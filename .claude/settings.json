@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "daily@yui-plugins": true,
+    "dev@yui-plugins": true
+  }
+}

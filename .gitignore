@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+dist/
+*.egg-info/
+.coverage*
+.ipynb_checkpoints/
+.ruff_cache/
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+
+# IDE
+*.swp
+*.swo
+
+# Jupyter
+*.ipynb_checkpoints/
+playground.ipynb
+playgrounds/
+
+# Training Data (large files)
+Style-Bert-VITS2/Data/
+Style-Bert-VITS2/inputs/*.wav
+data/
+
+# Model Assets (trained models - large files)
+Style-Bert-VITS2/model_assets/*/
+!Style-Bert-VITS2/model_assets/.gitignore
+
+# Pretrained Models (downloaded)
+Style-Bert-VITS2/pretrained/*.safetensors
+Style-Bert-VITS2/pretrained/*.pth
+Style-Bert-VITS2/pretrained_jp_extra/*.safetensors
+Style-Bert-VITS2/pretrained_jp_extra/*.pth
+
+# BERT Models (downloaded)
+Style-Bert-VITS2/bert/*/*.bin
+Style-Bert-VITS2/bert/*/*.h5
+Style-Bert-VITS2/bert/*/*.model
+Style-Bert-VITS2/bert/*/*.safetensors
+Style-Bert-VITS2/bert/*/*.msgpack
+Style-Bert-VITS2/bert/*/*.onnx
+
+# SLM Models
+Style-Bert-VITS2/slm/*/*.bin
+
+# Config (generated)
+Style-Bert-VITS2/configs/paths.yml
+Style-Bert-VITS2/*.yml
+!Style-Bert-VITS2/default_config.yml
+
+# Static files (built)
+Style-Bert-VITS2/static/
+
+# Scripts temp
+Style-Bert-VITS2/scripts/test/
+Style-Bert-VITS2/scripts/lib/
+Style-Bert-VITS2/scripts/Style-Bert-VITS2/
+Style-Bert-VITS2/scripts/sbv2/
+
+# Outputs
+Style-Bert-VITS2/mos_results/
+*.zip
+*.csv
+*.bak
+*.wav
+
+# Dictionary
+*.dic
+
+# Secrets
+.env
+.env.*
+*.key
+credentials.json
