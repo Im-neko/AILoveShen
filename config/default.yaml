@@ -1,0 +1,56 @@
+# AILoveShen Default Configuration
+# Environment-specific values should be in development.yaml or production.yaml
+
+app_name: AILoveShen
+debug: false
+
+# Twitch Integration
+twitch:
+  channel: "${TWITCH_CHANNEL:-}"
+  client_id: "${TWITCH_CLIENT_ID:-}"
+  client_secret: "${TWITCH_CLIENT_SECRET:-}"
+  access_token: "${TWITCH_ACCESS_TOKEN:-}"
+
+# Gemini API
+gemini:
+  api_key: "${GEMINI_API_KEY:-}"
+  main_model: "gemini-2.5-pro-preview-05-06"
+  filter_model: "gemini-2.0-flash"
+  max_tokens: 500
+  temperature: 0.7
+
+# TTS (Style-Bert-VITS2)
+tts:
+  server:
+    host: "localhost"
+    port: 5000
+  model_name: "default"
+  default_style: "Neutral"
+  speaking_rate: 1.0
+
+# MCP Settings
+mcp:
+  memory:
+    short_term_capacity: 20
+    long_term_db: "data/memory.db"
+
+# OBS WebSocket
+obs:
+  host: "localhost"
+  port: 4455
+  password: "${OBS_PASSWORD:-}"
+
+# NitroGen Integration
+nitrogen:
+  enabled: false
+  host: "localhost"
+  port: 8080
+
+# Logging
+logging:
+  level: "INFO"
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+  file: "data/logs/ailoveshen.log"
+  rotation: "10 MB"
+  retention: "7 days"
+  compression: "zip"

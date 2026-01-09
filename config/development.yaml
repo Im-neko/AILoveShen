@@ -1,0 +1,8 @@
+# AILoveShen Development Configuration
+# Inherits from default.yaml, overrides only what's needed
+
+debug: true
+
+logging:
+  level: "DEBUG"
+  file: "data/logs/ailoveshen-dev.log"
