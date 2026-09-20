@@ -5,18 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 AILoveShen is an AI Streamer project for **Twitch** combining:
-- **[NitroGen](https://github.com/MineDojo/NitroGen)** (planned): Minecraft AI game control for streaming
-- **Gemini 2.5**: Game commentary & thoughts (main), comment responses (sub/interrupt)
+- **[Jev](https://typesafe.ai/)** (planned): TypeSafe AI's System One model — fast, typed, real-time decision-making for Minecraft control, via a [Mineflayer](https://github.com/PrismarineJS/mineflayer) Node.js bridge (replaces the earlier NitroGen plan; see `docs/design/06_phase6_jev_integration.md`)
+- **Gemini 2.5**: Game commentary & thoughts (main), comment responses (sub/interrupt), and high-level Goal/direction decisions that get handed to Jev
 - **Gemini Flash** (planned): Comment filtering (dynamic threshold based on volume)
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control (JP/EN/ZH)
 - **MCP (Model Context Protocol)**: Memory management, expression control, and extensibility
 
 ### Core Concept
-- **Main loop**: NitroGen plays game → Gemini 2.5 generates commentary/thoughts → TTS speaks
+- **Main loop**: Minecraft Bridge (Mineflayer) plays game → Gemini 2.5 generates commentary/thoughts → TTS speaks
 - **Sub loop**: Twitch comments → Gemini Flash filters → Gemini 2.5 responds (interrupts main)
-- **Bidirectional NitroGen ↔ LLM**:
-  - Game State Manager → LLM: Position, inventory, surroundings, events
-  - LLM → Action Executor: Intentions translated to game actions
+- **Three-layer LLM → Jev → Minecraft Bridge link**:
+  - LLM → Jev: high-level direction — Gemini picks a `Goal` (from a closed set of 13) and hands it to Jev as a request
+  - Jev → Minecraft Bridge: Jev makes fast typed decisions within that Goal — a Reactive Loop (~600ms, survival reflexes, no LLM involved) and a Tactical Loop (~10s, next-step selection within the current Goal)
+  - Minecraft Bridge → LLM/Jev: Game State Manager feeds position, inventory, surroundings, and events back to both
 
 ## Common Commands
 

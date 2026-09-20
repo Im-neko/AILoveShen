@@ -171,10 +171,13 @@ AILoveShen/
 │       │   │   │   ├── speech_synthesizer.py  # ISpeechSynthesizer実装
 │       │   │   │   └── audio_player.py
 │       │   │   │
-│       │   │   ├── nitrogen/          # NitroGen アダプター
+│       │   │   ├── minecraft_bridge/  # Mineflayer Bridge アダプター（旧NitroGen）
 │       │   │   │   ├── __init__.py
-│       │   │   │   ├── game_gateway.py        # IGameGateway実装
-│       │   │   │   └── mapper.py
+│       │   │   │   └── mineflayer_bridge_adapter.py  # IMinecraftBridge実装
+│       │   │   │
+│       │   │   ├── jev/               # Jev (TypeSafe AI) アダプター
+│       │   │   │   ├── __init__.py
+│       │   │   │   └── jev_client_adapter.py         # IJevDecisionEngine実装
 │       │   │   │
 │       │   │   ├── obs/               # OBS WebSocket アダプター
 │       │   │   │   ├── __init__.py

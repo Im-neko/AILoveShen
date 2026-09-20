@@ -1,21 +1,22 @@
 # AILoveShen - AI Streamer
 
-[NitroGen](https://github.com/MineDojo/NitroGen)を使ってゲーム操作をしながら、学習した音声で会話する**Twitch向けAIストリーマー**プロジェクトです。
+[Jev](https://typesafe.ai/)（TypeSafe AIのSystem Oneモデル）と[Mineflayer](https://github.com/PrismarineJS/mineflayer)でMinecraftを操作しながら、学習した音声で会話する**Twitch向けAIストリーマー**プロジェクトです。
 
 ## プロジェクト概要
 
 このプロジェクトは以下の技術を組み合わせています：
 
-- **[NitroGen](https://github.com/MineDojo/NitroGen)** - Minecraftのプロシージャル生成とAIエージェント学習環境
+- **[Jev](https://typesafe.ai/)** - TypeSafe AIのSystem Oneモデル。型付き・確率付きの高速判断に特化しており、Minecraft操作のリアルタイムな戦術・反射判断を担当する
+- **[Mineflayer](https://github.com/PrismarineJS/mineflayer)** - Minecraftプロトコルを直接操作するNode.js製ライブラリ。Jevの判断を実際のゲーム操作に変換する「手」の役割
 - **[Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2)** - 感情豊かな音声合成エンジン
-- **Gemini 2.5** - メイン会話・対話生成
+- **Gemini 2.5** - メイン会話・対話生成。加えてMinecraft内で「何を目指すか（Goal）」という方向性を決め、Jevへリクエストする役割も担う
 - **Gemini Flash** - コメントフィルタリング用軽量LLM（反応すべきか判断、コメント量に応じて閾値を動的調整）
 - **MCP (Model Context Protocol)** - 記憶管理、表情操作、拡張機能
 - **Twitch API** - チャット連携・配信制御
 
 ## 機能
 
-- ゲーム内でのAIエージェント操作（NitroGen）
+- ゲーム内でのAI操作（LLMが方向性〈Goal〉を決め、Jevがリアルタイムに手段を判断し、Mineflayerで実行）
 - ゲーム状況に応じた実況・考えの発話（メイン）
 - コメントへの反応（サブ、コメントが来たら対応）
 - 学習した音声モデルによるリアルタイム音声合成
@@ -31,7 +32,7 @@
 │  【メイン：ゲーム実況】                 【サブ：コメント対応】            │
 │                                                                           │
 │  ┌─────────────────────────────┐       ┌──────────────┐                  │
-│  │         NitroGen            │       │ Twitch Chat  │                  │
+│  │   Jev + Minecraft Bridge     │       │ Twitch Chat  │                  │
 │  │  ┌───────────────────────┐  │       └──────┬───────┘                  │
 │  │  │    Game State Manager │  │              │                          │
 │  │  │  ・位置/インベントリ  │  │              ▼                          │
@@ -46,17 +47,17 @@
 │  │                    Gemini 2.5                      │                  │
 │  │  ・ゲーム状況への実況・考え・反応（メイン）        │                  │
 │  │  ・コメントへの返答（割り込み）                    │                  │
-│  │  ・次の行動の意思決定                              │                  │
+│  │  ・次に目指すGoal（方向性）の意思決定              │                  │
 │  └────────────────────┬───────────────────────────────┘                  │
 │                       │                                                   │
 │         ┌─────────────┼─────────────┐                                    │
 │         ▼             ▼             ▼                                    │
 │  ┌───────────┐ ┌───────────┐ ┌───────────────────────┐                  │
-│  │Style-Bert-│ │    MCP    │ │       NitroGen        │                  │
+│  │Style-Bert-│ │    MCP    │ │  Jev + Minecraft Bridge│                  │
 │  │  VITS2    │ │  Memory   │ │  ┌─────────────────┐  │                  │
-│  │ (Voice)   │ │Expression │ │  │ Action Executor │  │                  │
-│  │           │ │           │ │  │ LLMの意図を操作 │  │                  │
-│  │           │ │           │ │  │ に変換して実行  │  │                  │
+│  │ (Voice)   │ │Expression │ │  │Reactive/Tactical│  │                  │
+│  │           │ │           │ │  │ JevがGoal範囲内  │  │                  │
+│  │           │ │           │ │  │ で操作を決定・実行│  │                  │
 │  └───────────┘ └───────────┘ │  └─────────────────┘  │                  │
 │         │                    └───────────────────────┘                  │
 │         │                                                                 │
@@ -90,15 +91,23 @@ pip install -r requirements.txt
 python initialize.py
 ```
 
-### NitroGenのセットアップ
+### Jev + Minecraft Bridgeのセットアップ
 
 ```bash
-# NitroGenのインストール（別途）
-pip install nitrogen-ai
+# Jev Python SDKのインストール
+pip install typesafe-sdk
+# または: uv add typesafe-sdk
 
-# Minecraft環境の設定
-# 詳細は https://github.com/MineDojo/NitroGen を参照
+# APIキーを環境変数に設定（console.typesafe.aiで取得）
+export TYPESAFE_API_KEY="your-api-key"
+
+# Minecraft Bridge（Mineflayer, Node.js製サイドカー）のセットアップ
+cd minecraft-bridge
+npm install
+npm start
 ```
+
+詳細は[docs/design/06_phase6_jev_integration.md](docs/design/06_phase6_jev_integration.md)を参照してください。
 
 ## 使い方
 
@@ -138,10 +147,11 @@ python streamer_main.py
   - [ ] 記憶管理（長期・短期メモリ）
   - [ ] 表情操作
   - [ ] 感情状態管理
-- [ ] NitroGenとの統合
-  - [ ] Game State Manager（ゲーム状態の取得・管理）
-  - [ ] Action Executor（LLMの意図をゲーム操作に変換）
-  - [ ] LLM ↔ NitroGen 双方向連携
+- [ ] Jev + Minecraft Bridgeとの統合
+  - [ ] Minecraft Bridge（Mineflayer製Node.jsサイドカー）のGame State Manager
+  - [ ] Reactive Loop（Jevによる600ms周期の反射判断）
+  - [ ] Tactical Loop（LLMのGoal x Jevの手段選択、10秒周期）
+  - [ ] LLM → Jev → Minecraft Bridge の三層連携
 - [ ] リアルタイム音声合成パイプライン
 - [ ] OBS連携
 
@@ -149,10 +159,11 @@ python streamer_main.py
 
 このプロジェクトは以下のオープンソースプロジェクトを基盤としています：
 
-- [NitroGen](https://github.com/MineDojo/NitroGen) - Minecraft AI環境
+- [TypeSafe AI - Jev](https://typesafe.ai/) - リアルタイム型付き意思決定モデル（System One Model）
+- [jev-craft](https://github.com/akash-kamat/jev-craft) - Mineflayer + Jevによる先行実装（本プロジェクトの構成の参考元）
+- [Mineflayer](https://github.com/PrismarineJS/mineflayer) - Minecraft操作用Node.jsライブラリ
 - [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) - 音声合成エンジン
 - [Bert-VITS2](https://github.com/fishaudio/Bert-VITS2) - オリジナルTTSモデル
-- [MineDojo](https://github.com/MineDojo/MineDojo) - Minecraft学習環境
 
 ## ライセンス
 
