@@ -91,15 +91,6 @@ class OBSSettings:
 
 
 @dataclass
-class NitroGenSettings:
-    """NitroGen integration settings."""
-
-    enabled: bool = False
-    host: str = "localhost"
-    port: int = 8080
-
-
-@dataclass
 class LoggingSettings:
     """Logging configuration."""
 
@@ -128,7 +119,6 @@ class Settings:
     tts: TTSSettings = field(default_factory=TTSSettings)
     mcp: MCPSettings = field(default_factory=MCPSettings)
     obs: OBSSettings = field(default_factory=OBSSettings)
-    nitrogen: NitroGenSettings = field(default_factory=NitroGenSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
 
 
@@ -237,14 +227,6 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             host=obs_data.get("host", "localhost"),
             port=obs_data.get("port", 4455),
             password=obs_data.get("password", ""),
-        )
-
-    if "nitrogen" in data:
-        nitrogen_data = data["nitrogen"]
-        settings.nitrogen = NitroGenSettings(
-            enabled=nitrogen_data.get("enabled", False),
-            host=nitrogen_data.get("host", "localhost"),
-            port=nitrogen_data.get("port", 8080),
         )
 
     if "logging" in data:

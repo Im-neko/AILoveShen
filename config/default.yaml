@@ -191,7 +191,7 @@ game:
   events:
     health_change_threshold: 5
 
-# Minecraft (Mineflayer/Mindcraft)
+# Minecraft (Mineflayer bridge + Jev)
 minecraft:
   enabled: false
 
@@ -200,7 +200,7 @@ minecraft:
     host: "localhost"
     port: 25565
 
-  # Mindcraft bridge (Node.js process)
+  # Mineflayer bridge (Node.js sidecar process)
   bridge:
     type: "http"  # "http" or "websocket"
     host: "localhost"

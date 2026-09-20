@@ -6,13 +6,47 @@ This document tracks development progress to enable smooth resumption of work af
 
 ## Current Status
 
-**Active Phase**: Docker化 Complete, Ready for Phase 3
-**Last Updated**: 2026-01-09
-**Test Status**: 148 unit tests passing, Docker integration verified
+**Active Phase**: Phase 6 設計改訂 (NitroGen → Jev + Mineflayer) Complete, Ready for Phase 3
+**Last Updated**: 2026-09-20
+**Test Status**: 148 unit tests passing (`pytest tests/`), Docker integration verified
 
 ---
 
 ## Completed Work
+
+### Phase 6 設計改訂: NitroGen → Jev + Mineflayer (2026-09-20)
+
+**Issue**: #4 (実装は未着手のためオープンのまま)
+
+NitroGen (MineDojo) が設計のみで未実装のため、Phase 6 の Minecraft 統合設計を
+TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成へ改訂。
+
+**役割分担**:
+- Gemini 2.5 (System 2): 方向性 = `Goal`（13種の閉じた集合）を決定
+- Jev (System 1): Goal 範囲内の高速・型付き判断
+  - Reactive Loop (~600ms): 生存反射、LLM を介さない
+  - Tactical Loop (~10s): Goal 内の次の一手の選択
+- Mineflayer Bridge (Node.js サイドカー): 判断をゲーム操作へ変換、状態・イベントを双方へ還流
+
+**Files Changed**:
+- `docs/design/06_phase6_jev_integration.md` - 追加（全13章）
+- `docs/design/06_phase6_nitrogen_integration.md` - 削除
+- `docs/design/00_architecture_overview.md`, `01_phase1_core_infrastructure.md`,
+  `08_phase8_orchestration.md` - 参照更新
+- `README.md`, `CLAUDE.md` - プロジェクト概要更新
+- `src/ailoveshen/core/infrastructure/config.py` - `NitroGenSettings` 削除
+
+**Key Design Decisions**:
+1. LLM は「何を目指すか(Goal)」、Jev は「今どう動くか」という System 2 / System 1 分担
+2. Jev の型付き出力 (`Noul`/`Choice`/`Score`) により旧設計の `ACTION_KEYWORDS` による
+   自由テキストのキーワードマッチを廃止
+3. Mineflayer は Node.js 専用のため、Python 本体とは別プロセスのサイドカー構成とする
+4. `MinecraftBridgeSettings` / `JevSettings` の追加は Phase 6 実装時に行う（設計書 11.1）
+
+**Commit**: `2944add` - docs: replace NitroGen plan with Jev + Mineflayer bridge design (#4)
+**PR**: #11
+
+---
 
 ### Docker化: TTS Server Containerization (2026-01-09)
 
@@ -47,6 +81,8 @@ This document tracks development progress to enable smooth resumption of work af
 - transformers CVE-2025-32434 → Upgrade to torch >= 2.6
 - typing-extensions version conflict → Install typing-extensions>=4.10.0 before torch
 - Missing numba module → Add numba to dependencies
+
+**Commit**: `a857832` - feat: implement Phase 2 TTS pipeline and Docker containerization
 
 ---
 
@@ -91,6 +127,8 @@ This document tracks development progress to enable smooth resumption of work af
 3. Sync methods (stop, is_playing, get_duration_ms) vs async methods (play, synthesize)
 4. Priority queue with sequence numbers for FIFO within same priority
 5. Optional TTS dependencies via `pip install ailoveshen[tts]`
+
+**Commit**: `a857832` - feat: implement Phase 2 TTS pipeline and Docker containerization
 
 ---
 
@@ -175,14 +213,14 @@ Refer to design document: `docs/design/05_phase5_mcp_server.md`
 - Emotion decay: Applied when generating commentary
 - VTube Studio: API v1.0, token file auth
 
-### Phase 6: Game Integration (Ready for Implementation)
+### Phase 6: Jev + Minecraft Bridge Integration (Ready for Implementation)
 
 **Issue**: #4
 
-Refer to design document: `docs/design/06_phase6_nitrogen_integration.md` (renamed conceptually to Game Integration)
+Refer to design document: `docs/design/06_phase6_jev_integration.md`
 
-**Confirmed Specifications (2026-01-10)**:
-- **Framework change**: NitroGen → Mineflayer/Mindcraft
+**Confirmed Specifications (2026-09-20 改訂)**:
+- **Framework change**: NitroGen → Jev (TypeSafe AI System One) + Mineflayer
 - Abstraction: `IGameEnvironment` interface for future games (Terraria, Factorio, etc.)
 - Minecraft connection: External server (not managed by AILoveShen)
 - Action timeout: 5 seconds
@@ -215,6 +253,19 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-20 (Phase 6 設計改訂)
+
+- `jev-integration-design.patch` を適用し Phase 6 設計を Jev + Mineflayer 構成へ改訂
+  - `CLAUDE.md` のみ改行コード不一致 (パッチは LF / 作業ツリーは CRLF) で自動適用に失敗したため、
+    該当6行を CRLF 維持のまま手適用
+- 未コミットだった Phase 2 TTS / Docker 化を先行コミット `a857832` として分離
+- Phase 6 設計改訂を `2944add` としてコミット、PR #11 経由で main へマージ
+- PR 本文の `Closes #4` で Issue #4 が自動クローズされたため再オープン
+  (#4 は実装チケットであり、今回のマージは設計書のみ)
+- NitroGen 残存を一掃: `config.py` の `NitroGenSettings` 削除、
+  `.serena/` メモリ・`docs/WORKLOG.md` の記述を更新
+- `pytest tests/` 148 passed で回帰なしを確認
 
 ### 2026-01-09 (Docker化)
 

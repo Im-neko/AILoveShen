@@ -2,7 +2,7 @@
 
 ## Purpose
 AILoveShen is an **AI Streamer** project for Twitch that combines:
-- **NitroGen**: Minecraft AI game control and procedural generation
+- **Jev + Mineflayer**: Minecraft game control — Jev (TypeSafe AI System One model) makes fast typed decisions, Mineflayer executes them
 - **Gemini 2.5**: Main conversation/commentary generation
 - **Gemini Flash**: Comment filtering with dynamic threshold
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control
@@ -10,13 +10,14 @@ AILoveShen is an **AI Streamer** project for Twitch that combines:
 
 ## Architecture
 ```
-Main Loop: NitroGen (game) → Gemini 2.5 (commentary) → Style-Bert-VITS2 (TTS)
+Main Loop: Minecraft Bridge (Mineflayer) (game) → Gemini 2.5 (commentary) → Style-Bert-VITS2 (TTS)
 Sub Loop: Twitch Chat → Gemini Flash (filter) → Gemini 2.5 (response) → TTS (interrupt)
 ```
 
-### Bidirectional NitroGen ↔ LLM
-- **Game State Manager → LLM**: Position, inventory, surroundings, events
-- **LLM → Action Executor**: Intentions translated to game actions
+### Three-layer LLM → Jev → Minecraft Bridge
+- **LLM → Jev**: Gemini picks a `Goal` (closed set of 13) and hands it to Jev
+- **Jev → Minecraft Bridge**: Reactive Loop (~600ms, survival reflexes, no LLM) and Tactical Loop (~10s, next step within the Goal)
+- **Minecraft Bridge → LLM/Jev**: Game State Manager feeds position, inventory, surroundings, events back to both
 
 ## Tech Stack
 - **Python 3.10+** (requires 3.9+ for Style-Bert-VITS2)
@@ -35,7 +36,7 @@ Sub Loop: Twitch Chat → Gemini Flash (filter) → Gemini 2.5 (response) → TT
 1. Twitch Integration (chat retrieval)
 2. Gemini 2.5 Conversation System
 3. MCP Server Implementation
-4. NitroGen Integration
+4. Minecraft Integration (Jev + Mineflayer)
 5. Real-time TTS Pipeline
 6. OBS Integration
 7. Gemini Flash Comment Filtering
