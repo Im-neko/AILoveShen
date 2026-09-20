@@ -7,5 +7,5 @@ entry_points:
   - "!**/__pycache__/**"
 
 description: |
-  AI Streamer project for Twitch combining NitroGen (Minecraft AI),
+  AI Streamer project for Twitch combining Jev + Mineflayer (Minecraft AI),
   Gemini 2.5/Flash (LLM), Style-Bert-VITS2 (TTS), and MCP.

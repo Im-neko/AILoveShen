@@ -72,15 +72,15 @@ Phase 3から順に解決していきます。
 
 ## Phase 6: Game Integration ✅ 確定
 
-**変更**: NitroGen → Mineflayer/Mindcraft に変更
+**変更**: NitroGen → Jev (TypeSafe AI System Oneモデル) + Mineflayer に変更（設計: `docs/design/06_phase6_jev_integration.md`）
 
 ### アーキテクチャ
 - [x] **抽象化レイヤー**: `IGameEnvironment` インターフェースで将来の他ゲーム対応
-- [x] **Minecraft実装**: Mineflayer + Mindcraft（Node.js）
+- [x] **Minecraft実装**: Mineflayer（Node.jsサイドカー） + Jev（判断）
 - [x] **通信方式**: 外部で起動済みのMinecraftサーバーに接続
 
 ### 実装詳細
-- [x] **フレームワーク**: Mineflayer (PrismarineJS) + Mindcraft
+- [x] **フレームワーク**: Mineflayer (PrismarineJS) + Jev (TypeSafe AI)
 - [x] **Node.js要件**: v18 or v20 LTS
 - [x] **Minecraft対応**: Java Edition v1.21.6まで
 - [x] **Python-Node連携**: HTTP API または WebSocket
