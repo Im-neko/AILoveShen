@@ -1,0 +1,37 @@
+# AILoveShen Docker Compose Configuration
+# Usage: cd docker && docker compose up -d
+
+services:
+  tts-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tts-server
+    container_name: ailoveshen-tts
+    ports:
+      - "${TTS_PORT:-5001}:5001"
+    volumes:
+      # Mount BERT models (read-only)
+      - ${BERT_PATH:-../Style-Bert-VITS2/bert}:/app/bert:ro
+      # Mount TTS model assets (read-only)
+      - ${MODEL_ASSETS_PATH:-../Style-Bert-VITS2/model_assets}:/app/model_assets:ro
+      # Mount custom config if needed
+      - ./config.yml:/app/config.yml:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/status"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+networks:
+  default:
+    name: ailoveshen-network

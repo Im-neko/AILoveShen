@@ -1,0 +1,88 @@
+# Style-Bert-VITS2 TTS Server for CPU inference
+# Usage: docker build -f docker/Dockerfile.tts-server -t ailoveshen-tts .
+
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libsndfile1 \
+    libgomp1 \
+    ffmpeg \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 ttsuser
+WORKDIR /app
+
+# Copy and install Python dependencies
+# Using a minimal set for inference
+COPY Style-Bert-VITS2/requirements-infer.txt /tmp/requirements-infer.txt
+
+# Update typing-extensions first (required by torch >= 2.6)
+RUN pip install --no-cache-dir "typing-extensions>=4.10.0"
+
+# Install PyTorch CPU version (>= 2.6 required for transformers security fix)
+RUN pip install --no-cache-dir \
+    "torch>=2.6" "torchaudio>=2.6" \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies from PyPI
+RUN pip install --no-cache-dir \
+    accelerate \
+    cmudict \
+    cn2an \
+    g2p_en \
+    GPUtil \
+    jieba \
+    loguru \
+    "nltk<=3.8.1" \
+    num2words \
+    numba \
+    "numpy<2" \
+    onnx \
+    onnxconverter-common \
+    onnxruntime \
+    onnxsim-prebuilt \
+    psutil \
+    pyopenjtalk-dict \
+    pypinyin \
+    pyworld-prebuilt \
+    transformers \
+    fastapi \
+    uvicorn \
+    scipy
+
+# Initialize pyopenjtalk dictionary (downloads during build)
+RUN python -c "import pyopenjtalk; pyopenjtalk.run_frontend('test')"
+
+# Copy application code
+COPY --chown=ttsuser Style-Bert-VITS2/style_bert_vits2/ /app/style_bert_vits2/
+COPY --chown=ttsuser Style-Bert-VITS2/config.py /app/config.py
+COPY --chown=ttsuser Style-Bert-VITS2/server_fastapi.py /app/server_fastapi.py
+COPY --chown=ttsuser Style-Bert-VITS2/default_config.yml /app/default_config.yml
+COPY --chown=ttsuser Style-Bert-VITS2/dict_data/ /app/dict_data/
+COPY --chown=ttsuser Style-Bert-VITS2/configs/ /app/configs/
+
+# Create directories for volume mounts
+RUN mkdir -p /app/bert /app/model_assets && chown -R ttsuser:ttsuser /app
+
+# Switch to non-root user
+USER ttsuser
+
+# Expose the API port
+EXPOSE 5001
+
+# Health check using /status endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:5001/status || exit 1
+
+# Run the server with CPU mode
+CMD ["python", "server_fastapi.py", "--cpu"]
