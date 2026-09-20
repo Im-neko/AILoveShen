@@ -28,6 +28,15 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.0",
 ]
+tts = [
+    "httpx>=0.25",
+    "sounddevice>=0.4",
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+all = [
+    "ailoveshen[dev,tts]",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ailoveshen"]

@@ -5,18 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 AILoveShen is an AI Streamer project for **Twitch** combining:
-- **[NitroGen](https://github.com/MineDojo/NitroGen)** (planned): Minecraft AI game control for streaming
-- **Gemini 2.5**: Game commentary & thoughts (main), comment responses (sub/interrupt)
+- **[Jev](https://typesafe.ai/)** (planned): TypeSafe AI's System One model — fast, typed, real-time decision-making for Minecraft control, via a [Mineflayer](https://github.com/PrismarineJS/mineflayer) Node.js bridge (replaces the earlier NitroGen plan; see `docs/design/06_phase6_jev_integration.md`)
+- **Gemini 2.5**: Game commentary & thoughts (main), comment responses (sub/interrupt), and high-level Goal/direction decisions that get handed to Jev
 - **Gemini Flash** (planned): Comment filtering (dynamic threshold based on volume)
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control (JP/EN/ZH)
 - **MCP (Model Context Protocol)**: Memory management, expression control, and extensibility
 
 ### Core Concept
-- **Main loop**: NitroGen plays game → Gemini 2.5 generates commentary/thoughts → TTS speaks
+- **Main loop**: Minecraft Bridge (Mineflayer) plays game → Gemini 2.5 generates commentary/thoughts → TTS speaks
 - **Sub loop**: Twitch comments → Gemini Flash filters → Gemini 2.5 responds (interrupts main)
-- **Bidirectional NitroGen ↔ LLM**:
-  - Game State Manager → LLM: Position, inventory, surroundings, events
-  - LLM → Action Executor: Intentions translated to game actions
+- **Three-layer LLM → Jev → Minecraft Bridge link**:
+  - LLM → Jev: high-level direction — Gemini picks a `Goal` (from a closed set of 13) and hands it to Jev as a request
+  - Jev → Minecraft Bridge: Jev makes fast typed decisions within that Goal — a Reactive Loop (~600ms, survival reflexes, no LLM involved) and a Tactical Loop (~10s, next-step selection within the current Goal)
+  - Minecraft Bridge → LLM/Jev: Game State Manager feeds position, inventory, surroundings, and events back to both
 
 ## Common Commands
 
@@ -54,6 +55,12 @@ python style_gen.py -m <model_name>
 
 ### Testing
 ```bash
+# AILoveShen Core tests
+pytest tests/                   # Run all unit tests
+python examples/demo_phase1.py  # Demo Phase 1 components
+python examples/demo_phase2.py  # Demo Phase 2 TTS pipeline
+
+# Style-Bert-VITS2 tests (legacy)
 hatch run test:test          # PyTorch CPU tests
 hatch run test:test-cuda     # PyTorch GPU tests
 hatch run test-onnx:test     # ONNX CPU tests
@@ -68,6 +75,59 @@ python convert_bert_onnx.py  # Convert BERT models to ONNX
 ```
 
 ## Architecture
+
+### AILoveShen Core (`src/ailoveshen/core/`)
+Clean Architecture implementation with Domain-Driven Design patterns.
+
+```
+src/ailoveshen/core/
+├── domain/                    # Domain Layer (no external dependencies)
+│   ├── entities.py            # Entity, AggregateRoot base classes
+│   └── value_objects.py       # EmotionState, SpeechRequest, Position, etc.
+├── application/               # Application Layer
+│   └── ports/
+│       └── output_ports.py    # IEventPublisher, IEventSubscriber interfaces
+└── infrastructure/            # Infrastructure Layer
+    ├── config.py              # YAML config with env var expansion
+    ├── logging.py             # Loguru structured logging
+    └── events.py              # AsyncEventBus (Pub/Sub)
+```
+
+**Key Classes:**
+- `Entity`: Base class with auto-generated UUID, UTC timestamps, equality by ID
+- `AggregateRoot`: Entity with domain event collection
+- `EmotionState`, `SpeechRequest`, `FilterResult`: Immutable value objects
+- `AsyncEventBus`: Thread-safe async event publisher/subscriber
+- `Settings`: Hierarchical configuration (default.yaml → {env}.yaml → env vars)
+
+### AILoveShen TTS (`src/ailoveshen/tts/`)
+Clean Architecture TTS pipeline for Style-Bert-VITS2 integration.
+
+```
+src/ailoveshen/tts/
+├── domain/                    # Domain Layer
+│   ├── value_objects.py       # SpeechResult, SpeechStatus, VoiceConfig
+│   ├── events.py              # SpeechStartedEvent, SpeechCompletedEvent
+│   └── services/              # EmotionStyleService
+├── application/               # Application Layer
+│   ├── ports/                 # ISpeakText, ISpeechSynthesizer, IAudioPlayer
+│   ├── use_cases/             # SpeakTextUseCase
+│   └── dto/                   # SpeakTextRequest, SpeakTextResponse
+├── infrastructure/            # Infrastructure Layer
+│   └── adapters/
+│       ├── tts/               # StyleBertVits2Client
+│       └── audio/             # SounddevicePlayer
+├── presentation/              # Presentation Layer
+│   └── services/              # TTSService (queue management)
+└── factory.py                 # Composition Root
+```
+
+**Key Classes:**
+- `TTSService`: Priority queue-based speech service
+- `SpeakTextUseCase`: Core TTS orchestration logic
+- `EmotionStyleService`: Emotion→Style mapping
+- `StyleBertVits2Client`: HTTP client for TTS server
+- `SounddevicePlayer`: Audio playback adapter
 
 ### Core Library (`style_bert_vits2/`)
 - `tts_model.py`: Main `TTSModel` and `TTSModelHolder` classes for inference
@@ -110,6 +170,13 @@ model_assets/{model_name}/
 
 ## Configuration
 
+### AILoveShen Core
+- `config/default.yaml`: Default settings for all environments
+- `config/development.yaml`: Development overrides
+- Environment variables: `${VAR}` or `${VAR:-default}` syntax supported
+- `APP_ENV`: Environment name (defaults to "development")
+
+### Style-Bert-VITS2
 - `configs/paths.yml`: Dataset and asset paths
 - `default_config.yml`: Training hyperparameters template
 - Per-model `config.json`: Generated during preprocessing
@@ -119,3 +186,44 @@ model_assets/{model_name}/
 - `JP`: Japanese (pyopenjtalk + deberta-v2-large-japanese)
 - `EN`: English (g2p_en + deberta-v3-large)
 - `ZH`: Chinese (pypinyin + chinese-roberta-wwm-ext-large)
+
+## Work Log Guidelines
+
+**IMPORTANT**: Always maintain `docs/WORKLOG.md` to enable smooth resumption after context loss.
+
+### When to Update Work Log
+
+1. **Session Start**: Read WORKLOG.md to understand current status
+2. **Task Completion**: Record completed work with:
+   - Files created/modified
+   - Key design decisions
+   - Commit hash
+3. **Session End**: Update "Current Status" and "Next Steps"
+4. **Blockers/Issues**: Document any unresolved problems
+
+### Work Log Structure
+
+```markdown
+## Current Status
+- Active phase and last updated date
+
+## Completed Work
+- Phase/feature name, date, issue number
+- List of implemented components with file paths
+- Key design decisions made
+- Commit hash
+
+## Next Steps
+- Planned work items
+
+## Session Notes
+- Daily notes with date headers
+```
+
+### Resume Checklist
+
+1. Read `docs/WORKLOG.md`
+2. Check GitHub Issues (`gh issue list`)
+3. Review design docs in `docs/design/`
+4. Run tests: `pytest tests/`
+5. Run demo if available: `python examples/demo_phase1.py`

@@ -1,0 +1,11 @@
+name: AILoveShen
+language: python
+
+entry_points:
+  - "**/*.py"
+  - "!**/venv/**"
+  - "!**/__pycache__/**"
+
+description: |
+  AI Streamer project for Twitch combining NitroGen (Minecraft AI),
+  Gemini 2.5/Flash (LLM), Style-Bert-VITS2 (TTS), and MCP.

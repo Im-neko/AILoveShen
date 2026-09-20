@@ -6,45 +6,210 @@ debug: false
 
 # Twitch Integration
 twitch:
+  enabled: true
   channel: "${TWITCH_CHANNEL:-}"
   client_id: "${TWITCH_CLIENT_ID:-}"
   client_secret: "${TWITCH_CLIENT_SECRET:-}"
   access_token: "${TWITCH_ACCESS_TOKEN:-}"
 
+  # Response rate limit
+  response:
+    min_interval_seconds: 5.0
+
+  # Reconnection settings
+  reconnect:
+    enabled: true
+    base_delay_seconds: 1.0
+    max_delay_seconds: 300.0
+    exponential_base: 2.0
+    # Server errors: infinite retry with backoff
+    # Client errors: no retry
+
+# Comment Filter (Gemini Flash)
+comment_filter:
+  enabled: true
+  # Dynamic threshold based on comment volume
+  base_threshold: 0.5
+  min_threshold: 0.3
+  max_threshold: 0.9
+  # Volume measurement window
+  window_seconds: 60
+  # Messages per minute thresholds
+  low_volume_mpm: 5.0
+  high_volume_mpm: 30.0
+  # Filter results logging
+  log_results: true
+
 # Gemini API
 gemini:
   api_key: "${GEMINI_API_KEY:-}"
-  main_model: "gemini-2.5-pro-preview-05-06"
+  main_model: "gemini-2.5-pro"
   filter_model: "gemini-2.0-flash"
   max_tokens: 500
   temperature: 0.7
 
+  # Retry settings
+  retry:
+    max_attempts: 3
+    base_delay_seconds: 1.0
+    max_delay_seconds: 10.0
+    exponential_base: 2.0
+
+  # Rate limit settings
+  rate_limit:
+    min_interval_seconds: 1.0
+
 # TTS (Style-Bert-VITS2)
 tts:
+  enabled: true
+
+  # Server connection settings
   server:
     host: "localhost"
-    port: 5000
-  model_name: "default"
-  default_style: "Neutral"
-  speaking_rate: 1.0
+    port: 5001
+    timeout_seconds: 30
+
+  # Voice settings
+  voice:
+    model_name: "default"
+    speaker_id: 0
+    language: "JP"
+    default_style: "Neutral"
+
+  # Synthesis parameters
+  synthesis:
+    sdp_ratio: 0.2
+    noise: 0.6
+    noisew: 0.8
+    length: 1.0
+
+  # Queue settings
+  queue:
+    max_size: 10
+
+  # Audio output settings
+  audio:
+    # device: null = default device
+    # Windows (VB-Audio Cable): "CABLE Input (VB-Audio Virtual Cable)"
+    # macOS (BlackHole): "BlackHole 2ch"
+    device: null
+    blocksize: 1024
+
+  # Emotion to Style mapping (for EmotionStyleService)
+  emotion_style_map:
+    neutral: "Neutral"
+    happy: "Happy"
+    sad: "Sad"
+    angry: "Angry"
+    surprised: "Surprised"
+    scared: "Sad"
+    excited: "Happy"
 
 # MCP Settings
 mcp:
+  enabled: true
+
   memory:
     short_term_capacity: 20
     long_term_db: "data/memory.db"
+    # Auto-save memories with importance >= HIGH
+    auto_save_min_importance: "high"
 
-# OBS WebSocket
+  emotion:
+    default_state: "neutral"
+    decay_rate: 0.1
+    neutral_threshold: 0.3
+    # Decay is applied when generating commentary
+
+# Live2D (VTube Studio) Integration
+live2d:
+  enabled: true
+
+  vtube_studio:
+    host: "localhost"
+    port: 8001
+    timeout_seconds: 10
+
+  plugin:
+    name: "AILoveShen"
+    developer: "AILoveShen"
+
+  auth:
+    token_file: "data/.vts_token.json"
+
+  # Emotion to Expression mapping
+  emotion_expression_map:
+    neutral: "neutral.exp3.json"
+    happy: "happy.exp3.json"
+    sad: "sad.exp3.json"
+    angry: "angry.exp3.json"
+    surprised: "surprised.exp3.json"
+    scared: "scared.exp3.json"
+    excited: "excited.exp3.json"
+
+  sync:
+    auto_sync_emotions: true
+    intensity_threshold: 0.3
+    default_expression: "neutral.exp3.json"
+
+# OBS WebSocket (OBS 28+ / WebSocket 5.x)
 obs:
+  enabled: true
   host: "localhost"
   port: 4455
   password: "${OBS_PASSWORD:-}"
 
-# NitroGen Integration
-nitrogen:
+  # Scene name mapping (configure actual names in OBS)
+  scenes:
+    main: "Main Scene"
+    starting: "Starting Soon"
+    ending: "Ending"
+    brb: "Be Right Back"
+
+  # Subtitle settings (font/position configured in OBS)
+  subtitle:
+    source_name: "Subtitles"
+    # Default: persistent display (null = no auto-hide)
+    default_duration_seconds: null
+
+# Game Integration (Abstract layer for multiple games)
+game:
   enabled: false
-  host: "localhost"
-  port: 8080
+
+  # Current game adapter
+  adapter: "minecraft"  # Future: "terraria", "factorio", etc.
+
+  # Action execution
+  action_timeout_seconds: 5
+  enable_parallel_actions: true
+  action_queue_size: 10
+
+  # State polling
+  polling_interval_ms: 100
+
+  # Event detection
+  events:
+    health_change_threshold: 5
+
+# Minecraft (Mineflayer/Mindcraft)
+minecraft:
+  enabled: false
+
+  # Mineflayer connection
+  server:
+    host: "localhost"
+    port: 25565
+
+  # Mindcraft bridge (Node.js process)
+  bridge:
+    type: "http"  # "http" or "websocket"
+    host: "localhost"
+    port: 3000
+
+  # Bot settings
+  bot:
+    username: "AILoveShen"
+    version: "1.21.4"
 
 # Logging
 logging:
@@ -54,3 +219,5 @@ logging:
   rotation: "10 MB"
   retention: "7 days"
   compression: "zip"
+  # Separate log for filter results (for analysis)
+  filter_log: "data/logs/filter_results.jsonl"

@@ -1,0 +1,21 @@
+# Windows用オーバーライド設定
+# 使い方: このファイルを docker-compose.override.yml にリネーム
+#
+# PowerShell:
+#   Copy-Item docker-compose.override.yml.windows docker-compose.override.yml
+#
+# docker compose up -d で自動的に読み込まれます
+
+services:
+  tts-server:
+    volumes:
+      # Windows用パス (WSL2の場合)
+      # 方法1: WSLパス形式 (推奨)
+      - ../Style-Bert-VITS2/bert:/app/bert:ro
+      - ../Style-Bert-VITS2/model_assets:/app/model_assets:ro
+      - ./config.yml:/app/config.yml:ro
+
+      # 方法2: Windowsパス形式 (必要に応じてコメント解除)
+      # - C:/Users/YOUR_USER/apps/AILoveShen/Style-Bert-VITS2/bert:/app/bert:ro
+      # - C:/Users/YOUR_USER/apps/AILoveShen/Style-Bert-VITS2/model_assets:/app/model_assets:ro
+      # - C:/Users/YOUR_USER/apps/AILoveShen/docker/config.yml:/app/config.yml:ro

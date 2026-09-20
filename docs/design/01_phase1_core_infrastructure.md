@@ -1,5 +1,22 @@
 # Phase 1: Core Infrastructure 詳細設計書（クリーンアーキテクチャ版）
 
+## 実装状況
+
+| コンポーネント | 状況 | 備考 |
+|---------------|------|------|
+| Domain Layer: Entity/AggregateRoot | ✅ 完了 | `src/ailoveshen/core/domain/entities.py` |
+| Domain Layer: Value Objects | ✅ 完了 | `src/ailoveshen/core/domain/value_objects.py` |
+| Application Layer: Output Ports | ✅ 完了 | `src/ailoveshen/core/application/ports/output_ports.py` |
+| Infrastructure: Config | ✅ 完了 | `src/ailoveshen/core/infrastructure/config.py` |
+| Infrastructure: Logging | ✅ 完了 | `src/ailoveshen/core/infrastructure/logging.py` |
+| Infrastructure: EventBus | ✅ 完了 | `src/ailoveshen/core/infrastructure/events.py` |
+| Unit Tests | ✅ 完了 | 77 tests passing |
+| Demo Script | ✅ 完了 | `examples/demo_phase1.py` |
+
+**Phase 1 実装完了日**: 2026-01-09
+
+---
+
 ## 1. クリーンアーキテクチャ概要
 
 ```
@@ -154,10 +171,13 @@ AILoveShen/
 │       │   │   │   ├── speech_synthesizer.py  # ISpeechSynthesizer実装
 │       │   │   │   └── audio_player.py
 │       │   │   │
-│       │   │   ├── nitrogen/          # NitroGen アダプター
+│       │   │   ├── minecraft_bridge/  # Mineflayer Bridge アダプター（旧NitroGen）
 │       │   │   │   ├── __init__.py
-│       │   │   │   ├── game_gateway.py        # IGameGateway実装
-│       │   │   │   └── mapper.py
+│       │   │   │   └── mineflayer_bridge_adapter.py  # IMinecraftBridge実装
+│       │   │   │
+│       │   │   ├── jev/               # Jev (TypeSafe AI) アダプター
+│       │   │   │   ├── __init__.py
+│       │   │   │   └── jev_client_adapter.py         # IJevDecisionEngine実装
 │       │   │   │
 │       │   │   ├── obs/               # OBS WebSocket アダプター
 │       │   │   │   ├── __init__.py

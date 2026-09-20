@@ -1,0 +1,30 @@
+# Docker build context exclusions for AILoveShen TTS Server
+
+# Exclude large model files (mounted as volumes)
+Style-Bert-VITS2/bert/
+Style-Bert-VITS2/model_assets/
+Style-Bert-VITS2/pretrained/
+Style-Bert-VITS2/pretrained_jp_extra/
+Style-Bert-VITS2/slm/
+Style-Bert-VITS2/Data/
+Style-Bert-VITS2/venv/
+
+# Exclude unnecessary files
+Style-Bert-VITS2/.git/
+Style-Bert-VITS2/__pycache__/
+Style-Bert-VITS2/*.ipynb
+Style-Bert-VITS2/static/
+Style-Bert-VITS2/inputs/
+
+# Exclude AILoveShen source (not needed for TTS server)
+src/
+tests/
+examples/
+docs/
+config/
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.serena/

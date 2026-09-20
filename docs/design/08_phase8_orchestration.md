@@ -1847,7 +1847,7 @@ from .presentation.orchestrator_service import OrchestratorService
 # from .tts.presentation import TTSService
 # from .llm.presentation import LLMService
 # from .twitch.presentation import TwitchService
-# from .nitrogen.presentation import GameService
+# from .jev_integration.presentation import GameService
 # from .obs.presentation import OBSService
 
 
@@ -1964,7 +1964,7 @@ async def run_application(settings: Settings) -> None:
     tts_service = None  # create_tts_service(settings.tts, event_bus)
     llm_service = None  # create_llm_service(settings.gemini, event_bus)
     twitch_service = None  # create_twitch_service(settings.twitch, event_bus)
-    game_service = None  # create_game_service(settings.nitrogen, event_bus)
+    game_service = None  # create_game_service(settings.minecraft_bridge, settings.jev, event_bus)
     obs_service = None  # create_obs_service(settings.obs, event_bus)
 
     # Create orchestrator
@@ -2070,11 +2070,16 @@ mcp:
     default_state: "neutral"
     decay_rate: 0.1
 
-nitrogen:
+minecraft_bridge:
   enabled: false
   host: "localhost"
-  port: 8080
-  polling_interval_ms: 100
+  port: 8090
+  reactive_interval_ms: 600
+
+jev:
+  enabled: false
+  api_key: "${TYPESAFE_API_KEY}"
+  tactical_interval_seconds: 10
 
 tts:
   enabled: true
@@ -2155,7 +2160,7 @@ logging:
 3. Phase 3: LLM Integration
 4. Phase 4: Twitch Integration
 5. Phase 5: MCP Server
-6. Phase 6: NitroGen Integration
+6. Phase 6: Jev + Minecraft Bridge Integration
 7. Phase 7: OBS Integration
 8. Phase 8: Orchestration (統合)
 

@@ -1172,3 +1172,815 @@ mcp:
     default_state: "neutral"
     decay_rate: 0.1
 ```
+
+## 8. Live2D統合 (VTube Studio Plugin API)
+
+### 8.1 概要
+
+LLMからMCP経由でLive2Dアバターの表情・エモートを制御する機能を追加します。
+
+- **Live2D環境**: VTube Studio (WebSocket Plugin API)
+- **操作機能**: 表情(Expression)切り替え + エモート/モーション再生
+- **統合方式**: `set_emotion` → `EmotionChangedEvent` → `Live2DService`が自動購読
+
+### 8.2 連携フロー
+
+```
+LLMがset_emotion("happy")を呼び出し
+  → ManageEmotionUseCase.set_emotion()
+    → EmotionChangedEvent発行 (EventBus)
+      → Live2DService._on_emotion_changed() (subscriber)
+        → SyncEmotionExpressionUseCase.sync_expression()
+          → VTubeStudioClient.activate_expression("happy.exp3.json")
+            → VTube Studioが表情を変更
+```
+
+### 8.3 モジュール構成
+
+```
+src/ailoveshen/live2d/
+├── __init__.py
+├── domain/
+│   ├── __init__.py
+│   ├── value_objects.py          # Expression, Hotkey, ModelInfo
+│   ├── events.py                 # ExpressionChangedEvent, MotionTriggeredEvent
+│   └── services/
+│       ├── __init__.py
+│       └── emotion_expression_service.py  # EmotionType → Expression mapping
+├── application/
+│   ├── __init__.py
+│   ├── ports/
+│   │   ├── __init__.py
+│   │   ├── input/
+│   │   │   ├── __init__.py
+│   │   │   ├── manage_expression.py      # IManageExpression
+│   │   │   └── trigger_motion.py         # ITriggerMotion
+│   │   └── output/
+│   │       ├── __init__.py
+│   │       └── live2d_controller.py      # ILive2DController
+│   ├── use_cases/
+│   │   ├── __init__.py
+│   │   ├── change_expression.py          # ChangeExpressionUseCase
+│   │   ├── trigger_motion.py             # TriggerMotionUseCase
+│   │   └── sync_emotion_expression.py    # SyncEmotionExpressionUseCase
+│   └── dto/
+│       ├── __init__.py
+│       └── live2d_dto.py
+├── infrastructure/
+│   ├── __init__.py
+│   └── adapters/
+│       ├── __init__.py
+│       └── vtube_studio/
+│           ├── __init__.py
+│           ├── client.py                 # VTubeStudioClient (WebSocket)
+│           └── auth.py                   # Token management
+├── presentation/
+│   ├── __init__.py
+│   └── services/
+│       ├── __init__.py
+│       └── live2d_service.py             # Event subscription, coordination
+└── factory.py                            # Composition Root
+```
+
+### 8.4 Domain Layer
+
+#### 8.4.1 Value Objects (domain/value_objects.py)
+
+```python
+"""Live2D domain value objects."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
+
+
+class HotkeyType(str, Enum):
+    """Types of VTube Studio hotkeys."""
+    EXPRESSION = "expression"
+    MOTION = "motion"
+    ITEM = "item"
+    MODEL_MOVEMENT = "model_movement"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class Expression:
+    """Live2D expression value object."""
+    file_name: str              # e.g., "happy_expression.exp3.json"
+    name: str                   # Display name
+    is_active: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.file_name.endswith(".exp3.json"):
+            raise ValueError(
+                f"Expression file must end with .exp3.json, got: {self.file_name}"
+            )
+
+
+@dataclass(frozen=True)
+class Hotkey:
+    """VTube Studio hotkey value object."""
+    hotkey_id: str
+    name: str
+    hotkey_type: HotkeyType
+    description: str = ""
+
+    @classmethod
+    def from_api_response(cls, data: dict) -> Hotkey:
+        """Create Hotkey from VTube Studio API response."""
+        hotkey_type_str = data.get("type", "Unknown")
+        try:
+            hotkey_type = HotkeyType(hotkey_type_str.lower())
+        except ValueError:
+            hotkey_type = HotkeyType.UNKNOWN
+        return cls(
+            hotkey_id=data.get("hotkeyID", ""),
+            name=data.get("name", ""),
+            hotkey_type=hotkey_type,
+            description=data.get("description", ""),
+        )
+
+
+@dataclass(frozen=True)
+class ModelInfo:
+    """Currently loaded Live2D model information."""
+    model_id: str
+    model_name: str
+    is_loaded: bool = True
+
+    @classmethod
+    def none_loaded(cls) -> ModelInfo:
+        return cls(model_id="", model_name="", is_loaded=False)
+
+
+@dataclass(frozen=True)
+class MotionTriggerResult:
+    """Result of triggering a motion/hotkey."""
+    success: bool
+    hotkey_id: str
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class ExpressionChangeResult:
+    """Result of changing an expression."""
+    success: bool
+    expression_file: str
+    is_active: bool
+    message: str = ""
+```
+
+#### 8.4.2 Domain Events (domain/events.py)
+
+```python
+"""Live2D domain events."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from ailoveshen.core.domain.value_objects import DomainEvent, EmotionType
+
+
+@dataclass(frozen=True)
+class ExpressionChangedEvent(DomainEvent):
+    """Raised when a Live2D expression is activated/deactivated."""
+    expression_file: str = field(default="")
+    is_active: bool = field(default=True)
+    triggered_by: str = field(default="manual")  # "manual", "emotion_sync", "mcp"
+
+
+@dataclass(frozen=True)
+class MotionTriggeredEvent(DomainEvent):
+    """Raised when a motion/emote is triggered."""
+    hotkey_id: str = field(default="")
+    hotkey_name: str = field(default="")
+    triggered_by: str = field(default="manual")
+
+
+@dataclass(frozen=True)
+class Live2DConnectedEvent(DomainEvent):
+    """Raised when connection to VTube Studio is established."""
+    model_name: str = field(default="")
+    model_id: str = field(default="")
+
+
+@dataclass(frozen=True)
+class Live2DDisconnectedEvent(DomainEvent):
+    """Raised when connection to VTube Studio is lost."""
+    reason: str = field(default="")
+
+
+@dataclass(frozen=True)
+class EmotionExpressionSyncedEvent(DomainEvent):
+    """Raised when emotion state triggers expression change."""
+    emotion: EmotionType = field(default=EmotionType.NEUTRAL)
+    expression_file: str = field(default="")
+    intensity: float = field(default=0.5)
+```
+
+#### 8.4.3 Domain Service (domain/services/emotion_expression_service.py)
+
+```python
+"""Emotion to Expression mapping service."""
+
+from __future__ import annotations
+
+from typing import Dict, Optional
+
+from ailoveshen.core.domain.value_objects import EmotionState, EmotionType
+
+
+class EmotionExpressionService:
+    """
+    Domain service for mapping emotions to Live2D expressions.
+
+    Similar to EmotionStyleService in TTS module.
+    """
+
+    DEFAULT_EXPRESSION_MAP: Dict[EmotionType, str] = {
+        EmotionType.NEUTRAL: "neutral.exp3.json",
+        EmotionType.HAPPY: "happy.exp3.json",
+        EmotionType.SAD: "sad.exp3.json",
+        EmotionType.ANGRY: "angry.exp3.json",
+        EmotionType.SURPRISED: "surprised.exp3.json",
+        EmotionType.SCARED: "scared.exp3.json",
+        EmotionType.EXCITED: "excited.exp3.json",
+    }
+
+    def __init__(
+        self,
+        expression_map: Optional[Dict[EmotionType, str]] = None,
+        default_expression: str = "neutral.exp3.json",
+        intensity_threshold: float = 0.3,
+    ) -> None:
+        self._expression_map = expression_map or self.DEFAULT_EXPRESSION_MAP.copy()
+        self._default_expression = default_expression
+        self._intensity_threshold = intensity_threshold
+
+    def get_expression_for_emotion(self, emotion: EmotionState) -> str:
+        """Get the expression file for an emotion state."""
+        if emotion.intensity < self._intensity_threshold:
+            return self._default_expression
+        return self._expression_map.get(emotion.primary, self._default_expression)
+
+    def should_change_expression(
+        self,
+        current_expression: str,
+        new_emotion: EmotionState,
+    ) -> bool:
+        """Determine if expression should change based on new emotion."""
+        target_expression = self.get_expression_for_emotion(new_emotion)
+        return target_expression != current_expression
+
+    def update_mapping(self, emotion: EmotionType, expression_file: str) -> None:
+        """Update the expression mapping for an emotion type."""
+        self._expression_map[emotion] = expression_file
+```
+
+### 8.5 Application Layer
+
+#### 8.5.1 Output Port (application/ports/output/live2d_controller.py)
+
+```python
+"""Live2D controller output port."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import List, Optional
+
+from ailoveshen.live2d.domain.value_objects import (
+    Expression,
+    ExpressionChangeResult,
+    Hotkey,
+    ModelInfo,
+    MotionTriggerResult,
+)
+
+
+class ILive2DController(ABC):
+    """Output port for Live2D control via VTube Studio."""
+
+    @abstractmethod
+    async def connect(self) -> None:
+        """Establish connection and authenticate with VTube Studio."""
+        ...
+
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """Close connection to VTube Studio."""
+        ...
+
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """Check if connected and authenticated."""
+        ...
+
+    @abstractmethod
+    async def get_current_model(self) -> ModelInfo:
+        """Get information about the currently loaded model."""
+        ...
+
+    @abstractmethod
+    async def get_available_expressions(self) -> List[Expression]:
+        """Get all expressions available for the current model."""
+        ...
+
+    @abstractmethod
+    async def get_available_hotkeys(self) -> List[Hotkey]:
+        """Get all hotkeys configured for the current model."""
+        ...
+
+    @abstractmethod
+    async def activate_expression(
+        self,
+        expression_file: str,
+        active: bool = True,
+    ) -> ExpressionChangeResult:
+        """Activate or deactivate an expression."""
+        ...
+
+    @abstractmethod
+    async def trigger_hotkey(
+        self,
+        hotkey_id: Optional[str] = None,
+        hotkey_name: Optional[str] = None,
+    ) -> MotionTriggerResult:
+        """Trigger a hotkey by ID or name."""
+        ...
+
+    @abstractmethod
+    async def deactivate_all_expressions(self) -> None:
+        """Deactivate all currently active expressions."""
+        ...
+```
+
+#### 8.5.2 DTOs (application/dto/live2d_dto.py)
+
+```python
+"""Live2D DTOs for application layer."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+from ailoveshen.live2d.domain.value_objects import Expression, Hotkey
+
+
+@dataclass
+class ChangeExpressionRequest:
+    """Input DTO for changing expression."""
+    expression_file: str
+    active: bool = True
+    deactivate_others: bool = True
+
+
+@dataclass
+class ChangeExpressionResponse:
+    """Output DTO for changing expression."""
+    success: bool
+    expression_file: str
+    is_active: bool
+    message: str = ""
+    error: Optional[str] = None
+
+    @classmethod
+    def ok(cls, expression_file: str, is_active: bool) -> ChangeExpressionResponse:
+        return cls(
+            success=True,
+            expression_file=expression_file,
+            is_active=is_active,
+            message=f"Expression {'activated' if is_active else 'deactivated'}: {expression_file}",
+        )
+
+    @classmethod
+    def error_response(cls, error: str) -> ChangeExpressionResponse:
+        return cls(success=False, expression_file="", is_active=False, error=error, message=f"Failed: {error}")
+
+
+@dataclass
+class TriggerMotionRequest:
+    """Input DTO for triggering motion."""
+    hotkey_id: Optional[str] = None
+    hotkey_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.hotkey_id and not self.hotkey_name:
+            raise ValueError("Must provide either hotkey_id or hotkey_name")
+
+
+@dataclass
+class TriggerMotionResponse:
+    """Output DTO for triggering motion."""
+    success: bool
+    hotkey_id: str = ""
+    message: str = ""
+    error: Optional[str] = None
+
+    @classmethod
+    def ok(cls, hotkey_id: str) -> TriggerMotionResponse:
+        return cls(success=True, hotkey_id=hotkey_id, message=f"Motion triggered: {hotkey_id}")
+
+    @classmethod
+    def error_response(cls, error: str) -> TriggerMotionResponse:
+        return cls(success=False, error=error, message=f"Failed: {error}")
+
+
+@dataclass
+class GetExpressionsResponse:
+    """Output DTO for getting expressions."""
+    success: bool
+    expressions: List[Expression] = field(default_factory=list)
+    error: Optional[str] = None
+
+
+@dataclass
+class GetHotkeysResponse:
+    """Output DTO for getting hotkeys."""
+    success: bool
+    hotkeys: List[Hotkey] = field(default_factory=list)
+    error: Optional[str] = None
+```
+
+### 8.6 Infrastructure Layer
+
+#### 8.6.1 VTube Studio Client (infrastructure/adapters/vtube_studio/client.py)
+
+```python
+"""VTube Studio WebSocket client adapter."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+import websockets
+from loguru import logger
+from websockets.client import WebSocketClientProtocol
+
+from ailoveshen.core.exceptions import AILoveShenError
+from ailoveshen.live2d.application.ports.output.live2d_controller import ILive2DController
+from ailoveshen.live2d.domain.value_objects import (
+    Expression,
+    ExpressionChangeResult,
+    Hotkey,
+    ModelInfo,
+    MotionTriggerResult,
+)
+from ailoveshen.live2d.infrastructure.adapters.vtube_studio.auth import VTubeStudioAuth
+
+
+class VTubeStudioError(AILoveShenError):
+    """VTube Studio specific errors."""
+    pass
+
+
+class VTubeStudioClient(ILive2DController):
+    """Infrastructure adapter for VTube Studio Plugin API."""
+
+    API_NAME = "VTubeStudioPublicAPI"
+    API_VERSION = "1.0"
+
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 8001,
+        plugin_name: str = "AILoveShen",
+        plugin_developer: str = "AILoveShen",
+        plugin_icon: Optional[str] = None,
+        auth_token_file: Optional[str] = None,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        self._ws_url = f"ws://{host}:{port}"
+        self._plugin_name = plugin_name
+        self._plugin_developer = plugin_developer
+        self._plugin_icon = plugin_icon
+        self._timeout = timeout_seconds
+
+        self._ws: Optional[WebSocketClientProtocol] = None
+        self._authenticated = False
+        self._lock = asyncio.Lock()
+
+        self._auth = VTubeStudioAuth(
+            plugin_name=plugin_name,
+            plugin_developer=plugin_developer,
+            plugin_icon=plugin_icon,
+            token_file=auth_token_file,
+        )
+
+    async def connect(self) -> None:
+        """Establish connection and authenticate."""
+        async with self._lock:
+            try:
+                self._ws = await websockets.connect(
+                    self._ws_url,
+                    ping_interval=30,
+                    ping_timeout=10,
+                )
+                logger.info(f"Connected to VTube Studio at {self._ws_url}")
+                await self._authenticate()
+            except Exception as e:
+                self._ws = None
+                self._authenticated = False
+                raise ConnectionError(f"Failed to connect to VTube Studio: {e}") from e
+
+    async def disconnect(self) -> None:
+        """Close WebSocket connection."""
+        async with self._lock:
+            if self._ws:
+                await self._ws.close()
+                self._ws = None
+            self._authenticated = False
+            logger.info("Disconnected from VTube Studio")
+
+    def is_connected(self) -> bool:
+        """Check if connected and authenticated."""
+        return self._ws is not None and self._authenticated
+
+    async def _authenticate(self) -> None:
+        """Perform authentication flow."""
+        token = self._auth.load_token()
+        if token:
+            success = await self._try_authenticate_with_token(token)
+            if success:
+                self._authenticated = True
+                return
+
+        token = await self._request_new_token()
+        success = await self._try_authenticate_with_token(token)
+        if not success:
+            raise VTubeStudioError("Authentication failed")
+
+        self._auth.save_token(token)
+        self._authenticated = True
+        logger.info("Authenticated with VTube Studio")
+
+    async def _request_new_token(self) -> str:
+        """Request a new authentication token."""
+        request = self._build_request(
+            "AuthenticationTokenRequest",
+            {
+                "pluginName": self._plugin_name,
+                "pluginDeveloper": self._plugin_developer,
+                **({"pluginIcon": self._plugin_icon} if self._plugin_icon else {}),
+            },
+        )
+        response = await self._send_request(request)
+        if "authenticationToken" not in response.get("data", {}):
+            raise VTubeStudioError("Failed to get authentication token")
+        return response["data"]["authenticationToken"]
+
+    async def _try_authenticate_with_token(self, token: str) -> bool:
+        """Attempt authentication with given token."""
+        request = self._build_request(
+            "AuthenticationRequest",
+            {
+                "pluginName": self._plugin_name,
+                "pluginDeveloper": self._plugin_developer,
+                "authenticationToken": token,
+            },
+        )
+        response = await self._send_request(request)
+        return response.get("data", {}).get("authenticated", False)
+
+    async def get_current_model(self) -> ModelInfo:
+        """Get current model information."""
+        request = self._build_request("CurrentModelRequest", {})
+        response = await self._send_request(request)
+        data = response.get("data", {})
+        if not data.get("modelLoaded", False):
+            return ModelInfo.none_loaded()
+        return ModelInfo(
+            model_id=data.get("modelID", ""),
+            model_name=data.get("modelName", ""),
+            is_loaded=True,
+        )
+
+    async def get_available_expressions(self) -> List[Expression]:
+        """Get all expressions for current model."""
+        request = self._build_request("ExpressionStateRequest", {"details": True})
+        response = await self._send_request(request)
+        expressions = []
+        for exp_data in response.get("data", {}).get("expressions", []):
+            expressions.append(Expression(
+                file_name=exp_data.get("file", ""),
+                name=exp_data.get("name", ""),
+                is_active=exp_data.get("active", False),
+            ))
+        return expressions
+
+    async def get_available_hotkeys(self) -> List[Hotkey]:
+        """Get all hotkeys for current model."""
+        request = self._build_request("HotkeysInCurrentModelRequest", {})
+        response = await self._send_request(request)
+        hotkeys = []
+        for hk_data in response.get("data", {}).get("availableHotkeys", []):
+            hotkeys.append(Hotkey.from_api_response(hk_data))
+        return hotkeys
+
+    async def activate_expression(
+        self,
+        expression_file: str,
+        active: bool = True,
+    ) -> ExpressionChangeResult:
+        """Activate or deactivate an expression."""
+        request = self._build_request(
+            "ExpressionActivationRequest",
+            {"expressionFile": expression_file, "active": active},
+        )
+        try:
+            await self._send_request(request)
+            return ExpressionChangeResult(
+                success=True,
+                expression_file=expression_file,
+                is_active=active,
+            )
+        except VTubeStudioError as e:
+            return ExpressionChangeResult(
+                success=False,
+                expression_file=expression_file,
+                is_active=not active,
+                message=str(e),
+            )
+
+    async def trigger_hotkey(
+        self,
+        hotkey_id: Optional[str] = None,
+        hotkey_name: Optional[str] = None,
+    ) -> MotionTriggerResult:
+        """Trigger a hotkey."""
+        if not hotkey_id and not hotkey_name:
+            raise ValueError("Must provide hotkey_id or hotkey_name")
+        request = self._build_request(
+            "HotkeyTriggerRequest",
+            {"hotkeyID": hotkey_id or hotkey_name},
+        )
+        try:
+            await self._send_request(request)
+            return MotionTriggerResult(success=True, hotkey_id=hotkey_id or hotkey_name or "")
+        except VTubeStudioError as e:
+            return MotionTriggerResult(success=False, hotkey_id=hotkey_id or hotkey_name or "", message=str(e))
+
+    async def deactivate_all_expressions(self) -> None:
+        """Deactivate all active expressions."""
+        expressions = await self.get_available_expressions()
+        for exp in expressions:
+            if exp.is_active:
+                await self.activate_expression(exp.file_name, active=False)
+
+    def _build_request(self, message_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a VTube Studio API request."""
+        return {
+            "apiName": self.API_NAME,
+            "apiVersion": self.API_VERSION,
+            "requestID": str(uuid4()),
+            "messageType": message_type,
+            "data": data,
+        }
+
+    async def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Send request and wait for response."""
+        if not self._ws:
+            raise VTubeStudioError("Not connected")
+        try:
+            await self._ws.send(json.dumps(request))
+            response_text = await asyncio.wait_for(self._ws.recv(), timeout=self._timeout)
+            response = json.loads(response_text)
+            if "errorID" in response.get("data", {}):
+                error_msg = response["data"].get("message", "Unknown error")
+                raise VTubeStudioError(f"API Error: {error_msg}")
+            return response
+        except asyncio.TimeoutError:
+            raise VTubeStudioError("Request timed out")
+        except websockets.exceptions.ConnectionClosed:
+            self._authenticated = False
+            raise VTubeStudioError("Connection closed")
+```
+
+### 8.7 追加MCPツール
+
+既存の`MCPServerAdapter`に以下のツールを追加します：
+
+```python
+# MCP tools for Live2D control (infrastructure/mcp/mcp_server.py に追加)
+
+Tool(
+    name="trigger_emote",
+    description="Live2Dのエモート/モーションをホットキー名またはIDで再生",
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "hotkey_name": {"type": "string", "description": "トリガーするホットキー名"},
+            "hotkey_id": {"type": "string", "description": "トリガーするホットキーID（名前の代替）"},
+        },
+        "anyOf": [
+            {"required": ["hotkey_name"]},
+            {"required": ["hotkey_id"]},
+        ],
+    },
+),
+Tool(
+    name="set_expression",
+    description="Live2Dの表情を直接指定して変更",
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "expression_file": {"type": "string", "description": "表情ファイル名（例: 'happy.exp3.json'）"},
+            "active": {"type": "boolean", "default": True, "description": "有効化/無効化"},
+        },
+        "required": ["expression_file"],
+    },
+),
+Tool(
+    name="get_expressions",
+    description="現在のモデルで利用可能なLive2D表情一覧を取得",
+    inputSchema={"type": "object", "properties": {}},
+),
+Tool(
+    name="get_hotkeys",
+    description="現在のモデルで利用可能なホットキー/エモート一覧を取得",
+    inputSchema={"type": "object", "properties": {}},
+),
+```
+
+**注**: 既存の`set_emotion`ツールは変更不要です。`EmotionChangedEvent`がEventBus経由で発行され、`Live2DService`が自動的に購読してLive2D表情を同期します。
+
+### 8.8 設定 (config/default.yaml)
+
+```yaml
+# Live2D (VTube Studio) Integration
+live2d:
+  enabled: true
+
+  # VTube Studio connection
+  vtube_studio:
+    host: "localhost"
+    port: 8001
+    timeout_seconds: 10
+
+  # Plugin identity (shown in VTube Studio)
+  plugin:
+    name: "AILoveShen"
+    developer: "AILoveShen"
+    # icon: "base64_encoded_128x128_png"  # Optional
+
+  # Authentication token storage
+  auth:
+    token_file: "data/.vts_token.json"
+
+  # Emotion to Expression mapping
+  emotion_expression_map:
+    neutral: "neutral.exp3.json"
+    happy: "happy.exp3.json"
+    sad: "sad.exp3.json"
+    angry: "angry.exp3.json"
+    surprised: "surprised.exp3.json"
+    scared: "scared.exp3.json"
+    excited: "excited.exp3.json"
+
+  # Expression sync settings
+  sync:
+    auto_sync_emotions: true       # Automatically sync emotion -> expression
+    intensity_threshold: 0.3       # Minimum intensity to trigger change
+    default_expression: "neutral.exp3.json"
+```
+
+### 8.9 依存関係
+
+```toml
+# pyproject.toml
+[project.optional-dependencies]
+live2d = [
+    "websockets>=12.0",
+]
+```
+
+### 8.10 テスト構成
+
+```
+tests/unit/live2d/
+├── __init__.py
+├── domain/
+│   ├── __init__.py
+│   ├── test_value_objects.py
+│   └── test_emotion_expression_service.py
+├── application/
+│   ├── __init__.py
+│   ├── test_dto.py
+│   ├── test_change_expression_use_case.py
+│   ├── test_trigger_motion_use_case.py
+│   └── test_sync_emotion_expression_use_case.py
+├── infrastructure/
+│   ├── __init__.py
+│   ├── test_vtube_studio_client.py
+│   └── test_vtube_studio_auth.py
+└── presentation/
+    ├── __init__.py
+    └── test_live2d_service.py
+```

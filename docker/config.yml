@@ -1,0 +1,61 @@
+# Style-Bert-VITS2 server configuration for Docker
+# This config forces CPU mode for macOS Docker compatibility
+
+model_name: "shen"
+
+resample:
+  sampling_rate: 44100
+  in_dir: "raw"
+  out_dir: "wavs"
+
+preprocess_text:
+  transcription_path: "esd.list"
+  cleaned_path: ""
+  train_path: "train.list"
+  val_path: "val.list"
+  config_path: "config.json"
+  val_per_lang: 0
+  max_val_total: 12
+  clean: true
+
+bert_gen:
+  config_path: "config.json"
+  num_processes: 1
+  device: "cpu"
+  use_multi_device: false
+
+style_gen:
+  config_path: "config.json"
+  num_processes: 2
+  device: "cpu"
+
+train_ms:
+  env:
+    MASTER_ADDR: "localhost"
+    MASTER_PORT: 10086
+    WORLD_SIZE: 1
+    LOCAL_RANK: 0
+    RANK: 0
+  model_dir: "models"
+  config_path: "config.json"
+  num_workers: 4
+  spec_cache: true
+  keep_ckpts: 1
+
+webui:
+  device: "cpu"
+  model: "models/G_8000.pth"
+  config_path: "config.json"
+  port: 7860
+  share: false
+  debug: false
+  language_identification_library: "langid"
+
+# FastAPI server config
+server:
+  port: 5001
+  device: "cpu"
+  language: "JP"
+  limit: 500
+  origins:
+    - "*"

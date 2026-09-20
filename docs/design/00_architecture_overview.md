@@ -12,14 +12,14 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │   【メインループ】ゲーム実況                                            │
-│   NitroGen(Game) → GameState → Gemini 2.5 → Commentary → TTS → Audio   │
+│   Minecraft Bridge → GameState → Gemini 2.5 → Commentary → TTS → Audio │
 │                                                                         │
 │   【サブループ】コメント対応（割り込み）                                │
 │   Twitch Chat → Gemini Flash(Filter) → Gemini 2.5 → Response → TTS     │
 │                                                                         │
-│   【双方向連携】NitroGen ↔ LLM                                         │
-│   - Game State Manager: ゲーム状態 → LLM                                │
-│   - Action Executor: LLMの意図 → ゲーム操作                             │
+│   【三層連携】LLM → Jev → Minecraft Bridge                             │
+│   - Goal Decision: LLMが方向性（Goal）を決めてJevへリクエスト            │
+│   - Reactive/Tactical Decision: Jevが型付き高速判断でゲーム操作を選択    │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -31,7 +31,8 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 | Twitch Connector | チャット取得・配信連携 | #1 |
 | Gemini 2.5 Client | ゲーム実況・コメント応答生成 | #2 |
 | MCP Server | 記憶管理・表情制御・感情状態 | #3 |
-| NitroGen Bridge | ゲーム状態取得・アクション実行 | #4 |
+| Minecraft Bridge | ゲーム状態取得・アクション実行（Mineflayer） | #4 |
+| Jev Decision Engine | リアルタイム戦術・反射判断（TypeSafe AI Jev） | #4 |
 | TTS Pipeline | Style-Bert-VITS2連携・音声合成 | #5 |
 | OBS Connector | 配信制御・シーン切り替え | #6 |
 | Comment Filter | Gemini Flashによる動的フィルタリング | #7 |
@@ -78,7 +79,8 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │  Adapters (Output Port implementations)                              │    │
 │  │  - StyleBertVits2Client, GeminiTextGenerator, TwitchChatAdapter     │    │
-│  │  - OBSWebSocketAdapter, NitroGenAdapter, SQLiteMemoryRepository     │    │
+│  │  - OBSWebSocketAdapter, MineflayerBridgeAdapter, JevClientAdapter   │    │
+│  │  - SQLiteMemoryRepository                                            │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                          │
@@ -205,8 +207,8 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 ┌────────────────────────────────────────────┼────────────────────────────────────────────┐
 │                                            │                                            │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────┴─────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │    Twitch    │  │   NitroGen   │  │           │  │     OBS      │  │     MCP      │ │
-│  │  Connector   │  │    Bridge    │  │Orchestrator│  │  Connector   │  │   Server     │ │
+│  │    Twitch    │  │  Minecraft   │  │           │  │     OBS      │  │     MCP      │ │
+│  │  Connector   │  │ Bridge + Jev │  │Orchestrator│  │  Connector   │  │   Server     │ │
 │  └──────┬───────┘  └──────┬───────┘  │           │  └──────┬───────┘  └──────┬───────┘ │
 │         │                 │          │           │         │                 │         │
 │         │    ┌────────────┴──────────┤           ├─────────┴─────────────────┤         │
@@ -247,9 +249,11 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  NitroGen   │───▶│ GameState   │───▶│ Gemini 2.5  │───▶│    TTS      │
-│   Bridge    │    │  Manager    │    │  (思考生成)  │    │  Pipeline   │
+│ Jev(反射/戦術)│───▶│ GameState   │───▶│ Gemini 2.5  │───▶│    TTS      │
+│+Minecraft Br.│    │  Manager    │    │  (思考生成)  │    │  Pipeline   │
 └─────────────┘    └─────────────┘    └──────┬──────┘    └─────────────┘
+       ▲                                     │
+       └──────────────── Goal (方向性) ───────┘
                                              │
                                              ▼
                                       ┌─────────────┐
@@ -283,7 +287,7 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 | Web API | FastAPI |
 | TTS | Style-Bert-VITS2 |
 | LLM | Google Gemini API (2.5 Pro, Flash) |
-| ゲーム | NitroGen / MineDojo |
+| ゲーム操作 | Mineflayer (Node.jsブリッジ) + Jev (TypeSafe AI, System Oneモデル) |
 | 配信 | Twitch API (IRC/EventSub), OBS WebSocket |
 | MCP | Model Context Protocol |
 | DB | SQLite (メモリ管理) |
@@ -323,11 +327,11 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 - **Infrastructure**: SQLiteMemoryRepository, MCPServerAdapter
 - **Presentation**: MCPService
 
-### Phase 6: NitroGen Integration (Issue #4)
-- **Domain**: GameAction/GameEvent Value Objects, EventDetectionService
-- **Application**: IGetGameState/IExecuteAction Input Ports, IGameEnvironment Output Port
-- **Infrastructure**: NitroGenAdapter
-- **Presentation**: GameService
+### Phase 6: Jev + Minecraft Bridge Integration (Issue #4)
+- **Domain**: GameAction/GameEvent/Goal/JevDecision Value Objects, EventDetectionService, GoalOverridePolicy
+- **Application**: IGetGameState/IDecideGoal/IRunReactiveLoop/IRunTacticalLoop Input Ports, IMinecraftBridge/IJevDecisionEngine Output Ports
+- **Infrastructure**: MineflayerBridgeAdapter (Node.jsサイドカー経由), JevClientAdapter (typesafe-sdk)
+- **Presentation**: GameService（Reactive Loop 600ms / Tactical Loop 10s を統括）
 
 ### Phase 7: OBS Integration (Issue #6)
 - **Domain**: Scene/Source Value Objects
@@ -351,6 +355,6 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 | [03_phase3_llm_integration.md](./03_phase3_llm_integration.md) | LLM Integration詳細設計 |
 | [04_phase4_twitch_integration.md](./04_phase4_twitch_integration.md) | Twitch Integration詳細設計 |
 | [05_phase5_mcp_server.md](./05_phase5_mcp_server.md) | MCP Server詳細設計 |
-| [06_phase6_nitrogen_integration.md](./06_phase6_nitrogen_integration.md) | NitroGen Integration詳細設計 |
+| [06_phase6_jev_integration.md](./06_phase6_jev_integration.md) | Jev + Minecraft Bridge Integration詳細設計 |
 | [07_phase7_obs_integration.md](./07_phase7_obs_integration.md) | OBS Integration詳細設計 |
 | [08_phase8_orchestration.md](./08_phase8_orchestration.md) | Orchestration詳細設計 |
