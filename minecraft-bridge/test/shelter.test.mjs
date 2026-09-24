@@ -10,7 +10,7 @@ const DAY = 1000
 const NIGHT = 18000
 
 // A 5x5 house on stone at y 70: walls x 0..4, z 0..4 (planks, 2 high), interior 1..3, door at (2, 70, 4)
-function world ({ blocked = [] } = {}) {
+function world ({ blocked = [], sky } = {}) {
   const home = { door: v(2, 70, 4), inside: v(2, 70, 3), outside: v(2, 70, 5), min: v(1, 70, 1), max: v(3, 70, 3), bed: null, breach: [] }
   const blockAt = (p) => {
     const key = `${p.x},${p.y},${p.z}`
@@ -19,12 +19,12 @@ function world ({ blocked = [] } = {}) {
     if (p.x === 2 && p.z === 4 && p.y <= 71) return { name: 'oak_door', boundingBox: 'block', getProperties: () => ({ open: false }) }
     const wall = (p.x === 0 || p.x === 4 || p.z === 0 || p.z === 4) && p.x >= 0 && p.x <= 4 && p.z >= 0 && p.z <= 4
     if (wall && p.y <= 71 && !(p.x === 2 && p.z === 4)) return { name: 'oak_planks', boundingBox: 'block' }
-    return { name: 'air', boundingBox: 'empty' }
+    return { name: 'air', boundingBox: 'empty', skyLight: sky }
   }
   return { home, blockAt }
 }
 
-function fakeBot ({ time, at, mobs = [], blockAt }) {
+function fakeBot ({ time, at, mobs = [], blockAt, health = 20 }) {
   const entity = { position: at, eyeHeight: 1.62 }
   const entities = { 0: entity }
   mobs.forEach((m, i) => { entities[i + 1] = { id: i + 1, type: 'hostile', height: 1.99, ...m } })
@@ -32,7 +32,7 @@ function fakeBot ({ time, at, mobs = [], blockAt }) {
     entity,
     entities,
     time: { timeOfDay: time },
-    health: 20,
+    health,
     food: 20,
     heldItem: null,
     blockAt,
@@ -45,9 +45,9 @@ const skeletonAtDoor = { name: 'skeleton', position: v(2.5, 70, 6.5) }
 const digOutside = { leaves: [{ kind: 'dig', sources: ['oak_log'] }] }
 const snap = { dig: () => [v(10, 70, 10)], hunt: () => [] }
 
-function run ({ time = DAY, mobs = [skeletonAtDoor], status = digOutside, blocked } = {}) {
-  const { home, blockAt } = world({ blocked })
-  const bot = fakeBot({ time, at: v(2.5, 70, 2.5), mobs, blockAt })
+function run ({ time = DAY, mobs = [skeletonAtDoor], status = digOutside, blocked, sky, health } = {}) {
+  const { home, blockAt } = world({ blocked, sky })
+  const bot = fakeBot({ time, at: v(2.5, 70, 2.5), mobs, blockAt, health })
   const state = { home, plan: null, unreachableDrops: new Set() }
   return ground(bot, state, null, snap, status)
 }
@@ -74,7 +74,6 @@ test('by day with a hostile at the door, outside work is held back and exits are
   const verbs = candidates.map((c) => c.verb)
   assert.ok(!verbs.includes('dig'))
   assert.ok(verbs.includes('exit_wall'))
-  assert.ok(verbs.includes('wait'))
   assert.match(withheld, /skeleton wait near the door: 1 actions outside are held back/)
 })
 
@@ -86,9 +85,19 @@ test('the cleared goal may go out to fight what waits at the door, unarmed too',
   assert.equal(attack.weapon, 'none (fist)')
 })
 
-test('at night nothing outside and no exit, only waiting', () => {
+test('waiting is offered only for what the time changes', () => {
+  const husk = { name: 'husk', position: v(2.5, 70, 6.5) }
+  const ids = (opts) => run(opts).candidates.filter((c) => c.verb === 'wait').map((c) => c.id)
+  // Full health, a husk in the shade or the sun: waiting changes nothing
+  assert.deepEqual(ids({ mobs: [husk], sky: 15 }), [])
+  assert.deepEqual(ids({ mobs: [husk], health: 12 }), ['wait inside to heal'])
+  assert.deepEqual(ids({ mobs: [skeletonAtDoor], sky: 15 }), ['wait inside while they burn'])
+  assert.deepEqual(ids({ mobs: [skeletonAtDoor], sky: 7 }), [])
+})
+
+test('at night nothing outside and no exit, only waiting for the morning', () => {
   const { candidates, withheld } = run({ time: NIGHT, mobs: [] })
-  assert.deepEqual(candidates.map((c) => c.verb), ['wait'])
+  assert.deepEqual(candidates.map((c) => c.id), ['wait inside until morning'])
   assert.match(withheld, /staying inside for the night/)
 })
 

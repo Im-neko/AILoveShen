@@ -14,6 +14,15 @@ const NEUTRAL = new Set(['enderman', 'zombified_piglin', 'piglin', 'wolf', 'bee'
 const DAY_NEUTRAL = new Set(['spider', 'cave_spider'])
 // Explode when close: never fought in melee near the house
 export const EXPLODES = new Set(['creeper'])
+// Burn in daylight under the open sky (husks and wither skeletons do not)
+export const BURNS = new Set(['zombie', 'zombie_villager', 'skeleton', 'stray', 'drowned', 'phantom'])
+const FULL_SKY_LIGHT = 15
+
+// Whether daylight sets the mob on fire where it stands now (helmets are not checked)
+export function burningInDaylight (bot, e) {
+  if (!BURNS.has(e.name) || dayPhase(bot.time.timeOfDay) !== 'day') return false
+  return bot.blockAt(e.position.offset(0, e.height ?? 1.8, 0).floored())?.skyLight === FULL_SKY_LIGHT
+}
 
 export const round = (v, d = 1) => Math.round(v * 10 ** d) / 10 ** d
 

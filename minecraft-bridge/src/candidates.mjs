@@ -11,7 +11,7 @@
 // A candidate id names its target (a position or an entity id) so it stays the same until the
 // next /act, which grounds the candidates again and runs the one with that id.
 
-import { round, bearing, dayPhase } from './observe.mjs'
+import { round, bearing, dayPhase, burningInDaylight } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL } from './primitives.mjs'
 
@@ -48,13 +48,28 @@ export function ground (bot, state, knowledge, world, status) {
       }
     }
   }
-  // Waiting advances nothing but the clock: offered while sheltering, or when nothing else can be
-  // done. Offered always, the selector waited inside 9 steps in a row by day while the goal needed
-  // exploring for sheep.
-  if (sheltering || !safe.length) {
-    safe.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10 })
+  // Waiting is offered for what the time changes (healing, the morning, a mob burning in the sun),
+  // or when nothing else can be done. Offered without a purpose, the selector waited inside while
+  // nothing changed: 9 steps in a row by day, and 6 of 6 times with husks at the door and full health.
+  safe.push(...(inside ? waitsInside(bot, danger) : []))
+  if (!safe.length) {
+    safe.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10, purpose: 'nothing else can be done now' })
   }
   return { candidates: safe, withheld }
+}
+
+// Natural regeneration needs a nearly full hunger bar
+const REGEN_FOOD = 18
+const MAX_HEALTH = 20
+
+function waitsInside (bot, danger) {
+  const wait = (id, purpose) => ({ id, verb: 'wait', target: 'inside the house', inPlace: true, inside: true, seconds: 10, purpose })
+  const out = []
+  if (dayPhase(bot.time.timeOfDay) !== 'day') out.push(wait('wait inside until morning', 'the night passes'))
+  if (bot.health < MAX_HEALTH && bot.food >= REGEN_FOOD) out.push(wait('wait inside to heal', `health ${round(bot.health)}/${MAX_HEALTH} regenerates`))
+  const burning = danger.filter(({ e }) => burningInDaylight(bot, e)).map(({ e }) => e.name)
+  if (burning.length) out.push(wait('wait inside while they burn', `${burning.join(', ')} at the door burn in the sunlight`))
+  return out
 }
 
 // Whether running the candidate takes the bot out of the house (it then leaves through the door
