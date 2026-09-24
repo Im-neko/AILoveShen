@@ -5,7 +5,8 @@
   "description": "Mineflayer sidecar for AILoveShen: observation, bounded actions, house building and a POV mirror",
   "main": "src/index.mjs",
   "scripts": {
-    "start": "node src/index.mjs"
+    "start": "node src/index.mjs",
+    "test": "node --test 'test/*.test.mjs'"
   },
   "dependencies": {
     "minecraft-protocol": "1.68.0",
