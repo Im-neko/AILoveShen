@@ -23,7 +23,8 @@ function choose (view) {
   const threat = cs.find((c) => c.verb === 'attack' && c.hostile)
   if (threat) {
     const run = threat.weapon.startsWith('none') || self.health <= 8 || threat.target === 'creeper'
-    return cs.find((c) => c.verb === (run ? 'flee' : 'attack') && c.target === threat.target)
+    // A goal's attack (cleared) comes without a flee: fight then
+    return (run && cs.find((c) => c.verb === 'flee' && c.target === threat.target)) || threat
   }
   if (self.food <= 6) {
     const eat = cs.find((c) => c.verb === 'eat')
