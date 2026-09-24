@@ -101,7 +101,7 @@ tts:
 
   # Voice settings
   voice:
-    model_name: "default"
+    model_name: "shen"  # Directory name under Style-Bert-VITS2/model_assets
     speaker_id: 0
     language: "JP"
     default_style: "Neutral"
@@ -126,14 +126,16 @@ tts:
     blocksize: 1024
 
   # Emotion to Style mapping (for EmotionStyleService)
+  # The shen model only has the "Neutral" style (unknown styles return 422).
+  # Emotions are expressed by the avatar (Live2D), not the voice.
   emotion_style_map:
     neutral: "Neutral"
-    happy: "Happy"
-    sad: "Sad"
-    angry: "Angry"
-    surprised: "Surprised"
-    scared: "Sad"
-    excited: "Happy"
+    happy: "Neutral"
+    sad: "Neutral"
+    angry: "Neutral"
+    surprised: "Neutral"
+    scared: "Neutral"
+    excited: "Neutral"
 
 # MCP Settings
 mcp:

@@ -83,9 +83,7 @@ async def run(speak: bool) -> bool:
 
         if tts:
             print("\nWaiting for speech to finish...")
-            while tts.get_queue_size() > 0:
-                await asyncio.sleep(0.5)
-            await asyncio.sleep(5)
+            await tts.wait_until_idle()
     finally:
         await llm.close()
         if tts:

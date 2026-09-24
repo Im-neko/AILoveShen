@@ -83,6 +83,7 @@ class TTSService:
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
+                self._queue.task_done()
             except asyncio.QueueEmpty:
                 break
 
@@ -188,6 +189,15 @@ class TTSService:
         """Get current queue size."""
         return self._queue.qsize()
 
+    async def wait_until_idle(self) -> None:
+        """
+        Wait until every queued speech request has finished playing.
+
+        Unlike get_queue_size() == 0, this also waits for the request that
+        is currently being synthesized or played.
+        """
+        await self._queue.join()
+
     def is_running(self) -> bool:
         """Check if the service is running."""
         return self._running
@@ -213,8 +223,10 @@ class TTSService:
 
                 # Process the request
                 logger.debug(f"Processing queued speech: {request.text[:30]}...")
-                await self._use_case.execute(request)
-                self._queue.task_done()
+                try:
+                    await self._use_case.execute(request)
+                finally:
+                    self._queue.task_done()
 
             except asyncio.CancelledError:
                 logger.debug("TTS processing loop cancelled")
