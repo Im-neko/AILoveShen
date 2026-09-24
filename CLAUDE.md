@@ -76,58 +76,43 @@ python convert_bert_onnx.py  # Convert BERT models to ONNX
 
 ## Architecture
 
-### AILoveShen Core (`src/ailoveshen/core/`)
-Clean Architecture implementation with Domain-Driven Design patterns.
+### AILoveShen (`src/ailoveshen/`)
+Clean Architecture with the four layers at the top level. Features (TTS, LLM, Twitch, ...) are spread across the layers; there are no per-feature packages. Layout and dependency rules: `docs/design/00_architecture_overview.md` §2.5.
 
 ```
-src/ailoveshen/core/
-├── domain/                    # Domain Layer (no external dependencies)
-│   ├── entities.py            # Entity, AggregateRoot base classes
-│   └── value_objects.py       # EmotionState, SpeechRequest, Position, etc.
-├── application/               # Application Layer
-│   └── ports/
-│       └── output_ports.py    # IEventPublisher, IEventSubscriber interfaces
-└── infrastructure/            # Infrastructure Layer
-    ├── config.py              # YAML config with env var expansion
-    ├── logging.py             # Loguru structured logging
-    └── events.py              # AsyncEventBus (Pub/Sub)
-```
-
-**Key Classes:**
-- `Entity`: Base class with auto-generated UUID, UTC timestamps, equality by ID
-- `AggregateRoot`: Entity with domain event collection
-- `EmotionState`, `SpeechRequest`, `FilterResult`: Immutable value objects
-- `AsyncEventBus`: Thread-safe async event publisher/subscriber
-- `Settings`: Hierarchical configuration (default.yaml → {env}.yaml → env vars)
-
-### AILoveShen TTS (`src/ailoveshen/tts/`)
-Clean Architecture TTS pipeline for Style-Bert-VITS2 integration.
-
-```
-src/ailoveshen/tts/
-├── domain/                    # Domain Layer
-│   ├── value_objects.py       # SpeechResult, SpeechStatus, VoiceConfig
-│   ├── events.py              # SpeechStartedEvent, SpeechCompletedEvent
-│   └── services/              # EmotionStyleService
-├── application/               # Application Layer
-│   ├── ports/                 # ISpeakText, ISpeechSynthesizer, IAudioPlayer
+src/ailoveshen/
+├── domain/                    # No external dependencies
+│   ├── entities.py            # Entity, AggregateRoot
+│   ├── value_objects.py       # EmotionState, SpeechRequest, SpeechResult, Position, FilterResult
+│   ├── events.py              # DomainEvent, SpeechStartedEvent, SpeechCompletedEvent
+│   └── exceptions.py          # AILoveShenError hierarchy
+├── application/
+│   ├── ports/input/           # ISpeakText
+│   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer
 │   ├── use_cases/             # SpeakTextUseCase
 │   └── dto/                   # SpeakTextRequest, SpeakTextResponse
-├── infrastructure/            # Infrastructure Layer
+├── infrastructure/
+│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars)
+│   ├── logging.py             # Loguru structured logging
+│   ├── events.py              # AsyncEventBus (Pub/Sub)
 │   └── adapters/
-│       ├── tts/               # StyleBertVits2Client
+│       ├── tts/               # StyleBertVits2Client, EmotionStyleService, VoiceConfig
 │       └── audio/             # SounddevicePlayer
-├── presentation/              # Presentation Layer
-│   └── services/              # TTSService (queue management)
-└── factory.py                 # Composition Root
+├── presentation/
+│   └── services/              # TTSService (priority queue)
+└── factories/                 # Composition Roots (tts.py)
 ```
 
+**Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.
+
 **Key Classes:**
+- `Entity` / `AggregateRoot`: auto-generated UUID, UTC timestamps, equality by ID, domain event collection
+- `EmotionState`, `SpeechRequest`, `FilterResult`: Immutable value objects
+- `SpeakTextUseCase`: Core TTS orchestration; speaks in `EmotionState`, never in engine style names
+- `StyleBertVits2Client`: Maps `EmotionState` → Style-Bert-VITS2 style via `EmotionStyleService`
 - `TTSService`: Priority queue-based speech service
-- `SpeakTextUseCase`: Core TTS orchestration logic
-- `EmotionStyleService`: Emotion→Style mapping
-- `StyleBertVits2Client`: HTTP client for TTS server
-- `SounddevicePlayer`: Audio playback adapter
+- `AsyncEventBus`: Thread-safe async event publisher/subscriber
+- `Settings`: Hierarchical configuration
 
 ### Core Library (`style_bert_vits2/`)
 - `tts_model.py`: Main `TTSModel` and `TTSModelHolder` classes for inference

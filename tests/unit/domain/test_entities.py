@@ -2,8 +2,8 @@
 
 import pytest
 
-from ailoveshen.core.domain.entities import AggregateRoot, Entity, generate_id
-from ailoveshen.core.domain.value_objects import DomainEvent
+from ailoveshen.domain.entities import AggregateRoot, Entity, generate_id
+from ailoveshen.domain.events import DomainEvent
 
 
 class TestGenerateId:

@@ -141,60 +141,73 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 
 ### 2.5 ディレクトリ構造
 
-各フェーズは以下の統一されたディレクトリ構造を持ちます：
+最上位を4層で分け、各層の中を種類ごとに分けます。機能（TTS、LLM、Twitch…）は各層にまたがって配置し、機能ごとのパッケージは作りません。
 
 ```
-src/ailoveshen/{module}/
-├── domain/
-│   ├── __init__.py
-│   ├── entities.py          # Entity定義
-│   ├── value_objects.py     # Value Object定義
-│   └── services.py          # Domain Service定義
-├── application/
-│   ├── __init__.py
+src/ailoveshen/
+├── domain/                  # Domain Layer（外部依存なし）
+│   ├── entities.py          # Entity, AggregateRoot
+│   ├── value_objects.py     # EmotionState, SpeechRequest, Position, FilterResult ...
+│   ├── events.py            # DomainEvent, Speech*Event ...
+│   ├── exceptions.py        # AILoveShenError 系
+│   └── services/            # Domain Service
+├── application/             # Application Layer
 │   ├── ports/
-│   │   ├── __init__.py
-│   │   ├── input_ports.py   # Use Case Interface定義
-│   │   └── output_ports.py  # 外部サービスInterface定義
-│   ├── use_cases/
-│   │   ├── __init__.py
-│   │   └── *.py             # Use Case実装
-│   └── dto.py               # DTO定義
-├── infrastructure/
-│   ├── __init__.py
-│   └── adapters/
-│       ├── __init__.py
-│       └── *.py             # Adapter実装
-├── presentation/
-│   ├── __init__.py
-│   └── service.py           # Service実装
-└── main.py                  # Composition Root
+│   │   ├── input/           # Use Case Interface（ISpeakText, IGenerateCommentary ...）
+│   │   └── output/          # 外部サービス Interface（IEventPublisher, ISpeechSynthesizer, ITextGenerator ...）
+│   ├── use_cases/           # Use Case 実装
+│   └── dto/                 # DTO
+├── infrastructure/          # Infrastructure Layer
+│   ├── config.py            # Settings
+│   ├── logging.py           # Loguru
+│   ├── events.py            # AsyncEventBus
+│   └── adapters/            # Output Port 実装
+│       ├── tts/             # StyleBertVits2Client, EmotionStyleService, VoiceConfig
+│       ├── audio/           # SounddevicePlayer
+│       └── gemini/          # GeminiTextGenerator, プロンプト
+├── presentation/            # Presentation Layer
+│   └── services/            # TTSService, LLMService ...
+└── factories/               # Composition Root（機能ごとに1ファイル: tts.py, llm.py ...）
 ```
+
+**依存の向き**（内側へのみ）:
+
+| 層 | import してはいけない層 |
+|----|------------------------|
+| domain | application, infrastructure, presentation, factories |
+| application | infrastructure, presentation, factories |
+| infrastructure | presentation, factories |
+| presentation | infrastructure, factories |
+
+`factories/` だけが全層を import して組み立てます。この規則は `tests/unit/test_architecture.py` で検査しています。
+
+エンジン固有の語彙（例: Style-Bert-VITS2 のスタイル名 `"Happy"`）は infrastructure の adapter に閉じ込めます。domain と application はドメインの概念（`EmotionState` など）だけを扱います。
 
 ### 2.6 Composition Root
 
-依存性注入はComposition Root（各フェーズの`main.py`）で行います：
+依存性注入は Composition Root（`factories/` 配下の機能ごとのファイル）で行います：
 
 ```python
-def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> TTSService:
+# src/ailoveshen/factories/tts.py
+def create_tts_service(config: dict, event_publisher: IEventPublisher) -> TTSService:
     """Create TTS service with all dependencies."""
     # Infrastructure
-    synthesizer = StyleBertVits2Client(host=config.host, port=config.port)
+    emotion_style_service = EmotionStyleService(style_map=...)
+    synthesizer = StyleBertVits2Client(
+        host=..., port=..., emotion_style_service=emotion_style_service,
+    )
     player = SounddevicePlayer()
-
-    # Domain Service
-    emotion_service = EmotionStyleService(style_map=config.emotion_style_map)
 
     # Use Cases
     speak_use_case = SpeakTextUseCase(
         synthesizer=synthesizer,
-        player=player,
-        emotion_service=emotion_service,
+        audio_player=player,
         event_publisher=event_publisher,
+        get_current_emotion=...,
     )
 
     # Presentation
-    return TTSService(speak_text=speak_use_case)
+    return TTSService(speak_text_use_case=speak_use_case)
 ```
 
 ## 3. システムアーキテクチャ図

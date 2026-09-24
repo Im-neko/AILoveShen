@@ -19,18 +19,20 @@ from datetime import datetime
 from typing import List
 from unittest.mock import AsyncMock, Mock
 
-from ailoveshen.core.domain.value_objects import (
+from ailoveshen.domain.value_objects import (
     EmotionState,
     EmotionType,
     SpeechPriority,
+    SpeechResult,
+    SpeechStatus,
 )
-from ailoveshen.core.infrastructure.events import AsyncEventBus
-from ailoveshen.tts.domain.value_objects import SpeechResult, SpeechStatus, VoiceConfig
-from ailoveshen.tts.domain.events import SpeechStartedEvent, SpeechCompletedEvent
-from ailoveshen.tts.domain.services.emotion_style_service import EmotionStyleService
-from ailoveshen.tts.application.dto.speech_dto import SpeakTextRequest, SpeakTextResponse
-from ailoveshen.tts.application.use_cases.speak_text import SpeakTextUseCase
-from ailoveshen.tts.presentation.services.tts_service import TTSService
+from ailoveshen.infrastructure.events import AsyncEventBus
+from ailoveshen.domain.events import SpeechStartedEvent, SpeechCompletedEvent
+from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
+from ailoveshen.infrastructure.adapters.tts.voice_config import VoiceConfig
+from ailoveshen.application.dto.speech_dto import SpeakTextRequest, SpeakTextResponse
+from ailoveshen.application.use_cases.speak_text import SpeakTextUseCase
+from ailoveshen.presentation.services.tts_service import TTSService
 
 
 def print_header(title: str) -> None:
@@ -74,7 +76,7 @@ def demo_domain_value_objects() -> None:
 
 def demo_emotion_style_service() -> None:
     """Demonstrate emotion to style mapping."""
-    print_header("EmotionStyleService (Domain Service)")
+    print_header("EmotionStyleService (TTS Adapter)")
 
     service = EmotionStyleService()
 
@@ -103,7 +105,7 @@ def demo_domain_events() -> None:
     started = SpeechStartedEvent(
         text="Hello from AI",
         source="commentary",
-        style="Happy",
+        emotion=EmotionState(EmotionType.HAPPY, 0.8),
     )
     print(f"SpeechStartedEvent:")
     print(f"  event_type: {started.event_type}")
@@ -111,7 +113,7 @@ def demo_domain_events() -> None:
     print(f"  occurred_at: {started.occurred_at}")
     print(f"  text: {started.text}")
     print(f"  source: {started.source}")
-    print(f"  style: {started.style}")
+    print(f"  emotion: {started.emotion.primary.value}")
 
     completed = SpeechCompletedEvent(
         text="Hello from AI",
@@ -159,7 +161,6 @@ async def demo_use_case() -> None:
         synthesizer=mock_synthesizer,
         audio_player=mock_audio_player,
         event_publisher=event_bus,
-        emotion_style_service=EmotionStyleService(),
         get_current_emotion=lambda: current_emotion,
     )
 
@@ -187,7 +188,7 @@ async def demo_use_case() -> None:
     print(f"\nMock verification:")
     print(f"  synthesizer.synthesize called: {mock_synthesizer.synthesize.called}")
     call_args = mock_synthesizer.synthesize.call_args
-    print(f"  - style used: {call_args.kwargs['style']}")  # Should be "Happy" from emotion
+    print(f"  - emotion used: {call_args.kwargs['emotion'].primary.value}")  # Current emotion
 
 
 async def demo_tts_service() -> None:
@@ -272,7 +273,7 @@ async def demo_event_bus_integration() -> None:
     await event_bus.publish(SpeechStartedEvent(
         text="Hello viewers!",
         source="greeting",
-        style="Happy",
+        emotion=EmotionState(EmotionType.HAPPY, 0.8),
     ))
 
     await event_bus.publish(SpeechCompletedEvent(
@@ -285,7 +286,6 @@ async def demo_event_bus_integration() -> None:
     await event_bus.publish(SpeechStartedEvent(
         text="Let me explain this...",
         source="commentary",
-        style="Neutral",
     ))
 
     await event_bus.publish(SpeechCompletedEvent(
@@ -325,8 +325,8 @@ async def main() -> None:
     print_header("Demo Complete")
     print("Phase 2 TTS Pipeline components demonstrated successfully!")
     print("\nComponents tested:")
-    print("  - Domain: SpeechResult, VoiceConfig, SpeechStatus")
-    print("  - Domain: EmotionStyleService")
+    print("  - Domain: SpeechResult, SpeechStatus")
+    print("  - Infrastructure: EmotionStyleService, VoiceConfig")
     print("  - Domain: SpeechStartedEvent, SpeechCompletedEvent")
     print("  - Application: SpeakTextUseCase, SpeakTextRequest/Response")
     print("  - Presentation: TTSService with queue management")
