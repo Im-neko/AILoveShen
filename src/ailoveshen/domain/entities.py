@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC
+from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
+
+from ailoveshen.domain.value_objects import ConversationMessage, MessageRole, MessageType
 
 if TYPE_CHECKING:
     from ailoveshen.domain.events import DomainEvent
@@ -69,3 +73,71 @@ class AggregateRoot(Entity):
         events = self._domain_events.copy()
         self._domain_events.clear()
         return events
+
+
+@dataclass(eq=False)
+class Conversation(Entity):
+    """
+    The stream's short-term conversation history.
+
+    Holds viewer chats and the streamer's utterances in order, keeping only
+    the latest max_history messages.
+
+    Raises:
+        ValueError: If max_history is not positive.
+    """
+
+    max_history: int = 20
+    _messages: deque[ConversationMessage] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Validate max_history and create the bounded history."""
+        if self.max_history <= 0:
+            raise ValueError(f"max_history must be positive, got {self.max_history}")
+        self._messages = deque(maxlen=self.max_history)
+
+    def add_viewer_message(
+        self,
+        content: str,
+        user_name: str,
+        user_id: Optional[str] = None,
+    ) -> ConversationMessage:
+        """Record a chat message from a viewer."""
+        return self._append(ConversationMessage.from_viewer(content, user_name, user_id))
+
+    def add_streamer_message(
+        self,
+        content: str,
+        message_type: MessageType,
+    ) -> ConversationMessage:
+        """Record something the streamer said."""
+        return self._append(ConversationMessage.from_streamer(content, message_type))
+
+    def recent_messages(self, limit: int = 10) -> tuple[ConversationMessage, ...]:
+        """Return the latest messages, oldest first."""
+        if limit <= 0:
+            return ()
+        return tuple(self._messages)[-limit:]
+
+    def recent_viewer_messages(self, limit: int = 5) -> tuple[ConversationMessage, ...]:
+        """Return the latest viewer chat messages, oldest first."""
+        if limit <= 0:
+            return ()
+        viewer = [m for m in self._messages if m.role == MessageRole.VIEWER]
+        return tuple(viewer[-limit:])
+
+    def clear(self) -> None:
+        """Forget the whole history."""
+        self._messages.clear()
+        self.updated_at = _utc_now()
+
+    def _append(self, message: ConversationMessage) -> ConversationMessage:
+        self._messages.append(message)
+        self.updated_at = _utc_now()
+        return message
+
+    def __iter__(self) -> Iterator[ConversationMessage]:
+        return iter(self._messages)
+
+    def __len__(self) -> int:
+        return len(self._messages)

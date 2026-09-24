@@ -34,8 +34,11 @@ tts = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
+llm = [
+    "google-genai>=2.25",
+]
 all = [
-    "ailoveshen[dev,tts]",
+    "ailoveshen[dev,tts,llm]",
 ]
 
 [tool.hatch.build.targets.wheel]

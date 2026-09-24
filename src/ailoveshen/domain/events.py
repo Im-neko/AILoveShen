@@ -84,3 +84,24 @@ class SpeechQueuedEvent(DomainEvent):
     text: str = field(default="")
     source: str = field(default="unknown")
     queue_position: int = field(default=0)
+
+
+# =============================================================================
+# Conversation Events
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class CommentaryGeneratedEvent(DomainEvent):
+    """Domain event raised when the streamer's commentary has been generated."""
+
+    text: str = field(default="")
+
+
+@dataclass(frozen=True)
+class ChatResponseGeneratedEvent(DomainEvent):
+    """Domain event raised when a reply to a viewer's chat has been generated."""
+
+    text: str = field(default="")
+    original_message: str = field(default="")
+    user_name: str = field(default="")

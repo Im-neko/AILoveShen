@@ -1,3 +1,6 @@
+**Active Phase**: Phase 3 最小版（Gemini 会話生成）実装済み。実 API での確認待ち
+**Last Updated**: 2026-09-24
+**Test Status**: 223 unit tests passing (`pytest tests/`), Docker integration verified。Gemini 実 API は未確認（API キーがないため）
 # Work Log
 
 This document tracks development progress to enable smooth resumption of work after context loss.
@@ -13,6 +16,52 @@ This document tracks development progress to enable smooth resumption of work af
 ---
 
 ## Completed Work
+
+### Phase 3 最小版: Gemini LLM Integration (2026-09-24)
+
+**Issue**: #2（実 API での確認が済むまでオープンのまま）
+
+Gemini 3.8 Flash（google-genai SDK）で、実況と視聴者コメントへの返答を生成する。層別構成に合わせて実装した。
+
+**Implemented Components**:
+- Domain
+  - `domain/value_objects.py`: `MessageRole`, `MessageType`, `ConversationMessage`, `CharacterProfile`, `GenerationContext`
+  - `domain/entities.py`: `Conversation`（最新 max_history 件の会話履歴）
+  - `domain/events.py`: `CommentaryGeneratedEvent`, `ChatResponseGeneratedEvent`
+  - `domain/exceptions.py`: `TextGenerationError`
+- Application
+  - `ports/output/{text_generator,prompt_builder}.py`、`ports/input/{generate_commentary,generate_response}.py`
+  - `dto/llm_dto.py`、`use_cases/{generate_commentary,generate_response}.py`
+- Infrastructure
+  - `adapters/gemini/gemini_text_generator.py`: `GeminiTextGenerator`
+  - `adapters/prompts/prompt_template_builder.py`: `PromptTemplateBuilder`
+  - `config.py`: `GeminiSettings` から `temperature`/`max_tokens` を削除し、`main_thinking_level`/`filter_thinking_level`/`max_output_tokens`/`retry`/`rate_limit` を追加。`CharacterSettings` を新設
+- Presentation / Composition Root: `presentation/services/llm_service.py`、`factories/llm.py`
+- `pyproject.toml`: `llm` extra（`google-genai>=2.25`）
+- `config/default.yaml`: gemini セクションを更新し、`character` セクションを追加
+- Tests: 67 件追加（計 223）
+- Examples: `demo_phase3.py`（偽の生成器、キー不要）、`integration_test_llm.py [--speak]`（実 API、TTS 読み上げは任意）
+- Docs: 設計書 03 を実装に合わせて全面改訂、04 のフィルタのコード例を google-genai 化、01 §6.1 は 03 への参照に置き換え、CLAUDE.md・README を更新
+
+**Key Design Decisions**:
+1. Gemini 固有の概念（thinking_level、SDK の型、ロール名）は `GeminiTextGenerator` に閉じ込めた。domain は `VIEWER`/`STREAMER` という配信の言葉で会話を表す
+2. `generate_with_history` は作らない。履歴は文字列としてプロンプトに埋め込む（3.8 は prefill を推奨していないため）
+3. プロンプトの文面はモデルに依存しないので `adapters/prompts/` に置いた
+4. リトライは SDK の `HttpRetryOptions` を使う。ローカルの模擬サーバーで、503/429 は計3回、400 は1回で失敗することを確認した
+5. `thinking_level` は low/medium/high のみ受け付ける。SDK は `minimal` を通すが 3.8 Flash は拒否するので、起動時に弾く
+6. `max_output_tokens` には思考トークンが含まれ、上限に達すると出力が空になりうる。500 から 8192 に上げたが、**仮の値で未調整**
+7. 実況と応答で `Conversation` を1つ共有する。応答生成に失敗しても、視聴者コメントの記録は残す
+8. 依存方向のテストで、新しいファイルにも規則違反がないことを確認済み
+
+**確認済み / 未確認**:
+- 確認済み: ユニットテスト、`demo_phase3.py`、無効なキーでの実リクエスト（400 → `TextGenerationError`、即時失敗、レート制限の間隔）
+- 確認済み: 模擬サーバーで実際のリクエスト本文を確認した（`systemInstruction`、`maxOutputTokens`、`thinkingConfig` あり。`temperature`/`topP`/`topK`/`tools` なし）。SDK は `thinkingConfig` の中を `thinking_level` と snake_case で送っている
+- 未確認: 実キーでの生成、`max_output_tokens` と `main_thinking_level=medium` の妥当性（遅延・思考トークン量）、`--speak` での TTS 連携
+
+**Commit**: `2727c02` - feat: implement Phase 3 minimal LLM conversation with Gemini 3.8 Flash (#2)
+**PR**: #16（base: #15）
+
+---
 
 ### 層別構成への移行: Layer-first Clean Architecture (2026-09-24)
 
@@ -51,7 +100,8 @@ Phase 3 の最小版を動かしたあとに、実際に困った点が Flue で
 **Files Changed**: `src/ailoveshen/**`, `tests/unit/**`, `examples/demo_phase{1,2}.py`, `examples/integration_test_tts.py`,
 `CLAUDE.md`, `docs/design/00〜07`（構成・import パス・Composition Root の場所）
 
-**PR**: #14 の上に積む
+**Commit**: `f57d37c` - refactor: move to layer-first Clean Architecture
+**PR**: #15（base: #14）
 
 ---
 
@@ -73,6 +123,9 @@ Phase 3 の最小版を動かしたあとに、実際に困った点が Flue で
 - 3.8 Flash では `temperature` / `top_p` / `top_k` が廃止され、`thinking_level`（low/medium/high）に置き換わった。`GeminiSettings.temperature` と設計書 03/04 のコード例がまだ残っている
 - 設計書のコード例は旧 SDK `google.generativeai` 前提。`google-genai`（`genai.Client`）への書き換えが必要
 - Flue（TypeScript のエージェントフレームワーク）の採用を検討 → 見送り（層別構成への移行の項を参照）
+
+**Commit**: `51e9176` - chore: switch Gemini models to gemini-3.8-flash
+**PR**: #14
 
 ### Phase 6 設計改訂: NitroGen → Jev + Mineflayer (2026-09-20)
 
@@ -231,23 +284,30 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
-### Phase 3: Gemini LLM Integration (Ready for Implementation)
+### Phase 3: 実 API での確認（ブロッカー: GEMINI_API_KEY）
 
-**Issue**: #2 (Gemini 2.5による会話システムの実装)
+- `GEMINI_API_KEY=... python examples/integration_test_llm.py` を実行し、使用量ログ（thoughts トークン数、所要時間）を取る
+- その値で `max_output_tokens` と `main_thinking_level` を決める（medium の遅延がライブ実況に耐えるか）
+- `--speak` で Gemini → TTS の読み上げを確認し、Issue #2 をクローズする
 
-Refer to design document: `docs/design/03_phase3_llm_integration.md`
-
-**Confirmed Specifications (2026-01-10)**:
+**Confirmed Specifications (2026-01-10, 2026-09-24 更新)**:
 - Model: `gemini-3.8-flash`（2026-09-24 変更。main/filter とも同じモデル）
 - SDK: `google-genai`（`genai.Client`）。旧 `google.generativeai` は使わない
 - Generation params: `temperature`/`top_p`/`top_k` は 3.8 で廃止。`thinking_level` を枠ごとに設定（main=medium, filter=low）
 - Authentication: API Key only (no OAuth2)
-- Retry: 3 attempts with exponential backoff (base=1s, max=10s)
+- Retry: 3 attempts including the original request, exponential backoff (base=1s, max=10s), 408/429/5xx only
 - Fallback: None (no switch to another model on failure)
 - Default response: None (return empty string on failure)
 - Rate limit: Simple sleep (1 second interval)
 - Token monitoring: Log output only (no alerts)
-- GameState: Optional (Phase 3 works without it)
+- GameState: Optional（Phase 6 まではテキスト要約で受け取る）
+
+### 既知の課題（今回の作業で発見）
+
+- **`AggregateRoot` の等価性と hash の不具合**: `@dataclass` の既定（eq=True）によって、ID ではなくフィールドで比較され、hash もできない（`unhashable type`）。サブクラスも同じ。`Conversation` は `eq=False` で回避したが、`AggregateRoot` 自体は未修正
+- **TTS の設定経路のずれ**: `create_tts_service` は YAML の生の dict（voice/synthesis/queue/audio）を受け取るが、`Settings.tts`（`TTSSettings`）はその形になっていない。docstring にある `settings.get(...)` も存在しない。`integration_test_llm.py --speak` は YAML を直接読んで回避している
+- **プロンプトインジェクション**: 視聴者コメントはそのままプロンプトに入る。Phase 4 のフィルタで対処する
+- **設計書のパス**: 03〜08 には `domain/value_objects/` をパッケージとして分割する前提の import パスが残っている。実装は単一ファイル。各フェーズの実装時に判断する
 
 ### Phase 4: Twitch Integration (Ready for Implementation)
 
@@ -315,6 +375,13 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-24 (モデル切り替え・層別構成・Phase 3 最小版)
+- Gemini を 3.8 Flash に統一した（PR #14）
+- AI 層に Flue を使うか検討し、見送った。Python + google-genai をポートの内側に実装する方針にした
+- 最上位を4層に分ける構成へ移行し、Style-Bert-VITS2 のスタイル名を adapter に閉じ込めた（PR #15）
+- Phase 3 最小版を実装した（PR #16）。実キーがないため、実 API での確認は未実施
+- PR は #14 → #15 → Phase 3 の順に積んでいる。マージもこの順で行う
 
 ### 2026-09-20 (Phase 6 設計改訂)
 

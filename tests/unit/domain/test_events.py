@@ -2,7 +2,11 @@
 
 import pytest
 
-from ailoveshen.domain.events import DomainEvent
+from ailoveshen.domain.events import (
+    ChatResponseGeneratedEvent,
+    CommentaryGeneratedEvent,
+    DomainEvent,
+)
 
 
 class TestDomainEvent:
@@ -36,3 +40,24 @@ class TestDomainEvent:
         event = DomainEvent()
         with pytest.raises(AttributeError):
             event.event_id = "new-id"
+
+
+class TestConversationEvents:
+    """Tests for LLM generation events."""
+
+    def test_commentary_generated_event(self):
+        """Test CommentaryGeneratedEvent carries the text."""
+        event = CommentaryGeneratedEvent(text="洞窟だ！")
+        assert event.text == "洞窟だ！"
+        assert event.event_type == "CommentaryGeneratedEvent"
+
+    def test_chat_response_generated_event(self):
+        """Test ChatResponseGeneratedEvent carries reply and original chat."""
+        event = ChatResponseGeneratedEvent(
+            text="nekoさんありがとう！",
+            original_message="がんばれ",
+            user_name="neko",
+        )
+        assert event.text == "nekoさんありがとう！"
+        assert event.original_message == "がんばれ"
+        assert event.user_name == "neko"

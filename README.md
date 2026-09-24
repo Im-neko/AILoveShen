@@ -88,6 +88,12 @@ pip install -r requirements.txt
 
 # 必要なモデルのダウンロード
 python initialize.py
+
+# AILoveShen 本体と追加依存（dev, tts, llm）
+pip install -e ".[all]"
+
+# Gemini APIキー（会話生成に必要）
+export GEMINI_API_KEY=your_api_key
 ```
 
 ### Jev + Minecraft Bridgeのセットアップ

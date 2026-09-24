@@ -25,6 +25,8 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 ```bash
 pip install -r requirements.txt
 python initialize.py  # Downloads BERT models and pretrained weights
+pip install -e ".[all]"  # AILoveShen core + extras (dev, tts, llm=google-genai)
+export GEMINI_API_KEY=...  # Required for the LLM (Phase 3)
 ```
 
 ### Web UI & Servers
@@ -59,6 +61,8 @@ python style_gen.py -m <model_name>
 pytest tests/                   # Run all unit tests
 python examples/demo_phase1.py  # Demo Phase 1 components
 python examples/demo_phase2.py  # Demo Phase 2 TTS pipeline
+python examples/demo_phase3.py  # Demo Phase 3 LLM conversation (fake generator, no API key)
+GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gemini API (+ TTS)
 
 # Style-Bert-VITS2 tests (legacy)
 hatch run test:test          # PyTorch CPU tests
@@ -82,25 +86,28 @@ Clean Architecture with the four layers at the top level. Features (TTS, LLM, Tw
 ```
 src/ailoveshen/
 ├── domain/                    # No external dependencies
-│   ├── entities.py            # Entity, AggregateRoot
-│   ├── value_objects.py       # EmotionState, SpeechRequest, SpeechResult, Position, FilterResult
-│   ├── events.py              # DomainEvent, SpeechStartedEvent, SpeechCompletedEvent
+│   ├── entities.py            # Entity, AggregateRoot, Conversation
+│   ├── value_objects.py       # EmotionState, SpeechRequest, SpeechResult, Position, FilterResult,
+│   │                          # ConversationMessage, CharacterProfile, GenerationContext
+│   ├── events.py              # DomainEvent, Speech*Event, CommentaryGeneratedEvent, ChatResponseGeneratedEvent
 │   └── exceptions.py          # AILoveShenError hierarchy
 ├── application/
-│   ├── ports/input/           # ISpeakText
-│   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer
-│   ├── use_cases/             # SpeakTextUseCase
-│   └── dto/                   # SpeakTextRequest, SpeakTextResponse
+│   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse
+│   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder
+│   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase
+│   └── dto/                   # speech_dto, llm_dto
 ├── infrastructure/
-│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars)
+│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings
 │   ├── logging.py             # Loguru structured logging
 │   ├── events.py              # AsyncEventBus (Pub/Sub)
 │   └── adapters/
 │       ├── tts/               # StyleBertVits2Client, EmotionStyleService, VoiceConfig
-│       └── audio/             # SounddevicePlayer
+│       ├── audio/             # SounddevicePlayer
+│       ├── gemini/            # GeminiTextGenerator (google-genai)
+│       └── prompts/           # PromptTemplateBuilder (model-independent prompts)
 ├── presentation/
-│   └── services/              # TTSService (priority queue)
-└── factories/                 # Composition Roots (tts.py)
+│   └── services/              # TTSService (priority queue), LLMService
+└── factories/                 # Composition Roots (tts.py, llm.py)
 ```
 
 **Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.
@@ -111,6 +118,9 @@ src/ailoveshen/
 - `SpeakTextUseCase`: Core TTS orchestration; speaks in `EmotionState`, never in engine style names
 - `StyleBertVits2Client`: Maps `EmotionState` → Style-Bert-VITS2 style via `EmotionStyleService`
 - `TTSService`: Priority queue-based speech service
+- `GenerateCommentaryUseCase` / `GenerateResponseUseCase`: Commentary and chat replies sharing one `Conversation`
+- `GeminiTextGenerator`: google-genai adapter; `thinking_level` per slot (no temperature on 3.8), SDK retry on 408/429/5xx, 1s rate limit, token usage logging
+- `LLMService`: Returns commentary/replies as strings (empty on failure), holds current emotion
 - `AsyncEventBus`: Thread-safe async event publisher/subscriber
 - `Settings`: Hierarchical configuration
 

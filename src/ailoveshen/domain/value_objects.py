@@ -166,6 +166,115 @@ class SpeechResult:
 
 
 # =============================================================================
+# Conversation Value Objects
+# =============================================================================
+
+
+class MessageRole(str, Enum):
+    """Who sent a conversation message."""
+
+    VIEWER = "viewer"
+    STREAMER = "streamer"
+
+
+class MessageType(str, Enum):
+    """What kind of utterance a conversation message is."""
+
+    CHAT = "chat"  # Viewer chat comment
+    COMMENTARY = "commentary"  # Streamer's game commentary / thoughts
+    RESPONSE = "response"  # Streamer's reply to a viewer
+
+
+@dataclass(frozen=True)
+class ConversationMessage:
+    """
+    A single message in the stream conversation.
+
+    Raises:
+        ValueError: If content is empty.
+    """
+
+    role: MessageRole
+    message_type: MessageType
+    content: str
+    speaker_name: str = ""
+    speaker_id: Optional[str] = None
+    timestamp: datetime = field(default_factory=_utc_now)
+
+    def __post_init__(self) -> None:
+        """Validate content."""
+        if not self.content.strip():
+            raise ValueError("content must not be empty")
+
+    @classmethod
+    def from_viewer(
+        cls,
+        content: str,
+        user_name: str,
+        user_id: Optional[str] = None,
+    ) -> ConversationMessage:
+        """Create a chat message sent by a viewer."""
+        return cls(
+            role=MessageRole.VIEWER,
+            message_type=MessageType.CHAT,
+            content=content,
+            speaker_name=user_name,
+            speaker_id=user_id,
+        )
+
+    @classmethod
+    def from_streamer(cls, content: str, message_type: MessageType) -> ConversationMessage:
+        """Create a message spoken by the AI streamer."""
+        return cls(
+            role=MessageRole.STREAMER,
+            message_type=message_type,
+            content=content,
+        )
+
+
+@dataclass(frozen=True)
+class CharacterProfile:
+    """
+    The AI streamer's character.
+
+    Raises:
+        ValueError: If name is empty.
+    """
+
+    name: str = "AILoveShen"
+    description: str = "明るく元気なAI配信者"
+    speech_style: str = "フレンドリーで親しみやすい"
+    first_person: str = "私"
+    sentence_endings: tuple[str, ...] = ("だよ", "だね", "かな", "！")
+    personality_traits: tuple[str, ...] = (
+        "好奇心旺盛",
+        "ポジティブ",
+        "ちょっとおっちょこちょい",
+        "視聴者思い",
+    )
+
+    def __post_init__(self) -> None:
+        """Validate name."""
+        if not self.name.strip():
+            raise ValueError("name must not be empty")
+
+
+@dataclass(frozen=True)
+class GenerationContext:
+    """
+    Everything the streamer knows when generating an utterance.
+
+    game_state_summary is optional until the game integration (Phase 6)
+    provides a structured game state.
+    """
+
+    emotion_state: EmotionState = field(default_factory=EmotionState)
+    game_state_summary: Optional[str] = None
+    recent_events: tuple[str, ...] = ()
+    recent_messages: tuple[ConversationMessage, ...] = ()
+
+
+# =============================================================================
 # Position Value Objects
 # =============================================================================
 

@@ -45,10 +45,15 @@ gemini:
   api_key: "${GEMINI_API_KEY:-}"
   main_model: "gemini-3.8-flash"
   filter_model: "gemini-3.8-flash"
-  max_tokens: 500
-  temperature: 0.7
+  # thinking_level: low / medium / high (3.8 Flash rejects "minimal").
+  # temperature/top_p/top_k were removed in 3.8 Flash.
+  main_thinking_level: "medium"
+  filter_thinking_level: "low"
+  # Includes thinking tokens. Too small a value yields truncated or empty output.
+  max_output_tokens: 8192
 
-  # Retry settings
+  # Retry settings (max_attempts includes the original request;
+  # retried on 408/429/5xx only)
   retry:
     max_attempts: 3
     base_delay_seconds: 1.0
@@ -58,6 +63,28 @@ gemini:
   # Rate limit settings
   rate_limit:
     min_interval_seconds: 1.0
+
+# AI Streamer Character
+character:
+  name: "AILoveShen"
+  description: |
+    明るく元気なAI配信者。
+    Minecraftが大好きで、建築よりも冒険派。
+    視聴者との交流を楽しんでいる。
+  speech_style: |
+    フレンドリーで親しみやすい話し方。
+    時々ゲームに熱中して独り言が多くなる。
+  first_person: "私"
+  sentence_endings:
+    - "だよ"
+    - "だね"
+    - "かな"
+    - "！"
+  personality_traits:
+    - "好奇心旺盛"
+    - "ポジティブ"
+    - "ちょっとおっちょこちょい"
+    - "視聴者思い"
 
 # TTS (Style-Bert-VITS2)
 tts:

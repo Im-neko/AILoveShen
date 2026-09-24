@@ -31,3 +31,9 @@ class ConnectionError(AILoveShenError):
     """Raised when connection to external service fails."""
 
     pass
+
+
+class TextGenerationError(AILoveShenError):
+    """Raised when LLM text generation fails."""
+
+    pass
