@@ -25,11 +25,16 @@ export function ground (bot, state, knowledge, world, status) {
   for (const leaf of status?.leaves ?? []) out.push(...fromLeaf(bot, state, world, leaf))
   out.push(...forNeeds(bot, state, knowledge))
   const inside = isInside(bot, state.home)
-  out.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10 })
-
-  const unique = [...new Map(out.map((c) => [c.id, c])).values()]
   const sheltering = inside && (dayPhase(bot.time.timeOfDay) !== 'day' || dangerOutside(bot, state.home).length > 0)
-  return sheltering ? unique.filter((c) => !needsOutside(c, state.home)) : unique
+  const unique = [...new Map(out.map((c) => [c.id, c])).values()]
+  const safe = sheltering ? unique.filter((c) => !needsOutside(c, state.home)) : unique
+  // Waiting advances nothing but the clock: offered while sheltering, or when nothing else can be
+  // done. Offered always, the selector waited inside 9 steps in a row by day while the goal needed
+  // exploring for sheep.
+  if (sheltering || !safe.length) {
+    safe.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10 })
+  }
+  return safe
 }
 
 // Whether running the candidate takes the bot out of the house (it then leaves through the door

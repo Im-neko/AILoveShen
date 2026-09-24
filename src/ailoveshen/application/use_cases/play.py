@@ -330,6 +330,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             decision = ActionDecision(action_id=candidates[0].action_id, confidence=1.0)
         else:
             state, instructions = self._prompt_builder.build_action_context(goal, obs)
+            logger.info(
+                f"Candidates ({len(candidates)}): " + " | ".join(c.action_id for c in candidates)
+            )
             decision = await self._action_selector.select(state, candidates, instructions)
 
         result = await self._bridge.act(decision.action_id)

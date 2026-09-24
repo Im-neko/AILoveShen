@@ -21,6 +21,9 @@ const MAX_COUNT = 256
 const MIN_EXPLORE = 8
 const MAX_EXPLORE = 256
 const EXPLORE_STEP = 20 // about how far one explore step gets
+const DAY_TICKS = 24000
+const MORNING = 0 // time of day the sun is up again (dawn ends at 24000 = 0)
+const TICKS_PER_MINUTE = 1200
 
 export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored']
 
@@ -125,8 +128,9 @@ export function evaluate (bot, state, knowledge, world) {
       out.met = goal.sawNight && phase === 'day'
       out.lines.push(`the night has passed: ${out.met ? 'yes' : `no (${phase})`}`)
       if (out.met) break
-      out.remaining = 1
+      // Minutes until morning: waiting shows as progress, so it is not taken for a stall
       const tod = bot.time.timeOfDay
+      out.remaining = Math.max(1, Math.ceil(((MORNING - tod + DAY_TICKS) % DAY_TICKS) / TICKS_PER_MINUTE))
       if (!inside) out.leaves.push({ kind: 'go_home' })
       else if (hasBed(bot, state.home) && tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping) out.leaves.push({ kind: 'sleep' })
       break
