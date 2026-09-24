@@ -7,7 +7,9 @@ and the acceptable choices; unrelated but executable candidates pad the list to 
 
 Compared, on the same shuffled candidates:
 - jev: descriptions without hints
-- jev_hint: descriptions say which subgoal a candidate advances (what the solver knows)
+- jev_hint (results/primitives/full.json only): descriptions say which subgoal a candidate advances
+- jev_needs: the state also lists needs (critical health, urgent hunger, night coming, threats)
+- jev_prio: the instructions give a general priority order
 - rule: safety rules, then the nearest candidate advancing the first open subgoal (a hand baseline)
 
     TYPESAFE_API_KEY=... python spikes/primitive_choice_eval.py --sizes 10 20 50 --repeat 3
@@ -28,6 +30,27 @@ INSTRUCTIONS = (
     "You control a Minecraft survival player working toward the goal in the state. "
     "Choose the single best next primitive action. Stay alive first; otherwise make progress on the goal."
 )
+PRIORITY_INSTRUCTIONS = (
+    "You control a Minecraft survival player. Choose the single best next primitive action. "
+    "Priorities, highest first: 1) get away from danger you cannot win (low health, creepers, no weapon); "
+    "2) fix urgent needs of the body (low food: eat); 3) do not stay outside at night (be home, sleep if you can); "
+    "4) otherwise make progress on the goal in the state."
+)
+
+
+def needs(state: dict) -> list[str]:
+    """Generic needs from the numbers, stated without naming actions (what the bridge could compute)."""
+    s, out = state["self"], []
+    if s["health"] <= 8:
+        out.append(f"health critical ({s['health']}/20)")
+    if s["food"] <= 6:
+        out.append(f"hunger urgent ({s['food']}/20): healing stops below 18 and sprinting below 7")
+    if s["time"].startswith("dusk"):
+        out.append("night is coming: hostile mobs spawn outside in the dark")
+    for m in state["nearby"]:
+        if m.get("hostile"):
+            out.append(f"hostile {m['mob']} {m['distance']}m away")
+    return out or ["none"]
 
 
 def c(key, verb, target=None, advances=None, **info):
@@ -172,6 +195,65 @@ SCENARIOS = {
         accept={"go to home (58m)"}),
 }
 
+# Held out: written after the needs/priority variants were first measured
+SCENARIOS.update({
+    "h_hungry_zombie_close": scenario(
+        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"food": 5, "time": "night"}, inventory={"cooked_beef": 2},
+        nearby=[{"mob": "zombie", "hostile": True, "distance": 3}],
+        relevant=[
+            c("eat cooked_beef", "eat", "cooked_beef", None),
+            c("flee from zombie", "flee", "zombie", None, distance=3),
+            c("attack zombie", "attack", "zombie", None, distance=3, weapon="none (fist)"),
+            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+        ],
+        accept={"flee from zombie"}),
+    "h_food_ok": scenario(
+        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"food": 14}, inventory={"cooked_beef": 2},
+        relevant=[
+            c("eat cooked_beef", "eat", "cooked_beef", None),
+            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+        ],
+        accept={"dig oak_log at 3m"}),
+    "h_zombie_far_day": scenario(
+        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"weapon": "wooden_sword (in hand)"},
+        inventory={"wooden_sword": 1}, nearby=[{"mob": "zombie", "hostile": True, "distance": 22}],
+        relevant=[
+            c("flee from zombie", "flee", "zombie", None, distance=22),
+            c("attack zombie", "attack", "zombie", None, distance=22, weapon="wooden_sword"),
+            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+        ],
+        accept={"dig oak_log at 3m"}),
+    "h_creeper_far": scenario(
+        "have 3 oak_log", ["have 3 oak_log (0/3)"], nearby=[{"mob": "creeper", "hostile": True, "distance": 18}],
+        relevant=[
+            c("flee from creeper", "flee", "creeper", None, distance=18),
+            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3, direction="away from the creeper"),
+        ],
+        accept={"dig oak_log at 3m"}),
+    "h_low_hp_no_threat": scenario(
+        "have 3 oak_log", ["have 3 oak_log (1/3)"], self_={"health": 7}, inventory={"oak_log": 1},
+        relevant=[
+            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+            c("flee", "flee", "nothing nearby", None),
+        ],
+        accept={"dig oak_log at 3m"}),
+    "h_low_hp_hungry": scenario(
+        "have 3 oak_log", ["have 3 oak_log (1/3)"], self_={"health": 6, "food": 4}, inventory={"oak_log": 1, "bread": 3},
+        relevant=[
+            c("eat bread", "eat", "bread", None),
+            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+        ],
+        accept={"eat bread"}),
+    "h_night_home_no_bed": scenario(
+        "have 12 oak_log", ["have 12 oak_log (4/12)"], self_={"time": "night (just began)", "in_home": True},
+        relevant=[
+            c("wait inside", "wait", "inside the house", None, duration="10s"),
+            c("open oak_door", "use", "oak_door", None, distance=1),
+            c("dig oak_log at 12m", "dig", "oak_log", "have 12 oak_log", distance=12, outside=True),
+        ],
+        accept={"wait inside"}),
+})
+
 # Executable but unrelated to every scenario's goal (padding)
 DISTRACTORS = [
     c("dig dirt at 1m", "dig", "dirt", None, distance=1),
@@ -225,6 +307,15 @@ DISTRACTORS = [
 ]
 
 
+# variant -> ask() options
+VARIANTS = {
+    "jev": {"hint": False},
+    "jev_needs": {"hint": False, "with_needs": True},
+    "jev_prio": {"hint": False, "instructions": PRIORITY_INSTRUCTIONS},
+    "jev_needs_prio": {"hint": False, "with_needs": True, "instructions": PRIORITY_INSTRUCTIONS},
+}
+
+
 def candidates(sc: dict, n: int, rng: random.Random) -> list[dict]:
     keys = {x["key"] for x in sc["relevant"]}
     pad = [d for d in DISTRACTORS if d["key"] not in keys]
@@ -268,10 +359,11 @@ def rule(sc: dict, cands: list[dict]) -> str:
     return cands[0]["key"]
 
 
-async def ask(client, sc, cands, hint):
+async def ask(client, sc, cands, hint, with_needs=False, instructions=INSTRUCTIONS):
+    state = {**sc["state"], "needs": needs(sc["state"])} if with_needs else sc["state"]
     t = time.perf_counter()
     r = await client.system_one(
-        state=sc["state"], questions={"action": Choice(instructions=INSTRUCTIONS, criteria=criteria(cands, hint))}
+        state=state, questions={"action": Choice(instructions=instructions, criteria=criteria(cands, hint))}
     )
     a = r.choices["action"]
     return {"choice": a.choice, "confidence": round(a.confidence, 3), "latency_s": round(time.perf_counter() - t, 3),
@@ -290,34 +382,34 @@ async def run(sizes, repeat, only, seed):
                     cands = candidates(sc, n, rng)
                     row = {"scenario": name, "n": n, "rep": rep, "accept": sorted(sc["accept"])}
                     row["rule"] = {"choice": rule(sc, cands)}
-                    for variant, hint in (("jev", False), ("jev_hint", True)):
+                    for variant, kw in VARIANTS.items():
                         try:
-                            row[variant] = await ask(client, sc, cands, hint)
+                            row[variant] = await ask(client, sc, cands, **kw)
                         except Exception as e:  # record API errors (payload limits) as results
                             row[variant] = {"error": f"{type(e).__name__}: {e}"[:300]}
-                    for v in ("rule", "jev", "jev_hint"):
+                    for v in ("rule", *VARIANTS):
                         row[v]["ok"] = row[v].get("choice") in sc["accept"]
                     rows.append(row)
-                    print(f"{name:20} n={n:2} rule={'o' if row['rule']['ok'] else 'x'} "
-                          f"jev={'o' if row['jev']['ok'] else 'x'}:{row['jev'].get('choice') or row['jev'].get('error')} "
-                          f"hint={'o' if row['jev_hint']['ok'] else 'x'}:{row['jev_hint'].get('choice') or row['jev_hint'].get('error')}",
-                          flush=True)
+                    print(f"{name:20} n={n:2} " + " ".join(
+                        f"{v}={'o' if row[v]['ok'] else 'x'}:{row[v].get('choice') or row[v].get('error')}"
+                        for v in ("rule", *VARIANTS)), flush=True)
     return rows
 
 
 def summarize(rows, sizes):
-    print("\n== accuracy by candidates (rule / jev / jev_hint), latency median, input tokens median")
+    names = ("rule", *VARIANTS)
+    print(f"\n== accuracy by candidates ({' / '.join(names)}), latency median, input tokens median")
     for n in sizes:
         rs = [r for r in rows if r["n"] == n]
-        acc = {v: sum(r[v]["ok"] for r in rs) / len(rs) for v in ("rule", "jev", "jev_hint")}
-        lat = [r[v]["latency_s"] for r in rs for v in ("jev", "jev_hint") if "latency_s" in r[v]]
-        tok = [r[v]["input_tokens"] for r in rs for v in ("jev", "jev_hint") if "input_tokens" in r[v]]
-        print(f"n={n:2}: rule {acc['rule']:.0%}  jev {acc['jev']:.0%}  jev_hint {acc['jev_hint']:.0%}  "
-              f"latency {statistics.median(lat) if lat else '-'}s  tokens {statistics.median(tok) if tok else '-'}")
-    print("\n== per scenario (all sizes): rule / jev / jev_hint")
+        acc = "  ".join(f"{v} {sum(r[v]['ok'] for r in rs) / len(rs):.0%}" for v in names)
+        lat = [r[v]["latency_s"] for r in rs for v in VARIANTS if "latency_s" in r[v]]
+        tok = [r[v]["input_tokens"] for r in rs for v in VARIANTS if "input_tokens" in r[v]]
+        print(f"n={n:2}: {acc}  latency {statistics.median(lat) if lat else '-'}s  "
+              f"tokens {statistics.median(tok) if tok else '-'}")
+    print(f"\n== per scenario (all sizes): {' / '.join(names)}")
     for name in dict.fromkeys(r["scenario"] for r in rows):
         rs = [r for r in rows if r["scenario"] == name]
-        print(f"{name:20} " + " ".join(f"{sum(r[v]['ok'] for r in rs)}/{len(rs)}" for v in ("rule", "jev", "jev_hint")))
+        print(f"{name:20} " + " ".join(f"{sum(r[v]['ok'] for r in rs)}/{len(rs)}" for v in names))
 
 
 def main():

@@ -1,0 +1,2522 @@
+[
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.83,
+   "latency_s": 0.564,
+   "input_tokens": 836,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.56,
+   "latency_s": 0.241,
+   "input_tokens": 877,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.97,
+   "latency_s": 0.211,
+   "input_tokens": 891,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.85,
+   "latency_s": 0.204,
+   "input_tokens": 932,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.77,
+   "latency_s": 0.223,
+   "input_tokens": 824,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.54,
+   "latency_s": 0.21,
+   "input_tokens": 865,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.97,
+   "latency_s": 0.195,
+   "input_tokens": 879,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.85,
+   "latency_s": 0.194,
+   "input_tokens": 920,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.88,
+   "latency_s": 0.199,
+   "input_tokens": 846,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.68,
+   "latency_s": 0.247,
+   "input_tokens": 887,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.99,
+   "latency_s": 0.188,
+   "input_tokens": 901,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.94,
+   "latency_s": 0.246,
+   "input_tokens": 942,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.69,
+   "latency_s": 0.24,
+   "input_tokens": 1259,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.53,
+   "latency_s": 0.222,
+   "input_tokens": 1300,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.95,
+   "latency_s": 0.229,
+   "input_tokens": 1314,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.88,
+   "latency_s": 0.234,
+   "input_tokens": 1355,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.73,
+   "latency_s": 0.211,
+   "input_tokens": 1266,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.52,
+   "latency_s": 0.228,
+   "input_tokens": 1307,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.96,
+   "latency_s": 0.188,
+   "input_tokens": 1321,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.89,
+   "latency_s": 0.237,
+   "input_tokens": 1362,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.67,
+   "latency_s": 0.202,
+   "input_tokens": 1216,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.49,
+   "latency_s": 0.193,
+   "input_tokens": 1257,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.95,
+   "latency_s": 0.197,
+   "input_tokens": 1271,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.83,
+   "latency_s": 0.218,
+   "input_tokens": 1312,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.74,
+   "latency_s": 0.206,
+   "input_tokens": 2515,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.58,
+   "latency_s": 0.244,
+   "input_tokens": 2556,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.96,
+   "latency_s": 0.244,
+   "input_tokens": 2570,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.9,
+   "latency_s": 0.208,
+   "input_tokens": 2611,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.72,
+   "latency_s": 0.222,
+   "input_tokens": 2511,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.61,
+   "latency_s": 0.234,
+   "input_tokens": 2552,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.97,
+   "latency_s": 0.198,
+   "input_tokens": 2566,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.88,
+   "latency_s": 0.226,
+   "input_tokens": 2607,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_hungry_zombie_close",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "flee from zombie"
+  ],
+  "rule": {
+   "choice": "flee from zombie",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.72,
+   "latency_s": 0.239,
+   "input_tokens": 2532,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.47,
+   "latency_s": 0.2,
+   "input_tokens": 2573,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.94,
+   "latency_s": 0.201,
+   "input_tokens": 2587,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.84,
+   "latency_s": 0.265,
+   "input_tokens": 2628,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.78,
+   "latency_s": 0.203,
+   "input_tokens": 815,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.87,
+   "latency_s": 0.195,
+   "input_tokens": 825,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.56,
+   "latency_s": 0.208,
+   "input_tokens": 870,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.71,
+   "latency_s": 0.23,
+   "input_tokens": 880,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.71,
+   "latency_s": 0.215,
+   "input_tokens": 798,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.75,
+   "latency_s": 0.206,
+   "input_tokens": 808,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.53,
+   "latency_s": 0.195,
+   "input_tokens": 853,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.7,
+   "latency_s": 0.19,
+   "input_tokens": 863,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.51,
+   "latency_s": 0.219,
+   "input_tokens": 782,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.66,
+   "latency_s": 0.234,
+   "input_tokens": 792,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "eat cooked_beef",
+   "confidence": 0.42,
+   "latency_s": 0.227,
+   "input_tokens": 837,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.32,
+   "latency_s": 0.298,
+   "input_tokens": 847,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.54,
+   "latency_s": 0.235,
+   "input_tokens": 1248,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.62,
+   "latency_s": 0.197,
+   "input_tokens": 1258,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.48,
+   "latency_s": 0.302,
+   "input_tokens": 1303,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.53,
+   "latency_s": 0.316,
+   "input_tokens": 1313,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.72,
+   "latency_s": 0.29,
+   "input_tokens": 1281,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.81,
+   "latency_s": 0.232,
+   "input_tokens": 1291,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.55,
+   "latency_s": 0.241,
+   "input_tokens": 1336,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.64,
+   "latency_s": 0.283,
+   "input_tokens": 1346,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.41,
+   "latency_s": 0.196,
+   "input_tokens": 1220,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.51,
+   "latency_s": 0.201,
+   "input_tokens": 1230,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "eat cooked_beef",
+   "confidence": 0.38,
+   "latency_s": 0.307,
+   "input_tokens": 1275,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.47,
+   "latency_s": 0.238,
+   "input_tokens": 1285,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.6,
+   "latency_s": 0.285,
+   "input_tokens": 2496,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.61,
+   "latency_s": 0.219,
+   "input_tokens": 2506,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.49,
+   "latency_s": 0.268,
+   "input_tokens": 2551,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.57,
+   "latency_s": 0.224,
+   "input_tokens": 2561,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.67,
+   "latency_s": 0.338,
+   "input_tokens": 2496,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.72,
+   "latency_s": 0.225,
+   "input_tokens": 2506,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.51,
+   "latency_s": 0.303,
+   "input_tokens": 2551,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.64,
+   "latency_s": 0.229,
+   "input_tokens": 2561,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_food_ok",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.61,
+   "latency_s": 0.294,
+   "input_tokens": 2496,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.61,
+   "latency_s": 0.236,
+   "input_tokens": 2506,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "eat cooked_beef",
+   "confidence": 0.44,
+   "latency_s": 0.302,
+   "input_tokens": 2551,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.51,
+   "latency_s": 0.194,
+   "input_tokens": 2561,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from zombie",
+   "confidence": 0.42,
+   "latency_s": 0.217,
+   "input_tokens": 858,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "flee from zombie",
+   "confidence": 0.5,
+   "latency_s": 0.223,
+   "input_tokens": 875,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.82,
+   "latency_s": 0.222,
+   "input_tokens": 913,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.88,
+   "latency_s": 0.223,
+   "input_tokens": 930,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.62,
+   "latency_s": 0.195,
+   "input_tokens": 882,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.47,
+   "latency_s": 0.201,
+   "input_tokens": 899,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.62,
+   "latency_s": 0.231,
+   "input_tokens": 937,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.71,
+   "latency_s": 0.238,
+   "input_tokens": 954,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.56,
+   "latency_s": 0.237,
+   "input_tokens": 864,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.48,
+   "latency_s": 0.251,
+   "input_tokens": 881,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.67,
+   "latency_s": 0.22,
+   "input_tokens": 919,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.82,
+   "latency_s": 0.302,
+   "input_tokens": 936,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.72,
+   "latency_s": 0.195,
+   "input_tokens": 1235,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.67,
+   "latency_s": 0.21,
+   "input_tokens": 1252,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.47,
+   "latency_s": 0.199,
+   "input_tokens": 1290,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.54,
+   "latency_s": 0.193,
+   "input_tokens": 1307,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.77,
+   "latency_s": 0.254,
+   "input_tokens": 1286,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.68,
+   "latency_s": 0.227,
+   "input_tokens": 1303,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.55,
+   "latency_s": 0.295,
+   "input_tokens": 1341,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.73,
+   "latency_s": 0.229,
+   "input_tokens": 1358,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.59,
+   "latency_s": 0.295,
+   "input_tokens": 1271,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.48,
+   "latency_s": 0.196,
+   "input_tokens": 1288,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.65,
+   "latency_s": 0.224,
+   "input_tokens": 1326,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.75,
+   "latency_s": 0.297,
+   "input_tokens": 1343,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.7,
+   "latency_s": 0.214,
+   "input_tokens": 2541,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.64,
+   "latency_s": 0.206,
+   "input_tokens": 2558,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.53,
+   "latency_s": 0.2,
+   "input_tokens": 2596,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.63,
+   "latency_s": 0.236,
+   "input_tokens": 2613,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.6,
+   "latency_s": 0.245,
+   "input_tokens": 2536,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.47,
+   "latency_s": 0.287,
+   "input_tokens": 2553,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.52,
+   "latency_s": 0.218,
+   "input_tokens": 2591,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.63,
+   "latency_s": 0.297,
+   "input_tokens": 2608,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_zombie_far_day",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.66,
+   "latency_s": 0.252,
+   "input_tokens": 2543,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.66,
+   "latency_s": 0.272,
+   "input_tokens": 2560,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.64,
+   "latency_s": 0.21,
+   "input_tokens": 2598,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from zombie",
+   "confidence": 0.7,
+   "latency_s": 0.193,
+   "input_tokens": 2615,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.57,
+   "latency_s": 0.314,
+   "input_tokens": 866,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.45,
+   "latency_s": 0.193,
+   "input_tokens": 884,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.82,
+   "latency_s": 0.213,
+   "input_tokens": 921,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.9,
+   "latency_s": 0.214,
+   "input_tokens": 939,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.69,
+   "latency_s": 0.24,
+   "input_tokens": 853,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.58,
+   "latency_s": 0.216,
+   "input_tokens": 871,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.84,
+   "latency_s": 0.204,
+   "input_tokens": 908,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.88,
+   "latency_s": 0.294,
+   "input_tokens": 926,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.45,
+   "latency_s": 0.2,
+   "input_tokens": 847,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.44,
+   "latency_s": 0.198,
+   "input_tokens": 865,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.83,
+   "latency_s": 0.217,
+   "input_tokens": 902,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.87,
+   "latency_s": 0.469,
+   "input_tokens": 920,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.71,
+   "latency_s": 0.293,
+   "input_tokens": 1235,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.57,
+   "latency_s": 0.223,
+   "input_tokens": 1253,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.76,
+   "latency_s": 0.392,
+   "input_tokens": 1290,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.87,
+   "latency_s": 0.261,
+   "input_tokens": 1308,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.57,
+   "latency_s": 0.198,
+   "input_tokens": 1266,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.61,
+   "latency_s": 0.267,
+   "input_tokens": 1284,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.86,
+   "latency_s": 0.3,
+   "input_tokens": 1321,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.88,
+   "latency_s": 0.21,
+   "input_tokens": 1339,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.56,
+   "latency_s": 0.338,
+   "input_tokens": 1255,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.47,
+   "latency_s": 0.212,
+   "input_tokens": 1273,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.84,
+   "latency_s": 0.261,
+   "input_tokens": 1310,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.89,
+   "latency_s": 0.214,
+   "input_tokens": 1328,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from creeper",
+   "confidence": 0.55,
+   "latency_s": 0.27,
+   "input_tokens": 2531,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "flee from creeper",
+   "confidence": 0.56,
+   "latency_s": 0.225,
+   "input_tokens": 2549,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.84,
+   "latency_s": 0.298,
+   "input_tokens": 2586,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.88,
+   "latency_s": 0.239,
+   "input_tokens": 2604,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.67,
+   "latency_s": 0.286,
+   "input_tokens": 2531,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.6,
+   "latency_s": 0.244,
+   "input_tokens": 2549,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.78,
+   "latency_s": 0.278,
+   "input_tokens": 2586,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.86,
+   "latency_s": 0.215,
+   "input_tokens": 2604,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_creeper_far",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "flee from creeper",
+   "confidence": 0.48,
+   "latency_s": 0.194,
+   "input_tokens": 2531,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "flee from creeper",
+   "confidence": 0.55,
+   "latency_s": 0.294,
+   "input_tokens": 2549,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.89,
+   "latency_s": 0.704,
+   "input_tokens": 2586,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "flee from creeper",
+   "confidence": 0.89,
+   "latency_s": 0.199,
+   "input_tokens": 2604,
+   "ok": false
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.92,
+   "latency_s": 0.194,
+   "input_tokens": 820,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.76,
+   "latency_s": 0.193,
+   "input_tokens": 837,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.91,
+   "latency_s": 0.21,
+   "input_tokens": 875,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.45,
+   "latency_s": 0.199,
+   "input_tokens": 892,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.95,
+   "latency_s": 0.218,
+   "input_tokens": 807,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.8,
+   "latency_s": 0.197,
+   "input_tokens": 824,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.92,
+   "latency_s": 0.212,
+   "input_tokens": 862,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.43,
+   "latency_s": 0.234,
+   "input_tokens": 879,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.96,
+   "latency_s": 0.196,
+   "input_tokens": 788,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.79,
+   "latency_s": 0.208,
+   "input_tokens": 805,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.86,
+   "latency_s": 0.229,
+   "input_tokens": 843,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.5,
+   "latency_s": 0.298,
+   "input_tokens": 860,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.9,
+   "latency_s": 0.214,
+   "input_tokens": 1161,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.78,
+   "latency_s": 0.308,
+   "input_tokens": 1178,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.9,
+   "latency_s": 0.234,
+   "input_tokens": 1216,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.5,
+   "latency_s": 0.196,
+   "input_tokens": 1233,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.72,
+   "latency_s": 0.306,
+   "input_tokens": 1179,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.75,
+   "latency_s": 0.313,
+   "input_tokens": 1196,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.87,
+   "latency_s": 0.224,
+   "input_tokens": 1234,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.48,
+   "latency_s": 0.299,
+   "input_tokens": 1251,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.98,
+   "latency_s": 0.225,
+   "input_tokens": 1241,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.73,
+   "latency_s": 0.299,
+   "input_tokens": 1258,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.91,
+   "latency_s": 0.228,
+   "input_tokens": 1296,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.53,
+   "latency_s": 0.475,
+   "input_tokens": 1313,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.88,
+   "latency_s": 0.241,
+   "input_tokens": 2490,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.79,
+   "latency_s": 0.285,
+   "input_tokens": 2507,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.93,
+   "latency_s": 0.345,
+   "input_tokens": 2545,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.71,
+   "latency_s": 0.252,
+   "input_tokens": 2562,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.81,
+   "latency_s": 0.271,
+   "input_tokens": 2490,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.7,
+   "latency_s": 0.21,
+   "input_tokens": 2507,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.87,
+   "latency_s": 0.211,
+   "input_tokens": 2545,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.51,
+   "latency_s": 0.284,
+   "input_tokens": 2562,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_no_threat",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.83,
+   "latency_s": 0.215,
+   "input_tokens": 2490,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.71,
+   "latency_s": 0.305,
+   "input_tokens": 2507,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.88,
+   "latency_s": 0.242,
+   "input_tokens": 2545,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.61,
+   "latency_s": 0.286,
+   "input_tokens": 2562,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.97,
+   "latency_s": 0.198,
+   "input_tokens": 825,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.64,
+   "latency_s": 0.325,
+   "input_tokens": 867,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.91,
+   "latency_s": 0.206,
+   "input_tokens": 880,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.86,
+   "latency_s": 0.319,
+   "input_tokens": 922,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.91,
+   "latency_s": 0.215,
+   "input_tokens": 835,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.72,
+   "latency_s": 0.311,
+   "input_tokens": 877,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.82,
+   "latency_s": 0.344,
+   "input_tokens": 890,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.84,
+   "latency_s": 0.236,
+   "input_tokens": 932,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.89,
+   "latency_s": 0.29,
+   "input_tokens": 801,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.84,
+   "latency_s": 0.199,
+   "input_tokens": 843,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.88,
+   "latency_s": 0.325,
+   "input_tokens": 856,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.94,
+   "latency_s": 0.205,
+   "input_tokens": 898,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.81,
+   "latency_s": 0.204,
+   "input_tokens": 1253,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.67,
+   "latency_s": 0.278,
+   "input_tokens": 1295,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.82,
+   "latency_s": 0.215,
+   "input_tokens": 1308,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.83,
+   "latency_s": 0.225,
+   "input_tokens": 1350,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.85,
+   "latency_s": 0.218,
+   "input_tokens": 1240,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.81,
+   "latency_s": 0.251,
+   "input_tokens": 1282,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.81,
+   "latency_s": 0.272,
+   "input_tokens": 1295,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.93,
+   "latency_s": 0.229,
+   "input_tokens": 1337,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.95,
+   "latency_s": 0.191,
+   "input_tokens": 1219,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.75,
+   "latency_s": 0.33,
+   "input_tokens": 1261,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.92,
+   "latency_s": 0.202,
+   "input_tokens": 1274,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.92,
+   "latency_s": 0.209,
+   "input_tokens": 1316,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.71,
+   "latency_s": 0.205,
+   "input_tokens": 2493,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.6,
+   "latency_s": 0.255,
+   "input_tokens": 2535,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.76,
+   "latency_s": 0.239,
+   "input_tokens": 2548,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.81,
+   "latency_s": 0.203,
+   "input_tokens": 2590,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.7,
+   "latency_s": 0.262,
+   "input_tokens": 2493,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.67,
+   "latency_s": 0.215,
+   "input_tokens": 2535,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.83,
+   "latency_s": 0.308,
+   "input_tokens": 2548,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.85,
+   "latency_s": 0.22,
+   "input_tokens": 2590,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_low_hp_hungry",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "eat bread"
+  ],
+  "rule": {
+   "choice": "eat bread",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.79,
+   "latency_s": 0.303,
+   "input_tokens": 2493,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "eat bread",
+   "confidence": 0.76,
+   "latency_s": 0.273,
+   "input_tokens": 2535,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.92,
+   "latency_s": 0.251,
+   "input_tokens": 2548,
+   "ok": false
+  },
+  "jev_needs_prio": {
+   "choice": "eat bread",
+   "confidence": 0.88,
+   "latency_s": 0.239,
+   "input_tokens": 2590,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "wait inside",
+   "confidence": 0.38,
+   "latency_s": 0.285,
+   "input_tokens": 834,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "wait inside",
+   "confidence": 0.36,
+   "latency_s": 0.21,
+   "input_tokens": 844,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.9,
+   "latency_s": 0.315,
+   "input_tokens": 889,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.87,
+   "latency_s": 0.202,
+   "input_tokens": 899,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 10,
+  "rep": 1,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "wait inside",
+   "confidence": 0.38,
+   "latency_s": 0.191,
+   "input_tokens": 834,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "wait inside",
+   "confidence": 0.41,
+   "latency_s": 0.25,
+   "input_tokens": 844,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.89,
+   "latency_s": 0.192,
+   "input_tokens": 889,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.89,
+   "latency_s": 0.257,
+   "input_tokens": 899,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 10,
+  "rep": 2,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "wait inside",
+   "confidence": 0.32,
+   "latency_s": 0.209,
+   "input_tokens": 849,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 12m",
+   "confidence": 0.27,
+   "latency_s": 0.273,
+   "input_tokens": 859,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.89,
+   "latency_s": 0.194,
+   "input_tokens": 904,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.84,
+   "latency_s": 0.195,
+   "input_tokens": 914,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 20,
+  "rep": 0,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "open oak_door",
+   "confidence": 0.27,
+   "latency_s": 0.241,
+   "input_tokens": 1245,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "open oak_door",
+   "confidence": 0.28,
+   "latency_s": 0.191,
+   "input_tokens": 1255,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.73,
+   "latency_s": 0.227,
+   "input_tokens": 1300,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.73,
+   "latency_s": 0.214,
+   "input_tokens": 1310,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 20,
+  "rep": 1,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "wait inside",
+   "confidence": 0.32,
+   "latency_s": 0.309,
+   "input_tokens": 1253,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "open oak_door",
+   "confidence": 0.27,
+   "latency_s": 0.239,
+   "input_tokens": 1263,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.81,
+   "latency_s": 0.194,
+   "input_tokens": 1308,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.84,
+   "latency_s": 0.29,
+   "input_tokens": 1318,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 20,
+  "rep": 2,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "wait inside",
+   "confidence": 0.27,
+   "latency_s": 0.219,
+   "input_tokens": 1233,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "wait inside",
+   "confidence": 0.22,
+   "latency_s": 0.217,
+   "input_tokens": 1243,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.87,
+   "latency_s": 0.215,
+   "input_tokens": 1288,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.85,
+   "latency_s": 0.249,
+   "input_tokens": 1298,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "dig oak_log at 12m",
+   "confidence": 0.31,
+   "latency_s": 0.235,
+   "input_tokens": 2498,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 12m",
+   "confidence": 0.3,
+   "latency_s": 0.243,
+   "input_tokens": 2508,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.77,
+   "latency_s": 0.209,
+   "input_tokens": 2553,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.78,
+   "latency_s": 0.205,
+   "input_tokens": 2563,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 50,
+  "rep": 1,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "wait inside",
+   "confidence": 0.25,
+   "latency_s": 0.222,
+   "input_tokens": 2506,
+   "ok": true
+  },
+  "jev_needs": {
+   "choice": "wait inside",
+   "confidence": 0.28,
+   "latency_s": 0.232,
+   "input_tokens": 2516,
+   "ok": true
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.85,
+   "latency_s": 0.21,
+   "input_tokens": 2561,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.86,
+   "latency_s": 0.234,
+   "input_tokens": 2571,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "h_night_home_no_bed",
+  "n": 50,
+  "rep": 2,
+  "accept": [
+   "wait inside"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 12m",
+   "ok": false
+  },
+  "jev": {
+   "choice": "dig oak_log at 12m",
+   "confidence": 0.38,
+   "latency_s": 0.257,
+   "input_tokens": 2506,
+   "ok": false
+  },
+  "jev_needs": {
+   "choice": "dig oak_log at 12m",
+   "confidence": 0.48,
+   "latency_s": 0.238,
+   "input_tokens": 2516,
+   "ok": false
+  },
+  "jev_prio": {
+   "choice": "wait inside",
+   "confidence": 0.85,
+   "latency_s": 0.287,
+   "input_tokens": 2561,
+   "ok": true
+  },
+  "jev_needs_prio": {
+   "choice": "wait inside",
+   "confidence": 0.84,
+   "latency_s": 0.234,
+   "input_tokens": 2571,
+   "ok": true
+  }
+ }
+]
