@@ -8,4 +8,4 @@ entry_points:
 
 description: |
   AI Streamer project for Twitch combining Jev + Mineflayer (Minecraft AI),
-  Gemini 2.5/Flash (LLM), Style-Bert-VITS2 (TTS), and MCP.
+  Gemini 3.8 Flash (LLM), Style-Bert-VITS2 (TTS), and MCP.

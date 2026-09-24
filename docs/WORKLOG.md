@@ -6,13 +6,32 @@ This document tracks development progress to enable smooth resumption of work af
 
 ## Current Status
 
-**Active Phase**: Phase 6 設計改訂 (NitroGen → Jev + Mineflayer) Complete, Ready for Phase 3
-**Last Updated**: 2026-09-20
+**Active Phase**: Gemini モデルを 3.8 Flash へ切り替え済み。AI 層のフレームワーク（google-genai 直接 or Flue）が未決定のため Phase 3 は保留中
+**Last Updated**: 2026-09-24
 **Test Status**: 148 unit tests passing (`pytest tests/`), Docker integration verified
 
 ---
 
 ## Completed Work
+
+### Gemini モデル切り替え: → gemini-3.8-flash (2026-09-24)
+
+`main_model` と `filter_model` の両方を `gemini-3.8-flash` に統一した（GA、2026-09-02 リリース）。
+
+**Files Changed**:
+- `src/ailoveshen/core/infrastructure/config.py` - `GeminiSettings` のデフォルト値と `.get()` のフォールバック値
+- `config/default.yaml`, `tests/unit/infrastructure/test_config.py`
+- `docs/design/00, 01, 03, 04, 06, 08` - モデルID・本文・図
+- `README.md`, `CLAUDE.md`, `.serena/`
+
+**Key Design Decisions**:
+1. 同じモデルで 2 枠を使い、役割の差は `thinking_level` で付ける想定（filter=low, main=medium）。未実装
+2. 旧設定では `config.py` のデフォルト値（`gemini-2.5-pro-preview-05-06`）と yaml（`gemini-2.5-pro`）が食い違っていたが、今回の統一で解消
+
+**未解決（AI 層フレームワークの決定待ち）**:
+- 3.8 Flash では `temperature` / `top_p` / `top_k` が廃止され、`thinking_level`（low/medium/high）に置き換わった。`GeminiSettings.temperature` と設計書 03/04 のコード例がまだ残っている
+- 設計書のコード例は旧 SDK `google.generativeai` 前提。`google-genai`（`genai.Client`）への書き換えが必要
+- Flue（TypeScript のエージェントフレームワーク）を採用するかを検討中
 
 ### Phase 6 設計改訂: NitroGen → Jev + Mineflayer (2026-09-20)
 
@@ -178,10 +197,10 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 Refer to design document: `docs/design/03_phase3_llm_integration.md`
 
 **Confirmed Specifications (2026-01-10)**:
-- Model: `gemini-2.5-pro` (not preview version)
+- Model: `gemini-3.8-flash`（2026-09-24 変更。main/filter とも同じモデル）
 - Authentication: API Key only (no OAuth2)
 - Retry: 3 attempts with exponential backoff (base=1s, max=10s)
-- Fallback: None (no switch to Flash model on failure)
+- Fallback: None (no switch to another model on failure)
 - Default response: None (return empty string on failure)
 - Rate limit: Simple sleep (1 second interval)
 - Token monitoring: Log output only (no alerts)

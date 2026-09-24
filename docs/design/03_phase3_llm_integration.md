@@ -2,10 +2,10 @@
 
 ## 1. 概要
 
-Gemini 2.5を使用した会話システムを実装します。
+Gemini 3.8 Flashを使用した会話システムを実装します。
 
 ### 要件（Issue #2より）
-- Gemini 2.5 APIとの接続
+- Gemini 3.8 Flash APIとの接続
 - ゲーム実況生成（メインループ）
 - コメント応答生成（サブループ/割り込み）
 
@@ -853,7 +853,7 @@ class GeminiTextGenerator(ITextGenerator):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.5-pro",
+        model_name: str = "gemini-3.8-flash",
         temperature: float = 0.9,
         top_p: float = 0.95,
         top_k: int = 40,
@@ -1283,8 +1283,8 @@ def create_llm_service(
 # config/default.yaml (LLM section)
 gemini:
   api_key: "${GEMINI_API_KEY}"
-  main_model: "gemini-2.5-pro"
-  filter_model: "gemini-2.0-flash"
+  main_model: "gemini-3.8-flash"
+  filter_model: "gemini-3.8-flash"
 
   generation:
     temperature: 0.9

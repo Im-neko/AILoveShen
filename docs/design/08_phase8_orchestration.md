@@ -2047,8 +2047,8 @@ twitch:
 
 gemini:
   api_key: "${GEMINI_API_KEY}"
-  main_model: "gemini-2.5-pro-preview-05-06"
-  filter_model: "gemini-2.0-flash"
+  main_model: "gemini-3.8-flash"
+  filter_model: "gemini-3.8-flash"
 
 comment_filter:
   enabled: true

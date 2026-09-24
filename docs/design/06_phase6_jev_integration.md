@@ -4,7 +4,7 @@
 
 ## 1. 概要
 
-Minecraft操作の「判断」をJevに担わせつつ、配信全体の方向性（何をすべきか、視聴者にどう反応するか）はこれまで通りGemini 2.5（LLM）が担当する、という役割分担でMinecraft統合を実装する。
+Minecraft操作の「判断」をJevに担わせつつ、配信全体の方向性（何をすべきか、視聴者にどう反応するか）はこれまで通りGemini 3.8 Flash（LLM）が担当する、という役割分担でMinecraft統合を実装する。
 
 ### 1.1 要件（Issue #4より、Jev対応版）
 
@@ -72,7 +72,7 @@ Minecraft操作の「判断」をJevに担わせつつ、配信全体の方向�
 ├───────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                     │
 │  【方向性（Goal）を決める】                     ← 低頻度・LLM主導                    │
-│  Gemini 2.5 ──DecideGoalUseCase──▶ Goal (13種の定義済みゴールから選択)              │
+│  Gemini 3.8 Flash ──DecideGoalUseCase──▶ Goal (13種の定義済みゴールから選択)        │
 │      ▲                                    │                                        │
 │      │ ゲーム状況・視聴者コメントを加味          ▼                                   │
 │      │                          ┌─────────────────────────┐                        │
@@ -96,7 +96,7 @@ Minecraft操作の「判断」をJevに担わせつつ、配信全体の方向�
 
 - **Reactive Loop（反射ループ, 〜600ms周期）**: LLMを介さずJevのみで完結。体力・空腹・近接モブ等の状態から `threat_level` / `immediate_action` / `should_eat` / `flee_direction` を毎tick判定し、危険時は即座にMinecraft Bridgeへ実行させる。生存に関わる判断はLLMの応答速度を待てないため、ここは完全にJevに委譲する。
 - **Tactical Loop（戦術ループ, 〜5〜10秒周期）**: LLMが設定した現在の `Goal`（例：「鉱石を採掘する」）の範囲内で、Jevが次のステップ・approach（慎重/効率重視等）・urgencyを型付きで選ぶ。LLMは「何を目指すか」だけ決め、「今どう動くか」はJevに任せる。
-- **Goal選定（LLM主導, イベント駆動 or 30〜60秒周期）**: Gemini 2.5が、現在のゲーム状態・直近のイベント・視聴者コメント（「あっちの洞窟行って！」等）を踏まえて、13種の定義済みGoalから次のGoalを選ぶ。Reactive Loopが`critical`な脅威を検知した場合は、Tactical LoopがGoalを一時的に`FLEE`へ強制オーバーライドする（LLMの応答を待たない）。
+- **Goal選定（LLM主導, イベント駆動 or 30〜60秒周期）**: Gemini 3.8 Flashが、現在のゲーム状態・直近のイベント・視聴者コメント（「あっちの洞窟行って！」等）を踏まえて、13種の定義済みGoalから次のGoalを選ぶ。Reactive Loopが`critical`な脅威を検知した場合は、Tactical LoopがGoalを一時的に`FLEE`へ強制オーバーライドする（LLMの応答を待たない）。
 - Reactive/Tactical Loopの結果は `GameEvent` としてイベントバスに流れ、Phase 3のLLM実況（`GenerateCommentaryUseCase`）が「あぶない、逃げた！」のような実況コメントを生成する材料になる。
 
 ## 4. クリーンアーキテクチャに基づくコンポーネント構成
@@ -1082,7 +1082,7 @@ async def create_game_service(config: "JevMinecraftConfig", event_publisher, tex
 
 ## 10. LLMとの連携（この設計が満たす要件）
 
-- **方向性の決定はLLMが継続して行う**: `DecideGoalUseCase`がGemini 2.5を呼び出し、13種のGoalから次の目標を選ぶ。視聴者コメント（Twitch連携, Phase 4）も判断材料に含められる。
+- **方向性の決定はLLMが継続して行う**: `DecideGoalUseCase`がGemini 3.8 Flashを呼び出し、13種のGoalから次の目標を選ぶ。視聴者コメント（Twitch連携, Phase 4）も判断材料に含められる。
 - **Jevへのリクエストという形も維持される**: LLMは自由文の指示ではなく、`Goal`という閉じた型でJevに「今の目標」を渡す。Jevはその範囲内で高速に手段（`next_step`/`approach`/`urgency`）を決める。
 - **生存に関わる反射的判断はJevが完全に代行する**: Reactive LoopはLLMを介さず600ms周期で回るため、LLMのレイテンシがボトルネックにならない。
 - **実況ネタとしてフィードバックされる**: Reactive/Tactical Loopの判断結果は`GameEvent`としてイベントバスに流れ、Phase 3の`GenerateCommentaryUseCase`がこれを材料に実況を生成する（「うわ、ゾンビだ逃げなきゃ！」等）。
