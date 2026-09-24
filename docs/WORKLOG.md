@@ -1,12 +1,30 @@
 ## Current Status
 
-**Active Phase**: 街作りロードマップ（`docs/design/09_town_building_roadmap.md`）の M1 生存基盤を完了。F（根源的な行動の組み合わせ）のスパイクと設計（11）が済み、実装の承認待ち。ブランチ `feat/town-m1-m2`（`feat/phase6-minimal` から派生、PR #19 は未マージ）
+**Active Phase**: 街作りロードマップ（`docs/design/09_town_building_roadmap.md`）の F（根源的な行動の組み合わせ）を実装し、自律実行（frun1）で検証した。家は完成し一晩を越えたが、窓の穴からの被弾と、昼に家から出られなくなる問題が見つかった（方針の相談待ち）。ブランチ `feat/town-m1-m2`（`feat/phase6-minimal` から派生、PR #19 は未マージ）
 **Last Updated**: 2026-09-25
-**Test Status**: 318 unit tests passing (`pytest tests/`)。M1 は自律実行（m1run1）で一晩を越えられることを RCON で確認した。ベッドの一連の動作は、動作ごとに実機で確認した
+**Test Status**: 313 unit tests passing (`pytest tests/`)、ブリッジ `npm test` 全件成功
 
 ---
 
 ## Completed Work
+
+### F 実装: ゴールの述語・依存関係ソルバー・候補・プリミティブ (2026-09-25)
+
+**Commits**: `c37ed59`（ソルバーと知識）、`d9a0e03`（ブリッジのゴール・候補・プリミティブ、actions.mjs を削除）、`71aa872`（Python 側の書き換え）、`e107e2e`（設計書 06・CLAUDE.md、食べるのは食料だけ）、`2443242`（待機は避難中だけ、夜の残りを分で、候補のログ）。設計: `docs/design/11_primitive_actions.md`
+
+- Gemini はゴールを述語（`have` / `built` / `placed` / `at_home` / `through_night` / `explored`）で出し、ブリッジが世界から達成を判定する。手書きの複合アクションは互換層なしで削除した
+- ブリッジ: `knowledge.mjs`（minecraft-data のレシピ・ドロップ、補正つき）、`solver.mjs`（台帳つき依存関係解決）、`goals.mjs`、`candidates.mjs`（具体的な候補と欲求、避難中は外に出る候補を外す）、`primitives.mjs`（14 個）
+- Python: `PlaySession` がゴールの終わり（達成・行き詰まり・停滞・予算・時間帯の変化）を決める。Jev は候補から 1 つ選ぶ
+
+**結果（frun1、Gemini + Jev、`logs/frun1.log`、`logs/frun1-night.log`）**
+- 家（5x5x3、窓 3、柱あり）を step 103 で完成（実時間約 6 分、Jev 約 100 回）。その後 199 step まで実行して停止した
+- 夜は家の中でドアを閉めたまま過ごし（time 11342〜23407 を毎分確認）、死亡なし
+- 見つかった問題:
+  1. **窓が穴**: `HouseBlueprint.blocks()` は窓の位置（目の高さ）を空けるだけ。夜に家の中で 4 回被弾した（step 145/167/173/178）。直後に窓のすぐ外にゾンビ・スケルトンがいた。ただし被弾ログの「(X nearby)」は最寄りの敵の名前で、攻撃者ではない（`index.mjs` の `onHurt`）ので断定はしていない
+  2. **昼に閉じ込められる**: 朝になってもドアから 8m 以内にスケルトンがいて、候補が「wait inside」だけになった。step 176〜198（time 75〜5015）の間ずっと待ち、ゴール（木の剣 → 原木 3 → 原木 1）を変えても外に出られなかった。家の中から撃退する候補も、別の出口もない
+  3. 昼でも wait が候補にあり Jev が 9 回続けて待った → `2443242` で修正（実行中のブリッジには未反映）
+  4. through_night の remaining が 1 のままで停滞と判定された。Gemini は「朝まで残り約 1 分」と誤読した → `2443242` で修正（未反映）
+- 介入（自律実行では使わない）: `time set 13000` ×2、テスト用の作業台とベッドの撤去、白いベッドの付与、`data/state.json` を `data/state.m1-house.json` に退避、`spreadplayers 400 -300`、clear・回復・満腹・`time set 1000`
 
 ### F スパイク: 根源的な行動を Jev に選ばせる (2026-09-25)
 
@@ -404,7 +422,9 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 街作りロードマップの続き（09）
 
-- **F を最優先（2026-09-25 決定）**: 行動を毎回手書きで足すのをやめ、根源的な行動（掘る・置く・クラフト・攻撃・使う…）の組み合わせで実現する。設計は `docs/design/11_primitive_actions.md`（ユーザーの承認待ち）。スクショ（vision）と M3 はその後
+- **F の残り（要相談）**: 窓の穴の塞ぎ方（板で埋める / ガラス対応 / 窓際を避ける）、昼に家から出られない問題（撃退の候補、しきい値）、被弾ログに実際の攻撃者を出す。修正後にブリッジを再起動して再検証
+- F: Jev と規則（`tools/goal-drive.mjs`）の実機比較、Noul による続行・切り替え判断のスパイク、設計書 06 §10 に検証結果を反映
+- スクショ（vision）と M3 は F の後
 - M2（Twitch）: ユーザーのアプリ登録と `pass insert TWITCH_CLIENT_ID` 待ち
 - スクショを Gemini に見せる（ミラーのクライアントのウィンドウ、後で OBS に差し替え可能に）
 - 設計書 06 を M1 に合わせて更新
@@ -518,6 +538,9 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-25 (F の実装と自律実行 frun1)
+- F を実装し、Gemini + Jev で家の建築から一晩越しまで自律実行した。窓の穴からの被弾と、朝に日陰のスケルトンで家に閉じ込められる問題が見つかった。以前 M1 で「夜を安全に越えた」としたのは、窓の横に敵が来なかっただけだった
 
 ### 2026-09-25 (M1 のベッドと、根源的な行動への方針転換)
 - ベッドの設置と就寝を実機で確認し、就寝の成功判定を時刻で確かめるようにした
