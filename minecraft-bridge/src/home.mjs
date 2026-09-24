@@ -1,7 +1,7 @@
-// The home (a finished house) and persistence of the build plan and the home.
+// The home (a finished house) and persistence of the build plan, the home and the goal.
 //
-// Both live in memory otherwise, and the bridge restarts often: data/state.json keeps them so a
-// restart neither forgets the house nor the build in progress.
+// They live in memory otherwise, and the bridge restarts often: data/state.json keeps them so a
+// restart forgets neither the house, the build in progress nor what the bot is doing.
 //
 // Mineflayer-pathfinder does not handle doors (canOpenDoors is off: it misbehaves), so entering
 // and leaving are done explicitly: walk to the cell in front of the door, open it, walk through,
@@ -37,7 +37,8 @@ export function saveState (state) {
       min: plain(state.home.min),
       max: plain(state.home.max),
       bed: state.home.bed ? plain(state.home.bed) : null
-    }
+    },
+    goal: state.goal
   }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true })
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 1))
@@ -51,6 +52,7 @@ export function loadState (state) {
     const h = data.home
     state.home = { door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null }
   }
+  if (data.goal) state.goal = data.goal
 }
 
 // The finished plan becomes the home: the door's lower half, the cells just inside and outside it,
@@ -145,6 +147,20 @@ export function dangerOutside (bot, home) {
 }
 
 const inHome = (home, p) => p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z
+
+// Part of the home, or of the planned house (grown by `margin`): never dug, nothing placed there.
+// Both are checked: a new plan must not leave the finished home unprotected.
+const HOME_HEIGHT = 5 // walls up to 4 and the roof
+export function inHouse (state, p, margin = 0) {
+  const h = state.home
+  if (h && p.x >= h.min.x - 1 - margin && p.x <= h.max.x + 1 + margin && p.z >= h.min.z - 1 - margin &&
+      p.z <= h.max.z + 1 + margin && p.y >= h.min.y - 1 && p.y <= h.min.y + HOME_HEIGHT) return true
+  const o = state.plan?.origin
+  if (!o) return false
+  const { width, depth, height } = state.plan.size
+  return p.x >= o.x - margin && p.x < o.x + width + margin && p.z >= o.z - margin && p.z < o.z + depth + margin &&
+    p.y >= o.y - 1 && p.y <= o.y + height
+}
 
 // A bed goes straight in from the door: foot one cell past the inside cell, head one further
 export function bedSpot (bot, home) {

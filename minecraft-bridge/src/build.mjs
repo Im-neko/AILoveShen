@@ -1,4 +1,4 @@
-// Build plan execution: pick a flat site, place a block list in order, verify it in the world.
+// Build plan: pick a flat site, place its blocks one at a time in order, verify them in the world.
 //
 // The plan is a list of blocks relative to the site origin (min corner of the footprint at
 // ground level, i.e. the first air layer). Geometry (walls, roof, door) is decided on the
@@ -15,7 +15,6 @@ const SITE_SEARCH_RADIUS = 24
 const SITE_SEARCH_DY = 4
 const SITE_RETRY_DISTANCE = 16 // after a failed search, search again only this far from there
 const PLACE_RANGE = 4
-const BLOCKS_PER_STEP = 8
 const PLACE_INTERVAL_MS = 200
 const UNSUITABLE_GROUND = /(_leaves|_log|_planks|_door|water|lava|ice|snow$|sand$|gravel$)/
 
@@ -128,7 +127,7 @@ function findItem (bot, kind) {
 
 let lastPlaceAt = 0
 
-async function placeOne (bot, plan, b) {
+export async function placeOne (bot, plan, b) {
   const pos = plan.worldPos(b)
   const current = bot.blockAt(pos)
   if (current && current.name !== 'air' && current.name !== 'cave_air') {
@@ -169,36 +168,4 @@ async function placeOne (bot, plan, b) {
   } finally {
     lastPlaceAt = Date.now()
   }
-}
-
-// Places up to BLOCKS_PER_STEP pending blocks. Returns a short human-readable result.
-export async function buildStep (bot, plan, signal) {
-  if (!plan.origin) {
-    const origin = findSite(bot, plan.size)
-    if (!origin) {
-      plan.siteSearchFailedAt = bot.entity.position.clone()
-      throw new Error(`no flat ${plan.size.width}x${plan.size.depth} site within ${SITE_SEARCH_RADIUS}m; explore elsewhere`)
-    }
-    plan.origin = origin
-  }
-  let placed = 0
-  for (const b of plan.pending(bot)) {
-    if (placed >= BLOCKS_PER_STEP) break
-    signal.throwIfAborted()
-    if (!findItem(bot, b.block)) {
-      if (placed === 0) throw new Error(`out of ${b.block}`)
-      break
-    }
-    await placeOne(bot, plan, b)
-    placed++
-  }
-  const s = plan.status(bot)
-  return `placed ${placed} blocks (${s.placed}/${s.total})`
-}
-
-// The next block can be placed now: material in hand, and a site chosen or worth searching for here
-export function canBuildNow (bot, plan) {
-  if (!plan.origin && !plan.canSearchSite(bot)) return false
-  const next = plan.pending(bot)[0]
-  return !!next && !!findItem(bot, next.block)
 }

@@ -7,7 +7,7 @@
 // result goes into the action history so the decision makers see what happened.
 
 import { round } from './observe.mjs'
-import { reachableThreats, bestWeapon, fight, flee } from './actions.mjs'
+import { reachableThreats, bestWeapon, fight, flee } from './primitives.mjs'
 
 const REFLEX_RADIUS = 5
 const CREEPER_RADIUS = 7 // flee before it starts to swell

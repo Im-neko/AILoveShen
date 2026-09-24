@@ -1,9 +1,9 @@
-// Reproduce flee_hostile with a separate bot: summon a zombie next to it and trace distance and
+// Reproduce fleeing with a separate bot: summon a zombie next to it and trace distance and
 // pathfinder status. Uses RCON through docker (the dev server container).
 import { execFileSync } from 'node:child_process'
 import mineflayer from 'mineflayer'
 import pathfinderPkg from 'mineflayer-pathfinder'
-import { configureMovements, EXECUTORS } from '../src/actions.mjs'
+import { configureMovements, flee } from '../src/primitives.mjs'
 import { round } from '../src/observe.mjs'
 
 const rcon = (cmd) => execFileSync('docker', ['exec', 'ailoveshen-minecraft', 'rcon-cli', cmd]).toString().trim()
@@ -27,7 +27,7 @@ bot.once('spawn', async () => {
   }, 500)
   const signal = new AbortController().signal
   try {
-    console.log('flee:', await EXECUTORS.flee_hostile(bot, state, signal))
+    console.log('flee:', await flee(bot, z, signal))
   } catch (e) { console.log('flee failed:', e.message) }
   clearInterval(trace)
   rcon('kill @e[type=minecraft:zombie,tag=probe]')

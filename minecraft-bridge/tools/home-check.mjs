@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import mineflayer from 'mineflayer'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
-import { configureMovements } from '../src/actions.mjs'
+import { configureMovements } from '../src/primitives.mjs'
 import { enterHome, leaveHome, isInside, isDoorOpen } from '../src/home.mjs'
 
 const { Vec3 } = vec3Pkg
