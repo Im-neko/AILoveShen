@@ -55,7 +55,11 @@ Gemini 3.8 Flash（google-genai SDK）で、実況と視聴者コメントへの
 
 **確認済み / 未確認**:
 - 確認済み: ユニットテスト、`demo_phase3.py`、無効なキーでの実リクエスト（400 → `TextGenerationError`、即時失敗、レート制限の間隔）
+- 確認済み: 模擬サーバーで実際のリクエスト本文を確認した（`systemInstruction`、`maxOutputTokens`、`thinkingConfig` あり。`temperature`/`topP`/`topK`/`tools` なし）。SDK は `thinkingConfig` の中を `thinking_level` と snake_case で送っている
 - 未確認: 実キーでの生成、`max_output_tokens` と `main_thinking_level=medium` の妥当性（遅延・思考トークン量）、`--speak` での TTS 連携
+
+**Commit**: `2727c02` - feat: implement Phase 3 minimal LLM conversation with Gemini 3.8 Flash (#2)
+**PR**: #16（base: #15）
 
 ---
 
@@ -96,7 +100,8 @@ Phase 3 の最小版を動かしたあとに、実際に困った点が Flue で
 **Files Changed**: `src/ailoveshen/**`, `tests/unit/**`, `examples/demo_phase{1,2}.py`, `examples/integration_test_tts.py`,
 `CLAUDE.md`, `docs/design/00〜07`（構成・import パス・Composition Root の場所）
 
-**PR**: #14 の上に積む
+**Commit**: `f57d37c` - refactor: move to layer-first Clean Architecture
+**PR**: #15（base: #14）
 
 ---
 
@@ -118,6 +123,9 @@ Phase 3 の最小版を動かしたあとに、実際に困った点が Flue で
 - 3.8 Flash では `temperature` / `top_p` / `top_k` が廃止され、`thinking_level`（low/medium/high）に置き換わった。`GeminiSettings.temperature` と設計書 03/04 のコード例がまだ残っている
 - 設計書のコード例は旧 SDK `google.generativeai` 前提。`google-genai`（`genai.Client`）への書き換えが必要
 - Flue（TypeScript のエージェントフレームワーク）の採用を検討 → 見送り（層別構成への移行の項を参照）
+
+**Commit**: `51e9176` - chore: switch Gemini models to gemini-3.8-flash
+**PR**: #14
 
 ### Phase 6 設計改訂: NitroGen → Jev + Mineflayer (2026-09-20)
 
@@ -372,7 +380,7 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 - Gemini を 3.8 Flash に統一した（PR #14）
 - AI 層に Flue を使うか検討し、見送った。Python + google-genai をポートの内側に実装する方針にした
 - 最上位を4層に分ける構成へ移行し、Style-Bert-VITS2 のスタイル名を adapter に閉じ込めた（PR #15）
-- Phase 3 最小版を実装した（このブランチ）。実キーがないため、実 API での確認は未実施
+- Phase 3 最小版を実装した（PR #16）。実キーがないため、実 API での確認は未実施
 - PR は #14 → #15 → Phase 3 の順に積んでいる。マージもこの順で行う
 
 ### 2026-09-20 (Phase 6 設計改訂)
