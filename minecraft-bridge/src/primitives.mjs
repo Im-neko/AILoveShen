@@ -10,7 +10,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, inHouse, exitThroughWall, repairWall } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorOpen, bedSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // survival block reach from the eyes
@@ -357,10 +357,14 @@ export const PRIMITIVES = {
     return `slept through the night; time ${tod}`
   },
   async exit_wall (bot, state, c, signal) {
-    await exitThroughWall(bot, state.home, c.spot, signal)
+    await digExit(bot, state.home, c.spot, signal)
+    // Pick up the dug blocks (to close the wall with) before going out: they also fall inside,
+    // and collected after stepping out, the bot walked back in for them and closed itself in.
+    await collectNearbyDrops(bot, state)
     signal.throwIfAborted()
-    await collectNearbyDrops(bot, state) // the dug blocks, to close the wall with
+    await stepOut(bot, c.spot)
     await repairWall(bot, state.home)
+    if (isInside(bot, state.home)) throw new Error('closed the wall again but is still inside')
     return `left the house through the ${c.target} and closed it behind`
   },
   async repair_wall (bot, state) {

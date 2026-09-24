@@ -206,11 +206,10 @@ export function exitSpots (bot, home, hostiles) {
   return out.sort((a, b) => b.distance - a.distance)
 }
 
-// Leaves through the wall at `spot` (from exitSpots). The dug blocks are recorded first, so a hole
-// left by an interruption is known and gets repaired (repairWall).
-export async function exitThroughWall (bot, home, spot, signal) {
-  const inward = spot.wall.minus(spot.step)
-  const inside = spot.wall.plus(inward)
+// Digs an exit through the wall at `spot` (from exitSpots), from inside. The dug blocks are recorded
+// first, so a hole left by an interruption is known and gets repaired (repairWall).
+export async function digExit (bot, home, spot, signal) {
+  const inside = spot.wall.plus(spot.wall.minus(spot.step))
   if (bot.entity.position.floored().xzDistanceTo(inside) > 0) {
     try {
       await bot.pathfinder.goto(new goals.GoalBlock(inside.x, inside.y, inside.z))
@@ -225,7 +224,10 @@ export async function exitThroughWall (bot, home, spot, signal) {
     home.breach.push({ x: p.x, y: p.y, z: p.z, block: block.name })
     await bot.dig(block, true)
   }
-  signal.throwIfAborted()
+}
+
+// Walks out through the dug exit
+export async function stepOut (bot, spot) {
   await walkInto(bot, spot.wall)
   await walkInto(bot, spot.step)
 }
