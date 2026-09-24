@@ -89,3 +89,4 @@ spikes/.venv-*/
 # Minecraft bridge (Node sidecar)
 minecraft-bridge/node_modules/
 minecraft-bridge/*.log
+minecraft-bridge/data/

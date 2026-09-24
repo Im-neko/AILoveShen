@@ -367,6 +367,8 @@ class GoalType(str, Enum):
     CRAFT = "craft"
     BUILD_SHELTER = "build_shelter"
     EXPLORE = "explore"
+    SURVIVE_NIGHT = "survive_night"
+    GET_FOOD = "get_food"
 
 
 # Bridge action ids that serve each goal. Survival actions are always allowed.
@@ -378,10 +380,13 @@ GOAL_ACTIONS: dict[GoalType, frozenset[str]] = {
             "craft_crafting_table",
             "place_crafting_table",
             "craft_door",
+            "craft_sword",
         }
     ),
     GoalType.BUILD_SHELTER: frozenset({"build_step"}),
     GoalType.EXPLORE: frozenset({"explore", "pickup_drop"}),
+    GoalType.SURVIVE_NIGHT: frozenset({"go_home", "stay_inside"}),
+    GoalType.GET_FOOD: frozenset({"hunt_animal"}),
 }
 SURVIVAL_ACTIONS: frozenset[str] = frozenset(
     {"attack_hostile", "flee_hostile", "equip_weapon", "eat"}
@@ -573,11 +578,13 @@ class MaterialNeeds:
     PLANKS_PER_LOG = 4
     PLANKS_PER_TABLE = 4
     PLANKS_PER_DOOR_CRAFT = 6
+    PLANKS_PER_SWORD = 4  # 2 planks + a stick (2 planks make 4 sticks)
 
     logs_short: int
     planks_short: int
     door_needed: bool
     table_needed: bool
+    sword_needed: bool = False
 
     @property
     def wood_ready(self) -> bool:
@@ -586,8 +593,8 @@ class MaterialNeeds:
 
     @property
     def crafted(self) -> bool:
-        """All planks and the door are crafted."""
-        return self.planks_short == 0 and not self.door_needed
+        """All planks, the door and the sword are crafted."""
+        return self.planks_short == 0 and not self.door_needed and not self.sword_needed
 
 
 @dataclass(frozen=True)
@@ -614,6 +621,15 @@ class GameObservation:
     food: int
     crafting_table_nearby: bool = False
     build: Optional[BuildStatus] = None
+    time_phase: str = "day"  # day / dusk / night / dawn
+    food_items: int = 0
+    has_home: bool = False
+    inside_home: bool = False
+    busy: bool = False  # the bridge is running an action or a reflex
+
+    def can(self, action_id: str) -> bool:
+        """Whether the action is executable right now."""
+        return any(a.action_id == action_id for a in self.actions)
 
     def count(self, suffix: str) -> int:
         """Total count of inventory items whose name ends with suffix (e.g. "_log")."""

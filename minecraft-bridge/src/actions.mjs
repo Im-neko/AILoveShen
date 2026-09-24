@@ -6,23 +6,36 @@
 
 import pathfinderPkg from 'mineflayer-pathfinder'
 import {
-  THREAT_RADIUS, DROP_RADIUS, round, isLog, isPlanks, inventoryCounts, countMatching, nearbyEntities, threats
+  THREAT_RADIUS, DROP_RADIUS, round, dayPhase, isLog, isPlanks, inventoryCounts, countMatching, nearbyEntities, threats, isHostile
 } from './observe.mjs'
 import { buildStep, canBuildNow } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
+import { isInside, shelteredFrom, enterHome, isDoorOpen, dangerOutside } from './home.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const ACTION_TIMEOUT_MS = 20000
+// Going home may mean walking back from far away; stays below the Python client's HTTP timeout (60s)
+export const ACTION_TIMEOUTS_MS = { go_home: 45000 }
 const LOG_SEARCH_RADIUS = 32
 const MAX_LOG_HEIGHT = 4 // blocks above the ground the bot can chop without climbing
 const TABLE_SEARCH_RADIUS = 32
 const FLEE_DISTANCE = 16
+const FIGHT_TIMEOUT_MS = 10000
+const FLEE_TIMEOUT_MS = 8000
+const ANIMAL_SEARCH_RADIUS = 32
+const FOOD_STOCK = 4 // hunting stops being offered with this many food items
+const STAY_INSIDE_TICKS = 200
+const HOSTILE_AVOID_RADIUS = 5
+const HOSTILE_STEP_COST = 20
+const HOSTILE_CACHE_MS = 1000
 const REACH = 4.5 // survival block reach from the eyes
 const LEAVES_STEP_COST = 10
 const EXPLORE_DISTANCE = 20
 const EXPLORE_ATTEMPTS = 3
 const EXPLORE_MIN_PROGRESS = 5
 
+// Rabbits are left out: they outrun the bot
+const FOOD_ANIMALS = new Set(['cow', 'pig', 'sheep', 'chicken', 'mooshroom'])
 const WEAPONS = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword',
   'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe']
 
@@ -39,6 +52,17 @@ export function configureMovements (bot, state) {
     const inside = p.x >= o.x && p.x < o.x + state.plan.size.width && p.z >= o.z && p.z < o.z + state.plan.size.depth
     return inside && p.y > o.y + 1 ? 101 : 0
   })
+  // Keep away from hostile mobs: paths through their surroundings cost more, so walking home
+  // detours around a creeper instead of running into it again right after fleeing.
+  let hostiles = []
+  let hostilesAt = 0
+  m.exclusionAreasStep.push((block) => {
+    if (Date.now() - hostilesAt > HOSTILE_CACHE_MS) {
+      hostiles = nearbyEntities(bot).filter(({ e, dist }) => dist <= THREAT_RADIUS * 2 && isHostile(bot, e)).map(({ e }) => e.position.clone())
+      hostilesAt = Date.now()
+    }
+    return hostiles.some((h) => h.distanceTo(block.position) <= HOSTILE_AVOID_RADIUS) ? HOSTILE_STEP_COST : 0
+  })
   // Stay out of tree tops: walking on leaves leads onto canopies that are hard to leave.
   m.exclusionAreasStep.push((block) => isLeaves(bot.blockAt(block.position.offset(0, -1, 0))?.name) ? LEAVES_STEP_COST : 0)
   // Leaves are the only blocks the bot may break while walking (like a player pushing through a
@@ -48,6 +72,87 @@ export function configureMovements (bot, state) {
   m.allow1by1towers = false
   bot.pathfinder.setMovements(m)
 }
+
+// Reach any spot at least `distance` from the entity, re-planning whenever it has moved a couple of
+// blocks. GoalInvert(GoalFollow(e, d)) looks equivalent but only re-plans after the entity moved d
+// blocks: the bot ran to a spot far from where the mob *was*, then stood still while it closed in.
+const REPLAN_MOVE = 2
+class GoalAwayFrom extends goals.Goal {
+  constructor (entity, distance) {
+    super()
+    this.entity = entity
+    this.distance = distance
+    this.from = entity.position.clone()
+  }
+
+  heuristic (node) {
+    return Math.max(0, this.distance - Math.hypot(node.x - this.from.x, node.z - this.from.z))
+  }
+
+  isEnd (node) {
+    return Math.hypot(node.x - this.from.x, node.z - this.from.z) >= this.distance
+  }
+
+  hasChanged () {
+    if (this.entity.position.distanceTo(this.from) < REPLAN_MOVE) return false
+    this.from = this.entity.position.clone()
+    return true
+  }
+
+  isValid () {
+    return this.entity.isValid !== false
+  }
+}
+
+// Threats that can reach the bot: none from outside while it is in the closed house
+export function reachableThreats (bot, state) {
+  return threats(bot).filter(({ e }) => !shelteredFrom(bot, state.home, e))
+}
+
+export const bestWeapon = (bot) => {
+  const inv = inventoryCounts(bot)
+  const name = WEAPONS.find((w) => inv[w])
+  return name ? bot.inventory.items().find((i) => i.name === name) : null
+}
+
+export async function fight (bot, target, signal) {
+  const start = Date.now()
+  try {
+    while (bot.entities[target.id] && Date.now() - start < FIGHT_TIMEOUT_MS && !signal.aborted) {
+      if (target.position.distanceTo(bot.entity.position) > 3) {
+        bot.pathfinder.setGoal(new goals.GoalFollow(target, 2), true)
+      } else {
+        await bot.lookAt(target.position.offset(0, target.height * 0.8, 0), true)
+        bot.attack(target)
+      }
+      await bot.waitForTicks(12)
+    }
+  } finally {
+    bot.pathfinder.setGoal(null)
+  }
+  return bot.entities[target.id] ? `${target.name} still alive` : `${target.name} gone (killed or despawned)`
+}
+
+export async function flee (bot, h, signal) {
+  bot.pathfinder.setGoal(new GoalAwayFrom(h, FLEE_DISTANCE + REPLAN_MOVE), true)
+  const start = Date.now()
+  try {
+    while (Date.now() - start < FLEE_TIMEOUT_MS && !signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < FLEE_DISTANCE) {
+      await bot.waitForTicks(5)
+    }
+  } finally {
+    bot.pathfinder.setGoal(null)
+  }
+  return `now ${round(h.position.distanceTo(bot.entity.position))}m from ${h.name}`
+}
+
+function nearestAnimal (bot) {
+  const me = bot.entity.position
+  return nearbyEntities(bot).find(({ e, dist }) => FOOD_ANIMALS.has(e.name) && dist <= ANIMAL_SEARCH_RADIUS && Math.abs(e.position.y - me.y) < 4)?.e ?? null
+}
+
+const foodCount = (bot) => bot.inventory.items().filter((i) => isFood(bot, i)).reduce((n, i) => n + i.count, 0)
+export const HOME_ACTIONS = new Set(['go_home', 'stay_inside'])
 
 const isFood = (bot, item) => !!bot.registry.foodsByName[item.name]
 const isLeaves = (name) => !!name?.endsWith('_leaves')
@@ -82,6 +187,13 @@ function nearestDrop (bot, state) {
     Math.abs(e.position.y - bot.entity.position.y) < 4 && !state.unreachableDrops.has(e.id))
 }
 
+// Planks beyond what the house plan still needs (the sword takes 2 planks + a stick from 2 planks)
+function spareForSword (bot, state) {
+  const needed = state.plan && !state.plan.status(bot).complete ? (state.plan.materialsNeeded(bot).planks ?? 0) : 0
+  const sticks = countMatching(bot, (n) => n === 'stick')
+  return countMatching(bot, isPlanks) - needed >= (sticks ? 2 : 4)
+}
+
 const plankNameFor = (logName) => logName.replace(/_log$/, '_planks')
 const doorNameFor = (plankName) => plankName.replace(/_planks$/, '_door')
 
@@ -107,14 +219,14 @@ async function goNear (bot, pos, range) {
 export function availableActions (bot, state) {
   const acts = []
   const inv = inventoryCounts(bot)
-  const t = threats(bot)
+  const t = reachableThreats(bot, state)
   if (t.length) {
     const h = t[0]
     acts.push({ id: 'attack_hostile', description: `Fight the nearest hostile mob (${h.e.name}) with the held item` })
     acts.push({ id: 'flee_hostile', description: `Run away from the nearest hostile mob (${h.e.name})` })
   }
-  const weapon = WEAPONS.find((w) => inv[w])
-  if (weapon && bot.heldItem?.name !== weapon) acts.push({ id: 'equip_weapon', description: `Hold ${weapon} in hand` })
+  const weapon = bestWeapon(bot)
+  if (weapon && bot.heldItem?.name !== weapon.name) acts.push({ id: 'equip_weapon', description: `Hold ${weapon.name} in hand` })
   if (bot.food < 20 && bot.inventory.items().some((i) => isFood(bot, i))) acts.push({ id: 'eat', description: 'Eat food from the inventory' })
   if (nearestDrop(bot, state)) acts.push({ id: 'pickup_drop', description: 'Pick up the nearest dropped item' })
   if (findLog(bot)) acts.push({ id: 'collect_log', description: 'Chop the nearest reachable tree log' })
@@ -136,6 +248,22 @@ export function availableActions (bot, state) {
   if (state.plan && !state.plan.status(bot).complete && canBuildNow(bot, state.plan)) {
     acts.push({ id: 'build_step', description: 'Place the next blocks of the house plan' })
   }
+  if (table && !weapon && spareForSword(bot, state) && book.recipesFor('stick').length) {
+    acts.push({ id: 'craft_sword', description: 'Craft a wooden sword at the crafting table' })
+  }
+  if (foodCount(bot) < FOOD_STOCK && nearestAnimal(bot)) {
+    acts.push({ id: 'hunt_animal', description: `Hunt the nearest ${nearestAnimal(bot).name} for food` })
+  }
+  const phase = dayPhase(bot.time.timeOfDay)
+  const inside = isInside(bot, state.home)
+  if (state.home && !inside && (phase === 'dusk' || phase === 'night')) {
+    acts.push({ id: 'go_home', description: 'Go into the house and close the door' })
+  }
+  const waiting = dangerOutside(bot, state.home)
+  if (inside && (phase !== 'day' || waiting.length)) {
+    const why = waiting.length ? `${waiting[0].e.name} waiting outside` : 'until morning'
+    acts.push({ id: 'stay_inside', description: `Wait inside the closed house (${why})` })
+  }
   acts.push({ id: 'explore', description: 'Walk about 20m in a random direction' })
   acts.push({ id: 'idle', description: 'Stay still and look around' })
   return acts
@@ -143,37 +271,19 @@ export function availableActions (bot, state) {
 
 export const EXECUTORS = {
   async attack_hostile (bot, state, signal) {
-    const target = threats(bot)[0]?.e
+    const target = reachableThreats(bot, state)[0]?.e
     if (!target) return 'no threat in range'
-    const start = Date.now()
-    while (bot.entities[target.id] && Date.now() - start < 10000 && !signal.aborted) {
-      if (target.position.distanceTo(bot.entity.position) > 3) {
-        bot.pathfinder.setGoal(new goals.GoalFollow(target, 2), true)
-      } else {
-        await bot.lookAt(target.position.offset(0, target.height * 0.8, 0), true)
-        bot.attack(target)
-      }
-      await bot.waitForTicks(12)
-    }
-    bot.pathfinder.setGoal(null)
-    return bot.entities[target.id] ? `${target.name} still alive` : `${target.name} gone (killed or despawned)`
+    return await fight(bot, target, signal)
   },
   async flee_hostile (bot, state, signal) {
-    const h = threats(bot)[0]?.e
+    const h = reachableThreats(bot, state)[0]?.e
     if (!h) return 'no threat in range'
-    bot.pathfinder.setGoal(new goals.GoalInvert(new goals.GoalFollow(h, FLEE_DISTANCE)), true)
-    const start = Date.now()
-    while (Date.now() - start < 8000 && !signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < FLEE_DISTANCE) {
-      await bot.waitForTicks(5)
-    }
-    bot.pathfinder.setGoal(null)
-    return `now ${round(h.position.distanceTo(bot.entity.position))}m from ${h.name}`
+    return await flee(bot, h, signal)
   },
   async equip_weapon (bot) {
-    const inv = inventoryCounts(bot)
-    const w = WEAPONS.find((n) => inv[n])
-    await bot.equip(bot.inventory.items().find((i) => i.name === w), 'hand')
-    return `holding ${w}`
+    const w = bestWeapon(bot)
+    await bot.equip(w, 'hand')
+    return `holding ${w.name}`
   },
   async eat (bot) {
     const food = bot.inventory.items().find((i) => isFood(bot, i))
@@ -263,6 +373,44 @@ export const EXECUTORS = {
     const doorName = doorNameFor(mostPlanks(bot)[0])
     const gained = await craftWithRecipeBook(bot, state.recipeBook, doorName, { table })
     return `crafted ${gained} ${doorName}`
+  },
+  async craft_sword (bot, state, signal) {
+    const table = findTable(bot)
+    if (countMatching(bot, (n) => n === 'stick') < 1) {
+      await craftWithRecipeBook(bot, state.recipeBook, 'stick')
+      // Holding a stick unlocks the sword recipe; the server sends it right after
+      for (let i = 0; i < 40 && !state.recipeBook.recipesFor('wooden_sword').length; i++) await bot.waitForTicks(1)
+    }
+    signal.throwIfAborted()
+    await goNear(bot, table.position, 3)
+    await craftWithRecipeBook(bot, state.recipeBook, 'wooden_sword', { table })
+    await bot.equip(bestWeapon(bot), 'hand')
+    return 'crafted and holding wooden_sword'
+  },
+  async hunt_animal (bot, state, signal) {
+    const animal = nearestAnimal(bot)
+    if (!animal) return 'no animal nearby'
+    const before = foodCount(bot)
+    const weapon = bestWeapon(bot)
+    if (weapon) await bot.equip(weapon, 'hand')
+    const result = await fight(bot, animal, signal)
+    await bot.waitForTicks(10)
+    const drop = nearestDrop(bot, state)
+    if (drop && drop.dist < 8) await goNear(bot, drop.e.position, 0.5).catch(() => {})
+    if (foodCount(bot) <= before) throw new Error(`no food gained (${result})`)
+    return `${result}; food items ${before} -> ${foodCount(bot)}`
+  },
+  async go_home (bot, state) {
+    await enterHome(bot, state.home)
+    return 'inside the house with the door closed'
+  },
+  async stay_inside (bot, state, signal) {
+    await enterHome(bot, state.home) // closes the door if it was left open
+    for (let i = 0; i < STAY_INSIDE_TICKS / 20 && !signal.aborted; i++) {
+      await bot.look(bot.entity.yaw + Math.PI / 4, 0)
+      await bot.waitForTicks(20)
+    }
+    return `waited inside (time ${bot.time.timeOfDay}, door ${isDoorOpen(bot, state.home) ? 'open' : 'closed'})`
   },
   async build_step (bot, state, signal) {
     return await buildStep(bot, state.plan, signal)

@@ -12,9 +12,12 @@ from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_clien
 )
 
 OBSERVE = {
-    "busy": False,
+    "busy": True,
     "observation": {
+        "time": {"phase": "dusk", "time_of_day": 12500},
         "self": {"health": 18.5, "food": 17},
+        "food_items": 3,
+        "home": {"inside": False, "door_open": False},
         "inventory": {"spruce_log": 3},
         "crafting_table_nearby": True,
         "build": {
@@ -54,6 +57,8 @@ class TestMineflayerBridgeClient:
         assert obs.build.placed == 10 and obs.build.site_chosen
         assert obs.build.remaining == {BlockKind.PLANKS: 61, BlockKind.DOOR: 1}
         assert obs.state is not None and obs.state["inventory"] == {"spruce_log": 3}
+        assert obs.time_phase == "dusk" and obs.food_items == 3 and obs.busy
+        assert obs.has_home and not obs.inside_home
 
     @pytest.mark.asyncio
     async def test_observe_without_plan(self):
@@ -63,6 +68,16 @@ class TestMineflayerBridgeClient:
         client = _client(lambda req: httpx.Response(200, json=data))
 
         assert (await client.observe()).build is None
+
+    @pytest.mark.asyncio
+    async def test_observe_without_home(self):
+        """Test a null home means no home yet."""
+        data = {**OBSERVE, "observation": {**OBSERVE["observation"], "home": None}}
+        client = _client(lambda req: httpx.Response(200, json=data))
+
+        obs = await client.observe()
+
+        assert not obs.has_home and not obs.inside_home
 
     @pytest.mark.asyncio
     async def test_act_posts_action_id(self):

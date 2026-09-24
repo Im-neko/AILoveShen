@@ -23,7 +23,6 @@ from ailoveshen.domain.events import (
 )
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import (
-    GOAL_ACTIONS,
     ActionDecision,
     CharacterProfile,
     GameObservation,
@@ -207,9 +206,12 @@ class AdvanceHouseProjectUseCase(IAdvanceHouseProject):
     """
     Use case: one step of the house project.
 
-    1. Observe the game
-    2. If a goal decision is due (none, met, stuck, too long), the LLM picks the
-       next goal from the goals that have an executable action right now
+    1. Observe the game. While the bridge is busy (its reflex is handling a
+       nearby threat) the step does nothing. Completing the house is announced
+       once; the project goes on afterwards (surviving the night, food, ...)
+    2. If a goal decision is due (none, met, stuck, too long, or the time of
+       day changed), the LLM picks the next goal from the goals that have an
+       executable action right now
     3. The action selector (Jev) picks one of the executable actions the goal
        allows (survival actions are always allowed); a single candidate is taken
        without a model call
@@ -246,10 +248,18 @@ class AdvanceHouseProjectUseCase(IAdvanceHouseProject):
     async def execute(self, project: HouseProject) -> HouseStepReport:
         """Take one step of the project."""
         obs = await self._bridge.observe()
-        if project.is_complete(obs):
+        complete = project.is_complete(obs)
+        if complete and not project.completion_announced:
+            project.completion_announced = True
             await self._event_publisher.publish(HouseCompletedEvent(name=project.blueprint.name))
+        if obs.busy:
             return HouseStepReport(
-                goal=project.goal, goal_changed=False, decision=None, result=None, complete=True
+                goal=project.goal,
+                goal_changed=False,
+                decision=None,
+                result=None,
+                complete=complete,
+                waiting=True,
             )
 
         goal_changed = False
@@ -266,7 +276,7 @@ class AdvanceHouseProjectUseCase(IAdvanceHouseProject):
             )
             project.block_goal()
             return HouseStepReport(
-                goal=goal, goal_changed=goal_changed, decision=None, result=None, complete=False
+                goal=goal, goal_changed=goal_changed, decision=None, result=None, complete=complete
             )
 
         if len(candidates) == 1:
@@ -286,12 +296,16 @@ class AdvanceHouseProjectUseCase(IAdvanceHouseProject):
             )
         )
         return HouseStepReport(
-            goal=goal, goal_changed=goal_changed, decision=decision, result=result, complete=False
+            goal=goal,
+            goal_changed=goal_changed,
+            decision=decision,
+            result=result,
+            complete=complete,
         )
 
     async def _decide_goal(self, project: HouseProject, obs: GameObservation) -> None:
         reason = project.goal_end_reason(obs)
-        available = self._available_goals(obs)
+        available = project.pursuable_goals(obs)
         prompt = self._prompt_builder.build_goal_prompt(
             blueprint=project.blueprint,
             needs=project.material_needs(obs),
@@ -299,6 +313,7 @@ class AdvanceHouseProjectUseCase(IAdvanceHouseProject):
             current_goal=project.goal,
             goal_ended_because=reason,
             recent_goals=tuple(self._recent_goals),
+            goals=available,
         )
         data = await self._text_generator.generate_json(prompt, _goal_schema(available))
         try:
@@ -310,15 +325,9 @@ class AdvanceHouseProjectUseCase(IAdvanceHouseProject):
                 f"LLM chose {goal.goal_type.value}, which has no executable action now"
             )
 
-        project.set_goal(goal)
+        project.set_goal(goal, obs.time_phase)
         self._recent_goals.append(goal)
         logger.info(f"Goal: {goal.goal_type.value} ({reason}) - {goal.reason}")
         await self._event_publisher.publish(
             GoalSetEvent(goal_type=goal.goal_type.value, reason=goal.reason)
         )
-
-    @staticmethod
-    def _available_goals(obs: GameObservation) -> list[GoalType]:
-        """Goals with at least one executable, goal-specific action right now."""
-        ids = {a.action_id for a in obs.actions}
-        return [g for g in GoalType if GOAL_ACTIONS[g] & ids]

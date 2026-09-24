@@ -1,5 +1,7 @@
 """Tests for GamePromptTemplateBuilder adapter."""
 
+from dataclasses import replace
+
 from ailoveshen.domain.value_objects import (
     AvailableAction,
     BuildStatus,
@@ -51,10 +53,16 @@ class TestGamePromptTemplateBuilder:
 
         assert "width must be 5-7" in prompt
 
-    def test_goal_prompt_lists_only_available_goals(self):
-        """Test goals without an executable action are not offered."""
+    def test_goal_prompt_lists_the_given_goals(self):
+        """Test only the goals passed in are offered."""
         prompt = GamePromptTemplateBuilder().build_goal_prompt(
-            BLUEPRINT, NEEDS, _obs(["collect_log", "idle"]), None, "no goal yet", ()
+            BLUEPRINT,
+            NEEDS,
+            _obs(["collect_log", "idle"]),
+            None,
+            "no goal yet",
+            (),
+            [GoalType.GATHER_WOOD],
         )
 
         assert "- gather_wood:" in prompt
@@ -71,11 +79,13 @@ class TestGamePromptTemplateBuilder:
             Goal(GoalType.CRAFT),
             "goal craft is met",
             (Goal(GoalType.GATHER_WOOD, reason="木がない"),),
+            [GoalType.BUILD_SHELTER],
         )
 
         assert "30/72" in prompt
         assert "原木があと 5 本" in prompt and "ドア" in prompt
-        assert "night" in prompt and "体力 12.0/20" in prompt and "見えている敵: 1 体" in prompt
+        assert "時間帯: 夜" in prompt and "体力 12.0/20" in prompt
+        assert "見えている敵: 1 体" in prompt
         assert "gather_wood: 木がない" in prompt
         assert "goal craft is met" in prompt
 
@@ -86,20 +96,44 @@ class TestGamePromptTemplateBuilder:
             {"action": "collect_log", "ok": True, "result": "chopped"},
             {"action": "build_step", "ok": False, "result": "failed: no flat 5x5 site"},
         ]
-        prompt = GamePromptTemplateBuilder().build_goal_prompt(BLUEPRINT, NEEDS, obs, None, "", ())
+        prompt = GamePromptTemplateBuilder().build_goal_prompt(
+            BLUEPRINT, NEEDS, obs, None, "", (), []
+        )
 
         assert "collect_log=成功 / build_step=失敗（failed: no flat 5x5 site）" in prompt
 
     def test_goal_prompt_tells_whether_a_log_is_reachable(self):
         """Test the LLM is told whether gathering wood can proceed here."""
         builder = GamePromptTemplateBuilder()
-        none = builder.build_goal_prompt(BLUEPRINT, NEEDS, _obs(["explore"]), None, "", ())
+        none = builder.build_goal_prompt(BLUEPRINT, NEEDS, _obs(["explore"]), None, "", (), [])
         obs = _obs(["collect_log"])
         obs.state["resources"] = {"nearest_reachable_log": {"block": "oak_log", "distance_m": 6.5}}
-        near = builder.build_goal_prompt(BLUEPRINT, NEEDS, obs, None, "", ())
+        near = builder.build_goal_prompt(BLUEPRINT, NEEDS, obs, None, "", (), [])
 
         assert "近くに切れる木: なし" in none
         assert "近くに切れる木: あり（6.5m 先）" in near
+
+    def test_goal_prompt_tells_time_left_and_home(self):
+        """Test the LLM sees how long until dusk and whether a home exists."""
+        obs = _obs(["collect_log"])
+        obs.state["time"] = {"phase": "day", "time_of_day": 6000}
+        prompt = GamePromptTemplateBuilder().build_goal_prompt(
+            BLUEPRINT, NEEDS, obs, None, "", (), []
+        )
+
+        assert "時間帯: 昼（日暮れまで約 5 分）" in prompt
+        assert "家: まだない" in prompt
+
+    def test_goal_prompt_at_night_counts_to_morning(self):
+        """Test at night the time until morning is shown."""
+        obs = replace(_obs(["stay_inside"]), has_home=True, inside_home=True)
+        obs.state["time"] = {"phase": "night", "time_of_day": 18000}
+        prompt = GamePromptTemplateBuilder().build_goal_prompt(
+            BLUEPRINT, NEEDS, obs, None, "", (), []
+        )
+
+        assert "時間帯: 夜（朝まで約 5 分）" in prompt
+        assert "家: 家の中にいる" in prompt
 
     def test_action_instructions_name_the_goal(self):
         """Test the selector instructions carry the goal and house."""

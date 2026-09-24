@@ -8,7 +8,6 @@ from string import Template
 
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.domain.value_objects import (
-    GOAL_ACTIONS,
     CharacterProfile,
     GameObservation,
     Goal,
@@ -41,8 +40,10 @@ $previous_error
 """)
 
 GOAL_TEMPLATE = Template("""\
-あなたは Minecraft で家を建てているAIエージェントの方針を決めます。
+あなたは Minecraft のサバイバルで家を建てて暮らすAIエージェントの方針を決めます。
 細かい操作は別の高速なモデルが担当するので、あなたは「今どのゴールに取り組むか」だけを選びます。
+夜は敵が湧いて危険です。日が暮れる前に家を用意し、夜は家にこもるのが安全です。
+近くの敵への対処（逃げる・戦う）は自動で行われるので、ゴールとして選ぶ必要はありません。
 
 ## 建てる家
 $blueprint
@@ -74,6 +75,8 @@ GOAL_DESCRIPTIONS: dict[GoalType, str] = {
     GoalType.CRAFT: "原木を板材にし、作業台とドアを作る",
     GoalType.BUILD_SHELTER: "設計図どおりにブロックを置く（手元の材料の分だけ進む）",
     GoalType.EXPLORE: "周辺を歩き回って、木や平らな建設地を探す",
+    GoalType.SURVIVE_NIGHT: "家に入ってドアを閉め、朝まで中で過ごす",
+    GoalType.GET_FOOD: "動物を狩って食料を確保する",
 }
 
 ACTION_INSTRUCTIONS = Template("""\
@@ -87,6 +90,8 @@ GOAL_DESCRIPTIONS_EN: dict[GoalType, str] = {
     GoalType.CRAFT: "turn logs into planks and craft a crafting table and a door",
     GoalType.BUILD_SHELTER: "place the house blocks",
     GoalType.EXPLORE: "look around for trees and flat land",
+    GoalType.SURVIVE_NIGHT: "get into the house, close the door and stay inside until morning",
+    GoalType.GET_FOOD: "hunt animals for food",
 }
 
 
@@ -127,12 +132,9 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         current_goal: Goal | None,
         goal_ended_because: str,
         recent_goals: Sequence[Goal],
+        goals: Sequence[GoalType],
     ) -> str:
-        """Build the prompt asking the LLM to choose the next goal."""
-        available = {a.action_id for a in observation.actions}
-        goals = "\n".join(
-            f"- {g.value}: {GOAL_DESCRIPTIONS[g]}" for g in GoalType if GOAL_ACTIONS[g] & available
-        )
+        """Build the prompt asking the LLM to choose the next goal among `goals`."""
         return GOAL_TEMPLATE.substitute(
             blueprint=_format_blueprint(blueprint),
             build=_format_build(observation),
@@ -141,7 +143,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             recent_goals="\n".join(f"- {g.goal_type.value}: {g.reason}" for g in recent_goals)
             or "なし",
             reason=goal_ended_because or "なし",
-            goals=goals,
+            goals="\n".join(f"- {g.value}: {GOAL_DESCRIPTIONS[g]}" for g in goals),
         )
 
     def build_action_instructions(self, goal: Goal, blueprint: HouseBlueprint) -> str:
@@ -181,9 +183,34 @@ def _format_needs(n: MaterialNeeds) -> str:
     ]
     if n.door_needed:
         lines.append("- ドア（板材6枚と作業台が必要）")
+    if n.sword_needed:
+        lines.append("- 木の剣（板材4枚と作業台。敵と戦うのに必要）")
     if n.table_needed:
         lines.append("- 作業台（板材4枚）")
     return "\n".join(lines)
+
+
+TICKS_PER_MINUTE = 20 * 60
+DUSK_TICK = 12000
+MORNING_TICK = 24000
+PHASE_NAMES = {"day": "昼", "dusk": "夕方", "night": "夜", "dawn": "明け方"}
+
+
+def _format_time(time: dict) -> str:
+    phase = time.get("phase", "")
+    name = PHASE_NAMES.get(phase, "不明")
+    tick = time.get("time_of_day")
+    if tick is None:
+        return name
+    if phase == "day":
+        return f"{name}（日暮れまで約 {(DUSK_TICK - tick) / TICKS_PER_MINUTE:.0f} 分）"
+    return f"{name}（朝まで約 {(MORNING_TICK - tick) / TICKS_PER_MINUTE:.0f} 分）"
+
+
+def _format_home(obs: GameObservation) -> str:
+    if not obs.has_home:
+        return "まだない（夜までに建てる必要がある）"
+    return "家の中にいる" if obs.inside_home else "完成している（外にいる）"
 
 
 def _format_log(state: dict) -> str:
@@ -195,7 +222,9 @@ def _format_situation(obs: GameObservation) -> str:
     s = obs.state
     threats = [m for m in s.get("mobs", []) if m.get("hostile") and m.get("visible")]
     lines = [
-        f"- 時間帯: {s.get('time', {}).get('phase', '不明')}",
+        f"- 時間帯: {_format_time(s.get('time', {}))}",
+        f"- 家: {_format_home(obs)}",
+        f"- 食料: {obs.food_items} 個",
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
         f"- 持ち物: {json.dumps(obs.inventory, ensure_ascii=False)}",
         f"- 見えている敵: {len(threats)} 体",

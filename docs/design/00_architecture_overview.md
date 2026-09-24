@@ -17,9 +17,11 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 │   【サブループ】コメント対応（割り込み）                                │
 │   Twitch Chat → Filter(3.8 Flash) → Gemini 3.8 Flash → Response → TTS  │
 │                                                                         │
-│   【三層連携】LLM → Jev → Minecraft Bridge                             │
-│   - Goal Decision: LLMが方向性（Goal）を決めてJevへリクエスト            │
-│   - Reactive/Tactical Decision: Jevが型付き高速判断でゲーム操作を選択    │
+│   【三層連携】Gemini（方針）→ Jev（遂行）→ ゲームアダプタ（反射・実行） │
+│   - Gemini: 中長期の目標・方針、短期目標と達成条件（イベント時・数分）   │
+│   - Jev: 短期目標の中の行動選択と進み具合の判定（数秒ごと）              │
+│   - 反射: 近くの敵などへの即応をゲーム側のコードで（0.2秒ごと）          │
+│   詳細: 10_agent_lifecycle.md                                           │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -341,10 +343,16 @@ def create_tts_service(config: dict, event_publisher: IEventPublisher) -> TTSSer
 - **Presentation**: MCPService
 
 ### Phase 6: Jev + Minecraft Bridge Integration (Issue #4)
-- **Domain**: GameAction/GameEvent/Goal/JevDecision Value Objects, EventDetectionService, GoalOverridePolicy
-- **Application**: IGetGameState/IDecideGoal/IRunReactiveLoop/IRunTacticalLoop Input Ports, IMinecraftBridge/IJevDecisionEngine Output Ports
-- **Infrastructure**: MineflayerBridgeAdapter (Node.jsサイドカー経由), JevClientAdapter (typesafe-sdk)
-- **Presentation**: GameService（Reactive Loop 600ms / Tactical Loop 10s を統括）
+- 最小版は実装済み（自律で家を建てる）。構成は `06_phase6_jev_integration.md`、以降の計画は `09_town_building_roadmap.md`
+- **Domain**: GoalType/Goal, HouseBlueprint, GameObservation, HouseProject
+- **Application**: Start/AdvanceHouseProjectUseCase, IMinecraftBridge/IActionSelector/IGamePromptBuilder Output Ports
+- **Infrastructure**: MineflayerBridgeClient（Node.js サイドカー `minecraft-bridge/`）, JevActionSelector (typesafe-sdk)
+- **Presentation**: GameService
+
+### 横断: エージェントのライフサイクル
+- Gemini（方針）/ Jev（遂行）/ 反射（コード）の分担と、短期目標の発行・検証・終了・再計画の流れ
+- ゲームによらない枠組み。最初の適用先は Minecraft（`09_town_building_roadmap.md` の F）
+- 設計: `10_agent_lifecycle.md`
 
 ### Phase 7: OBS Integration (Issue #6)
 - **Domain**: Scene/Source Value Objects
@@ -371,3 +379,5 @@ def create_tts_service(config: dict, event_publisher: IEventPublisher) -> TTSSer
 | [06_phase6_jev_integration.md](./06_phase6_jev_integration.md) | Jev + Minecraft Bridge Integration詳細設計 |
 | [07_phase7_obs_integration.md](./07_phase7_obs_integration.md) | OBS Integration詳細設計 |
 | [08_phase8_orchestration.md](./08_phase8_orchestration.md) | Orchestration詳細設計 |
+| [09_town_building_roadmap.md](./09_town_building_roadmap.md) | Minecraft 街づくりロードマップ（M1〜M6） |
+| [10_agent_lifecycle.md](./10_agent_lifecycle.md) | エージェントのライフサイクル（Gemini / Jev / 反射の分担） |

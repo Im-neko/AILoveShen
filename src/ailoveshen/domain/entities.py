@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from ailoveshen.domain.value_objects import (
+    GOAL_ACTIONS,
     ActionResult,
     BlockKind,
     ConversationMessage,
@@ -170,13 +171,21 @@ class HouseProject(Entity):
     max_steps_per_goal: int = 15
     max_consecutive_failures: int = 3
     explore_steps: int = 3
+    food_stock: int = 4
     goal: Optional[Goal] = field(default=None, init=False)
+    goal_phase: str = field(default="", init=False)
     steps_in_goal: int = field(default=0, init=False)
     consecutive_failures: int = field(default=0, init=False)
+    completion_announced: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
         """Validate limits."""
-        for label in ("max_steps_per_goal", "max_consecutive_failures", "explore_steps"):
+        for label in (
+            "max_steps_per_goal",
+            "max_consecutive_failures",
+            "explore_steps",
+            "food_stock",
+        ):
             if getattr(self, label) <= 0:
                 raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
 
@@ -186,8 +195,9 @@ class HouseProject(Entity):
         planks_blocks = remaining.get(BlockKind.PLANKS, 0)
         log_blocks = remaining.get(BlockKind.LOG, 0)
         door_needed = remaining.get(BlockKind.DOOR, 0) > 0 and obs.count("_door") == 0
+        sword_needed = obs.count("_sword") == 0
         table_needed = (
-            door_needed
+            (door_needed or sword_needed)
             and not obs.crafting_table_nearby
             and obs.inventory.get("crafting_table", 0) == 0
         )
@@ -195,6 +205,8 @@ class HouseProject(Entity):
         planks_total = planks_blocks
         if door_needed:
             planks_total += MaterialNeeds.PLANKS_PER_DOOR_CRAFT
+        if sword_needed:
+            planks_total += MaterialNeeds.PLANKS_PER_SWORD
         if table_needed:
             planks_total += MaterialNeeds.PLANKS_PER_TABLE
         planks_short = max(0, planks_total - obs.count("_planks"))
@@ -204,6 +216,7 @@ class HouseProject(Entity):
             planks_short=planks_short,
             door_needed=door_needed,
             table_needed=table_needed,
+            sword_needed=sword_needed,
         )
 
     def is_complete(self, obs: GameObservation) -> bool:
@@ -214,14 +227,39 @@ class HouseProject(Entity):
         """Whether the current goal's purpose is fulfilled."""
         if self.goal is None:
             return False
+        if self.goal.goal_type == GoalType.EXPLORE:
+            return self.steps_in_goal >= self.explore_steps
+        return self.is_met(self.goal.goal_type, obs)
+
+    def is_met(self, goal_type: GoalType, obs: GameObservation) -> bool:
+        """Whether a goal's purpose is already fulfilled (exploring never is)."""
         needs = self.material_needs(obs)
-        if self.goal.goal_type == GoalType.GATHER_WOOD:
+        if goal_type == GoalType.GATHER_WOOD:
             return needs.wood_ready
-        if self.goal.goal_type == GoalType.CRAFT:
+        if goal_type == GoalType.CRAFT:
             return needs.crafted
-        if self.goal.goal_type == GoalType.BUILD_SHELTER:
+        if goal_type == GoalType.BUILD_SHELTER:
             return self.is_complete(obs)
-        return self.steps_in_goal >= self.explore_steps
+        if goal_type == GoalType.SURVIVE_NIGHT:
+            # Morning, and nothing waits at the door (the bridge offers stay_inside then)
+            return obs.time_phase == "day" and not obs.can("stay_inside")
+        if goal_type == GoalType.GET_FOOD:
+            return obs.food_items >= self.food_stock
+        return False
+
+    def pursuable_goals(self, obs: GameObservation) -> list[GoalType]:
+        """
+        Goals worth offering: not fulfilled yet, with an executable goal action.
+
+        A fulfilled goal would end right after being chosen, and the LLM would
+        be asked again at every step.
+        """
+        ids = {a.action_id for a in obs.actions}
+        return [g for g in GoalType if GOAL_ACTIONS[g] & ids and not self.is_met(g, obs)]
+
+    def phase_changed(self, obs: GameObservation) -> bool:
+        """The time of day moved on (e.g. dusk began) since the goal was set."""
+        return self.goal is not None and obs.time_phase != self.goal_phase
 
     def needs_new_goal(self, obs: GameObservation) -> bool:
         """A goal decision is due: none yet, met, stuck, or pursued too long."""
@@ -230,11 +268,13 @@ class HouseProject(Entity):
             or self.goal_met(obs)
             or self.consecutive_failures >= self.max_consecutive_failures
             or self.steps_in_goal >= self.max_steps_per_goal
+            or self.phase_changed(obs)
         )
 
-    def set_goal(self, goal: Goal) -> None:
-        """Start pursuing a new goal."""
+    def set_goal(self, goal: Goal, time_phase: str) -> None:
+        """Start pursuing a new goal at the given time of day."""
         self.goal = goal
+        self.goal_phase = time_phase
         self.steps_in_goal = 0
         self.consecutive_failures = 0
         self.updated_at = _utc_now()
@@ -257,6 +297,8 @@ class HouseProject(Entity):
             )
         if self.steps_in_goal >= self.max_steps_per_goal:
             return f"goal {self.goal.goal_type.value} ran for {self.steps_in_goal} steps"
+        if self.phase_changed(obs):
+            return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
         return ""
 
     def record(self, result: ActionResult) -> None:

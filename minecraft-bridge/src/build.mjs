@@ -5,9 +5,11 @@
 // Python side; this module only places what it is given, in the given order.
 
 import pathfinderPkg from 'mineflayer-pathfinder'
+import vec3Pkg from 'vec3'
 import { isLog, isPlanks } from './observe.mjs'
 
 const { goals } = pathfinderPkg
+const { Vec3 } = vec3Pkg
 
 const SITE_SEARCH_RADIUS = 24
 const SITE_SEARCH_DY = 4
@@ -41,6 +43,16 @@ export class BuildPlan {
   // False while the bot is still near where a site search already failed
   canSearchSite (bot) {
     return !this.siteSearchFailedAt || this.siteSearchFailedAt.distanceTo(bot.entity.position) >= SITE_RETRY_DISTANCE
+  }
+
+  toJSON () {
+    return { blocks: this.blocks, ...this.size, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
+  }
+
+  static fromJSON (data) {
+    const plan = new BuildPlan(data)
+    if (data.origin) plan.origin = new Vec3(data.origin.x, data.origin.y, data.origin.z)
+    return plan
   }
 
   worldPos (b) {

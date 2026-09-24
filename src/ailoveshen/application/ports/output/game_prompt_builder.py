@@ -9,6 +9,7 @@ from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GameObservation,
     Goal,
+    GoalType,
     HouseBlueprint,
     MaterialNeeds,
 )
@@ -44,8 +45,9 @@ class IGamePromptBuilder(ABC):
         current_goal: Goal | None,
         goal_ended_because: str,
         recent_goals: Sequence[Goal],
+        goals: Sequence[GoalType],
     ) -> str:
-        """Build the prompt asking the LLM to choose the next goal."""
+        """Build the prompt asking the LLM to choose the next goal among `goals`."""
         ...
 
     @abstractmethod

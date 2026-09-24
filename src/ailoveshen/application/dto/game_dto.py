@@ -17,3 +17,4 @@ class HouseStepReport:
     decision: Optional[ActionDecision]
     result: Optional[ActionResult]
     complete: bool
+    waiting: bool = False  # nothing done: the bridge was busy (reflex)

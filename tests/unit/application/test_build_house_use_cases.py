@@ -1,5 +1,6 @@
 """Tests for StartHouseProjectUseCase and AdvanceHouseProjectUseCase."""
 
+from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -212,7 +213,7 @@ class TestAdvanceHouseProject:
         """Test the selector only sees actions the goal allows."""
         bridge.observe.return_value = _obs(("collect_log", "explore", "idle", "flee_hostile"))
         project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.GATHER_WOOD))
+        project.set_goal(Goal(GoalType.GATHER_WOOD), "day")
 
         report = await use_case.execute(project)
 
@@ -225,7 +226,7 @@ class TestAdvanceHouseProject:
         """Test a lone candidate is taken without a model call."""
         bridge.observe.return_value = _obs(("build_step", "idle"))
         project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.BUILD_SHELTER))
+        project.set_goal(Goal(GoalType.BUILD_SHELTER), "day")
 
         report = await use_case.execute(project)
 
@@ -238,7 +239,7 @@ class TestAdvanceHouseProject:
         """Test a goal with nothing executable is marked stuck without acting."""
         bridge.observe.return_value = _obs(("explore", "idle"))
         project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.CRAFT))
+        project.set_goal(Goal(GoalType.CRAFT), "day")
 
         report = await use_case.execute(project)
 
@@ -247,12 +248,28 @@ class TestAdvanceHouseProject:
         assert project.needs_new_goal(_obs())
 
     @pytest.mark.asyncio
-    async def test_complete_house_stops(self, use_case, bridge, events):
-        """Test a complete build reports completion and publishes the event."""
-        bridge.observe.return_value = _obs(complete=True)
+    async def test_completion_is_announced_once_and_play_goes_on(
+        self, use_case, text_generator, bridge, events
+    ):
+        """Test completion publishes one event and the project keeps taking steps."""
+        text_generator.generate_json.return_value = {"goal": "explore", "reason": ""}
+        bridge.observe.return_value = _obs(("explore",), complete=True)
+        project = HouseProject(blueprint=_blueprint())
+
+        first = await use_case.execute(project)
+        await use_case.execute(project)
+
+        assert first.complete
+        assert len(_published(events, HouseCompletedEvent)) == 1
+        assert bridge.act.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_busy_bridge_skips_the_step(self, use_case, text_generator, bridge):
+        """Test nothing is decided or run while the bridge's reflex is busy."""
+        bridge.observe.return_value = replace(_obs(), busy=True)
 
         report = await use_case.execute(HouseProject(blueprint=_blueprint()))
 
-        assert report.complete
+        assert report.waiting
+        text_generator.generate_json.assert_not_called()
         bridge.act.assert_not_called()
-        assert _published(events, HouseCompletedEvent)[0].name == "小屋"

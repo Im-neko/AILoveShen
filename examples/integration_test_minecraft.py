@@ -56,7 +56,7 @@ async def run(max_steps: int) -> bool:
         event_publisher=event_bus,
     )
     try:
-        outcome = await game.build_house(max_steps=max_steps)
+        outcome = await game.play(max_steps=max_steps)
     finally:
         await game.close()
 

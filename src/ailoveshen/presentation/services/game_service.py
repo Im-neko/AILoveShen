@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from loguru import logger
@@ -14,8 +15,8 @@ from ailoveshen.domain.entities import HouseProject
 
 
 @dataclass(frozen=True)
-class HouseBuildOutcome:
-    """Result of a house building run."""
+class PlayOutcome:
+    """Result of a play session."""
 
     project: HouseProject
     steps: int
@@ -27,9 +28,11 @@ class GameService:
     Presentation layer service running the game agent.
 
     The LLM designs the house and sets goals, the action selector picks each
-    action, the bridge plays. Runs step by step until the house is complete
-    or the step budget is spent.
+    action, the bridge plays. The session goes on after the house is complete
+    (the night, food, ...) until the step budget is spent.
     """
+
+    WAIT_SECONDS = 1.0  # pause while the bridge's reflex is busy
 
     def __init__(
         self,
@@ -55,32 +58,40 @@ class GameService:
         self._text_generator = text_generator
         self._action_selector = action_selector
 
-    async def build_house(self, max_steps: int = 200) -> HouseBuildOutcome:
+    async def play(self, max_steps: int = 200) -> PlayOutcome:
         """
-        Design and build a house.
+        Design a house, then play until max_steps actions have been taken.
 
         Args:
-            max_steps: Maximum number of actions before giving up
+            max_steps: Number of actions to take (steps spent waiting for the
+                bridge's reflex do not count)
 
         Returns:
-            The project, steps taken and whether every block is in place
+            The project, actions taken and whether the house is complete
         """
         project = await self._start.execute()
-        for step in range(1, max_steps + 1):
+        steps = 0
+        complete = False
+        while steps < max_steps:
             report = await self._advance.execute(project)
-            if report.complete:
-                logger.info(f"House '{project.blueprint.name}' complete after {step - 1} steps")
-                return HouseBuildOutcome(project=project, steps=step - 1, complete=True)
+            complete = report.complete
+            if report.waiting:
+                await asyncio.sleep(self.WAIT_SECONDS)
+                continue
+            steps += 1
             if report.result is not None and report.decision is not None:
                 goal = report.goal.goal_type.value if report.goal else "-"
                 logger.info(
-                    f"[{step}] {goal} -> {report.decision.action_id} "
+                    f"[{steps}] {goal} -> {report.decision.action_id} "
                     f"(conf {report.decision.confidence:.2f}): "
                     f"{'ok' if report.result.ok else 'FAILED'} {report.result.result} "
                     f"({report.result.seconds}s)"
                 )
-        logger.warning(f"House '{project.blueprint.name}' not complete after {max_steps} steps")
-        return HouseBuildOutcome(project=project, steps=max_steps, complete=False)
+        logger.info(
+            f"Played {steps} steps; house '{project.blueprint.name}' "
+            f"{'complete' if complete else 'not complete'}"
+        )
+        return PlayOutcome(project=project, steps=steps, complete=complete)
 
     async def close(self) -> None:
         """Close the bridge client and the model clients."""

@@ -57,7 +57,7 @@ def create_game_service(
         game = create_game_service(
             settings.gemini, settings.jev, settings.minecraft, settings.character, AsyncEventBus()
         )
-        outcome = await game.build_house()
+        outcome = await game.play()
         await game.close()
         ```
     """

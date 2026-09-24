@@ -88,6 +88,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
 
 def _to_observation(data: dict[str, Any]) -> GameObservation:
     obs = data["observation"]
+    home = obs.get("home")
     build = obs.get("build")
     build_status = None
     if build is not None:
@@ -106,4 +107,9 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         food=int(obs["self"]["food"]),
         crafting_table_nearby=bool(obs.get("crafting_table_nearby", False)),
         build=build_status,
+        time_phase=str(obs["time"]["phase"]),
+        food_items=int(obs.get("food_items", 0)),
+        has_home=home is not None,
+        inside_home=bool(home and home["inside"]),
+        busy=bool(data.get("busy", False)),
     )
