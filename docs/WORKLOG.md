@@ -1,9 +1,6 @@
-**Active Phase**: Phase 3 最小版（Gemini 会話生成）実装済み。実 API での確認待ち
+**Active Phase**: Phase 3 実 API 確認済み（Gemini 3.8 Flash で実況・返答を生成できる）。TTS 読み上げの確認は未実施
 **Last Updated**: 2026-09-24
-**Test Status**: 223 unit tests passing (`pytest tests/`), Docker integration verified。Gemini 実 API は未確認（API キーがないため）
-# Work Log
-
-This document tracks development progress to enable smooth resumption of work after context loss.
+**Test Status**: 223 unit tests passing (`pytest tests/`)。Gemini 実 API で `examples/integration_test_llm.py` 成功（3/3、各約2秒）
 
 ---
 
@@ -56,7 +53,8 @@ Gemini 3.8 Flash（google-genai SDK）で、実況と視聴者コメントへの
 **確認済み / 未確認**:
 - 確認済み: ユニットテスト、`demo_phase3.py`、無効なキーでの実リクエスト（400 → `TextGenerationError`、即時失敗、レート制限の間隔）
 - 確認済み: 模擬サーバーで実際のリクエスト本文を確認した（`systemInstruction`、`maxOutputTokens`、`thinkingConfig` あり。`temperature`/`topP`/`topK`/`tools` なし）。SDK は `thinkingConfig` の中を `thinking_level` と snake_case で送っている
-- 未確認: 実キーでの生成、`max_output_tokens` と `main_thinking_level=medium` の妥当性（遅延・思考トークン量）、`--speak` での TTS 連携
+- 確認済み（マージ後の 2026-09-24）: 実キーで `integration_test_llm.py` の3回の生成がすべて成功。snake_case の `thinking_level` も API に受理された。low と medium を比べて main=low に決定（下記「thinking_level の調整」）
+- 未確認: `--speak` での TTS 連携（このマシンに Style-Bert-VITS2 のモデルがなく、Docker も停止しているため）
 
 **Commit**: `2727c02` - feat: implement Phase 3 minimal LLM conversation with Gemini 3.8 Flash (#2)
 **PR**: #16（base: #15）
@@ -284,16 +282,27 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
-### Phase 3: 実 API での確認（ブロッカー: GEMINI_API_KEY）
+### Phase 3: 残作業
 
-- `GEMINI_API_KEY=... python examples/integration_test_llm.py` を実行し、使用量ログ（thoughts トークン数、所要時間）を取る
-- その値で `max_output_tokens` と `main_thinking_level` を決める（medium の遅延がライブ実況に耐えるか）
-- `--speak` で Gemini → TTS の読み上げを確認し、Issue #2 をクローズする
+- **TTS 読み上げの確認**: `GEMINI_API_KEY=... python examples/integration_test_llm.py --speak`。このマシンにはモデル（`model_assets/`, `bert/`）がなく、Docker も停止している。TTS サーバーを動かせる環境（Windows 機など）で実行し、確認できたら Issue #2 をクローズする
+  - `default.yaml` の `tts.voice.model_name` は `"default"`。以前の TTS テストでは `"shen"` を使っていたので、実際のモデル名に合わせる必要がある
+- **返答にゲーム状況を渡す**: `GenerateResponseRequest` には `game_state_summary` / `recent_events` がない。会話履歴が空だと、モデルが今やっていることを作り話で答える（計測中に「新しいお家を建てている」と答えた）。Phase 6/8 でゲーム状態を渡すときに追加する
+
+### thinking_level の調整（2026-09-24 実測）
+
+同じプロンプトで各4回計測した結果:
+
+| thinking_level | 実況（中央値） | 返答（中央値） | 思考トークン |
+|---|---|---|---|
+| low | 1.90s | 1.64s | 0〜93 |
+| medium | 2.87s | 3.10s | 129〜405 |
+
+品質に目立った差がないので、main=low に決めた。`max_output_tokens` は 8192 のまま（実測の合計は最大約1,300トークン）。
 
 **Confirmed Specifications (2026-01-10, 2026-09-24 更新)**:
 - Model: `gemini-3.8-flash`（2026-09-24 変更。main/filter とも同じモデル）
 - SDK: `google-genai`（`genai.Client`）。旧 `google.generativeai` は使わない
-- Generation params: `temperature`/`top_p`/`top_k` は 3.8 で廃止。`thinking_level` を枠ごとに設定（main=medium, filter=low）
+- Generation params: `temperature`/`top_p`/`top_k` は 3.8 で廃止。`thinking_level` を枠ごとに設定（main=low, filter=low。実測にもとづき 2026-09-24 に決定）
 - Authentication: API Key only (no OAuth2)
 - Retry: 3 attempts including the original request, exponential backoff (base=1s, max=10s), 408/429/5xx only
 - Fallback: None (no switch to another model on failure)
@@ -381,7 +390,8 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 - AI 層に Flue を使うか検討し、見送った。Python + google-genai をポートの内側に実装する方針にした
 - 最上位を4層に分ける構成へ移行し、Style-Bert-VITS2 のスタイル名を adapter に閉じ込めた（PR #15）
 - Phase 3 最小版を実装した（PR #16）。実キーがないため、実 API での確認は未実施
-- PR は #14 → #15 → Phase 3 の順に積んでいる。マージもこの順で行う
+- #14 → #15 → #16 をこの順でマージした
+- 実 API で確認し、thinking_level を low と medium で比較して main=low に決めた
 
 ### 2026-09-20 (Phase 6 設計改訂)
 

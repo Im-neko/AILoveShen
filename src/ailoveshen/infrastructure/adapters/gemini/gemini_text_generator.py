@@ -33,7 +33,7 @@ class GeminiTextGenerator(ITextGenerator):
         self,
         api_key: str,
         model: str = "gemini-3.8-flash",
-        thinking_level: str = "medium",
+        thinking_level: str = "low",
         max_output_tokens: int = 8192,
         retry_attempts: int = 3,
         retry_initial_delay_seconds: float = 1.0,

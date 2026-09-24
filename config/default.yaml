@@ -47,9 +47,12 @@ gemini:
   filter_model: "gemini-3.8-flash"
   # thinking_level: low / medium / high (3.8 Flash rejects "minimal").
   # temperature/top_p/top_k were removed in 3.8 Flash.
-  main_thinking_level: "medium"
+  # main=low: measured 2026-09-24, median ~1.6-1.9s vs ~2.9-3.1s for medium
+  # with no noticeable quality difference for 1-2 sentence utterances.
+  main_thinking_level: "low"
   filter_thinking_level: "low"
   # Includes thinking tokens. Too small a value yields truncated or empty output.
+  # Measured total usage peaks around 1.3k tokens (medium); 8192 is headroom.
   max_output_tokens: 8192
 
   # Retry settings (max_attempts includes the original request;
