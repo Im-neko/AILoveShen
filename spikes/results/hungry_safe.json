@@ -26,20 +26,21 @@
    "bread": 3
   },
   "mobs": [],
-  "drops": [
-   {
-    "item": "gunpowder",
-    "distance_m": 3.7,
-    "direction": "E"
-   }
-  ],
+  "drops": [],
   "resources": {
    "nearest_log": {
     "block": "spruce_log",
-    "distance_m": 4.3
+    "distance_m": 5.1
    }
   },
-  "recent_actions": []
+  "recent_actions": [
+   {
+    "action": "collect_log",
+    "ok": true,
+    "result": "chopped spruce_log; logs now spruce_logx2",
+    "seconds": 4.9
+   }
+  ]
  },
  "actions": [
   {
@@ -48,13 +49,8 @@
    "generic": "Eat food from the inventory"
   },
   {
-   "id": "pickup_drop",
-   "description": "Walk to the dropped gunpowder 3.7m away and pick it up",
-   "generic": "Pick up the nearest dropped item"
-  },
-  {
    "id": "collect_log",
-   "description": "Walk to the nearest spruce_log (4.3m away) and chop it",
+   "description": "Walk to the nearest spruce_log (5.1m away) and chop it",
    "generic": "Chop the nearest tree log"
   },
   {
@@ -72,188 +68,176 @@
   "summary": [
    {
     "choice": "eat",
-    "confidence": 0.66,
+    "confidence": 0.77,
     "probabilities": {
-     "eat": 0.74,
-     "pickup_drop": 0.2,
-     "collect_log": 0.06,
+     "eat": 0.83,
+     "collect_log": 0.17,
      "idle": 0.0,
      "explore": 0.0
     },
-    "latency_s": 0.563,
-    "input_tokens": 648,
-    "output_tokens": 55,
+    "latency_s": 0.613,
+    "input_tokens": 636,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    },
    {
     "choice": "eat",
-    "confidence": 0.59,
+    "confidence": 0.78,
     "probabilities": {
-     "eat": 0.68,
-     "pickup_drop": 0.24,
-     "collect_log": 0.08,
-     "idle": 0.0,
-     "explore": 0.0
-    },
-    "latency_s": 0.221,
-    "input_tokens": 648,
-    "output_tokens": 55,
-    "model": "jev-1.13.0"
-   },
-   {
-    "choice": "eat",
-    "confidence": 0.69,
-    "probabilities": {
-     "eat": 0.76,
-     "pickup_drop": 0.19,
-     "collect_log": 0.05,
+     "eat": 0.84,
+     "collect_log": 0.16,
      "explore": 0.0,
      "idle": 0.0
     },
-    "latency_s": 0.242,
-    "input_tokens": 648,
-    "output_tokens": 55,
-    "model": "jev-1.13.0"
-   }
-  ],
-  "raw": [
-   {
-    "choice": "eat",
-    "confidence": 0.74,
-    "probabilities": {
-     "eat": 0.78,
-     "pickup_drop": 0.15,
-     "collect_log": 0.05,
-     "explore": 0.01,
-     "idle": 0.01
-    },
-    "latency_s": 0.244,
-    "input_tokens": 2541,
-    "output_tokens": 55,
-    "model": "jev-1.13.0"
-   },
-   {
-    "choice": "eat",
-    "confidence": 0.79,
-    "probabilities": {
-     "eat": 0.84,
-     "pickup_drop": 0.11,
-     "collect_log": 0.05,
-     "idle": 0.0,
-     "explore": 0.0
-    },
-    "latency_s": 0.224,
-    "input_tokens": 2541,
-    "output_tokens": 55,
+    "latency_s": 0.2,
+    "input_tokens": 636,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    },
    {
     "choice": "eat",
     "confidence": 0.77,
     "probabilities": {
-     "eat": 0.8200000000000001,
-     "pickup_drop": 0.13,
-     "collect_log": 0.04,
+     "eat": 0.83,
+     "collect_log": 0.17,
      "explore": 0.0,
      "idle": 0.0
     },
-    "latency_s": 0.224,
-    "input_tokens": 2541,
-    "output_tokens": 55,
+    "latency_s": 0.208,
+    "input_tokens": 636,
+    "output_tokens": 47,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw": [
+   {
+    "choice": "eat",
+    "confidence": 0.95,
+    "probabilities": {
+     "eat": 0.96,
+     "collect_log": 0.03,
+     "explore": 0.01,
+     "idle": 0.0
+    },
+    "latency_s": 0.204,
+    "input_tokens": 2364,
+    "output_tokens": 47,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "eat",
+    "confidence": 0.95,
+    "probabilities": {
+     "eat": 0.96,
+     "collect_log": 0.03,
+     "explore": 0.01,
+     "idle": 0.0
+    },
+    "latency_s": 0.21,
+    "input_tokens": 2364,
+    "output_tokens": 47,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "eat",
+    "confidence": 0.95,
+    "probabilities": {
+     "eat": 0.97,
+     "collect_log": 0.03,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.248,
+    "input_tokens": 2364,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    }
   ],
   "summary_generic": [
    {
     "choice": "eat",
-    "confidence": 0.51,
+    "confidence": 0.76,
     "probabilities": {
-     "eat": 0.62,
-     "pickup_drop": 0.3,
-     "collect_log": 0.08,
-     "explore": 0.0,
+     "eat": 0.82,
+     "collect_log": 0.17,
+     "explore": 0.01,
      "idle": 0.0
     },
-    "latency_s": 0.229,
-    "input_tokens": 606,
-    "output_tokens": 55,
+    "latency_s": 0.215,
+    "input_tokens": 605,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    },
    {
     "choice": "eat",
-    "confidence": 0.64,
+    "confidence": 0.75,
     "probabilities": {
-     "eat": 0.71,
-     "pickup_drop": 0.23,
-     "collect_log": 0.06,
-     "explore": 0.0,
+     "eat": 0.8099999999999999,
+     "collect_log": 0.18,
+     "explore": 0.01,
      "idle": 0.0
     },
-    "latency_s": 0.234,
-    "input_tokens": 606,
-    "output_tokens": 55,
+    "latency_s": 0.248,
+    "input_tokens": 605,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    },
    {
     "choice": "eat",
-    "confidence": 0.45,
+    "confidence": 0.74,
     "probabilities": {
-     "eat": 0.56,
-     "pickup_drop": 0.34,
-     "collect_log": 0.09,
-     "idle": 0.0,
-     "explore": 0.0
+     "eat": 0.81,
+     "collect_log": 0.18,
+     "explore": 0.01,
+     "idle": 0.0
     },
-    "latency_s": 0.204,
-    "input_tokens": 606,
-    "output_tokens": 55,
+    "latency_s": 0.246,
+    "input_tokens": 605,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    }
   ],
   "raw_generic": [
    {
     "choice": "eat",
-    "confidence": 0.3,
+    "confidence": 0.64,
     "probabilities": {
-     "eat": 0.44,
-     "pickup_drop": 0.42,
-     "collect_log": 0.12,
-     "explore": 0.01,
-     "idle": 0.01
+     "eat": 0.73,
+     "collect_log": 0.23,
+     "idle": 0.02,
+     "explore": 0.02
     },
-    "latency_s": 0.233,
-    "input_tokens": 2499,
-    "output_tokens": 55,
+    "latency_s": 0.237,
+    "input_tokens": 2333,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    },
    {
     "choice": "eat",
-    "confidence": 0.3,
+    "confidence": 0.72,
     "probabilities": {
-     "eat": 0.45,
-     "pickup_drop": 0.43,
-     "collect_log": 0.11,
-     "idle": 0.01,
-     "explore": 0.0
+     "eat": 0.78,
+     "collect_log": 0.16,
+     "idle": 0.03,
+     "explore": 0.03
     },
-    "latency_s": 0.212,
-    "input_tokens": 2499,
-    "output_tokens": 55,
+    "latency_s": 0.237,
+    "input_tokens": 2333,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    },
    {
-    "choice": "pickup_drop",
-    "confidence": 0.3,
+    "choice": "eat",
+    "confidence": 0.66,
     "probabilities": {
-     "pickup_drop": 0.44,
-     "eat": 0.42,
-     "collect_log": 0.11,
-     "idle": 0.02,
-     "explore": 0.01
+     "eat": 0.75,
+     "collect_log": 0.2,
+     "idle": 0.03,
+     "explore": 0.02
     },
-    "latency_s": 0.23,
-    "input_tokens": 2499,
-    "output_tokens": 56,
+    "latency_s": 0.235,
+    "input_tokens": 2333,
+    "output_tokens": 47,
     "model": "jev-1.13.0"
    }
   ]

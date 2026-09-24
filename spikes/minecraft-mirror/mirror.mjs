@@ -193,28 +193,24 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
   }, POSITION_INTERVAL_MS)
 
   // Server never echoes a player's own swing/dig progress: synthesize them for the viewer.
+  // Mineflayer has no dig-start event, so watch bot.targetDigBlock every tick.
   const DIG_BREAKER_ID = 0x7ffffff0
-  let digTimer = null
-  bot.on('diggingStarted', (block) => {
-    const start = Date.now()
-    const total = Math.max(bot.digTime(block), 1)
-    clearInterval(digTimer)
-    digTimer = setInterval(() => {
-      const stage = Math.min(9, Math.floor(((Date.now() - start) / total) * 10))
-      for (const v of viewers) {
-        v.write('animation', { entityId: bot.entity.id, animation: 0 })
-        v.write('block_break_animation', { entityId: DIG_BREAKER_ID, location: block.position, destroyStage: stage })
-      }
-    }, 250)
-  })
-  const stopDig = (block) => {
-    clearInterval(digTimer)
-    for (const v of viewers) {
-      v.write('block_break_animation', { entityId: DIG_BREAKER_ID, location: block.position, destroyStage: -1 })
+  let dig = null // { pos, start, total, lastStage }
+  bot.on('physicsTick', () => {
+    const target = bot.targetDigBlock
+    if (dig && (!target || !target.position.equals(dig.pos))) {
+      for (const v of viewers) v.write('block_break_animation', { entityId: DIG_BREAKER_ID, location: dig.pos, destroyStage: -1 })
+      dig = null
     }
-  }
-  bot.on('diggingCompleted', stopDig)
-  bot.on('diggingAborted', stopDig)
+    if (!target) return
+    if (!dig) dig = { pos: target.position.clone(), start: Date.now(), total: Math.max(bot.digTime(target), 1), ticks: 0 }
+    if (dig.ticks++ % 5 !== 0) return
+    const stage = Math.min(9, Math.floor(((Date.now() - dig.start) / dig.total) * 10))
+    for (const v of viewers) {
+      v.write('animation', { entityId: bot.entity.id, animation: 0 })
+      v.write('block_break_animation', { entityId: DIG_BREAKER_ID, location: dig.pos, destroyStage: stage })
+    }
+  })
 
   server.on('listening', () => log(`[mirror] listening on 127.0.0.1:${port}`))
   return { server, viewers, recorder: rec, close: () => { clearInterval(timer); server.close() } }

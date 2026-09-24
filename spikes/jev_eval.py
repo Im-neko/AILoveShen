@@ -35,6 +35,9 @@ RESET = [
     f"tp {BOT} {HOME}",
     f"effect give {BOT} instant_health 1 5",
     f"effect give {BOT} saturation 1 20",
+    # Killing the previous scenario's mobs spawns their drops a moment later
+    "sleep 1",
+    "kill @e[type=item]",
 ]
 # name -> (setup commands after RESET, seconds to wait, expected sensible choices)
 SCENARIOS = {

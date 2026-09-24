@@ -26,6 +26,7 @@ setTimeout(() => {
     configPackets: configNames.reduce((a, n) => (a[n] = (a[n] ?? 0) + 1, a), {}),
     reachedPlay: !!login,
     login: login && { entityId: login.entityId, dimension: login.worldState?.name, gamemode: login.worldState?.gamemode },
+    digCrack: counts.block_break_animation ?? 0, armSwing: counts.animation ?? 0,
     chunks: counts.map_chunk ?? 0, light: counts.update_light ?? 0,
     health, positions: positions.length, moved,
     lastPos: lastPos && { x: lastPos.x.toFixed(2), y: lastPos.y.toFixed(2), z: lastPos.z.toFixed(2), yaw: lastPos.yaw.toFixed(1) },
