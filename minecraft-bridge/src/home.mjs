@@ -35,7 +35,8 @@ export function saveState (state) {
       inside: plain(state.home.inside),
       outside: plain(state.home.outside),
       min: plain(state.home.min),
-      max: plain(state.home.max)
+      max: plain(state.home.max),
+      bed: state.home.bed ? plain(state.home.bed) : null
     }
   }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true })
@@ -48,7 +49,7 @@ export function loadState (state) {
   if (data.plan) state.plan = BuildPlan.fromJSON(data.plan)
   if (data.home) {
     const h = data.home
-    state.home = { door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max) }
+    state.home = { door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null }
   }
 }
 
@@ -66,7 +67,8 @@ export function homeFromPlan (plan) {
     inside: door.offset(inward[0], 0, inward[1]),
     outside: door.offset(-inward[0], 0, -inward[1]),
     min: plan.origin.offset(1, 0, 1),
-    max: plan.origin.offset(width - 2, 0, depth - 2)
+    max: plan.origin.offset(width - 2, 0, depth - 2),
+    bed: null
   }
 }
 
@@ -141,6 +143,19 @@ export function dangerOutside (bot, home) {
   return nearbyEntities(bot).filter(({ e }) => isHostile(bot, e) && e.position.distanceTo(home.outside) <= DOOR_DANGER_RADIUS &&
     !(e.position.x >= home.min.x && e.position.x < home.max.x + 1 && e.position.z >= home.min.z && e.position.z < home.max.z + 1))
 }
+
+const inHome = (home, p) => p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z
+
+// A bed goes straight in from the door: foot one cell past the inside cell, head one further
+export function bedSpot (bot, home) {
+  const inward = home.inside.minus(home.door)
+  const foot = home.inside.plus(inward)
+  const head = foot.plus(inward)
+  const free = (p) => inHome(home, p) && bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
+  return free(foot) && free(head) ? { foot, inward } : null
+}
+
+export const hasBed = (bot, home) => !!home?.bed && !!bot.blockAt(home.bed)?.name.endsWith('_bed')
 
 export async function leaveHome (bot, home) {
   if (!isInside(bot, home)) return

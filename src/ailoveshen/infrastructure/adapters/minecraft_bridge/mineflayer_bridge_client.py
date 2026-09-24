@@ -111,5 +111,6 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         food_items=int(obs.get("food_items", 0)),
         has_home=home is not None,
         inside_home=bool(home and home["inside"]),
+        bed_in_home=bool(home and home.get("bed")),
         busy=bool(data.get("busy", False)),
     )

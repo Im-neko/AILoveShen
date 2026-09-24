@@ -17,7 +17,7 @@ OBSERVE = {
         "time": {"phase": "dusk", "time_of_day": 12500},
         "self": {"health": 18.5, "food": 17},
         "food_items": 3,
-        "home": {"inside": False, "door_open": False},
+        "home": {"inside": False, "door_open": False, "bed": True},
         "inventory": {"spruce_log": 3},
         "crafting_table_nearby": True,
         "build": {
@@ -58,7 +58,7 @@ class TestMineflayerBridgeClient:
         assert obs.build.remaining == {BlockKind.PLANKS: 61, BlockKind.DOOR: 1}
         assert obs.state is not None and obs.state["inventory"] == {"spruce_log": 3}
         assert obs.time_phase == "dusk" and obs.food_items == 3 and obs.busy
-        assert obs.has_home and not obs.inside_home
+        assert obs.has_home and not obs.inside_home and obs.bed_in_home
 
     @pytest.mark.asyncio
     async def test_observe_without_plan(self):

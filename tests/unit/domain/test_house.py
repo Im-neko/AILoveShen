@@ -1,5 +1,7 @@
 """Tests for the house building domain: blueprint, goals and HouseProject."""
 
+from dataclasses import replace
+
 import pytest
 
 from ailoveshen.domain.entities import HouseProject
@@ -387,6 +389,14 @@ class TestHouseProjectGoals:
         assert project.goal_end_reason(_obs(phase="dusk")) == (
             "the time of day changed from day to dusk"
         )
+
+    def test_make_bed_met_when_a_bed_is_in_the_house(self):
+        """Test the bed goal ends once the bridge reports a bed in the house."""
+        project = HouseProject(blueprint=_blueprint())
+        project.set_goal(Goal(GoalType.MAKE_BED), "day")
+
+        assert not project.goal_met(_obs())
+        assert project.goal_met(replace(_obs(), bed_in_home=True))
 
     def test_fulfilled_goals_are_not_offered(self):
         """Test a finished house offers neither gathering, crafting nor building."""

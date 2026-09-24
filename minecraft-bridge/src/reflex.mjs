@@ -1,4 +1,5 @@
-// Reflex: a hostile mob close to the bot is handled at once, without waiting for a decision.
+// Reflexes: a hostile mob close to the bot is handled at once, without waiting for a decision,
+// and the bot keeps its head above water.
 //
 // It runs on every few physics ticks, both while an action runs and between steps (the bot was
 // killed standing still between steps once). A running action is preempted and awaited until it
@@ -21,7 +22,15 @@ function dangers (bot, state) {
 // hooks.record(entry): appends to the action history.
 export function startReflex (bot, state, hooks) {
   let ticks = 0
+  let floating = false
   bot.on('physicsTick', () => {
+    // Mineflayer does not swim on its own: left idle in water (between steps, or with the agent
+    // stopped) the bot sank and drowned. Hold jump to stay at the surface unless pathing.
+    const float = !!bot.entity?.isInWater && !bot.pathfinder.isMoving()
+    if (float !== floating) {
+      bot.setControlState('jump', float)
+      floating = float
+    }
     if (++ticks % CHECK_EVERY_TICKS || state.reflex || !bot.entity || bot.health <= 0) return
     const near = dangers(bot, state)
     if (near.length) react(near).catch((e) => console.log(`[reflex] error: ${e.message}`))

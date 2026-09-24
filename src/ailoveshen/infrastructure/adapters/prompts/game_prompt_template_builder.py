@@ -77,6 +77,7 @@ GOAL_DESCRIPTIONS: dict[GoalType, str] = {
     GoalType.EXPLORE: "周辺を歩き回って、木や平らな建設地を探す",
     GoalType.SURVIVE_NIGHT: "家に入ってドアを閉め、朝まで中で過ごす",
     GoalType.GET_FOOD: "動物を狩って食料を確保する",
+    GoalType.MAKE_BED: "羊を狩って羊毛を3つ集め、ベッドを作って家に置く（寝れば夜を飛ばせる）",
 }
 
 ACTION_INSTRUCTIONS = Template("""\
@@ -92,6 +93,7 @@ GOAL_DESCRIPTIONS_EN: dict[GoalType, str] = {
     GoalType.EXPLORE: "look around for trees and flat land",
     GoalType.SURVIVE_NIGHT: "get into the house, close the door and stay inside until morning",
     GoalType.GET_FOOD: "hunt animals for food",
+    GoalType.MAKE_BED: "hunt sheep for 3 wool, craft a bed and place it in the house",
 }
 
 
@@ -210,7 +212,9 @@ def _format_time(time: dict) -> str:
 def _format_home(obs: GameObservation) -> str:
     if not obs.has_home:
         return "まだない（夜までに建てる必要がある）"
-    return "家の中にいる" if obs.inside_home else "完成している（外にいる）"
+    where = "家の中にいる" if obs.inside_home else "完成している（外にいる）"
+    bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
+    return f"{where}、{bed}"
 
 
 def _format_log(state: dict) -> str:

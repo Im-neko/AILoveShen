@@ -245,6 +245,8 @@ class HouseProject(Entity):
             return obs.time_phase == "day" and not obs.can("stay_inside")
         if goal_type == GoalType.GET_FOOD:
             return obs.food_items >= self.food_stock
+        if goal_type == GoalType.MAKE_BED:
+            return obs.bed_in_home
         return False
 
     def pursuable_goals(self, obs: GameObservation) -> list[GoalType]:

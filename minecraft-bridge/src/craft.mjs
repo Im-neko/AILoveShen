@@ -14,6 +14,11 @@ import { once } from 'node:events'
 const RESULT_SLOT = 0
 const GRID_FILL_TIMEOUT_MS = 2000
 const WINDOW_OPEN_TIMEOUT_MS = 3000
+// Paper silently drops recipe requests beyond recipe-spam-limit (20, spigot.yml), a budget that
+// refills by one per tick. Crafting 19 logs one by one took 0.1s and the next request (a crafting
+// table) was dropped twice. One request per 2 ticks stays well inside the budget.
+const RECIPE_REQUEST_INTERVAL_MS = 100
+let lastRecipeRequestAt = 0
 
 export class RecipeBook {
   constructor (bot) {
@@ -87,6 +92,9 @@ export async function craftWithRecipeBook (bot, book, itemName, { table = null, 
   const window = table ? await openTable(bot, table) : bot.inventory
   try {
     for (const recipe of recipes) {
+      const wait = RECIPE_REQUEST_INTERVAL_MS - (Date.now() - lastRecipeRequestAt)
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+      lastRecipeRequestAt = Date.now()
       const filled = waitForResult(window, itemName)
       bot._client.write('craft_recipe_request', { windowId: window.id, recipeId: recipe.displayId, makeAll })
       if (!(await filled)) continue // ingredients missing for this recipe variant

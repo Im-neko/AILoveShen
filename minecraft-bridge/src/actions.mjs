@@ -4,18 +4,20 @@
 // something impossible. Executors take an AbortSignal (timeout, or damage taken) and must stop
 // promptly once it fires: loops check it, and the caller cancels pathing and digging.
 
+import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import {
   THREAT_RADIUS, DROP_RADIUS, round, dayPhase, isLog, isPlanks, inventoryCounts, countMatching, nearbyEntities, threats, isHostile
 } from './observe.mjs'
 import { buildStep, canBuildNow } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { isInside, shelteredFrom, enterHome, isDoorOpen, dangerOutside } from './home.mjs'
+import { isInside, shelteredFrom, enterHome, isDoorOpen, dangerOutside, bedSpot, hasBed } from './home.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const ACTION_TIMEOUT_MS = 20000
-// Going home may mean walking back from far away; stays below the Python client's HTTP timeout (60s)
-export const ACTION_TIMEOUTS_MS = { go_home: 45000 }
+// Actions that go home first may walk back from far away; stays below the Python client's HTTP
+// timeout (60s)
+export const ACTION_TIMEOUTS_MS = { go_home: 45000, place_bed: 45000, sleep: 45000 }
 const LOG_SEARCH_RADIUS = 32
 const MAX_LOG_HEIGHT = 4 // blocks above the ground the bot can chop without climbing
 const TABLE_SEARCH_RADIUS = 32
@@ -25,6 +27,9 @@ const FLEE_TIMEOUT_MS = 8000
 const ANIMAL_SEARCH_RADIUS = 32
 const FOOD_STOCK = 4 // hunting stops being offered with this many food items
 const STAY_INSIDE_TICKS = 200
+const PICKUP_WAIT_MS = 1500
+const GLANCE_TICKS = 50
+const GLANCE_ANGLE = Math.PI / 3
 const HOSTILE_AVOID_RADIUS = 5
 const HOSTILE_STEP_COST = 20
 const HOSTILE_CACHE_MS = 1000
@@ -146,13 +151,59 @@ export async function flee (bot, h, signal) {
   return `now ${round(h.position.distanceTo(bot.entity.position))}m from ${h.name}`
 }
 
+// Drops can be picked up only after a short delay; standing on them already, the walk ends at
+// once. Collect the drops nearby and wait for each pickup.
+async function collectNearbyDrops (bot, state) {
+  for (let i = 0; i < 3; i++) {
+    await bot.waitForTicks(10)
+    const drop = nearestDrop(bot, state)
+    if (!drop || drop.dist > 8) return
+    const collected = waitForCollect(bot, PICKUP_WAIT_MS)
+    await goNear(bot, drop.e.position, 0.5).catch(() => {})
+    await collected
+  }
+}
+
+// Resolves when the bot picks something up, or after ms
+function waitForCollect (bot, ms) {
+  return new Promise((resolve) => {
+    const onCollect = (collector) => {
+      if (collector !== bot.entity) return
+      clearTimeout(timer)
+      bot.off('playerCollect', onCollect)
+      resolve(true)
+    }
+    const timer = setTimeout(() => { bot.off('playerCollect', onCollect); resolve(false) }, ms)
+    bot.on('playerCollect', onCollect)
+  })
+}
+
 function nearestAnimal (bot) {
   const me = bot.entity.position
   return nearbyEntities(bot).find(({ e, dist }) => FOOD_ANIMALS.has(e.name) && dist <= ANIMAL_SEARCH_RADIUS && Math.abs(e.position.y - me.y) < 4)?.e ?? null
 }
 
 const foodCount = (bot) => bot.inventory.items().filter((i) => isFood(bot, i)).reduce((n, i) => n + i.count, 0)
-export const HOME_ACTIONS = new Set(['go_home', 'stay_inside'])
+export const HOME_ACTIONS = new Set(['go_home', 'stay_inside', 'place_bed', 'sleep'])
+
+const WOOL_PER_BED = 3
+const PLANKS_PER_BED = 3
+// Sleeping is possible from this time of day (Mineflayer's own check: 12541..23458)
+const SLEEP_FROM = 12541
+const SLEEP_UNTIL = 23458
+const TIME_UPDATE_TIMEOUT_MS = 3000 // the server sends the time every second
+
+// The wool color held most, e.g. ['white_wool', 2]
+function mostWool (bot) {
+  return Object.entries(inventoryCounts(bot)).filter(([n]) => n.endsWith('_wool')).sort((a, b) => b[1] - a[1])[0] ?? null
+}
+const bedItem = (bot) => bot.inventory.items().find((i) => i.name.endsWith('_bed'))
+const needsBed = (bot, state) => !hasBed(bot, state.home) && !bedItem(bot)
+
+function nearestSheep (bot) {
+  const me = bot.entity.position
+  return nearbyEntities(bot).find(({ e, dist }) => e.name === 'sheep' && dist <= ANIMAL_SEARCH_RADIUS && Math.abs(e.position.y - me.y) < 4)?.e ?? null
+}
 
 const isFood = (bot, item) => !!bot.registry.foodsByName[item.name]
 const isLeaves = (name) => !!name?.endsWith('_leaves')
@@ -253,6 +304,20 @@ export function availableActions (bot, state) {
   }
   if (foodCount(bot) < FOOD_STOCK && nearestAnimal(bot)) {
     acts.push({ id: 'hunt_animal', description: `Hunt the nearest ${nearestAnimal(bot).name} for food` })
+  }
+  if (needsBed(bot, state) && (mostWool(bot)?.[1] ?? 0) < WOOL_PER_BED && nearestSheep(bot)) {
+    acts.push({ id: 'hunt_sheep', description: 'Hunt the nearest sheep for wool (a bed takes 3 of one color)' })
+  }
+  const wool = mostWool(bot)
+  if (table && needsBed(bot, state) && wool && wool[1] >= WOOL_PER_BED && planks && planks[1] >= PLANKS_PER_BED) {
+    acts.push({ id: 'craft_bed', description: `Craft a bed from 3 ${wool[0]} at the crafting table` })
+  }
+  if (bedItem(bot) && state.home && !hasBed(bot, state.home) && bedSpot(bot, state.home)) {
+    acts.push({ id: 'place_bed', description: 'Place the bed inside the house' })
+  }
+  const tod = bot.time.timeOfDay
+  if (hasBed(bot, state.home) && tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping) {
+    acts.push({ id: 'sleep', description: 'Sleep in the bed to skip the night' })
   }
   const phase = dayPhase(bot.time.timeOfDay)
   const inside = isInside(bot, state.home)
@@ -394,11 +459,59 @@ export const EXECUTORS = {
     const weapon = bestWeapon(bot)
     if (weapon) await bot.equip(weapon, 'hand')
     const result = await fight(bot, animal, signal)
-    await bot.waitForTicks(10)
-    const drop = nearestDrop(bot, state)
-    if (drop && drop.dist < 8) await goNear(bot, drop.e.position, 0.5).catch(() => {})
+    await collectNearbyDrops(bot, state)
     if (foodCount(bot) <= before) throw new Error(`no food gained (${result})`)
     return `${result}; food items ${before} -> ${foodCount(bot)}`
+  },
+  async hunt_sheep (bot, state, signal) {
+    const sheep = nearestSheep(bot)
+    if (!sheep) return 'no sheep nearby'
+    const before = mostWool(bot)?.[1] ?? 0
+    const weapon = bestWeapon(bot)
+    if (weapon) await bot.equip(weapon, 'hand')
+    const result = await fight(bot, sheep, signal)
+    await collectNearbyDrops(bot, state)
+    const after = mostWool(bot)?.[1] ?? 0
+    if (after <= before) throw new Error(`no wool gained (${result})`)
+    return `${result}; ${mostWool(bot)[0]} ${after}`
+  },
+  async craft_bed (bot, state) {
+    const table = findTable(bot)
+    const bedName = mostWool(bot)[0].replace(/_wool$/, '_bed')
+    await goNear(bot, table.position, 3)
+    await craftWithRecipeBook(bot, state.recipeBook, bedName, { table })
+    return `crafted ${bedName}`
+  },
+  async place_bed (bot, state) {
+    await enterHome(bot, state.home)
+    const spot = bedSpot(bot, state.home)
+    if (!spot) throw new Error('no free spot for the bed in the house')
+    const { inside } = state.home
+    try {
+      await bot.pathfinder.goto(new goals.GoalBlock(inside.x, inside.y, inside.z))
+    } finally {
+      bot.pathfinder.setGoal(null)
+    }
+    // The bed extends away from the player, in the direction it faces
+    await bot.lookAt(spot.foot.offset(0.5, 0, 0.5), true)
+    await bot.equip(bedItem(bot), 'hand')
+    await bot.placeBlock(bot.blockAt(spot.foot.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
+    if (!bot.blockAt(spot.foot)?.name.endsWith('_bed')) throw new Error('the bed was not placed')
+    state.home.bed = spot.foot
+    return `placed ${bot.blockAt(spot.foot).name} in the house`
+  },
+  async sleep (bot, state, signal) {
+    await enterHome(bot, state.home)
+    await bot.sleep(bot.blockAt(state.home.bed))
+    // The night is skipped once every player sleeps; the server then wakes the bot
+    while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
+    if (bot.isSleeping) await bot.wake()
+    // The server wakes the bot before it sends the new time: wait for the next update, then check
+    // the night really passed (being woken by a monster also ends the sleep)
+    await once(bot, 'time', { signal: AbortSignal.timeout(TIME_UPDATE_TIMEOUT_MS) })
+    const tod = bot.time.timeOfDay
+    if (tod >= SLEEP_FROM && tod <= SLEEP_UNTIL) throw new Error(`woke up but the night was not skipped (time ${tod})`)
+    return `slept through the night; time ${tod}`
   },
   async go_home (bot, state) {
     await enterHome(bot, state.home)
@@ -406,9 +519,13 @@ export const EXECUTORS = {
   },
   async stay_inside (bot, state, signal) {
     await enterHome(bot, state.home) // closes the door if it was left open
-    for (let i = 0; i < STAY_INSIDE_TICKS / 20 && !signal.aborted; i++) {
-      await bot.look(bot.entity.yaw + Math.PI / 4, 0)
-      await bot.waitForTicks(20)
+    // Face the door and keep still, glancing aside now and then (turning every second made the
+    // stream view spin the whole night)
+    await bot.lookAt(state.home.door.offset(0.5, 1.2, 0.5))
+    const facing = bot.entity.yaw
+    for (let i = 0; i < STAY_INSIDE_TICKS / GLANCE_TICKS && !signal.aborted; i++) {
+      await bot.waitForTicks(GLANCE_TICKS)
+      await bot.look(facing + (i % 2 ? 0 : (Math.random() - 0.5) * GLANCE_ANGLE), 0)
     }
     return `waited inside (time ${bot.time.timeOfDay}, door ${isDoorOpen(bot, state.home) ? 'open' : 'closed'})`
   },

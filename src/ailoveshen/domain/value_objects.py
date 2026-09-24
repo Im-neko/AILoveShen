@@ -369,6 +369,7 @@ class GoalType(str, Enum):
     EXPLORE = "explore"
     SURVIVE_NIGHT = "survive_night"
     GET_FOOD = "get_food"
+    MAKE_BED = "make_bed"
 
 
 # Bridge action ids that serve each goal. Survival actions are always allowed.
@@ -385,8 +386,9 @@ GOAL_ACTIONS: dict[GoalType, frozenset[str]] = {
     ),
     GoalType.BUILD_SHELTER: frozenset({"build_step"}),
     GoalType.EXPLORE: frozenset({"explore", "pickup_drop"}),
-    GoalType.SURVIVE_NIGHT: frozenset({"go_home", "stay_inside"}),
+    GoalType.SURVIVE_NIGHT: frozenset({"go_home", "stay_inside", "sleep"}),
     GoalType.GET_FOOD: frozenset({"hunt_animal"}),
+    GoalType.MAKE_BED: frozenset({"hunt_sheep", "craft_bed", "place_bed"}),
 }
 SURVIVAL_ACTIONS: frozenset[str] = frozenset(
     {"attack_hostile", "flee_hostile", "equip_weapon", "eat"}
@@ -625,6 +627,7 @@ class GameObservation:
     food_items: int = 0
     has_home: bool = False
     inside_home: bool = False
+    bed_in_home: bool = False
     busy: bool = False  # the bridge is running an action or a reflex
 
     def can(self, action_id: str) -> bool:

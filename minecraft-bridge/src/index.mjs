@@ -15,7 +15,7 @@ import { summarize, round, threats } from './observe.mjs'
 import { availableActions, configureMovements, findLog, findTable, EXECUTORS, ACTION_TIMEOUT_MS, ACTION_TIMEOUTS_MS } from './actions.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
-import { loadState, saveState, homeFromPlan, isInside, isDoorOpen, leaveHome } from './home.mjs'
+import { loadState, saveState, homeFromPlan, isInside, isDoorOpen, leaveHome, hasBed } from './home.mjs'
 import { startReflex } from './reflex.mjs'
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
@@ -63,7 +63,7 @@ function observation () {
     crafting_table_nearby: !!table
   }
   if (state.plan) extra.build = { ...state.plan.status(bot), materials_needed: state.plan.materialsNeeded(bot) }
-  extra.home = state.home ? { inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home) } : null
+  extra.home = state.home ? { inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   extra.food_items = bot.inventory.items().filter((i) => bot.registry.foodsByName[i.name]).reduce((n, i) => n + i.count, 0)
   return summarize(bot, state.history, extra)
 }
@@ -71,7 +71,7 @@ function observation () {
 // Survival actions are how the bot answers an attack, so taking damage does not interrupt them.
 const DAMAGE_TOLERANT = new Set(['attack_hostile', 'flee_hostile'])
 // Actions done where the bot stands; every other action first leaves the house if the bot is in it
-const IN_PLACE = new Set(['eat', 'equip_weapon', 'idle', 'craft_planks', 'craft_crafting_table', 'go_home', 'stay_inside'])
+const IN_PLACE = new Set(['eat', 'equip_weapon', 'idle', 'craft_planks', 'craft_crafting_table', 'go_home', 'stay_inside', 'place_bed', 'sleep'])
 
 // Runs one action. It is aborted on timeout, or when the bot takes damage (a reflex: the decision
 // maker then sees the attacker and can fight or flee). Aborting cancels pathing and digging, and
