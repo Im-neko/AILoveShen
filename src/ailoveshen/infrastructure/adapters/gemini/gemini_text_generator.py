@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from google import genai
 from google.genai import errors, types
@@ -106,9 +107,45 @@ class GeminiTextGenerator(ITextGenerator):
         Raises:
             TextGenerationError: If the API call fails after retries
         """
+        config = self._config.model_copy(update={"system_instruction": system_instruction})
+        return await self._generate_text(prompt, config)
+
+    async def generate_json(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        system_instruction: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """
+        Generate a JSON object constrained by a JSON Schema (Gemini structured output).
+
+        Raises:
+            TextGenerationError: If the API call fails or the output is not a JSON object
+        """
+        config = self._config.model_copy(
+            update={
+                "system_instruction": system_instruction,
+                "response_mime_type": "application/json",
+                "response_json_schema": schema,
+            }
+        )
+        text = await self._generate_text(prompt, config)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise TextGenerationError(f"Gemini returned invalid JSON: {text[:200]!r}") from e
+        if not isinstance(data, dict):
+            raise TextGenerationError(f"Gemini returned JSON that is not an object: {text[:200]!r}")
+        return data
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.aio.aclose()
+
+    async def _generate_text(self, prompt: str, config: types.GenerateContentConfig) -> str:
+        """Call the API with rate limiting, usage logging and diagnostics for empty output."""
         await self._wait_for_rate_limit()
 
-        config = self._config.model_copy(update={"system_instruction": system_instruction})
         started = time.monotonic()
         try:
             response = await self._client.aio.models.generate_content(
@@ -142,10 +179,6 @@ class GeminiTextGenerator(ITextGenerator):
                 logger.warning(f"Gemini returned no text (finish_reason={finish_reason})")
 
         return text
-
-    async def close(self) -> None:
-        """Close the underlying HTTP client."""
-        await self._client.aio.aclose()
 
     async def _wait_for_rate_limit(self) -> None:
         """Sleep until min_request_interval has passed since the last request."""

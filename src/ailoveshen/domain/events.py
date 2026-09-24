@@ -105,3 +105,41 @@ class ChatResponseGeneratedEvent(DomainEvent):
     text: str = field(default="")
     original_message: str = field(default="")
     user_name: str = field(default="")
+
+
+# =============================================================================
+# Game Events
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class HouseDesignedEvent(DomainEvent):
+    """Event raised when the LLM has designed a house to build."""
+
+    name: str = ""
+    concept: str = ""
+
+
+@dataclass(frozen=True)
+class GoalSetEvent(DomainEvent):
+    """Event raised when the LLM sets a new goal."""
+
+    goal_type: str = ""
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class GameActionExecutedEvent(DomainEvent):
+    """Event raised after the agent executed one action in the game."""
+
+    action_id: str = ""
+    ok: bool = True
+    result: str = ""
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class HouseCompletedEvent(DomainEvent):
+    """Event raised when every block of the house is in place."""
+
+    name: str = ""

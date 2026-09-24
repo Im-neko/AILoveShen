@@ -37,3 +37,15 @@ class TextGenerationError(AILoveShenError):
     """Raised when LLM text generation fails."""
 
     pass
+
+
+class GameBridgeError(AILoveShenError):
+    """Raised when the game bridge cannot be reached or rejects a request."""
+
+    pass
+
+
+class ActionSelectionError(AILoveShenError):
+    """Raised when the action selector (Jev) fails to decide."""
+
+    pass

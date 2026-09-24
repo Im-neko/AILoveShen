@@ -1,0 +1,15 @@
+{
+  "name": "ailoveshen-minecraft-bridge",
+  "private": true,
+  "type": "module",
+  "description": "Mineflayer sidecar for AILoveShen: observation, bounded actions, house building and a POV mirror",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs"
+  },
+  "dependencies": {
+    "minecraft-protocol": "1.68.0",
+    "mineflayer": "4.39.0",
+    "mineflayer-pathfinder": "^2.4.5"
+  }
+}

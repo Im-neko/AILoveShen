@@ -16,7 +16,7 @@ For the real Gemini API, see examples/integration_test_llm.py.
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
@@ -56,6 +56,11 @@ class FakeTextGenerator(ITextGenerator):
         self.last_prompt = prompt
         self.last_system_instruction = system_instruction
         return next(self._replies, "")
+
+    async def generate_json(
+        self, prompt: str, schema: dict[str, Any], system_instruction: Optional[str] = None
+    ) -> dict[str, Any]:
+        raise NotImplementedError("the conversation demo uses plain text only")
 
     async def close(self) -> None:
         pass

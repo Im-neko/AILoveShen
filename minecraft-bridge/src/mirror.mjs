@@ -1,11 +1,12 @@
-// Protocol mirror spike: render the Mineflayer bot's POV on a real Minecraft client.
+// Protocol mirror: render the Mineflayer bot's POV on a real Minecraft client.
 //
 // The bot joins the real server. Every packet it receives is recorded (for late
 // joiners) and relayed as raw bytes to viewers connected to a local fake server.
 // A viewer "is" the bot: same entity id, locked to the bot's position/rotation.
 // Viewer input is ignored (read-only spectator of the bot).
 //
-// Usage: node mirror.mjs [--walk]
+// startMirror(bot) is used by index.mjs. Standalone (viewer check without the bridge):
+//   node src/mirror.mjs [--walk]
 //   env: MC_HOST (localhost) MC_PORT (25565) MIRROR_PORT (25578) BOT_NAME (AILoveShen)
 
 import { createRequire } from 'node:module'
@@ -20,7 +21,16 @@ const MC_HOST = process.env.MC_HOST ?? 'localhost'
 const MC_PORT = Number(process.env.MC_PORT ?? 25565)
 const MIRROR_PORT = Number(process.env.MIRROR_PORT ?? 25578)
 const BOT_NAME = process.env.BOT_NAME ?? 'AILoveShen'
-const POSITION_INTERVAL_MS = 50
+// Camera: the viewer is moved by absolute position packets. Send them at ~60Hz, interpolate the
+// bot's 20Hz physics positions, and turn the view at a capped rate so bot.lookAt() snaps are not
+// shown as instant jumps.
+const CAMERA_INTERVAL_MS = 16
+const TICK_MS = 50
+const MAX_TURN_DEG_PER_S = 150
+// Mineflayer starts digging right after an instant lookAt(); a leaf breaks in ~0.35s. Turn faster
+// while a dig is in progress so the view reaches the block before it breaks.
+const DIG_TURN_DEG_PER_S = 600
+const TURN_EASE = 0.2 // fraction of the remaining angle covered per frame, before the speed cap
 
 // Packets that are connection-scoped, not world state: never relayed.
 const NOT_RELAYED = new Set([
@@ -121,6 +131,45 @@ function positionPacket (bot, teleportId) {
   }
 }
 
+const wrapDeg = (d) => ((d + 540) % 360) - 180
+
+class Camera {
+  constructor (bot) {
+    this.bot = bot
+    this.prev = null
+    this.curr = null
+    this.tickAt = 0
+    this.yaw = null
+    this.pitch = null
+    this.lastFrame = Date.now()
+    bot.on('physicsTick', () => {
+      this.prev = this.curr ?? bot.entity.position.clone()
+      this.curr = bot.entity.position.clone()
+      this.tickAt = Date.now()
+    })
+  }
+
+  frame (teleportId) {
+    const bot = this.bot
+    const now = Date.now()
+    const dt = Math.min((now - this.lastFrame) / 1000, 0.1)
+    this.lastFrame = now
+    const targetYaw = conv.toNotchianYaw(bot.entity.yaw)
+    const targetPitch = conv.toNotchianPitch(bot.entity.pitch)
+    if (this.yaw === null) { this.yaw = targetYaw; this.pitch = targetPitch }
+    const maxStep = (bot.targetDigBlock ? DIG_TURN_DEG_PER_S : MAX_TURN_DEG_PER_S) * dt
+    const approach = (from, diff) => from + Math.sign(diff) * Math.min(Math.abs(diff), maxStep, Math.max(Math.abs(diff) * TURN_EASE, 0.5))
+    this.yaw = approach(this.yaw, wrapDeg(targetYaw - this.yaw))
+    this.pitch = approach(this.pitch, targetPitch - this.pitch)
+    let p = bot.entity.position
+    if (this.prev && this.curr) {
+      const a = Math.min((now - this.tickAt) / TICK_MS, 1)
+      p = this.prev.plus(this.curr.minus(this.prev).scaled(a))
+    }
+    return { teleportId, x: p.x, y: p.y, z: p.z, dx: 0, dy: 0, dz: 0, yaw: this.yaw, pitch: this.pitch, flags: {} }
+  }
+}
+
 function replayWorld (viewer, rec, bot) {
   for (const buf of rec.singletons.values()) viewer.writeRaw(buf)
   for (const buf of rec.log) viewer.writeRaw(buf)
@@ -186,11 +235,13 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
   })
 
   let teleportId = 2
+  let camera = null
   const timer = setInterval(() => {
     if (!bot.entity || viewers.size === 0) return
-    const pkt = positionPacket(bot, teleportId++)
+    camera ??= new Camera(bot)
+    const pkt = camera.frame(teleportId++)
     for (const v of viewers) v.write('position', pkt)
-  }, POSITION_INTERVAL_MS)
+  }, CAMERA_INTERVAL_MS)
 
   // Server never echoes a player's own swing/dig progress: synthesize them for the viewer.
   // Mineflayer has no dig-start event, so watch bot.targetDigBlock every tick.

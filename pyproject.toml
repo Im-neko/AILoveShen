@@ -37,8 +37,12 @@ tts = [
 llm = [
     "google-genai>=2.25",
 ]
+game = [
+    "httpx>=0.25",
+    "typesafe-sdk>=0.7.1",
+]
 all = [
-    "ailoveshen[dev,tts,llm]",
+    "ailoveshen[dev,tts,llm,game]",
 ]
 
 [tool.hatch.build.targets.wheel]

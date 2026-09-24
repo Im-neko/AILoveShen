@@ -85,3 +85,7 @@ credentials.json
 spikes/**/node_modules/
 spikes/**/*.log
 spikes/.venv-*/
+
+# Minecraft bridge (Node sidecar)
+minecraft-bridge/node_modules/
+minecraft-bridge/*.log

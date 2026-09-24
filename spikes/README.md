@@ -5,11 +5,13 @@ Phase 6 の方式を決める前の検証コードです。本番コード（`sr
 
 ## 構成
 
+`minecraft-mirror/` は Phase 6 最小版で `minecraft-bridge/`（本番のサイドカー）に移しました。以下のパスは spike 当時のものです。
+
 | ファイル | 役割 |
 |---|---|
-| `minecraft-mirror/mirror.mjs` | プロトコルミラー。bot が受け取ったパケットを、偽サーバー（127.0.0.1:25578）につないだクライアントへ中継する |
-| `minecraft-mirror/viewer-check.mjs` | ヘッドレス確認。nmp クライアントとしてミラーに接続し、受け取ったパケットを集計する |
-| `minecraft-mirror/bridge.mjs` | bot + ミラー + HTTP API（`GET /observe`, `POST /act`）。今実行できる有界アクションを列挙し、実行する |
+| `minecraft-mirror/mirror.mjs` | プロトコルミラー。bot が受け取ったパケットを、偽サーバー（127.0.0.1:25578）につないだクライアントへ中継する。**現在は `minecraft-bridge/src/mirror.mjs`** |
+| `minecraft-mirror/viewer-check.mjs` | ヘッドレス確認。nmp クライアントとしてミラーに接続し、受け取ったパケットを集計する。**現在は `minecraft-bridge/tools/viewer-check.mjs`** |
+| `minecraft-mirror/bridge.mjs` | bot + ミラー + HTTP API（`GET /observe`, `POST /act`）。今実行できる有界アクションを列挙し、実行する。**Phase 6 最小版で `minecraft-bridge/src/` に作り直した**（spike 版はコミット `c0df529` にある） |
 | `jev_eval.py` | Jev（typesafe-sdk）にアクションを選ばせる。シナリオ評価（`scenarios`）とクローズドループ（`loop`） |
 | `results/*.json` | シナリオ評価の生データ |
 
@@ -17,7 +19,7 @@ Phase 6 の方式を決める前の検証コードです。本番コード（`sr
 
 ```bash
 cd docker && docker compose -f docker-compose.minecraft.yml up -d && cd ..
-cd spikes/minecraft-mirror && npm install && node bridge.mjs     # ミラーも同時に起動する
+cd minecraft-bridge && npm install && npm start     # ミラーも同時に起動する（spike 当時は spikes/minecraft-mirror/bridge.mjs）
 # 実クライアント: Java Edition 1.21.4 で 127.0.0.1:25578 にダイレクト接続
 
 python -m venv spikes/.venv-jev && spikes/.venv-jev/bin/pip install typesafe-sdk==0.7.1

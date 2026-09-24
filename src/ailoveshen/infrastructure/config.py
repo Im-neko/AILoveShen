@@ -69,6 +69,27 @@ class GeminiSettings:
 
 
 @dataclass
+class JevSettings:
+    """Jev (TypeSafe AI System One) settings."""
+
+    api_key: str = ""
+    model: str = "jev-latest"
+    timeout_seconds: float = 10.0
+
+
+@dataclass
+class MinecraftSettings:
+    """Minecraft bridge connection and agent settings."""
+
+    bridge_host: str = "localhost"
+    bridge_port: int = 3000
+    # Must exceed the bridge's per-action timeout (20s)
+    request_timeout_seconds: float = 60.0
+    max_steps_per_goal: int = 15
+    max_consecutive_failures: int = 3
+
+
+@dataclass
 class CharacterSettings:
     """AI streamer character settings."""
 
@@ -156,6 +177,8 @@ class Settings:
     twitch: TwitchSettings = field(default_factory=TwitchSettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     character: CharacterSettings = field(default_factory=CharacterSettings)
+    jev: JevSettings = field(default_factory=JevSettings)
+    minecraft: MinecraftSettings = field(default_factory=MinecraftSettings)
     tts: TTSSettings = field(default_factory=TTSSettings)
     mcp: MCPSettings = field(default_factory=MCPSettings)
     obs: OBSSettings = field(default_factory=OBSSettings)
@@ -263,6 +286,32 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             personality_traits=list(
                 character_data.get("personality_traits", defaults.personality_traits)
+            ),
+        )
+
+    if "jev" in data:
+        jev_data = data["jev"]
+        defaults = JevSettings()
+        settings.jev = JevSettings(
+            api_key=jev_data.get("api_key", defaults.api_key),
+            model=jev_data.get("model", defaults.model),
+            timeout_seconds=jev_data.get("timeout_seconds", defaults.timeout_seconds),
+        )
+
+    if "minecraft" in data:
+        mc_data = data["minecraft"]
+        bridge_data = mc_data.get("bridge", {})
+        agent_data = mc_data.get("agent", {})
+        defaults = MinecraftSettings()
+        settings.minecraft = MinecraftSettings(
+            bridge_host=bridge_data.get("host", defaults.bridge_host),
+            bridge_port=bridge_data.get("port", defaults.bridge_port),
+            request_timeout_seconds=bridge_data.get(
+                "timeout_seconds", defaults.request_timeout_seconds
+            ),
+            max_steps_per_goal=agent_data.get("max_steps_per_goal", defaults.max_steps_per_goal),
+            max_consecutive_failures=agent_data.get(
+                "max_consecutive_failures", defaults.max_consecutive_failures
             ),
         )
 

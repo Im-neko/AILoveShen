@@ -1,12 +1,48 @@
 ## Current Status
 
-**Active Phase**: Phase 6 の方式検証（プロトコルミラー + Jev の spike）。Phase 4 最小版は保留中
+**Active Phase**: Phase 6 最小版（Gemini + Jev による自律建築）完了。ブランチ `feat/phase6-minimal`（PR 未作成）。Phase 4 最小版は保留中
 **Last Updated**: 2026-09-24
-**Test Status**: 227 unit tests passing (`pytest tests/`)。spike: ミラーのヘッドレス確認と、Jev のシナリオ評価およびクローズドループは成功。実クライアントでの描画も確認済み
+**Test Status**: 305 unit tests passing (`pytest tests/`)。自律実行 run6 で家が完成し、RCON でワールドのブロックを確認済み
 
 ---
 
 ## Completed Work
+
+### Phase 6 最小版: Gemini が設計・方針、Jev が行動選択、ブリッジが実行して家を建てる (2026-09-24)
+
+**Branch**: `feat/phase6-minimal`（spike ブランチから派生）。設計: `docs/design/06_phase6_jev_integration.md`（実装に合わせて書き直した）
+
+**結果（run6）**: Gemini が「ひだまりシェンハウス」（5x5x3、南ドア、窓3、原木の柱）を設計し、47ステップで完成。bridge の `build.complete` だけでなく、RCON の `execute if block` で全 69 ブロック（屋根25、柱の原木12、ドア、窓の穴）を確認した
+- 実行中の介入: なし（/give、テレポート、手動のアクション選択なし）
+- 開始前のリセット: インベントリを空に、体力・満腹度の回復、`time set 1000`、run4 で bot が置いた作業台 (155,70,-21) の撤去。テスト用に召喚したゾンビ（tag=probe）は開始前に消した
+- gamerule は既定のまま（doDaylightCycle / doMobSpawning true、keepInventory false、difficulty easy）
+- 過去の検証で RCON で平らにした 11x11 の草地（104..114, 77, -80..-70）がワールドに残っている。run6 の建設地 (102,77,-32) はその範囲外
+
+**構成**:
+- Python（Clean Architecture）
+  - domain: `GoalType`、`GOAL_ACTIONS`、`HouseBlueprint`（検証とブロック順）、`MaterialNeeds`、`GameObservation`、`HouseProject`（Goal の達成・選び直し判定）
+  - application: `StartHouseProjectUseCase`（設計、検証エラーで最大3回やり直し）、`AdvanceHouseProjectUseCase`（観測 → Goal 判定 → Jev → 実行）
+  - infrastructure: `JevActionSelector`、`MineflayerBridgeClient`、`GamePromptTemplateBuilder`、`GeminiTextGenerator.generate_json`、`JevSettings` / `MinecraftSettings`
+  - presentation / factories: `GameService`、`factories/game.py`。実行は `examples/integration_test_minecraft.py`
+- `minecraft-bridge/`（spike の `spikes/minecraft-mirror/` から移した Node サイドカー）: `index.mjs`（HTTP API）、`observe.mjs`、`actions.mjs`、`build.mjs`、`craft.mjs`、`mirror.mjs`
+
+**失敗から特定した根本原因と対処**（run1〜run5）:
+- Paper は use_item を 300ms に8件より多く受けると黙って捨てる → 設置を 200ms 間隔にした
+- `pathfinder.stop()` を待機中に呼ぶと、次の `goto` がすぐ失敗する → `setGoal(null)` を使う
+- mineflayer の `bot.craft` は、このサーバーではクリック予測がずれて材料を失う（原木5 → 板材4、原木0） → レシピ本（`craft_recipe_request`）+ シフトクリック + 再同期でクラフトする
+- `craft_planks` が柱用の原木まで板材にしていた → 計画の原木ブロック分を残す
+- `explore` と `pickup_drop` が失敗しても成功を返していた → 失敗は正直に返す（届かないドロップは以後除外）
+- 樹冠に閉じ込められた: `GoalNear` だと、高い位置の原木には葉の上からしか「近く」にならず、`canDig=false` で降りられなかった → 原木へは `GoalLookAtBlock`（reach 4.5）で近づき、葉の上を歩くコストを上げ、歩行中に壊せるブロックを葉だけにした。葉を地面とみなしていたバグも直した
+- アクションの打ち切りが `Promise.race` だけで、ループが裏で動き続けていた → `AbortSignal` で本当に止め、止まるまで待つ
+- run5 で「slain by Zombie」: アクション中（最長20秒）は被弾に反応できなかった。葉の陰のゾンビは視線判定で脅威から外れていた → 被弾でアクションを中断する反射を入れ、4m 以内の敵は視線に関係なく脅威にした
+- `explore` が3つの Goal に含まれていて、Goal の絞り込みがほぼ効いていなかった → `explore` は explore Goal だけに入れた。建設地探しに失敗した場所では `build_step` を出さない
+- Goal プロンプトに「近くに切れる木があるか」と、失敗したアクションの理由を入れた
+
+**カメラ（ミラー）**: 60Hz の位置送信、位置の補間、回転速度の上限（150°/s、掘削中は 600°/s）。「掘っている位置より上を見ている」という指摘について、ヘッドレスのクライアントで計測した（カメラの向きと、掘っているブロック中心への向きの差）。掘削中のずれは 0.0〜0.1° で、ずれていたのは掘り始めの約0.5秒（最大約50°）と、経路探索中に葉を壊すとき。後者の対処として掘削中の回転を速めた。指摘の場面は、樹冠の上から葉越しに下の原木を掘っていた状況だった可能性が高い（このときクロスヘアは手前の葉に当たる）。この状況は上記の修正でなくなった
+
+**既知の制約**: 反射は「被弾したら中断」だけで、ステップの合間は無防備。素手では戦闘がほぼ成立しない。LLM・Jev・ブリッジの例外で実行が終わる（フォールバックなし）。Node 側の自動テストはない
+
+**その他**: 環境の starlette 1.3.1 と gradio<1.0 の依存衝突は以前からのもの（今回の変更とは無関係）
 
 ### Spike: プロトコルミラー + Jev による行動選択 (2026-09-24)
 
@@ -323,6 +359,14 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 ---
 
 ## Next Steps
+
+### Phase 6 の続き
+
+- PR 作成（ユーザー確認後）
+- 先に動く反射層（ステップの合間も含め、殴られる前に逃げる・戦う）と、木の剣のクラフト
+- 例外で止めない方針（LLM・Jev の一時的な失敗）
+- ゲームイベントを実況・TTS につなぐ（Phase 8）
+- ブリッジ（Node）の自動テスト
 
 ### Phase 3 の積み残し
 

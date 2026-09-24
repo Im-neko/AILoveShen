@@ -99,17 +99,23 @@ export GEMINI_API_KEY=your_api_key
 ### Jev + Minecraft Bridgeのセットアップ
 
 ```bash
-# Jev Python SDKのインストール
-pip install typesafe-sdk
-# または: uv add typesafe-sdk
+# Jev SDK と HTTP クライアント（extra: game）
+pip install -e ".[game]"
 
 # APIキーを環境変数に設定（console.typesafe.aiで取得）
 export TYPESAFE_API_KEY="your-api-key"
 
-# Minecraft Bridge（Mineflayer, Node.js製サイドカー）のセットアップ
+# Minecraft サーバー（Paper 1.21.4、offline、127.0.0.1:25565）
+docker compose -f docker/docker-compose.minecraft.yml up -d
+
+# Minecraft Bridge（Mineflayer, Node.js製サイドカー）: bot + 視点ミラー + HTTP API（:3000）
 cd minecraft-bridge
 npm install
 npm start
+# bot の一人称視点は Java Edition 1.21.4 で 127.0.0.1:25578 にダイレクト接続すると見られる
+
+# Gemini が家を設計し、Jev が行動を選んで、自律で家を建てる（Phase 6 最小版）
+python examples/integration_test_minecraft.py --max-steps 300
 ```
 
 詳細は[docs/design/06_phase6_jev_integration.md](docs/design/06_phase6_jev_integration.md)を参照してください。
