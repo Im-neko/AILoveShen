@@ -1,6 +1,6 @@
 ## Current Status
 
-**Active Phase**: Phase 6 最小版（Gemini + Jev による自律建築）完了。ブランチ `feat/phase6-minimal`（PR 未作成）。Phase 4 最小版は保留中
+**Active Phase**: Phase 6 最小版（Gemini + Jev による自律建築）完了。ブランチ `feat/phase6-minimal`、PR #19（レビュー待ち）。Phase 4 最小版は保留中
 **Last Updated**: 2026-09-24
 **Test Status**: 305 unit tests passing (`pytest tests/`)。自律実行 run6 で家が完成し、RCON でワールドのブロックを確認済み
 
@@ -362,7 +362,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### Phase 6 の続き
 
-- PR 作成（ユーザー確認後）
+- PR #19 のレビューとマージ
 - 先に動く反射層（ステップの合間も含め、殴られる前に逃げる・戦う）と、木の剣のクラフト
 - 例外で止めない方針（LLM・Jev の一時的な失敗）
 - ゲームイベントを実況・TTS につなぐ（Phase 8）
