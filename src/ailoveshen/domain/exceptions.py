@@ -45,6 +45,12 @@ class GameBridgeError(AILoveShenError):
     pass
 
 
+class GoalRejectedError(GameBridgeError):
+    """Raised when the game bridge rejects a goal (unknown item, no home yet, ...)."""
+
+    pass
+
+
 class ActionSelectionError(AILoveShenError):
     """Raised when the action selector (Jev) fails to decide."""
 

@@ -1,18 +1,16 @@
-"""Tests for the house building domain: blueprint, goals and HouseProject."""
-
-from dataclasses import replace
+"""Tests for the play domain: house blueprint, goal specs and the PlaySession lifecycle."""
 
 import pytest
 
-from ailoveshen.domain.entities import HouseProject
+from ailoveshen.domain.entities import PlaySession
 from ailoveshen.domain.value_objects import (
     ActionResult,
-    AvailableAction,
     BlockKind,
-    BuildStatus,
     GameObservation,
     Goal,
-    GoalType,
+    GoalPredicate,
+    GoalSpec,
+    GoalStatus,
     HouseBlueprint,
     Side,
     WallOpening,
@@ -33,32 +31,20 @@ def _blueprint(**kwargs) -> HouseBlueprint:
     return HouseBlueprint(**params)
 
 
-def _obs(
-    inventory=None, actions=(), build=None, table=False, phase="day", food_items=0
-) -> GameObservation:
-    """An observation; a sword is held unless the inventory says otherwise."""
+def _obs(remaining=5, met=False, phase="day", goal=True) -> GameObservation:
     return GameObservation(
         state={},
-        inventory={"wooden_sword": 1} if inventory is None else inventory,
-        actions=tuple(AvailableAction(a, a) for a in actions),
+        candidates=(),
         health=20.0,
         food=20,
-        crafting_table_nearby=table,
-        build=build,
+        goal=GoalStatus(met=met, remaining=remaining) if goal else None,
         time_phase=phase,
-        food_items=food_items,
     )
 
 
-def _build(remaining: dict[BlockKind, int], complete=False) -> BuildStatus:
-    total = 72
-    return BuildStatus(
-        total=total,
-        placed=total - sum(remaining.values()),
-        complete=complete,
-        site_chosen=True,
-        remaining=remaining,
-    )
+PLANKS = GoalSpec(GoalPredicate.HAVE, item="planks", count=12)
+OK = ActionResult("dig oak_log at 1,2,3", True, "dug", 1.0)
+FAILED = ActionResult("dig oak_log at 1,2,3", False, "failed", 1.0)
 
 
 class TestHouseBlueprintValidation:
@@ -163,253 +149,112 @@ class TestHouseBlueprintBlocks:
         assert counts[BlockKind.PLANKS] == 71 - 12
 
 
-class TestGoal:
-    """Tests for Goal.allows."""
+class TestGoalSpec:
+    """Tests for the goal vocabulary's shape checks."""
 
-    def test_goal_actions_allowed(self):
-        """Test the goal's own actions are allowed and others are not."""
-        goal = Goal(GoalType.GATHER_WOOD)
+    def test_to_dict_and_describe(self):
+        assert PLANKS.to_dict() == {"predicate": "have", "item": "planks", "count": 12}
+        assert PLANKS.describe() == "have(planks, 12)"
+        assert GoalSpec(GoalPredicate.AT_HOME).describe() == "at_home()"
 
-        assert goal.allows("collect_log")
-        assert not goal.allows("build_step")
-
-    def test_survival_actions_always_allowed(self):
-        """Test survival actions are allowed in every goal."""
-        for goal_type in GoalType:
-            assert Goal(goal_type).allows("flee_hostile")
-
-    def test_only_the_explore_goal_explores(self):
-        """Test explore is not a fallback of other goals (it would keep them always available)."""
-        assert Goal(GoalType.EXPLORE).allows("explore")
-        for goal_type in (GoalType.GATHER_WOOD, GoalType.CRAFT, GoalType.BUILD_SHELTER):
-            assert not Goal(goal_type).allows("explore")
-
-
-class TestHouseProjectMaterialNeeds:
-    """Tests for the material shortfall computation."""
-
-    def test_nothing_in_hand(self):
-        """Test a fresh 5x5 house needs 71 + 6 (door) + 4 (table) planks = 21 logs."""
-        needs = HouseProject(blueprint=_blueprint()).material_needs(_obs())
-
-        assert needs.planks_short == 81
-        assert needs.logs_short == 21
-        assert needs.door_needed and needs.table_needed
-
-    def test_logs_in_hand_reduce_shortfall(self):
-        """Test held logs count toward the log shortfall only."""
-        needs = HouseProject(blueprint=_blueprint()).material_needs(
-            _obs({"wooden_sword": 1, "spruce_log": 20})
-        )
-
-        assert needs.logs_short == 1
-        assert needs.planks_short == 81
-        assert not needs.wood_ready
-
-    def test_table_nearby_or_held_is_not_needed(self):
-        """Test a placed or held crafting table removes its 4 planks."""
-        project = HouseProject(blueprint=_blueprint())
-
-        assert not project.material_needs(_obs(table=True)).table_needed
-        assert not project.material_needs(
-            _obs({"wooden_sword": 1, "crafting_table": 1})
-        ).table_needed
-        assert project.material_needs(_obs(table=True)).planks_short == 77
-
-    def test_door_in_hand_needs_no_door_planks(self):
-        """Test a held door removes the door and table planks."""
-        needs = HouseProject(blueprint=_blueprint()).material_needs(
-            _obs({"wooden_sword": 1, "spruce_door": 1})
-        )
-
-        assert not needs.door_needed and not needs.table_needed
-        assert needs.planks_short == 71
-
-    def test_remaining_blocks_come_from_build_status(self):
-        """Test placed blocks no longer count once building has started."""
-        obs = _obs(
-            {"wooden_sword": 1, "oak_planks": 10},
-            build=_build({BlockKind.PLANKS: 10, BlockKind.DOOR: 1}),
-        )
-        needs = HouseProject(blueprint=_blueprint()).material_needs(obs)
-
-        assert needs.planks_short == 10  # 10 blocks + 6 door + 4 table - 10 held
-        assert needs.logs_short == 3
-
-    def test_corner_logs_count_as_logs(self):
-        """Test log blocks are needed as logs, not planks."""
-        needs = HouseProject(blueprint=_blueprint(corner_pillars=True)).material_needs(
-            _obs({"wooden_sword": 1, "spruce_door": 1, "spruce_planks": 59})
-        )
-
-        assert needs.planks_short == 0
-        assert needs.logs_short == 12
-        assert needs.crafted
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"predicate": GoalPredicate.HAVE, "item": "planks"},
+            {"predicate": GoalPredicate.HAVE, "count": 3},
+            {"predicate": GoalPredicate.HAVE, "item": "planks", "count": 0},
+            {"predicate": GoalPredicate.PLACED, "item": "bed"},
+            {"predicate": GoalPredicate.EXPLORED},
+        ],
+    )
+    def test_missing_arguments_raise(self, kwargs):
+        with pytest.raises(ValueError):
+            GoalSpec(**kwargs)
 
 
-class TestSwordNeeds:
-    """Tests for the sword in the material needs."""
+class TestPlaySession:
+    """Tests for the goal lifecycle."""
 
-    def test_no_sword_needs_sword_planks_and_a_table(self):
-        """Test a missing sword adds 4 planks and needs a crafting table."""
-        project = HouseProject(blueprint=_blueprint())
-        done = _obs(build=_build({}, complete=True), inventory={})
-
-        needs = project.material_needs(done)
-
-        assert needs.sword_needed and needs.table_needed
-        assert needs.planks_short == 8  # sword 4 + table 4
-        assert not needs.crafted
-
-    def test_held_sword_is_not_needed(self):
-        """Test a held sword of any material removes the need."""
-        project = HouseProject(blueprint=_blueprint())
-        needs = project.material_needs(
-            _obs({"stone_sword": 1}, build=_build({}, complete=True), table=True)
-        )
-
-        assert not needs.sword_needed
-        assert needs.crafted
-
-
-class TestHouseProjectGoals:
-    """Tests for goal completion and re-decision rules."""
+    def _session(self, **kwargs) -> PlaySession:
+        session = PlaySession(blueprint=_blueprint(), **kwargs)
+        session.set_goal(Goal(PLANKS, "板材が要る"), "day")
+        return session
 
     def test_needs_goal_initially(self):
-        """Test a new project asks for a goal."""
-        project = HouseProject(blueprint=_blueprint())
+        session = PlaySession(blueprint=_blueprint())
+        assert session.needs_new_goal(_obs(goal=False))
+        assert session.goal_end_reason(_obs(goal=False)) == "no goal yet"
 
-        assert project.needs_new_goal(_obs())
-        assert project.goal_end_reason(_obs()) == "no goal yet"
+    def test_goal_goes_on_while_not_met(self):
+        assert not self._session().needs_new_goal(_obs())
 
-    def test_gather_wood_met_when_enough_logs(self):
-        """Test gathering ends once held logs cover the shortfall."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.GATHER_WOOD), "day")
+    def test_met_goal_ends(self):
+        assert self._session().goal_end_reason(_obs(met=True, remaining=0)) == (
+            "goal have(planks, 12) is met"
+        )
 
-        assert not project.goal_met(_obs({"wooden_sword": 1, "spruce_log": 20}))
-        assert project.goal_met(_obs({"wooden_sword": 1, "spruce_log": 21}))
+    def test_consecutive_failures_end_the_goal(self):
+        session = self._session(max_consecutive_failures=2)
+        session.record(FAILED)
+        assert not session.needs_new_goal(_obs())
+        session.record(FAILED)
+        assert "stuck" in session.goal_end_reason(_obs())
 
-    def test_craft_met_when_planks_and_door_ready(self):
-        """Test crafting ends when planks and the door are ready."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.CRAFT), "day")
+    def test_success_resets_failures(self):
+        session = self._session(max_consecutive_failures=2)
+        session.record(FAILED)
+        session.record(OK)
+        session.record(FAILED)
+        assert not session.needs_new_goal(_obs())
 
-        assert not project.goal_met(_obs({"wooden_sword": 1, "spruce_planks": 71}))
-        assert project.goal_met(_obs({"wooden_sword": 1, "spruce_planks": 71, "spruce_door": 1}))
+    def test_stall_counts_steps_without_less_remaining_work(self):
+        session = self._session(max_stalled_steps=2)
+        session.track_progress(_obs(remaining=5))
+        session.record(OK)
+        session.track_progress(_obs(remaining=5))
+        session.record(OK)
+        assert not session.needs_new_goal(_obs(remaining=5))
+        session.track_progress(_obs(remaining=6))
+        assert "stalled" in session.goal_end_reason(_obs(remaining=6))
 
-    def test_build_met_when_complete(self):
-        """Test building ends only when the bridge reports completion."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.BUILD_SHELTER), "day")
+    def test_progress_resets_the_stall(self):
+        session = self._session(max_stalled_steps=2)
+        session.track_progress(_obs(remaining=5))
+        session.record(OK)
+        session.track_progress(_obs(remaining=5))
+        session.record(OK)
+        session.track_progress(_obs(remaining=4))
+        assert session.stalled_steps == 0
 
-        assert not project.goal_met(_obs(build=_build({BlockKind.PLANKS: 1})))
-        assert project.goal_met(_obs(build=_build({}, complete=True)))
-        assert project.is_complete(_obs(build=_build({}, complete=True)))
+    def test_step_budget_ends_the_goal(self):
+        session = self._session(max_steps_per_goal=2)
+        session.record(OK)
+        session.record(OK)
+        assert "ran for 2 steps" in session.goal_end_reason(_obs())
 
-    def test_explore_met_after_steps(self):
-        """Test exploring ends after explore_steps steps."""
-        project = HouseProject(blueprint=_blueprint(), explore_steps=2)
-        project.set_goal(Goal(GoalType.EXPLORE), "day")
-        project.record(ActionResult("explore", True, "", 1.0))
-        assert not project.goal_met(_obs())
-        project.record(ActionResult("explore", True, "", 1.0))
-
-        assert project.goal_met(_obs())
-
-    def test_consecutive_failures_force_new_goal(self):
-        """Test repeated failures ask for a new goal and a success resets the count."""
-        project = HouseProject(blueprint=_blueprint(), max_consecutive_failures=2)
-        project.set_goal(Goal(GoalType.GATHER_WOOD), "day")
-        project.record(ActionResult("collect_log", False, "failed", 1.0))
-        project.record(ActionResult("collect_log", True, "ok", 1.0))
-        project.record(ActionResult("collect_log", False, "failed", 1.0))
-        assert not project.needs_new_goal(_obs())
-
-        project.record(ActionResult("collect_log", False, "failed", 1.0))
-        assert project.needs_new_goal(_obs())
-        assert "stuck" in project.goal_end_reason(_obs())
-
-    def test_step_budget_forces_new_goal(self):
-        """Test a goal pursued for max_steps_per_goal steps is re-decided."""
-        project = HouseProject(blueprint=_blueprint(), max_steps_per_goal=1)
-        project.set_goal(Goal(GoalType.GATHER_WOOD), "day")
-        project.record(ActionResult("collect_log", True, "ok", 1.0))
-
-        assert project.needs_new_goal(_obs())
-
-    def test_block_goal_forces_new_goal(self):
-        """Test block_goal marks the goal as stuck."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.CRAFT), "day")
-        project.block_goal()
-
-        assert project.needs_new_goal(_obs())
-
-    def test_set_goal_resets_counters(self):
-        """Test a new goal starts with fresh counters."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.CRAFT), "day")
-        project.block_goal()
-        project.set_goal(Goal(GoalType.GATHER_WOOD), "day")
-
-        assert project.steps_in_goal == 0
-        assert project.consecutive_failures == 0
-
-    def test_survive_night_met_in_the_morning(self):
-        """Test the night goal ends when the day begins."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.SURVIVE_NIGHT), "dusk")
-
-        assert not project.goal_met(_obs(phase="night"))
-        assert project.goal_met(_obs(phase="day"))
-
-    def test_survive_night_goes_on_while_a_mob_waits_outside(self):
-        """Test morning with a mob at the door (stay_inside still offered) keeps the goal."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.SURVIVE_NIGHT), "dawn")
-
-        assert not project.goal_met(_obs(actions=("stay_inside",), phase="day"))
-
-    def test_get_food_met_with_food_stock(self):
-        """Test the food goal ends once enough food is carried."""
-        project = HouseProject(blueprint=_blueprint(), food_stock=3)
-        project.set_goal(Goal(GoalType.GET_FOOD), "day")
-
-        assert not project.goal_met(_obs(food_items=2))
-        assert project.goal_met(_obs(food_items=3))
-
-    def test_time_of_day_change_forces_new_goal(self):
-        """Test dusk falling during a goal asks for a new decision."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.GATHER_WOOD), "day")
-
-        assert not project.needs_new_goal(_obs(phase="day"))
-        assert project.needs_new_goal(_obs(phase="dusk"))
-        assert project.goal_end_reason(_obs(phase="dusk")) == (
+    def test_time_of_day_change_ends_the_goal(self):
+        session = self._session()
+        assert session.goal_end_reason(_obs(phase="dusk")) == (
             "the time of day changed from day to dusk"
         )
 
-    def test_make_bed_met_when_a_bed_is_in_the_house(self):
-        """Test the bed goal ends once the bridge reports a bed in the house."""
-        project = HouseProject(blueprint=_blueprint())
-        project.set_goal(Goal(GoalType.MAKE_BED), "day")
-
-        assert not project.goal_met(_obs())
-        assert project.goal_met(replace(_obs(), bed_in_home=True))
-
-    def test_fulfilled_goals_are_not_offered(self):
-        """Test a finished house offers neither gathering, crafting nor building."""
-        project = HouseProject(blueprint=_blueprint())
-        done = _obs(
-            actions=("collect_log", "craft_planks", "explore", "hunt_animal"),
-            build=_build({}, complete=True),
-            table=True,
+    def test_set_goal_resets_counters(self):
+        session = self._session(max_stalled_steps=2)
+        session.track_progress(_obs(remaining=5))
+        session.record(FAILED)
+        session.track_progress(_obs(remaining=5))
+        session.set_goal(Goal(GoalSpec(GoalPredicate.AT_HOME)), "dusk")
+        assert (session.steps_in_goal, session.consecutive_failures, session.stalled_steps) == (
+            0,
+            0,
+            0,
         )
+        assert session.least_remaining is None
+        assert session.goal_phase == "dusk"
 
-        assert project.pursuable_goals(done) == [GoalType.EXPLORE, GoalType.GET_FOOD]
-
-    def test_limits_must_be_positive(self):
-        """Test non-positive limits are rejected."""
-        with pytest.raises(ValueError, match="max_steps_per_goal"):
-            HouseProject(blueprint=_blueprint(), max_steps_per_goal=0)
+    @pytest.mark.parametrize(
+        "field", ["max_steps_per_goal", "max_consecutive_failures", "max_stalled_steps"]
+    )
+    def test_limits_must_be_positive(self, field):
+        with pytest.raises(ValueError, match=field):
+            PlaySession(blueprint=_blueprint(), **{field: 0})

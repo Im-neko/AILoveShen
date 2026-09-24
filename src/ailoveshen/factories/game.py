@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
-from ailoveshen.application.use_cases.build_house import (
-    AdvanceHouseProjectUseCase,
-    StartHouseProjectUseCase,
-)
+from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
@@ -35,8 +32,8 @@ def create_game_service(
     """
     Create the game agent service with all dependencies wired up.
 
-    Gemini (main slot) designs the house and sets goals, Jev picks each
-    action, and the Mineflayer bridge sidecar plays.
+    Gemini (main slot) designs the house and sets goals, the Mineflayer
+    bridge sidecar judges them and grounds the candidates, Jev picks each one.
 
     Args:
         gemini: Gemini settings (settings.gemini)
@@ -82,7 +79,7 @@ def create_game_service(
     )
     prompt_builder = GamePromptTemplateBuilder()
 
-    start = StartHouseProjectUseCase(
+    start = StartPlayUseCase(
         text_generator=text_generator,
         prompt_builder=prompt_builder,
         bridge=bridge,
@@ -90,8 +87,9 @@ def create_game_service(
         character=create_character_profile(character),
         max_steps_per_goal=minecraft.max_steps_per_goal,
         max_consecutive_failures=minecraft.max_consecutive_failures,
+        max_stalled_steps=minecraft.max_stalled_steps,
     )
-    advance = AdvanceHouseProjectUseCase(
+    advance = AdvancePlayUseCase(
         bridge=bridge,
         text_generator=text_generator,
         prompt_builder=prompt_builder,
@@ -99,8 +97,8 @@ def create_game_service(
         event_publisher=event_publisher,
     )
     return GameService(
-        start_house_project=start,
-        advance_house_project=advance,
+        start_play=start,
+        advance_play=advance,
         bridge=bridge,
         text_generator=text_generator,
         action_selector=action_selector,

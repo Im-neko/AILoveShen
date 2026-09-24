@@ -122,9 +122,9 @@ class HouseDesignedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class GoalSetEvent(DomainEvent):
-    """Event raised when the LLM sets a new goal."""
+    """Event raised when the LLM sets a new goal (e.g. goal="have(planks, 12)")."""
 
-    goal_type: str = ""
+    goal: str = ""
     reason: str = ""
 
 

@@ -5,22 +5,29 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from ailoveshen.domain.value_objects import ActionResult, GameObservation, PlannedBlock
+from ailoveshen.domain.value_objects import (
+    ActionResult,
+    GameObservation,
+    GoalSpec,
+    GoalStatus,
+    PlannedBlock,
+)
 
 
 class IMinecraftBridge(ABC):
     """
     Output port for the process that plays Minecraft (Mineflayer sidecar).
 
-    The bridge owns everything that needs the live world: observation,
-    enumerating the actions executable right now, running them, and placing
-    a build plan's blocks. This interface is defined in the Application layer.
+    The bridge owns everything that needs the live world: judging the goal
+    from the world, decomposing it into what can be done now (the candidates),
+    running one candidate, and the build plan. This interface is defined in
+    the Application layer.
     """
 
     @abstractmethod
     async def observe(self) -> GameObservation:
         """
-        Take a snapshot of the game and the actions executable right now.
+        Take a snapshot of the game: the goal's status and the candidates.
 
         Raises:
             GameBridgeError: If the bridge is unreachable or not in the world
@@ -28,9 +35,20 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def set_goal(self, spec: GoalSpec) -> GoalStatus:
+        """
+        Set the goal the candidates are grounded for.
+
+        Raises:
+            GoalRejectedError: If the bridge rejects the goal (with the reason)
+            GameBridgeError: If the bridge is unreachable
+        """
+        ...
+
+    @abstractmethod
     async def act(self, action_id: str) -> ActionResult:
         """
-        Run one action to completion (or failure) and report the outcome.
+        Run one candidate to completion (or failure) and report the outcome.
 
         Raises:
             GameBridgeError: If the bridge is unreachable or busy

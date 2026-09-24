@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum, IntEnum
-from typing import Optional
+from typing import Any, Optional
 
 
 def _utc_now() -> datetime:
@@ -355,57 +355,96 @@ class FilterResult:
 # =============================================================================
 
 
-class GoalType(str, Enum):
+class GoalPredicate(str, Enum):
     """
-    Goals the LLM can set for the game agent.
+    The vocabulary goals are set in (judged by the Minecraft bridge from the world).
 
-    Only goals that have executable actions in the Minecraft bridge are
-    listed; offering the LLM a goal nothing can carry out would stall the agent.
+    - HAVE: hold `count` of an item or group (planks, log, door, bed, wool, food, ...)
+    - BUILT: every block of the house plan is in place
+    - PLACED: an item placed somewhere (a bed in the home)
+    - AT_HOME: inside the house with the door closed
+    - THROUGH_NIGHT: the night has passed (inside the house, or asleep)
+    - EXPLORED: `distance` blocks away from where the goal was set
     """
 
-    GATHER_WOOD = "gather_wood"
-    CRAFT = "craft"
-    BUILD_SHELTER = "build_shelter"
-    EXPLORE = "explore"
-    SURVIVE_NIGHT = "survive_night"
-    GET_FOOD = "get_food"
-    MAKE_BED = "make_bed"
+    HAVE = "have"
+    BUILT = "built"
+    PLACED = "placed"
+    AT_HOME = "at_home"
+    THROUGH_NIGHT = "through_night"
+    EXPLORED = "explored"
 
 
-# Bridge action ids that serve each goal. Survival actions are always allowed.
-GOAL_ACTIONS: dict[GoalType, frozenset[str]] = {
-    GoalType.GATHER_WOOD: frozenset({"collect_log", "pickup_drop"}),
-    GoalType.CRAFT: frozenset(
-        {
-            "craft_planks",
-            "craft_crafting_table",
-            "place_crafting_table",
-            "craft_door",
-            "craft_sword",
-        }
-    ),
-    GoalType.BUILD_SHELTER: frozenset({"build_step"}),
-    GoalType.EXPLORE: frozenset({"explore", "pickup_drop"}),
-    GoalType.SURVIVE_NIGHT: frozenset({"go_home", "stay_inside", "sleep"}),
-    GoalType.GET_FOOD: frozenset({"hunt_animal"}),
-    GoalType.MAKE_BED: frozenset({"hunt_sheep", "craft_bed", "place_bed"}),
-}
-SURVIVAL_ACTIONS: frozenset[str] = frozenset(
-    {"attack_hostile", "flee_hostile", "equip_weapon", "eat"}
-)
+@dataclass(frozen=True)
+class GoalSpec:
+    """
+    A goal in the predicate vocabulary with its arguments.
+
+    Only the shape is checked here; whether an item exists or the goal makes
+    sense in the world (e.g. a home to go to) is checked by the bridge.
+
+    Raises:
+        ValueError: If an argument the predicate needs is missing or invalid.
+    """
+
+    predicate: GoalPredicate
+    item: Optional[str] = None
+    count: Optional[int] = None
+    where: Optional[str] = None
+    distance: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        """Check the arguments the predicate needs."""
+        if self.predicate == GoalPredicate.HAVE:
+            if not self.item:
+                raise ValueError("have needs an item")
+            if self.count is None or self.count < 1:
+                raise ValueError(f"have needs a positive count, got {self.count}")
+        if self.predicate == GoalPredicate.PLACED and not (self.item and self.where):
+            raise ValueError("placed needs an item and where")
+        if self.predicate == GoalPredicate.EXPLORED and (
+            self.distance is None or self.distance < 1
+        ):
+            raise ValueError(f"explored needs a positive distance, got {self.distance}")
+
+    def to_dict(self) -> dict[str, Any]:
+        """The spec as sent to the bridge (arguments that are set only)."""
+        out: dict[str, Any] = {"predicate": self.predicate.value}
+        for key in ("item", "count", "where", "distance"):
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
+        return out
+
+    def describe(self) -> str:
+        """Short form for prompts and logs, e.g. have(planks, 12)."""
+        args = [str(v) for v in (self.item, self.count, self.where, self.distance) if v is not None]
+        return f"{self.predicate.value}({', '.join(args)})"
 
 
 @dataclass(frozen=True)
 class Goal:
     """The current direction set by the LLM; the action selector works within it."""
 
-    goal_type: GoalType
+    spec: GoalSpec
     reason: str = ""
     set_at: datetime = field(default_factory=_utc_now)
 
-    def allows(self, action_id: str) -> bool:
-        """Whether an action may be chosen while pursuing this goal."""
-        return action_id in SURVIVAL_ACTIONS or action_id in GOAL_ACTIONS[self.goal_type]
+
+@dataclass(frozen=True)
+class GoalStatus:
+    """
+    The current goal judged from the world by the bridge.
+
+    `remaining` is the work left (items to gather, crafts, blocks to place);
+    progress is it going down. `lines` show the subgoals with their progress,
+    `blocked` why some of them cannot be advanced right now.
+    """
+
+    met: bool
+    remaining: int
+    lines: tuple[str, ...] = ()
+    blocked: tuple[str, ...] = ()
 
 
 class Side(str, Enum):
@@ -563,48 +602,11 @@ class HouseBlueprint:
 
 
 @dataclass(frozen=True)
-class BuildStatus:
-    """Progress of the house plan in the world, as reported by the bridge."""
-
-    total: int
-    placed: int
-    complete: bool
-    site_chosen: bool
-    remaining: dict[BlockKind, int] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class MaterialNeeds:
-    """What is still missing to finish the house, given the current inventory."""
-
-    PLANKS_PER_LOG = 4
-    PLANKS_PER_TABLE = 4
-    PLANKS_PER_DOOR_CRAFT = 6
-    PLANKS_PER_SWORD = 4  # 2 planks + a stick (2 planks make 4 sticks)
-
-    logs_short: int
-    planks_short: int
-    door_needed: bool
-    table_needed: bool
-    sword_needed: bool = False
-
-    @property
-    def wood_ready(self) -> bool:
-        """Enough logs are held to craft everything still missing."""
-        return self.logs_short == 0
-
-    @property
-    def crafted(self) -> bool:
-        """All planks, the door and the sword are crafted."""
-        return self.planks_short == 0 and not self.door_needed and not self.sword_needed
-
-
-@dataclass(frozen=True)
-class AvailableAction:
-    """An action the bridge can execute right now."""
+class Candidate:
+    """A concrete action the bridge can execute right now (e.g. dig oak_log at 3,70,5)."""
 
     action_id: str
-    description: str
+    description: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -612,31 +614,23 @@ class GameObservation:
     """
     A compact snapshot of the game for decision making.
 
-    `state` is the JSON-serializable summary given to the decision models
-    as-is; the typed fields are what the domain logic reads.
+    `state` is the bridge's JSON summary of the world; the typed fields are
+    what the application logic reads.
     """
 
     state: dict
-    inventory: dict[str, int]
-    actions: tuple[AvailableAction, ...]
+    candidates: tuple[Candidate, ...]
     health: float
     food: int
-    crafting_table_nearby: bool = False
-    build: Optional[BuildStatus] = None
+    needs: tuple[str, ...] = ()
+    goal: Optional[GoalStatus] = None
     time_phase: str = "day"  # day / dusk / night / dawn
-    food_items: int = 0
+    has_plan: bool = False
+    house_complete: bool = False
     has_home: bool = False
     inside_home: bool = False
     bed_in_home: bool = False
     busy: bool = False  # the bridge is running an action or a reflex
-
-    def can(self, action_id: str) -> bool:
-        """Whether the action is executable right now."""
-        return any(a.action_id == action_id for a in self.actions)
-
-    def count(self, suffix: str) -> int:
-        """Total count of inventory items whose name ends with suffix (e.g. "_log")."""
-        return sum(n for name, n in self.inventory.items() if name.endswith(suffix))
 
 
 @dataclass(frozen=True)

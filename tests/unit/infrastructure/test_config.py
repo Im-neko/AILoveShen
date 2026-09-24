@@ -117,9 +117,7 @@ class TestLoadYamlFile:
 
     def test_load_existing_file(self):
         """Test loading existing YAML file."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("key: value\nnumber: 42")
             f.flush()
             path = Path(f.name)
@@ -137,9 +135,7 @@ class TestLoadYamlFile:
 
     def test_load_empty_file(self):
         """Test loading empty file returns empty dict."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("")
             f.flush()
             path = Path(f.name)
@@ -152,9 +148,7 @@ class TestLoadYamlFile:
 
     def test_load_invalid_yaml_raises_error(self):
         """Test loading invalid YAML raises ConfigurationError."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: yaml: content: [")
             f.flush()
             path = Path(f.name)
@@ -209,9 +203,7 @@ class TestLoadSettings:
             with tempfile.TemporaryDirectory() as tmpdir:
                 config_dir = Path(tmpdir)
                 default_yaml = config_dir / "default.yaml"
-                default_yaml.write_text(
-                    "twitch:\n  channel: ${TEST_CHANNEL}"
-                )
+                default_yaml.write_text("twitch:\n  channel: ${TEST_CHANNEL}")
 
                 settings = load_settings(config_dir=config_dir)
                 assert settings.twitch.channel == "testchannel"
@@ -253,10 +245,7 @@ class TestLoadGeminiAndCharacterSettings:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             (config_dir / "default.yaml").write_text(
-                "character:\n"
-                "  name: Shen\n"
-                "  sentence_endings:\n"
-                "    - のだ\n"
+                "character:\n  name: Shen\n  sentence_endings:\n    - のだ\n"
             )
 
             settings = load_settings(config_dir=config_dir)
@@ -344,6 +333,7 @@ class TestLoadJevAndMinecraftSettings:
                 "    timeout_seconds: 90\n"
                 "  agent:\n"
                 "    max_steps_per_goal: 9\n"
+                "    max_stalled_steps: 4\n"
             )
 
             settings = load_settings(config_dir=config_dir)
@@ -356,6 +346,7 @@ class TestLoadJevAndMinecraftSettings:
             assert settings.minecraft.request_timeout_seconds == 90
             assert settings.minecraft.max_steps_per_goal == 9
             assert settings.minecraft.max_consecutive_failures == 3
+            assert settings.minecraft.max_stalled_steps == 4
 
     def test_project_default_yaml_reads_typesafe_key(self):
         """Test the shipped default.yaml takes the Jev key from TYPESAFE_API_KEY."""

@@ -11,15 +11,11 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from ailoveshen.domain.value_objects import (
-    GOAL_ACTIONS,
     ActionResult,
-    BlockKind,
     ConversationMessage,
     GameObservation,
     Goal,
-    GoalType,
     HouseBlueprint,
-    MaterialNeeds,
     MessageRole,
     MessageType,
 )
@@ -156,122 +152,72 @@ class Conversation(Entity):
 
 
 @dataclass(eq=False)
-class HouseProject(Entity):
+class PlaySession(Entity):
     """
-    Building one house: the blueprint, the current goal and the progress rules.
+    A play session: the house to build and the lifecycle of the current goal.
 
-    Goal completion is decided here from the observed world, not by the LLM:
-    the LLM chooses what to pursue next, the project says when a goal is met.
+    Whether a goal is met is judged by the bridge from the world; the session
+    decides when a new goal is due: met, stuck (actions keep failing), stalled
+    (the remaining work stopped going down), over budget, or the time of day
+    changed.
 
     Raises:
         ValueError: If a limit is not positive.
     """
 
     blueprint: HouseBlueprint = field(kw_only=True)
-    max_steps_per_goal: int = 15
+    max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
-    explore_steps: int = 3
-    food_stock: int = 4
+    max_stalled_steps: int = 8
     goal: Optional[Goal] = field(default=None, init=False)
     goal_phase: str = field(default="", init=False)
     steps_in_goal: int = field(default=0, init=False)
     consecutive_failures: int = field(default=0, init=False)
+    stalled_steps: int = field(default=0, init=False)
+    least_remaining: Optional[int] = field(default=None, init=False)
     completion_announced: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
         """Validate limits."""
-        for label in (
-            "max_steps_per_goal",
-            "max_consecutive_failures",
-            "explore_steps",
-            "food_stock",
-        ):
+        for label in ("max_steps_per_goal", "max_consecutive_failures", "max_stalled_steps"):
             if getattr(self, label) <= 0:
                 raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
 
-    def material_needs(self, obs: GameObservation) -> MaterialNeeds:
-        """Compute what is missing from the remaining blocks and the inventory."""
-        remaining = obs.build.remaining if obs.build else self.blueprint.material_counts()
-        planks_blocks = remaining.get(BlockKind.PLANKS, 0)
-        log_blocks = remaining.get(BlockKind.LOG, 0)
-        door_needed = remaining.get(BlockKind.DOOR, 0) > 0 and obs.count("_door") == 0
-        sword_needed = obs.count("_sword") == 0
-        table_needed = (
-            (door_needed or sword_needed)
-            and not obs.crafting_table_nearby
-            and obs.inventory.get("crafting_table", 0) == 0
-        )
-
-        planks_total = planks_blocks
-        if door_needed:
-            planks_total += MaterialNeeds.PLANKS_PER_DOOR_CRAFT
-        if sword_needed:
-            planks_total += MaterialNeeds.PLANKS_PER_SWORD
-        if table_needed:
-            planks_total += MaterialNeeds.PLANKS_PER_TABLE
-        planks_short = max(0, planks_total - obs.count("_planks"))
-        logs_total = log_blocks + -(-planks_short // MaterialNeeds.PLANKS_PER_LOG)
-        return MaterialNeeds(
-            logs_short=max(0, logs_total - obs.count("_log")),
-            planks_short=planks_short,
-            door_needed=door_needed,
-            table_needed=table_needed,
-            sword_needed=sword_needed,
-        )
-
-    def is_complete(self, obs: GameObservation) -> bool:
-        """Every planned block is in place in the world."""
-        return obs.build is not None and obs.build.complete
-
-    def goal_met(self, obs: GameObservation) -> bool:
-        """Whether the current goal's purpose is fulfilled."""
-        if self.goal is None:
-            return False
-        if self.goal.goal_type == GoalType.EXPLORE:
-            return self.steps_in_goal >= self.explore_steps
-        return self.is_met(self.goal.goal_type, obs)
-
-    def is_met(self, goal_type: GoalType, obs: GameObservation) -> bool:
-        """Whether a goal's purpose is already fulfilled (exploring never is)."""
-        needs = self.material_needs(obs)
-        if goal_type == GoalType.GATHER_WOOD:
-            return needs.wood_ready
-        if goal_type == GoalType.CRAFT:
-            return needs.crafted
-        if goal_type == GoalType.BUILD_SHELTER:
-            return self.is_complete(obs)
-        if goal_type == GoalType.SURVIVE_NIGHT:
-            # Morning, and nothing waits at the door (the bridge offers stay_inside then)
-            return obs.time_phase == "day" and not obs.can("stay_inside")
-        if goal_type == GoalType.GET_FOOD:
-            return obs.food_items >= self.food_stock
-        if goal_type == GoalType.MAKE_BED:
-            return obs.bed_in_home
-        return False
-
-    def pursuable_goals(self, obs: GameObservation) -> list[GoalType]:
-        """
-        Goals worth offering: not fulfilled yet, with an executable goal action.
-
-        A fulfilled goal would end right after being chosen, and the LLM would
-        be asked again at every step.
-        """
-        ids = {a.action_id for a in obs.actions}
-        return [g for g in GoalType if GOAL_ACTIONS[g] & ids and not self.is_met(g, obs)]
+    def track_progress(self, obs: GameObservation) -> None:
+        """Note the remaining work of the current goal; not going down counts as stalling."""
+        if self.goal is None or obs.goal is None:
+            return
+        remaining = obs.goal.remaining
+        if self.least_remaining is None or remaining < self.least_remaining:
+            self.least_remaining = remaining
+            self.stalled_steps = 0
+        elif self.steps_in_goal > 0:
+            self.stalled_steps += 1
 
     def phase_changed(self, obs: GameObservation) -> bool:
         """The time of day moved on (e.g. dusk began) since the goal was set."""
         return self.goal is not None and obs.time_phase != self.goal_phase
 
     def needs_new_goal(self, obs: GameObservation) -> bool:
-        """A goal decision is due: none yet, met, stuck, or pursued too long."""
-        return (
-            self.goal is None
-            or self.goal_met(obs)
-            or self.consecutive_failures >= self.max_consecutive_failures
-            or self.steps_in_goal >= self.max_steps_per_goal
-            or self.phase_changed(obs)
-        )
+        """A goal decision is due: none yet, met, stuck, stalled, too long, or dusk/dawn."""
+        return bool(self.goal_end_reason(obs))
+
+    def goal_end_reason(self, obs: GameObservation) -> str:
+        """Why a new goal is due, for the LLM prompt and logs ("" while the goal goes on)."""
+        if self.goal is None or obs.goal is None:
+            return "no goal yet"
+        name = self.goal.spec.describe()
+        if obs.goal.met:
+            return f"goal {name} is met"
+        if self.consecutive_failures >= self.max_consecutive_failures:
+            return f"goal {name} is stuck (actions keep failing)"
+        if self.stalled_steps >= self.max_stalled_steps:
+            return f"goal {name} stalled (no progress in {self.stalled_steps} steps)"
+        if self.steps_in_goal >= self.max_steps_per_goal:
+            return f"goal {name} ran for {self.steps_in_goal} steps"
+        if self.phase_changed(obs):
+            return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
+        return ""
 
     def set_goal(self, goal: Goal, time_phase: str) -> None:
         """Start pursuing a new goal at the given time of day."""
@@ -279,29 +225,9 @@ class HouseProject(Entity):
         self.goal_phase = time_phase
         self.steps_in_goal = 0
         self.consecutive_failures = 0
+        self.stalled_steps = 0
+        self.least_remaining = None
         self.updated_at = _utc_now()
-
-    def block_goal(self) -> None:
-        """Nothing can be done for the current goal right now: force a new decision."""
-        self.consecutive_failures = self.max_consecutive_failures
-        self.updated_at = _utc_now()
-
-    def goal_end_reason(self, obs: GameObservation) -> str:
-        """Why a new goal is due (for the LLM prompt and logs)."""
-        if self.goal is None:
-            return "no goal yet"
-        if self.goal_met(obs):
-            return f"goal {self.goal.goal_type.value} is met"
-        if self.consecutive_failures >= self.max_consecutive_failures:
-            return (
-                f"goal {self.goal.goal_type.value} is stuck "
-                "(actions keep failing or none is available)"
-            )
-        if self.steps_in_goal >= self.max_steps_per_goal:
-            return f"goal {self.goal.goal_type.value} ran for {self.steps_in_goal} steps"
-        if self.phase_changed(obs):
-            return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
-        return ""
 
     def record(self, result: ActionResult) -> None:
         """Count a step toward the current goal."""

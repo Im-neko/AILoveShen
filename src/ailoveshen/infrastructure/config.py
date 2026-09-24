@@ -85,8 +85,9 @@ class MinecraftSettings:
     bridge_port: int = 3000
     # Must exceed the bridge's per-action timeout (20s)
     request_timeout_seconds: float = 60.0
-    max_steps_per_goal: int = 15
+    max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
+    max_stalled_steps: int = 8
 
 
 @dataclass
@@ -313,6 +314,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             max_consecutive_failures=agent_data.get(
                 "max_consecutive_failures", defaults.max_consecutive_failures
             ),
+            max_stalled_steps=agent_data.get("max_stalled_steps", defaults.max_stalled_steps),
         )
 
     if "tts" in data:

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Integration test: Gemini designs a house and sets goals, Jev plays, the bridge builds it.
+"""Integration test: Gemini designs a house and sets goals, Jev picks actions, the bridge plays.
 
-Nothing is given to the bot: it gathers wood, crafts and builds on its own.
+Nothing is given to the bot: it gathers wood, crafts, builds and gets through
+the night on its own. Goals are judged by the bridge from the world.
 
 Prerequisites:
 1. Minecraft server running (docker/docker-compose.minecraft.yml)
@@ -31,7 +32,7 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 
 async def run(max_steps: int) -> bool:
-    """Build a house and report whether every block is in place."""
+    """Play, and report whether the house is complete."""
     settings = load_settings(config_dir=CONFIG_DIR)
     event_bus = AsyncEventBus()
 
@@ -39,7 +40,7 @@ async def run(max_steps: int) -> bool:
         print(f"[design] {event.name}: {event.concept}", flush=True)
 
     async def on_goal(event: GoalSetEvent) -> None:
-        print(f"[goal] {event.goal_type}: {event.reason}", flush=True)
+        print(f"[goal] {event.goal}: {event.reason}", flush=True)
 
     async def on_completed(event: HouseCompletedEvent) -> None:
         print(f"[done] {event.name} is complete", flush=True)
@@ -60,11 +61,11 @@ async def run(max_steps: int) -> bool:
     finally:
         await game.close()
 
-    b = outcome.project.blueprint
+    b = outcome.session.blueprint
     print("=" * 60)
     print(f"House: {b.name} {b.width}x{b.depth}x{b.wall_height} ({len(b.blocks())} blocks)")
-    print(f"Complete: {outcome.complete} after {outcome.steps} steps")
-    return outcome.complete
+    print(f"Complete: {outcome.house_complete} after {outcome.steps} steps")
+    return outcome.house_complete
 
 
 def main() -> None:

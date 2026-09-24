@@ -5,30 +5,33 @@ import json
 import httpx
 import pytest
 
-from ailoveshen.domain.exceptions import GameBridgeError
-from ailoveshen.domain.value_objects import BlockKind, PlannedBlock
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
+from ailoveshen.domain.value_objects import BlockKind, GoalPredicate, GoalSpec, PlannedBlock
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
     MineflayerBridgeClient,
 )
 
+# The shape of GET /observe (minecraft-bridge/src/index.mjs)
 OBSERVE = {
     "busy": True,
     "observation": {
         "time": {"phase": "dusk", "time_of_day": 12500},
         "self": {"health": 18.5, "food": 17},
-        "food_items": 3,
         "home": {"inside": False, "door_open": False, "bed": True},
         "inventory": {"spruce_log": 3},
-        "crafting_table_nearby": True,
-        "build": {
-            "origin": {"x": 1, "y": 2, "z": 3},
-            "total": 72,
-            "placed": 10,
-            "complete": False,
-            "materials_needed": {"planks": 61, "door": 1},
-        },
+        "build": {"origin": {"x": 1, "y": 2, "z": 3}, "total": 72, "placed": 10, "complete": False},
     },
-    "actions": [{"id": "collect_log", "description": "Chop"}],
+    "needs": ["night is coming: hostile mobs spawn outside in the dark"],
+    "goal": {
+        "spec": {"predicate": "have", "item": "planks", "count": 12},
+        "met": False,
+        "remaining": 4,
+        "lines": ["have 12 planks (5/12): craft spruce_planks x2"],
+        "blocked": ["no oak_log nearby for oak_log"],
+    },
+    "candidates": [
+        {"id": "dig spruce_log at 1,70,2", "verb": "dig", "target": "spruce_log", "distance": 3}
+    ],
 }
 
 
@@ -51,36 +54,68 @@ class TestMineflayerBridgeClient:
         obs = await client.observe()
 
         assert obs.health == 18.5 and obs.food == 17
-        assert obs.inventory == {"spruce_log": 3}
-        assert obs.crafting_table_nearby
-        assert obs.actions[0].action_id == "collect_log"
-        assert obs.build.placed == 10 and obs.build.site_chosen
-        assert obs.build.remaining == {BlockKind.PLANKS: 61, BlockKind.DOOR: 1}
-        assert obs.state is not None and obs.state["inventory"] == {"spruce_log": 3}
-        assert obs.time_phase == "dusk" and obs.food_items == 3 and obs.busy
+        assert obs.candidates[0].action_id == "dig spruce_log at 1,70,2"
+        assert obs.candidates[0].description == {
+            "verb": "dig",
+            "target": "spruce_log",
+            "distance": 3,
+        }
+        assert obs.goal.remaining == 4 and not obs.goal.met
+        assert obs.goal.lines == ("have 12 planks (5/12): craft spruce_planks x2",)
+        assert obs.goal.blocked == ("no oak_log nearby for oak_log",)
+        assert obs.needs == ("night is coming: hostile mobs spawn outside in the dark",)
+        assert obs.state["inventory"] == {"spruce_log": 3}
+        assert obs.time_phase == "dusk" and obs.busy
+        assert obs.has_plan and not obs.house_complete
         assert obs.has_home and not obs.inside_home and obs.bed_in_home
 
     @pytest.mark.asyncio
-    async def test_observe_without_plan(self):
-        """Test no build section means no build status."""
-        data = {**OBSERVE, "observation": {**OBSERVE["observation"]}}
+    async def test_observe_without_plan_home_or_goal(self):
+        """Test missing sections mean no plan, no home and no goal yet."""
+        data = {**OBSERVE, "goal": None, "observation": {**OBSERVE["observation"], "home": None}}
         del data["observation"]["build"]
-        client = _client(lambda req: httpx.Response(200, json=data))
-
-        assert (await client.observe()).build is None
-
-    @pytest.mark.asyncio
-    async def test_observe_without_home(self):
-        """Test a null home means no home yet."""
-        data = {**OBSERVE, "observation": {**OBSERVE["observation"], "home": None}}
         client = _client(lambda req: httpx.Response(200, json=data))
 
         obs = await client.observe()
 
+        assert not obs.has_plan and not obs.house_complete
         assert not obs.has_home and not obs.inside_home
+        assert obs.goal is None
 
     @pytest.mark.asyncio
-    async def test_act_posts_action_id(self):
+    async def test_set_goal_puts_the_spec(self):
+        """Test set_goal() sends the spec and returns the goal's status."""
+        seen = {}
+
+        def handler(req):
+            seen["method"] = req.method
+            seen["path"] = req.url.path
+            seen["body"] = json.loads(req.content)
+            return httpx.Response(200, json=OBSERVE["goal"])
+
+        status = await _client(handler).set_goal(
+            GoalSpec(GoalPredicate.HAVE, item="planks", count=12)
+        )
+
+        assert seen == {
+            "method": "PUT",
+            "path": "/goal",
+            "body": {"predicate": "have", "item": "planks", "count": 12},
+        }
+        assert status.remaining == 4
+
+    @pytest.mark.asyncio
+    async def test_rejected_goal_raises_with_the_reason(self):
+        """Test a 400 becomes GoalRejectedError carrying the bridge's reason."""
+        client = _client(
+            lambda req: httpx.Response(400, json={"error": "unknown item or group: x"})
+        )
+
+        with pytest.raises(GoalRejectedError, match="unknown item or group: x"):
+            await client.set_goal(GoalSpec(GoalPredicate.HAVE, item="x", count=1))
+
+    @pytest.mark.asyncio
+    async def test_act_posts_candidate_id(self):
         """Test act() posts the id and returns the result."""
         seen = {}
 
@@ -89,9 +124,9 @@ class TestMineflayerBridgeClient:
             seen["body"] = json.loads(req.content)
             return httpx.Response(200, json={"ok": False, "result": "failed: x", "seconds": 1.5})
 
-        result = await _client(handler).act("build_step")
+        result = await _client(handler).act("wait inside")
 
-        assert seen == {"path": "/act", "body": {"id": "build_step"}}
+        assert seen == {"path": "/act", "body": {"id": "wait inside"}}
         assert not result.ok and result.result == "failed: x" and result.seconds == 1.5
 
     @pytest.mark.asyncio
@@ -124,7 +159,7 @@ class TestMineflayerBridgeClient:
         client = _client(lambda req: httpx.Response(409, json={"error": "busy"}))
 
         with pytest.raises(GameBridgeError, match="409"):
-            await client.act("explore")
+            await client.act("explore north")
 
     @pytest.mark.asyncio
     async def test_unreachable_raises(self):

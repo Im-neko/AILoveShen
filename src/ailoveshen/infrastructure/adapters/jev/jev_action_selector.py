@@ -11,7 +11,7 @@ from typesafe_sdk import AsyncTypeSafeClient, Choice, TypeSafeError
 
 from ailoveshen.application.ports.output.action_selector import IActionSelector
 from ailoveshen.domain.exceptions import ActionSelectionError
-from ailoveshen.domain.value_objects import ActionDecision, AvailableAction
+from ailoveshen.domain.value_objects import ActionDecision, Candidate
 
 QUESTION = "action"
 
@@ -21,7 +21,7 @@ class JevActionSelector(IActionSelector):
     Infrastructure adapter for TypeSafe AI's System One model (Jev).
 
     Implements IActionSelector with one Choice question whose criteria are
-    the candidate action ids and their descriptions.
+    the candidate ids and their descriptions (JSON objects).
     """
 
     def __init__(
@@ -46,7 +46,7 @@ class JevActionSelector(IActionSelector):
     async def select(
         self,
         state: dict[str, Any],
-        actions: Sequence[AvailableAction],
+        actions: Sequence[Candidate],
         instructions: str,
     ) -> ActionDecision:
         """

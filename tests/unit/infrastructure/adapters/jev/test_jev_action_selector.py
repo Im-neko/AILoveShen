@@ -9,13 +9,16 @@ pytest.importorskip("typesafe_sdk", reason="typesafe-sdk not installed")
 from typesafe_sdk import Choice, TypeSafeAPIConnectionError  # noqa: E402
 
 from ailoveshen.domain.exceptions import ActionSelectionError  # noqa: E402
-from ailoveshen.domain.value_objects import AvailableAction  # noqa: E402
+from ailoveshen.domain.value_objects import Candidate  # noqa: E402
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import (  # noqa: E402
     JevActionSelector,
 )
 
 MODULE = "ailoveshen.infrastructure.adapters.jev.jev_action_selector"
-ACTIONS = (AvailableAction("collect_log", "Chop a log"), AvailableAction("explore", "Walk"))
+ACTIONS = (
+    Candidate("collect_log", {"verb": "dig", "target": "oak_log", "distance": 3}),
+    Candidate("explore", {"verb": "explore", "target": "north"}),
+)
 
 
 @pytest.fixture
@@ -44,7 +47,7 @@ class TestJevActionSelector:
 
     @pytest.mark.asyncio
     async def test_sends_one_choice_question(self, mock_client):
-        """Test the candidates become the criteria of one Choice question."""
+        """Test the candidates (JSON descriptions) become the criteria of one Choice question."""
         selector = JevActionSelector(api_key="k", model="jev-latest")
 
         await selector.select({"hp": 20}, ACTIONS, "pick one")
@@ -55,7 +58,10 @@ class TestJevActionSelector:
         question = kwargs["questions"]["action"]
         assert isinstance(question, Choice)
         assert question.instructions == "pick one"
-        assert dict(question.criteria) == {"collect_log": "Chop a log", "explore": "Walk"}
+        assert dict(question.criteria) == {
+            "collect_log": {"verb": "dig", "target": "oak_log", "distance": 3},
+            "explore": {"verb": "explore", "target": "north"},
+        }
 
     @pytest.mark.asyncio
     async def test_returns_decision(self, mock_client):

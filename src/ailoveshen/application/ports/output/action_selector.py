@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import Any
 
-from ailoveshen.domain.value_objects import ActionDecision, AvailableAction
+from ailoveshen.domain.value_objects import ActionDecision, Candidate
 
 
 class IActionSelector(ABC):
@@ -20,7 +20,7 @@ class IActionSelector(ABC):
     async def select(
         self,
         state: dict[str, Any],
-        actions: Sequence[AvailableAction],
+        actions: Sequence[Candidate],
         instructions: str,
     ) -> ActionDecision:
         """

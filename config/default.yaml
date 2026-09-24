@@ -239,10 +239,12 @@ minecraft:
     timeout_seconds: 60
 
   agent:
-    # Ask the LLM for a new goal after this many steps in one goal
-    max_steps_per_goal: 15
+    # Ask the LLM for a new goal after this many steps (primitive actions) in one goal
+    max_steps_per_goal: 40
     # ... or after this many failed steps in a row
     max_consecutive_failures: 3
+    # ... or after this many steps without the remaining work going down
+    max_stalled_steps: 8
 
 # Logging
 logging:

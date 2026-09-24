@@ -8,13 +8,13 @@ from typing import Any
 import httpx
 
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.domain.exceptions import GameBridgeError
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
 from ailoveshen.domain.value_objects import (
     ActionResult,
-    AvailableAction,
-    BlockKind,
-    BuildStatus,
+    Candidate,
     GameObservation,
+    GoalSpec,
+    GoalStatus,
     PlannedBlock,
 )
 
@@ -40,12 +40,26 @@ class MineflayerBridgeClient(IMinecraftBridge):
         self._client = httpx.AsyncClient(base_url=f"http://{host}:{port}", timeout=timeout_seconds)
 
     async def observe(self) -> GameObservation:
-        """Fetch the observation and the executable actions."""
+        """Fetch the observation, the goal's status and the candidates."""
         data = await self._request("GET", "/observe")
         return _to_observation(data)
 
+    async def set_goal(self, spec: GoalSpec) -> GoalStatus:
+        """Set the goal; a 400 from the bridge carries the reason it was rejected."""
+        try:
+            response = await self._client.put("/goal", json=spec.to_dict())
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (PUT /goal): {e}") from e
+        if response.status_code == 400:
+            raise GoalRejectedError(f"goal {spec.describe()} rejected: {response.json()['error']}")
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge PUT /goal -> {response.status_code}: {response.text[:200]}"
+            )
+        return _to_status(response.json())
+
     async def act(self, action_id: str) -> ActionResult:
-        """Run one action on the bridge."""
+        """Run one candidate on the bridge."""
         data = await self._request("POST", "/act", json={"id": action_id})
         return ActionResult(
             action_id=action_id,
@@ -86,29 +100,32 @@ class MineflayerBridgeClient(IMinecraftBridge):
         return response.json()
 
 
+def _to_status(data: dict[str, Any]) -> GoalStatus:
+    return GoalStatus(
+        met=bool(data["met"]),
+        remaining=int(data["remaining"]),
+        lines=tuple(str(x) for x in data.get("lines", [])),
+        blocked=tuple(str(x) for x in data.get("blocked", [])),
+    )
+
+
 def _to_observation(data: dict[str, Any]) -> GameObservation:
     obs = data["observation"]
     home = obs.get("home")
     build = obs.get("build")
-    build_status = None
-    if build is not None:
-        build_status = BuildStatus(
-            total=int(build["total"]),
-            placed=int(build["placed"]),
-            complete=bool(build["complete"]),
-            site_chosen=build.get("origin") is not None,
-            remaining={BlockKind(k): int(v) for k, v in build.get("materials_needed", {}).items()},
-        )
     return GameObservation(
         state=obs,
-        inventory={str(k): int(v) for k, v in obs["inventory"].items()},
-        actions=tuple(AvailableAction(a["id"], a["description"]) for a in data["actions"]),
+        candidates=tuple(
+            Candidate(c["id"], {k: v for k, v in c.items() if k != "id"})
+            for c in data["candidates"]
+        ),
         health=float(obs["self"]["health"]),
         food=int(obs["self"]["food"]),
-        crafting_table_nearby=bool(obs.get("crafting_table_nearby", False)),
-        build=build_status,
+        needs=tuple(str(n) for n in data.get("needs", [])),
+        goal=_to_status(data["goal"]) if data.get("goal") else None,
         time_phase=str(obs["time"]["phase"]),
-        food_items=int(obs.get("food_items", 0)),
+        has_plan=build is not None,
+        house_complete=bool(build and build["complete"]),
         has_home=home is not None,
         inside_home=bool(home and home["inside"]),
         bed_in_home=bool(home and home.get("bed")),

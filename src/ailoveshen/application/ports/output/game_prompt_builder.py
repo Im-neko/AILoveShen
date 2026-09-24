@@ -4,20 +4,21 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import Any
 
+from ailoveshen.application.dto.game_dto import GoalOutcome
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GameObservation,
     Goal,
-    GoalType,
+    GoalPredicate,
     HouseBlueprint,
-    MaterialNeeds,
 )
 
 
 class IGamePromptBuilder(ABC):
     """
-    Output port for building the LLM prompts that direct the game agent.
+    Output port for building the prompts that direct the game agent.
 
     This interface is defined in the Application layer.
     Infrastructure adapters implement this interface.
@@ -40,17 +41,36 @@ class IGamePromptBuilder(ABC):
     def build_goal_prompt(
         self,
         blueprint: HouseBlueprint,
-        needs: MaterialNeeds,
         observation: GameObservation,
         current_goal: Goal | None,
         goal_ended_because: str,
-        recent_goals: Sequence[Goal],
-        goals: Sequence[GoalType],
+        recent_goals: Sequence[GoalOutcome],
+        predicates: Sequence[GoalPredicate],
+        previous_error: str = "",
     ) -> str:
-        """Build the prompt asking the LLM to choose the next goal among `goals`."""
+        """
+        Build the prompt asking the LLM to set the next goal.
+
+        Args:
+            blueprint: The house being built
+            observation: The current game snapshot (with the ending goal's status)
+            current_goal: The goal that is ending, if any
+            goal_ended_because: Why a new goal is due
+            recent_goals: Recent goals and how each ended, oldest first
+            predicates: The predicates that make sense now
+            previous_error: Why the bridge rejected the previous goal, if it did
+        """
         ...
 
     @abstractmethod
-    def build_action_instructions(self, goal: Goal, blueprint: HouseBlueprint) -> str:
-        """Build the instructions given to the action selector for the current goal."""
+    def build_action_context(
+        self, goal: Goal, observation: GameObservation
+    ) -> tuple[dict[str, Any], str]:
+        """
+        Build what the action selector sees: the state and the instructions.
+
+        The state states the body's needs (numbers and severity) but never
+        which action to take; the instructions give no priority order (both
+        measured: spikes/primitive_choice_eval.py).
+        """
         ...

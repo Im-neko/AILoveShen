@@ -7,37 +7,38 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from ailoveshen.application.ports.input.build_house import IAdvanceHouseProject, IStartHouseProject
+from ailoveshen.application.ports.input.play import IAdvancePlay, IStartPlay
 from ailoveshen.application.ports.output.action_selector import IActionSelector
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.entities import HouseProject
+from ailoveshen.domain.entities import PlaySession
 
 
 @dataclass(frozen=True)
 class PlayOutcome:
     """Result of a play session."""
 
-    project: HouseProject
+    session: PlaySession
     steps: int
-    complete: bool
+    house_complete: bool
 
 
 class GameService:
     """
     Presentation layer service running the game agent.
 
-    The LLM designs the house and sets goals, the action selector picks each
-    action, the bridge plays. The session goes on after the house is complete
-    (the night, food, ...) until the step budget is spent.
+    The LLM designs the house and sets goals, the bridge judges them and
+    grounds the candidates, the action selector picks each one. The session
+    goes on after the house is complete (the night, food, ...) until the step
+    budget is spent.
     """
 
     WAIT_SECONDS = 1.0  # pause while the bridge's reflex is busy
 
     def __init__(
         self,
-        start_house_project: IStartHouseProject,
-        advance_house_project: IAdvanceHouseProject,
+        start_play: IStartPlay,
+        advance_play: IAdvancePlay,
         bridge: IMinecraftBridge,
         text_generator: ITextGenerator,
         action_selector: IActionSelector,
@@ -46,14 +47,14 @@ class GameService:
         Initialize game service.
 
         Args:
-            start_house_project: Use case designing the house and sending its plan
-            advance_house_project: Use case taking one step
+            start_play: Use case designing the house and starting the session
+            advance_play: Use case taking one step
             bridge: Minecraft bridge, closed together with the service
             text_generator: LLM, closed together with the service
             action_selector: Action selector, closed together with the service
         """
-        self._start = start_house_project
-        self._advance = advance_house_project
+        self._start = start_play
+        self._advance = advance_play
         self._bridge = bridge
         self._text_generator = text_generator
         self._action_selector = action_selector
@@ -67,31 +68,32 @@ class GameService:
                 bridge's reflex do not count)
 
         Returns:
-            The project, actions taken and whether the house is complete
+            The session, actions taken and whether the house is complete
         """
-        project = await self._start.execute()
+        session = await self._start.execute()
         steps = 0
-        complete = False
+        house_complete = False
         while steps < max_steps:
-            report = await self._advance.execute(project)
-            complete = report.complete
+            report = await self._advance.execute(session)
+            house_complete = report.house_complete
             if report.waiting:
                 await asyncio.sleep(self.WAIT_SECONDS)
                 continue
             steps += 1
             if report.result is not None and report.decision is not None:
-                goal = report.goal.goal_type.value if report.goal else "-"
+                goal = report.goal.spec.describe() if report.goal else "-"
+                remaining = report.status.remaining if report.status else "-"
                 logger.info(
-                    f"[{steps}] {goal} -> {report.decision.action_id} "
+                    f"[{steps}] {goal} (remaining {remaining}) -> {report.decision.action_id} "
                     f"(conf {report.decision.confidence:.2f}): "
                     f"{'ok' if report.result.ok else 'FAILED'} {report.result.result} "
                     f"({report.result.seconds}s)"
                 )
         logger.info(
-            f"Played {steps} steps; house '{project.blueprint.name}' "
-            f"{'complete' if complete else 'not complete'}"
+            f"Played {steps} steps; house '{session.blueprint.name}' "
+            f"{'complete' if house_complete else 'not complete'}"
         )
-        return PlayOutcome(project=project, steps=steps, complete=complete)
+        return PlayOutcome(session=session, steps=steps, house_complete=house_complete)
 
     async def close(self) -> None:
         """Close the bridge client and the model clients."""

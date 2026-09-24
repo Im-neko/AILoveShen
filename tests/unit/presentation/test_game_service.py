@@ -4,35 +4,38 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ailoveshen.application.dto.game_dto import HouseStepReport
-from ailoveshen.domain.entities import HouseProject
+from ailoveshen.application.dto.game_dto import PlayStepReport
+from ailoveshen.domain.entities import PlaySession
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
     Goal,
-    GoalType,
+    GoalPredicate,
+    GoalSpec,
+    GoalStatus,
     HouseBlueprint,
     Side,
 )
 from ailoveshen.presentation.services.game_service import GameService
 
 
-def _report(complete=False, waiting=False) -> HouseStepReport:
-    return HouseStepReport(
-        goal=Goal(GoalType.GATHER_WOOD),
+def _report(complete=False, waiting=False) -> PlayStepReport:
+    return PlayStepReport(
+        goal=Goal(GoalSpec(GoalPredicate.BUILT)),
         goal_changed=False,
-        decision=None if waiting else ActionDecision("collect_log", 0.9),
-        result=None if waiting else ActionResult("collect_log", True, "ok", 1.0),
-        complete=complete,
+        status=GoalStatus(met=complete, remaining=0 if complete else 5),
+        decision=None if waiting else ActionDecision("dig oak_log at 1,2,3", 0.9),
+        result=None if waiting else ActionResult("dig oak_log at 1,2,3", True, "ok", 1.0),
+        house_complete=complete,
         waiting=waiting,
     )
 
 
 @pytest.fixture
 def start():
-    """Mock start use case returning a project."""
+    """Mock start use case returning a session."""
     use_case = AsyncMock()
-    use_case.execute.return_value = HouseProject(
+    use_case.execute.return_value = PlaySession(
         blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2)
     )
     return use_case
@@ -54,7 +57,7 @@ class TestGameService:
 
         outcome = await _service(start, advance).play(max_steps=3)
 
-        assert outcome.complete
+        assert outcome.house_complete
         assert outcome.steps == 3
         assert advance.execute.await_count == 3
 
@@ -66,7 +69,7 @@ class TestGameService:
 
         outcome = await _service(start, advance).play(max_steps=4)
 
-        assert not outcome.complete
+        assert not outcome.house_complete
         assert outcome.steps == 4
         assert advance.execute.await_count == 4
 
