@@ -75,7 +75,7 @@ function observation () {
 function decisionView () {
   const world = snapshot(bot, state)
   const status = state.goal ? evaluate(bot, state, knowledge, world) : null
-  return { status, candidates: ground(bot, state, world, status) }
+  return { status, candidates: ground(bot, state, knowledge, world, status) }
 }
 
 const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)] }

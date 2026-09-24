@@ -20,10 +20,10 @@ const EXPLORE_DIRECTIONS = { north: [0, -1], east: [1, 0], south: [0, 1], west: 
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 const dist = (bot, p) => round(bot.entity.position.distanceTo(p))
 
-export function ground (bot, state, world, status) {
+export function ground (bot, state, knowledge, world, status) {
   const out = []
   for (const leaf of status?.leaves ?? []) out.push(...fromLeaf(bot, state, world, leaf))
-  out.push(...forNeeds(bot, state))
+  out.push(...forNeeds(bot, state, knowledge))
   const inside = isInside(bot, state.home)
   out.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10 })
 
@@ -85,7 +85,7 @@ function fromLeaf (bot, state, world, leaf) {
   }
 }
 
-function forNeeds (bot, state) {
+function forNeeds (bot, state, knowledge) {
   const out = []
   for (const { e, dist } of reachableThreats(bot, state).slice(0, THREATS_OFFERED)) {
     const weapon = bestWeapon(bot)?.name ?? 'none (fist)'
@@ -93,7 +93,9 @@ function forNeeds (bot, state) {
     out.push({ id: `flee from ${e.name} #${e.id}`, verb: 'flee', target: e.name, distance: round(dist), entityId: e.id, inPlace: false, pos: e.position })
   }
   if (bot.food < 20) {
-    const foods = bot.inventory.items().filter((i) => bot.registry.foodsByName[i.name])
+    // Only what the food goals count as food: rotten flesh and the like do harm
+    const edible = new Set(knowledge.resolve('food').members)
+    const foods = bot.inventory.items().filter((i) => edible.has(i.name))
     const best = foods.sort((a, b) => bot.registry.foodsByName[b.name].foodPoints - bot.registry.foodsByName[a.name].foodPoints)[0]
     if (best) out.push({ id: `eat ${best.name}`, verb: 'eat', target: best.name, item: best.name, inPlace: true })
   }

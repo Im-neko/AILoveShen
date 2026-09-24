@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 AILoveShen is an AI Streamer project for **Twitch** combining:
-- **[Jev](https://typesafe.ai/)**: TypeSafe AI's System One model — picks the next Minecraft action (Phase 6 minimal: autonomous house building), executed by a [Mineflayer](https://github.com/PrismarineJS/mineflayer) Node.js bridge in `minecraft-bridge/` (replaces the earlier NitroGen plan; see `docs/design/06_phase6_jev_integration.md`)
+- **[Jev](https://typesafe.ai/)**: TypeSafe AI's System One model — picks the next primitive action among the candidates the [Mineflayer](https://github.com/PrismarineJS/mineflayer) Node.js bridge in `minecraft-bridge/` grounds for the current goal (replaces the earlier NitroGen plan; see `docs/design/06_phase6_jev_integration.md` and `docs/design/11_primitive_actions.md`)
 - **Gemini 3.8 Flash** (`main_model`): Game commentary & thoughts (main), comment responses (sub/interrupt), and high-level Goal/direction decisions that get handed to Jev
 - **Gemini 3.8 Flash** (`filter_model`, planned): Comment filtering (dynamic threshold based on volume)
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control (JP/EN/ZH)
@@ -14,11 +14,11 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 ### Core Concept
 - **Main loop**: Minecraft Bridge (Mineflayer) plays game → Gemini 3.8 Flash generates commentary/thoughts → TTS speaks
 - **Sub loop**: Twitch comments → Gemini 3.8 Flash filters → Gemini 3.8 Flash responds (interrupts main)
-- **Three-layer LLM → Jev → Minecraft Bridge link** (implemented for house building, `GameService.build_house`):
-  - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and picks a `Goal` (gather_wood / craft / build_shelter / explore; only goals with an executable action are offered)
-  - Jev: picks one of the executable actions the goal allows (survival actions always allowed); one `Choice` question per step
-  - Minecraft Bridge: lists only actions whose preconditions hold, runs one bounded action (20s, aborted on damage), and reports observations; completion is judged from blocks in the world
-  - Planned: a short-cycle Reactive Loop that acts before taking damage
+- **Three-layer LLM → Jev → Minecraft Bridge link** (`GameService.play`; design: `docs/design/10_agent_lifecycle.md`, `11_primitive_actions.md`):
+  - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and sets goals in a predicate vocabulary (`have(item, n)`, `built`, `placed(bed, home)`, `at_home`, `through_night`, `explored(distance)`); a goal the bridge rejects goes back with the reason
+  - Minecraft Bridge: judges the goal from the world (never from the models), decomposes it with a dependency solver over minecraft-data (recipes, drops, with corrections), grounds concrete candidates (dig this block, craft that item, ...) plus what the body needs, removes unsafe ones (nothing outside while sheltering), and runs one bounded primitive (aborted on damage). A reflex handles nearby hostiles and keeps the bot afloat
+  - Jev: picks one candidate per step (`Choice`), seeing the goal's progress and the body's needs (no priority order: measured in `spikes/primitive_choice_eval.py`)
+  - `PlaySession` ends a goal when it is met, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
 
 ## Common Commands
 
@@ -91,18 +91,18 @@ Clean Architecture with the four layers at the top level. Features (TTS, LLM, Tw
 ```
 src/ailoveshen/
 ├── domain/                    # No external dependencies
-│   ├── entities.py            # Entity, AggregateRoot, Conversation, HouseProject
+│   ├── entities.py            # Entity, AggregateRoot, Conversation, PlaySession
 │   ├── value_objects.py       # EmotionState, SpeechRequest, SpeechResult, Position, FilterResult,
 │   │                          # ConversationMessage, CharacterProfile, GenerationContext,
-│   │                          # Minecraft: GoalType, Goal, HouseBlueprint, GameObservation, ...
+│   │                          # Minecraft: GoalPredicate, GoalSpec, GoalStatus, Candidate, HouseBlueprint, GameObservation, ...
 │   ├── events.py              # DomainEvent, Speech*Event, CommentaryGeneratedEvent, ChatResponseGeneratedEvent
 │   └── exceptions.py          # AILoveShenError hierarchy
 ├── application/
-│   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse, IStart/IAdvanceHouseProject
+│   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse, IStartPlay, IAdvancePlay
 │   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder,
 │   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder
 │   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase,
-│   │                          # Start/AdvanceHouseProjectUseCase
+│   │                          # StartPlayUseCase, AdvancePlayUseCase
 │   └── dto/                   # speech_dto, llm_dto, game_dto
 ├── infrastructure/
 │   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings, JevSettings, MinecraftSettings
@@ -119,7 +119,8 @@ src/ailoveshen/
 │   └── services/              # TTSService (priority queue), LLMService, GameService
 └── factories/                 # Composition Roots (tts.py, llm.py, game.py)
 
-minecraft-bridge/              # Node sidecar: Mineflayer bot, POV mirror, HTTP API (observe/act/build-plan)
+minecraft-bridge/              # Node sidecar: goals, solver, candidates, primitives, reflex, POV mirror,
+                               # HTTP API (goal/observe/act/build-plan); tests: npm test
 ```
 
 **Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.
