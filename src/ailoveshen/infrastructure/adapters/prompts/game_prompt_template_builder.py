@@ -27,7 +27,6 @@ HOUSE_DESIGN_TEMPLATE = Template("""\
 - 壁の高さは $min_height〜$max_height ブロック
 - ドアは1つ。door_side の壁の door_offset の位置に置く
   （offset は壁の端から数えた位置で、角は選べない）
-- 窓は壁に空ける1ブロックの穴（ガラスはない）。最大4つ。ドアと同じ位置には置けない
 - corner_pillars を true にすると四隅の柱が原木になる
   （見た目のアクセント。原木が4本×壁の高さぶん余分に必要）
 - 材料はすべて自分で木を切って集める。大きい家ほど時間がかかる
@@ -87,6 +86,10 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.THROUGH_NIGHT: "through_night: 家で夜を越す（ベッドがあれば寝る）",
     GoalPredicate.EXPLORED: (
         "explored(distance): 今いる場所から distance ブロック離れるまで探索する"
+    ),
+    GoalPredicate.CLEARED: (
+        "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼だけ。素手でも戦える。"
+        "クリーパーは近くで爆発するので対象外）"
     ),
 }
 

@@ -18,7 +18,7 @@ import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { summarize, round, threats } from './observe.mjs'
-import { configureMovements, PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS } from './primitives.mjs'
+import { configureMovements, PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CRITICAL } from './primitives.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
 import { Knowledge } from './knowledge.mjs'
@@ -75,7 +75,10 @@ function observation () {
 function decisionView () {
   const world = snapshot(bot, state)
   const status = state.goal ? evaluate(bot, state, knowledge, world) : null
-  return { status, candidates: ground(bot, state, knowledge, world, status) }
+  const { candidates, withheld } = ground(bot, state, knowledge, world, status)
+  // What the shelter rule holds back is part of why the goal does not advance
+  if (status && withheld) status.blocked.push(withheld)
+  return { status, candidates }
 }
 
 const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)] }
@@ -99,7 +102,12 @@ async function act (id) {
   }
   const timer = setTimeout(() => abort('timeout'), TIMEOUTS_MS[c.verb] ?? DEFAULT_TIMEOUT_MS)
   const onHurt = (entity) => {
-    if (entity !== bot.entity || DAMAGE_TOLERANT.has(c.verb)) return
+    if (entity !== bot.entity) return
+    if (DAMAGE_TOLERANT.has(c.verb)) {
+      // Fleeing goes on at any health; a fight is given up
+      if (c.verb === 'attack' && bot.health <= HEALTH_CRITICAL) abort(`stopped: health critical (${round(bot.health)}/20)`)
+      return
+    }
     const attacker = threats(bot)[0]?.e.name
     abort(`interrupted: took damage${attacker ? ` (${attacker} nearby)` : ''}`)
   }
@@ -109,7 +117,7 @@ async function act (id) {
   let finished
   state.current = { id, verb: c.verb, abort, done: new Promise((resolve) => { finished = resolve }) }
   try {
-    if (isInside(bot, state.home) && needsOutside(c, state.home)) await leaveHome(bot, state.home)
+    if (isInside(bot, state.home) && needsOutside(c, state.home)) await leaveHome(bot, state.home, { confront: !!c.confront })
     controller.signal.throwIfAborted()
     result = await PRIMITIVES[c.verb](bot, state, c, controller.signal)
     if (controller.signal.aborted) throw controller.signal.reason

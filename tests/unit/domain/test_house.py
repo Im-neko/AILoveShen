@@ -13,7 +13,6 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     Side,
-    WallOpening,
 )
 
 
@@ -70,21 +69,11 @@ class TestHouseBlueprintValidation:
         with pytest.raises(ValueError, match="door offset"):
             _blueprint(door_offset=offset)
 
-    def test_window_on_door_raises(self):
-        """Test a window at the door position is rejected."""
-        with pytest.raises(ValueError, match="overlaps"):
-            _blueprint(windows=(WallOpening(Side.NORTH, 2),))
-
-    def test_duplicate_windows_raise(self):
-        """Test two windows at one position are rejected."""
-        with pytest.raises(ValueError, match="overlaps"):
-            _blueprint(windows=(WallOpening(Side.EAST, 1), WallOpening(Side.EAST, 1)))
-
-    def test_window_offset_uses_that_walls_length(self):
+    def test_door_offset_uses_that_walls_length(self):
         """Test east/west offsets are checked against the depth."""
-        _blueprint(width=5, depth=7, windows=(WallOpening(Side.EAST, 5),))
+        _blueprint(width=5, depth=7, door_side=Side.EAST, door_offset=5)
         with pytest.raises(ValueError, match="east"):
-            _blueprint(width=7, depth=5, windows=(WallOpening(Side.EAST, 5),))
+            _blueprint(width=7, depth=5, door_side=Side.EAST, door_offset=5)
 
 
 class TestHouseBlueprintBlocks:
@@ -132,14 +121,19 @@ class TestHouseBlueprintBlocks:
         assert (2, 1, 4) not in blocks
         assert (2, 2, 4) in blocks
 
-    def test_window_is_one_block_at_eye_height(self):
-        """Test a window removes only the block at y=1."""
-        blocks = {
-            (b.x, b.y, b.z) for b in _blueprint(windows=(WallOpening(Side.WEST, 2),)).blocks()
+    def test_walls_have_no_openings_but_the_door(self):
+        """Test every wall cell is planned except the door's two lower cells."""
+        bp = _blueprint()
+        blocks = {(b.x, b.y, b.z) for b in bp.blocks()[:-1]}
+        wall = {
+            (x, y, z)
+            for y in range(bp.wall_height)
+            for x in range(bp.width)
+            for z in range(bp.depth)
+            if x in (0, bp.width - 1) or z in (0, bp.depth - 1)
         }
 
-        assert (0, 1, 2) not in blocks
-        assert (0, 0, 2) in blocks and (0, 2, 2) in blocks
+        assert wall - blocks == {(2, 0, 0), (2, 1, 0)}
 
     def test_corner_pillars_use_logs(self):
         """Test corner pillars turn the four corner columns into logs."""

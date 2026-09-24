@@ -12,6 +12,8 @@ const NEUTRAL = new Set(['enderman', 'zombified_piglin', 'piglin', 'wolf', 'bee'
   'polar_bear', 'dolphin', 'panda', 'goat', 'iron_golem'])
 // Spiders are neutral in daylight.
 const DAY_NEUTRAL = new Set(['spider', 'cave_spider'])
+// Explode when close: never fought in melee near the house
+export const EXPLODES = new Set(['creeper'])
 
 export const round = (v, d = 1) => Math.round(v * 10 ** d) / 10 ** d
 

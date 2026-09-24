@@ -12,8 +12,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vec3Pkg from 'vec3'
 import pathfinderPkg from 'mineflayer-pathfinder'
-import { BuildPlan } from './build.mjs'
-import { nearbyEntities, isHostile } from './observe.mjs'
+import { BuildPlan, placeOne } from './build.mjs'
+import { nearbyEntities, isHostile, isLog, isPlanks } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const { goals } = pathfinderPkg
@@ -36,7 +36,8 @@ export function saveState (state) {
       outside: plain(state.home.outside),
       min: plain(state.home.min),
       max: plain(state.home.max),
-      bed: state.home.bed ? plain(state.home.bed) : null
+      bed: state.home.bed ? plain(state.home.bed) : null,
+      breach: state.home.breach
     },
     goal: state.goal
   }
@@ -50,7 +51,7 @@ export function loadState (state) {
   if (data.plan) state.plan = BuildPlan.fromJSON(data.plan)
   if (data.home) {
     const h = data.home
-    state.home = { door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null }
+    state.home = { door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] }
   }
   if (data.goal) state.goal = data.goal
 }
@@ -70,7 +71,8 @@ export function homeFromPlan (plan) {
     outside: door.offset(-inward[0], 0, -inward[1]),
     min: plan.origin.offset(1, 0, 1),
     max: plan.origin.offset(width - 2, 0, depth - 2),
-    bed: null
+    bed: null,
+    breach: [] // wall blocks dug for an exit and not yet put back: { x, y, z, block }
   }
 }
 
@@ -81,9 +83,9 @@ export function isInside (bot, home) {
     p.y >= home.min.y && p.y <= home.min.y + 1
 }
 
-// A mob outside the walls cannot reach a bot inside with the door closed.
+// A mob outside the walls cannot reach a bot inside with the door closed (and no hole in the wall).
 export function shelteredFrom (bot, home, entity) {
-  if (!isInside(bot, home) || isDoorOpen(bot, home)) return false
+  if (!isInside(bot, home) || isDoorOpen(bot, home) || home.breach.length) return false
   const p = entity.position.floored()
   return !(p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z)
 }
@@ -171,12 +173,83 @@ export function bedSpot (bot, home) {
   return free(foot) && free(head) ? { foot, inward } : null
 }
 
+const isWallBlock = (block) => !!block && (isPlanks(block.name) || isLog(block.name))
+const standable = (bot, p) => bot.blockAt(p)?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' &&
+  bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
+
+// Where an exit can be dug through the wall, the best cell of each side: both wall blocks there,
+// room to stand inside and outside, not the door. Farthest from the given hostiles first.
+export function exitSpots (bot, home, hostiles) {
+  const y = home.min.y
+  const span = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
+  const sides = [
+    { side: 'west', dx: -1, dz: 0, cells: span(home.min.z, home.max.z).map((z) => [home.min.x - 1, z]) },
+    { side: 'east', dx: 1, dz: 0, cells: span(home.min.z, home.max.z).map((z) => [home.max.x + 1, z]) },
+    { side: 'north', dx: 0, dz: -1, cells: span(home.min.x, home.max.x).map((x) => [x, home.min.z - 1]) },
+    { side: 'south', dx: 0, dz: 1, cells: span(home.min.x, home.max.x).map((x) => [x, home.max.z + 1]) }
+  ]
+  const out = []
+  for (const { side, dx, dz, cells } of sides) {
+    let best = null
+    for (const [x, z] of cells) {
+      const wall = new Vec3(x, y, z)
+      if (x === home.door.x && z === home.door.z) continue
+      if (!isWallBlock(bot.blockAt(wall)) || !isWallBlock(bot.blockAt(wall.offset(0, 1, 0)))) continue
+      const step = wall.offset(dx, 0, dz)
+      if (!standable(bot, wall.offset(-dx, 0, -dz)) || !standable(bot, step)) continue
+      const center = step.offset(0.5, 0, 0.5)
+      const distance = Math.min(Infinity, ...hostiles.map((h) => h.position.distanceTo(center)))
+      if (!best || distance > best.distance) best = { side, wall, step, distance }
+    }
+    if (best) out.push(best)
+  }
+  return out.sort((a, b) => b.distance - a.distance)
+}
+
+// Leaves through the wall at `spot` (from exitSpots). The dug blocks are recorded first, so a hole
+// left by an interruption is known and gets repaired (repairWall).
+export async function exitThroughWall (bot, home, spot, signal) {
+  const inward = spot.wall.minus(spot.step)
+  const inside = spot.wall.plus(inward)
+  if (bot.entity.position.floored().xzDistanceTo(inside) > 0) {
+    try {
+      await bot.pathfinder.goto(new goals.GoalBlock(inside.x, inside.y, inside.z))
+    } finally {
+      bot.pathfinder.setGoal(null)
+    }
+  }
+  for (const p of [spot.wall.offset(0, 1, 0), spot.wall]) {
+    signal.throwIfAborted()
+    const block = bot.blockAt(p)
+    if (!isWallBlock(block)) continue
+    home.breach.push({ x: p.x, y: p.y, z: p.z, block: block.name })
+    await bot.dig(block, true)
+  }
+  signal.throwIfAborted()
+  await walkInto(bot, spot.wall)
+  await walkInto(bot, spot.step)
+}
+
+// Puts back the wall blocks dug for an exit (lowest first: the upper one rests on it)
+export async function repairWall (bot, home) {
+  for (const b of [...home.breach].sort((a, c) => a.y - c.y)) {
+    const pos = new Vec3(b.x, b.y, b.z)
+    if (!isWallBlock(bot.blockAt(pos))) {
+      const kind = isLog(b.block) ? 'log' : 'planks'
+      if (!bot.inventory.items().some((i) => (kind === 'log' ? isLog : isPlanks)(i.name))) throw new Error(`no ${kind} to close the wall at ${pos}`)
+      await placeOne(bot, { worldPos: () => pos }, { block: kind })
+    }
+    home.breach.splice(home.breach.indexOf(b), 1)
+  }
+}
+
 export const hasBed = (bot, home) => !!home?.bed && !!bot.blockAt(home.bed)?.name.endsWith('_bed')
 
-export async function leaveHome (bot, home) {
+// `confront`: going out to fight what waits at the door (the cleared goal), so they do not stop it
+export async function leaveHome (bot, home, { confront = false } = {}) {
   if (!isInside(bot, home)) return
   const danger = dangerOutside(bot, home)
-  if (danger.length) throw new Error(`staying inside: ${danger.map(({ e }) => e.name).join(', ')} waiting outside the door`)
+  if (danger.length && !confront) throw new Error(`staying inside: ${danger.map(({ e }) => e.name).join(', ')} waiting outside the door`)
   if (bot.entity.position.floored().xzDistanceTo(home.inside) > 0) {
     // Pathing inside the closed house is fine: the interior is free of obstacles
     try {

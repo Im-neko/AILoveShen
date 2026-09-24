@@ -40,7 +40,6 @@ VALID_DESIGN = {
     "wall_height": 3,
     "door_side": "south",
     "door_offset": 2,
-    "windows": [{"side": "east", "offset": 2}],
     "corner_pillars": False,
 }
 PLANKS = {"predicate": "have", "item": "planks", "count": 4, "reason": "板材がない"}
@@ -236,9 +235,18 @@ class TestAdvancePlay:
             "have",
             "at_home",
             "through_night",
+            "cleared",
             "placed",
             "explored",
         ]
+
+        # Clearing the door is a daytime goal: at night more keep spawning
+        bridge.observe.return_value = _obs(
+            goal=False, has_plan=True, house_complete=True, has_home=True, time_phase="night"
+        )
+        await use_case.execute(_session())
+        schema = text_generator.generate_json.call_args.args[1]
+        assert "cleared" not in schema["properties"]["predicate"]["enum"]
 
     @pytest.mark.asyncio
     async def test_goal_rejected_by_bridge_is_retried_with_reason(

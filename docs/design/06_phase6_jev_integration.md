@@ -17,7 +17,7 @@ Minecraft のサバイバルで、AI 配信者が自分で設計した家を建�
 | 項目 | 内容 |
 |------|------|
 | 目標 | `have(item, count)` / `built` / `placed(bed, home)` / `at_home` / `through_night` / `explored(distance)`。達成はブリッジが世界から判定する（LLM やアクションの戻り値には頼らない） |
-| 家 | 1部屋、平屋根、ドア1つ、窓0〜4。幅・奥行き 5〜7、壁の高さ 3〜4（`HouseBlueprint`） |
+| 家 | 1部屋、平屋根、ドア1つ、窓なし（ガラスのない穴から家の中の bot が撃たれた）。幅・奥行き 5〜7、壁の高さ 3〜4（`HouseBlueprint`） |
 | 設計・目標の検証 | 設計は `HouseBlueprint`、目標は `GoalSpec`（形）とブリッジ（中身: 存在するアイテムか、家があるか）で検証し、拒否の理由をプロンプトに入れて出し直させる（各3回まで） |
 | 行動 | 根源的な行動14種を、具体的な対象つきの候補としてブリッジが列挙する。前提を満たすものだけが出る |
 | 行動選択 | Jev `system_one` に `Choice` を1問。候補が1つならモデルを呼ばない |
@@ -40,7 +40,7 @@ Minecraft のサバイバルで、AI 配信者が自分で設計した家を建�
 src/ailoveshen/
 ├── domain/
 │   ├── value_objects.py   # GoalPredicate, GoalSpec, Goal, GoalStatus, Candidate, GameObservation,
-│   │                      # Side, BlockKind, WallOpening, PlannedBlock, HouseBlueprint,
+│   │                      # Side, BlockKind, PlannedBlock, HouseBlueprint,
 │   │                      # ActionDecision, ActionResult
 │   ├── entities.py        # PlaySession（目標のライフサイクル）
 │   ├── events.py          # HouseDesignedEvent, GoalSetEvent, GameActionExecutedEvent, HouseCompletedEvent
@@ -94,9 +94,9 @@ Python の追加依存は extra `game`（`httpx`, `typesafe-sdk>=0.7.1`）。
 
 ### 3.2 家の設計 (`HouseBlueprint`)
 
-- フィールド: `name`, `concept`, `width`(x), `depth`(z), `wall_height`, `door_side`, `door_offset`, `windows`, `corner_pillars`
+- フィールド: `name`, `concept`, `width`(x), `depth`(z), `wall_height`, `door_side`, `door_offset`, `corner_pillars`
 - 寸法の上下限（5〜7、3〜4）は、ブリッジで建てきれたことを実測した範囲
-- 検証: 寸法の範囲、ドアと窓の offset が `1..壁の長さ-2`、窓が重ならない。違反は `ValueError`
+- 検証: 寸法の範囲、ドアの offset が `1..壁の長さ-2`。違反は `ValueError`
 - `blocks()` は設置できる順（壁を1段ずつ → 屋根を外周から内側へ → ドア）。座標は建設地の原点からの相対
 
 ### 3.3 PlaySession (`domain/entities.py`)

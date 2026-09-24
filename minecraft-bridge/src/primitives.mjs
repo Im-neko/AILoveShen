@@ -10,10 +10,12 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, inHouse } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorOpen, bedSpot, inHouse, exitThroughWall, repairWall } from './home.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // survival block reach from the eyes
+// Health this low is critical: stated as a need, and a fight or flight stops here
+export const HEALTH_CRITICAL = 8
 export const TABLE_SEARCH_RADIUS = 32
 const HOSTILE_AVOID_RADIUS = 5
 const HOSTILE_STEP_COST = 20
@@ -354,6 +356,17 @@ export const PRIMITIVES = {
     if (tod >= SLEEP_FROM && tod <= SLEEP_UNTIL) throw new Error(`woke up but the night was not skipped (time ${tod})`)
     return `slept through the night; time ${tod}`
   },
+  async exit_wall (bot, state, c, signal) {
+    await exitThroughWall(bot, state.home, c.spot, signal)
+    signal.throwIfAborted()
+    await collectNearbyDrops(bot, state) // the dug blocks, to close the wall with
+    await repairWall(bot, state.home)
+    return `left the house through the ${c.target} and closed it behind`
+  },
+  async repair_wall (bot, state) {
+    await repairWall(bot, state.home)
+    return 'the house wall is closed again'
+  },
   async go_home (bot, state) {
     await enterHome(bot, state.home)
     return 'inside the house with the door closed'
@@ -391,6 +404,6 @@ export const PRIMITIVES = {
 // Which primitive answers damage itself: taking damage does not interrupt it
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
-export const TIMEOUTS_MS = { go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000 }
+export const TIMEOUTS_MS = { go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

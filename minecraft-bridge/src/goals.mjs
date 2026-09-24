@@ -9,12 +9,13 @@
 //   at_home()                inside the house with the door closed
 //   through_night()          the night has passed (inside the house, or asleep)
 //   explored(distance)       this far (horizontally) from where the goal was set
+//   cleared()                no hostile waits near the door (by day only: go out and fight them)
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
-import { dayPhase, inventoryCounts } from './observe.mjs'
+import { dayPhase, inventoryCounts, EXPLODES } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
-import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL } from './primitives.mjs'
+import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
@@ -25,7 +26,7 @@ const DAY_TICKS = 24000
 const MORNING = 0 // time of day the sun is up again (dawn ends at 24000 = 0)
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared']
 
 // Validates a goal spec and returns the goal state to keep; throws with the reason
 export function makeGoal (spec, bot, state, knowledge) {
@@ -58,6 +59,13 @@ export function makeGoal (spec, bot, state, knowledge) {
       }
       const p = bot.entity.position
       return { spec: { predicate, distance }, start: { x: p.x, y: p.y, z: p.z } }
+    }
+    case 'cleared': {
+      needHome()
+      // In the dark more keep spawning: the night is waited out inside (through_night)
+      const phase = dayPhase(bot.time.timeOfDay)
+      if (phase !== 'day') throw new Error(`it is ${phase}: hostile mobs keep spawning in the dark; stay inside until morning`)
+      return { spec: { predicate } }
     }
     default:
       throw new Error(`unknown predicate ${predicate}; use one of ${PREDICATES.join(', ')}`)
@@ -116,7 +124,7 @@ export function evaluate (bot, state, knowledge, world) {
       break
     }
     case 'at_home':
-      out.met = inside && !isDoorOpen(bot, state.home)
+      out.met = inside && !isDoorOpen(bot, state.home) && !state.home.breach.length
       if (!out.met) {
         out.leaves.push({ kind: 'go_home' })
         out.remaining = 1
@@ -146,6 +154,18 @@ export function evaluate (bot, state, knowledge, world) {
       }
       break
     }
+    case 'cleared': {
+      const danger = dangerOutside(bot, state.home)
+      out.met = danger.length === 0
+      out.remaining = danger.length
+      out.lines.push(`hostiles near the door: ${danger.length ? danger.map(({ e }) => e.name).join(', ') : 'none'}`)
+      if (out.met) break
+      if (phase !== 'day') out.blocked.push(`it is ${phase}: stay inside until morning`)
+      // A creeper blows up the doorway when fought in melee there (it happened in M1)
+      else if (danger.some(({ e }) => EXPLODES.has(e.name))) out.blocked.push('a creeper is near the door: it explodes when fought in melee; wait for it to leave')
+      else out.leaves.push({ kind: 'clear', mobs: danger.map(({ e }) => e) })
+      break
+    }
   }
   return out
 }
@@ -154,12 +174,13 @@ export function evaluate (bot, state, knowledge, world) {
 // better with these stated, and worse when told what to do)
 export function needs (bot, state) {
   const out = []
-  if (bot.health <= 8) out.push(`health critical (${Math.round(bot.health)}/20)`)
+  if (bot.health <= HEALTH_CRITICAL) out.push(`health critical (${Math.round(bot.health)}/20)`)
   if (bot.food <= 6) out.push(`hunger urgent (${bot.food}/20): healing stops below 18 and sprinting below 7`)
   const phase = dayPhase(bot.time.timeOfDay)
   if (phase === 'dusk') out.push('night is coming: hostile mobs spawn outside in the dark')
   if (phase === 'night' && !isInside(bot, state.home)) out.push('it is night and you are outside')
   for (const { e, dist } of reachableThreats(bot, state)) out.push(`hostile ${e.name} ${Math.round(dist)}m away`)
   for (const { e } of dangerOutside(bot, state.home)) out.push(`${e.name} waiting outside the door`)
+  for (const b of state.home?.breach ?? []) out.push(`the house wall has a hole at ${b.x},${b.y},${b.z}`)
   return out.length ? out : ['none']
 }

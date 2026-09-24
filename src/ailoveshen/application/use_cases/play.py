@@ -31,7 +31,6 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     HouseBlueprint,
     Side,
-    WallOpening,
 )
 
 _SIDES = [s.value for s in Side]
@@ -61,22 +60,6 @@ HOUSE_SCHEMA: dict[str, Any] = {
         },
         "door_side": {"type": "string", "enum": _SIDES},
         "door_offset": {"type": "integer", "minimum": 1, "maximum": HouseBlueprint.MAX_SIDE - 2},
-        "windows": {
-            "type": "array",
-            "maxItems": 4,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "side": {"type": "string", "enum": _SIDES},
-                    "offset": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": HouseBlueprint.MAX_SIDE - 2,
-                    },
-                },
-                "required": ["side", "offset"],
-            },
-        },
         "corner_pillars": {"type": "boolean"},
     },
     "required": [
@@ -87,7 +70,6 @@ HOUSE_SCHEMA: dict[str, Any] = {
         "wall_height",
         "door_side",
         "door_offset",
-        "windows",
         "corner_pillars",
     ],
 }
@@ -145,6 +127,8 @@ def _predicates(obs: GameObservation) -> list[GoalPredicate]:
     out.append(GoalPredicate.HAVE)
     if obs.has_home:
         out += [GoalPredicate.AT_HOME, GoalPredicate.THROUGH_NIGHT]
+        if obs.time_phase == "day":
+            out.append(GoalPredicate.CLEARED)
         if not obs.bed_in_home:
             out.append(GoalPredicate.PLACED)
     out.append(GoalPredicate.EXPLORED)
@@ -161,9 +145,6 @@ def _parse_blueprint(data: dict[str, Any]) -> HouseBlueprint:
             wall_height=int(data["wall_height"]),
             door_side=Side(data["door_side"]),
             door_offset=int(data["door_offset"]),
-            windows=tuple(
-                WallOpening(Side(w["side"]), int(w["offset"])) for w in data.get("windows", [])
-            ),
             corner_pillars=bool(data.get("corner_pillars", False)),
         )
     except (KeyError, TypeError) as e:
@@ -221,7 +202,6 @@ class StartPlayUseCase(IStartPlay):
             f"House designed: {blueprint.name} "
             f"{blueprint.width}x{blueprint.depth}x{blueprint.wall_height} "
             f"door={blueprint.door_side.value}:{blueprint.door_offset} "
-            f"windows={len(blueprint.windows)} "
             f"pillars={blueprint.corner_pillars} - {blueprint.concept}"
         )
         await self._event_publisher.publish(

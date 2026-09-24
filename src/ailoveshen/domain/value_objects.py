@@ -365,6 +365,7 @@ class GoalPredicate(str, Enum):
     - AT_HOME: inside the house with the door closed
     - THROUGH_NIGHT: the night has passed (inside the house, or asleep)
     - EXPLORED: `distance` blocks away from where the goal was set
+    - CLEARED: no hostile waits near the door (by day only: go out and fight them)
     """
 
     HAVE = "have"
@@ -373,6 +374,7 @@ class GoalPredicate(str, Enum):
     AT_HOME = "at_home"
     THROUGH_NIGHT = "through_night"
     EXPLORED = "explored"
+    CLEARED = "cleared"
 
 
 @dataclass(frozen=True)
@@ -465,14 +467,6 @@ class BlockKind(str, Enum):
 
 
 @dataclass(frozen=True)
-class WallOpening:
-    """A one-block window in a wall, at eye height."""
-
-    side: Side
-    offset: int  # position along the wall, 0 = the corner with the smallest x/z
-
-
-@dataclass(frozen=True)
 class PlannedBlock:
     """A block of a build plan, relative to the site origin (min corner, ground level)."""
 
@@ -485,21 +479,23 @@ class PlannedBlock:
 @dataclass(frozen=True)
 class HouseBlueprint:
     """
-    A small single-room house: walls, a flat roof, one door, optional windows.
+    A small single-room house: walls, a flat roof, one door.
+
+    No windows: an opening without glass let mobs outside hit the bot inside
+    (glass needs smelting, which the bridge cannot do yet).
 
     Size bounds come from what the Minecraft bridge was measured to build
     reliably (5x5x3 and 7x7x4 both completed without failed placements).
 
     Raises:
-        ValueError: If a dimension is out of bounds, or the door or a window does
-            not fit on its wall.
+        ValueError: If a dimension is out of bounds, or the door does not fit on
+            its wall.
     """
 
     MIN_SIDE = 5
     MAX_SIDE = 7
     MIN_WALL_HEIGHT = 3
     MAX_WALL_HEIGHT = 4
-    WINDOW_Y = 1
 
     name: str
     concept: str
@@ -508,11 +504,10 @@ class HouseBlueprint:
     wall_height: int
     door_side: Side
     door_offset: int
-    windows: tuple[WallOpening, ...] = ()
     corner_pillars: bool = False  # logs at the four corners instead of planks
 
     def __post_init__(self) -> None:
-        """Validate dimensions and openings."""
+        """Validate dimensions and the door."""
         for label, value in (("width", self.width), ("depth", self.depth)):
             if not self.MIN_SIDE <= value <= self.MAX_SIDE:
                 raise ValueError(f"{label} must be {self.MIN_SIDE}-{self.MAX_SIDE}, got {value}")
@@ -522,20 +517,12 @@ class HouseBlueprint:
                 f"got {self.wall_height}"
             )
         self._check_offset("door", self.door_side, self.door_offset)
-        seen = {(self.door_side, self.door_offset)}
-        for w in self.windows:
-            self._check_offset("window", w.side, w.offset)
-            if (w.side, w.offset) in seen:
-                raise ValueError(
-                    f"window at {w.side.value}:{w.offset} overlaps the door or another window"
-                )
-            seen.add((w.side, w.offset))
 
     def _wall_length(self, side: Side) -> int:
         return self.width if side in (Side.NORTH, Side.SOUTH) else self.depth
 
     def _check_offset(self, label: str, side: Side, offset: int) -> None:
-        # Corners are excluded: an opening there would cut the wall's support
+        # Corners are excluded: a door there would cut the wall's support
         if not 1 <= offset <= self._wall_length(side) - 2:
             raise ValueError(
                 f"{label} offset on the {side.value} wall must be "
@@ -566,7 +553,6 @@ class HouseBlueprint:
         and the door comes last.
         """
         door_x, door_z = self._wall_position(self.door_side, self.door_offset)
-        windows = {self._wall_position(w.side, w.offset) for w in self.windows}
         last_x, last_z = self.width - 1, self.depth - 1
         corners = {(0, 0), (0, last_z), (last_x, 0), (last_x, last_z)}
         out: list[PlannedBlock] = []
@@ -577,8 +563,6 @@ class HouseBlueprint:
                     if not (x in (0, self.width - 1) or z in (0, self.depth - 1)):
                         continue
                     if (x, z) == (door_x, door_z) and y < 2:
-                        continue
-                    if (x, z) in windows and y == self.WINDOW_Y:
                         continue
                     pillar = self.corner_pillars and (x, z) in corners
                     kind = BlockKind.LOG if pillar else BlockKind.PLANKS
