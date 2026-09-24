@@ -2,7 +2,7 @@
 
 **Active Phase**: Phase 6 の方式検証（プロトコルミラー + Jev の spike）。Phase 4 最小版は保留中
 **Last Updated**: 2026-09-24
-**Test Status**: 227 unit tests passing (`pytest tests/`)。spike: ミラーのヘッドレス確認と、Jev のシナリオ評価およびクローズドループは成功。実クライアントでの描画確認は未実施
+**Test Status**: 227 unit tests passing (`pytest tests/`)。spike: ミラーのヘッドレス確認と、Jev のシナリオ評価およびクローズドループは成功。実クライアントでの描画も確認済み
 
 ---
 
@@ -17,7 +17,9 @@
   - 採掘のひび割れと腕振りを合成して送る。mineflayer には dig 開始イベントがないので、`targetDigBlock` を tick ごとに監視する。ヘッドレス確認では、ひび割れ17件、腕振り14件が届いた
   - bot の configuration パケットと play パケットを記録し、127.0.0.1:25578 の偽サーバーに生バイトのまま中継する
   - ヘッドレス確認: play まで到達し、チャンク、体力、20Hz の位置を受け取った。パースエラーはなかった
-  - **バニラクライアントでの描画は未確認**
+  - バニラ 1.21.4 クライアントで接続し、一人称視点と HUD（体力、満腹度、ホットバー）の描画を確認した
+  - 視点のカクつきは目視評価待ち
+  - 昼間のループで `flee_hostile` が2回選ばれて失敗した。敵の分類と逃げ先の経路を調べる必要がある
 - **Jev**（`spikes/minecraft-mirror/bridge.mjs` + `spikes/jev_eval.py`）
   - typesafe-sdk 0.7.1 の `system_one` で、Choice を1問だけ投げる。`jev-1.13.0` で約 0.2s
   - 10シナリオ（state は各1つ）× 4条件（summary/raw × 手がかり付き/generic な説明）× 3回の結果
