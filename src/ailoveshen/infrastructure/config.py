@@ -37,14 +37,54 @@ class TwitchSettings:
 
 
 @dataclass
+class GeminiRetrySettings:
+    """Gemini API retry settings (exponential backoff)."""
+
+    max_attempts: int = 3  # Including the original request
+    base_delay_seconds: float = 1.0
+    max_delay_seconds: float = 10.0
+    exponential_base: float = 2.0
+
+
+@dataclass
+class GeminiRateLimitSettings:
+    """Gemini API rate limit settings."""
+
+    min_interval_seconds: float = 1.0
+
+
+@dataclass
 class GeminiSettings:
     """Gemini API settings."""
 
     api_key: str = ""
     main_model: str = "gemini-3.8-flash"
     filter_model: str = "gemini-3.8-flash"
-    max_tokens: int = 500
-    temperature: float = 0.7
+    main_thinking_level: str = "medium"
+    filter_thinking_level: str = "low"
+    # Includes thinking tokens; too small a value yields empty output
+    max_output_tokens: int = 8192
+    retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
+    rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
+
+
+@dataclass
+class CharacterSettings:
+    """AI streamer character settings."""
+
+    name: str = "AILoveShen"
+    description: str = "明るく元気なAI配信者"
+    speech_style: str = "フレンドリーで親しみやすい"
+    first_person: str = "私"
+    sentence_endings: list[str] = field(default_factory=lambda: ["だよ", "だね", "かな", "！"])
+    personality_traits: list[str] = field(
+        default_factory=lambda: [
+            "好奇心旺盛",
+            "ポジティブ",
+            "ちょっとおっちょこちょい",
+            "視聴者思い",
+        ]
+    )
 
 
 @dataclass
@@ -115,6 +155,7 @@ class Settings:
 
     twitch: TwitchSettings = field(default_factory=TwitchSettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
+    character: CharacterSettings = field(default_factory=CharacterSettings)
     tts: TTSSettings = field(default_factory=TTSSettings)
     mcp: MCPSettings = field(default_factory=MCPSettings)
     obs: OBSSettings = field(default_factory=OBSSettings)
@@ -189,12 +230,40 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
 
     if "gemini" in data:
         gemini_data = data["gemini"]
+        retry_data = gemini_data.get("retry", {})
+        rate_limit_data = gemini_data.get("rate_limit", {})
         settings.gemini = GeminiSettings(
             api_key=gemini_data.get("api_key", ""),
             main_model=gemini_data.get("main_model", "gemini-3.8-flash"),
             filter_model=gemini_data.get("filter_model", "gemini-3.8-flash"),
-            max_tokens=gemini_data.get("max_tokens", 500),
-            temperature=gemini_data.get("temperature", 0.7),
+            main_thinking_level=gemini_data.get("main_thinking_level", "medium"),
+            filter_thinking_level=gemini_data.get("filter_thinking_level", "low"),
+            max_output_tokens=gemini_data.get("max_output_tokens", 8192),
+            retry=GeminiRetrySettings(
+                max_attempts=retry_data.get("max_attempts", 3),
+                base_delay_seconds=retry_data.get("base_delay_seconds", 1.0),
+                max_delay_seconds=retry_data.get("max_delay_seconds", 10.0),
+                exponential_base=retry_data.get("exponential_base", 2.0),
+            ),
+            rate_limit=GeminiRateLimitSettings(
+                min_interval_seconds=rate_limit_data.get("min_interval_seconds", 1.0),
+            ),
+        )
+
+    if "character" in data:
+        character_data = data["character"]
+        defaults = CharacterSettings()
+        settings.character = CharacterSettings(
+            name=character_data.get("name", defaults.name),
+            description=character_data.get("description", defaults.description),
+            speech_style=character_data.get("speech_style", defaults.speech_style),
+            first_person=character_data.get("first_person", defaults.first_person),
+            sentence_endings=list(
+                character_data.get("sentence_endings", defaults.sentence_endings)
+            ),
+            personality_traits=list(
+                character_data.get("personality_traits", defaults.personality_traits)
+            ),
         )
 
     if "tts" in data:

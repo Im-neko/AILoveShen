@@ -953,13 +953,11 @@ class TwitchAuth:
 
 from __future__ import annotations
 
-import asyncio
 import json
 from string import Template
-from typing import Optional
 
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
+from google import genai
+from google.genai import errors, types
 from loguru import logger
 
 from ailoveshen.application.ports.output.comment_analyzer import (
@@ -994,38 +992,51 @@ $volume_level
 - 他の視聴者同士の会話
 
 ## 出力形式
-以下のJSON形式で出力してください：
-{"respond": true/false, "score": 0.0-1.0, "reason": "理由"}
+respond（反応すべきか）、score（0.0-1.0）、reason（理由）をJSONで出力してください。
 """)
+
+# Structured output schema (google-genai response_schema)
+FILTER_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "respond": {"type": "boolean"},
+        "score": {"type": "number"},
+        "reason": {"type": "string"},
+    },
+    "required": ["respond", "score", "reason"],
+}
 
 
 class GeminiCommentAnalyzer(ICommentAnalyzer):
     """
     Infrastructure adapter for Gemini 3.8 Flash comment analysis.
 
-    Implements ICommentAnalyzer output port.
+    Implements ICommentAnalyzer output port. Uses the filter model slot
+    (settings.gemini.filter_model / filter_thinking_level). temperature is
+    not available on 3.8 Flash; consistency comes from low thinking and a
+    structured output schema instead.
     """
 
     def __init__(
         self,
         api_key: str,
         model_name: str = "gemini-3.8-flash",
+        thinking_level: str = "low",
+        max_output_tokens: int = 2048,  # Includes thinking tokens
+        retry_options: types.HttpRetryOptions | None = None,
     ) -> None:
-        self._api_key = api_key
         self._model_name = model_name
-        self._model: Optional[genai.GenerativeModel] = None
-
-    async def initialize(self) -> None:
-        """Initialize Gemini model."""
-        genai.configure(api_key=self._api_key)
-        self._model = genai.GenerativeModel(
-            model_name=self._model_name,
-            generation_config=GenerationConfig(
-                temperature=0.1,  # Low temperature for consistent filtering
-                max_output_tokens=100,
-            ),
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=retry_options),
         )
-        logger.info(f"Comment analyzer initialized: {self._model_name}")
+        self._config = types.GenerateContentConfig(
+            max_output_tokens=max_output_tokens,
+            thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
+            response_mime_type="application/json",
+            response_schema=FILTER_RESPONSE_SCHEMA,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
 
     async def analyze(
         self,
@@ -1034,9 +1045,6 @@ class GeminiCommentAnalyzer(ICommentAnalyzer):
         volume: VolumeMetrics,
     ) -> AnalysisResult:
         """Analyze comment using Gemini 3.8 Flash."""
-        if self._model is None:
-            raise AnalysisError("Analyzer not initialized")
-
         prompt = FILTER_PROMPT_TEMPLATE.substitute(
             username=username,
             message=message,
@@ -1044,9 +1052,10 @@ class GeminiCommentAnalyzer(ICommentAnalyzer):
         )
 
         try:
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self._model.generate_content(prompt),
+            response = await self._client.aio.models.generate_content(
+                model=self._model_name,
+                contents=prompt,
+                config=self._config,
             )
 
             if not response.text:
@@ -1058,8 +1067,10 @@ class GeminiCommentAnalyzer(ICommentAnalyzer):
 
             return self._parse_response(response.text)
 
+        except errors.APIError as e:
+            raise AnalysisError(f"Gemini API error {e.code}: {e.message}") from e
         except Exception as e:
-            raise AnalysisError(f"Analysis failed: {e}")
+            raise AnalysisError(f"Analysis failed: {e}") from e
 
     def _parse_response(self, response: str) -> AnalysisResult:
         """Parse Gemini's JSON response."""
@@ -1202,6 +1213,7 @@ def create_twitch_service(
     comment_analyzer = GeminiCommentAnalyzer(
         api_key=gemini_config.api_key,
         model_name=gemini_config.filter_model,
+        thinking_level=gemini_config.filter_thinking_level,
     )
 
     # Domain service

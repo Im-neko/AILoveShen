@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ailoveshen.infrastructure.config import (
+    CharacterSettings,
     ConfigurationError,
     GeminiSettings,
     LoggingSettings,
@@ -218,6 +219,61 @@ class TestLoadSettings:
             del os.environ["TEST_CHANNEL"]
 
 
+class TestLoadGeminiAndCharacterSettings:
+    """Tests for loading Gemini and character sections."""
+
+    def test_load_gemini_section(self):
+        """Test gemini section including nested retry/rate_limit is parsed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            (config_dir / "default.yaml").write_text(
+                "gemini:\n"
+                "  main_model: gemini-x\n"
+                "  main_thinking_level: high\n"
+                "  max_output_tokens: 1024\n"
+                "  retry:\n"
+                "    max_attempts: 5\n"
+                "    max_delay_seconds: 20.0\n"
+                "  rate_limit:\n"
+                "    min_interval_seconds: 0.5\n"
+            )
+
+            settings = load_settings(config_dir=config_dir)
+            assert settings.gemini.main_model == "gemini-x"
+            assert settings.gemini.main_thinking_level == "high"
+            assert settings.gemini.filter_thinking_level == "low"  # default
+            assert settings.gemini.max_output_tokens == 1024
+            assert settings.gemini.retry.max_attempts == 5
+            assert settings.gemini.retry.max_delay_seconds == 20.0
+            assert settings.gemini.retry.base_delay_seconds == 1.0  # default
+            assert settings.gemini.rate_limit.min_interval_seconds == 0.5
+
+    def test_load_character_section(self):
+        """Test character section is parsed with defaults for missing keys."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            (config_dir / "default.yaml").write_text(
+                "character:\n"
+                "  name: Shen\n"
+                "  sentence_endings:\n"
+                "    - のだ\n"
+            )
+
+            settings = load_settings(config_dir=config_dir)
+            assert settings.character.name == "Shen"
+            assert settings.character.sentence_endings == ["のだ"]
+            assert settings.character.first_person == "私"  # default
+
+    def test_project_default_yaml_loads(self):
+        """Test the project's config/default.yaml loads the Phase 3 sections."""
+        config_dir = Path(__file__).resolve().parents[3] / "config"
+        settings = load_settings(config_dir=config_dir, env="nonexistent")
+        assert settings.gemini.main_model == "gemini-3.8-flash"
+        assert settings.gemini.main_thinking_level in {"low", "medium", "high"}
+        assert settings.gemini.filter_thinking_level in {"low", "medium", "high"}
+        assert settings.character.name
+
+
 class TestSettingsDataclasses:
     """Tests for settings dataclasses."""
 
@@ -241,7 +297,20 @@ class TestSettingsDataclasses:
         gemini = GeminiSettings()
         assert gemini.main_model == "gemini-3.8-flash"
         assert gemini.filter_model == "gemini-3.8-flash"
-        assert gemini.max_tokens == 500
+        assert gemini.main_thinking_level == "medium"
+        assert gemini.filter_thinking_level == "low"
+        assert gemini.max_output_tokens == 8192
+        assert gemini.retry.max_attempts == 3
+        assert gemini.retry.base_delay_seconds == 1.0
+        assert gemini.retry.max_delay_seconds == 10.0
+        assert gemini.rate_limit.min_interval_seconds == 1.0
+
+    def test_character_settings_defaults(self):
+        """Test CharacterSettings defaults."""
+        character = CharacterSettings()
+        assert character.name == "AILoveShen"
+        assert character.first_person == "私"
+        assert character.sentence_endings == ["だよ", "だね", "かな", "！"]
 
     def test_tts_settings_defaults(self):
         """Test TTSSettings defaults."""

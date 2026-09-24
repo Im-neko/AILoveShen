@@ -1,0 +1,103 @@
+"""Tests for LLMService."""
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from ailoveshen.application.dto.llm_dto import (
+    GenerateCommentaryResponse,
+    GenerateResponseResponse,
+)
+from ailoveshen.domain.value_objects import EmotionState, EmotionType
+from ailoveshen.presentation.services.llm_service import LLMService
+
+
+@pytest.fixture
+def commentary_use_case():
+    """Create mock commentary use case."""
+    use_case = AsyncMock()
+    use_case.execute.return_value = GenerateCommentaryResponse.ok("洞窟だ！")
+    return use_case
+
+
+@pytest.fixture
+def response_use_case():
+    """Create mock chat response use case."""
+    use_case = AsyncMock()
+    use_case.execute.return_value = GenerateResponseResponse.ok("やっほー", "hi", "neko")
+    return use_case
+
+
+@pytest.fixture
+def text_generator():
+    """Create mock text generator."""
+    return AsyncMock()
+
+
+@pytest.fixture
+def service(commentary_use_case, response_use_case, text_generator):
+    """Create LLMService with mocked use cases."""
+    return LLMService(
+        generate_commentary_use_case=commentary_use_case,
+        generate_response_use_case=response_use_case,
+        text_generator=text_generator,
+    )
+
+
+class TestLLMService:
+    """Tests for LLMService."""
+
+    @pytest.mark.asyncio
+    async def test_generate_commentary(self, service, commentary_use_case):
+        """Test commentary request is built from arguments and current emotion."""
+        happy = EmotionState(EmotionType.HAPPY, 0.8)
+        service.update_emotion(happy)
+
+        text = await service.generate_commentary(
+            recent_events=["ゾンビを倒した"],
+            game_state_summary="体力: 20/20",
+        )
+
+        assert text == "洞窟だ！"
+        request = commentary_use_case.execute.call_args.args[0]
+        assert request.emotion_state == happy
+        assert request.recent_events == ["ゾンビを倒した"]
+        assert request.game_state_summary == "体力: 20/20"
+
+    @pytest.mark.asyncio
+    async def test_generate_commentary_failure_returns_empty(self, service, commentary_use_case):
+        """Test failed commentary returns an empty string."""
+        commentary_use_case.execute.return_value = GenerateCommentaryResponse.error_response("x")
+        assert await service.generate_commentary() == ""
+
+    @pytest.mark.asyncio
+    async def test_generate_response(self, service, response_use_case):
+        """Test chat response request is built from arguments."""
+        text = await service.generate_response("neko", "hi", user_id="42")
+
+        assert text == "やっほー"
+        request = response_use_case.execute.call_args.args[0]
+        assert request.user_name == "neko"
+        assert request.message == "hi"
+        assert request.user_id == "42"
+        assert request.emotion_state == EmotionState()
+
+    @pytest.mark.asyncio
+    async def test_generate_response_failure_returns_empty(self, service, response_use_case):
+        """Test failed chat response returns an empty string."""
+        response_use_case.execute.return_value = GenerateResponseResponse.error_response(
+            "x", "hi", "neko"
+        )
+        assert await service.generate_response("neko", "hi") == ""
+
+    def test_update_emotion(self, service):
+        """Test emotion can be updated and read back."""
+        sad = EmotionState(EmotionType.SAD, 0.6)
+        service.update_emotion(sad)
+        assert service.get_current_emotion() == sad
+
+    @pytest.mark.asyncio
+    async def test_close(self, service, text_generator):
+        """Test close() closes the text generator."""
+        await service.close()
+        text_generator.close.assert_awaited_once()
