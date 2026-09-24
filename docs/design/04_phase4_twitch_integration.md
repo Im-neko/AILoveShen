@@ -2,11 +2,11 @@
 
 ## 1. 概要
 
-Twitchチャット連携とGemini Flashによるコメントフィルタリングを実装します。
+Twitchチャット連携とGemini 3.8 Flashによるコメントフィルタリングを実装します。
 
 ### 要件
 - **Issue #1**: OAuth認証、IRC接続、コメント取得
-- **Issue #7**: Gemini Flashフィルター、動的閾値調整
+- **Issue #7**: Gemini 3.8 Flashフィルター、動的閾値調整
 
 ## 2. クリーンアーキテクチャに基づくコンポーネント構成
 
@@ -1001,7 +1001,7 @@ $volume_level
 
 class GeminiCommentAnalyzer(ICommentAnalyzer):
     """
-    Infrastructure adapter for Gemini Flash comment analysis.
+    Infrastructure adapter for Gemini 3.8 Flash comment analysis.
 
     Implements ICommentAnalyzer output port.
     """
@@ -1009,7 +1009,7 @@ class GeminiCommentAnalyzer(ICommentAnalyzer):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.0-flash",
+        model_name: str = "gemini-3.8-flash",
     ) -> None:
         self._api_key = api_key
         self._model_name = model_name
@@ -1033,7 +1033,7 @@ class GeminiCommentAnalyzer(ICommentAnalyzer):
         message: str,
         volume: VolumeMetrics,
     ) -> AnalysisResult:
-        """Analyze comment using Gemini Flash."""
+        """Analyze comment using Gemini 3.8 Flash."""
         if self._model is None:
             raise AnalysisError("Analyzer not initialized")
 

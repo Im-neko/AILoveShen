@@ -20,7 +20,7 @@ Detailed design documents have been created in `docs/design/`:
 
 1. **Phase 1**: Core Infrastructure (config, events, models)
 2. **Phase 2**: TTS Pipeline (Style-Bert-VITS2)
-3. **Phase 3**: LLM Integration (Gemini 2.5)
+3. **Phase 3**: LLM Integration (Gemini 3.8 Flash)
 4. **Phase 4**: Twitch Integration (IRC + Flash filter)
 5. **Phase 5**: MCP Server (memory, emotion)
 6. **Phase 6**: Jev + Minecraft Bridge Integration

@@ -3,15 +3,15 @@
 ## Purpose
 AILoveShen is an **AI Streamer** project for Twitch that combines:
 - **Jev + Mineflayer**: Minecraft game control — Jev (TypeSafe AI System One model) makes fast typed decisions, Mineflayer executes them
-- **Gemini 2.5**: Main conversation/commentary generation
-- **Gemini Flash**: Comment filtering with dynamic threshold
+- **Gemini 3.8 Flash**: Main conversation/commentary generation
+- **Gemini 3.8 Flash**: Comment filtering with dynamic threshold
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control
 - **MCP (Model Context Protocol)**: Memory management, expression control
 
 ## Architecture
 ```
-Main Loop: Minecraft Bridge (Mineflayer) (game) → Gemini 2.5 (commentary) → Style-Bert-VITS2 (TTS)
-Sub Loop: Twitch Chat → Gemini Flash (filter) → Gemini 2.5 (response) → TTS (interrupt)
+Main Loop: Minecraft Bridge (Mineflayer) (game) → Gemini 3.8 Flash (commentary) → Style-Bert-VITS2 (TTS)
+Sub Loop: Twitch Chat → Gemini 3.8 Flash (filter) → Gemini 3.8 Flash (response) → TTS (interrupt)
 ```
 
 ### Three-layer LLM → Jev → Minecraft Bridge
@@ -34,9 +34,9 @@ Sub Loop: Twitch Chat → Gemini Flash (filter) → Gemini 2.5 (response) → TT
 
 ## Open Issues
 1. Twitch Integration (chat retrieval)
-2. Gemini 2.5 Conversation System
+2. Gemini 3.8 Flash Conversation System
 3. MCP Server Implementation
 4. Minecraft Integration (Jev + Mineflayer)
 5. Real-time TTS Pipeline
 6. OBS Integration
-7. Gemini Flash Comment Filtering
+7. Gemini 3.8 Flash Comment Filtering

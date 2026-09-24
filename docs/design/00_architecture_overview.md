@@ -12,10 +12,10 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │   【メインループ】ゲーム実況                                            │
-│   Minecraft Bridge → GameState → Gemini 2.5 → Commentary → TTS → Audio │
+│   Mineflayer → GameState → Gemini 3.8 Flash → Commentary → TTS → Audio │
 │                                                                         │
 │   【サブループ】コメント対応（割り込み）                                │
-│   Twitch Chat → Gemini Flash(Filter) → Gemini 2.5 → Response → TTS     │
+│   Twitch Chat → Filter(3.8 Flash) → Gemini 3.8 Flash → Response → TTS  │
 │                                                                         │
 │   【三層連携】LLM → Jev → Minecraft Bridge                             │
 │   - Goal Decision: LLMが方向性（Goal）を決めてJevへリクエスト            │
@@ -29,13 +29,13 @@ AILoveShenは、MinecraftをプレイしながらTwitchで配信を行うAIス�
 | コンポーネント | 役割 | Issue |
 |---------------|------|-------|
 | Twitch Connector | チャット取得・配信連携 | #1 |
-| Gemini 2.5 Client | ゲーム実況・コメント応答生成 | #2 |
+| Gemini 3.8 Flash Client | ゲーム実況・コメント応答生成 | #2 |
 | MCP Server | 記憶管理・表情制御・感情状態 | #3 |
 | Minecraft Bridge | ゲーム状態取得・アクション実行（Mineflayer） | #4 |
 | Jev Decision Engine | リアルタイム戦術・反射判断（TypeSafe AI Jev） | #4 |
 | TTS Pipeline | Style-Bert-VITS2連携・音声合成 | #5 |
 | OBS Connector | 配信制御・シーン切り替え | #6 |
-| Comment Filter | Gemini Flashによる動的フィルタリング | #7 |
+| Comment Filter | Gemini 3.8 Flashによる動的フィルタリング | #7 |
 | Orchestrator | 全体統括・イベント管理 | - |
 
 ## 2. クリーンアーキテクチャ
@@ -227,7 +227,7 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 │         │                                  │                                 │         │
 │         ▼                                  ▼                                 ▼         │
 │  ┌──────────────────────────────────────────────────────────────────────────────┐     │
-│  │                           Gemini 2.5 Client                                  │     │
+│  │                        Gemini 3.8 Flash Client                               │     │
 │  │  - Commentary Generator (Main Loop)                                          │     │
 │  │  - Response Generator (Sub Loop / Interrupt)                                 │     │
 │  └──────────────────────────────────────────┬───────────────────────────────────┘     │
@@ -249,7 +249,7 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│ Jev(反射/戦術)│───▶│ GameState   │───▶│ Gemini 2.5  │───▶│    TTS      │
+│ Jev(反射/戦術)│───▶│ GameState   │───▶│Gemini Flash │───▶│    TTS      │
 │+Minecraft Br.│    │  Manager    │    │  (思考生成)  │    │  Pipeline   │
 └─────────────┘    └─────────────┘    └──────┬──────┘    └─────────────┘
        ▲                                     │
@@ -267,7 +267,7 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Twitch    │───▶│   Comment   │───▶│ Gemini 2.5  │───▶│    TTS      │
+│   Twitch    │───▶│   Comment   │───▶│Gemini Flash │───▶│    TTS      │
 │    Chat     │    │   Filter    │    │  (応答生成)  │    │ (Interrupt) │
 └─────────────┘    │(Gemini Flash)│    └─────────────┘    └─────────────┘
                    └─────────────┘
@@ -286,7 +286,7 @@ def create_tts_service(config: TTSConfig, event_publisher: IEventPublisher) -> T
 | 非同期 | asyncio |
 | Web API | FastAPI |
 | TTS | Style-Bert-VITS2 |
-| LLM | Google Gemini API (2.5 Pro, Flash) |
+| LLM | Google Gemini API (3.8 Flash) |
 | ゲーム操作 | Mineflayer (Node.jsブリッジ) + Jev (TypeSafe AI, System Oneモデル) |
 | 配信 | Twitch API (IRC/EventSub), OBS WebSocket |
 | MCP | Model Context Protocol |

@@ -9,8 +9,8 @@
 - **[Jev](https://typesafe.ai/)** - TypeSafe AIのSystem Oneモデル。型付き・確率付きの高速判断に特化しており、Minecraft操作のリアルタイムな戦術・反射判断を担当する
 - **[Mineflayer](https://github.com/PrismarineJS/mineflayer)** - Minecraftプロトコルを直接操作するNode.js製ライブラリ。Jevの判断を実際のゲーム操作に変換する「手」の役割
 - **[Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2)** - 感情豊かな音声合成エンジン
-- **Gemini 2.5** - メイン会話・対話生成。加えてMinecraft内で「何を目指すか（Goal）」という方向性を決め、Jevへリクエストする役割も担う
-- **Gemini Flash** - コメントフィルタリング用軽量LLM（反応すべきか判断、コメント量に応じて閾値を動的調整）
+- **Gemini 3.8 Flash** - メイン会話・対話生成。加えてMinecraft内で「何を目指すか（Goal）」という方向性を決め、Jevへリクエストする役割も担う
+- **Gemini 3.8 Flash** - コメントフィルタリング用軽量LLM（反応すべきか判断、コメント量に応じて閾値を動的調整）
 - **MCP (Model Context Protocol)** - 記憶管理、表情操作、拡張機能
 - **Twitch API** - チャット連携・配信制御
 
@@ -44,7 +44,7 @@
 │                 │ ゲーム状態                    │ 反応すべきコメント      │
 │                 ▼                               ▼                         │
 │  ┌────────────────────────────────────────────────────┐                   │
-│  │                     Gemini 2.5                     │                   │
+│  │                  Gemini 3.8 Flash                  │                   │
 │  │  ・ゲーム状況への実況・考え・反応（メイン）        │                   │
 │  │  ・コメントへの返答（割り込み）                    │                   │
 │  │  ・次に目指すGoal（方向性）の意思決定              │                   │
@@ -139,9 +139,9 @@ python streamer_main.py
 
 - [ ] Twitch連携
   - [ ] チャット取得・送信
-  - [ ] Gemini Flashによるコメントフィルタリング
+  - [ ] Gemini 3.8 Flashによるコメントフィルタリング
   - [ ] コメント量に応じた動的閾値調整（少ない時は多く拾う）
-- [ ] Gemini 2.5による会話システム実装
+- [ ] Gemini 3.8 Flashによる会話システム実装
 - [ ] MCP サーバー実装
   - [ ] 記憶管理（長期・短期メモリ）
   - [ ] 表情操作

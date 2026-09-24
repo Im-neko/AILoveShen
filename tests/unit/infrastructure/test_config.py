@@ -239,8 +239,8 @@ class TestSettingsDataclasses:
     def test_gemini_settings_defaults(self):
         """Test GeminiSettings defaults."""
         gemini = GeminiSettings()
-        assert gemini.main_model == "gemini-2.5-pro-preview-05-06"
-        assert gemini.filter_model == "gemini-2.0-flash"
+        assert gemini.main_model == "gemini-3.8-flash"
+        assert gemini.filter_model == "gemini-3.8-flash"
         assert gemini.max_tokens == 500
 
     def test_tts_settings_defaults(self):

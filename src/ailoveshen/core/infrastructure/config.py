@@ -42,8 +42,8 @@ class GeminiSettings:
     """Gemini API settings."""
 
     api_key: str = ""
-    main_model: str = "gemini-2.5-pro-preview-05-06"
-    filter_model: str = "gemini-2.0-flash"
+    main_model: str = "gemini-3.8-flash"
+    filter_model: str = "gemini-3.8-flash"
     max_tokens: int = 500
     temperature: float = 0.7
 
@@ -192,8 +192,8 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         gemini_data = data["gemini"]
         settings.gemini = GeminiSettings(
             api_key=gemini_data.get("api_key", ""),
-            main_model=gemini_data.get("main_model", "gemini-2.5-pro-preview-05-06"),
-            filter_model=gemini_data.get("filter_model", "gemini-2.0-flash"),
+            main_model=gemini_data.get("main_model", "gemini-3.8-flash"),
+            filter_model=gemini_data.get("filter_model", "gemini-3.8-flash"),
             max_tokens=gemini_data.get("max_tokens", 500),
             temperature=gemini_data.get("temperature", 0.7),
         )

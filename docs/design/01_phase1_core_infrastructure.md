@@ -1031,7 +1031,7 @@ class GeminiTextGenerator(ITextGenerator):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.5-pro-preview-05-06",
+        model_name: str = "gemini-3.8-flash",
         prompt_builder: PromptBuilder | None = None,
     ) -> None:
         genai.configure(api_key=api_key)
