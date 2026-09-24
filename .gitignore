@@ -80,3 +80,8 @@ Style-Bert-VITS2/mos_results/
 .env.*
 *.key
 credentials.json
+
+# Spikes
+spikes/**/node_modules/
+spikes/**/*.log
+spikes/.venv-*/

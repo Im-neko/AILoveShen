@@ -1,0 +1,285 @@
+{
+ "label": "unarmed_full_zombie",
+ "expected": [
+  "attack_hostile",
+  "flee_hostile"
+ ],
+ "summary": {
+  "time": {
+   "phase": "night",
+   "time_of_day": 13000,
+   "raining": false
+  },
+  "self": {
+   "health": 20,
+   "max_health": 20,
+   "food": 20,
+   "position": {
+    "x": 90.5,
+    "y": 75,
+    "z": -43.5
+   },
+   "held_item": null,
+   "in_water": false,
+   "on_ground": true
+  },
+  "inventory": {},
+  "mobs": [
+   {
+    "name": "zombie",
+    "hostile": true,
+    "distance_m": 4,
+    "direction": "E",
+    "height_diff_m": 0
+   }
+  ],
+  "drops": [
+   {
+    "item": "rotten_flesh",
+    "distance_m": 14.8,
+    "direction": "E"
+   }
+  ],
+  "resources": {
+   "nearest_log": {
+    "block": "spruce_log",
+    "distance_m": 4.3
+   }
+  },
+  "recent_actions": []
+ },
+ "actions": [
+  {
+   "id": "attack_hostile",
+   "description": "Fight the nearest hostile mob (zombie, 4m away) with the held item until it dies or 10s pass",
+   "generic": "Fight the nearest hostile mob"
+  },
+  {
+   "id": "flee_hostile",
+   "description": "Run 16m away from the nearest hostile mob (zombie, 4m away)",
+   "generic": "Run away from the nearest hostile mob"
+  },
+  {
+   "id": "pickup_drop",
+   "description": "Walk to the dropped rotten_flesh 14.8m away and pick it up",
+   "generic": "Pick up the nearest dropped item"
+  },
+  {
+   "id": "collect_log",
+   "description": "Walk to the nearest spruce_log (4.3m away) and chop it",
+   "generic": "Chop the nearest tree log"
+  },
+  {
+   "id": "explore",
+   "description": "Walk about 20m in a random direction to find new things",
+   "generic": "Explore in a random direction"
+  },
+  {
+   "id": "idle",
+   "description": "Stay still and look around for 3 seconds",
+   "generic": "Stay still and look around"
+  }
+ ],
+ "runs": {
+  "summary": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.8,
+    "probabilities": {
+     "flee_hostile": 0.84,
+     "collect_log": 0.11,
+     "attack_hostile": 0.04,
+     "pickup_drop": 0.01,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.524,
+    "input_tokens": 742,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.75,
+    "probabilities": {
+     "flee_hostile": 0.79,
+     "collect_log": 0.15,
+     "attack_hostile": 0.05,
+     "pickup_drop": 0.01,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.222,
+    "input_tokens": 742,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.73,
+    "probabilities": {
+     "flee_hostile": 0.78,
+     "collect_log": 0.15,
+     "attack_hostile": 0.06,
+     "pickup_drop": 0.01,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.197,
+    "input_tokens": 742,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.52,
+    "probabilities": {
+     "flee_hostile": 0.6,
+     "attack_hostile": 0.27,
+     "collect_log": 0.1,
+     "pickup_drop": 0.02,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.235,
+    "input_tokens": 2721,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.54,
+    "probabilities": {
+     "flee_hostile": 0.62,
+     "attack_hostile": 0.24,
+     "collect_log": 0.1,
+     "pickup_drop": 0.03,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.219,
+    "input_tokens": 2721,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.62,
+    "probabilities": {
+     "flee_hostile": 0.68,
+     "attack_hostile": 0.2,
+     "collect_log": 0.08,
+     "pickup_drop": 0.03,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.251,
+    "input_tokens": 2721,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "summary_generic": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.54,
+    "probabilities": {
+     "flee_hostile": 0.62,
+     "attack_hostile": 0.28,
+     "collect_log": 0.08,
+     "pickup_drop": 0.02,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.264,
+    "input_tokens": 669,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.51,
+    "probabilities": {
+     "flee_hostile": 0.59,
+     "attack_hostile": 0.3,
+     "collect_log": 0.1,
+     "pickup_drop": 0.01,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.21,
+    "input_tokens": 669,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.56,
+    "probabilities": {
+     "flee_hostile": 0.63,
+     "attack_hostile": 0.24,
+     "collect_log": 0.11,
+     "pickup_drop": 0.02,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.242,
+    "input_tokens": 669,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw_generic": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.4,
+    "probabilities": {
+     "flee_hostile": 0.5,
+     "attack_hostile": 0.34,
+     "pickup_drop": 0.11,
+     "collect_log": 0.05,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.2,
+    "input_tokens": 2648,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.39,
+    "probabilities": {
+     "flee_hostile": 0.51,
+     "attack_hostile": 0.32,
+     "pickup_drop": 0.12,
+     "collect_log": 0.05,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.239,
+    "input_tokens": 2648,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.39,
+    "probabilities": {
+     "flee_hostile": 0.5,
+     "attack_hostile": 0.35,
+     "pickup_drop": 0.11,
+     "collect_log": 0.04,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.222,
+    "input_tokens": 2648,
+    "output_tokens": 73,
+    "model": "jev-1.13.0"
+   }
+  ]
+ }
+}

@@ -1,18 +1,34 @@
-**Active Phase**: Phase 3 完了（Gemini で生成 → Style-Bert-VITS2 で読み上げ、を実機で確認）。次は Phase 4 最小版（Twitch コメント → 返答 → 読み上げ）
-**Last Updated**: 2026-09-24
-**Test Status**: 227 unit tests passing (`pytest tests/`)。`examples/integration_test_llm.py --speak` 成功（3/3 を最後まで再生）
-
----
-
 ## Current Status
 
-**Active Phase**: 層別構成への移行が完了。次は Phase 3 最小版（Python + google-genai）
+**Active Phase**: Phase 6 の方式検証（プロトコルミラー + Jev の spike）。Phase 4 最小版は保留中
 **Last Updated**: 2026-09-24
-**Test Status**: 152 unit tests passing (`pytest tests/`, アーキテクチャ検査 4 件を含む), Docker integration verified
+**Test Status**: 227 unit tests passing (`pytest tests/`)。spike: ミラーのヘッドレス確認と、Jev のシナリオ評価およびクローズドループは成功。実クライアントでの描画確認は未実施
 
 ---
 
 ## Completed Work
+
+### Spike: プロトコルミラー + Jev による行動選択 (2026-09-24)
+
+**Branch**: `spike/minecraft-mirror-jev`。詳細と表は `spikes/README.md`
+
+- `docker/docker-compose.minecraft.yml`: Paper 1.21.4、offline、127.0.0.1:25565、RCON 有効
+- **ミラー**（`spikes/minecraft-mirror/mirror.mjs`）
+  - bot の configuration パケットと play パケットを記録し、127.0.0.1:25578 の偽サーバーに生バイトのまま中継する
+  - ヘッドレス確認: play まで到達し、チャンク、体力、20Hz の位置を受け取った。パースエラーはなかった
+  - **バニラクライアントでの描画は未確認**
+- **Jev**（`spikes/minecraft-mirror/bridge.mjs` + `spikes/jev_eval.py`）
+  - typesafe-sdk 0.7.1 の `system_one` で、Choice を1問だけ投げる。`jev-1.13.0` で約 0.2s
+  - 10シナリオ × 4条件（summary/raw × 手がかり付き/generic な説明）× 3回の結果
+    - 妥当な選択にならなかったのは、raw 条件の zombie_far_day だけだった（剣があり、14m 先のゾンビから逃げた）
+    - raw は正解の確率が一貫して低く、トークンは 4〜20 倍になる → 状態は要約して渡す
+  - generic な説明でも、state に応じて attack と flee を切り替えた。説明文ではなく state を読んでいる
+  - confidence は、はっきりした状況で 0.8〜0.99、割れる状況で 0.1〜0.5 だった。LLM へ上げるかどうかの閾値として使える
+  - クローズドループ: 昼 10/10 成功。夜にゾンビ2体を倒したが、体力は 20 から 11.3 に減った。アクション実行中の被弾は Jev では防げないので、反射層をコードで持つ必要がある
+  - バグ修正: 採掘の遅延。足元を掘った直後の空中で採掘を始めると、速度が 1/5 になっていた。着地を待ってから掘るようにした
+- API キーは pass の `JEV_API_KEY` を、SDK が読む `TYPESAFE_API_KEY` として渡す
+
+---
 
 ### Phase 3 実機確認: Gemini → TTS 読み上げ (2026-09-24)
 
@@ -404,6 +420,12 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-24 (Minecraft サーバー・ミラー・Jev spike)
+- Minecraft サーバーを Docker で起動し、Mineflayer の bot で参加と移動を確認した
+- bot として参加すると、カメラの動きや UI が配信向きではない。そこで、パケットを実クライアントに中継する方式（プロトコルミラー）を採用し、spike で検証した
+- Jev に今実行できるアクションを列挙して選ばせる方式を、シナリオ評価とクローズドループで検証した
+- 設計書 06 の書き換えは、実クライアントでの確認が済んでから行う
 
 ### 2026-09-24 (モデル切り替え・層別構成・Phase 3 最小版)
 - Gemini を 3.8 Flash に統一した（PR #14）

@@ -1,0 +1,220 @@
+{
+ "label": "day_safe",
+ "expected": [
+  "collect_log",
+  "explore"
+ ],
+ "summary": {
+  "time": {
+   "phase": "day",
+   "time_of_day": 1000,
+   "raining": false
+  },
+  "self": {
+   "health": 20,
+   "max_health": 20,
+   "food": 20,
+   "position": {
+    "x": 90.5,
+    "y": 75,
+    "z": -43.5
+   },
+   "held_item": null,
+   "in_water": false,
+   "on_ground": true
+  },
+  "inventory": {},
+  "mobs": [],
+  "drops": [],
+  "resources": {
+   "nearest_log": {
+    "block": "spruce_log",
+    "distance_m": 4.3
+   }
+  },
+  "recent_actions": []
+ },
+ "actions": [
+  {
+   "id": "collect_log",
+   "description": "Walk to the nearest spruce_log (4.3m away) and chop it",
+   "generic": "Chop the nearest tree log"
+  },
+  {
+   "id": "explore",
+   "description": "Walk about 20m in a random direction to find new things",
+   "generic": "Explore in a random direction"
+  },
+  {
+   "id": "idle",
+   "description": "Stay still and look around for 3 seconds",
+   "generic": "Stay still and look around"
+  }
+ ],
+ "runs": {
+  "summary": [
+   {
+    "choice": "collect_log",
+    "confidence": 0.99,
+    "probabilities": {
+     "collect_log": 1.0,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.5,
+    "input_tokens": 562,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.99,
+    "probabilities": {
+     "collect_log": 1.0,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.207,
+    "input_tokens": 562,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 1.0,
+    "probabilities": {
+     "collect_log": 1.0,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.195,
+    "input_tokens": 562,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw": [
+   {
+    "choice": "collect_log",
+    "confidence": 0.96,
+    "probabilities": {
+     "collect_log": 0.98,
+     "explore": 0.01,
+     "idle": 0.01
+    },
+    "latency_s": 0.187,
+    "input_tokens": 2303,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.96,
+    "probabilities": {
+     "collect_log": 0.98,
+     "idle": 0.01,
+     "explore": 0.01
+    },
+    "latency_s": 0.211,
+    "input_tokens": 2303,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.96,
+    "probabilities": {
+     "collect_log": 0.98,
+     "idle": 0.01,
+     "explore": 0.01
+    },
+    "latency_s": 0.191,
+    "input_tokens": 2303,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "summary_generic": [
+   {
+    "choice": "collect_log",
+    "confidence": 0.99,
+    "probabilities": {
+     "collect_log": 0.99,
+     "explore": 0.01,
+     "idle": 0.0
+    },
+    "latency_s": 0.205,
+    "input_tokens": 538,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.99,
+    "probabilities": {
+     "collect_log": 1.0,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.21,
+    "input_tokens": 538,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.99,
+    "probabilities": {
+     "collect_log": 1.0,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.206,
+    "input_tokens": 538,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw_generic": [
+   {
+    "choice": "collect_log",
+    "confidence": 0.96,
+    "probabilities": {
+     "collect_log": 0.97,
+     "idle": 0.02,
+     "explore": 0.01
+    },
+    "latency_s": 0.25,
+    "input_tokens": 2279,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.96,
+    "probabilities": {
+     "collect_log": 0.97,
+     "idle": 0.02,
+     "explore": 0.01
+    },
+    "latency_s": 0.195,
+    "input_tokens": 2279,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "collect_log",
+    "confidence": 0.97,
+    "probabilities": {
+     "collect_log": 0.98,
+     "explore": 0.01,
+     "idle": 0.01
+    },
+    "latency_s": 0.218,
+    "input_tokens": 2279,
+    "output_tokens": 41,
+    "model": "jev-1.13.0"
+   }
+  ]
+ }
+}
