@@ -1,12 +1,43 @@
 ## Current Status
 
-**Active Phase**: Phase 6 最小版（Gemini + Jev による自律建築）完了。ブランチ `feat/phase6-minimal`、PR #19（レビュー待ち）。Phase 4 最小版は保留中
-**Last Updated**: 2026-09-24
-**Test Status**: 305 unit tests passing (`pytest tests/`)。自律実行 run6 で家が完成し、RCON でワールドのブロックを確認済み
+**Active Phase**: 街作りロードマップ（`docs/design/09_town_building_roadmap.md`）の M1 生存基盤を完了。次は F（根源的な行動の組み合わせ、Jev の評価から）。ブランチ `feat/town-m1-m2`（`feat/phase6-minimal` から派生、PR #19 は未マージ）
+**Last Updated**: 2026-09-25
+**Test Status**: 318 unit tests passing (`pytest tests/`)。M1 は自律実行（m1run1）で一晩を越えられることを RCON で確認した。ベッドの一連の動作は、動作ごとに実機で確認した
 
 ---
 
 ## Completed Work
+
+### M1 生存基盤: 反射、剣、夜は家にこもる、食料、拠点の永続化、ベッド (2026-09-24〜25)
+
+**Branch**: `feat/town-m1-m2`。**Commits**: `e146a2e`（M1 本体）、`c4f6f1a`（ベッド、浮く反射、待機中のカメラ、拾いの待ち、レシピ要求の間隔）。設計: `docs/design/09_town_building_roadmap.md`、`docs/design/10_agent_lifecycle.md`
+
+**結果（m1run1）**: `time set 1000` から自律実行した。家を建て、夕方に go_home で帰宅し、時刻 13560〜23188 の間は家の中でドアが閉まっていた（RCON で毎分確認）。体力は 20 のままで、夜の間の死亡はなかった。朝に家を出て作業に戻った
+- 実行を止めた後、放置中の bot が水中で溺死した（Mineflayer は止まっていると泳がない）。「死亡なし」は夜の間だけの結果。水中では経路探索していなければジャンプを押し続ける反射を足した
+- それ以前の実行では、家まで追ってきたクリーパーが、朝ドアから出た瞬間に爆発して、ドアと家の角を壊した → ドアの近くに敵がいる間は家から出ない（`dangerOutside`）、敵を避ける経路コストを足した
+
+**ベッド（c4f6f1a）**: `make_bed` Goal（hunt_sheep, craft_bed, place_bed）と、survive_night Goal の `sleep`
+- 実機で確認: 作業台のクラフト → 設置 → ベッドのクラフト → 家に設置（`data/state.json` の `home.bed` と RCON で確認） → `time set 13000` で就寝 → 夜明け（サーバー時刻 24〜2429、実績 Sweet Dreams）
+- `sleep` の戻り値は、起きた後の次の時刻更新で夜が明けたかを確かめる（サーバーは時刻を送る前に bot を起こすので、すぐ読むと夜の時刻のままだった）
+- 自律実行で make_bed を通しで確認したことはまだない
+
+**構成（主なもの）**:
+- ブリッジ: `reflex.mjs`（近くの敵に先に戦う・逃げる。実行中のアクションは中断して止まるまで待つ。水中で浮く）、`home.mjs`（拠点、ドアの開け閉め、ベッドの位置、`data/state.json` への保存）、`actions.mjs`（`GoalAwayFrom` の逃走、剣、狩り、羊、ベッド、家に帰る・こもる）
+- Python: `GoalType` に SURVIVE_NIGHT / GET_FOOD / MAKE_BED、`HouseProject.pursuable_goals`（実行できて未達成の Goal だけを Gemini に出す）、時間帯の変化で Goal を選び直す、`GameService.play`（完成後も続ける、ブリッジが反射中は待つ）
+
+**根本原因と対処**:
+- Paper の `recipe-spam-limit: 20`（1 tick に1回復）で作業台のクラフトが黙って失敗 → レシピ要求を 100ms 間隔にした
+- ドロップには拾えるまでの遅延があり、狩りの直後に「食料が増えない」と失敗を返していた → `playerCollect` を待って拾う
+- `GoalInvert(GoalFollow)` は敵が範囲いっぱい動くまで再計画しない → 独自の `GoalAwayFrom`
+- 家の完成後に Goal が行ったり来たりした → 達成済みの Goal を候補から外した
+- 家の中で待つ間、1秒ごとに向きを変えてカメラが回っていた（ユーザーの指摘） → ドアを向いて静止し、ときどき横を見る
+
+**テストでの介入**（自律実行には使っていない）:
+- 別の bot（`tools/flee-check.mjs`、`home-check.mjs`、`hunt-check.mjs`）と RCON での召喚・時刻変更
+- ベッドのクラフト確認のため、白い羊毛3と板材12を give した。確認のために置いた作業台 (97,73,-83) は撤去した
+- 就寝の確認で `time set 13000` を2回
+
+**積み残し**: 設計書 06 は M1 の内容（反射、拠点、ベッド、浮く、レシピの間隔）にまだ合わせていない
 
 ### Phase 6 最小版: Gemini が設計・方針、Jev が行動選択、ブリッジが実行して家を建てる (2026-09-24)
 
@@ -360,10 +391,16 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
+### 街作りロードマップの続き（09）
+
+- **F を最優先（2026-09-25 決定）**: 行動を毎回手書きで足すのをやめ、根源的な行動（掘る・置く・クラフト・攻撃・使う…）の組み合わせで実現する。まず Jev が引数付きの候補（10〜50個）から正しく選べるか、単純なヒューリスティックより良いかをスパイクで測る。設計は 10 に置く。スクショ（vision）と M3 はその後
+- M2（Twitch）: ユーザーのアプリ登録と `pass insert TWITCH_CLIENT_ID` 待ち
+- スクショを Gemini に見せる（ミラーのクライアントのウィンドウ、後で OBS に差し替え可能に）
+- 設計書 06 を M1 に合わせて更新
+
 ### Phase 6 の続き
 
-- PR #19 のレビューとマージ
-- 先に動く反射層（ステップの合間も含め、殴られる前に逃げる・戦う）と、木の剣のクラフト
+- PR #19 のレビューとマージ（`feat/town-m1-m2` の PR をどこに向けるかは要相談）
 - 例外で止めない方針（LLM・Jev の一時的な失敗）
 - ゲームイベントを実況・TTS につなぐ（Phase 8）
 - ブリッジ（Node）の自動テスト
@@ -470,6 +507,10 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-25 (M1 のベッドと、根源的な行動への方針転換)
+- ベッドの設置と就寝を実機で確認し、就寝の成功判定を時刻で確かめるようにした
+- ユーザーから「行動を毎回配信外で足すのが気になる。根源的な行動の組み合わせで実現できないか」。手書きアクションは①操作の仕組み ②手順 ③その場の選択が混ざっていて、②はレシピ・ドロップのデータから導ける。ただし Jev は計画役ではないので、組み合わせは達成条件＋依存関係の解決＋Gemini が担う、と整理した。スクショより先にこれを進める
 
 ### 2026-09-24 (Minecraft サーバー・ミラー・Jev spike)
 - Minecraft サーバーを Docker で起動し、Mineflayer の bot で参加と移動を確認した
