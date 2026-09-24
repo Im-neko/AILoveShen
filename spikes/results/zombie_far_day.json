@@ -1,0 +1,271 @@
+{
+ "label": "zombie_far_day",
+ "expected": [
+  "attack_hostile",
+  "collect_log"
+ ],
+ "summary": {
+  "time": {
+   "phase": "day",
+   "time_of_day": 1000,
+   "raining": false
+  },
+  "self": {
+   "health": 20,
+   "max_health": 20,
+   "food": 20,
+   "position": {
+    "x": 90.5,
+    "y": 75,
+    "z": -43.5
+   },
+   "held_item": "iron_sword",
+   "in_water": false,
+   "on_ground": true
+  },
+  "inventory": {
+   "iron_sword": 1
+  },
+  "mobs": [
+   {
+    "name": "zombie",
+    "hostile": true,
+    "distance_m": 14,
+    "direction": "E",
+    "height_diff_m": 0
+   }
+  ],
+  "drops": [],
+  "resources": {
+   "nearest_log": {
+    "block": "spruce_log",
+    "distance_m": 5.1
+   }
+  },
+  "recent_actions": [
+   {
+    "action": "collect_log",
+    "ok": true,
+    "result": "chopped spruce_log; logs now spruce_logx2",
+    "seconds": 4.9
+   }
+  ]
+ },
+ "actions": [
+  {
+   "id": "attack_hostile",
+   "description": "Fight the nearest hostile mob (zombie, 14m away) with the held item until it dies or 10s pass",
+   "generic": "Fight the nearest hostile mob"
+  },
+  {
+   "id": "flee_hostile",
+   "description": "Run 16m away from the nearest hostile mob (zombie, 14m away)",
+   "generic": "Run away from the nearest hostile mob"
+  },
+  {
+   "id": "collect_log",
+   "description": "Walk to the nearest spruce_log (5.1m away) and chop it",
+   "generic": "Chop the nearest tree log"
+  },
+  {
+   "id": "explore",
+   "description": "Walk about 20m in a random direction to find new things",
+   "generic": "Explore in a random direction"
+  },
+  {
+   "id": "idle",
+   "description": "Stay still and look around for 3 seconds",
+   "generic": "Stay still and look around"
+  }
+ ],
+ "runs": {
+  "summary": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.37,
+    "probabilities": {
+     "flee_hostile": 0.48,
+     "attack_hostile": 0.33,
+     "collect_log": 0.17,
+     "explore": 0.01,
+     "idle": 0.01
+    },
+    "latency_s": 0.475,
+    "input_tokens": 740,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.34,
+    "probabilities": {
+     "flee_hostile": 0.47,
+     "attack_hostile": 0.37,
+     "collect_log": 0.15,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.215,
+    "input_tokens": 740,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.44,
+    "probabilities": {
+     "flee_hostile": 0.54,
+     "attack_hostile": 0.29,
+     "collect_log": 0.15,
+     "idle": 0.01,
+     "explore": 0.01
+    },
+    "latency_s": 0.188,
+    "input_tokens": 740,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.36,
+    "probabilities": {
+     "flee_hostile": 0.5,
+     "attack_hostile": 0.48,
+     "collect_log": 0.01,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.264,
+    "input_tokens": 2565,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.37,
+    "probabilities": {
+     "flee_hostile": 0.5,
+     "attack_hostile": 0.48,
+     "collect_log": 0.01,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.291,
+    "input_tokens": 2565,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.37,
+    "probabilities": {
+     "attack_hostile": 0.51,
+     "flee_hostile": 0.47,
+     "collect_log": 0.01,
+     "idle": 0.01,
+     "explore": 0.0
+    },
+    "latency_s": 0.208,
+    "input_tokens": 2565,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "summary_generic": [
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.41,
+    "probabilities": {
+     "attack_hostile": 0.52,
+     "flee_hostile": 0.33,
+     "collect_log": 0.13,
+     "explore": 0.01,
+     "idle": 0.01
+    },
+    "latency_s": 0.224,
+    "input_tokens": 677,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.37,
+    "probabilities": {
+     "attack_hostile": 0.48,
+     "flee_hostile": 0.36,
+     "collect_log": 0.14,
+     "explore": 0.01,
+     "idle": 0.01
+    },
+    "latency_s": 0.199,
+    "input_tokens": 677,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.46,
+    "probabilities": {
+     "attack_hostile": 0.58,
+     "flee_hostile": 0.31,
+     "collect_log": 0.1,
+     "explore": 0.01,
+     "idle": 0.0
+    },
+    "latency_s": 0.19,
+    "input_tokens": 677,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw_generic": [
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.63,
+    "probabilities": {
+     "attack_hostile": 0.71,
+     "flee_hostile": 0.28,
+     "collect_log": 0.01,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.237,
+    "input_tokens": 2502,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.53,
+    "probabilities": {
+     "attack_hostile": 0.64,
+     "flee_hostile": 0.36,
+     "explore": 0.0,
+     "collect_log": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.218,
+    "input_tokens": 2502,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "attack_hostile",
+    "confidence": 0.57,
+    "probabilities": {
+     "attack_hostile": 0.67,
+     "flee_hostile": 0.33,
+     "collect_log": 0.0,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.232,
+    "input_tokens": 2502,
+    "output_tokens": 64,
+    "model": "jev-1.13.0"
+   }
+  ]
+ }
+}

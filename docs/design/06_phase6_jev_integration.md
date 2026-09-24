@@ -1,1123 +1,429 @@
-# Phase 6: Jev + Minecraft Bridge Integration 詳細設計書 (Issue #4 改訂)
+# Phase 6: Jev + Minecraft Bridge Integration 詳細設計書 (Issue #4)
 
-> **改訂の経緯**: 当初はNitroGen/MineDojoによるMinecraft統合を計画していたが、NitroGenは未実装（設計のみ）の段階で、TypeSafe AI社の実運用向けリアルタイム意思決定モデル **[Jev](https://typesafe.ai/)** が登場した。Jevは「型付き・確率付きの高速判断」に特化した**System Oneモデル**であり、LLM（System 2：じっくり推論・言語生成）と組み合わせることで、Minecraft内のリアルタイム操作判断に適している。本改訂では、NitroGenへの依存をやめ、**Mineflayer（Node.jsのMinecraft制御ライブラリ）による実機操作ブリッジ + Jevによる戦術・反射判断**という構成に置き換える。
+> この文書は `feat/phase6-minimal` に**実装済み**の構成を記述する。当初の計画（13 Goal、Reactive/Tactical の2ループなど）との違いは §11 にまとめる。
 
 ## 1. 概要
 
-Minecraft操作の「判断」をJevに担わせつつ、配信全体の方向性（何をすべきか、視聴者にどう反応するか）はこれまで通りGemini 3.8 Flash（LLM）が担当する、という役割分担でMinecraft統合を実装する。
+Minecraft のサバイバルで、AI 配信者が**木を集め、クラフトし、自分で設計した家を建てる**ところまでを、人の介入なしで行う。
 
-### 1.1 要件（Issue #4より、Jev対応版）
+判断は3層に分ける。
 
-- Game State Manager（ゲーム状態の取得・管理） — Minecraft Bridge経由
-- Action Executor（判断をゲーム操作に変換） — Jevの判断 → Minecraft Bridgeで実行
-- LLM ↔ Jev ↔ Minecraft Bridge の三層連携
-  - LLM → Jev: 「今何をすべきか」という**方向性（Goal）**をリクエストする
-  - Jev → Minecraft Bridge: Goalを踏まえた**具体的な次の一手**を高速・型安全に決定し、実行させる
-  - Minecraft Bridge → Jev / LLM: ゲーム状態・イベントをフィードバックする
+| 層 | 担当 | 決めること | 頻度 |
+|----|------|-----------|------|
+| LLM（Gemini, `main_model`） | System 2 | 家の設計（構造化 JSON）と、今取り組む Goal（閉じた4種から1つ） | 開始時1回 + Goal の選び直しが必要なとき |
+| Jev（TypeSafe AI System One） | System 1 | Goal が許す実行可能アクションから次の1つ | 候補が2つ以上ある各ステップ |
+| Minecraft Bridge（Node.js / Mineflayer） | 実行 | 今実行できるアクションの列挙、実行、ブロック設置、世界の観測 | 各ステップ |
 
-### 1.2 なぜJevか（採用理由）
+### 確定仕様
 
-| 観点 | LLM (Gemini) だけで判断する場合 | Jevを間に挟む場合 |
-|------|--------------------------------|-------------------|
-| レイテンシ | 数百ms〜数秒。Minecraftのリアルタイム操作（索敵・回避等）には遅すぎる | 型付き並列呼び出しでLLMの二桁分の一程度に高速化 |
-| 出力の安全性 | 自由テキストの意図を正規表現/キーワードマッチで解析する必要があり脆弱（旧設計の`ACTION_KEYWORDS`参照） | `Choice`/`Score`/`Noul`という型付き出力のみを返すため、パース不要・ハルシネーション不可 |
-| 得意なこと | キャラクター性のある実況・チャット応答・大局的な目標設定 | 「今、逃げるべきか戦うべきか」等の閉じた選択肢からの高速・高頻度な判断 |
+| 項目 | 内容 |
+|------|------|
+| Goal | `gather_wood` / `craft` / `build_shelter` / `explore` の4種（`GoalType`） |
+| 家 | 1部屋、平屋根、ドア1つ、窓0〜4。幅・奥行き 5〜7、壁の高さ 3〜4（`HouseBlueprint`） |
+| 設計の検証 | Gemini の structured output（JSON Schema）→ `HouseBlueprint` で検証。検証エラーは理由をプロンプトに入れて再設計させる（計3回まで） |
+| 行動選択 | Jev `system_one` に `Choice` を1問。候補が1つならモデルを呼ばない |
+| 生存行動 | `attack_hostile` / `flee_hostile` / `equip_weapon` / `eat` はどの Goal でも候補に入る（前提条件を満たすときだけ） |
+| アクション | ブリッジ側で有限時間（20秒）に打ち切る。前提条件を満たすものだけを列挙する |
+| 完了判定 | アクションの戻り値ではなく、世界に置かれているブロックから判定する（`BuildPlan.status()`） |
+| 失敗時 | フォールバックなし。LLM / Jev / ブリッジの例外はそのまま実行を終了させる |
+| Minecraft | Paper 1.21.4（offline、`docker/docker-compose.minecraft.yml`） |
 
-この特性差から、**LLMは「何を目指すか（Goal）」を決め、Jevは「今この瞬間どう動くか」を決める**という分担にする。
+### スコープ外（後続）
 
-## 2. Jevの基礎知識（実装に必要な範囲）
+- 実況・TTS との接続（ゲームイベントを発話にする）→ Phase 8
+- 短周期の Reactive Loop（脅威を先読みして動く反射）→ §12。今あるのは被弾したときにアクションを中断する反射だけ（§6.1）
+- Twitch コメントによる介入 → Phase 4 / 8
 
-- Jevは TypeSafe AI の **System One Model**。「非構造なStateを入力し、型付きの確率的Decisionを出力する」ことに特化しており、生成AI（LLM）のような自由文出力は行わない。
-- 3つのプリミティブ（質問タイプ）:
-  - **Noul**: Yes/Noの二値判定（「はい」である確率を返す）
-  - **Choice**: 定義済みの選択肢から1つを選ぶ（各選択肢の確率・信頼度つき）
-  - **Score**: 順序付き基準に対する評価（段階的スコア）
-- 1回の`system_one()`呼び出しで複数の質問（`questions`）を並列に投げられるため、「脅威レベル・行動・逃走方向」のようなセットを1リクエストで取得できる（後述のReactive Loopで利用）。
-- Python SDK: `typesafe-sdk`（`pip install typesafe-sdk` / `uv add typesafe-sdk`）
-  - 環境変数 `TYPESAFE_API_KEY` にAPIキーを設定
-  - `AsyncTypeSafeClient`（非同期）/ `TypeSafeClient`（同期）
-  - 呼び出し例:
+## 2. コンポーネント構成
 
-    ```python
-    from typesafe_sdk import AsyncTypeSafeClient, Noul, Choice, Score
-
-    async with AsyncTypeSafeClient() as client:
-        response = await client.system_one(
-            state={"health": 12, "hunger": 4, "nearby_hostiles": ["zombie"]},
-            questions={
-                "threat_level": Score(
-                    instructions="現在の危険度は？",
-                    criteria=["none", "low", "medium", "high", "critical"],
-                ),
-                "action": Choice(
-                    instructions="次に取るべき行動は？",
-                    criteria={"fight": None, "flee": None, "eat": None, "explore": None},
-                ),
-                "should_eat": Noul(instructions="今すぐ食事すべきか？"),
-            },
-        )
-
-    threat = response.scores["threat_level"].score       # 例: "high"
-    action = response.choices["action"].choice            # 例: "flee"
-    should_eat = response.nouls["should_eat"].noul         # 例: False
-    ```
-
-- 参考実装: [jev-craft](https://github.com/akash-kamat/jev-craft)（Mineflayer + Jevによる生存Botの先行事例。600ms周期の反射ループと10秒周期の戦術ループという二層構成を採用しており、本設計もこれに倣う）。
-
-## 3. 全体アーキテクチャ（2ループ構成）
-
-```
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│                        AILoveShen × Jev アーキテクチャ                              │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  【方向性（Goal）を決める】                     ← 低頻度・LLM主導                    │
-│  Gemini 3.8 Flash ──DecideGoalUseCase──▶ Goal (13種の定義済みゴールから選択)        │
-│      ▲                                    │                                        │
-│      │ ゲーム状況・視聴者コメントを加味          ▼                                   │
-│      │                          ┌─────────────────────────┐                        │
-│      │                          │   Tactical Loop (10s)    │  ← LLMのGoalの範囲内で │
-│      │                          │   Jev: 次の一手/approach/ │     Jevが手段を選ぶ   │
-│      │                          │        urgencyを型で決定  │                        │
-│      │                          └────────────┬─────────────┘                        │
-│      │                                       ▼                                     │
-│      │                          ┌─────────────────────────┐                        │
-│      │                          │   Reactive Loop (600ms)  │  ← LLMを介さず         │
-│      │                          │   Jev: 脅威度/即時行動/   │     Jevのみで反射的に  │
-│      │                          │        逃走方向を型で決定 │     生存を優先         │
-│      │                          └────────────┬─────────────┘                        │
-│      │                                       ▼                                     │
-│      │                          ┌─────────────────────────┐                        │
-│      └── GameEvent（実況ネタ）───┤   Minecraft Bridge        │                        │
-│                                  │   (Node.js + Mineflayer)  │──▶ Minecraft Java Ed. │
-│                                  └─────────────────────────┘                        │
-└───────────────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Reactive Loop（反射ループ, 〜600ms周期）**: LLMを介さずJevのみで完結。体力・空腹・近接モブ等の状態から `threat_level` / `immediate_action` / `should_eat` / `flee_direction` を毎tick判定し、危険時は即座にMinecraft Bridgeへ実行させる。生存に関わる判断はLLMの応答速度を待てないため、ここは完全にJevに委譲する。
-- **Tactical Loop（戦術ループ, 〜5〜10秒周期）**: LLMが設定した現在の `Goal`（例：「鉱石を採掘する」）の範囲内で、Jevが次のステップ・approach（慎重/効率重視等）・urgencyを型付きで選ぶ。LLMは「何を目指すか」だけ決め、「今どう動くか」はJevに任せる。
-- **Goal選定（LLM主導, イベント駆動 or 30〜60秒周期）**: Gemini 3.8 Flashが、現在のゲーム状態・直近のイベント・視聴者コメント（「あっちの洞窟行って！」等）を踏まえて、13種の定義済みGoalから次のGoalを選ぶ。Reactive Loopが`critical`な脅威を検知した場合は、Tactical LoopがGoalを一時的に`FLEE`へ強制オーバーライドする（LLMの応答を待たない）。
-- Reactive/Tactical Loopの結果は `GameEvent` としてイベントバスに流れ、Phase 3のLLM実況（`GenerateCommentaryUseCase`）が「あぶない、逃げた！」のような実況コメントを生成する材料になる。
-
-## 4. クリーンアーキテクチャに基づくコンポーネント構成
+`00_architecture_overview.md` §2.5 の4層構成に従う。Minecraft に触れるものは Node.js サイドカー `minecraft-bridge/` に閉じ込め、Python からは HTTP だけで使う。
 
 ```
 src/ailoveshen/
 ├── domain/
-│   ├── entities/
-│   │   └── game_state.py               # GameState aggregate (Phase 1から)
-│   ├── value_objects/
-│   │   ├── game_action.py              # GameAction（旧設計を拡張）
-│   │   ├── game_event.py               # GameEvent（既存流用）
-│   │   ├── position.py                 # Position, Rotation（既存流用）
-│   │   ├── goal.py                     # GoalType, Goal ★NEW
-│   │   └── jev_decision.py             # ReactiveDecision, TacticalDecision ★NEW
-│   └── services/
-│       ├── event_detection_service.py  # EventDetectionService（既存流用）
-│       └── goal_override_policy.py     # GoalOverridePolicy ★NEW
-│
+│   ├── value_objects.py   # GoalType, GOAL_ACTIONS, SURVIVAL_ACTIONS, Goal, Side, BlockKind,
+│   │                      # WallOpening, PlannedBlock, HouseBlueprint, BuildStatus, MaterialNeeds,
+│   │                      # AvailableAction, GameObservation, ActionDecision, ActionResult
+│   ├── entities.py        # HouseProject
+│   ├── events.py          # HouseDesignedEvent, GoalSetEvent, GameActionExecutedEvent, HouseCompletedEvent
+│   └── exceptions.py      # GameBridgeError, ActionSelectionError
 ├── application/
-│   ├── ports/
-│   │   ├── input/
-│   │   │   ├── get_game_state.py       # IGetGameState（既存流用）
-│   │   │   ├── decide_goal.py          # IDecideGoal ★NEW
-│   │   │   ├── run_reactive_loop.py    # IRunReactiveLoop ★NEW
-│   │   │   └── run_tactical_loop.py    # IRunTacticalLoop ★NEW
-│   │   └── output/
-│   │       ├── minecraft_bridge.py     # IMinecraftBridge（旧IGameEnvironmentを改称）
-│   │       └── jev_decision_engine.py  # IJevDecisionEngine ★NEW
-│   ├── use_cases/
-│   │   ├── get_game_state.py           # GetGameStateUseCase（Bridge向けに調整）
-│   │   ├── decide_goal.py              # DecideGoalUseCase ★NEW（LLM呼び出し）
-│   │   ├── reactive_decision.py        # ReactiveDecisionUseCase ★NEW（Jev呼び出し）
-│   │   └── tactical_decision.py        # TacticalDecisionUseCase ★NEW（Jev呼び出し, 旧ExecuteActionUseCaseを置換）
-│   └── dto/
-│       └── game_dto.py                 # Request/Response DTOs
-│
+│   ├── ports/input/build_house.py       # IStartHouseProject, IAdvanceHouseProject
+│   ├── ports/output/minecraft_bridge.py # IMinecraftBridge
+│   ├── ports/output/action_selector.py  # IActionSelector
+│   ├── ports/output/game_prompt_builder.py # IGamePromptBuilder
+│   ├── ports/output/text_generator.py   # ITextGenerator.generate_json（追加）
+│   ├── dto/game_dto.py                  # HouseStepReport
+│   └── use_cases/build_house.py         # StartHouseProjectUseCase, AdvanceHouseProjectUseCase
 ├── infrastructure/
+│   ├── config.py                        # JevSettings, MinecraftSettings
 │   └── adapters/
-│       ├── minecraft_bridge/
-│       │   └── mineflayer_bridge_adapter.py  # MineflayerBridgeAdapter（旧NitroGenAdapterを置換）
-│       └── jev/
-│           └── jev_client_adapter.py         # JevClientAdapter（typesafe-sdkラッパー）
-│
-└── presentation/
-    └── services/
-        └── game_service.py             # GameService（Reactive/Tactical両ループを統括）
+│       ├── jev/jev_action_selector.py   # JevActionSelector (typesafe-sdk)
+│       ├── minecraft_bridge/mineflayer_bridge_client.py # MineflayerBridgeClient (httpx)
+│       ├── prompts/game_prompt_template_builder.py      # GamePromptTemplateBuilder
+│       └── gemini/gemini_text_generator.py              # generate_json（追加）
+├── presentation/services/game_service.py # GameService
+└── factories/game.py                     # create_game_service
 
-minecraft-bridge/                        # ★NEW: Python本体とは別プロセスのNode.jsサイドカー
-├── package.json                        # mineflayer, mineflayer-pathfinder 等
-├── src/
-│   ├── index.js                        # WebSocket/HTTPサーバのエントリポイント
-│   ├── observe.js                      # ゲーム状態のスナップショット生成
-│   └── actions.js                      # GameAction → Mineflayer API呼び出しの変換
-└── README.md
+minecraft-bridge/            # Node.js サイドカー（mineflayer 4.39.0, minecraft-protocol 1.68.0）
+├── src/index.mjs            # bot 起動 + HTTP API
+├── src/observe.mjs          # 観測の要約、敵の判定
+├── src/actions.mjs          # アクションの列挙と実行
+├── src/build.mjs            # BuildPlan: 建設地選び、ブロック設置、進捗
+├── src/craft.mjs            # レシピ本経由のクラフト
+├── src/mirror.mjs           # プロトコルミラー（bot の視点を実クライアントで見る）
+└── tools/                   # house-plan.mjs（固定の建築計画）, viewer-check.mjs（ミラーのヘッドレス確認）
 ```
 
-## 5. Domain Layer
+Python の追加依存は extra `game`（`httpx`, `typesafe-sdk>=0.7.1`）。
 
-### 5.1 Value Objects
+## 3. Domain Layer
 
-#### GameAction（拡張版, domain/value_objects/game_action.py）
+### 3.1 Goal とアクション (`domain/value_objects.py`)
 
-```python
-"""Game action value object."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from enum import Enum
-
-
-class ActionType(str, Enum):
-    """Types of game actions."""
-    MOVE = "move"
-    ATTACK = "attack"
-    MINE = "mine"
-    PLACE = "place"
-    USE_ITEM = "use_item"
-    CRAFT = "craft"
-    INTERACT = "interact"
-    EAT = "eat"
-    FLEE = "flee"
-    SLEEP = "sleep"
-    FOLLOW = "follow"
-    IDLE = "idle"
-
-
-@dataclass(frozen=True)
-class GameAction:
-    """
-    Immutable value object representing a game action.
-
-    Jevの`Choice`結果（文字列）をそのままparametersに載せられるよう、
-    自由記述の`intention`ではなく型付きの`action_type`から直接構築する。
-    """
-    action_type: ActionType
-    parameters: dict = field(default_factory=dict)
-    description: str = ""
-    confidence: float = 1.0
-    """Jevが返す確信度（0.0〜1.0）。低確信度のアクションはログで警告する。"""
-
-    def is_movement(self) -> bool:
-        return self.action_type in (ActionType.MOVE, ActionType.FLEE, ActionType.FOLLOW)
-
-    def is_combat(self) -> bool:
-        return self.action_type == ActionType.ATTACK
-
-    def is_survival_critical(self) -> bool:
-        """Reactive Loop由来の生存優先アクションか。"""
-        return self.action_type in (ActionType.FLEE, ActionType.EAT)
-```
-
-#### Goal（domain/value_objects/goal.py）★NEW
+`GoalType` は、ブリッジに実行手段があるものだけを並べる。実行できない Goal を LLM に見せると、エージェントが止まるため。
 
 ```python
-"""Goal value object - LLM sets these, Jev executes within them."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-
-
-class GoalType(str, Enum):
-    """
-    13種の定義済みゴール。
-
-    LLM(Gemini)はこの中からのみ選ぶ（Jevと同様、自由記述ではなく閉じた
-    選択肢にすることで、Tactical LoopでのJevのChoice基準として使い回せる）。
-    """
-    EXPLORE = "explore"                    # 探索
-    GATHER_WOOD = "gather_wood"            # 木材収集
-    MINE_ORE = "mine_ore"                  # 鉱石採掘
-    BUILD_SHELTER = "build_shelter"        # 拠点構築
-    FARM = "farm"                          # 農業
-    FIGHT = "fight"                        # 戦闘
-    FLEE = "flee"                          # 逃走（Reactive Loopが強制上書きすることもある）
-    EAT = "eat"                            # 食事
-    SLEEP = "sleep"                        # 就寝（夜越え）
-    CRAFT = "craft"                        # クラフト
-    RETURN_TO_BASE = "return_to_base"      # 拠点帰還
-    FOLLOW_CHAT_REQUEST = "follow_chat_request"  # 視聴者リクエスト対応
-    IDLE_PERFORM = "idle_perform"          # 待機中の小ネタ（カメラ目線トーク等）
-
-    @property
-    def steps(self) -> tuple[str, ...]:
-        """
-        このGoalに対してTactical LoopのJevが選べる手段（Choiceの選択肢）。
-
-        Mineflayer Bridge側で実装される低レベル操作にマッピングされる。
-        """
-        return _GOAL_STEPS[self]
-
-
-_GOAL_STEPS: dict[GoalType, tuple[str, ...]] = {
-    GoalType.EXPLORE: ("move_forward", "climb", "swim", "mark_location"),
-    GoalType.GATHER_WOOD: ("locate_tree", "path_to_tree", "chop", "return_if_full"),
-    GoalType.MINE_ORE: ("locate_ore", "path_to_ore", "mine_block", "return_if_full"),
-    GoalType.BUILD_SHELTER: ("clear_area", "place_walls", "place_roof", "place_door"),
-    GoalType.FARM: ("till_soil", "plant_seed", "harvest", "replant"),
-    GoalType.FIGHT: ("approach_target", "attack", "retreat_if_low_hp", "finish_target"),
-    GoalType.FLEE: ("run_from_threat", "seek_shelter", "close_door", "place_block_barrier"),
-    GoalType.EAT: ("select_food_item", "consume"),
-    GoalType.SLEEP: ("path_to_bed", "use_bed", "wait_for_morning"),
-    GoalType.CRAFT: ("open_crafting", "select_recipe", "craft_item"),
-    GoalType.RETURN_TO_BASE: ("path_to_base", "store_items", "arrive"),
-    GoalType.FOLLOW_CHAT_REQUEST: ("interpret_request", "path_to_target", "perform_request"),
-    GoalType.IDLE_PERFORM: ("look_at_camera", "emote", "narrate_surroundings"),
+GOAL_ACTIONS = {
+    GoalType.GATHER_WOOD:   {"collect_log", "pickup_drop"},
+    GoalType.CRAFT:         {"craft_planks", "craft_crafting_table", "place_crafting_table",
+                             "craft_door"},
+    GoalType.BUILD_SHELTER: {"build_step"},
+    GoalType.EXPLORE:       {"explore", "pickup_drop"},
 }
-
-
-@dataclass(frozen=True)
-class Goal:
-    """LLMが設定する現在のゴール。"""
-    goal_type: GoalType
-    reason: str = ""
-    """LLMがこのゴールを選んだ理由（実況・デバッグ用）。"""
-    set_at: datetime = field(default_factory=datetime.now)
-    set_by: str = "llm"
-    """'llm' | 'reactive_override'（Reactive Loopによる緊急上書き）"""
+SURVIVAL_ACTIONS = {"attack_hostile", "flee_hostile", "equip_weapon", "eat"}
 ```
 
-#### JevDecision（domain/value_objects/jev_decision.py）★NEW
+- `Goal(goal_type, reason, set_at)`: LLM が決めた現在の方針。`allows(action_id)` は `SURVIVAL_ACTIONS` か、その Goal の `GOAL_ACTIONS` に含まれるかを返す
+- アクション ID はブリッジの語彙そのもの（文字列）。domain は ID の集合だけを持ち、実行の中身は知らない
+
+### 3.2 家の設計 (`HouseBlueprint`)
+
+- フィールド: `name`, `concept`, `width`(x), `depth`(z), `wall_height`, `door_side`, `door_offset`, `windows: tuple[WallOpening, ...]`, `corner_pillars`
+- 寸法の上下限（`MIN_SIDE=5`, `MAX_SIDE=7`, `MIN_WALL_HEIGHT=3`, `MAX_WALL_HEIGHT=4`）は、ブリッジで設置の失敗なしに建てきれたことを実測した範囲（5x5x3 と 7x7x4）
+- `__post_init__` の検証: 寸法の範囲、ドアと窓の offset が `1..壁の長さ-2`（角は壁の支えになるので不可）、窓がドアや他の窓と重ならない。違反は `ValueError`
+- `blocks()` は設置できる順に `PlannedBlock(x, y, z, kind)` を返す
+  1. 壁を1段ずつ（ドアの位置は下2段、窓は `WINDOW_Y=1` を空ける。`corner_pillars` なら四隅は `LOG`）
+  2. 屋根を外周のリングから内側へ（各ブロックが壁か直前の屋根ブロックに接する）
+  3. 最後にドア
+- `material_counts()`: 種類ごとの必要数。5x5x3 は板材 71 + ドア 1、7x7x4 は計 144 ブロック
+
+座標は建設地の原点（足元の最初の空気層、footprint の最小角）からの相対。北は -Z、東は +X。
+
+### 3.3 観測と結果
+
+| 型 | 内容 |
+|----|------|
+| `AvailableAction(action_id, description)` | ブリッジが今実行できるアクション |
+| `BuildStatus(total, placed, complete, site_chosen, remaining)` | ブリッジが世界から読み取った建築の進捗。`remaining` は未設置ブロックの種類別の数 |
+| `GameObservation` | `state`（モデルにそのまま渡す JSON 要約）と、domain が読む型付きフィールド（`inventory`, `actions`, `health`, `food`, `crafting_table_nearby`, `build`）。`count(suffix)` で `_log` 等の合計を数える |
+| `MaterialNeeds(logs_short, planks_short, door_needed, table_needed)` | 家を完成させるまでに足りないもの。`wood_ready`, `crafted` プロパティ |
+| `ActionDecision(action_id, confidence, probabilities)` | Jev の選択 |
+| `ActionResult(action_id, ok, result, seconds)` | ブリッジでの実行結果 |
+
+### 3.4 HouseProject (`domain/entities.py`)
+
+1軒の家の建築を表すエンティティ。**Goal の達成判定は LLM ではなくここで、観測した世界から行う**。LLM は次に何を目指すかを選ぶだけ。
+
+- `material_needs(obs)`: `obs.build.remaining`（なければ設計図全体）と持ち物から不足を計算する
+  - ドアが未設置で手持ちにない → ドア用の板材 6 を加算
+  - さらに作業台が近くにも手持ちにもない → 作業台用の板材 4 を加算
+  - 不足する板材は原木に換算（1原木 = 4板材）し、`LOG` ブロックの分と合わせて `logs_short` にする
+- `goal_met(obs)`
+
+  | Goal | 達成条件 |
+  |------|---------|
+  | `gather_wood` | `needs.wood_ready`（残りを全部作れるだけの原木がある） |
+  | `craft` | `needs.crafted`（板材が足りていて、ドアも手元にある） |
+  | `build_shelter` | `is_complete(obs)` |
+  | `explore` | その Goal で `explore_steps`（3、固定値）ステップ進んだ |
+
+- `needs_new_goal(obs)`: 次のいずれかで Goal の選び直しが必要になる
+  - Goal がまだない
+  - Goal を達成した
+  - 連続失敗が `max_consecutive_failures`（既定 3）に達した
+  - その Goal で `max_steps_per_goal`（既定 15）ステップ進んだ
+  - `block_goal()` された（Goal が許す実行可能アクションが1つもない。連続失敗を上限にして選び直させる）
+- `goal_end_reason(obs)`: 選び直す理由の文。LLM のプロンプトとログに使う
+- `record(result)`: ステップ数を進め、成功なら連続失敗を 0 に戻す
+- `set_goal(goal)`: カウンタをリセットする
+
+### 3.5 イベントと例外
+
+- `HouseDesignedEvent(name, concept)`, `GoalSetEvent(goal_type, reason)`, `GameActionExecutedEvent(action_id, ok, result, confidence)`, `HouseCompletedEvent(name)`
+- `GameBridgeError`: ブリッジに届かない、または非 200 を返した
+- `ActionSelectionError`: Jev の呼び出しに失敗した
+
+## 4. Application Layer
+
+### 4.1 Output Ports
+
+| Port | メソッド | 備考 |
+|------|---------|------|
+| `IMinecraftBridge` | `observe()`, `act(action_id)`, `set_build_plan(blocks, width, depth, height)`, `close()` | 世界に触れるものはすべてブリッジが持つ |
+| `IActionSelector` | `select(state, actions, instructions) -> ActionDecision`, `close()` | 候補は2つ以上で呼ぶ |
+| `IGamePromptBuilder` | `build_house_design_prompt(character, previous_error)`, `build_goal_prompt(...)`, `build_action_instructions(goal, blueprint)` | |
+| `ITextGenerator` | `generate_json(prompt, schema, system_instruction) -> dict` を追加 | schema はモデル非依存の plain dict（JSON Schema）。JSON でない、object でない場合は `TextGenerationError` |
+
+### 4.2 StartHouseProjectUseCase
+
+1. `build_house_design_prompt(character, previous_error)` で設計を依頼し、`generate_json(prompt, HOUSE_SCHEMA)` を呼ぶ
+2. `_parse_blueprint` → `HouseBlueprint` の検証で `ValueError` が出たら、そのメッセージを `previous_error` にして再依頼する（`max_attempts=3` は初回を含む回数）
+   - `HOUSE_SCHEMA` の `door_offset` / 窓の `offset` の上限は `MAX_SIDE-2` 固定で、実際の壁の長さとは連動しない。この差は再依頼で吸収する
+   - `generate_json` 自体の失敗（API エラー、不正な JSON）は再依頼せずにそのまま送出する
+3. `HouseDesignedEvent` を発行し、`bridge.set_build_plan(blueprint.blocks(), width, depth, height)` で計画を渡す
+4. `HouseProject` を返す
+
+### 4.3 AdvanceHouseProjectUseCase（1ステップ）
+
+1. `bridge.observe()`
+2. `project.is_complete(obs)` なら `HouseCompletedEvent` を発行し、`complete=True` を返す
+3. `project.needs_new_goal(obs)` なら Goal を決める
+   - 選択肢は `_available_goals(obs)`: `GOAL_ACTIONS[g]` と今の実行可能アクションの積が空でない Goal
+   - `build_goal_prompt` に、設計図、進捗、不足、状況、直近の Goal（`goal_history=5`）、選び直す理由を入れる
+   - schema の `enum` を選択肢に絞って `generate_json`。選択肢外の答えや不正な形は `TextGenerationError`
+   - `project.set_goal`、`GoalSetEvent` を発行
+4. 候補 = 実行可能アクションのうち `goal.allows()` を満たすもの
+   - 0件 → `project.block_goal()` して行動せずに返す（次のステップで選び直し）
+   - 1件 → Jev を呼ばずにそれを選ぶ（confidence 1.0）
+   - 2件以上 → `build_action_instructions` と `obs.state` を渡して `action_selector.select`
+5. `bridge.act(action_id)`、`project.record(result)`、`GameActionExecutedEvent` を発行
+6. `HouseStepReport(goal, goal_changed, decision, result, complete)` を返す
+
+`explore` はブリッジが常に列挙するので、`explore` Goal にだけ含める。他の Goal の予備手段にすると、その Goal が常に「選べる」ことになり、絞り込みが効かなくなる（材料がなくても `build_shelter` が選べて、`explore` だけで歩き回っていた）。木が届かない、建設地がない、といった状況では、その Goal の候補が 0 件になって選び直しになり、LLM が `explore` を選ぶ。
+
+## 5. Infrastructure Layer (Python)
+
+### 5.1 JevActionSelector (`adapters/jev/jev_action_selector.py`)
 
-```python
-"""Value objects representing Jev's typed decisions."""
+- `typesafe_sdk.AsyncTypeSafeClient(api_key, timeout)` を使う。API キーが空なら `ValueError`
+- 1回の `system_one` に `Choice` を1問だけ投げる。`criteria` は `{action_id: description}`
 
-from __future__ import annotations
+  ```python
+  response = await self._client.system_one(
+      state=state,
+      questions={"action": Choice(instructions=instructions, criteria=criteria)},
+      model=self._model,
+  )
+  answer = response.choices["action"]  # choice, confidence, probabilities
+  ```
 
-from dataclasses import dataclass
-from enum import Enum
+- `TypeSafeError` は `ActionSelectionError` に変換する。レイテンシと入力トークン数をログに出す
+- `jev/__init__.py` は `JevActionSelector` を遅延 import する（`typesafe-sdk` がない環境でもパッケージを import できるように）
 
+### 5.2 MineflayerBridgeClient (`adapters/minecraft_bridge/mineflayer_bridge_client.py`)
 
-class ThreatLevel(str, Enum):
-    NONE = "none"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+- `httpx.AsyncClient`。タイムアウト（既定 60秒）は、ブリッジのアクション打ち切り（20秒）より長くする
+- 接続失敗と非 200 は `GameBridgeError`。409（busy）と 503（bot 未 spawn）もここに入る
+- `/observe` のレスポンスを `GameObservation` に変換する。`observation.build.materials_needed` を `BuildStatus.remaining`、`origin` の有無を `site_chosen` にする
 
+### 5.3 GamePromptTemplateBuilder (`adapters/prompts/game_prompt_template_builder.py`)
 
-@dataclass(frozen=True)
-class ReactiveDecision:
-    """Reactive Loop(600ms)でJevが返す型付き判断。"""
-    threat_level: ThreatLevel
-    immediate_action: str        # Choice結果: "continue" | "fight" | "flee" | "eat"
-    should_eat: bool
-    flee_direction: str | None   # threat_level >= HIGH のときのみ設定
-    confidence: float
+- LLM 向け（設計、Goal）は日本語。他のプロンプトと揃える
+  - 設計: キャラクター名と性格、建てられる家の条件（寸法の上下限は `HouseBlueprint` の定数から埋める）、前回の設計が使えなかった理由
+  - Goal: 設計図と必要ブロック数、設置済み数と建設地の有無、不足、時間帯・体力・持ち物・見えている敵・作業台・切れる木の有無、直近の行動、これまでの Goal、選び直す理由、今選べる Goal
+- Jev 向け（`build_action_instructions`）は英語。Jev の評価をこの言語で行ったため。優先順位は「1) 生き延びる 2) 現在の Goal を進める」
 
-    @property
-    def requires_goal_override(self) -> bool:
-        """CRITICALな脅威はTactical LoopのGoalを強制的にFLEEへ切り替える。"""
-        return self.threat_level == ThreatLevel.CRITICAL
+### 5.4 GeminiTextGenerator.generate_json
 
+`response_mime_type="application/json"` と `response_json_schema=schema` を設定して生成し、`json.loads` した dict を返す。レート制限・リトライ・トークンログは `generate` と共通の `_generate_text` を通る。
 
-@dataclass(frozen=True)
-class TacticalDecision:
-    """Tactical Loop(10s)でJevが返す型付き判断。"""
-    goal_type: str
-    next_step: str               # Goal.stepsのうちの1つ
-    approach: str                # "aggressive" | "cautious" | "efficient"
-    urgency: str                 # "low" | "medium" | "high"
-    confidence: float
-```
+## 6. Minecraft Bridge サイドカー (`minecraft-bridge/`)
 
-### 5.2 Domain Services
+1プロセスで Mineflayer bot（Minecraft 1.21.4、offline）、HTTP API、プロトコルミラーを動かす。起動: `cd minecraft-bridge && npm install && npm start`。
 
-#### GoalOverridePolicy（domain/services/goal_override_policy.py）★NEW
+### 6.1 HTTP API (`src/index.mjs`, 127.0.0.1 のみ)
 
-```python
-"""Domain service deciding whether Reactive Loop should override the LLM's Goal."""
-
-from __future__ import annotations
-
-from ailoveshen.domain.value_objects.goal import Goal, GoalType
-from ailoveshen.domain.value_objects.jev_decision import ReactiveDecision
-
-
-class GoalOverridePolicy:
-    """
-    生存に関わる反射判断が出た場合、LLMの応答を待たずに
-    現在のGoalを一時的に上書きするためのビジネスルール。
-    """
-
-    def should_override(self, decision: ReactiveDecision, current_goal: Goal) -> bool:
-        if current_goal.goal_type == GoalType.FLEE:
-            return False  # 既に逃走中なら上書き不要
-        return decision.requires_goal_override
-
-    def build_override_goal(self, decision: ReactiveDecision) -> Goal:
-        return Goal(
-            goal_type=GoalType.FLEE,
-            reason=f"Reactive Loop: threat_level={decision.threat_level.value}",
-            set_by="reactive_override",
-        )
-```
-
-`EventDetectionService`（既存, damage/death/mob検知）はそのまま流用する。Reactive/Tactical Loopの結果は`GetGameStateUseCase`を経由せず直接イベント発行するため、この既存サービスとは独立して動作する。
-
-## 6. Application Layer
-
-### 6.1 Output Ports
-
-#### IMinecraftBridge（application/ports/output/minecraft_bridge.py）
-
-旧`IGameEnvironment`と同一のインターフェース形状を維持する（実装をNitroGenからMineflayer Bridgeへ差し替えるだけで、上位のUse Caseは無改修で済むようにするため）。
-
-```python
-"""Minecraft bridge output port (formerly IGameEnvironment)."""
-
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from typing import Any
-
-from ailoveshen.domain.value_objects.game_action import GameAction
-
-
-class IMinecraftBridge(ABC):
-    """
-    Output port for Minecraft control.
-
-    Abstracts the Node.js + Mineflayer sidecar process (formerly NitroGen).
-    """
-
-    @abstractmethod
-    async def connect(self) -> None: ...
-
-    @abstractmethod
-    async def disconnect(self) -> None: ...
-
-    @abstractmethod
-    async def get_observation(self) -> dict[str, Any]: ...
-
-    @abstractmethod
-    async def execute_action(self, action: GameAction) -> bool: ...
-
-    @abstractmethod
-    def is_connected(self) -> bool: ...
-```
-
-#### IJevDecisionEngine（application/ports/output/jev_decision_engine.py）★NEW
-
-```python
-"""Jev decision engine output port."""
-
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from typing import Any
-
-from ailoveshen.domain.value_objects.goal import Goal
-from ailoveshen.domain.value_objects.jev_decision import ReactiveDecision, TacticalDecision
-
-
-class IJevDecisionEngine(ABC):
-    """
-    Output port abstracting TypeSafe AI's Jev (System One Model).
-
-    2種類の呼び出しのみを提供する。実装(JevClientAdapter)がtypesafe-sdkの
-    system_one()呼び出しとNoul/Choice/Scoreへの変換を担う。
-    """
-
-    @abstractmethod
-    async def reactive_decide(self, state: dict[str, Any]) -> ReactiveDecision:
-        """600ms周期の反射判断。LLMを介さない。"""
-        ...
-
-    @abstractmethod
-    async def tactical_decide(
-        self,
-        state: dict[str, Any],
-        goal: Goal,
-    ) -> TacticalDecision:
-        """10s周期の戦術判断。現在のGoalの範囲内で次の一手を選ぶ。"""
-        ...
-```
-
-### 6.2 Input Ports
-
-```python
-# application/ports/input/decide_goal.py
-"""Decide goal input port (LLM-driven)."""
-
-from __future__ import annotations
-from abc import ABC, abstractmethod
-from ailoveshen.application.dto.game_dto import DecideGoalRequest, DecideGoalResponse
-
-
-class IDecideGoal(ABC):
-    """LLMが次のGoalを決めるユースケースの入力ポート。"""
-
-    @abstractmethod
-    async def execute(self, request: DecideGoalRequest) -> DecideGoalResponse: ...
-```
-
-```python
-# application/ports/input/run_reactive_loop.py
-"""Reactive loop input port."""
-
-from __future__ import annotations
-from abc import ABC, abstractmethod
-
-
-class IRunReactiveLoop(ABC):
-    @abstractmethod
-    async def start(self) -> None: ...
-
-    @abstractmethod
-    async def stop(self) -> None: ...
-```
-
-```python
-# application/ports/input/run_tactical_loop.py
-"""Tactical loop input port."""
-
-from __future__ import annotations
-from abc import ABC, abstractmethod
-
-
-class IRunTacticalLoop(ABC):
-    @abstractmethod
-    async def start(self) -> None: ...
-
-    @abstractmethod
-    async def stop(self) -> None: ...
-
-    @abstractmethod
-    def set_goal(self, goal: "Goal") -> None:
-        """LLMまたはReactive Loopから現在のGoalを更新する。"""
-        ...
-```
-
-### 6.3 Use Cases
-
-#### DecideGoalUseCase（application/use_cases/decide_goal.py）★NEW
-
-```python
-"""LLM decides the current Goal (direction) - Jev then executes within it."""
-
-from __future__ import annotations
-
-from loguru import logger
-
-from ailoveshen.application.dto.game_dto import DecideGoalRequest, DecideGoalResponse
-from ailoveshen.application.ports.input.decide_goal import IDecideGoal
-from ailoveshen.application.ports.output.event_publisher import IEventPublisher
-from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.value_objects.goal import Goal, GoalType
-from ailoveshen.domain.events import GoalChangedEvent
-
-
-class DecideGoalUseCase(IDecideGoal):
-    """
-    Gemini(ITextGenerator)に、ゲーム状態・直近イベント・視聴者コメントを渡し、
-    GoalType(13種)の中から1つをJSON/function calling形式で選ばせる。
-
-    Jevと同様、LLM側の出力も「自由記述」ではなく「閉じた選択肢からの選択」に
-    制約することで、後段のTactical LoopがそのままGoal.stepsを使い回せる。
-    """
-
-    def __init__(
-        self,
-        text_generator: ITextGenerator,
-        event_publisher: IEventPublisher,
-    ) -> None:
-        self._text_generator = text_generator
-        self._event_publisher = event_publisher
-
-    async def execute(self, request: DecideGoalRequest) -> DecideGoalResponse:
-        try:
-            prompt = self._build_goal_selection_prompt(request)
-            raw = await self._text_generator.generate(
-                prompt=prompt,
-                system_instruction=(
-                    "あなたはMinecraftを実況プレイするAI配信者の「意思決定担当」です。"
-                    f"以下のいずれか1つのgoal_idのみをJSONで返してください: "
-                    f"{[g.value for g in GoalType]}"
-                ),
-            )
-            goal_type = self._parse_goal_type(raw)
-
-            goal = Goal(goal_type=goal_type, reason=request.reasoning_hint or "", set_by="llm")
-
-            await self._event_publisher.publish(GoalChangedEvent(goal=goal))
-            logger.info(f"LLM set new goal: {goal.goal_type.value} ({goal.reason})")
-
-            return DecideGoalResponse(success=True, goal=goal)
-
-        except Exception as e:
-            logger.error(f"Goal decision failed: {e}")
-            # フォールバック: 安全側のEXPLOREを維持
-            return DecideGoalResponse(
-                success=False,
-                goal=Goal(goal_type=GoalType.EXPLORE, reason="fallback"),
-                error=str(e),
-            )
-
-    def _build_goal_selection_prompt(self, request: DecideGoalRequest) -> str:
-        return (
-            f"## 現在のゲーム状況\n{request.game_state_summary}\n\n"
-            f"## 直近のイベント\n{request.recent_events_summary}\n\n"
-            f"## 視聴者からのリクエスト\n{request.chat_request_summary or 'なし'}\n\n"
-            "## タスク\n次に目指すべきgoal_idを1つだけJSONで選んでください。"
-        )
-
-    def _parse_goal_type(self, raw_json: str) -> GoalType:
-        import json
-        data = json.loads(raw_json)
-        return GoalType(data["goal_id"])
-```
-
-#### ReactiveDecisionUseCase（application/use_cases/reactive_decision.py）★NEW
-
-```python
-"""Reactive decision use case - 600ms tick, Jev only, no LLM in the loop."""
-
-from __future__ import annotations
-
-from loguru import logger
-
-from ailoveshen.application.ports.output.event_publisher import IEventPublisher
-from ailoveshen.application.ports.output.jev_decision_engine import IJevDecisionEngine
-from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.domain.events import GameEventOccurredEvent
-from ailoveshen.domain.value_objects.game_action import ActionType, GameAction
-from ailoveshen.domain.value_objects.goal import Goal
-from ailoveshen.domain.value_objects.jev_decision import ThreatLevel
-from ailoveshen.domain.services.goal_override_policy import GoalOverridePolicy
-
-
-class ReactiveDecisionUseCase:
-    """
-    毎tick(〜600ms)呼び出される。生存に関わる判断はLLMを待たずJevのみで完結させる。
-
-    critical脅威時はGoalOverridePolicyを介してTactical LoopのGoalを上書きする。
-    """
-
-    ACTION_MAP = {
-        "fight": ActionType.ATTACK,
-        "flee": ActionType.FLEE,
-        "eat": ActionType.EAT,
-        "continue": None,  # 現在の行動を継続、何もしない
-    }
-
-    def __init__(
-        self,
-        jev_engine: IJevDecisionEngine,
-        bridge: IMinecraftBridge,
-        event_publisher: IEventPublisher,
-        override_policy: GoalOverridePolicy | None = None,
-    ) -> None:
-        self._jev = jev_engine
-        self._bridge = bridge
-        self._event_publisher = event_publisher
-        self._override_policy = override_policy or GoalOverridePolicy()
-
-    async def execute(self, state: dict, current_goal: Goal) -> Goal:
-        """1tick実行し、（必要なら上書きされた）現在のGoalを返す。"""
-        decision = await self._jev.reactive_decide(state)
-
-        if decision.threat_level in (ThreatLevel.HIGH, ThreatLevel.CRITICAL):
-            await self._event_publisher.publish(GameEventOccurredEvent(
-                event_type="threat_detected",
-                description=f"脅威レベル: {decision.threat_level.value}",
-            ))
-
-        action_type = self.ACTION_MAP.get(decision.immediate_action)
-        if action_type is not None:
-            action = GameAction(
-                action_type=action_type,
-                parameters={"direction": decision.flee_direction} if action_type == ActionType.FLEE else {},
-                description=f"[reactive] {decision.immediate_action}",
-                confidence=decision.confidence,
-            )
-            success = await self._bridge.execute_action(action)
-            if not success:
-                logger.warning(f"Reactive action failed: {action.description}")
-
-        if self._override_policy.should_override(decision, current_goal):
-            new_goal = self._override_policy.build_override_goal(decision)
-            logger.warning(f"Reactive override: Goal -> {new_goal.goal_type.value}")
-            return new_goal
-
-        return current_goal
-```
-
-#### TacticalDecisionUseCase（application/use_cases/tactical_decision.py）★NEW（旧ExecuteActionUseCaseを置換）
-
-```python
-"""Tactical decision use case - 10s tick, Jev picks the next step within the LLM's Goal."""
-
-from __future__ import annotations
-
-from loguru import logger
-
-from ailoveshen.application.ports.output.event_publisher import IEventPublisher
-from ailoveshen.application.ports.output.jev_decision_engine import IJevDecisionEngine
-from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.domain.events import GameActionExecutedEvent
-from ailoveshen.domain.value_objects.game_action import GameAction
-from ailoveshen.domain.value_objects.goal import Goal
-
-# Goalのstep文字列 → 実際のActionTypeへのマッピングはBridge側の語彙に依存するため
-# infrastructure層(MineflayerBridgeAdapter)にActionTypeへの変換テーブルを持たせる。
-# ここでは「stepをdescriptionに乗せて丸ごとBridgeへ渡す」ことで責務を分離する。
-from ailoveshen.domain.value_objects.game_action import ActionType
-
-
-class TacticalDecisionUseCase:
-    """
-    旧`ExecuteActionUseCase`が自由記述の`intention`をキーワードマッチで
-    パースしていた箇所を置き換える。LLMの自由記述ではなく、
-    「LLMが選んだGoal」×「Jevが選んだstep」という型付きの組み合わせのみを扱う。
-    """
-
-    def __init__(
-        self,
-        jev_engine: IJevDecisionEngine,
-        bridge: IMinecraftBridge,
-        event_publisher: IEventPublisher,
-    ) -> None:
-        self._jev = jev_engine
-        self._bridge = bridge
-        self._event_publisher = event_publisher
-
-    async def execute(self, state: dict, goal: Goal) -> bool:
-        decision = await self._jev.tactical_decide(state, goal)
-
-        action = GameAction(
-            action_type=ActionType.INTERACT,  # 具体的な種別はBridge側で`next_step`から解決
-            parameters={
-                "goal": decision.goal_type,
-                "step": decision.next_step,
-                "approach": decision.approach,
-                "urgency": decision.urgency,
-            },
-            description=f"[tactical] {goal.goal_type.value} -> {decision.next_step}",
-            confidence=decision.confidence,
-        )
-
-        logger.info(f"Executing tactical step: {action.description}")
-        success = await self._bridge.execute_action(action)
-
-        await self._event_publisher.publish(GameActionExecutedEvent(
-            action_type=decision.next_step,
-            description=action.description,
-            success=success,
-        ))
-
-        return success
-```
-
-## 7. Infrastructure Layer
-
-### 7.1 JevClientAdapter（infrastructure/adapters/jev/jev_client_adapter.py）
-
-```python
-"""Jev (TypeSafe AI System One Model) client adapter."""
-
-from __future__ import annotations
-
-from typing import Any
-
-from loguru import logger
-from typesafe_sdk import AsyncTypeSafeClient, Choice, Noul, Score
-
-from ailoveshen.application.ports.output.jev_decision_engine import IJevDecisionEngine
-from ailoveshen.domain.exceptions import GameConnectionError
-from ailoveshen.domain.value_objects.goal import Goal
-from ailoveshen.domain.value_objects.jev_decision import (
-    ReactiveDecision,
-    TacticalDecision,
-    ThreatLevel,
-)
-
-
-class JevClientAdapter(IJevDecisionEngine):
-    """Implements IJevDecisionEngine using typesafe-sdk's AsyncTypeSafeClient."""
-
-    def __init__(self, api_key: str | None = None) -> None:
-        # api_keyを渡さない場合、SDKは環境変数 TYPESAFE_API_KEY を参照する
-        self._api_key = api_key
-        self._client: AsyncTypeSafeClient | None = None
-
-    async def __aenter__(self) -> "JevClientAdapter":
-        self._client = AsyncTypeSafeClient(api_key=self._api_key) if self._api_key else AsyncTypeSafeClient()
-        await self._client.__aenter__()
-        return self
-
-    async def __aexit__(self, *exc: Any) -> None:
-        if self._client:
-            await self._client.__aexit__(*exc)
-
-    async def reactive_decide(self, state: dict[str, Any]) -> ReactiveDecision:
-        if self._client is None:
-            raise GameConnectionError("Jev client not initialized")
-
-        response = await self._client.system_one(
-            state=state,
-            questions={
-                "threat_level": Score(
-                    instructions="現在の危険度は？周囲の敵性MOB・体力・空腹度から判断する。",
-                    criteria=["none", "low", "medium", "high", "critical"],
-                ),
-                "immediate_action": Choice(
-                    instructions="次のtickで取るべき即時行動は？",
-                    criteria={"continue": None, "fight": None, "flee": None, "eat": None},
-                ),
-                "should_eat": Noul(instructions="空腹度・体力から見て今すぐ食事すべきか？"),
-                "flee_direction": Choice(
-                    instructions="逃げる場合、どの方向が安全か？（脅威がない場合は無視される）",
-                    criteria={"north": None, "south": None, "east": None, "west": None, "toward_base": None},
-                ),
-            },
-        )
-
-        threat_raw = response.scores["threat_level"].score
-        return ReactiveDecision(
-            threat_level=ThreatLevel(threat_raw),
-            immediate_action=response.choices["immediate_action"].choice,
-            should_eat=response.nouls["should_eat"].noul,
-            flee_direction=response.choices["flee_direction"].choice,
-            confidence=response.choices["immediate_action"].confidence,
-        )
-
-    async def tactical_decide(self, state: dict[str, Any], goal: Goal) -> TacticalDecision:
-        if self._client is None:
-            raise GameConnectionError("Jev client not initialized")
-
-        steps = goal.goal_type.steps
-        response = await self._client.system_one(
-            state={**state, "current_goal": goal.goal_type.value},
-            questions={
-                "next_step": Choice(
-                    instructions=f"Goal「{goal.goal_type.value}」を達成する上で、現在の状態に対して"
-                                 f"次に実行すべきステップはどれか？",
-                    criteria={step: None for step in steps},
-                ),
-                "approach": Choice(
-                    instructions="このステップをどんなスタイルで実行すべきか？",
-                    criteria={"aggressive": None, "cautious": None, "efficient": None},
-                ),
-                "urgency": Score(
-                    instructions="このステップの緊急度は？",
-                    criteria=["low", "medium", "high"],
-                ),
-            },
-        )
-
-        return TacticalDecision(
-            goal_type=goal.goal_type.value,
-            next_step=response.choices["next_step"].choice,
-            approach=response.choices["approach"].choice,
-            urgency=response.scores["urgency"].score,
-            confidence=response.choices["next_step"].confidence,
-        )
-```
-
-### 7.2 MineflayerBridgeAdapter（infrastructure/adapters/minecraft_bridge/mineflayer_bridge_adapter.py）
-
-Node.js側（`minecraft-bridge/`）のWebSocket/HTTPサーバへ接続するアダプター。設定項目(`host`/`port`)は旧NitroGenAdapterと同じ形状を維持する。
-
-```python
-"""Mineflayer bridge adapter (replaces NitroGenAdapter)."""
-
-from __future__ import annotations
-
-from typing import Any
-
-import httpx
-from loguru import logger
-
-from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.domain.exceptions import GameConnectionError
-from ailoveshen.domain.value_objects.game_action import GameAction
-
-
-class MineflayerBridgeAdapter(IMinecraftBridge):
-    """
-    Infrastructure adapter for the Node.js + Mineflayer sidecar.
-
-    サイドカーは以下のHTTP APIを公開する想定（詳細は7.3参照）:
-      GET  /observe  -> 現在のゲーム状態JSON
-      POST /action    -> GameActionを受け取り実行
-      GET  /health    -> 接続確認
-    """
-
-    def __init__(self, host: str = "localhost", port: int = 8090) -> None:
-        self._base_url = f"http://{host}:{port}"
-        self._client: httpx.AsyncClient | None = None
-        self._connected = False
-
-    async def connect(self) -> None:
-        try:
-            self._client = httpx.AsyncClient(base_url=self._base_url, timeout=5.0)
-            resp = await self._client.get("/health")
-            resp.raise_for_status()
-            self._connected = True
-            logger.info(f"Connected to Minecraft Bridge at {self._base_url}")
-        except Exception as e:
-            raise GameConnectionError(f"Failed to connect to Minecraft Bridge: {e}")
-
-    async def disconnect(self) -> None:
-        if self._client:
-            await self._client.aclose()
-        self._connected = False
-        logger.info("Disconnected from Minecraft Bridge")
-
-    async def get_observation(self) -> dict[str, Any]:
-        if not self._connected or self._client is None:
-            raise GameConnectionError("Not connected")
-        resp = await self._client.get("/observe")
-        resp.raise_for_status()
-        return resp.json()
-
-    async def execute_action(self, action: GameAction) -> bool:
-        if not self._connected or self._client is None:
-            raise GameConnectionError("Not connected")
-        try:
-            resp = await self._client.post("/action", json={
-                "action_type": action.action_type.value,
-                "parameters": action.parameters,
-                "description": action.description,
-            })
-            resp.raise_for_status()
-            return bool(resp.json().get("success", False))
-        except Exception as e:
-            logger.error(f"Action failed: {e}")
-            return False
-
-    def is_connected(self) -> bool:
-        return self._connected
-```
-
-### 7.3 Minecraft Bridge サイドカー（`minecraft-bridge/`, Node.js）
-
-Pythonプロセスとは別に、Mineflayer（Minecraftプロトコルを直接喋るJS製ライブラリ）を動かす小さなNode.jsサービスを立てる。理由:
-
-- MineflayerはNode.jsエコシステムのライブラリであり、Pythonから直接は使えない。
-- [jev-craft](https://github.com/akash-kamat/jev-craft)が実証済みの構成（Mineflayer + Jev）にならうことで、実装コストとリスクを下げる。
-- Python側（AILoveShen本体）はこのサイドカーをHTTP経由の「ゲーム環境」として扱うだけなので、Phase 1で確立したクリーンアーキテクチャのOutput Port抽象化がそのまま活きる（実装がNitroGenからMineflayer Bridgeに変わっても、Application層以上は無改修）。
-
-```
-minecraft-bridge/
-├── package.json          # mineflayer, mineflayer-pathfinder, express, ws
-├── .env.example           # MC_HOST, MC_PORT, MC_USERNAME, BRIDGE_PORT
-└── src/
-    ├── index.js           # Express + WebSocketサーバのエントリポイント
-    ├── observe.js         # bot.entity/health/food/inventory等 → JSON化
-    └── actions.js         # {action_type, parameters} → mineflayer API呼び出し
-```
-
-最小限のエンドポイント仕様:
-
-| メソッド | パス | 説明 |
+| メソッド | パス | 内容 |
 |---------|------|------|
-| GET | `/health` | サイドカー疎通確認 |
-| GET | `/observe` | 体力・空腹・座標・インベントリ・近接エンティティ等のJSONスナップショット |
-| POST | `/action` | `{action_type, parameters}` を受け取り、Mineflayer APIで実行し `{success}` を返す |
-| WS | `/events` | ダメージ・死亡・アイテム取得等のプッシュ通知（Reactive Loopの追加トリガーとして将来利用） |
+| GET | `/observe` | `{ observation, actions: [{id, description}], busy }` |
+| POST | `/act` `{id}` | アクションを1つ完了（または失敗）まで実行。`{ ok, result, seconds }` |
+| PUT | `/build-plan` | `{ blocks: [{x,y,z,block}], width, depth, height }` を建築計画として設定 |
+| GET | `/build-plan` | 建築の進捗（`/observe` の `build` と同じ `status()`）。Python からは使っていない（手動確認用） |
 
-実装自体（JSコード）は本Phaseの範囲外とし、別Issueで管理する（本ドキュメントはPython側の設計に集中する）。
+- bot が未 spawn なら 503、実行中に `/act` が来たら 409
+- 今列挙されていない ID の `/act` はエラーにせず、`ok:false` と `action X is not available now` を返す
+- 実行は `AbortSignal` で中断できる。中断の理由は2つ
+  - 20秒（`ACTION_TIMEOUT_MS`）の打ち切り
+  - **被弾**（`entityHurt`）: 実行中に bot がダメージを受けたら中断して `interrupted: took damage (zombie nearby)` を返す。次のステップで脅威が候補に出て、Jev が戦うか逃げるかを選ぶ。`attack_hostile` / `flee_hostile` は被弾を前提にした行動なので中断しない
+- 中断すると採掘を止め、`pathfinder.setGoal(null)`、操作状態をクリアする。実行中の関数が本当に止まるまで待ってから返すので、アクションは重ならない（ループはシグナルを見て抜け、待ちにはすべて上限がある）。以前は `Promise.race` で打ち切るだけで、`buildStep` や `craft_planks` のループが裏で動き続けていた
+- 実行結果は `history` に積み、直近5件を `observation.recent_actions` に入れる。死亡も `event` として積む
 
-## 8. Presentation Layer
+### 6.2 観測 (`src/observe.mjs`)
 
-### 8.1 GameService（presentation/services/game_service.py）
+`observation` は時間帯・天気、自分（体力、満腹度、位置、手持ち、水中か）、持ち物、周囲 48m の mob（最大16体、敵対か、距離、方角、高低差、見えているか）、24m 以内のドロップ、直近の行動に加え、`index.mjs` が足す `resources`（届く原木、作業台までの距離）、`crafting_table_nearby`、`build`（進捗 + `materials_needed`）からなる。
 
-```python
-"""Game service - orchestrates Reactive Loop, Tactical Loop and Goal updates."""
+**脅威**（`threats`）は、16m 以内・高低差 3 未満で、視線が通るか 4m 以内にいる敵対 mob に限る。洞窟の下や壁の向こうの mob は観測には出すが脅威にはしない。4m 以内は視線に関係なく脅威にする（run5 で、葉の陰から殴ってきたゾンビが脅威に入らず、bot が倒された）。Mineflayer が hostile に分類する中立 mob（enderman、piglin など）と、昼の spider は除外する。
 
-from __future__ import annotations
+### 6.3 アクションの列挙と実行 (`src/actions.mjs`)
 
-import asyncio
-from typing import Callable, Optional
+**前提条件を満たすアクションだけを列挙する**。判断側は不可能なアクションを選べない。
 
-from loguru import logger
+| ID | 列挙される条件 | 実行内容 |
+|----|---------------|---------|
+| `attack_hostile` / `flee_hostile` | 脅威がいる | 追って攻撃（最大10秒） / 16m 離れるまで逃げる（最大8秒） |
+| `equip_weapon` | 武器（剣・斧）を持っていて手に持っていない | 装備 |
+| `eat` | 満腹度 < 20 で食料がある | 食べる |
+| `pickup_drop` | 24m 以内・高低差 4 未満に、まだ失敗していないドロップがある | 拾いに行く。届かない、または拾えなかったら失敗を返し、そのドロップを以後除外する |
+| `collect_log` | 32m 以内に届く原木がある（幹の下 4 ブロック以内に地面） | 切って、近くのドロップを拾う |
+| `craft_planks` | 家に使う原木を除いて余る原木がある | 余りを板材にする |
+| `craft_crafting_table` | 作業台が手元にも近くにもなく、板材 4 以上 | 2x2 で作業台を作る |
+| `place_crafting_table` | 作業台を持っていて近くにない | bot から2マス離れた空きマスに置く（建設地が決まっていればその周囲1マスを避ける） |
+| `craft_door` | 近くに作業台、同じ種類の板材 6 以上、ドアを持っていない | 作業台でドアを作る |
+| `build_step` | 計画が未完成で、次に置くブロックの材料があり、建設地が決まっているか、建設地探しに失敗した場所から 16m 以上離れている | 最大8ブロック置く（§6.4） |
+| `explore` | 常に | ランダムな方向へ約20m。3方向試して 5m 以上進めなければ失敗 |
+| `idle` | 常に | 周りを見回す。どの Goal にも生存行動にも含まれないので、Python からは選ばれない |
 
-from ailoveshen.application.ports.input.get_game_state import IGetGameState
-from ailoveshen.application.use_cases.reactive_decision import ReactiveDecisionUseCase
-from ailoveshen.application.use_cases.tactical_decision import TacticalDecisionUseCase
-from ailoveshen.domain.entities.game_state import GameState
-from ailoveshen.domain.value_objects.goal import Goal, GoalType
-from ailoveshen.domain.value_objects.game_event import GameEvent
+原因調査から入った設計上の注意:
 
+- **経路のキャンセルは `setGoal(null)`**。`pathfinder.stop()` はフラグを立てるだけで、次の移動 tick で消える。待機中に呼ぶと、次の `goto()` がすぐ失敗する
+- **Movements の制約**（`configureMovements`）
+  - 建設中の構造物の上（原点から高さ +2 以上）は歩かない。途中の壁が階段になって登ってしまい、壁の上から屋根を置いたり、そこで動けなくなったりしたため
+  - 葉の上を歩くコストを上げる（樹冠に乗ると降りにくい）
+  - 歩行中に壊してよいのは葉だけ。家や地形は壊さない
+  - 足場ブロックを使わない、1x1 の柱登りをしない（建材を消費しないため）
+- **原木を切る位置は `GoalLookAtBlock`（reach 4.5）**。`GoalNear` だと、頭より高い原木には葉の上からしか「近く」にならない。空中での採掘は5倍遅いので、着地を待ってから掘る
+- **`craft_planks` は原木を残す**。`corner_pillars` の柱として置く原木（`materialsNeeded().log`）は板材にしない
+- **失敗は正直に返す**。`explore` はほとんど進めなかったら、`pickup_drop` は持ち物が増えなかったら失敗にする。成功扱いにすると、Goal の連続失敗による選び直しが働かない
 
-class GameService:
-    """
-    Presentation layer service coordinating:
-      - Reactive Loop (~600ms, Jevのみ)
-      - Tactical Loop (~10s, LLMのGoal x Jevのstep選択)
-      - LLMからのGoal更新受付
-    """
+### 6.4 建築 (`src/build.mjs`)
 
-    def __init__(
-        self,
-        get_game_state: IGetGameState,
-        reactive_decision: ReactiveDecisionUseCase,
-        tactical_decision: TacticalDecisionUseCase,
-        reactive_interval_ms: int = 600,
-        tactical_interval_s: float = 10.0,
-    ) -> None:
-        self._get_state = get_game_state
-        self._reactive = reactive_decision
-        self._tactical = tactical_decision
-        self._reactive_interval = reactive_interval_ms / 1000
-        self._tactical_interval = tactical_interval_s
+`BuildPlan` は Python から受けたブロックを順に置くだけで、形は決めない。
 
-        self._current_goal = Goal(goal_type=GoalType.EXPLORE, reason="initial")
-        self._running = False
-        self._reactive_task: Optional[asyncio.Task] = None
-        self._tactical_task: Optional[asyncio.Task] = None
-        self._event_handlers: list[Callable[[GameEvent], None]] = []
+- **建設地**: 見つからなければ失敗を返し、その場所を覚える（同じ場所で探し直しても無駄なため）。最初の `build_step` で、bot の周囲を半径 2〜24 のリングで広げ、高さ ±4 の範囲から探す。footprint の地面がすべて固体で不適当なもの（葉、原木、板材、水、氷、砂、砂利など）でなく、家の高さまで空気・草・葉（掘って除く）だけの場所を選ぶ
+- **設置順**: `pending()`（まだ置かれていないブロック）を計画の順に、1ステップ最大 `BLOCKS_PER_STEP=8`。材料が尽きたらそこで止める（1つも置けなければ失敗）
+- **設置位置**: `GoalPlaceBlock(pos, { range: 4, LOS: false })`。サーバーが検証するのは reach とカーソルで、視線ではない。そのため最初の屋根ブロックも家の中から壁の上に置ける
+- **ペース**: 設置の間隔を 200ms 空ける。Paper は use_item パケットを 300ms あたり8個を超えると、何も返さずに捨てる。バニラクライアントの右クリック連打（4 tick）に合わせた
+- **スロット更新を待つ**: 手持ちのスタックを減らすのはサーバー。そのスロット更新（最大1秒）を待たないと、次の設置で使い切ったスタックを選んでしまう
+- **進捗**: `status()` は毎回、計画の各座標のブロックを世界から読み直して判定する（種類が合っていれば木の種類は問わない）。完了判定はこれだけに頼る
 
-    async def start(self) -> None:
-        self._running = True
-        self._reactive_task = asyncio.create_task(self._reactive_loop())
-        self._tactical_task = asyncio.create_task(self._tactical_loop())
-        logger.info("GameService started (reactive + tactical loops)")
+### 6.5 クラフト (`src/craft.mjs`)
 
-    async def stop(self) -> None:
-        self._running = False
-        for task in (self._reactive_task, self._tactical_task):
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        logger.info("GameService stopped")
+Mineflayer の `bot.craft()` はこのサーバーでは壊れている。予測したカーソル操作を待たずに連続送信するため、最初の再同期の後に在庫モデルがずれ、以降のクリックで材料がカーソルに入れ替わる。結果、クラフトのたびに残りの材料を失う（原木 5 → 板材 4、原木 0）。
 
-    async def get_state(self) -> GameState | None:
-        response = await self._get_state.execute_request()
-        return response.state if response.success else None
+そのため、バニラのレシピ本ボタンと同じ経路を使う。
 
-    def set_goal(self, goal: Goal) -> None:
-        """LLM(DecideGoalUseCase経由)から呼ばれ、Tactical Loopの対象Goalを更新する。"""
-        logger.info(f"Goal updated: {self._current_goal.goal_type.value} -> {goal.goal_type.value}")
-        self._current_goal = goal
+1. `recipe_book_add` / `recipe_book_remove` パケットから、解放済みレシピを結果アイテムごとに保持する（`RecipeBook`）
+2. `close_window` と `_syncWindow` で在庫をサーバーと同期する
+3. `craft_recipe_request` を送り、サーバーにグリッドを埋めさせる（`makeAll` でスタック全部）
+4. 結果スロットに目的のアイテムが来たら（最大2秒）、shift-click で取る（サーバー側の quick move で、カーソルを使わない）
+5. ウィンドウを再同期して、増えた数を返す。増えなければ失敗
 
-    def on_game_event(self, handler: Callable[[GameEvent], None]) -> None:
-        self._event_handlers.append(handler)
+`RecipeBook` は `bot._client` と `bot._syncWindow` という Mineflayer の非公開 API に依存する。そのため `mineflayer` は 4.39.0 に固定している。
 
-    async def _reactive_loop(self) -> None:
-        while self._running:
-            try:
-                state = await self._get_state.execute_raw()
-                self._current_goal = await self._reactive.execute(state, self._current_goal)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Reactive loop error: {e}")
-            await asyncio.sleep(self._reactive_interval)
+### 6.6 プロトコルミラー (`src/mirror.mjs`)
 
-    async def _tactical_loop(self) -> None:
-        while self._running:
-            try:
-                state = await self._get_state.execute_raw()
-                await self._tactical.execute(state, self._current_goal)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Tactical loop error: {e}")
-            await asyncio.sleep(self._tactical_interval)
-```
+bot の一人称視点を、実際の Minecraft クライアント（1.21.4）で見るための偽サーバー（`127.0.0.1:25578`）。
 
-## 9. Composition Root（`main.py`抜粋）
+- bot が受けた configuration / play パケットを記録し、生バイトのまま視聴クライアントへ中継する。途中で接続したクライアントには、記録したチャンク・エンティティ・状態を再生する
+- 視聴側は bot と同じエンティティ ID で、入力は無視する（読み取り専用）
+- **カメラ**: 約60Hz で位置パケットを送る。bot の 20Hz の物理位置を補間し、視点の回転速度に上限（150°/s）を設ける。`bot.lookAt()` の瞬間的な向き替えがカクついて見えないように
+  - 採掘中は上限を 600°/s に上げる。Mineflayer は向いた直後に掘り始め、葉は約 0.35 秒で壊れるので、視点が届く前に壊れてしまうため
+- **採掘の演出**: サーバーは自分の腕振りと採掘のひび割れを返さない。Mineflayer には採掘開始イベントもないので、`bot.targetDigBlock` を毎 tick 監視し、`animation` と `block_break_animation` を合成して送る
+
+`tools/viewer-check.mjs` はミラーにヘッドレスで接続し、届いたパケットを集計する。`tools/house-plan.mjs` は Python を介さずに建築を試すための固定計画（`PUT /build-plan` の本文）を出力する。
+
+## 7. Presentation Layer / Composition Root
+
+### 7.1 GameService (`presentation/services/game_service.py`)
+
+- `build_house(max_steps=200) -> HouseBuildOutcome(project, steps, complete)`: `StartHouseProjectUseCase` を1回、その後 `AdvanceHouseProjectUseCase` を完成するか `max_steps` に達するまで繰り返す。各ステップを1行でログに出す
+- 例外は捕まえない。どの層の失敗でも実行はそこで終わる
+- `close()`: ブリッジ、Gemini、Jev のクライアントを閉じる
+
+### 7.2 create_game_service (`factories/game.py`)
 
 ```python
-from ailoveshen.application.use_cases.decide_goal import DecideGoalUseCase
-from ailoveshen.application.use_cases.get_game_state import GetGameStateUseCase
-from ailoveshen.application.use_cases.reactive_decision import ReactiveDecisionUseCase
-from ailoveshen.application.use_cases.tactical_decision import TacticalDecisionUseCase
-from ailoveshen.domain.services.event_detection_service import EventDetectionService
-from ailoveshen.infrastructure.adapters.jev.jev_client_adapter import JevClientAdapter
-from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_adapter import (
-    MineflayerBridgeAdapter,
+game = create_game_service(
+    settings.gemini, settings.jev, settings.minecraft, settings.character, AsyncEventBus()
 )
-from ailoveshen.presentation.services.game_service import GameService
-
-
-async def create_game_service(config: "JevMinecraftConfig", event_publisher, text_generator) -> GameService:
-    bridge = MineflayerBridgeAdapter(host=config.bridge.host, port=config.bridge.port)
-    await bridge.connect()
-
-    jev = JevClientAdapter(api_key=config.jev.api_key)
-    await jev.__aenter__()
-
-    event_detection = EventDetectionService()
-
-    get_game_state = GetGameStateUseCase(
-        game_environment=bridge,
-        event_detection=event_detection,
-        event_publisher=event_publisher,
-    )
-
-    reactive_decision = ReactiveDecisionUseCase(
-        jev_engine=jev, bridge=bridge, event_publisher=event_publisher,
-    )
-    tactical_decision = TacticalDecisionUseCase(
-        jev_engine=jev, bridge=bridge, event_publisher=event_publisher,
-    )
-    decide_goal = DecideGoalUseCase(
-        text_generator=text_generator, event_publisher=event_publisher,
-    )
-
-    game_service = GameService(
-        get_game_state=get_game_state,
-        reactive_decision=reactive_decision,
-        tactical_decision=tactical_decision,
-        reactive_interval_ms=config.bridge.reactive_interval_ms,
-        tactical_interval_s=config.jev.tactical_interval_seconds,
-    )
-
-    # OrchestratorのメインループやDecideGoalUseCaseの結果をgame_service.set_goal()へ橋渡しする
-    # 配線はPhase 8 (Orchestration) 側で行う。
-
-    return game_service
+outcome = await game.build_house()
+await game.close()
 ```
 
-## 10. LLMとの連携（この設計が満たす要件）
+- Gemini は `main_model` / `main_thinking_level` の枠を使う。設計と Goal 決定の両方で同じ `GeminiTextGenerator` を共有する
+- キャラクターは `factories/llm.py` の `create_character_profile` を再利用する
+- `max_steps_per_goal` / `max_consecutive_failures` は `StartHouseProjectUseCase` 経由で `HouseProject` に渡る
 
-- **方向性の決定はLLMが継続して行う**: `DecideGoalUseCase`がGemini 3.8 Flashを呼び出し、13種のGoalから次の目標を選ぶ。視聴者コメント（Twitch連携, Phase 4）も判断材料に含められる。
-- **Jevへのリクエストという形も維持される**: LLMは自由文の指示ではなく、`Goal`という閉じた型でJevに「今の目標」を渡す。Jevはその範囲内で高速に手段（`next_step`/`approach`/`urgency`）を決める。
-- **生存に関わる反射的判断はJevが完全に代行する**: Reactive LoopはLLMを介さず600ms周期で回るため、LLMのレイテンシがボトルネックにならない。
-- **実況ネタとしてフィードバックされる**: Reactive/Tactical Loopの判断結果は`GameEvent`としてイベントバスに流れ、Phase 3の`GenerateCommentaryUseCase`がこれを材料に実況を生成する（「うわ、ゾンビだ逃げなきゃ！」等）。
-
-## 11. 設定
+## 8. 設定
 
 ```yaml
-# config/default.yaml への追加想定（実際の反映はPhase 6実装時に行う）
-minecraft_bridge:
-  enabled: false
-  host: "localhost"
-  port: 8090
-  reactive_interval_ms: 600
-
+# config/default.yaml
 jev:
-  enabled: false
   api_key: "${TYPESAFE_API_KEY:-}"
-  tactical_interval_seconds: 10
+  model: "jev-latest"
+  timeout_seconds: 10
+
+minecraft:
+  bridge:
+    host: "localhost"
+    port: 3000
+    timeout_seconds: 60        # ブリッジのアクション打ち切り（20秒）より長くする
+  agent:
+    max_steps_per_goal: 15
+    max_consecutive_failures: 3
 ```
 
-### 11.1 移行ノート（実装時にあわせて対応すること）
+- `JevSettings(api_key, model, timeout_seconds)`、`MinecraftSettings(bridge_host, bridge_port, request_timeout_seconds, max_steps_per_goal, max_consecutive_failures)`
+- `explore_steps`（3）、`goal_history`（5）、設計の試行回数（3）はコード上の既定値で、設定には出していない
+- ブリッジ側は環境変数: `MC_HOST`（localhost）、`MC_PORT`（25565）、`BOT_NAME`（AILoveShen）、`BRIDGE_PORT`（3000）、`MIRROR_PORT`（25578）
+- 必要な API キー: `GEMINI_API_KEY`、`TYPESAFE_API_KEY`
 
-- `src/ailoveshen/infrastructure/config.py` に `MinecraftBridgeSettings` + `JevSettings` を追加する（旧`NitroGenSettings`は本改訂にあわせて削除済み）。
-- `config/default.yaml` には既に `game:` / `minecraft:` セクションが存在するが、いずれも `config.py` 側に未配線である。Phase 6実装時に `minecraft:` を上記 `minecraft_bridge:` 相当へ整理し、`jev:` セクションを新設したうえで、`Settings` へのロード処理を併せて実装する。
-- どちらも本ドキュメントの対象（設計）範囲外のため、Phase 6着手時に別途コード側の変更として実施する。
+## 9. テスト
 
-## 12. テスト計画（概要）
+| ファイル | 対象 |
+|---------|------|
+| `tests/unit/domain/test_house.py` | `HouseBlueprint` の検証とブロック展開（数、順序、ドア・窓・柱）、`Goal.allows`、`HouseProject` の不足計算と Goal の選び直し条件 |
+| `tests/unit/application/test_build_house_use_cases.py` | 設計の送信・再依頼・打ち切り、初回の Goal 決定、選択肢の絞り込み、候補の絞り込み、候補1つで Jev を呼ばない、候補0で `block_goal`、完成で停止 |
+| `tests/unit/infrastructure/adapters/jev/test_jev_action_selector.py` | Choice 1問の送信、`ActionDecision` への変換、SDK エラーの変換、close |
+| `tests/unit/infrastructure/adapters/minecraft_bridge/test_mineflayer_bridge_client.py` | `/observe` の変換（計画あり・なし）、`/act`、`/build-plan` の送信順、エラー |
+| `tests/unit/infrastructure/adapters/prompts/test_game_prompt_template_builder.py` | 設計・Goal プロンプトの内容、Jev 向け指示 |
+| `tests/unit/infrastructure/adapters/gemini/test_gemini_text_generator.py` | `generate_json`（JSON モードの設定、object 以外の拒否）※追記 |
+| `tests/unit/infrastructure/test_config.py` | `jev` / `minecraft` セクションの読み込み ※追記 |
+| `tests/unit/presentation/test_game_service.py` | 完成までのループ、ステップ上限、close |
+| `tests/unit/factories/test_game_factory.py` | 組み立て、API キー欠落時の `ValueError` |
+| `tests/unit/test_architecture.py` | 層の依存規則（既存） |
 
-- **Unit**: `GoalOverridePolicy`, `ReactiveDecision`/`TacticalDecision`のバリデーション、`DecideGoalUseCase`のJSONパース異常系。
-- **Integration**: `JevClientAdapter`は`typesafe-sdk`をモックし、`system_one()`のリクエスト形状（questionsのキー・criteria）を検証する。`MineflayerBridgeAdapter`は`httpx`をモックしてAPI契約を検証する。
-- **E2E（手動）**: 実際のMinecraftサーバ + Minecraft Bridgeサイドカー + 実Jev APIキーで、Reactive Loopが低HP時に`flee`を選ぶこと、Tactical Loopが`MINE_ORE`ゴール下で妥当な`next_step`を選ぶことを確認する。
+Node.js 側（`minecraft-bridge/`）には自動テストがない。実サーバーでの確認（§10）だけで検証している。
 
-## 13. 参考
+## 10. 検証方法
 
-- [TypeSafe AI - Jev](https://typesafe.ai/)
-- [Introducing System One Models & Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)
-- [jev-craft (Mineflayer + Jev Minecraft bot)](https://github.com/akash-kamat/jev-craft)
-- [Mineflayer](https://github.com/PrismarineJS/mineflayer)
+```bash
+docker compose -f docker/docker-compose.minecraft.yml up -d   # Paper 1.21.4
+cd minecraft-bridge && npm install && npm start               # bot + HTTP API + ミラー
+pip install -e ".[llm,game]"
+GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py --max-steps 300
+```
+
+- bot には何も与えない。木を集め、クラフトし、建てるまでを自分で行う
+- 設計・Goal・完成のイベントを表示し、最後に家の寸法、ブロック数、完成したか、ステップ数を出す。完成すれば終了コード 0
+- 完成は `HouseProject.is_complete` で判定する。その元は `/observe` の `build.complete` で、ブリッジが世界のブロックを読み直した結果。アクションが「成功」と返したかどうかには頼らない
+- 動きは 1.21.4 クライアントで `127.0.0.1:25578` に接続して見る
+
+## 11. 当初計画からの変更点
+
+| 当初の計画 | 実装 | 理由 |
+|-----------|------|------|
+| `GameAction` 13種の Goal | `GoalType` 4種 | 実行手段のない Goal を選ばせると止まる。ブリッジで実行できるものだけに絞った |
+| Reactive Loop（~600ms、Noul/Score/Choice を並列）+ Tactical Loop（~10s） | 1ステップずつの逐次ループ。Jev は Choice 1問だけ | spike の評価で、今実行できるアクションを列挙して1問で選ばせれば、`jev-1.13.0` で約 0.2 秒、明らかな状況では妥当な選択になった。state は raw より要約のほうが正解の確率が高く、トークンも 4〜20 分の 1 |
+| `GoalOverridePolicy`（危険時に Goal を上書き） | 生存行動を常に候補に入れる | Goal を上書きする仕組みを持たず、Jev の選択に任せた |
+| `IJevDecisionEngine` / `JevDecision` | `IActionSelector` / `ActionDecision` | Jev 固有の型を application に出さない。行動選択という役割で名付けた |
+| Goal の step 文字列を Bridge 側の語彙に変換 | ブリッジが実行可能なアクション ID を列挙し、それを選ぶ | 変換テーブルが不要になり、不可能な行動を選べない |
+| Goal の完了を LLM やアクション結果で判断 | `HouseProject` が観測から判定 | LLM の自己申告や「成功」の戻り値は、世界の状態と一致しないことがある |
+| `main.py` の Composition Root、`MinecraftBridgeSettings`、http/websocket の切り替え | `factories/game.py`、`MinecraftSettings`、HTTP のみ | 他の機能と同じ factories 構成に揃えた。未使用の選択肢は作らない |
+| 家は固定の形 | LLM が設計し、`HouseBlueprint` で検証 | 配信者らしさを出す。範囲は実測で建てきれた寸法に限る |
+
+## 12. 今後の課題
+
+- **反射層（Reactive Loop）**: 今の反射は「被弾したら中断」だけで、殴られる前に動くことはできない。ステップの合間（LLM・Jev の待ち時間）も無防備。当初計画の Reactive Loop（短周期で脅威を判定して先に動く）を、コード側の反射として実装する。素手では戦闘がほぼ成立しないので、木の剣のクラフトも必要
+- **実況・TTS との接続**: `GoalSetEvent` / `GameActionExecutedEvent` / `HouseCompletedEvent` を Phase 3 の実況生成と Phase 2 の TTS につなぐ（Phase 8）
+- **Goal とアクションの追加**: 採掘、夜の過ごし方（ベッド、松明）、食料の確保など。追加するときは、ブリッジの実行手段と `GOAL_ACTIONS` と達成条件をセットで足す
+- **Twitch**: 視聴者のコメントで Goal や設計に介入する（Phase 4 / 8）
+- **エラーからの回復**: 今は例外で実行が終わる。LLM・Jev の一時的な失敗で止めない方針を決める
+- **ブリッジの自動テスト**: Node 側のテストがない
+
+## 13. 既知の問題（未修正）
+
+- すでに達成済みの Goal も選択肢から除外していない
+- 完成済みの `HouseProject` で `AdvanceHouseProjectUseCase.execute` を再び呼ぶと、`HouseCompletedEvent` がまた発行される
+- `config/default.yaml` の `game:` セクションは当初計画の名残で、読むコードがない

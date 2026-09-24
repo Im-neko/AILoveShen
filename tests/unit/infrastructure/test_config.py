@@ -325,3 +325,45 @@ class TestSettingsDataclasses:
         assert logging.level == "INFO"
         assert logging.rotation == "10 MB"
         assert logging.retention == "7 days"
+
+
+class TestLoadJevAndMinecraftSettings:
+    """Tests for loading the jev and minecraft sections."""
+
+    def test_load_sections(self):
+        """Test jev and minecraft (bridge + agent) are parsed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            (config_dir / "default.yaml").write_text(
+                "jev:\n"
+                "  api_key: k\n"
+                "  model: jev-preview\n"
+                "minecraft:\n"
+                "  bridge:\n"
+                "    port: 4000\n"
+                "    timeout_seconds: 90\n"
+                "  agent:\n"
+                "    max_steps_per_goal: 9\n"
+            )
+
+            settings = load_settings(config_dir=config_dir)
+
+            assert settings.jev.api_key == "k"
+            assert settings.jev.model == "jev-preview"
+            assert settings.jev.timeout_seconds == 10.0
+            assert settings.minecraft.bridge_port == 4000
+            assert settings.minecraft.bridge_host == "localhost"
+            assert settings.minecraft.request_timeout_seconds == 90
+            assert settings.minecraft.max_steps_per_goal == 9
+            assert settings.minecraft.max_consecutive_failures == 3
+
+    def test_project_default_yaml_reads_typesafe_key(self):
+        """Test the shipped default.yaml takes the Jev key from TYPESAFE_API_KEY."""
+        os.environ["TYPESAFE_API_KEY"] = "from-env"
+        try:
+            settings = load_settings(config_dir=Path(__file__).parents[3] / "config")
+        finally:
+            del os.environ["TYPESAFE_API_KEY"]
+
+        assert settings.jev.api_key == "from-env"
+        assert settings.minecraft.bridge_port == 3000

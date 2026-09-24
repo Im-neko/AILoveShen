@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 AILoveShen is an AI Streamer project for **Twitch** combining:
-- **[Jev](https://typesafe.ai/)** (planned): TypeSafe AI's System One model — fast, typed, real-time decision-making for Minecraft control, via a [Mineflayer](https://github.com/PrismarineJS/mineflayer) Node.js bridge (replaces the earlier NitroGen plan; see `docs/design/06_phase6_jev_integration.md`)
+- **[Jev](https://typesafe.ai/)**: TypeSafe AI's System One model — picks the next Minecraft action (Phase 6 minimal: autonomous house building), executed by a [Mineflayer](https://github.com/PrismarineJS/mineflayer) Node.js bridge in `minecraft-bridge/` (replaces the earlier NitroGen plan; see `docs/design/06_phase6_jev_integration.md`)
 - **Gemini 3.8 Flash** (`main_model`): Game commentary & thoughts (main), comment responses (sub/interrupt), and high-level Goal/direction decisions that get handed to Jev
 - **Gemini 3.8 Flash** (`filter_model`, planned): Comment filtering (dynamic threshold based on volume)
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control (JP/EN/ZH)
@@ -14,10 +14,11 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 ### Core Concept
 - **Main loop**: Minecraft Bridge (Mineflayer) plays game → Gemini 3.8 Flash generates commentary/thoughts → TTS speaks
 - **Sub loop**: Twitch comments → Gemini 3.8 Flash filters → Gemini 3.8 Flash responds (interrupts main)
-- **Three-layer LLM → Jev → Minecraft Bridge link**:
-  - LLM → Jev: high-level direction — Gemini picks a `Goal` (from a closed set of 13) and hands it to Jev as a request
-  - Jev → Minecraft Bridge: Jev makes fast typed decisions within that Goal — a Reactive Loop (~600ms, survival reflexes, no LLM involved) and a Tactical Loop (~10s, next-step selection within the current Goal)
-  - Minecraft Bridge → LLM/Jev: Game State Manager feeds position, inventory, surroundings, and events back to both
+- **Three-layer LLM → Jev → Minecraft Bridge link** (implemented for house building, `GameService.build_house`):
+  - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and picks a `Goal` (gather_wood / craft / build_shelter / explore; only goals with an executable action are offered)
+  - Jev: picks one of the executable actions the goal allows (survival actions always allowed); one `Choice` question per step
+  - Minecraft Bridge: lists only actions whose preconditions hold, runs one bounded action (20s, aborted on damage), and reports observations; completion is judged from blocks in the world
+  - Planned: a short-cycle Reactive Loop that acts before taking damage
 
 ## Common Commands
 
@@ -63,6 +64,10 @@ python examples/demo_phase1.py  # Demo Phase 1 components
 python examples/demo_phase2.py  # Demo Phase 2 TTS pipeline
 python examples/demo_phase3.py  # Demo Phase 3 LLM conversation (fake generator, no API key)
 GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gemini API (+ TTS)
+# Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
+docker compose -f docker/docker-compose.minecraft.yml up -d
+cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)
+GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300]
 
 # Style-Bert-VITS2 tests (legacy)
 hatch run test:test          # PyTorch CPU tests
@@ -86,28 +91,35 @@ Clean Architecture with the four layers at the top level. Features (TTS, LLM, Tw
 ```
 src/ailoveshen/
 ├── domain/                    # No external dependencies
-│   ├── entities.py            # Entity, AggregateRoot, Conversation
+│   ├── entities.py            # Entity, AggregateRoot, Conversation, HouseProject
 │   ├── value_objects.py       # EmotionState, SpeechRequest, SpeechResult, Position, FilterResult,
-│   │                          # ConversationMessage, CharacterProfile, GenerationContext
+│   │                          # ConversationMessage, CharacterProfile, GenerationContext,
+│   │                          # Minecraft: GoalType, Goal, HouseBlueprint, GameObservation, ...
 │   ├── events.py              # DomainEvent, Speech*Event, CommentaryGeneratedEvent, ChatResponseGeneratedEvent
 │   └── exceptions.py          # AILoveShenError hierarchy
 ├── application/
-│   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse
-│   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder
-│   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase
-│   └── dto/                   # speech_dto, llm_dto
+│   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse, IStart/IAdvanceHouseProject
+│   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder,
+│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder
+│   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase,
+│   │                          # Start/AdvanceHouseProjectUseCase
+│   └── dto/                   # speech_dto, llm_dto, game_dto
 ├── infrastructure/
-│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings
+│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings, JevSettings, MinecraftSettings
 │   ├── logging.py             # Loguru structured logging
 │   ├── events.py              # AsyncEventBus (Pub/Sub)
 │   └── adapters/
 │       ├── tts/               # StyleBertVits2Client, EmotionStyleService, VoiceConfig
 │       ├── audio/             # SounddevicePlayer
-│       ├── gemini/            # GeminiTextGenerator (google-genai)
-│       └── prompts/           # PromptTemplateBuilder (model-independent prompts)
+│       ├── gemini/            # GeminiTextGenerator (google-genai; text + JSON structured output)
+│       ├── jev/               # JevActionSelector (typesafe-sdk)
+│       ├── minecraft_bridge/  # MineflayerBridgeClient (HTTP to minecraft-bridge/)
+│       └── prompts/           # PromptTemplateBuilder, GamePromptTemplateBuilder
 ├── presentation/
-│   └── services/              # TTSService (priority queue), LLMService
-└── factories/                 # Composition Roots (tts.py, llm.py)
+│   └── services/              # TTSService (priority queue), LLMService, GameService
+└── factories/                 # Composition Roots (tts.py, llm.py, game.py)
+
+minecraft-bridge/              # Node sidecar: Mineflayer bot, POV mirror, HTTP API (observe/act/build-plan)
 ```
 
 **Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.

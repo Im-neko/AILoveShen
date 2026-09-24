@@ -197,3 +197,56 @@ class TestGeminiTextGeneratorGenerate:
         generator = _generator()
         await generator.close()
         mock_client.return_value.aio.aclose.assert_awaited_once()
+
+
+class TestGeminiTextGeneratorGenerateJson:
+    """Tests for generate_json()."""
+
+    SCHEMA = {"type": "object", "properties": {"goal": {"type": "string"}}}
+
+    @pytest.mark.asyncio
+    async def test_returns_parsed_object(self, mock_client):
+        """Test the JSON text is parsed into a dict."""
+        client = mock_client.return_value
+        client.aio.models.generate_content.return_value = _response('{"goal": "explore"}')
+
+        data = await _generator().generate_json("prompt", self.SCHEMA)
+
+        assert data == {"goal": "explore"}
+
+    @pytest.mark.asyncio
+    async def test_sends_schema_as_json_mode(self, mock_client):
+        """Test the schema and JSON mime type go into the request config."""
+        client = mock_client.return_value
+        client.aio.models.generate_content.return_value = _response("{}")
+
+        await _generator().generate_json("prompt", self.SCHEMA, system_instruction="sys")
+
+        config = client.aio.models.generate_content.call_args.kwargs["config"]
+        assert config.response_mime_type == "application/json"
+        assert config.response_json_schema == self.SCHEMA
+        assert config.system_instruction == "sys"
+
+    @pytest.mark.asyncio
+    async def test_plain_generate_is_not_json_mode(self, mock_client):
+        """Test JSON settings do not leak into plain text calls."""
+        generator = _generator()
+        client = mock_client.return_value
+        client.aio.models.generate_content.return_value = _response("{}")
+        await generator.generate_json("p", self.SCHEMA)
+        client.aio.models.generate_content.return_value = _response("text")
+
+        await generator.generate("p")
+
+        config = client.aio.models.generate_content.call_args.kwargs["config"]
+        assert config.response_mime_type is None
+        assert config.response_json_schema is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("text", ["not json", "[1, 2]"])
+    async def test_non_object_raises(self, mock_client, text):
+        """Test invalid JSON or a non-object raises TextGenerationError."""
+        mock_client.return_value.aio.models.generate_content.return_value = _response(text)
+
+        with pytest.raises(TextGenerationError, match="JSON"):
+            await _generator().generate_json("prompt", self.SCHEMA)

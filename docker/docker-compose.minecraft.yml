@@ -1,0 +1,36 @@
+# Local Minecraft Java server for development (Mineflayer bot target)
+# Usage: cd docker && docker compose -f docker-compose.minecraft.yml up -d
+#
+# - Paper 1.21.4 (matches minecraft.bot.version in config/default.yaml)
+# - offline-mode so the Mineflayer bot can join without a Microsoft account.
+#   Keep this server local; do not expose port 25565 to the internet.
+# - Starting the server accepts the Minecraft EULA: https://aka.ms/MinecraftEULA
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:java21
+    container_name: ailoveshen-minecraft
+    ports:
+      - "127.0.0.1:${MC_PORT:-25565}:25565"
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.4"
+      MEMORY: "2G"
+      ONLINE_MODE: "FALSE"
+      DIFFICULTY: "easy"
+      MODE: "survival"
+      MOTD: "AILoveShen dev server"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
+      SPAWN_PROTECTION: "0"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "${MC_RCON_PASSWORD:-ailoveshen-dev}"
+    volumes:
+      - minecraft-data:/data
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  minecraft-data:

@@ -1,0 +1,270 @@
+{
+ "label": "night_zombie_natural",
+ "summary": {
+  "time": {
+   "phase": "night",
+   "time_of_day": 20324,
+   "raining": false
+  },
+  "self": {
+   "health": 17,
+   "max_health": 20,
+   "food": 20,
+   "position": {
+    "x": 90,
+    "y": 76,
+    "z": -43.6
+   },
+   "held_item": null,
+   "in_water": false,
+   "on_ground": true
+  },
+  "inventory": {},
+  "mobs": [
+   {
+    "name": "zombie",
+    "hostile": true,
+    "distance_m": 1.7,
+    "direction": "N",
+    "height_diff_m": 0
+   },
+   {
+    "name": "creeper",
+    "hostile": true,
+    "distance_m": 3.2,
+    "direction": "E",
+    "height_diff_m": 1
+   },
+   {
+    "name": "sheep",
+    "hostile": false,
+    "distance_m": 8.2,
+    "direction": "W",
+    "height_diff_m": -2
+   },
+   {
+    "name": "sheep",
+    "hostile": false,
+    "distance_m": 14,
+    "direction": "E",
+    "height_diff_m": 3
+   },
+   {
+    "name": "spider",
+    "hostile": true,
+    "distance_m": 16.7,
+    "direction": "SE",
+    "height_diff_m": 4
+   },
+   {
+    "name": "sheep",
+    "hostile": false,
+    "distance_m": 20.8,
+    "direction": "E",
+    "height_diff_m": 4
+   },
+   {
+    "name": "spider",
+    "hostile": true,
+    "distance_m": 22,
+    "direction": "W",
+    "height_diff_m": -1
+   },
+   {
+    "name": "spider",
+    "hostile": true,
+    "distance_m": 23.5,
+    "direction": "SW",
+    "height_diff_m": 1
+   },
+   {
+    "name": "skeleton",
+    "hostile": true,
+    "distance_m": 24.8,
+    "direction": "SW",
+    "height_diff_m": -2
+   },
+   {
+    "name": "creeper",
+    "hostile": true,
+    "distance_m": 28,
+    "direction": "E",
+    "height_diff_m": 3
+   },
+   {
+    "name": "spider",
+    "hostile": true,
+    "distance_m": 32.9,
+    "direction": "E",
+    "height_diff_m": 3
+   },
+   {
+    "name": "cow",
+    "hostile": false,
+    "distance_m": 33,
+    "direction": "SE",
+    "height_diff_m": 0
+   },
+   {
+    "name": "cow",
+    "hostile": false,
+    "distance_m": 33.3,
+    "direction": "S",
+    "height_diff_m": -5
+   },
+   {
+    "name": "zombie",
+    "hostile": true,
+    "distance_m": 34.4,
+    "direction": "S",
+    "height_diff_m": -5
+   },
+   {
+    "name": "spider",
+    "hostile": true,
+    "distance_m": 38,
+    "direction": "NW",
+    "height_diff_m": -22
+   },
+   {
+    "name": "spider",
+    "hostile": true,
+    "distance_m": 38.4,
+    "direction": "NW",
+    "height_diff_m": -22
+   }
+  ],
+  "drops": [],
+  "resources": {
+   "nearest_log": {
+    "block": "spruce_log",
+    "distance_m": 3.9
+   }
+  },
+  "recent_actions": [
+   {
+    "action": "event",
+    "ok": false,
+    "result": "died"
+   }
+  ]
+ },
+ "actions": [
+  {
+   "id": "attack_hostile",
+   "description": "Fight the nearest hostile mob (zombie, 1.7m away) with the held item until it dies or 10s pass"
+  },
+  {
+   "id": "flee_hostile",
+   "description": "Run 16m away from the nearest hostile mob (zombie, 1.7m away)"
+  },
+  {
+   "id": "collect_log",
+   "description": "Walk to the nearest spruce_log (3.9m away) and chop it"
+  },
+  {
+   "id": "explore",
+   "description": "Walk about 20m in a random direction to find new things"
+  },
+  {
+   "id": "idle",
+   "description": "Stay still and look around for 3 seconds"
+  }
+ ],
+ "runs": {
+  "summary": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.89,
+    "probabilities": {
+     "flee_hostile": 0.91,
+     "collect_log": 0.04,
+     "attack_hostile": 0.03,
+     "idle": 0.02,
+     "explore": 0.0
+    },
+    "latency_s": 0.532,
+    "input_tokens": 1367,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.89,
+    "probabilities": {
+     "flee_hostile": 0.9,
+     "collect_log": 0.04,
+     "idle": 0.03,
+     "attack_hostile": 0.03,
+     "explore": 0.0
+    },
+    "latency_s": 0.215,
+    "input_tokens": 1367,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.87,
+    "probabilities": {
+     "flee_hostile": 0.91,
+     "collect_log": 0.04,
+     "attack_hostile": 0.03,
+     "idle": 0.02,
+     "explore": 0.0
+    },
+    "latency_s": 0.211,
+    "input_tokens": 1367,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   }
+  ],
+  "raw": [
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.82,
+    "probabilities": {
+     "flee_hostile": 0.86,
+     "attack_hostile": 0.07,
+     "collect_log": 0.07,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.532,
+    "input_tokens": 27914,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.79,
+    "probabilities": {
+     "flee_hostile": 0.84,
+     "attack_hostile": 0.09,
+     "collect_log": 0.07,
+     "explore": 0.0,
+     "idle": 0.0
+    },
+    "latency_s": 0.375,
+    "input_tokens": 27914,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   },
+   {
+    "choice": "flee_hostile",
+    "confidence": 0.81,
+    "probabilities": {
+     "flee_hostile": 0.85,
+     "attack_hostile": 0.08,
+     "collect_log": 0.07,
+     "idle": 0.0,
+     "explore": 0.0
+    },
+    "latency_s": 0.441,
+    "input_tokens": 27914,
+    "output_tokens": 65,
+    "model": "jev-1.13.0"
+   }
+  ]
+ }
+}

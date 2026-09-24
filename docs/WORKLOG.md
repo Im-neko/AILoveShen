@@ -1,18 +1,76 @@
-**Active Phase**: Phase 3 完了（Gemini で生成 → Style-Bert-VITS2 で読み上げ、を実機で確認）。次は Phase 4 最小版（Twitch コメント → 返答 → 読み上げ）
-**Last Updated**: 2026-09-24
-**Test Status**: 227 unit tests passing (`pytest tests/`)。`examples/integration_test_llm.py --speak` 成功（3/3 を最後まで再生）
-
----
-
 ## Current Status
 
-**Active Phase**: 層別構成への移行が完了。次は Phase 3 最小版（Python + google-genai）
+**Active Phase**: Phase 6 最小版（Gemini + Jev による自律建築）完了。ブランチ `feat/phase6-minimal`（PR 未作成）。Phase 4 最小版は保留中
 **Last Updated**: 2026-09-24
-**Test Status**: 152 unit tests passing (`pytest tests/`, アーキテクチャ検査 4 件を含む), Docker integration verified
+**Test Status**: 305 unit tests passing (`pytest tests/`)。自律実行 run6 で家が完成し、RCON でワールドのブロックを確認済み
 
 ---
 
 ## Completed Work
+
+### Phase 6 最小版: Gemini が設計・方針、Jev が行動選択、ブリッジが実行して家を建てる (2026-09-24)
+
+**Branch**: `feat/phase6-minimal`（spike ブランチから派生）。**Commit**: `9ef81fc`。設計: `docs/design/06_phase6_jev_integration.md`（実装に合わせて書き直した）
+
+**結果（run6）**: Gemini が「ひだまりシェンハウス」（5x5x3、南ドア、窓3、原木の柱）を設計し、47ステップで完成。bridge の `build.complete` だけでなく、RCON の `execute if block` で全 69 ブロック（屋根25、柱の原木12、ドア、窓の穴）を確認した
+- 実行中の介入: なし（/give、テレポート、手動のアクション選択なし）
+- 開始前のリセット: インベントリを空に、体力・満腹度の回復、`time set 1000`、run4 で bot が置いた作業台 (155,70,-21) の撤去。テスト用に召喚したゾンビ（tag=probe）は開始前に消した
+- gamerule は既定のまま（doDaylightCycle / doMobSpawning true、keepInventory false、difficulty easy）
+- 過去の検証で RCON で平らにした 11x11 の草地（104..114, 77, -80..-70）がワールドに残っている。run6 の建設地 (102,77,-32) はその範囲外
+
+**構成**:
+- Python（Clean Architecture）
+  - domain: `GoalType`、`GOAL_ACTIONS`、`HouseBlueprint`（検証とブロック順）、`MaterialNeeds`、`GameObservation`、`HouseProject`（Goal の達成・選び直し判定）
+  - application: `StartHouseProjectUseCase`（設計、検証エラーで最大3回やり直し）、`AdvanceHouseProjectUseCase`（観測 → Goal 判定 → Jev → 実行）
+  - infrastructure: `JevActionSelector`、`MineflayerBridgeClient`、`GamePromptTemplateBuilder`、`GeminiTextGenerator.generate_json`、`JevSettings` / `MinecraftSettings`
+  - presentation / factories: `GameService`、`factories/game.py`。実行は `examples/integration_test_minecraft.py`
+- `minecraft-bridge/`（spike の `spikes/minecraft-mirror/` から移した Node サイドカー）: `index.mjs`（HTTP API）、`observe.mjs`、`actions.mjs`、`build.mjs`、`craft.mjs`、`mirror.mjs`
+
+**失敗から特定した根本原因と対処**（run1〜run5）:
+- Paper は use_item を 300ms に8件より多く受けると黙って捨てる → 設置を 200ms 間隔にした
+- `pathfinder.stop()` を待機中に呼ぶと、次の `goto` がすぐ失敗する → `setGoal(null)` を使う
+- mineflayer の `bot.craft` は、このサーバーではクリック予測がずれて材料を失う（原木5 → 板材4、原木0） → レシピ本（`craft_recipe_request`）+ シフトクリック + 再同期でクラフトする
+- `craft_planks` が柱用の原木まで板材にしていた → 計画の原木ブロック分を残す
+- `explore` と `pickup_drop` が失敗しても成功を返していた → 失敗は正直に返す（届かないドロップは以後除外）
+- 樹冠に閉じ込められた: `GoalNear` だと、高い位置の原木には葉の上からしか「近く」にならず、`canDig=false` で降りられなかった → 原木へは `GoalLookAtBlock`（reach 4.5）で近づき、葉の上を歩くコストを上げ、歩行中に壊せるブロックを葉だけにした。葉を地面とみなしていたバグも直した
+- アクションの打ち切りが `Promise.race` だけで、ループが裏で動き続けていた → `AbortSignal` で本当に止め、止まるまで待つ
+- run5 で「slain by Zombie」: アクション中（最長20秒）は被弾に反応できなかった。葉の陰のゾンビは視線判定で脅威から外れていた → 被弾でアクションを中断する反射を入れ、4m 以内の敵は視線に関係なく脅威にした
+- `explore` が3つの Goal に含まれていて、Goal の絞り込みがほぼ効いていなかった → `explore` は explore Goal だけに入れた。建設地探しに失敗した場所では `build_step` を出さない
+- Goal プロンプトに「近くに切れる木があるか」と、失敗したアクションの理由を入れた
+
+**カメラ（ミラー）**: 60Hz の位置送信、位置の補間、回転速度の上限（150°/s、掘削中は 600°/s）。「掘っている位置より上を見ている」という指摘について、ヘッドレスのクライアントで計測した（カメラの向きと、掘っているブロック中心への向きの差）。掘削中のずれは 0.0〜0.1° で、ずれていたのは掘り始めの約0.5秒（最大約50°）と、経路探索中に葉を壊すとき。後者の対処として掘削中の回転を速めた。指摘の場面は、樹冠の上から葉越しに下の原木を掘っていた状況だった可能性が高い（このときクロスヘアは手前の葉に当たる）。この状況は上記の修正でなくなった
+
+**既知の制約**: 反射は「被弾したら中断」だけで、ステップの合間は無防備。素手では戦闘がほぼ成立しない。LLM・Jev・ブリッジの例外で実行が終わる（フォールバックなし）。Node 側の自動テストはない
+
+**その他**: 環境の starlette 1.3.1 と gradio<1.0 の依存衝突は以前からのもの（今回の変更とは無関係）
+
+### Spike: プロトコルミラー + Jev による行動選択 (2026-09-24)
+
+**Branch**: `spike/minecraft-mirror-jev`。詳細と表は `spikes/README.md`
+
+- `docker/docker-compose.minecraft.yml`: Paper 1.21.4、offline、127.0.0.1:25565、RCON 有効
+- **ミラー**（`spikes/minecraft-mirror/mirror.mjs`）
+  - 採掘のひび割れと腕振りを合成して送る。mineflayer には dig 開始イベントがないので、`targetDigBlock` を tick ごとに監視する。ヘッドレス確認では、ひび割れ17件、腕振り14件が届いた
+  - bot の configuration パケットと play パケットを記録し、127.0.0.1:25578 の偽サーバーに生バイトのまま中継する
+  - ヘッドレス確認: play まで到達し、チャンク、体力、20Hz の位置を受け取った。パースエラーはなかった
+  - バニラ 1.21.4 クライアントで接続し、一人称視点と HUD（体力、満腹度、ホットバー）の描画を確認した
+  - 視点のカクつきは目視評価待ち
+  - 昼間のループで `flee_hostile` が2回選ばれて失敗した。敵の分類と逃げ先の経路を調べる必要がある
+- **Jev**（`spikes/minecraft-mirror/bridge.mjs` + `spikes/jev_eval.py`）
+  - typesafe-sdk 0.7.1 の `system_one` で、Choice を1問だけ投げる。`jev-1.13.0` で約 0.2s
+  - 10シナリオ（state は各1つ）× 4条件（summary/raw × 手がかり付き/generic な説明）× 3回の結果
+    - 同じ state への再問い合わせでは、ほぼ同じ答えが返る
+    - 明らかな状況では全条件で妥当な選択になった
+    - 要約と raw で選択が変わったケースはない。ただし正解の確率は、要約のほうがほぼ一貫して高い。raw はトークンが 4〜20 倍になる → 状態は要約して渡す
+    - zombie_far_day は判断が割れた。説明文に距離を入れると flee、generic だと attack になった。説明文の書き方も判断を動かす
+    - 初回の「raw だけ flee」は、前のシナリオのドロップが残った汚染による誤りだった。RESET を直して取り直した
+  - generic な説明でも、state に応じて attack と flee を切り替えた。説明文ではなく state を読んでいる
+  - confidence は、はっきりした状況で 0.8〜0.99、割れる状況で 0.1〜0.5 だった。LLM へ上げるかどうかの閾値として使える
+  - クローズドループ: 昼 10/10 成功。夜にゾンビ2体を倒したが（エンティティが消えたことからの推定）、体力は 20 から 11.3 に減った。アクション実行中の被弾は Jev では防げないので、反射層をコードで持つ必要がある
+  - バグ修正: 採掘の遅延。足元を掘った直後の空中で採掘を始めると、速度が 1/5 になっていた。着地を待ってから掘るようにした
+- API キーは pass の `JEV_API_KEY` を、SDK が読む `TYPESAFE_API_KEY` として渡す
+
+---
 
 ### Phase 3 実機確認: Gemini → TTS 読み上げ (2026-09-24)
 
@@ -302,6 +360,14 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
+### Phase 6 の続き
+
+- PR 作成（ユーザー確認後）
+- 先に動く反射層（ステップの合間も含め、殴られる前に逃げる・戦う）と、木の剣のクラフト
+- 例外で止めない方針（LLM・Jev の一時的な失敗）
+- ゲームイベントを実況・TTS につなぐ（Phase 8）
+- ブリッジ（Node）の自動テスト
+
 ### Phase 3 の積み残し
 
 - **返答にゲーム状況を渡す**: `GenerateResponseRequest` には `game_state_summary` / `recent_events` がない。会話履歴が空だと、モデルが今やっていることを作り話で答える（計測中に「新しいお家を建てている」と答えた）。Phase 6/8 でゲーム状態を渡すときに追加する
@@ -404,6 +470,12 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-24 (Minecraft サーバー・ミラー・Jev spike)
+- Minecraft サーバーを Docker で起動し、Mineflayer の bot で参加と移動を確認した
+- bot として参加すると、カメラの動きや UI が配信向きではない。そこで、パケットを実クライアントに中継する方式（プロトコルミラー）を採用し、spike で検証した
+- Jev に今実行できるアクションを列挙して選ばせる方式を、シナリオ評価とクローズドループで検証した
+- 設計書 06 の書き換えは、実クライアントでの確認が済んでから行う
 
 ### 2026-09-24 (モデル切り替え・層別構成・Phase 3 最小版)
 - Gemini を 3.8 Flash に統一した（PR #14）

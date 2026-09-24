@@ -223,25 +223,26 @@ game:
   events:
     health_change_threshold: 5
 
-# Minecraft (Mineflayer bridge + Jev)
+# Jev (TypeSafe AI System One): picks the next action within the LLM's goal
+jev:
+  api_key: "${TYPESAFE_API_KEY:-}"
+  model: "jev-latest"
+  timeout_seconds: 10
+
+# Minecraft (Mineflayer bridge sidecar: minecraft-bridge/)
+# Server connection and bot name are the bridge's env vars (MC_HOST, MC_PORT, BOT_NAME).
 minecraft:
-  enabled: false
-
-  # Mineflayer connection
-  server:
-    host: "localhost"
-    port: 25565
-
-  # Mineflayer bridge (Node.js sidecar process)
   bridge:
-    type: "http"  # "http" or "websocket"
     host: "localhost"
     port: 3000
+    # Must exceed the bridge's per-action timeout (20s)
+    timeout_seconds: 60
 
-  # Bot settings
-  bot:
-    username: "AILoveShen"
-    version: "1.21.4"
+  agent:
+    # Ask the LLM for a new goal after this many steps in one goal
+    max_steps_per_goal: 15
+    # ... or after this many failed steps in a row
+    max_consecutive_failures: 3
 
 # Logging
 logging:
