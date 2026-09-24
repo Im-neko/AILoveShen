@@ -10,7 +10,7 @@
 
 ### Phase 6 最小版: Gemini が設計・方針、Jev が行動選択、ブリッジが実行して家を建てる (2026-09-24)
 
-**Branch**: `feat/phase6-minimal`（spike ブランチから派生）。設計: `docs/design/06_phase6_jev_integration.md`（実装に合わせて書き直した）
+**Branch**: `feat/phase6-minimal`（spike ブランチから派生）。**Commit**: `9ef81fc`。設計: `docs/design/06_phase6_jev_integration.md`（実装に合わせて書き直した）
 
 **結果（run6）**: Gemini が「ひだまりシェンハウス」（5x5x3、南ドア、窓3、原木の柱）を設計し、47ステップで完成。bridge の `build.complete` だけでなく、RCON の `execute if block` で全 69 ブロック（屋根25、柱の原木12、ドア、窓の穴）を確認した
 - 実行中の介入: なし（/give、テレポート、手動のアクション選択なし）
