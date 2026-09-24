@@ -1,6 +1,6 @@
-**Active Phase**: Phase 3 実 API 確認済み（Gemini 3.8 Flash で実況・返答を生成できる）。TTS 読み上げの確認は未実施
+**Active Phase**: Phase 3 完了（Gemini で生成 → Style-Bert-VITS2 で読み上げ、を実機で確認）。次は Phase 4 最小版（Twitch コメント → 返答 → 読み上げ）
 **Last Updated**: 2026-09-24
-**Test Status**: 223 unit tests passing (`pytest tests/`)。Gemini 実 API で `examples/integration_test_llm.py` 成功（3/3、各約2秒）
+**Test Status**: 227 unit tests passing (`pytest tests/`)。`examples/integration_test_llm.py --speak` 成功（3/3 を最後まで再生）
 
 ---
 
@@ -13,6 +13,26 @@
 ---
 
 ## Completed Work
+
+### Phase 3 実機確認: Gemini → TTS 読み上げ (2026-09-24)
+
+**Issue**: #2（このエントリの PR マージでクローズ）
+
+`examples/integration_test_llm.py --speak` で、Gemini 3.8 Flash が生成した3つの発話を、Style-Bert-VITS2（Docker、shen モデル）で最後まで読み上げられることを確認した。
+
+**Changes**:
+- `config/default.yaml`
+  - `tts.voice.model_name` を `"default"` から `"shen"` に変更
+  - `emotion_style_map` をすべて `"Neutral"` に変更。shen モデルは Neutral しか持たず、他のスタイルを指定するとサーバーが 422（`style=Happy not found`）を返す。感情表現は声ではなくアバター（Live2D）で行う方針
+- `TTSService.wait_until_idle()` を追加（キューに積んだ発話の再生がすべて終わるまで待つ）
+  - `_process_loop` は例外が起きても `task_done()` するようにした
+  - `stop()` でキューを捨てた要素も `task_done()` するようにした
+  - 以前のスクリプトは「キューが空 + 5秒」を待っていたため、10秒ある3つ目の発話が再生途中で切れていた
+- `tests/unit/presentation/test_tts_service.py`（4件）
+
+**計測値**（1〜2文の発話）: 生成 1.6〜2.0秒、合成 2.6〜3.3秒、生成開始から声が出るまで約4.2〜4.6秒
+
+---
 
 ### Phase 3 最小版: Gemini LLM Integration (2026-09-24)
 
@@ -282,11 +302,11 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
-### Phase 3: 残作業
+### Phase 3 の積み残し
 
-- **TTS 読み上げの確認**: `GEMINI_API_KEY=... python examples/integration_test_llm.py --speak`。このマシンにはモデル（`model_assets/`, `bert/`）がなく、Docker も停止している。TTS サーバーを動かせる環境（Windows 機など）で実行し、確認できたら Issue #2 をクローズする
-  - `default.yaml` の `tts.voice.model_name` は `"default"`。以前の TTS テストでは `"shen"` を使っていたので、実際のモデル名に合わせる必要がある
 - **返答にゲーム状況を渡す**: `GenerateResponseRequest` には `game_state_summary` / `recent_events` がない。会話履歴が空だと、モデルが今やっていることを作り話で答える（計測中に「新しいお家を建てている」と答えた）。Phase 6/8 でゲーム状態を渡すときに追加する
+- **声が出るまでの遅延**: 生成開始から声が出るまで約4.2〜4.6秒。内訳は生成 1.6〜2.0秒、合成 2.6〜3.3秒（Docker 内・CPU）で、合成のほうが遅い。改善案は、文ごとに分けて合成と再生を並行させる、Docker を使わずに GPU/MPS で推論する、など。Phase 8 で配信の間合いを見ながら判断する
+- **`StyleBertVits2Client.get_available_styles()` の不具合**: サーバーの `/models/info` はモデル ID（`"0"`）をキーに返すが、クライアントはモデル名（`"shen"`）で引いているため、常に `["Neutral"]` を返す。現在は呼び出し元がないので実害はない
 
 ### thinking_level の調整（2026-09-24 実測）
 
@@ -392,6 +412,7 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 - Phase 3 最小版を実装した（PR #16）。実キーがないため、実 API での確認は未実施
 - #14 → #15 → #16 をこの順でマージした
 - 実 API で確認し、thinking_level を low と medium で比較して main=low に決めた
+- TTS を Docker で起動し、`--speak` で読み上げまで確認した。shen モデルは Neutral のみなので、感情表現はアバター側で行う
 
 ### 2026-09-20 (Phase 6 設計改訂)
 
