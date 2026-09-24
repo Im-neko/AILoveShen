@@ -1,0 +1,54 @@
+[
+ {
+  "scenario": "logs_empty",
+  "n": 10,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.95,
+   "latency_s": 0.539,
+   "input_tokens": 825,
+   "ok": true
+  },
+  "jev_hint": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.97,
+   "latency_s": 0.184,
+   "input_tokens": 947,
+   "ok": true
+  }
+ },
+ {
+  "scenario": "logs_empty",
+  "n": 50,
+  "rep": 0,
+  "accept": [
+   "dig oak_log at 3m"
+  ],
+  "rule": {
+   "choice": "dig oak_log at 3m",
+   "ok": true
+  },
+  "jev": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.67,
+   "latency_s": 0.307,
+   "input_tokens": 2503,
+   "ok": true
+  },
+  "jev_hint": {
+   "choice": "dig oak_log at 3m",
+   "confidence": 0.83,
+   "latency_s": 0.21,
+   "input_tokens": 3105,
+   "ok": true
+  }
+ }
+]
