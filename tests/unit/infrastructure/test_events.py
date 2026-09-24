@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from ailoveshen.core.domain.value_objects import DomainEvent
-from ailoveshen.core.infrastructure.events import AsyncEventBus, event_handler
+from ailoveshen.domain.events import DomainEvent
+from ailoveshen.infrastructure.events import AsyncEventBus, event_handler
 
 
 @dataclass(frozen=True)

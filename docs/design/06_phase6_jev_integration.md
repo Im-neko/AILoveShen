@@ -728,7 +728,7 @@ from loguru import logger
 from typesafe_sdk import AsyncTypeSafeClient, Choice, Noul, Score
 
 from ailoveshen.application.ports.output.jev_decision_engine import IJevDecisionEngine
-from ailoveshen.core.exceptions import GameConnectionError
+from ailoveshen.domain.exceptions import GameConnectionError
 from ailoveshen.domain.value_objects.goal import Goal
 from ailoveshen.domain.value_objects.jev_decision import (
     ReactiveDecision,
@@ -834,7 +834,7 @@ import httpx
 from loguru import logger
 
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.core.exceptions import GameConnectionError
+from ailoveshen.domain.exceptions import GameConnectionError
 from ailoveshen.domain.value_objects.game_action import GameAction
 
 
@@ -1105,7 +1105,7 @@ jev:
 
 ### 11.1 移行ノート（実装時にあわせて対応すること）
 
-- `src/ailoveshen/core/infrastructure/config.py` に `MinecraftBridgeSettings` + `JevSettings` を追加する（旧`NitroGenSettings`は本改訂にあわせて削除済み）。
+- `src/ailoveshen/infrastructure/config.py` に `MinecraftBridgeSettings` + `JevSettings` を追加する（旧`NitroGenSettings`は本改訂にあわせて削除済み）。
 - `config/default.yaml` には既に `game:` / `minecraft:` セクションが存在するが、いずれも `config.py` 側に未配線である。Phase 6実装時に `minecraft:` を上記 `minecraft_bridge:` 相当へ整理し、`jev:` セクションを新設したうえで、`Settings` へのロード処理を併せて実装する。
 - どちらも本ドキュメントの対象（設計）範囲外のため、Phase 6着手時に別途コード側の変更として実施する。
 

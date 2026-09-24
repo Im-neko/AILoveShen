@@ -840,7 +840,7 @@ from google.generativeai.types import GenerationConfig
 from loguru import logger
 
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.core.exceptions import TextGenerationError
+from ailoveshen.domain.exceptions import TextGenerationError
 
 
 class GeminiTextGenerator(ITextGenerator):
@@ -1162,7 +1162,7 @@ class LLMService:
 ## 7. Composition Root (LLM部分)
 
 ```python
-# src/ailoveshen/main.py (LLM部分の抜粋)
+# src/ailoveshen/factories/llm.py
 
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase

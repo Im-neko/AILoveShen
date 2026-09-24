@@ -742,7 +742,7 @@ from twitchio import Message
 from twitchio.ext import commands
 
 from ailoveshen.application.ports.output.chat_provider import IChatProvider
-from ailoveshen.core.exceptions import ChatConnectionError
+from ailoveshen.domain.exceptions import ChatConnectionError
 from ailoveshen.domain.entities.chat_message import ChatMessage, ChatUser
 from ailoveshen.infrastructure.adapters.twitch.twitch_auth import TwitchAuth
 
@@ -888,7 +888,7 @@ from typing import Optional
 import httpx
 from loguru import logger
 
-from ailoveshen.core.exceptions import AuthenticationError
+from ailoveshen.domain.exceptions import AuthenticationError
 
 
 class TwitchAuth:
@@ -966,7 +966,7 @@ from ailoveshen.application.ports.output.comment_analyzer import (
     AnalysisResult,
     ICommentAnalyzer,
 )
-from ailoveshen.core.exceptions import AnalysisError
+from ailoveshen.domain.exceptions import AnalysisError
 from ailoveshen.domain.value_objects.volume_metrics import VolumeMetrics
 
 
@@ -1174,7 +1174,7 @@ class TwitchService:
 ## 7. Composition Root (Twitch部分)
 
 ```python
-# src/ailoveshen/main.py (Twitch部分の抜粋)
+# src/ailoveshen/factories/twitch.py
 
 from ailoveshen.application.use_cases.filter_comment import FilterCommentUseCase
 from ailoveshen.application.use_cases.process_chat_message import ProcessChatMessageUseCase

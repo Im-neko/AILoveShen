@@ -18,11 +18,8 @@ Style-Bert-VITS2を使用したリアルタイム音声合成パイプライン�
 ```
 src/ailoveshen/
 ├── domain/
-│   ├── value_objects/
-│   │   ├── speech_request.py      # SpeechRequest, SpeechPriority
-│   │   └── speech_result.py       # SpeechResult
-│   └── services/
-│       └── emotion_style_service.py  # EmotionStyleService
+│   ├── value_objects.py           # SpeechRequest, SpeechPriority, SpeechResult
+│   └── events.py                  # SpeechStartedEvent, SpeechCompletedEvent
 │
 ├── application/
 │   ├── ports/
@@ -39,14 +36,21 @@ src/ailoveshen/
 ├── infrastructure/
 │   └── adapters/
 │       ├── tts/
-│       │   └── style_bert_vits2_client.py  # StyleBertVits2Client
+│       │   ├── style_bert_vits2_client.py  # StyleBertVits2Client
+│       │   ├── emotion_style_service.py    # EmotionStyleService (感情→スタイル名)
+│       │   └── voice_config.py             # VoiceConfig
 │       └── audio/
 │           └── sounddevice_player.py       # SounddevicePlayer
 │
-└── presentation/
-    └── services/
-        └── tts_service.py         # TTSService (coordinates use case)
+├── presentation/
+│   └── services/
+│       └── tts_service.py         # TTSService (coordinates use case)
+│
+└── factories/
+    └── tts.py                     # create_tts_service (Composition Root)
 ```
+
+ドメイン層とアプリケーション層は感情（`EmotionState`）だけを扱い、Style-Bert-VITS2 のスタイル名（`"Happy"` 等）は知らない。感情からスタイル名への変換は TTS adapter 側の `EmotionStyleService` が担う。これにより TTS エンジンを差し替えても、ドメイン層とアプリケーション層は影響を受けない。
 
 ## 3. Domain Layer
 
@@ -81,7 +85,7 @@ class SpeechRequest:
     Immutable to ensure integrity.
     """
     text: str
-    style: str = "Neutral"
+    emotion: EmotionState = field(default_factory=EmotionState)
     speaker_id: int = 0
     language: str = "JP"
     priority: SpeechPriority = SpeechPriority.NORMAL
@@ -97,11 +101,11 @@ class SpeechRequest:
         """Check if this request should interrupt current speech."""
         return self.priority >= SpeechPriority.INTERRUPT
 
-    def with_style(self, style: str) -> SpeechRequest:
-        """Create new request with different style."""
+    def with_emotion(self, emotion: EmotionState) -> SpeechRequest:
+        """Create new request with different emotion."""
         return SpeechRequest(
             text=self.text,
-            style=style,
+            emotion=emotion,
             speaker_id=self.speaker_id,
             language=self.language,
             priority=self.priority,
@@ -174,26 +178,27 @@ class SpeechResult:
         )
 ```
 
-### 3.2 Domain Services
+### 3.2 Emotion → Style Mapping（Infrastructure）
 
-#### EmotionStyleService (domain/services/emotion_style_service.py)
+#### EmotionStyleService (infrastructure/adapters/tts/emotion_style_service.py)
+
+スタイル名は Style-Bert-VITS2 固有の語彙なので、ドメイン層ではなく TTS adapter 側に置く。`StyleBertVits2Client` がこれを保持し、`synthesize()` で受け取った `EmotionState` をスタイル名へ変換する。
 
 ```python
-"""Domain service for emotion to style mapping."""
+"""Emotion to Style-Bert-VITS2 style mapping."""
 
 from __future__ import annotations
 
-from ailoveshen.domain.value_objects.emotion import EmotionState, EmotionType
+from ailoveshen.domain.value_objects import EmotionState, EmotionType
 
 
 class EmotionStyleService:
     """
-    Domain service that maps emotion states to TTS voice styles.
+    Maps domain emotion states to Style-Bert-VITS2 voice styles.
 
-    This is a domain service because:
-    - It encapsulates domain logic (emotion → style mapping)
-    - It operates on domain value objects
-    - It doesn't depend on external services
+    Style names are Style-Bert-VITS2 vocabulary, so this mapping lives in the
+    TTS adapter rather than the domain. Swapping the TTS engine only requires
+    a new mapping on the adapter side.
     """
 
     # Default mapping - can be overridden via config
@@ -258,6 +263,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from ailoveshen.domain.value_objects import EmotionState
+
 
 class ISpeechSynthesizer(ABC):
     """
@@ -271,7 +278,7 @@ class ISpeechSynthesizer(ABC):
     async def synthesize(
         self,
         text: str,
-        style: str = "Neutral",
+        emotion: EmotionState,
         speaker_id: int = 0,
         language: str = "JP",
     ) -> bytes:
@@ -280,7 +287,7 @@ class ISpeechSynthesizer(ABC):
 
         Args:
             text: Text to synthesize
-            style: Voice style
+            emotion: Emotion to express. Adapters map it to engine-specific styles.
             speaker_id: Speaker ID
             language: Language code
 
@@ -290,11 +297,6 @@ class ISpeechSynthesizer(ABC):
         Raises:
             SynthesisError: If synthesis fails
         """
-        ...
-
-    @abstractmethod
-    async def get_available_styles(self) -> list[str]:
-        """Get list of available voice styles."""
         ...
 
     @abstractmethod
@@ -407,7 +409,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ailoveshen.domain.value_objects.speech_request import SpeechPriority
+from ailoveshen.domain.value_objects import EmotionState, SpeechPriority
 
 
 @dataclass
@@ -415,7 +417,7 @@ class SpeakTextRequest:
     """Input DTO for speak text use case."""
     text: str
     priority: SpeechPriority = SpeechPriority.NORMAL
-    style: Optional[str] = None  # None = use emotion-based style
+    emotion: Optional[EmotionState] = None  # None = use current emotion
     source: str = "unknown"
 
 
@@ -450,10 +452,8 @@ from ailoveshen.application.ports.input.speak_text import ISpeakText
 from ailoveshen.application.ports.output.audio_player import IAudioPlayer
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.speech_synthesizer import ISpeechSynthesizer
-from ailoveshen.domain.events import DomainEvent, SpeechCompletedEvent, SpeechStartedEvent
-from ailoveshen.domain.services.emotion_style_service import EmotionStyleService
-from ailoveshen.domain.value_objects.emotion import EmotionState
-from ailoveshen.domain.value_objects.speech_request import SpeechRequest
+from ailoveshen.domain.events import SpeechCompletedEvent, SpeechStartedEvent
+from ailoveshen.domain.value_objects import EmotionState, SpeechRequest
 
 
 class SpeakTextUseCase(ISpeakText):
@@ -461,7 +461,7 @@ class SpeakTextUseCase(ISpeakText):
     Use case for synthesizing and playing speech.
 
     Coordinates:
-    - Style selection based on emotion
+    - Emotion selection (current emotion or override)
     - Speech synthesis via adapter
     - Audio playback via adapter
     - Domain event publishing
@@ -472,7 +472,6 @@ class SpeakTextUseCase(ISpeakText):
         synthesizer: ISpeechSynthesizer,
         audio_player: IAudioPlayer,
         event_publisher: IEventPublisher,
-        emotion_style_service: EmotionStyleService,
         get_current_emotion: Callable[[], EmotionState],
     ) -> None:
         """
@@ -482,13 +481,11 @@ class SpeakTextUseCase(ISpeakText):
             synthesizer: Speech synthesizer adapter
             audio_player: Audio player adapter
             event_publisher: Event publisher for domain events
-            emotion_style_service: Domain service for emotion→style mapping
             get_current_emotion: Callable to get current emotion state
         """
         self._synthesizer = synthesizer
         self._audio_player = audio_player
         self._event_publisher = event_publisher
-        self._emotion_style_service = emotion_style_service
         self._get_current_emotion = get_current_emotion
 
         self._interrupt_event = asyncio.Event()
@@ -496,17 +493,13 @@ class SpeakTextUseCase(ISpeakText):
     async def execute(self, request: SpeakTextRequest) -> SpeakTextResponse:
         """Execute the speak text use case."""
         try:
-            # Determine style
-            if request.style is None:
-                emotion = self._get_current_emotion()
-                style = self._emotion_style_service.get_style_for_emotion(emotion)
-            else:
-                style = request.style
+            # Determine emotion
+            emotion = request.emotion or self._get_current_emotion()
 
             # Create domain value object
             speech_request = SpeechRequest(
                 text=request.text,
-                style=style,
+                emotion=emotion,
                 priority=request.priority,
                 source=request.source,
             )
@@ -520,7 +513,7 @@ class SpeakTextUseCase(ISpeakText):
             logger.debug(f"Synthesizing: {request.text[:50]}...")
             audio_data = await self._synthesizer.synthesize(
                 text=speech_request.text,
-                style=speech_request.style,
+                emotion=speech_request.emotion,
                 speaker_id=speech_request.speaker_id,
                 language=speech_request.language,
             )
@@ -581,7 +574,9 @@ import httpx
 from loguru import logger
 
 from ailoveshen.application.ports.output.speech_synthesizer import ISpeechSynthesizer
-from ailoveshen.core.exceptions import SynthesisError
+from ailoveshen.domain.exceptions import SynthesisError
+from ailoveshen.domain.value_objects import EmotionState
+from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
 
 
 class StyleBertVits2Client(ISpeechSynthesizer):
@@ -597,10 +592,12 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         port: int = 5000,
         timeout_seconds: float = 30.0,
         model_name: str = "default",
+        emotion_style_service: Optional[EmotionStyleService] = None,
     ) -> None:
         self._base_url = f"http://{host}:{port}"
         self._timeout = timeout_seconds
         self._model_name = model_name
+        self._emotion_style_service = emotion_style_service or EmotionStyleService()
         self._client: Optional[httpx.AsyncClient] = None
 
     async def connect(self) -> None:
@@ -621,13 +618,15 @@ class StyleBertVits2Client(ISpeechSynthesizer):
     async def synthesize(
         self,
         text: str,
-        style: str = "Neutral",
+        emotion: EmotionState,
         speaker_id: int = 0,
         language: str = "JP",
     ) -> bytes:
         """Synthesize speech using Style-Bert-VITS2 server."""
         if not self._client:
             raise SynthesisError("TTS client not connected")
+
+        style = self._emotion_style_service.get_style_for_emotion(emotion)
 
         try:
             response = await self._client.get(
@@ -785,7 +784,7 @@ from loguru import logger
 
 from ailoveshen.application.dto.speech_dto import SpeakTextRequest
 from ailoveshen.application.ports.input.speak_text import ISpeakText
-from ailoveshen.domain.value_objects.speech_request import SpeechPriority
+from ailoveshen.domain.value_objects import EmotionState, SpeechPriority
 
 
 class TTSService:
@@ -839,7 +838,7 @@ class TTSService:
         self,
         text: str,
         priority: SpeechPriority = SpeechPriority.NORMAL,
-        style: Optional[str] = None,
+        emotion: Optional[EmotionState] = None,
         source: str = "unknown",
     ) -> None:
         """
@@ -848,7 +847,7 @@ class TTSService:
         Args:
             text: Text to speak
             priority: Speech priority
-            style: Override style (None = use emotion-based)
+            emotion: Override emotion (None = use current emotion)
             source: Source identifier
         """
         if not text.strip():
@@ -857,7 +856,7 @@ class TTSService:
         request = SpeakTextRequest(
             text=text,
             priority=priority,
-            style=style,
+            emotion=emotion,
             source=source,
         )
 
@@ -900,12 +899,11 @@ class TTSService:
 ## 7. Composition Root (TTS部分)
 
 ```python
-# src/ailoveshen/main.py (TTS部分の抜粋)
+# src/ailoveshen/factories/tts.py
 
 from ailoveshen.application.use_cases.speak_text import SpeakTextUseCase
-from ailoveshen.domain.services.emotion_style_service import EmotionStyleService
-from ailoveshen.domain.value_objects.emotion import EmotionState
 from ailoveshen.infrastructure.adapters.audio.sounddevice_player import SounddevicePlayer
+from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
 from ailoveshen.infrastructure.adapters.tts.style_bert_vits2_client import StyleBertVits2Client
 from ailoveshen.presentation.services.tts_service import TTSService
 
@@ -917,21 +915,22 @@ def create_tts_service(
 ) -> TTSService:
     """Create TTS service with all dependencies."""
 
+    # Emotion to style mapping (Style-Bert-VITS2 specific)
+    emotion_style_service = EmotionStyleService(
+        style_map=config.emotion_style_map,
+    )
+
     # Infrastructure adapters
     synthesizer = StyleBertVits2Client(
         host=config.server.host,
         port=config.server.port,
         timeout_seconds=config.server.timeout_seconds,
         model_name=config.voice.model,
+        emotion_style_service=emotion_style_service,
     )
 
     audio_player = SounddevicePlayer(
         sample_rate=config.audio.sample_rate,
-    )
-
-    # Domain service
-    emotion_style_service = EmotionStyleService(
-        style_map=config.emotion_style_map,
     )
 
     # Use case
@@ -939,7 +938,6 @@ def create_tts_service(
         synthesizer=synthesizer,
         audio_player=audio_player,
         event_publisher=event_publisher,
-        emotion_style_service=emotion_style_service,
         get_current_emotion=emotion_state_holder.get_current,
     )
 
@@ -1053,7 +1051,7 @@ tts:
 ```python
 # tests/unit/domain/test_speech_request.py
 import pytest
-from ailoveshen.domain.value_objects.speech_request import (
+from ailoveshen.domain.value_objects import (
     SpeechRequest,
     SpeechPriority,
 )
@@ -1074,13 +1072,14 @@ def test_speech_request_is_interrupt():
     assert interrupt.is_interrupt()
 
 
-def test_speech_request_with_style():
-    """Test immutable style modification."""
-    original = SpeechRequest(text="test", style="Neutral")
-    modified = original.with_style("Happy")
+def test_speech_request_with_emotion():
+    """Test immutable emotion modification."""
+    original = SpeechRequest(text="test")
+    happy = EmotionState(EmotionType.HAPPY, 0.8)
+    modified = original.with_emotion(happy)
 
-    assert original.style == "Neutral"
-    assert modified.style == "Happy"
+    assert original.emotion == EmotionState()
+    assert modified.emotion == happy
     assert modified.text == original.text
 ```
 
@@ -1093,8 +1092,8 @@ from unittest.mock import AsyncMock, Mock
 
 from ailoveshen.application.dto.speech_dto import SpeakTextRequest
 from ailoveshen.application.use_cases.speak_text import SpeakTextUseCase
-from ailoveshen.domain.services.emotion_style_service import EmotionStyleService
-from ailoveshen.domain.value_objects.emotion import EmotionState
+from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
+from ailoveshen.domain.value_objects import EmotionState
 
 
 @pytest.fixture

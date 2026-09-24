@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ailoveshen.core.infrastructure.config import (
+from ailoveshen.infrastructure.config import (
     ConfigurationError,
     GeminiSettings,
     LoggingSettings,

@@ -1109,7 +1109,7 @@ class MCPServerAdapter:
 ## 6. Composition Root (MCP部分)
 
 ```python
-# src/ailoveshen/main.py (MCP部分の抜粋)
+# src/ailoveshen/factories/mcp.py
 
 from ailoveshen.application.use_cases.manage_emotion import ManageEmotionUseCase
 from ailoveshen.application.use_cases.recall_memory import RecallMemoryUseCase
@@ -1341,7 +1341,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ailoveshen.core.domain.value_objects import DomainEvent, EmotionType
+from ailoveshen.domain.events import DomainEvent
+from ailoveshen.domain.value_objects import EmotionType
 
 
 @dataclass(frozen=True)
@@ -1390,7 +1391,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from ailoveshen.core.domain.value_objects import EmotionState, EmotionType
+from ailoveshen.domain.value_objects import EmotionState, EmotionType
 
 
 class EmotionExpressionService:
@@ -1624,7 +1625,7 @@ import websockets
 from loguru import logger
 from websockets.client import WebSocketClientProtocol
 
-from ailoveshen.core.exceptions import AILoveShenError
+from ailoveshen.domain.exceptions import AILoveShenError
 from ailoveshen.live2d.application.ports.output.live2d_controller import ILive2DController
 from ailoveshen.live2d.domain.value_objects import (
     Expression,

@@ -4,12 +4,12 @@
 
 | コンポーネント | 状況 | 備考 |
 |---------------|------|------|
-| Domain Layer: Entity/AggregateRoot | ✅ 完了 | `src/ailoveshen/core/domain/entities.py` |
-| Domain Layer: Value Objects | ✅ 完了 | `src/ailoveshen/core/domain/value_objects.py` |
-| Application Layer: Output Ports | ✅ 完了 | `src/ailoveshen/core/application/ports/output_ports.py` |
-| Infrastructure: Config | ✅ 完了 | `src/ailoveshen/core/infrastructure/config.py` |
-| Infrastructure: Logging | ✅ 完了 | `src/ailoveshen/core/infrastructure/logging.py` |
-| Infrastructure: EventBus | ✅ 完了 | `src/ailoveshen/core/infrastructure/events.py` |
+| Domain Layer: Entity/AggregateRoot | ✅ 完了 | `src/ailoveshen/domain/entities.py` |
+| Domain Layer: Value Objects | ✅ 完了 | `src/ailoveshen/domain/value_objects.py`, `src/ailoveshen/domain/events.py` |
+| Application Layer: Output Ports | ✅ 完了 | `src/ailoveshen/application/ports/output/event_publisher.py` |
+| Infrastructure: Config | ✅ 完了 | `src/ailoveshen/infrastructure/config.py` |
+| Infrastructure: Logging | ✅ 完了 | `src/ailoveshen/infrastructure/logging.py` |
+| Infrastructure: EventBus | ✅ 完了 | `src/ailoveshen/infrastructure/events.py` |
 | Unit Tests | ✅ 完了 | 77 tests passing |
 | Demo Script | ✅ 完了 | `examples/demo_phase1.py` |
 
@@ -346,7 +346,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from ailoveshen.domain.value_objects.position import Position, Rotation
+from ailoveshen.domain.value_objects import Position, Rotation
 
 
 @dataclass
@@ -526,7 +526,7 @@ class CommentFiltered(DomainEvent):
 from __future__ import annotations
 
 from ailoveshen.domain.entities.game_state import GameState
-from ailoveshen.domain.value_objects.emotion import EmotionState, EmotionType
+from ailoveshen.domain.value_objects import EmotionState, EmotionType
 
 
 class EmotionService:
@@ -576,7 +576,7 @@ from __future__ import annotations
 
 from ailoveshen.domain.entities.chat_message import ChatMessage
 from ailoveshen.domain.entities.game_state import GameState
-from ailoveshen.domain.value_objects.speech import SpeechPriority
+from ailoveshen.domain.value_objects import SpeechPriority
 
 
 class PriorityService:
@@ -800,8 +800,8 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.events.chat_events import ChatResponseGenerated
 from ailoveshen.domain.services.priority_service import PriorityService
-from ailoveshen.domain.value_objects.emotion import EmotionState
-from ailoveshen.domain.value_objects.speech import SpeechPriority
+from ailoveshen.domain.value_objects import EmotionState
+from ailoveshen.domain.value_objects import SpeechPriority
 
 
 class RespondToChatUseCase(IRespondToChat):
@@ -865,7 +865,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.entities.game_state import GameState
 from ailoveshen.domain.services.priority_service import PriorityService
-from ailoveshen.domain.value_objects.speech import SpeechPriority, SpeechRequest
+from ailoveshen.domain.value_objects import SpeechPriority, SpeechRequest
 
 
 @dataclass
@@ -944,7 +944,7 @@ from ailoveshen.application.ports.output.comment_filter import ICommentFilter
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.domain.entities.chat_message import ChatMessage
 from ailoveshen.domain.events.chat_events import CommentFiltered
-from ailoveshen.domain.value_objects.filter_result import FilterResult
+from ailoveshen.domain.value_objects import FilterResult
 
 
 @dataclass
@@ -1192,7 +1192,7 @@ from ailoveshen.application.ports.input.respond_to_chat import (
 )
 from ailoveshen.application.services.speech_queue import SpeechQueueService
 from ailoveshen.domain.entities.chat_message import ChatMessage
-from ailoveshen.domain.value_objects.speech import SpeechPriority, SpeechRequest
+from ailoveshen.domain.value_objects import SpeechPriority, SpeechRequest
 
 
 class ChatEventHandler:

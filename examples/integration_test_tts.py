@@ -15,7 +15,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ailoveshen.tts.factory import create_tts_service, create_and_connect_tts_service
+from ailoveshen.factories.tts import create_tts_service, create_and_connect_tts_service
 
 
 async def test_server_connection():
@@ -90,7 +90,7 @@ async def test_tts_service():
     print("=" * 60)
 
     try:
-        from ailoveshen.core.infrastructure.events import AsyncEventBus
+        from ailoveshen.infrastructure.events import AsyncEventBus
 
         # Create event bus
         event_bus = AsyncEventBus()
@@ -157,8 +157,8 @@ async def test_emotion_based_speech():
     print("Test 4: Emotion-Based Style Selection")
     print("=" * 60)
 
-    from ailoveshen.core.domain.value_objects import EmotionState
-    from ailoveshen.tts.domain.services.emotion_style_service import EmotionStyleService
+    from ailoveshen.domain.value_objects import EmotionState
+    from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
 
     emotion_service = EmotionStyleService()
 

@@ -6,13 +6,54 @@ This document tracks development progress to enable smooth resumption of work af
 
 ## Current Status
 
-**Active Phase**: Gemini モデルを 3.8 Flash へ切り替え済み。AI 層のフレームワーク（google-genai 直接 or Flue）が未決定のため Phase 3 は保留中
+**Active Phase**: 層別構成への移行が完了。次は Phase 3 最小版（Python + google-genai）
 **Last Updated**: 2026-09-24
-**Test Status**: 148 unit tests passing (`pytest tests/`), Docker integration verified
+**Test Status**: 152 unit tests passing (`pytest tests/`, アーキテクチャ検査 4 件を含む), Docker integration verified
 
 ---
 
 ## Completed Work
+
+### 層別構成への移行: Layer-first Clean Architecture (2026-09-24)
+
+`core/` と `tts/` の「機能ごとに4層」構成をやめ、最上位を
+`domain / application / infrastructure / presentation / factories` に分けた。
+設計書 02〜07 はもともとこの構成を前提にしていたので、実装が設計書に揃った。
+
+**AI 層の方針（決定事項）**: Flue（TypeScript のエージェントフレームワーク）は採用しない。
+Python + google-genai で `ITextGenerator` ポートの内側に実装する。Flue は検討したが、
+次の理由で見送った。
+- 任せられるのは API 呼び出しと短期の会話履歴（要約圧縮）だけ。長期記憶・感情などのドメイン記憶は結局自前で作る
+- Python ↔ Node の二重ランタイムとプロセス間通信が増える
+- 最新版 2.1.1 が pi-ai `^0.83` に固定されており、`gemini-3.8-flash` を解決できない
+Phase 3 の最小版を動かしたあとに、実際に困った点が Flue で解消するなら再検討する。
+
+**移動先**:
+- `core/domain/*`, `core/exceptions.py` → `domain/`（`DomainEvent` は `value_objects.py` から `events.py` へ移動）
+- `tts/domain/value_objects.py` → `SpeechResult`/`SpeechStatus` は `domain/value_objects.py` へ、`VoiceConfig` は `infrastructure/adapters/tts/voice_config.py` へ
+- `tts/domain/events.py` → `domain/events.py`
+- `core/application/ports/output_ports.py` → `application/ports/output/event_publisher.py`
+- `tts/application/*` → `application/{ports,use_cases,dto}/`
+- `core/infrastructure/*` → `infrastructure/`
+- `tts/infrastructure/adapters/*` → `infrastructure/adapters/{tts,audio}/`
+- `tts/domain/services/emotion_style_service.py` → `infrastructure/adapters/tts/`
+- `tts/presentation/*` → `presentation/services/`
+- `tts/factory.py` → `factories/tts.py`
+- テストも同じ構成に移動（`tests/unit/{domain,application,infrastructure/adapters/...}`）
+
+**Key Design Decisions**:
+1. エンジン固有の語彙は adapter に閉じ込める。スタイル名（"Happy" 等）への変換を `StyleBertVits2Client` 側へ移し、domain/application は `EmotionState` だけを扱う
+   - `ISpeechSynthesizer.synthesize(text, emotion, ...)`、`SpeakTextRequest.emotion`、`SpeechRequest.emotion`、`SpeechStartedEvent.emotion`
+   - 未使用だった `ISpeechSynthesizer.get_available_styles` をポートから削除（adapter には残す）
+2. 依存の向きを `tests/unit/test_architecture.py` で検査する（AST で import を解析）
+3. 設計書 03〜08 は `domain/value_objects/` をパッケージとして分割する前提だが、実装は単一ファイルのまま。各フェーズの実装時に判断する
+
+**Files Changed**: `src/ailoveshen/**`, `tests/unit/**`, `examples/demo_phase{1,2}.py`, `examples/integration_test_tts.py`,
+`CLAUDE.md`, `docs/design/00〜07`（構成・import パス・Composition Root の場所）
+
+**PR**: #14 の上に積む
+
+---
 
 ### Gemini モデル切り替え: → gemini-3.8-flash (2026-09-24)
 
@@ -28,10 +69,10 @@ This document tracks development progress to enable smooth resumption of work af
 1. 同じモデルで 2 枠を使い、役割の差は `thinking_level` で付ける想定（filter=low, main=medium）。未実装
 2. 旧設定では `config.py` のデフォルト値（`gemini-2.5-pro-preview-05-06`）と yaml（`gemini-2.5-pro`）が食い違っていたが、今回の統一で解消
 
-**未解決（AI 層フレームワークの決定待ち）**:
+**未解決（Phase 3 で対応）**:
 - 3.8 Flash では `temperature` / `top_p` / `top_k` が廃止され、`thinking_level`（low/medium/high）に置き換わった。`GeminiSettings.temperature` と設計書 03/04 のコード例がまだ残っている
 - 設計書のコード例は旧 SDK `google.generativeai` 前提。`google-genai`（`genai.Client`）への書き換えが必要
-- Flue（TypeScript のエージェントフレームワーク）を採用するかを検討中
+- Flue（TypeScript のエージェントフレームワーク）の採用を検討 → 見送り（層別構成への移行の項を参照）
 
 ### Phase 6 設計改訂: NitroGen → Jev + Mineflayer (2026-09-20)
 
@@ -198,6 +239,8 @@ Refer to design document: `docs/design/03_phase3_llm_integration.md`
 
 **Confirmed Specifications (2026-01-10)**:
 - Model: `gemini-3.8-flash`（2026-09-24 変更。main/filter とも同じモデル）
+- SDK: `google-genai`（`genai.Client`）。旧 `google.generativeai` は使わない
+- Generation params: `temperature`/`top_p`/`top_k` は 3.8 で廃止。`thinking_level` を枠ごとに設定（main=medium, filter=low）
 - Authentication: API Key only (no OAuth2)
 - Retry: 3 attempts with exponential backoff (base=1s, max=10s)
 - Fallback: None (no switch to another model on failure)

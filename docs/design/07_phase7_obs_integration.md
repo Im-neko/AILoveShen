@@ -480,7 +480,7 @@ import obsws_python as obs
 from loguru import logger
 
 from ailoveshen.application.ports.output.obs_connection import IOBSConnection
-from ailoveshen.core.exceptions import OBSConnectionError
+from ailoveshen.domain.exceptions import OBSConnectionError
 
 
 class OBSWebSocketAdapter(IOBSConnection):
@@ -699,7 +699,7 @@ class OBSService:
 ## 7. Composition Root (OBS部分)
 
 ```python
-# src/ailoveshen/main.py (OBS部分の抜粋)
+# src/ailoveshen/factories/obs.py
 
 from ailoveshen.application.use_cases.control_scene import ControlSceneUseCase
 from ailoveshen.application.use_cases.control_stream import ControlStreamUseCase

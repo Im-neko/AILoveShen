@@ -11,7 +11,7 @@ print("=" * 60)
 print("1. 設定管理（Configuration）")
 print("=" * 60)
 
-from ailoveshen.core.infrastructure.config import load_settings
+from ailoveshen.infrastructure.config import load_settings
 
 settings = load_settings()
 print(f"  App Name: {settings.app_name}")
@@ -28,7 +28,7 @@ print("=" * 60)
 print("2. ロギング（Logging）")
 print("=" * 60)
 
-from ailoveshen.core.infrastructure.logging import get_logger, setup_logging
+from ailoveshen.infrastructure.logging import get_logger, setup_logging
 
 # デバッグモードでセットアップ（diagnoseは無効）
 setup_logging(level="DEBUG", debug=False)
@@ -46,7 +46,7 @@ print("=" * 60)
 print("3. Value Objects")
 print("=" * 60)
 
-from ailoveshen.core.domain.value_objects import (
+from ailoveshen.domain.value_objects import (
     EmotionState,
     EmotionType,
     FilterResult,
@@ -72,7 +72,7 @@ print(f"  Distance from {pos1} to {pos2}: {pos1.distance_to(pos2)}")
 speech = SpeechRequest(
     text="こんにちは！配信を始めます！",
     priority=SpeechPriority.HIGH,
-    style="Happy",
+    emotion=EmotionState(EmotionType.HAPPY, 0.8),
     source="commentary",
 )
 print(f"  Speech: '{speech.text[:20]}...' (priority: {speech.priority.name})")
@@ -89,8 +89,8 @@ print("=" * 60)
 print("4. Entity & AggregateRoot")
 print("=" * 60)
 
-from ailoveshen.core.domain.entities import AggregateRoot, Entity
-from ailoveshen.core.domain.value_objects import DomainEvent
+from ailoveshen.domain.entities import AggregateRoot, Entity
+from ailoveshen.domain.events import DomainEvent
 
 
 @dataclass
@@ -130,7 +130,7 @@ print("=" * 60)
 
 
 async def demo_event_bus():
-    from ailoveshen.core.infrastructure.events import AsyncEventBus
+    from ailoveshen.infrastructure.events import AsyncEventBus
 
     bus = AsyncEventBus()
     received_events: list[MessageReceived] = []
