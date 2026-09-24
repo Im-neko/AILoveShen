@@ -297,7 +297,7 @@ class TestSettingsDataclasses:
         gemini = GeminiSettings()
         assert gemini.main_model == "gemini-3.8-flash"
         assert gemini.filter_model == "gemini-3.8-flash"
-        assert gemini.main_thinking_level == "medium"
+        assert gemini.main_thinking_level == "low"
         assert gemini.filter_thinking_level == "low"
         assert gemini.max_output_tokens == 8192
         assert gemini.retry.max_attempts == 3

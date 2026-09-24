@@ -15,7 +15,7 @@ Gemini 3.8 Flash を使い、配信者としての発話（ゲーム実況・コ
 | モデル | `gemini-3.8-flash`（main / filter とも同じモデル） |
 | SDK | `google-genai`（`genai.Client`）。旧 `google.generativeai` は使わない |
 | 認証 | API キーのみ（`GEMINI_API_KEY`） |
-| 生成パラメータ | `temperature` / `top_p` / `top_k` は 3.8 で廃止。`thinking_level` を枠ごとに設定（main=medium, filter=low） |
+| 生成パラメータ | `temperature` / `top_p` / `top_k` は 3.8 で廃止。`thinking_level` を枠ごとに設定（main=low, filter=low） |
 | リトライ | 初回を含め最大3回、指数バックオフ（base=1s, max=10s）。対象は 408/429/5xx のみ（400 などは即失敗） |
 | フォールバック | なし（別モデルへの切り替えはしない） |
 | 失敗時の応答 | 空文字列 |
@@ -167,7 +167,7 @@ client = genai.Client(
 )
 config = types.GenerateContentConfig(
     max_output_tokens=max_output_tokens,
-    thinking_config=types.ThinkingConfig(thinking_level="medium"),
+    thinking_config=types.ThinkingConfig(thinking_level="low"),
     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
 )
 response = await client.aio.models.generate_content(
@@ -230,7 +230,7 @@ gemini:
   api_key: "${GEMINI_API_KEY:-}"
   main_model: "gemini-3.8-flash"
   filter_model: "gemini-3.8-flash"
-  main_thinking_level: "medium"   # low / medium / high
+  main_thinking_level: "low"      # low / medium / high
   filter_thinking_level: "low"
   max_output_tokens: 8192         # 思考トークンを含む
   retry:
@@ -252,7 +252,14 @@ character:
   personality_traits: ["好奇心旺盛", "ポジティブ", "ちょっとおっちょこちょい", "視聴者思い"]
 ```
 
-`max_output_tokens: 8192` と `main_thinking_level: medium` は **仮の値で、まだ調整していない**。実 API で使用量ログ（thoughts トークン数、所要時間）を取ってから決める。特に medium の遅延がライブ実況に耐えるかは未確認。
+`main_thinking_level` は実測（2026-09-24、同一プロンプトで各4回）をもとに **low** に決めた。
+
+| thinking_level | 実況（中央値） | 返答（中央値） | 思考トークン |
+|---|---|---|---|
+| low | 1.90s | 1.64s | 0〜93 |
+| medium | 2.87s | 3.10s | 129〜405 |
+
+1〜2文の発話では品質に目立った差がなく、low のほうが約1.2秒速い。ライブ配信では返答の遅延がそのまま間の悪さになるので、速さを優先した。`max_output_tokens: 8192` は据え置く。実測の合計は最大でも約1,300トークンで、十分な余裕がある。途中で切れて空の応答になるほうが害が大きいので、上限は下げない。
 
 ## 9. テスト
 
