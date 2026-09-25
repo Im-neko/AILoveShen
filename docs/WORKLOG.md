@@ -1,13 +1,15 @@
 ## Current Status
 
-**Active Phase**: 設計書 21（A の最初の版: Gemini が道具を呼んで操作し、Jev が実行中に Gemini の質問に答える）を実装した（`minecraft.agent.control: tools`、既定は今までの `candidates`）。実機ではまだ動かしていない（クラウドの環境に API キーと Minecraft サーバーがない）。次はユーザーの環境で `--control tools` を動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
+**Active Phase**: 設計書 21（Gemini が道具で操作し、Jev が見張る。`--control tools`）と 23（OBS のスクリーンショットを Gemini に見せる）を実装した。どちらも実機では未確認（クラウドの環境に API キー・Minecraft・OBS がない）。次はユーザーの環境で `examples/integration_test_minecraft.py --control tools --board-port 8765` を OBS つきで動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 491 passed, 1 skipped。ブリッジ `npm test` 117 件
-**実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに今回のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
+**Test Status**: `pytest tests/` 492 passed, 1 skipped。ブリッジ `npm test` 117 件
+**実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
 
 ### 配信の画面を Gemini に見せる（OBS、設計書 23） (2026-09-25)
+
+**Commits**: `45d9bc1`（本体）、次のコミット（obsws-python のログを止める: OBS がないと 60 秒ごとにトレースバックが出ていた。達成と考え直しが重なったら達成を先に）
 
 - ユーザーの問い「行き詰まったときや定期的に、画面のスクショを Gemini がチェックして軌道修正するようになっているか」→ なっていなかった。決定「OBS で良い。OBS 前提で進めて」
 - `ObsScreenCapture`（`infrastructure/adapters/obs/`）: `GetSourceScreenshot` で `obs.game_source`（既定 `Minecraft`、`.env` の `OBS_GAME_SOURCE`）だけを JPEG・幅 768 で撮る。シーン全体は撮らない（目標ボードが映る）。3 秒の上限、失敗したら 60 秒撮らない、ソースがなければ撮るのをやめる、例外は出さずに None（画像なしで続く）。`obsws-python` のロガーを WARNING にしてパスワードを出さない（テストあり）。`image/jpg` → `image/jpeg`
@@ -20,11 +22,15 @@
 
 ### .env で環境変数、requirements.txt (2026-09-25)
 
+**Commits**: `28bc0f5`（requirements.txt）、`5e0e204`（.env）
+
 - `requirements.txt`（pyproject の依存と全 extras と `-e .`。新しい venv で入れてテストが通ることを確認）
 - `.env.example`（コミット。`.gitignore` に `!.env.example`）。リポジトリ直下の `.env` を Python（`load_settings` の `load_env_file`。`config/*.yaml` の `${VAR}` に入る）とブリッジ（`minecraft-bridge/src/env.mjs`、`process.loadEnvFile`。index.mjs が最初に import する）が読む。シェルで export した値が優先。Docker Compose は `--env-file .env`
 - `minecraft.bridge.host/port` を `${BRIDGE_HOST}` / `${BRIDGE_PORT}` に（ブリッジと同じ変数）
 
 ### デバッグ: Gemini の思考を見るエンドポイント (2026-09-25)
+
+**Commit**: `3d87066`
 
 - ユーザーの依頼「今の Gemini の思考内容が見えるエンドポイントが欲しい。JSON で返すだけでよい」「OBS で JSON を表示できるか」→ OBS は JSON を直接は読めないので、読んで表示するページをブラウザソースで開く形にした
 - `GeminiTextGenerator` が呼び出しごとに記録する（用途、thinking_level、所要時間、思考の要約、出力、道具の呼び出し、finish_reason、トークン、プロンプト、エラー）。思考の要約は `gemini.include_thoughts`（既定 true）で `ThinkingConfig(include_thoughts=True)` を送って受け取る
@@ -648,7 +654,8 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 
-0. **`--control tools` の実機確認**（ユーザーの環境）: ブリッジを再起動し、`python examples/integration_test_minecraft.py --control tools --max-steps 100`。見ること: Gemini の道具の選び方（格子を読めるか、提案との使い分け）、書かれる見張りの質問と Jev の答え（誤検知）、1 ステップの遅延、呼び出し回数とトークン（`logs/watch/*.jsonl`）、`goto` / `place` の実機の動き。town4c の縦穴や town4d の前の家のベッドを試験の場面にする。その結果で、コードの「進んでいるか」を規則と比べる（19 §6）、次の版（`blocks` / `build`、道具の好みの引数）、B（設計書 22）へ
+0. **OBS の準備**（23 §6）: WebSocket サーバーを有効にしてパスワードを `.env` の `OBS_PASSWORD` に、視点のクライアントを映すソースを `Minecraft`（または `OBS_GAME_SOURCE`）に。`pip install -r requirements.txt` をやり直す（`obsws-python`）。実機で見ること: 画像が撮れるか（黒くないか、縦横比）、定期の見直しで Gemini が画面をどう読むか、1 枚あたりのトークンと時間（`/debug/gemini`）、`look_screen` をいつ使うか
+1. **`--control tools` の実機確認**（ユーザーの環境）: ブリッジを再起動し、`python examples/integration_test_minecraft.py --control tools --max-steps 100`。見ること: Gemini の道具の選び方（格子を読めるか、提案との使い分け）、書かれる見張りの質問と Jev の答え（誤検知）、1 ステップの遅延、呼び出し回数とトークン（`logs/watch/*.jsonl`）、`goto` / `place` の実機の動き。town4c の縦穴や town4d の前の家のベッドを試験の場面にする。その結果で、コードの「進んでいるか」を規則と比べる（19 §6）、次の版（`blocks` / `build`、道具の好みの引数）、B（設計書 22）へ
 1. **置いた物の扱い**（ユーザーと検討中）: 「使う（use）」と「持っていく（take）」は別の概念として用意する（ユーザーの指摘）。
    - 今の詰まり（新しい家にベッドを置く）を解くのは take: 前の家の家具を掘って持ち物に戻す。ソルバーの入手元（チェスト、かまどに並ぶ）として。対象の案はベッド、作業台、空のかまど、空のチェストで、前の家だけ。ユーザーの返事待ち
    - use（`station` をベッドとチェストにも広げる。例: 前の家のベッドで寝る）は、必要な場面が出てから

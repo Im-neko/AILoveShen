@@ -88,6 +88,8 @@ class TestPeriodicReview:
         reason = session.goal_end_reason(_obs())
         assert reason == "goal have(planks, 4) is reconsidered: on screen: 穴から出られていない"
         assert session.needs_new_goal(_obs())
+        # 達成していれば、考え直しではなく達成として終わる
+        assert session.goal_end_reason(_obs(met=True, remaining=0)) == "goal have(planks, 4) is met"
 
     @pytest.mark.asyncio
     async def test_no_screen_or_a_failed_review_changes_nothing(self):

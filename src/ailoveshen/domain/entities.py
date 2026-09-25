@@ -641,10 +641,10 @@ class PlaySession(Entity):
         if self.goal is None or obs.goal is None:
             return "no goal yet"
         name = self.goal.spec.describe()
-        if self.rethink_reason:
-            return f"goal {name} is reconsidered: {self.rethink_reason}"
         if obs.goal.met:
             return f"goal {name} is met"
+        if self.rethink_reason:
+            return f"goal {name} is reconsidered: {self.rethink_reason}"
         mid = self.goal.mid_goal_id
         if mid is not None and self.plan.get(mid) is None:
             return f"the mid goal {mid} that goal {name} served has ended"

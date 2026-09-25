@@ -124,3 +124,22 @@ def test_a_source_name_is_required():
 async def test_not_a_data_uri_is_a_failure_not_an_exception():
     capture, _ = _capture([FakeClient(image="not a data uri")])
     assert await capture.capture() is None
+
+
+def test_the_real_library_is_quiet_and_never_shows_the_password():
+    """本物の obsws-python で閉じたポートにつなぐ: パスワードもトレースバックも出さない。"""
+    import subprocess
+    import sys
+
+    pytest.importorskip("obsws_python")
+    code = (
+        "from ailoveshen.infrastructure.adapters.obs.obs_screen_capture import "
+        "_default_client_factory\n"
+        "try:\n"
+        "    _default_client_factory('127.0.0.1', 1, 'pw-test-secret', 1.0)\n"
+        "except Exception as e:\n"
+        "    print(type(e).__name__)\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
+    assert "pw-test-secret" not in r.stdout + r.stderr
+    assert "Traceback" not in r.stderr

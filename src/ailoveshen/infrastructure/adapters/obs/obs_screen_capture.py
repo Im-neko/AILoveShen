@@ -18,12 +18,24 @@ from ailoveshen.domain.value_objects import Screenshot
 RESOURCE_NOT_FOUND = 600
 
 
+def _silence_library_logs() -> None:
+    """
+    obsws-python のログを出させない: 接続のたびにパスワードを INFO で出し、つながらないたびに
+    トレースバックを ERROR で出す（OBS を開いていないと 60 秒ごとに流れる）。失敗はこの
+    アダプターが 1 行で出す。
+    """
+    library = logging.getLogger("obsws_python")
+    library.setLevel(logging.CRITICAL + 1)
+    library.propagate = False
+    if not library.handlers:
+        library.addHandler(logging.NullHandler())
+
+
 def _default_client_factory(host: str, port: int, password: str, timeout: float) -> Any:
     # 重い依存（websocket-client）は使うときに読む
     import obsws_python
 
-    # obsws-python は接続のたびにパスワードを INFO で出す。ロガーを WARNING にして出させない
-    logging.getLogger("obsws_python").setLevel(logging.WARNING)
+    _silence_library_logs()
     # host / port / password を必ず渡す（渡さないと、ライブラリは手元の toml を読みにいく）
     return obsws_python.ReqClient(host=host, port=port, password=password, timeout=timeout)
 
