@@ -78,6 +78,7 @@ Style-Bert-VITS2/mos_results/
 # Secrets
 .env
 .env.*
+!.env.example
 *.key
 credentials.json
 

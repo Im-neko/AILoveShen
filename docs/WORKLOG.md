@@ -2,10 +2,16 @@
 
 **Active Phase**: 設計書 21（A の最初の版: Gemini が道具を呼んで操作し、Jev が実行中に Gemini の質問に答える）を実装した（`minecraft.agent.control: tools`、既定は今までの `candidates`）。実機ではまだ動かしていない（クラウドの環境に API キーと Minecraft サーバーがない）。次はユーザーの環境で `--control tools` を動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 473 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Test Status**: `pytest tests/` 475 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに今回のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### .env で環境変数、requirements.txt (2026-09-25)
+
+- `requirements.txt`（pyproject の依存と全 extras と `-e .`。新しい venv で入れてテストが通ることを確認）
+- `.env.example`（コミット。`.gitignore` に `!.env.example`）。リポジトリ直下の `.env` を Python（`load_settings` の `load_env_file`。`config/*.yaml` の `${VAR}` に入る）とブリッジ（`minecraft-bridge/src/env.mjs`、`process.loadEnvFile`。index.mjs が最初に import する）が読む。シェルで export した値が優先。Docker Compose は `--env-file .env`
+- `minecraft.bridge.host/port` を `${BRIDGE_HOST}` / `${BRIDGE_PORT}` に（ブリッジと同じ変数）
 
 ### デバッグ: Gemini の思考を見るエンドポイント (2026-09-25)
 

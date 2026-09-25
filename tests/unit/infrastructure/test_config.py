@@ -418,3 +418,43 @@ class TestToolControlSettings:
         assert settings.minecraft.watch.threshold == 0.8
         assert settings.minecraft.watch.consecutive == 2
         assert settings.minecraft.watch.record_dir == ""
+
+
+class TestEnvFile:
+    """.env ファイル（リポジトリ直下）から環境変数を読む。"""
+
+    def test_env_file_fills_the_yaml_but_the_shell_wins(self, tmp_path, monkeypatch):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "default.yaml").write_text(
+            'gemini:\n  api_key: "${GEMINI_API_KEY:-}"\n'
+            'jev:\n  api_key: "${TYPESAFE_API_KEY:-}"\n'
+            'minecraft:\n  bridge:\n    port: "${BRIDGE_PORT:-3000}"\n'
+        )
+        (tmp_path / ".env").write_text(
+            "# コメント\n"
+            "GEMINI_API_KEY=from-file\n"
+            "export TYPESAFE_API_KEY='quoted # not a comment'\n"
+            "BRIDGE_PORT=3100  # 行末のコメント\n"
+            "not a line\n"
+        )
+        # .env で入れた変数を後のテストに残さない
+        monkeypatch.setattr(os, "environ", dict(os.environ))
+        for name in ("GEMINI_API_KEY", "TYPESAFE_API_KEY", "BRIDGE_PORT"):
+            os.environ.pop(name, None)
+        os.environ["GEMINI_API_KEY"] = "from-shell"
+
+        settings = load_settings(config_dir=config_dir)
+
+        assert settings.gemini.api_key == "from-shell"
+        assert settings.jev.api_key == "quoted # not a comment"
+        assert settings.minecraft.bridge_port == 3100
+
+    def test_no_env_file_is_fine(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(os, "environ", dict(os.environ))
+        os.environ.pop("BRIDGE_PORT", None)
+        (tmp_path / "default.yaml").write_text(
+            'minecraft:\n  bridge:\n    port: "${BRIDGE_PORT:-3000}"\n'
+        )
+        settings = load_settings(config_dir=tmp_path, env_file=tmp_path / "missing.env")
+        assert settings.minecraft.bridge_port == 3000

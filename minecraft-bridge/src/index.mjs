@@ -20,7 +20,9 @@
 //
 // 設計: docs/design/11_primitive_actions.md
 // 環境変数: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
+//   リポジトリ直下の .env にも書ける（env.mjs。シェルの環境変数が優先）
 
+import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
 import http from 'node:http'
 import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'

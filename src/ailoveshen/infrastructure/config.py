@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from loguru import logger
 
 # =============================================================================
 # 例外
@@ -271,6 +272,41 @@ class Settings:
 # =============================================================================
 
 
+def load_env_file(path: Path) -> list[str]:
+    """
+    .env ファイル（KEY=VALUE の行）を読み、まだ設定されていない環境変数だけを設定する。
+    実際の環境変数（シェルで export したもの）が優先する。ファイルがなければ何もしない。
+
+    書き方: 空行と # で始まる行は無視する。`export KEY=VALUE` も読む。値を ' か " で囲めば、
+    そのまま（囲みを外して）使う。囲まない値の後ろの ` #` からはコメント。
+
+    Returns:
+        設定した変数の名前（値はログに出さない）
+    """
+    if not path.is_file():
+        return []
+    loaded = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        else:
+            value = value.split(" #", 1)[0].rstrip()
+        if key not in os.environ:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
 def _expand_env_vars(value: Any) -> Any:
     """
     文字列の値の中の環境変数を再帰的に展開する。
@@ -396,7 +432,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         mission_defaults = defaults.mission
         settings.minecraft = MinecraftSettings(
             bridge_host=bridge_data.get("host", defaults.bridge_host),
-            bridge_port=bridge_data.get("port", defaults.bridge_port),
+            bridge_port=int(bridge_data.get("port", defaults.bridge_port)),
             request_timeout_seconds=bridge_data.get(
                 "timeout_seconds", defaults.request_timeout_seconds
             ),
@@ -511,6 +547,7 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
 def load_settings(
     config_dir: Path | str | None = None,
     env: str | None = None,
+    env_file: Path | str | None = None,
 ) -> Settings:
     """
     YAML ファイルから、階層的に上書きして設定を読み込む。
@@ -518,11 +555,13 @@ def load_settings(
     読み込む順（後のものが前のものを上書きする）:
     1. default.yaml
     2. {env}.yaml（例: development.yaml、production.yaml）
-    3. 環境変数
+    3. 環境変数（YAML の ${VAR}）。.env ファイルに書いたものも環境変数として読む（実際の
+       環境変数が優先する）
 
     Args:
         config_dir: 設定ファイルのあるディレクトリ。既定は 'config/'。
         env: 環境名。既定は APP_ENV、なければ 'development'。
+        env_file: 読む .env ファイル。既定は config_dir の親（リポジトリの直下）の .env。
 
     Returns:
         すべての設定を読み込んだ Settings。
@@ -531,6 +570,12 @@ def load_settings(
         config_dir = Path("config")
     elif isinstance(config_dir, str):
         config_dir = Path(config_dir)
+
+    # .env を先に読む（APP_ENV も .env に書ける）
+    env_path_file = Path(env_file) if env_file is not None else config_dir.parent / ".env"
+    loaded = load_env_file(env_path_file)
+    if loaded:
+        logger.debug(f"{env_path_file} から環境変数を読んだ: {', '.join(loaded)}")
 
     if env is None:
         env = os.environ.get("APP_ENV", "development")

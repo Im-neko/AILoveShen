@@ -32,7 +32,9 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 pip install -r requirements.txt  # AILoveShen core + all extras + the package itself (-e .); same as pip install -e ".[all]"
 # Keep requirements.txt and pyproject.toml in sync. On Linux, sounddevice needs PortAudio (apt install libportaudio2).
 # The Style-Bert-VITS2 TTS server runs in Docker (docker/Dockerfile.tts-server), not from this requirements.txt.
-export GEMINI_API_KEY=...  # Required for the LLM (Phase 3)
+cp .env.example .env  # then fill in GEMINI_API_KEY, TYPESAFE_API_KEY, ... (.env is git-ignored)
+# .env at the repo root is read by load_settings (Python) and by the bridge (minecraft-bridge/src/env.mjs);
+# variables exported in the shell win. Docker: docker compose --env-file .env -f docker/<file>.yml up -d
 ```
 
 ### Web UI & Servers
@@ -191,7 +193,7 @@ model_assets/{model_name}/
 ### AILoveShen Core
 - `config/default.yaml`: Default settings for all environments
 - `config/development.yaml`: Development overrides
-- Environment variables: `${VAR}` or `${VAR:-default}` syntax supported
+- Environment variables: `${VAR}` or `${VAR:-default}` syntax supported; `.env` at the repo root is loaded first (`.env.example` lists them)
 - `APP_ENV`: Environment name (defaults to "development")
 
 ### Style-Bert-VITS2

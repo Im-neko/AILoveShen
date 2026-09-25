@@ -249,8 +249,9 @@ jev:
 # Server connection and bot name are the bridge's env vars (MC_HOST, MC_PORT, BOT_NAME).
 minecraft:
   bridge:
-    host: "localhost"
-    port: 3000
+    # Same variables as the bridge reads (.env at the repository root)
+    host: "${BRIDGE_HOST:-localhost}"
+    port: "${BRIDGE_PORT:-3000}"
     # Must exceed the bridge's longest action timeout (45s, TIMEOUTS_MS in primitives.mjs)
     timeout_seconds: 60
 
