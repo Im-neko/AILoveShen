@@ -7,6 +7,13 @@
 
 ## Completed Work
 
+### Minecraft の例で読み上げる（--speak） (2026-09-25)
+
+- ユーザーの問い「Style-Bert で作った音声モデルで TTS するには？」→ TTS の仕組み（Docker の Style-Bert-VITS2 サーバー、`create_tts_service`）はあったが、`integration_test_minecraft.py` は `[say]` を表示するだけだった
+- `--speak`: 実況（Narrator の say）を NORMAL、視聴者への返事を HIGH で `TTSService` に。感情は `LLMService.get_current_emotion`。TTS の `SpeechStartedEvent` でアバターの口も音声に合う（`lip_sync: auto`）
+- `config.load_config_dict`（default.yaml + {env}.yaml + ${VAR}。辞書で受け取る TTS のファクトリー用。`load_settings` もこれを使う）。`tts.voice.model_name` を `${TTS_MODEL_NAME:-shen}` にし、`.env.example` に足した
+- 未確認: 実際の読み上げ（この環境に sounddevice・TTS サーバー・モデルがない）
+
 ### Ctrl-C で止まらない (2026-09-25)
 
 - ユーザー「サーバー止めたくなっても Ctrl-C で止まらない」→ `--board-port` のとき、uvicorn の `Server.serve` が SIGINT を横取りし、開いている接続（OBS のブラウザソースの SSE は閉じない）が閉じるまで待っていた。プレイにも Ctrl-C が届かなかった

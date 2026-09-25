@@ -458,3 +458,18 @@ class TestEnvFile:
         )
         settings = load_settings(config_dir=tmp_path, env_file=tmp_path / "missing.env")
         assert settings.minecraft.bridge_port == 3000
+
+
+def test_config_dict_merges_the_env_file_and_expands_variables(tmp_path, monkeypatch):
+    # TTS のファクトリーは辞書で受け取る（--speak）
+    from ailoveshen.infrastructure.config import load_config_dict
+
+    monkeypatch.setattr(os, "environ", {"TTS_MODEL_NAME": "yui"})
+    (tmp_path / "default.yaml").write_text(
+        'tts:\n  voice:\n    model_name: "${TTS_MODEL_NAME:-shen}"\n  server:\n    port: 5001\n'
+    )
+    (tmp_path / "production.yaml").write_text("tts:\n  server:\n    port: 5002\n")
+    tts = load_config_dict(tmp_path, env="production")["tts"]
+    assert tts == {"voice": {"model_name": "yui"}, "server": {"port": 5002}}
+    monkeypatch.setattr(os, "environ", {})
+    assert load_config_dict(tmp_path)["tts"]["voice"]["model_name"] == "shen"

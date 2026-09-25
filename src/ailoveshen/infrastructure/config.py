@@ -641,22 +641,19 @@ def load_settings(
     if loaded:
         logger.debug(f"{env_path_file} から環境変数を読んだ: {', '.join(loaded)}")
 
+    config = load_config_dict(config_dir, env)
+    return _dict_to_settings(config)
+
+
+def load_config_dict(config_dir: Path, env: str | None = None) -> dict[str, Any]:
+    """
+    default.yaml に {env}.yaml を重ね、${VAR} を展開した辞書（.env は読まない。先に
+    load_settings か load_env_file で読む）。辞書で設定を受け取るファクトリー（TTS）に渡す。
+    """
     if env is None:
         env = os.environ.get("APP_ENV", "development")
-
-    # 既定の設定を読み込む
-    config: dict[str, Any] = {}
-    default_path = config_dir / "default.yaml"
-    if default_path.exists():
-        config = load_yaml_file(default_path)
-
-    # 環境ごとの設定を読み込む
+    config = load_yaml_file(config_dir / "default.yaml")
     env_path = config_dir / f"{env}.yaml"
     if env_path.exists():
-        env_config = load_yaml_file(env_path)
-        config = _deep_merge(config, env_config)
-
-    # 環境変数を展開する
-    config = _expand_env_vars(config)
-
-    return _dict_to_settings(config)
+        config = _deep_merge(config, load_yaml_file(env_path))
+    return _expand_env_vars(config)

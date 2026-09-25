@@ -120,7 +120,7 @@ tts:
 
   # Voice settings
   voice:
-    model_name: "shen"  # Directory name under Style-Bert-VITS2/model_assets
+    model_name: "${TTS_MODEL_NAME:-shen}"  # Directory name under Style-Bert-VITS2/model_assets
     speaker_id: 0
     language: "JP"
     default_style: "Neutral"

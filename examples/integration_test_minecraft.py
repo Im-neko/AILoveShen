@@ -18,6 +18,9 @@ http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。デバッグ
 呼び出し（思考の要約、出力、道具の呼び出し）も出す: /api/debug/gemini（JSON）、
 /debug/gemini（表示）。
 
+--speak を付けると、実況と返事を Style-Bert-VITS2 で読み上げる（設定の tts。サーバーは
+docker/docker-compose.yml、モデルは tts.voice.model_name、.env の TTS_MODEL_NAME）。
+
 前提:
 1. Minecraft サーバーが動いている（docker/docker-compose.minecraft.yml）
 2. ブリッジが動いている: cd minecraft-bridge && npm install && npm start
@@ -27,7 +30,7 @@ http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。デバッグ
 
 使い方:
     python examples/integration_test_minecraft.py [--max-steps 300] [--comments comments.json]
-        [--board-port 8765] [--control candidates|tools]
+        [--board-port 8765] [--control candidates|tools] [--speak]
 
 comments.json: [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}, ...]
 （after_seconds はプレイ開始からの秒数）
@@ -38,6 +41,7 @@ import asyncio
 import json
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 # プロジェクトの src をパスに足す
@@ -52,17 +56,23 @@ from ailoveshen.domain.events import (
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
 )
+from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import create_llm_service
 from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
-from ailoveshen.infrastructure.config import load_settings
+from ailoveshen.infrastructure.config import load_config_dict, load_settings
 from ailoveshen.infrastructure.events import AsyncEventBus
 from ailoveshen.presentation.services import GameService, LLMService, Narrator
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 
-async def feed_comments(comments: list[dict], game: GameService, llm: LLMService) -> None:
+async def feed_comments(
+    comments: list[dict],
+    game: GameService,
+    llm: LLMService,
+    speak: Callable[[str], Awaitable[None]] | None = None,
+) -> None:
     """台本のコメントを決まった時刻に送り、返事を表示する。"""
     started = time.monotonic()
     for c in sorted(comments, key=lambda c: c["after_seconds"]):
@@ -73,10 +83,16 @@ async def feed_comments(comments: list[dict], game: GameService, llm: LLMService
         t = time.monotonic()
         reply = await llm.generate_response(c["user"], c["message"], session=session)
         print(f"[reply] ({time.monotonic() - t:.1f}s) {reply}", flush=True)
+        if speak and reply:
+            await speak(reply)
 
 
 async def run(
-    max_steps: int, comments: list[dict], board_port: int | None, control: str | None = None
+    max_steps: int,
+    comments: list[dict],
+    board_port: int | None,
+    control: str | None = None,
+    speak: bool = False,
 ) -> bool:
     """プレイして、家が完成したかを返す。"""
     settings = load_settings(config_dir=CONFIG_DIR)
@@ -106,8 +122,28 @@ async def run(
     async def on_completed(event: HouseCompletedEvent) -> None:
         print(f"[done] {event.name} が完成", flush=True)
 
+    tts = None
+    if speak:
+        from ailoveshen.factories.tts import create_and_connect_tts_service
+
+        # TTS のファクトリーは設定の tts セクションを辞書で受け取る
+        tts_config = load_config_dict(CONFIG_DIR).get("tts", {})
+        tts = await create_and_connect_tts_service(
+            config=tts_config,
+            event_publisher=event_bus,
+            get_current_emotion=lambda: llm.get_current_emotion(),
+        )
+        print(f"[tts] モデル {tts_config.get('voice', {}).get('model_name')}", flush=True)
+
     async def say(text: str) -> None:
         print(f"[say] {text}", flush=True)
+        if tts:
+            await tts.speak(text, source="commentary")
+
+    async def say_reply(text: str) -> None:
+        if tts:
+            # 視聴者への返事は実況より先に読む
+            await tts.speak(text, priority=SpeechPriority.HIGH, source="chat")
 
     event_bus.subscribe(HouseDesignedEvent, on_designed)
     event_bus.subscribe(GoalSetEvent, on_goal)
@@ -161,7 +197,7 @@ async def run(
         board = asyncio.create_task(goal_board.serve(port=board_port))
         print(f"[debug] Gemini の思考: http://127.0.0.1:{board_port}/debug/gemini", flush=True)
         print(f"[avatar] アバター: http://127.0.0.1:{board_port}/avatar", flush=True)
-    chat = asyncio.create_task(feed_comments(comments, game, llm)) if comments else None
+    chat = asyncio.create_task(feed_comments(comments, game, llm, say_reply)) if comments else None
     try:
         outcome = await game.play(max_steps=max_steps)
         await narrator.drain()
@@ -173,6 +209,8 @@ async def run(
         await llm.close()
         if avatar is not None:
             await avatar.close()
+        if tts is not None:
+            await tts.stop()
 
     b = outcome.session.blueprint
     print("=" * 60)
@@ -194,10 +232,13 @@ def main() -> None:
         choices=["candidates", "tools"],
         help="行動の決め方（既定は設定の minecraft.agent.control）",
     )
+    parser.add_argument(
+        "--speak", action="store_true", help="実況と返事を TTS（Style-Bert-VITS2）で読み上げる"
+    )
     args = parser.parse_args()
     comments = json.loads(args.comments.read_text()) if args.comments else []
     try:
-        ok = asyncio.run(run(args.max_steps, comments, args.board_port, args.control))
+        ok = asyncio.run(run(args.max_steps, comments, args.board_port, args.control, args.speak))
     except KeyboardInterrupt:
         print("\n[stop] Ctrl-C で止めた", flush=True)
         sys.exit(130)
