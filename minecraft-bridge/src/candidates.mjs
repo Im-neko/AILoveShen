@@ -123,6 +123,8 @@ function fromLeaf (bot, state, world, leaf) {
     }
     case 'place':
       return [{ id: `place ${leaf.item} nearby`, verb: 'place_station', target: leaf.item, item: leaf.item }]
+    case 'light':
+      return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {
       const furnace = findFurnace(bot)
       if (!furnace) return []

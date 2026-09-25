@@ -17,21 +17,24 @@ import { solve } from './solver.mjs'
 import { dayPhase, inventoryCounts, EXPLODES, isDark } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
 import { chests, storedCounts } from './memory.mjs'
+import { darkGround } from './lighting.mjs'
 import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
 const MIN_EXPLORE = 8
+const MIN_LIT = 8
+const MAX_LIT = 32
 const MAX_EXPLORE = 256
 const EXPLORE_STEP = 20 // about how far one explore step gets
 const DAY_TICKS = 24000
 const MORNING = 0 // time of day the sun is up again (dawn ends at 24000 = 0)
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit']
 // Judged from the state of the world alone, so they can be the completion conditions of mid goals
 // (the others depend on the moment or on where the goal was set)
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit']
 
 // Validates a goal spec and returns the goal state to keep; throws with the reason
 // A goal that is valid but cannot be pursued until something exists (the home, the plan)
@@ -93,6 +96,12 @@ function validGoal (spec, bot, state, knowledge) {
       }
       const p = bot.entity.position
       return { spec: { predicate, distance }, start: { x: p.x, y: p.y, z: p.z } }
+    }
+    case 'lit': {
+      needHome()
+      const distance = Number(spec.distance)
+      if (!Number.isInteger(distance) || distance < MIN_LIT || distance > MAX_LIT) throw new Error(`distance (the radius) must be ${MIN_LIT}-${MAX_LIT}`)
+      return { spec: { predicate, distance } }
     }
     case 'cleared': {
       needHome()
@@ -213,6 +222,17 @@ export function evaluate (bot, state, knowledge, world) {
         if (held.length) out.leaves.push({ kind: 'deposit', items: held })
       }
       addSolved([{ spec: goal.spec.item, count: want }], gathering)
+      break
+    }
+    case 'lit': {
+      const dark = darkGround(bot, state, goal.spec.distance)
+      out.met = dark.length === 0
+      out.remaining = dark.length
+      out.lines.push(`dark ground within ${goal.spec.distance} of the home: ${dark.length ? `${dark.length} spots` : 'none'}`)
+      if (out.met) break
+      const torches = inventoryCounts(bot).torch ?? 0
+      if (torches) out.leaves.push({ kind: 'light', pos: dark[0] })
+      else addSolved([{ spec: 'torch', count: 4 }])
       break
     }
     case 'cleared': {

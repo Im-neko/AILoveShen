@@ -168,6 +168,9 @@ class TestGoalSpec:
         assert PLANKS.to_dict() == {"predicate": "have", "item": "planks", "count": 12}
         assert PLANKS.describe() == "have(planks, 12)"
         assert GoalSpec(GoalPredicate.AT_HOME).describe() == "at_home()"
+        lit = GoalSpec(GoalPredicate.LIT, distance=16)
+        assert lit.to_dict() == {"predicate": "lit", "distance": 16}
+        assert lit.describe() == "lit(16)"
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -177,6 +180,8 @@ class TestGoalSpec:
             {"predicate": GoalPredicate.HAVE, "item": "planks", "count": 0},
             {"predicate": GoalPredicate.PLACED, "item": "bed"},
             {"predicate": GoalPredicate.EXPLORED},
+            {"predicate": GoalPredicate.LIT},
+            {"predicate": GoalPredicate.STORED, "item": "food"},
         ],
     )
     def test_missing_arguments_raise(self, kwargs):

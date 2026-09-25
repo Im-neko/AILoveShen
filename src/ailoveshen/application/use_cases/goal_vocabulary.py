@@ -92,6 +92,12 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
         "predicate": {"type": "string", "enum": [p.value for p in predicates]},
         "item": {"type": "string", "description": ITEM_DESCRIPTION},
         "count": {"type": "integer", "minimum": 1, "maximum": MAX_GOAL_COUNT},
+        "distance": {
+            "type": "integer",
+            "minimum": MIN_EXPLORE_DISTANCE,
+            "maximum": MAX_EXPLORE_DISTANCE,
+            "description": "explored: blocks to go; lit: the radius around the home (8-32)",
+        },
     }
 
 
@@ -142,11 +148,6 @@ def goal_schema(predicates: list[GoalPredicate], mid_goal_ids: list[str]) -> dic
                 "items": change,
             },
             **_spec_properties(predicates),
-            "distance": {
-                "type": "integer",
-                "minimum": MIN_EXPLORE_DISTANCE,
-                "maximum": MAX_EXPLORE_DISTANCE,
-            },
             "serves": {
                 "type": "string",
                 "enum": [s.value for s in Serves],
@@ -208,7 +209,9 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED)
             else None,
             where="home" if predicate == GoalPredicate.PLACED else None,
-            distance=int(data["distance"]) if predicate == GoalPredicate.EXPLORED else None,
+            distance=int(data["distance"])
+            if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT)
+            else None,
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e
@@ -296,5 +299,6 @@ def predicates_now(obs: GameObservation) -> list[GoalPredicate]:
         if not obs.bed_in_home:
             out.append(GoalPredicate.PLACED)
         out.append(GoalPredicate.STORED)
+        out.append(GoalPredicate.LIT)
     out.append(GoalPredicate.EXPLORED)
     return out

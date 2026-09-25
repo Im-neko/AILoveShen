@@ -34,6 +34,10 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "（チェストがなければ作って家に置くところから）。使っても減らない備蓄になる。"
         "例: stored(food, 16)、stored(log, 32)"
     ),
+    GoalPredicate.LIT: (
+        "lit(distance): 家のまわり半径 distance ブロックの地面に、暗い所（敵が湧く所）がない状態にする"
+        "（松明を置いて湧き潰し。松明がなければ作るところから）。distance は 8〜32。例: lit(16)"
+    ),
     GoalPredicate.PLACED: (
         "placed(item=bed): 家の中にベッドを置く（ベッドがなければ作るところから）"
     ),

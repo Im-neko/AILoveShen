@@ -361,6 +361,7 @@ class GoalPredicate(str, Enum):
 
     - HAVE: hold `count` of an item or group (planks, log, door, bed, wool, food, ...)
     - STORED: `count` of an item or group in the chests (as remembered when last opened)
+    - LIT: no dark ground within `distance` blocks of the home (torches placed around it)
     - BUILT: every block of the house plan is in place
     - PLACED: an item placed somewhere (a bed in the home)
     - AT_HOME: inside the house with the door closed
@@ -377,6 +378,7 @@ class GoalPredicate(str, Enum):
     EXPLORED = "explored"
     CLEARED = "cleared"
     STORED = "stored"
+    LIT = "lit"
 
 
 @dataclass(frozen=True)
@@ -407,10 +409,12 @@ class GoalSpec:
                 raise ValueError(f"{name} needs a positive count, got {self.count}")
         if self.predicate == GoalPredicate.PLACED and not (self.item and self.where):
             raise ValueError("placed needs an item and where")
-        if self.predicate == GoalPredicate.EXPLORED and (
+        if self.predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT) and (
             self.distance is None or self.distance < 1
         ):
-            raise ValueError(f"explored needs a positive distance, got {self.distance}")
+            raise ValueError(
+                f"{self.predicate.value} needs a positive distance, got {self.distance}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """The spec as sent to the bridge (arguments that are set only)."""
@@ -453,7 +457,13 @@ class ConditionStatus:
 
 # Judged from the state of the world alone: they can be the completion conditions of mid goals
 CONDITION_PREDICATES = frozenset(
-    {GoalPredicate.BUILT, GoalPredicate.PLACED, GoalPredicate.HAVE, GoalPredicate.STORED}
+    {
+        GoalPredicate.BUILT,
+        GoalPredicate.PLACED,
+        GoalPredicate.HAVE,
+        GoalPredicate.STORED,
+        GoalPredicate.LIT,
+    }
 )
 _SURVIVAL_PREDICATES = frozenset(
     {GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME, GoalPredicate.CLEARED}

@@ -499,6 +499,18 @@ export const PRIMITIVES = {
     const left = furnace.inputItem()?.count ?? 0
     return `${took ? `took ${took}` : 'nothing done yet'}${left ? `; ${left} still smelting` : ''}`
   },
+  // On the ground at c.pos (an empty cell on a full block)
+  async place_torch_at (bot, state, c) {
+    const torch = bot.inventory.items().find((i) => i.name === 'torch')
+    if (!torch) throw new Error('no torch')
+    await goNear(bot, c.pos, 2)
+    const floor = bot.blockAt(c.pos.offset(0, -1, 0))
+    if (floor?.boundingBox !== 'block' || bot.blockAt(c.pos)?.boundingBox !== 'empty') throw new Error(`no ground for a torch at ${c.pos.x},${c.pos.z} any more`)
+    await bot.equip(torch, 'hand')
+    await bot.placeBlock(floor, { x: 0, y: 1, z: 0 })
+    if (bot.blockAt(c.pos)?.name !== 'torch') throw new Error('the torch was not placed')
+    return `placed a torch at ${c.pos.x},${c.pos.y},${c.pos.z}`
+  },
   async place_torch (bot) {
     const spot = torchSpot(bot)
     if (!spot) throw new Error('no floor to stand a torch on here')
