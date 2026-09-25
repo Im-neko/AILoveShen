@@ -11,6 +11,10 @@
 合図は 3 種類だけ: 話す（本文と長さ。口の動きはページが本文から作る）、話し終わる、表情や
 しぐさ（うれしい・驚いた・かなしい、うなずく・よろこぶ）。ゲームの判断には関わらない
 （読み取るだけ）。
+
+表情としぐさは、`AvatarDirector` があれば状況と発言から Jev が選ぶ（§8）。口はすぐ動かし、
+表情は Jev の答えが来たとき（0.2〜0.6 秒後）に変える。Jev が答えられなければ、ここの規則
+（本文の手がかり、出来事ごとの表）の答えを使う。
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
+from ailoveshen.application.use_cases.avatar_director import AvatarDirector, AvatarReaction
 from ailoveshen.domain.events import (
     ChatResponseGeneratedEvent,
     CommentaryGeneratedEvent,
@@ -104,11 +109,17 @@ class AvatarStage:
     - "auto": 最初は "text"。音声の再生のイベントが一度でも来たら "tts" に切り替える
     """
 
-    def __init__(self, model_path: str | Path | None = None, lip_sync: str = "auto") -> None:
+    def __init__(
+        self,
+        model_path: str | Path | None = None,
+        lip_sync: str = "auto",
+        director: AvatarDirector | None = None,
+    ) -> None:
         """
         Args:
             model_path: VRM のファイル。None か、ファイルがなければ /assets/avatar.vrm は 404
             lip_sync: 口の動きの元（"auto"、"text"、"tts"）
+            director: 表情としぐさを Jev に選ばせるもの。None なら規則だけ
 
         Raises:
             ValueError: lip_sync が不明なとき
@@ -119,6 +130,8 @@ class AvatarStage:
         self._lip_sync = lip_sync
         self._tts_seen = False
         self._listeners: set[asyncio.Queue[str]] = set()
+        self._director = director
+        self._pending: set[asyncio.Task] = set()  # Jev の答えを待っている判断
 
     def subscribe(self, bus: IEventSubscriber) -> None:
         """合図のもとになるイベントを購読する。"""
@@ -208,7 +221,49 @@ class AvatarStage:
 
     async def _on_event(self, event: DomainEvent) -> None:
         for cue in self.cues_for(event):
-            self._broadcast(json.dumps(cue, ensure_ascii=False))
+            if self._director is None or cue["type"] not in ("speak", "emote"):
+                self._send(cue)
+                continue
+            # Jev に選ばせる: 口はすぐ動かし、表情としぐさは答えが来たら
+            if cue["type"] == "speak":
+                rule = AvatarReaction(emotion=cue["emotion"], intensity=0.7)
+                seconds = max(2.5, cue["duration_ms"] / 1000)
+                self._send({**cue, "emotion": None})
+                self._decide("speaking", cue["text"], rule, seconds)
+            else:
+                rule = AvatarReaction(cue["emotion"], cue["intensity"], cue["gesture"])
+                self._decide(moment_of(event), "", rule, cue["seconds"])
+
+    async def close(self) -> None:
+        """待っている判断をやめ、判断モデルを閉じる。"""
+        for task in list(self._pending):
+            task.cancel()
+        if self._director is not None:
+            await self._director.close()
+
+    def _decide(self, moment: str, line: str, rule: AvatarReaction, seconds: float) -> None:
+        task = asyncio.ensure_future(self._react(moment, line, rule, seconds))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _react(self, moment: str, line: str, rule: AvatarReaction, seconds: float) -> None:
+        assert self._director is not None
+        reaction = await self._director.react(moment, line, rule)
+        if reaction.emotion is None and reaction.gesture is None:
+            return
+        self._send(
+            {
+                "type": "emote",
+                "emotion": reaction.emotion,
+                "intensity": reaction.intensity,
+                "seconds": seconds,
+                "gesture": reaction.gesture,
+                "source": reaction.source,
+            }
+        )
+
+    def _send(self, cue: dict[str, Any]) -> None:
+        self._broadcast(json.dumps(cue, ensure_ascii=False))
 
     def _broadcast(self, data: str) -> None:
         for queue in self._listeners:
@@ -231,3 +286,21 @@ class AvatarStage:
                 yield f"data: {data}\n\n"
         finally:
             self._listeners.discard(queue)
+
+
+def moment_of(event: DomainEvent) -> str:
+    """ゲームの出来事を、Jev に渡す「今起きていること」の 1 行にする。"""
+    if isinstance(event, MidGoalCompletedEvent):
+        return f"a mid goal was completed: {event.title}"
+    if isinstance(event, HouseCompletedEvent):
+        return f"the house was completed: {event.name}"
+    if isinstance(event, TownSiteChosenEvent):
+        return f"chose where to build the town: {event.name}"
+    if isinstance(event, MidGoalAddedEvent):
+        return f"accepted a request from viewer {event.requested_by}: {event.title}"
+    if isinstance(event, GoalEndedEvent):
+        state = "done" if event.met else "gave up"
+        return f"a small goal ended ({state}): {event.goal}, because {event.ended_because}"
+    if isinstance(event, GameActionExecutedEvent):
+        return f"took damage while doing {event.action_id}: {event.result}"
+    return type(event).__name__

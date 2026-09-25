@@ -90,3 +90,66 @@ def test_the_page_the_model_and_the_libraries_are_served(tmp_path):
     assert missing.get("/assets/avatar.vrm").status_code == 404
     with pytest.raises(ValueError, match="lip_sync"):
         AvatarStage(lip_sync="radio")
+
+
+class _Director:
+    """AvatarDirector の代わり（答えを決めておく）。"""
+
+    def __init__(self, reaction):
+        self.reaction = reaction
+        self.calls = []
+        self.closed = False
+
+    async def react(self, moment, line, fallback):
+        self.calls.append((moment, line, fallback))
+        return self.reaction
+
+    async def close(self):
+        self.closed = True
+
+
+def _sent(stage):
+    import json
+
+    sent = []
+    stage._broadcast = lambda data: sent.append(json.loads(data))
+    return sent
+
+
+async def test_with_a_director_the_mouth_moves_now_and_the_face_follows_jev():
+    import asyncio
+
+    from ailoveshen.application.use_cases.avatar_director import AvatarReaction
+
+    director = _Director(AvatarReaction("sad", 0.6, "tilt", "jev", 0.7))
+    stage = AvatarStage(lip_sync="text", director=director)
+    sent = _sent(stage)
+    await stage._on_event(CommentaryGeneratedEvent(text="やった、家ができたよ！"))
+    assert sent[0]["type"] == "speak" and sent[0]["emotion"] is None
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    moment, line, rule = director.calls[0]
+    assert (moment, line, rule.emotion) == ("speaking", "やった、家ができたよ！", "happy")
+    assert sent[1] == {
+        "type": "emote",
+        "emotion": "sad",
+        "intensity": 0.6,
+        "seconds": 2.5,
+        "gesture": "tilt",
+        "source": "jev",
+    }
+
+    await stage._on_event(MidGoalCompletedEvent(title="家"))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    moment, line, rule = director.calls[1]
+    assert moment == "a mid goal was completed: 家" and rule.gesture == "cheer"
+    await stage.close()
+    assert director.closed
+
+
+async def test_without_a_director_rules_are_sent_directly():
+    stage = AvatarStage(lip_sync="text")
+    sent = _sent(stage)
+    await stage._on_event(MidGoalCompletedEvent(title="家"))
+    assert (sent[0]["emotion"], sent[0]["gesture"]) == ("happy", "cheer")

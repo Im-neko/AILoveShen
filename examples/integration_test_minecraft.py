@@ -142,13 +142,12 @@ async def run(
     narrator = Narrator(llm, activity=activity, say=say)
     narrator.subscribe(event_bus)
     board = None
+    avatar = None
     if board_port is not None:
-        from ailoveshen.presentation.web.avatar import AvatarStage
-        from ailoveshen.presentation.web.goal_board import GoalBoard
+        from ailoveshen.factories.avatar import create_avatar_stage
 
-        avatar = AvatarStage(
-            model_path=Path(__file__).parent.parent / settings.avatar.model_path,
-            lip_sync=settings.avatar.lip_sync,
+        avatar = create_avatar_stage(
+            settings.avatar, settings.jev, activity, base_dir=Path(__file__).parent.parent
         )
         avatar.subscribe(event_bus)
         goal_board = GoalBoard(
@@ -171,6 +170,8 @@ async def run(
                 task.cancel()
         await game.close()
         await llm.close()
+        if avatar is not None:
+            await avatar.close()
 
     b = outcome.session.blueprint
     print("=" * 60)

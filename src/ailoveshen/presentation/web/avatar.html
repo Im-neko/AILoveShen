@@ -193,7 +193,7 @@ function quiet () { if (speech) speech.end = Math.min(speech.end, now() + 0.1) }
 
 // ---------------------------------------------------------------- しぐさ
 let gesture = null // { name, start, length }
-const LENGTH = { nod: 0.9, cheer: 1.6, flinch: 0.7 }
+const LENGTH = { nod: 0.9, cheer: 1.6, flinch: 0.7, tilt: 1.8, wave: 2.2 }
 function play (name) { if (LENGTH[name]) gesture = { name, start: now(), length: LENGTH[name] } }
 
 // ---------------------------------------------------------------- 毎フレーム
@@ -229,6 +229,14 @@ function update (dt) {
       const s = Math.sin(Math.PI * p)
       if (gesture.name === 'nod') add('head', 0.22 * Math.abs(Math.sin(2 * Math.PI * p)), 0, 0)
       if (gesture.name === 'flinch') { add('head', -0.2 * s, 0, 0); add('spine', -0.08 * s, 0, 0) }
+      if (gesture.name === 'tilt') { add('head', 0.04 * s, 0.05 * s, 0.3 * s); add('neck', 0, 0, 0.12 * s) }
+      if (gesture.name === 'wave') {
+        // 右手を上げて振る（ひじから先を左右に）
+        // 上腕をほぼ水平に上げ、ひじから先を立てて左右に振る
+        const swing = 0.35 * Math.sin(2 * Math.PI * 3 * p)
+        add('rightUpperArm', 0, 0.3 * s, -1.5 * s); add('rightLowerArm', 0, 0, (-1.6 + swing) * s)
+        add('head', 0, 0, -0.08 * s)
+      }
       if (gesture.name === 'cheer') {
         add('leftUpperArm', 0, 0, 2.0 * s); add('rightUpperArm', 0, 0, -2.0 * s)
         add('leftLowerArm', 0, 0, 0.6 * s); add('rightLowerArm', 0, 0, -0.6 * s)
@@ -281,7 +289,7 @@ function add (name, x, y, z) {
 
 // デバッグ用（ブラウザのコンソールから）: avatarCue({type: 'emote', emotion: 'happy'}) など
 window.avatarCue = (cue) => onCue(cue)
-window.avatarDebug = () => ({ loaded: !!vrm, camera: camera.position.toArray(), head: vrm ? bones.head.getWorldPosition(new THREE.Vector3()).toArray() : null })
+window.avatarDebug = () => ({ gesture: gesture && gesture.name, arm: vrm ? bones.rightUpperArm.rotation.z : null, loaded: !!vrm, camera: camera.position.toArray(), head: vrm ? bones.head.getWorldPosition(new THREE.Vector3()).toArray() : null })
 
 renderer.setAnimationLoop((time) => {
   timer.update(time)
@@ -294,7 +302,7 @@ renderer.setAnimationLoop((time) => {
 function onCue (cue) {
   if (cue.type === 'speak') speak(cue.text, cue.duration_ms, cue.emotion)
   else if (cue.type === 'quiet') quiet()
-  else if (cue.type === 'emote') { setEmotion(cue.emotion, cue.intensity, cue.seconds); if (cue.gesture) play(cue.gesture) }
+  else if (cue.type === 'emote') { if (cue.emotion) setEmotion(cue.emotion, cue.intensity, cue.seconds); if (cue.gesture) play(cue.gesture) }
   else if (cue.type === 'gesture') play(cue.gesture)
 }
 
@@ -308,12 +316,13 @@ function startCues () {
 function demo () {
   const script = [
     { type: 'speak', text: 'こんにちは！シェンだよ。今日も街づくり、がんばるね！', duration_ms: 3600, emotion: 'happy' },
-    { type: 'gesture', gesture: 'nod' },
+    { type: 'gesture', gesture: 'wave' },
     { type: 'speak', text: 'うわっ、ゾンビだ！家に戻らなきゃ。', duration_ms: 2600, emotion: 'surprised' },
     { type: 'emote', emotion: 'surprised', intensity: 0.9, seconds: 1.8, gesture: 'flinch' },
     { type: 'emote', emotion: 'happy', intensity: 1, seconds: 4, gesture: 'cheer' },
     { type: 'speak', text: 'やった、家がかんせいしたよ！みんなありがとう！', duration_ms: 3400, emotion: 'happy' },
-    { type: 'speak', text: 'うう、羊が見つからない…ざんねん。', duration_ms: 2800, emotion: 'sad' }
+    { type: 'speak', text: 'うう、羊が見つからない…ざんねん。', duration_ms: 2800, emotion: 'sad' },
+    { type: 'emote', emotion: null, intensity: 0.7, seconds: 2, gesture: 'tilt' }
   ]
   let i = 0
   const next = () => { onCue(script[i]); i = (i + 1) % script.length; setTimeout(next, 3800) }

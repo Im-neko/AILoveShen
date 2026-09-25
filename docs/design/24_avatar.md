@@ -18,7 +18,7 @@
 | 目線 | ほとんどカメラ（視聴者）、ときどき少しよそ見 |
 | 話す | 本文からかなを母音（あいうえお → aa ih ou ee oh）に並べ、長さに合わせて口を動かす。漢字は読みが分からないので字ごとに決まった 2 モーラ。話している間は頭も少し動く |
 | 表情 | happy / sad / angry / surprised / relaxed をなめらかに出して戻す（ドメインの感情 excited・scared は組み合わせ） |
-| しぐさ | うなずく（nod）、両手を上げて跳ねる（cheer）、びくっとする（flinch） |
+| しぐさ | うなずく（nod）、両手を上げて跳ねる（cheer）、びくっとする（flinch）、首をかしげる（tilt）、右手を振る（wave） |
 
 ## 3. 合図（AvatarStage）
 
@@ -52,7 +52,24 @@
 - 口を音声の大きさに合わせる（TTS の音声から 20ms ごとの大きさを出して合図に入れる。今は本文から）
 - Gemini に感情も出させる（実況・返答の生成で感情を選ばせ、`SpeechStartedEvent.emotion` に入れる）
 - ゲームの状況で姿勢を変える（夜は眠そう、戦うときは身構える）
+- 記録（`logs/avatar/*.jsonl`）を見て、Jev の質問の言い方と `min_confidence` を直す。日本語の発言を英語の状態に入れたまま聞いているので、読めていなければ Gemini に英語の要約を添えさせる
 
-## 7. モデルのライセンス
+## 8. Jev が表情・しぐさを選ぶ（`avatar.judge: jev`）
+
+ユーザーの問い「アバターの操作は状況や発言テキストから Jev が判断して操作するようにできる？」→ 3 の規則を下書き（フォールバック）にして、Jev に選ばせる。
+
+- `AvatarDirector`（`application/use_cases/avatar_director.py`）: 1 回の `system_one` で 3 つ聞く
+  - 表情（Choice）: neutral / happy / sad / angry / surprised / relaxed（neutral は変えない）
+  - 強さ（Score、4 段階）→ 表情の重み 0.3〜1.0
+  - しぐさ（Choice）: none / nod / cheer / flinch / tilt / wave
+- 状態: 今起きていること（`moment`: "speaking" か、ゲームの出来事の英語の 1 行）、発言（`line`）、小目標とその理由、やろうとしていること（`intent`）、時間帯・体力・空腹・家の中か・要るもの・近くの敵（`activity()` から）
+- 規則に戻るとき: Jev の失敗、`avatar.judge_timeout_seconds`（既定 1.5 秒）を超えた、表情の確信度が 0.35 未満、知らない答え。TypeSafe のキーがない、または `avatar.judge: rules` なら規則だけ
+- 時間: 話すときは口をすぐ動かし（`speak` の感情は空）、表情としぐさは Jev の答えが来たら `emote`（`source: jev|rule`）で足す。発話の長さ（最短 2.5 秒）だけ表情を保つ。ゲームの出来事も同じ流れ
+- 記録: `avatar.record_dir`（既定 `logs/avatar/`）に、状態・Jev の答えと確信度・規則の答え・使ったもの・時間を 1 行ずつ。規則と Jev を見比べて、どちらが合っているか・質問を直すかを決める
+- 表情はゲームの判断に関わらない（外れても見た目だけ）ので、Jev の答えをそのまま使ってよい。完了の判定や安全には使わない決まりは変わらない
+- 費用: 発話 1 回とゲームの出来事 1 回ごとに 1 回の呼び出し（見張りの 1 秒ごとよりずっと少ない）
+- 未確認（実機）: Jev の答えの速さ（1.5 秒に収まるか）、日本語の発言をどれだけ読めるか
+
+## 9. モデルのライセンス
 
 モデルのメタ情報は `avatarPermission: onlyAuthor`、`commercialUsage: personalNonProfit`。作者本人の配信には問題ないが、収益化する配信で使うなら VRoid Studio でライセンスの設定を見直す。

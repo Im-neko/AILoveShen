@@ -260,6 +260,11 @@ class AvatarSettings:
     model_path: str = "models/vrm/ailoveshen.vrm"
     # 口の動きの元: auto（TTS の再生のイベントが来たらそれに、来なければ生成した本文に）/ text / tts
     lip_sync: str = "auto"
+    # 表情としぐさを選ぶもの: jev（状況と発言から Jev が選び、だめなら規則）/ rules（規則だけ）
+    judge: str = "jev"
+    judge_timeout_seconds: float = 1.5
+    # Jev と規則の答えを並べた記録（見比べるため）。空なら残さない
+    record_dir: str = "logs/avatar"
 
 
 @dataclass
@@ -539,6 +544,11 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         settings.avatar = AvatarSettings(
             model_path=avatar_data.get("model_path", AvatarSettings.model_path),
             lip_sync=avatar_data.get("lip_sync", AvatarSettings.lip_sync),
+            judge=avatar_data.get("judge", AvatarSettings.judge),
+            judge_timeout_seconds=avatar_data.get(
+                "judge_timeout_seconds", AvatarSettings.judge_timeout_seconds
+            ),
+            record_dir=avatar_data.get("record_dir", AvatarSettings.record_dir),
         )
 
     if "obs" in data:

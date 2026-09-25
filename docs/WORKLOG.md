@@ -2,10 +2,21 @@
 
 **Active Phase**: 設計書 21（Gemini が道具で操作し、Jev が見張る。`--control tools`）と 23（OBS のスクリーンショットを Gemini に見せる）を実装した。どちらも実機では未確認（クラウドの環境に API キー・Minecraft・OBS がない）。次はユーザーの環境で `examples/integration_test_minecraft.py --control tools --board-port 8765` を OBS つきで動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 499 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Test Status**: `pytest tests/` 509 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### アバターの表情・しぐさを Jev が選ぶ（設計書 24 §8） (2026-09-25)
+
+**Commit**: 次のコミット
+
+- ユーザーの問い「アバターの操作は状況や発言テキストから Jev が判断して操作するようにできる？」→ 設計を出して「作ってください」
+- `AvatarDirector`（`application/use_cases/avatar_director.py`）: 1 回の `system_one` で表情（Choice）・強さ（Score）・しぐさ（Choice）。状態は出来事・発言・小目標・intent・状況。失敗・1.5 秒超え・確信度 0.35 未満・知らない答えは規則（今までの `cues_for`）に戻る
+- `AvatarStage(director=...)`: 口はすぐ動かし、表情としぐさは答えが来たら `emote`（`source`）。`moment_of(event)` でゲームの出来事を英語の 1 行に。`close()`
+- `avatar.html`: しぐさ tilt（首をかしげる）と wave（右手を振る）を足した
+- 設定: `avatar.judge: jev|rules`、`judge_timeout_seconds`、`record_dir`（`logs/avatar/`、Jev と規則の答えを並べた記録）。`factories/avatar.py` の `create_avatar_stage`（キーがなければ規則だけ）。結合テストの例をこれに切り替えた
+- 未確認（実機）: Jev の速さ、日本語の発言の読み方。記録を見て質問と閾値を直す
 
 ### アバター（VRM、three-vrm、設計書 24） (2026-09-25)
 

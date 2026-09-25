@@ -210,6 +210,11 @@ avatar:
   # Where the mouth movement comes from: auto (the TTS playback events when they come, otherwise
   # the generated text with an estimated length) / text / tts
   lip_sync: "auto"
+  # Who picks the expression and gesture: jev (Jev reads the situation and the line; the rules
+  # below it are the fallback on failure, timeout or low confidence) / rules (rules only)
+  judge: "jev"
+  judge_timeout_seconds: 1.5
+  record_dir: "logs/avatar"   # Jev's and the rules' answers side by side (empty: none)
 
 # OBS WebSocket (OBS 28+ / WebSocket 5.x)
 obs:
