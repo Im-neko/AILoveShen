@@ -122,6 +122,19 @@ async function goto (bot, goal) {
 
 const goNear = (bot, pos, range) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range))
 
+// A long trip is walked one leg per step, like exploring: each action stays short, so it ends well
+// within its timeout and the next step sees the world again (270m home took longer than 45s)
+export const LEG = 48
+async function legToward (bot, target, what) {
+  const me = bot.entity.position
+  const far = Math.hypot(target.x - me.x, target.z - me.z)
+  if (far <= LEG) return null
+  const k = LEG / far
+  await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3))
+  const left = Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z)
+  return `walked ${round(far - left)}m toward ${what} (${round(left)}m left)`
+}
+
 // Threats that can reach the bot: none from outside while it is in the closed house
 export function reachableThreats (bot, state) {
   return threats(bot).filter(({ e }) => !shelteredFrom(bot, state.home, e))
@@ -378,6 +391,8 @@ export const PRIMITIVES = {
     return 'the house wall is closed again'
   },
   async go_home (bot, state) {
+    const leg = await legToward(bot, state.home.outside, 'home')
+    if (leg) return leg
     await enterHome(bot, state.home)
     return 'inside the house with the door closed'
   },
@@ -427,6 +442,8 @@ export const PRIMITIVES = {
     })
   },
   async goto_memory (bot, state, c) {
+    const leg = await legToward(bot, c.pos, `where ${c.target} was seen`)
+    if (leg) return leg
     await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3))
     return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
   },
@@ -468,6 +485,7 @@ async function useChest (bot, state, c, use) {
 // Which primitive answers damage itself: taking damage does not interrupt it
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
-export const TIMEOUTS_MS = { place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 60000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+// The longest is 45s: the Python client's request timeout (minecraft.bridge.timeout_seconds) must exceed it
+export const TIMEOUTS_MS = { place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

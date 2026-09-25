@@ -235,7 +235,7 @@ minecraft:
   bridge:
     host: "localhost"
     port: 3000
-    # Must exceed the bridge's per-action timeout (20s)
+    # Must exceed the bridge's longest action timeout (45s, TIMEOUTS_MS in primitives.mjs)
     timeout_seconds: 60
 
   agent:

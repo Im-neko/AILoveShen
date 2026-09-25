@@ -122,7 +122,7 @@ class MinecraftSettings:
 
     bridge_host: str = "localhost"
     bridge_port: int = 3000
-    # Must exceed the bridge's per-action timeout (20s)
+    # Must exceed the bridge's longest action timeout (45s, TIMEOUTS_MS in primitives.mjs)
     request_timeout_seconds: float = 60.0
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
