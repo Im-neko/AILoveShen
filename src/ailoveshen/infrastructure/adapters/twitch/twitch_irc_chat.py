@@ -120,7 +120,7 @@ class TwitchIrcChat(IChatSource):
                 if self._closed:
                     return
                 logger.warning(f"Twitch のチャットの接続が切れた（#{self._channel}）")
-            except (OSError, asyncio.IncompleteReadError, TimeoutError, ssl.SSLError) as e:
+            except Exception as e:  # noqa: BLE001 - どの失敗でもつなぎ直す（ポートの約束）
                 if self._closed:
                     return
                 logger.warning(f"Twitch のチャットにつながらない（{type(e).__name__}: {e}）")

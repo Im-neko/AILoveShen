@@ -295,3 +295,15 @@ def test_stopping_the_server_ends_the_open_streams():
     empty = aio.Queue(maxsize=1)
     end_streams({full, empty})
     assert full.get_nowait() is None and empty.get_nowait() is None
+
+
+@pytest.mark.asyncio
+async def test_a_port_in_use_is_an_os_error_not_an_exit():
+    import socket
+
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        with pytest.raises(OSError, match="could not serve"):
+            await GoalBoard(lambda: None).serve(port=port)

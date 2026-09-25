@@ -171,7 +171,7 @@ Twitch のチャット #<チャンネル> を読み始めた
 - Gemini・Jev・ブリッジが失敗しても止まらない。「… 秒待ってやり直す」と出して 5 秒から倍々（最長 60 秒）に待ち、やり直す。ブリッジを再起動しても配信はそのまま続く
 - TTS サーバーにつながらなければ始めない（黙った配信を防ぐ）。直し方が出る
 - チャットのコメントには 1 つずつ声で返事をする。返事の間は 5 秒以上。作っている間に来たコメントは新しい 3 件だけ取っておく（`twitch.response`）。`!` で始まるコメントには返事をしない。頼みごとは中目標に足すことがある
-- 画面のログ（`[say]` 実況、`[chat]`、`[reply]`、`[goal]` 小目標、`[mid+]` / `[mid✓]` / `[mid×]` 中目標）は `data/logs/ailoveshen.log` にも残る
+- 画面のログ（`[say]` 実況、`[chat]`、`[reply]`、`[goal]` 小目標、`[mid+]` / `[mid✓]` / `[mid×]` 中目標）は、設定の `logging.file` のファイルにも残る（`.env` の `APP_ENV=development` なら `data/logs/ailoveshen-dev.log`）。ログは INFO まで（`--debug` で DEBUG も）
 
 既定は設定（`config/default.yaml` の `stream` と `twitch`）。その回だけ変えるオプション:
 
@@ -230,7 +230,7 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
 | 見張りの記録（`--control tools`） | `logs/watch/*.jsonl` |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
-| 配信のログ | ターミナルと `data/logs/ailoveshen.log` |
+| 配信のログ | ターミナルと `data/logs/ailoveshen-dev.log`（`APP_ENV=development` のとき。設定の `logging.file`） |
 | ボットの様子 | ブリッジのターミナルの出力 |
 
 ## うまくいかないとき
@@ -243,6 +243,8 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | `Twitch のチャットにつながらない` | ネットワークを確かめる。自動でつなぎ直す |
 | `Twitch から: … NOTICE …` | チャンネル名を確かめる（`TWITCH_CHANNEL`） |
 | `.env に GEMINI_API_KEY … を書く` | `.env` にキーを書く |
+| `目標ボードのポート 8765 が使われている` で起動しない | 前の配信や examples が動いたままになっている → 止める。別のポートにするなら `--board-port` と OBS の URL |
+| `…が止まった（…）。配信は続くが、直すには再起動する` | 目標ボードかチャットへの返事が止まった。プレイと実況は続く。区切りのよいところで配信を再起動する |
 | `config/default.yaml がない` | リポジトリの直下で動かす |
 | `OBS から画面を撮れない（…）` | OBS が開いていない、パスワード違い、WebSocket がオフ → 準備の 6。画面なしでプレイは続く |
 | `OBS と話すためのモジュール obsws_python がない` | `pip install -r requirements.txt` |

@@ -101,12 +101,16 @@ class Stream:
         tasks: list[asyncio.Task[Any]] = []
         try:
             if self._board is not None:
-                tasks.append(asyncio.create_task(self._board.serve(port=self._board_port)))
+                board = asyncio.create_task(self._board.serve(port=self._board_port))
+                board.add_done_callback(_report_end("目標ボード（OBS のブラウザソース）"))
+                tasks.append(board)
                 base = f"http://127.0.0.1:{self._board_port}"
                 logger.info(f"[obs] 目標: {base}/overlay/vtuber  アバター: {base}/avatar")
                 logger.info(f"[debug] Gemini の思考: {base}/debug/gemini")
             if self._chat is not None and self._responder is not None:
-                tasks.append(asyncio.create_task(self._responder.run(self._chat)))
+                chat = asyncio.create_task(self._responder.run(self._chat))
+                chat.add_done_callback(_report_end("チャットへの返事"))
+                tasks.append(chat)
             await self._game.play(max_steps=None, keep_going=True)
         finally:
             for task in tasks:
@@ -125,3 +129,18 @@ class Stream:
             except Exception as e:  # noqa: BLE001 - 1 つ閉じられなくても残りを閉じる
                 logger.warning(f"閉じるときに失敗した（{type(e).__name__}: {e}）")
         logger.info("配信を止めた")
+
+
+def _report_end(what: str) -> Callable[[asyncio.Task[Any]], None]:
+    """止めていないのに終わった裏のタスクを、ERROR でログに出す（黙って止まらない）。"""
+
+    def report(task: asyncio.Task[Any]) -> None:
+        if task.cancelled():
+            return
+        error = task.exception()
+        reason = f"{type(error).__name__}: {error}" if error else "終わった"
+        logger.opt(exception=error).error(
+            f"{what}が止まった（{reason}）。配信は続くが、直すには再起動する"
+        )
+
+    return report

@@ -100,3 +100,29 @@ async def test_run_reads_the_source_until_cancelled():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert said == ["こんばんは！"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_reply_does_not_stop_the_chat():
+    class Source:
+        async def comments(self):
+            yield ChatComment("a", "1")
+            yield ChatComment("b", "2")
+            await asyncio.Event().wait()
+
+        async def close(self):
+            pass
+
+    llm = AsyncMock()
+    llm.generate_response.side_effect = [RuntimeError("boom"), "ok"]
+    said = []
+    responder = _responder(llm, said, min_interval_seconds=0)
+    task = asyncio.create_task(responder.run(Source()))
+    for _ in range(100):
+        await asyncio.sleep(0)
+        if said:
+            break
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert said == ["ok"]

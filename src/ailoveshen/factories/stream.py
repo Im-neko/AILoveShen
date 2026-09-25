@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +37,11 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         base_dir: リポジトリの直下（アバターのモデルと記録の基準）
 
     Raises:
-        StreamSetupError: 読み上げがオンで、TTS サーバーにつながらないとき
+        StreamSetupError: 目標ボードのポートが使われている、または読み上げがオンで TTS サーバーに
+            つながらないとき
     """
+    if settings.stream.board_port:
+        _check_port_free(settings.stream.board_port)
     bus = AsyncEventBus()
     conversation = Conversation()
     gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
@@ -143,3 +147,17 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     stream.subscribe(bus)
     logger.info(f"[control] {settings.minecraft.control}")
     return stream
+
+
+def _check_port_free(port: int, host: str = "127.0.0.1") -> None:
+    """目標ボードのポートが空いているか（使われていると OBS のソースが空のまま配信が進む）。"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+        except OSError as e:
+            raise StreamSetupError(
+                f"目標ボードのポート {port} が使われている（{e.strerror}）。前の配信や "
+                "examples/integration_test_minecraft.py が動いていないか確かめる。"
+                "別のポートなら --board-port（OBS のブラウザソースの URL も合わせる）"
+            ) from e

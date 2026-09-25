@@ -58,6 +58,7 @@ class ChatResponder:
     async def run(self, source: IChatSource) -> None:
         """キャンセルされるまで、読んで返事をする。"""
         reader = asyncio.create_task(self._read(source))
+        reader.add_done_callback(_report_reader_error)
         try:
             await self._answer_forever()
         finally:
@@ -98,9 +99,23 @@ class ChatResponder:
 
     async def _answer_forever(self) -> None:
         while True:
-            if not await self.answer_next():
+            try:
+                answered = await self.answer_next()
+            except Exception as e:  # noqa: BLE001 - 1 つの返事の失敗でチャットを止めない
+                logger.opt(exception=e).warning(f"返事に失敗した（{type(e).__name__}: {e}）")
+                continue
+            if not answered:
                 await self._arrived.wait()
 
     async def _read(self, source: IChatSource) -> None:
         async for comment in source.comments():
             self.accept(comment)
+        logger.error("チャットの読み込みが終わった（もうコメントは届かない）")
+
+
+def _report_reader_error(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        error = task.exception()
+        logger.opt(exception=error).error(
+            f"チャットの読み込みが止まった（{type(error).__name__}: {error}）"
+        )

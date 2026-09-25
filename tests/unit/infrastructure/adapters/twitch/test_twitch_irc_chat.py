@@ -125,3 +125,19 @@ async def test_a_hanging_connection_times_out_and_is_retried():
     chat = TwitchIrcChat("shen", opener=opener, retry_seconds=0.01, connect_timeout_seconds=0.05)
     assert [c async for c in chat.comments()] == []
     assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_error_is_retried_too():
+    attempts = 0
+
+    async def opener():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            await chat.close()
+        raise RuntimeError("unexpected")
+
+    chat = TwitchIrcChat("shen", opener=opener, retry_seconds=0.01)
+    assert [c async for c in chat.comments()] == []
+    assert attempts == 2

@@ -59,3 +59,15 @@ def test_main_needs_the_config_and_the_keys(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert main(["--config-dir", str(tmp_path)]) == 2
     assert "GEMINI_API_KEY" in capsys.readouterr().err
+
+
+@pytest.mark.asyncio
+async def test_a_busy_board_port_stops_the_start_with_how_to_fix(tmp_path):
+    import socket
+
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        with pytest.raises(StreamSetupError, match="--board-port"):
+            await create_stream(_settings(board_port=port, speak=False), {}, tmp_path)

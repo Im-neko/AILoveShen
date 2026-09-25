@@ -20,6 +20,8 @@
 - 止めるとき、開いたままの SSE（OBS）を uvicorn が打ち切ってトレースバックが出ていた → キャンセルされたら SSE に終わりの印を入れ、uvicorn 自身に止めさせる（`GoalBoard.serve`、`AvatarStage.end_streams`）
 - 確かめたこと: ブリッジなしで起動 → 5 秒、10 秒待ってやり直す。目標とアバターの SSE をつないだまま SIGINT → 0.3 秒で止まり、トレースバックなし、後片付けが走った。IRC は手元の偽のサーバーで（タグ、PING、RECONNECT、つなぎ直し、応答しない接続）
 - 未確認: 本物の Twitch（この環境から TCP が通らない）、本物の API での長時間の配信
+- 見直し（次のコミット）: 裏のタスクが黙って止まる所を塞いだ。目標ボードのポートが使われていると uvicorn が SystemExit を投げて配信の全体が落ちていた（再現: 終了コード 3）→ 起動前にポートを確かめて `StreamSetupError`、`GoalBoard.serve` は SystemExit を OSError に。目標ボード・チャットのタスクが止まったら ERROR でログ（プレイは続く）。`ChatResponder` は 1 つの返事の失敗で止まらない。`TwitchIrcChat` はどの例外でもつなぎ直す。手順書のログの場所（`logging.file`、development なら `-dev.log`、INFO まで）
+- 残る小さなこと: 開始のやり直しは最初から（`StartPlay` は observe が先なので、ブリッジが落ちていれば設計し直さない。家の設計の直後にブリッジが落ちたときだけ、設計し直しと実況の重複がありうる）
 
 ### 配信の手順書（docs/streaming.md） (2026-09-25)
 

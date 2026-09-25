@@ -75,3 +75,27 @@ async def test_runs_until_cancelled_then_closes_everything():
 def test_chat_and_responder_go_together():
     with pytest.raises(ValueError):
         Stream(_game(), Mock(), chat=Mock())
+
+
+@pytest.mark.asyncio
+async def test_a_background_task_that_dies_is_reported_and_the_play_goes_on():
+    from loguru import logger
+
+    class BrokenBoard:
+        async def serve(self, host="127.0.0.1", port=8765):
+            raise OSError("in use")
+
+    messages = []
+    sink = logger.add(lambda m: messages.append(str(m)), level="ERROR")
+    game = _game()
+    task = asyncio.create_task(Stream(game, Mock(close=AsyncMock()), board=BrokenBoard()).run())
+    try:
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert not task.done()  # プレイは続く
+        assert any("目標ボード" in m and "OSError" in m for m in messages)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        logger.remove(sink)

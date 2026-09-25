@@ -295,7 +295,7 @@ class GoalBoard:
             )
         )
         logger.info(f"目標ボード: http://{host}:{port}/overlay")
-        task = asyncio.ensure_future(server.serve())
+        task = asyncio.ensure_future(_serve_or_raise(server, host, port))
         try:
             await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -381,6 +381,14 @@ class GoalBoard:
             return DEBUG_HTML.read_text(encoding="utf-8")
 
         return app
+
+
+async def _serve_or_raise(server: uvicorn.Server, host: str, port: int) -> None:
+    """uvicorn はポートを開けないと SystemExit を投げ、配信の全体が落ちる。OSError にする。"""
+    try:
+        await server.serve()
+    except SystemExit as e:
+        raise OSError(f"the goal board could not serve on {host}:{port} (in use?)") from e
 
 
 def end_streams(listeners: set[asyncio.Queue[str | None]]) -> None:
