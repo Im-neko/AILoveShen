@@ -12,10 +12,10 @@
 // next /act, which grounds the candidates again and runs the one with that id.
 
 import vec3Pkg from 'vec3'
-import { round, bearing, dayPhase, burningInDaylight, isDark } from './observe.mjs'
+import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
 import { recall, visited, chests, chestWith } from './memory.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, torchSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
+import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
@@ -122,7 +122,19 @@ function fromLeaf (bot, state, world, leaf) {
       }]
     }
     case 'place':
-      return [{ id: 'place crafting_table nearby', verb: 'place_table', target: 'crafting_table' }]
+      return [{ id: `place ${leaf.item} nearby`, verb: 'place_station', target: leaf.item, item: leaf.item }]
+    case 'smelt': {
+      const furnace = findFurnace(bot)
+      if (!furnace) return []
+      const pos = furnace.position
+      const where = { pos, distance: dist(bot, pos) }
+      if (!leaf.count) return [{ id: `take ${leaf.item} from the furnace`, verb: 'smelt', target: leaf.item, item: leaf.item, ...where }]
+      const inv = inventoryCounts(bot)
+      const input = leaf.inputs.find((m) => inv[m] > 0)
+      const fuel = leaf.fuels.find((m) => inv[m] >= leaf.fuelCount) ?? leaf.fuels.find((m) => inv[m] > 0)
+      if (!input || !fuel) return []
+      return [{ id: `smelt ${leaf.count} ${input} into ${leaf.item}`, verb: 'smelt', target: leaf.item, item: leaf.item, input, count: leaf.count, fuel, fuelCount: leaf.fuelCount, ...where }]
+    }
     case 'place_plan': {
       const plan = state.plan
       const s = plan.status(bot)

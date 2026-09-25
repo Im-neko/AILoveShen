@@ -7,6 +7,7 @@
 // - deaths: where the bot died
 // - chests: what each chest held when it was last opened (only the bot uses them: the record holds
 //   until the next opening, which overwrites it)
+// - furnaces: what each furnace was making when it was last opened (made and still to be made)
 // A remembered place near the bot that is not seen now is forgotten (dug out, walked away, or
 // never there), so a trip to it is not repeated.
 
@@ -24,7 +25,7 @@ export const REMEMBERED_BLOCK = /^(?!stripped_).*_log$|^(deepslate_)?(coal|iron)
 export const REMEMBERED_ANIMALS = new Set(['cow', 'pig', 'sheep', 'chicken'])
 
 export function newMemory () {
-  return { places: {}, explored: {}, deaths: [], chests: {} }
+  return { places: {}, explored: {}, deaths: [], chests: {}, furnaces: {} }
 }
 
 export const regionOf = (p) => `${Math.floor(p.x / REGION)},${Math.floor(p.z / REGION)}`
@@ -107,6 +108,26 @@ export function chestWith (memory, names, me) {
   return chests(memory)
     .filter((c) => names.some((n) => (c.contents[n] ?? 0) > 0))
     .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
+}
+
+// making: {product: count} made or still to be made (the fuel is put in with the input)
+export function rememberFurnace (memory, pos, making, now) {
+  memory.furnaces ??= {}
+  if (Object.values(making).some((n) => n > 0)) memory.furnaces[chestKey(pos)] = { x: pos.x, y: pos.y, z: pos.z, making, seen: now }
+  else delete memory.furnaces[chestKey(pos)]
+}
+
+export function forgetFurnace (memory, pos) {
+  delete memory.furnaces?.[chestKey(pos)]
+}
+
+// What the furnaces are making, by product
+export function smeltingCounts (memory) {
+  const out = {}
+  for (const f of Object.values(memory.furnaces ?? {})) {
+    for (const [name, n] of Object.entries(f.making)) out[name] = (out[name] ?? 0) + n
+  }
+  return out
 }
 
 export const visited = (memory, pos) => memory.explored[regionOf(pos)] !== undefined

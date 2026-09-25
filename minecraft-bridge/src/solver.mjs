@@ -3,14 +3,18 @@
 // Pure (no bot): it reads a snapshot of the world. Items already held are allocated to the needs
 // in order from a shared ledger, so e.g. the logs for a house's corner pillars are set aside
 // before the rest become planks. A missing item is obtained the cheapest way among crafting (each
-// recipe), digging a natural block and hunting an animal. What the chests hold (as last seen) is
-// taken out before anything is gathered or crafted: it is near and certain. The result is a tree of subgoals with
+// recipe), smelting, digging a natural block and hunting an animal. What the chests hold (as last
+// seen) and what the furnaces are making are taken before anything is gathered or crafted: they are
+// near and certain. The result is a tree of subgoals with
 // progress, the leaves that can be acted on now, the reasons some cannot, and the remaining work.
 //
 // world: { inventory: {name: count}, stored: {name: count} (in chests), blocks: {name: count}, mobs: {name: count},
-//          remembered: Set(name), table: 'reach' | 'near' | null, unlocked: (item) => bool }
+//          remembered: Set(name), table: 'reach' | 'near' | null, furnace: 'near' | null,
+//          smelting: {product: count} (in the furnaces, made or still to be made), unlocked: (item) => bool }
 //   blocks and mobs are the sources nearby (natural, reachable blocks outside the house; animals);
 //   remembered: sources out of sight seen before (memory.mjs), cheaper to go back to than to search for
+
+import { FUELS } from './knowledge.mjs'
 
 const MAX_DEPTH = 6
 const EXPLORE_COST = 100 // a source not in sight has to be searched for first
@@ -18,9 +22,10 @@ const RECALL_COST = 50 // one seen before: a trip back to where it was
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
 const WITHDRAW_COST = 0.5
+const SMELT_COST = 1 // per item, like crafting (the furnace works while the bot does other things)
 
 export function solve (knowledge, world, needs) {
-  const ledger = { items: { ...world.inventory }, stored: { ...(world.stored ?? {}) }, table: !!world.table }
+  const ledger = { items: { ...world.inventory }, stored: { ...(world.stored ?? {}) }, smelting: { ...(world.smelting ?? {}) }, table: !!world.table, furnace: !!world.furnace }
   const nodes = needs.map(({ spec, count }) => need(knowledge, world, spec, count, ledger, [], 0).node)
   const leaves = []
   const blocked = []
@@ -58,6 +63,14 @@ function need (k, world, spec, count, ledger, path, depth) {
     taken += take
     fromChests.push({ label: `take ${take} ${m} from a chest`, have: 0, need: take, units: take, children: [], leaf: { kind: 'withdraw', item: m, count: take } })
   }
+  // Made (or being made) in a furnace: taken out when done
+  for (const m of members) {
+    const take = Math.min(ledger.smelting[m] ?? 0, count - have - taken)
+    if (take <= 0) continue
+    ledger.smelting[m] -= take
+    taken += take
+    fromChests.push({ label: `take ${take} ${m} from the furnace`, have: 0, need: take, units: take, children: [], leaf: { kind: 'smelt', item: m, count: 0 } })
+  }
   if (taken) {
     node.children = fromChests
     node.units = taken
@@ -86,6 +99,8 @@ function acquire (k, world, item, n, ledger, path, depth) {
   if (depth >= MAX_DEPTH || path.includes(item)) return none
   const options = []
   for (const r of k.recipes(item)) options.push((l) => craftOption(k, world, item, n, r, l, [...path, item], depth))
+  const input = k.smeltingInput(item)
+  if (input) options.push((l) => smeltOption(k, world, item, n, input, l, [...path, item], depth))
   const blocks = k.blockSources.get(item)
   if (blocks) options.push((l) => gatherOption(k, world, item, n, 'dig', blocks, world.blocks, 1, l, path, depth))
   const mobs = k.mobSources.get(item)
@@ -135,14 +150,49 @@ function craftOption (k, world, item, n, recipe, ledger, path, depth) {
   }
 }
 
-// A crafting table within walking distance; planned once per solve (the ledger remembers it)
-function station (k, world, ledger, path, depth) {
-  if (ledger.table) return null
-  ledger.table = true
-  const r = need(k, world, 'crafting_table', 1, ledger, path, depth + 1)
-  const node = { label: 'a crafting table nearby', have: 0, need: 1, units: r.node.units + 1, children: [r.node], leaf: null }
-  if (r.node.have >= r.node.need) node.leaf = { kind: 'place', item: 'crafting_table' }
+// A crafting table or furnace within walking distance; planned once per solve (the ledger remembers it)
+function station (k, world, ledger, path, depth, item = 'crafting_table', flag = 'table') {
+  if (ledger[flag]) return null
+  ledger[flag] = true
+  const r = need(k, world, item, 1, ledger, path, depth + 1)
+  const node = { label: `a ${item.replace('_', ' ')} nearby`, have: 0, need: 1, units: r.node.units + 1, children: [r.node], leaf: null }
+  if (r.node.have >= r.node.need) node.leaf = { kind: 'place', item }
   return { node, cost: r.cost + 1 }
+}
+
+// n items from a furnace: the input, fuel for n (what is held first), and a furnace nearby
+function smeltOption (k, world, item, n, input, ledger, path, depth) {
+  const children = []
+  let cost = n * SMELT_COST
+  let units = n
+  const held = (spec) => k.resolve(spec).members.reduce((s, m) => s + (ledger.items[m] ?? 0), 0)
+  const fuels = FUELS.map((f) => ({ ...f, count: Math.ceil(n / f.per) })).filter((f) => f.spec !== input)
+  const fuel = fuels.find((f) => held(f.spec) >= f.count) ?? fuels.find((f) => f.spec === 'planks')
+  for (const [spec, count] of [[input, n], [fuel.spec, fuel.count]]) {
+    const r = need(k, world, spec, count, ledger, path, depth + 1)
+    children.push(r.node)
+    cost += r.cost
+    units += r.node.units
+    if (cost >= IMPOSSIBLE) return { cost: IMPOSSIBLE, units, children, leaf: null, method: 'smelt' }
+  }
+  let furnaceReady = !!world.furnace
+  if (!world.furnace) {
+    const f = station(k, world, ledger, path, depth, 'furnace', 'furnace')
+    if (f) {
+      children.push(f.node)
+      cost += f.cost
+      units += f.node.units
+    }
+    furnaceReady = false
+  }
+  const ready = children.every((c) => c.have >= c.need) && furnaceReady
+  return {
+    cost,
+    units,
+    children,
+    method: 'smelt',
+    leaf: { kind: 'smelt', item, input, count: n, inputs: k.resolve(input).members, fuels: k.resolve(fuel.spec).members, fuelCount: fuel.count, ready }
+  }
 }
 
 function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledger, path, depth) {
@@ -194,6 +244,8 @@ function collect (node, leaves, blocked) {
     if (!leaf.ready) return
     if (leaf.unlocked) leaves.push(leaf)
     else blocked.push(`the recipe for ${leaf.item} is not unlocked yet`)
+  } else if (leaf.kind === 'smelt' && leaf.count > 0) {
+    if (leaf.ready) leaves.push(leaf)
   } else leaves.push(leaf)
 }
 
@@ -215,8 +267,9 @@ function describe (leaf, method) {
     case 'explore': return `find ${leaf.sources.join('/')}`
     case 'place': return `place ${leaf.item}`
     case 'withdraw': return 'take it out of the chest'
+    case 'smelt': return leaf.count ? `smelt ${leaf.input} in a furnace` : 'take it out of the furnace'
     default: return leaf.reason ?? ''
   }
 }
 
-const cloneLedger = (l) => ({ items: { ...l.items }, stored: { ...l.stored }, table: l.table })
+const cloneLedger = (l) => ({ items: { ...l.items }, stored: { ...l.stored }, smelting: { ...l.smelting }, table: l.table, furnace: l.furnace })

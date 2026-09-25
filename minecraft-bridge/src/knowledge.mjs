@@ -7,7 +7,7 @@
 // - sheep have no wool in entityLoot (the color is entity metadata): EXTRA_MOB_DROPS adds it
 // - only the animals on HUNTABLE are hunted (zombies drop rotten_flesh, which counts as food;
 //   rabbits outrun the bot)
-// Smelting is not in minecraft-data; it comes with the furnace primitives (M3).
+// Smelting is not in minecraft-data: SMELTING lists what the furnace makes (one input per item).
 
 // Groups: any member satisfies a need for the group (e.g. a house wall takes any planks)
 const GROUP_PATTERNS = {
@@ -25,6 +25,18 @@ const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato',
 // made of planks, so planks are not listed; logs are, and the dig candidates exclude the house)
 const NATURAL_BLOCKS = [/^(?!stripped_).*_log$/, /^(stone|granite|diorite|andesite|deepslate|tuff)$/,
   /^(dirt|grass_block|coarse_dirt|podzol|sand|red_sand|gravel|clay)$/, /_ore$/, /^(sugar_cane|pumpkin|melon)$/]
+
+// What a furnace makes from what (an item or a group), one input per output, 10s each
+const SMELTING = {
+  iron_ingot: 'raw_iron',
+  charcoal: 'log',
+  cooked_beef: 'beef',
+  cooked_porkchop: 'porkchop',
+  cooked_mutton: 'mutton',
+  cooked_chicken: 'chicken'
+}
+// Items burnt per item smelted: coal and charcoal burn 8 items, planks and logs 1.5
+export const FUELS = [{ spec: 'coal', per: 8 }, { spec: 'charcoal', per: 8 }, { spec: 'planks', per: 1.5 }, { spec: 'log', per: 1.5 }]
 
 export const HUNTABLE = new Set(['cow', 'pig', 'sheep', 'chicken', 'mooshroom'])
 const EXTRA_MOB_DROPS = { sheep: ['white_wool'] }
@@ -84,6 +96,16 @@ export class Knowledge {
       out.push({ count: r.result.count, ingredients, needsTable })
     }
     return out
+  }
+
+  // The furnace input for item (an item or a group), or null
+  smeltingInput (item) {
+    return SMELTING[item] ?? null
+  }
+
+  // The item a furnace makes from input (an item name), or null
+  smeltingProduct (input) {
+    return Object.keys(SMELTING).find((out) => this.isMember(SMELTING[out], input)) ?? null
   }
 
   // Tools that can harvest the block, or null when a bare hand does

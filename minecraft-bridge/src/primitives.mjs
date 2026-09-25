@@ -11,7 +11,7 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { findSite, placeOne } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
-import { rememberChest, forgetChest } from './memory.mjs'
+import { rememberChest, forgetChest, rememberFurnace, forgetFurnace } from './memory.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // survival block reach from the eyes
@@ -133,6 +133,7 @@ export function torchSpot (bot) {
 // A long trip is walked one leg per step, like exploring: each action stays short, so it ends well
 // within its timeout and the next step sees the world again (270m home took longer than 45s)
 export const LEG = 48
+const SMELT_WAIT_MS = 20000 // an item takes 10s: waiting for all of a stack would pass the timeout
 async function legToward (bot, target, what) {
   const me = bot.entity.position
   const far = Math.hypot(target.x - me.x, target.z - me.z)
@@ -222,6 +223,10 @@ const totalItems = (bot) => bot.inventory.items().reduce((n, i) => n + i.count, 
 
 export function findTable (bot) {
   return bot.findBlock({ matching: bot.registry.blocksByName.crafting_table.id, maxDistance: TABLE_SEARCH_RADIUS })
+}
+
+export function findFurnace (bot) {
+  return bot.findBlock({ matching: bot.registry.blocksByName.furnace.id, maxDistance: TABLE_SEARCH_RADIUS })
 }
 
 // Equip the fastest tool for the block, if any is held
@@ -316,9 +321,10 @@ export const PRIMITIVES = {
     }
     return `crafted ${itemCount(bot, c.item) - before} ${c.item}`
   },
-  async place_table (bot, state, c) {
-    const item = bot.inventory.items().find((i) => i.name === 'crafting_table')
-    if (!item) throw new Error('no crafting_table')
+  // A crafting table or furnace next to the bot
+  async place_station (bot, state, c) {
+    const item = bot.inventory.items().find((i) => i.name === c.item)
+    if (!item) throw new Error(`no ${c.item}`)
     const me = bot.entity.position.floored()
     for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [2, -2], [-2, 2]]) {
       const pos = me.offset(dx, 0, dz)
@@ -328,9 +334,9 @@ export const PRIMITIVES = {
       if (inHouse(state, pos, 1) || !ground || ground.boundingBox !== 'block' || !spot || spot.name !== 'air') continue
       await bot.equip(item, 'hand')
       await bot.placeBlock(ground, { x: 0, y: 1, z: 0 })
-      return `placed crafting_table at ${pos}`
+      return `placed ${c.item} at ${pos}`
     }
-    throw new Error('no free spot for the crafting table')
+    throw new Error(`no free spot for the ${c.item}`)
   },
   async place_plan (bot, state, c) {
     const plan = state.plan
@@ -449,6 +455,50 @@ export const PRIMITIVES = {
       return `took ${n} ${c.item} from the chest`
     })
   },
+  // Takes out what is done, puts in the input and fuel, and waits a while taking what gets done;
+  // the rest is taken out at a later step (the furnace works on meanwhile)
+  async smelt (bot, state, c) {
+    const block = bot.blockAt(c.pos)
+    if (block?.name !== 'furnace') {
+      forgetFurnace(state.memory, c.pos)
+      throw new Error(`no furnace at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+    }
+    await goNear(bot, c.pos, 2)
+    const furnace = await bot.openFurnace(block)
+    const got = {}
+    const take = async () => {
+      const out = furnace.outputItem()
+      if (!out) return
+      await furnace.takeOutput()
+      got[out.name] = (got[out.name] ?? 0) + out.count
+    }
+    try {
+      await take()
+      if (c.input) {
+        const inSlot = furnace.inputItem()?.name === c.input ? furnace.inputItem().count : 0
+        const n = Math.min(c.count - inSlot, inventoryCounts(bot)[c.input] ?? 0)
+        if (c.fuel && (furnace.fuelItem()?.count ?? 0) < c.fuelCount) {
+          await furnace.putFuel(bot.registry.itemsByName[c.fuel].id, null, Math.min(c.fuelCount, inventoryCounts(bot)[c.fuel] ?? 0))
+        }
+        if (n > 0) await furnace.putInput(bot.registry.itemsByName[c.input].id, null, n)
+      }
+      const until = Date.now() + SMELT_WAIT_MS
+      while (Date.now() < until && furnace.inputItem()) {
+        await bot.waitForTicks(20)
+        await take()
+      }
+      await take()
+    } finally {
+      const making = {}
+      if (furnace.outputItem()) making[furnace.outputItem().name] = furnace.outputItem().count
+      if (furnace.inputItem()) making[c.item] = (making[c.item] ?? 0) + furnace.inputItem().count
+      rememberFurnace(state.memory, c.pos, making, Number(bot.time.age))
+      furnace.close()
+    }
+    const took = Object.entries(got).map(([name, n]) => `${n} ${name}`).join(', ')
+    const left = furnace.inputItem()?.count ?? 0
+    return `${took ? `took ${took}` : 'nothing done yet'}${left ? `; ${left} still smelting` : ''}`
+  },
   async place_torch (bot) {
     const spot = torchSpot(bot)
     if (!spot) throw new Error('no floor to stand a torch on here')
@@ -504,6 +554,6 @@ async function useChest (bot, state, c, use) {
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
 // The longest is 45s: the Python client's request timeout (minecraft.bridge.timeout_seconds) must exceed it
-export const TIMEOUTS_MS = { place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

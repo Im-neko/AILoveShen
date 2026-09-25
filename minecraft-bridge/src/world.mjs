@@ -3,9 +3,9 @@
 
 import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
-import { findTable, isLeaves, HUNGER_URGENT } from './primitives.mjs'
+import { findTable, findFurnace, isLeaves, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
-import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts, recallableKinds } from './memory.mjs'
+import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // blocks above or below the feet the bot digs without climbing or tunnelling
@@ -90,6 +90,8 @@ export function snapshot (bot, state) {
     blocks: new Proxy({}, { get: (_, name) => typeof name === 'string' ? dig(name).length : undefined }),
     mobs: new Proxy({}, { get: (_, name) => typeof name === 'string' ? hunt(name).length : undefined }),
     table: findTable(bot) ? 'near' : null,
+    furnace: findFurnace(bot) ? 'near' : null,
+    smelting: smeltingCounts(state.memory ?? {}),
     unlocked: (item) => state.recipeBook.recipesFor(item).length > 0,
     dig,
     hunt
