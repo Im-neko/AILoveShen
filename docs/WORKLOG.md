@@ -9,7 +9,7 @@
 
 ### アバターの表情・しぐさを Jev が選ぶ（設計書 24 §8） (2026-09-25)
 
-**Commit**: 次のコミット
+**Commit**: `32bbc7e`
 
 - ユーザーの問い「アバターの操作は状況や発言テキストから Jev が判断して操作するようにできる？」→ 設計を出して「作ってください」
 - `AvatarDirector`（`application/use_cases/avatar_director.py`）: 1 回の `system_one` で表情（Choice）・強さ（Score）・しぐさ（Choice）。状態は出来事・発言・小目標・intent・状況。失敗・1.5 秒超え・確信度 0.35 未満・知らない答えは規則（今までの `cues_for`）に戻る
