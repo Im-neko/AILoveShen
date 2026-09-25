@@ -20,6 +20,7 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
   - World memory (`docs/design/14_world_memory.md`, bridge `memory.mjs`, saved in `state.json`): only what was seen and is out of view now, with when (places per 16x16 region, explored regions, deaths, chest contents as last opened). Recalled places are offered as trips before blind exploration, the solver takes stored items from a chest before gathering, and `/observe` summarises it for the prompts and the goal board
   - Jev: picks one candidate per step (`Choice`), seeing the goal's progress and the body's needs (no priority order: measured in `spikes/primitive_choice_eval.py`)
   - `PlaySession` ends a goal when it is met, the mid goal it served ended, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
+- **Tool control** (`minecraft.agent.control: tools`, `docs/design/19_gemini_tools.md`, `21_tool_control.md`; default `candidates` is the path above, kept as the baseline): within the same predicate small goals, Gemini calls one bridge tool per step by function calling (`POST /tool`: goto/dig/place/craft/…, `do_suggestion` runs a solver candidate, `find_blocks`/`recipe_of`/`how_to_get` are lookups). Action tools carry an `intent` (shown via `activity()`) and up to 3 English `watch` questions. While a tool runs, `ToolWatcher` reads `GET /state` (progress, a `look_around` height grid, mobs with ids, needs) every second and asks Jev all questions in one `system_one` call; two strong yeses stop / wake / report maybe-done via `POST /abort` (Jev never judges completion; the code's own progress question only records until it beats a rule). Safety stays in the bridge: sheltering refuses outside tools, the current home and the house being built are never dug (former homes can be). Ticks go to `logs/watch/*.jsonl`. Thinking depth per purpose: `gemini.thinking_levels`
 - **Goal hierarchy** (`docs/design/13_goal_hierarchy.md`): mission (config `minecraft.mission`, never changed on stream) → mid goals (`MidGoalPlan`: prioritised list, done when their conditions `built`/`placed`/`have` hold, judged by the bridge's `POST /check` at small-goal boundaries; limits kept by code: 6 in the list, 2 viewers' at a time, one per viewer, a viewer's never ahead of the current one, 80-step budget) → the small goal (serves the top mid goal, or survival). Gemini edits the list with the small goal (add/move/drop with a reason); `MidGoalKeeper` applies edits atomically, saves (`data/mission.json`) and publishes MidGoal events
 - **Coherent decisions** (`docs/design/12_coherent_decisions.md`, request flow replaced by 13): `PlaySession` alone owns the goals; its `activity()` (mission, mid goals, small goal and status, recent goals) is rendered by one formatter (`prompts/stream_context.py`) for the goal decision, the commentary and the chat replies, and the goal decision also sees the conversation. A chat reply and its handling of a request (none/accept/decline) come from one generation; an accepted request becomes a viewer's mid goal behind the current one (the small goal is not interrupted). `Narrator` says why goals change and never drops a promise silently
 - **Goal board** (`presentation/web/goal_board.py`, extra `ailoveshen[stream]`): `GET /api/goals`, `/api/goals/stream` (SSE), `/overlay` (OBS browser source), read-only in the play process (`examples/integration_test_minecraft.py --board-port 8765`)
@@ -71,7 +72,7 @@ GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gem
 # Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
 docker compose -f docker/docker-compose.minecraft.yml up -d
 cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)
-GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300] [--comments c.json] [--board-port 8765]
+GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300] [--comments c.json] [--board-port 8765] [--control tools]
 
 # Style-Bert-VITS2 tests (legacy)
 hatch run test:test          # PyTorch CPU tests
@@ -105,9 +106,10 @@ src/ailoveshen/
 ├── application/
 │   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse, IStartPlay, IAdvancePlay
 │   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder,
-│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder, IMissionStore
+│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder, IMissionStore, IFastJudge, IWatchRecorder
 │   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase,
-│   │                          # StartPlayUseCase, AdvancePlayUseCase, MidGoalKeeper, goal_vocabulary (schemas)
+│   │                          # StartPlayUseCase, AdvancePlayUseCase, MidGoalKeeper, goal_vocabulary (schemas),
+│   │                          # tool_catalog (tools for Gemini), ToolWatcher (Jev answers watch questions)
 │   └── dto/                   # speech_dto, llm_dto, game_dto
 ├── infrastructure/
 │   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings, JevSettings, MinecraftSettings
@@ -117,9 +119,9 @@ src/ailoveshen/
 │       ├── tts/               # StyleBertVits2Client, EmotionStyleService, VoiceConfig
 │       ├── audio/             # SounddevicePlayer
 │       ├── gemini/            # GeminiTextGenerator (google-genai; text + JSON structured output)
-│       ├── jev/               # JevActionSelector (typesafe-sdk)
+│       ├── jev/               # JevActionSelector, JevFastJudge (typesafe-sdk)
 │       ├── minecraft_bridge/  # MineflayerBridgeClient (HTTP to minecraft-bridge/)
-│       ├── storage/           # JsonMissionStore (mid goals across restarts)
+│       ├── storage/           # JsonMissionStore (mid goals across restarts), JsonlWatchRecorder
 │       └── prompts/           # PromptTemplateBuilder, GamePromptTemplateBuilder, stream_context
 ├── presentation/
 │   ├── services/              # TTSService (priority queue), LLMService, GameService, Narrator
@@ -127,7 +129,8 @@ src/ailoveshen/
 └── factories/                 # Composition Roots (tts.py, llm.py, game.py)
 
 minecraft-bridge/              # Node sidecar: goals, solver, candidates, primitives, reflex, POV mirror,
-                               # world memory, chests, HTTP API (goal/check/observe/act/build-plan); tests: npm test
+                               # world memory, chests, tools, shared state, HTTP API
+                               # (goal/check/observe/act/tool/state/abort/build-plan); tests: npm test
 ```
 
 **Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.
@@ -139,7 +142,7 @@ minecraft-bridge/              # Node sidecar: goals, solver, candidates, primit
 - `StyleBertVits2Client`: Maps `EmotionState` → Style-Bert-VITS2 style via `EmotionStyleService`
 - `TTSService`: Priority queue-based speech service
 - `GenerateCommentaryUseCase` / `GenerateResponseUseCase`: Commentary and chat replies sharing one `Conversation`
-- `GeminiTextGenerator`: google-genai adapter; `thinking_level` per slot (no temperature on 3.8), SDK retry on 408/429/5xx, 1s rate limit, token usage logging
+- `GeminiTextGenerator`: google-genai adapter; `thinking_level` per purpose (`purpose=` on every call, table in `gemini.thinking_levels`; no temperature on 3.8), `choose_tool` (function calling, mode ANY), SDK retry on 408/429/5xx, 1s rate limit, token usage logging
 - `LLMService`: Returns commentary/replies as strings (empty on failure), holds current emotion
 - `AsyncEventBus`: Thread-safe async event publisher/subscriber
 - `Settings`: Hierarchical configuration

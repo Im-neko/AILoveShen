@@ -1,6 +1,6 @@
 # A: Gemini が道具で操作し、Jev が Gemini の質問に高頻度で答える（最初の版）
 
-作成: 2026-09-25。19 §8（A）の詳細と、19 §11（Jev の役）の最初の実装。ユーザーの指示「その方針で一度設計・実装してみて」（19 §13 の 9・11・12 を承認）。
+作成: 2026-09-25。19 §8（A）の詳細と、19 §11（Jev の役）の最初の実装。ユーザーの指示「その方針で一度設計・実装してみて」（19 §13 の 9・11・12 を承認）。**実装済み（§10）。実機（Gemini・Jev・Minecraft）ではまだ動かしていない。**
 
 ## 1. この版でやること・やらないこと
 
@@ -9,7 +9,7 @@
 - Gemini が 1 ステップに 1 つ道具を呼ぶ（function calling）。行動の道具には「今やろうとしていること」（`intent`）が必須で、見張りの質問（`watch`）を最大 3 つ添えられる
 - 道具の実行中、1 秒ごとに Jev に質問をまとめて聞く: コードの 1 問（進んでいるか）と、Gemini が添えた質問
 - 用途ごとの考える深さ（19 §7）
-- 設定 `minecraft.control: candidates | tools`。既定は `candidates`（今の構成。比べる相手として残す）
+- 設定 `minecraft.agent.control: candidates | tools`。既定は `candidates`（今の構成。比べる相手として残す）
 
 やらないこと（次の版以降）:
 - 一般の完了条件と建てる道具（`blocks` / `build`、19 §10.3）。**この版の小目標は、今の述語のまま**（Gemini は今までどおり述語で小目標を決め、その小目標のために道具を選ぶ。完了はブリッジが述語で判定する）
@@ -49,7 +49,7 @@
 | `smelt` | `input, count` | 覚えているかまど・燃料は持ち物から選ぶ |
 | `deposit` / `withdraw` | `item, count` | 家のチェスト |
 | `go_home` / `sleep` / `build_next` | — | 今の複合の行動（家に帰る、寝る、設計図のブロックを 1 つ置く） |
-| `wait` | — | 5 秒ほど待つ |
+| `wait` | — | 10 秒ほど待つ（家の中ならドアを向いて） |
 | `find_blocks` | `block, radius?` | 近い順に最大 8 か所（調べるだけ。すぐ返る） |
 | `recipe_of` | `item` | レシピ（材料、作業台が要るか） |
 | `how_to_get` | `item, count` | ソルバーの木（何が足りないか） |
@@ -112,3 +112,28 @@ Jev の質問と、Gemini の道具の選択の両方が見る 1 つの書式（
 
 - ここでできること: ブリッジの `npm test`（道具の検証と断り、夜の決まり、`look_around`、中断の競合）、Python の単体テスト（見張りの規則、道具のステップ、アダプターの変換、設定）
 - ユーザーの環境で: `examples/integration_test_minecraft.py --control tools`。見ること: Gemini が道具をどう選ぶか、書かれる質問、Jev の答えと誤検知、遅延、1 ステップあたりの Gemini と Jev の呼び出し回数とトークン
+
+## 10. 実装（2026-09-25）
+
+| 場所 | 中身 |
+|---|---|
+| bridge `runner.mjs` | `run(c, label)`: `/act` と `/tool` の共通の実行の経路（反射・busy・時間の上限・被弾での中断・家を出る・履歴・保存）。`abortCurrent`（終わった行動には何もしない） |
+| bridge `progress.mjs` | 実行中の進み具合（動いた距離 1 秒・5 秒・全体、目標までの距離、経路の更新と見つからない回数、`forcedMove` の回数、掘っているブロック、持ち物と体力の変化） |
+| bridge `state.mjs` | 共通の状態と `lookAround`（半径 3 の格子。セルは足元から見た立てる高さの差、`#` 高い壁、`v` 深い穴、`~` 水、`!` 溶岩、`?` 未読み込み） |
+| bridge `tools.mjs` | 道具（§3）。避難中は外に出る道具を断る（昼にドアの前の敵と戦うのは許す）。今の家・建てている家は掘らない・置かない（`protectedReason`）。前の家は掘れる。知識と合わない引数も理由つきで断る（プレイを止めない） |
+| bridge `primitives.mjs` | `goto_pos`、`place_at` を追加 |
+| Python domain | `ToolCall`、`WatchQuestion`、`WatchAction`、`ToolOutcome`、`FastQuestion` / `FastAnswer` / `FastVerdict`、`PlaySession.intent`、`Activity.intent` |
+| Python application | `tool_catalog.py`（道具の JSON Schema、`parse_tool_call`）、`watcher.py`（`ToolWatcher`、`WatchPolicy`）、`AdvancePlayUseCase(control, tool_watcher)`、ポート `IFastJudge` / `IWatchRecorder`、`ITextGenerator.choose_tool` と `purpose` |
+| Python infrastructure | `GeminiTextGenerator.choose_tool` と用途の表、`JevFastJudge`、`JsonlWatchRecorder`、`build_tool_prompt`、`stream_context` の「今やろうとしていること」、設定 |
+| example | `examples/integration_test_minecraft.py --control tools` |
+
+確かめたこと:
+- `npm test` 113 件、`pytest tests/` 470 件
+- 模擬サーバーで Gemini への実際のリクエスト本文を見た: `toolConfig.functionCallingConfig.mode = ANY`、用途の `thinkingConfig`（例 `tool_after_failure` → MEDIUM）、20 個の関数宣言。SDK は宣言の中を `parameters_json_schema` と snake_case で送る（`thinking_level` と同じ。実 API が受け付けるかは未確認）
+
+まだ確かめていないこと（ユーザーの環境で）:
+- Gemini が道具をどう選ぶか（まわりの格子を読めるか、ソルバーの提案とどう使い分けるか）、1 ステップの遅延
+- Gemini が書く見張りの質問と、それへの Jev の答え（誤検知）。英語の質問と要約した状態で答えられるか
+- 1 ステップあたりの Gemini と Jev の呼び出し回数とトークン（`logs/watch/*.jsonl`）
+- `goto_pos` / `place_at` の実機での動き（穴から土を積んで出られるか）
+

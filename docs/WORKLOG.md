@@ -1,11 +1,31 @@
 ## Current Status
 
-**Active Phase**: 設計書 19（Gemini が自分で操作する: 見張り → 考える深さ → A 道具箱 → B 技）と 20（大目標を Gemini が決め直す）を書き、どちらも承認された（後から調整する前提）。19 §10 の点検（A の穴: 見え方・完了の言葉・言うこととやることの一致）と §11 の Jev の役は、19 §13 の 9〜12 がユーザーの返事待ち。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
+**Active Phase**: 設計書 21（A の最初の版: Gemini が道具を呼んで操作し、Jev が実行中に Gemini の質問に答える）を実装した（`minecraft.agent.control: tools`、既定は今までの `candidates`）。実機ではまだ動かしていない（クラウドの環境に API キーと Minecraft サーバーがない）。次はユーザーの環境で `--control tools` を動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
 **Last Updated**: 2026-09-25
-**Test Status**: `feat/town-m1-m2`: 435 unit tests（`pytest tests/`）、ブリッジ 96 件（`npm test`）。`feat/notes`: 454 件、ブリッジ 95 件。取り込み後のブランチでは未実行（クラウドの環境に pytest と node_modules がない。変更は設計書だけ）
-**実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158 はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
+**Test Status**: `pytest tests/` 470 passed, 1 skipped。ブリッジ `npm test` 113 件
+**実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに今回のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### A の最初の版: 道具・共通の状態・Gemini の質問に Jev が答える見張り（設計書 21） (2026-09-25)
+
+**Commits**: `16ad1fb`（設計書 21）、`d07fdd0`（ブリッジ: 実行を run() 1 つに、進み具合）、`d1d1721`（ブリッジ: /tool /state /abort）、`c90f24c`（Python: 道具のステップ、見張り、用途ごとの thinking_level）
+
+- ユーザーの指示「その方針で一度設計・実装してみて」（Jev は Gemini が書いた質問に高頻度で答える役。19 §13 の 9・11・12 を承認）
+- ブリッジ
+  - `runner.mjs`: `/act` と `/tool` の共通の実行（反射・busy・時間の上限・被弾での中断・家を出る・履歴・保存）。`abortCurrent` は終わった行動には何もしない
+  - `progress.mjs`: 実行中の進み具合（移動量、目標までの距離、経路が見つからない回数、`forcedMove` の回数、掘り、持ち物・体力の変化）。行動の種類ごとの判定は書かない
+  - `state.mjs`: 共通の状態と `lookAround`（足元から見た立てる高さの格子。town4c の縦穴なら隣 8 つが +3）
+  - `tools.mjs`: 行動の道具 17（`do_suggestion` でソルバーの候補も呼べる）と調べもの 3。避難中は外に出る道具を理由つきで断る（昼のドアの前の敵とは戦える）。今の家・建てている家は掘らない・置かない、前の家は掘れる（town4d のベッド）。引数は世界と知識から導いて確かめ、合わなければ理由を返す（プレイを止めない）
+- Python
+  - `tool_catalog.py`（道具の JSON Schema、行動の道具は `intent` 必須・`watch` 最大 3）、`watcher.py`（1 秒ごとに全質問を 1 回の Jev 呼び出しに。0.7 以上の「はい」が 2 回で stop / wake / maybe_done。コードの「進んでいるか」は記録だけ）
+  - `AdvancePlayUseCase(control="tools")`: 小目標は今までどおり述語で決め、その中で Gemini が 1 ステップに 1 つ道具を呼ぶ（調べものは 3 回まで同じステップで）。停滞・予算・時間帯の判定はそのまま
+  - `PlaySession.intent` → `activity()` → 実況・返答・プロンプトに「今やろうとしていること」
+  - `GeminiTextGenerator`: `choose_tool`（function calling、mode ANY）、すべての呼び出しに `purpose`、用途ごとの thinking_level（town/site high、house・失敗の後 medium、ほか low）
+  - `JevFastJudge`（Noul の「はい」の確率 → はい/いいえと確信度）、`JsonlWatchRecorder`（`logs/watch/*.jsonl`）
+  - 設定: `gemini.thinking_levels`、`minecraft.agent.control`、`minecraft.watch`。`examples/integration_test_minecraft.py --control tools`
+- 確かめたこと: 単体テスト。模擬サーバーで Gemini へのリクエスト本文（`mode: ANY`、用途の thinking、関数宣言 20）。SDK は宣言を `parameters_json_schema` と snake_case で送る（実 API が受け付けるかは未確認）
+- この版でやらないこと（21 §1）: 一般の完了条件 `blocks` / `build`、B、大目標の見直し（20）、道具の好みの引数の大半、コメントの仕分け、夜の決まりの変更
 
 ### Jev を「Gemini が書いた質問に高頻度で答える役」に (2026-09-25)
 
@@ -603,7 +623,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 
-0. **見張りと考える深さは今すぐ始められる**（19 §13 の 1〜8 と 20 §8 は承認済み）: 見張りの記録（`/progress`）と `/abort` → 考える深さ（用途ごとの thinking_level）→ §6 の評価（ユーザーの環境で）→ 見張りをループに → 設計書 21（A）。設計書 21 は 19 §13 の 9〜12 の返事（A の範囲、夜の決まり、Jev の役の順番、Gemini が質問を書く方式）を待つ。`/progress` は 12 に合わせて、質問が共通に見る状態の書式として作る。下の 2（低レベルの操作を Jev に）は、有界の低レベル操作を Jev ではなく A の道具として Gemini に渡すことで決着した（19 §13 の 8）
+0. **`--control tools` の実機確認**（ユーザーの環境）: ブリッジを再起動し、`python examples/integration_test_minecraft.py --control tools --max-steps 100`。見ること: Gemini の道具の選び方（格子を読めるか、提案との使い分け）、書かれる見張りの質問と Jev の答え（誤検知）、1 ステップの遅延、呼び出し回数とトークン（`logs/watch/*.jsonl`）、`goto` / `place` の実機の動き。town4c の縦穴や town4d の前の家のベッドを試験の場面にする。その結果で、コードの「進んでいるか」を規則と比べる（19 §6）、次の版（`blocks` / `build`、道具の好みの引数）、B（設計書 22）へ
 1. **置いた物の扱い**（ユーザーと検討中）: 「使う（use）」と「持っていく（take）」は別の概念として用意する（ユーザーの指摘）。
    - 今の詰まり（新しい家にベッドを置く）を解くのは take: 前の家の家具を掘って持ち物に戻す。ソルバーの入手元（チェスト、かまどに並ぶ）として。対象の案はベッド、作業台、空のかまど、空のチェストで、前の家だけ。ユーザーの返事待ち
    - use（`station` をベッドとチェストにも広げる。例: 前の家のベッドで寝る）は、必要な場面が出てから
