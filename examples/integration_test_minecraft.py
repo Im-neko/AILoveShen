@@ -145,6 +145,7 @@ async def run(
     avatar = None
     if board_port is not None:
         from ailoveshen.factories.avatar import create_avatar_stage
+        from ailoveshen.presentation.web.goal_board import GoalBoard
 
         avatar = create_avatar_stage(
             settings.avatar, settings.jev, activity, base_dir=Path(__file__).parent.parent
