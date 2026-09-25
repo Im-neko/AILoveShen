@@ -80,6 +80,9 @@ class GeminiSettings:
     # 用途（呼び出しの purpose）ごとの thinking_level（docs/design/19 §7、21 §7）。
     # ない用途は main_thinking_level
     thinking_levels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_THINKING_LEVELS))
+    # デバッグ: 思考の要約も返させ、直近の呼び出しを目標ボードの /api/debug/gemini に出す
+    include_thoughts: bool = True
+    debug_log_size: int = 50
     retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
     rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
 
@@ -344,6 +347,8 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 **DEFAULT_THINKING_LEVELS,
                 **dict(gemini_data.get("thinking_levels") or {}),
             },
+            include_thoughts=gemini_data.get("include_thoughts", True),
+            debug_log_size=gemini_data.get("debug_log_size", 50),
             retry=GeminiRetrySettings(
                 max_attempts=retry_data.get("max_attempts", 3),
                 base_delay_seconds=retry_data.get("base_delay_seconds", 1.0),

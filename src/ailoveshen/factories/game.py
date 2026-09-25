@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
+from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
@@ -64,6 +65,7 @@ def create_game_service(
     character: CharacterSettings,
     event_publisher: IEventPublisher,
     conversation: Conversation,
+    generation_log: IGenerationLog | None = None,
 ) -> GameService:
     """
     依存をすべてつないだゲームのエージェントのサービスを作る。
@@ -81,6 +83,7 @@ def create_game_service(
         event_publisher: ドメインイベントの発行先
         conversation: 配信で話したこと（create_llm_service と共有する）。目標の決定が
             これを読み、話したことと食い違う目標を立てないようにする
+        generation_log: Gemini の呼び出しの記録（デバッグ用。create_llm_service と共有する）
 
     Returns:
         設定済みの GameService
@@ -110,6 +113,8 @@ def create_game_service(
         retry_exponential_base=gemini.retry.exponential_base,
         min_request_interval_seconds=gemini.rate_limit.min_interval_seconds,
         thinking_levels=gemini.thinking_levels,
+        include_thoughts=gemini.include_thoughts,
+        generation_log=generation_log,
     )
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds

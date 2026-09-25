@@ -66,6 +66,10 @@ gemini:
     tool_after_failure: "medium"
     commentary: "low"
     reply: "low"               # a viewer is waiting
+  # Debugging: ask for thought summaries and keep the last calls (purpose, level, thoughts,
+  # output, tokens) for GET /api/debug/gemini and /debug/gemini on the goal board (--board-port)
+  include_thoughts: true
+  debug_log_size: 50
 
   # Retry settings (max_attempts includes the original request;
   # retried on 408/429/5xx only)

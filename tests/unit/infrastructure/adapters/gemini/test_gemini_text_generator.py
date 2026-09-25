@@ -336,3 +336,59 @@ class TestChooseTool:
         mock_client.return_value.aio.models.generate_content.return_value = _tool_response(None)
         with pytest.raises(TextGenerationError, match="did not call a tool"):
             await _generator().choose_tool("prompt", self._tools())
+
+
+class TestGenerationLog:
+    """デバッグの記録: 呼び出しごとに用途、深さ、思考の要約、出力、道具、トークン。"""
+
+    @pytest.mark.asyncio
+    async def test_thoughts_output_and_tool_calls_are_recorded(self, mock_client):
+        from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+
+        response = types.GenerateContentResponse(
+            candidates=[
+                types.Candidate(
+                    content=types.Content(
+                        role="model",
+                        parts=[
+                            types.Part(text="穴の壁は +3 なので土を積む", thought=True),
+                            types.Part(function_call=types.FunctionCall(name="wait", args={})),
+                        ],
+                    ),
+                    finish_reason=types.FinishReason.STOP,
+                )
+            ],
+            usage_metadata=types.GenerateContentResponseUsageMetadata(
+                prompt_token_count=100, thoughts_token_count=40, candidates_token_count=5
+            ),
+        )
+        mock_client.return_value.aio.models.generate_content.return_value = response
+        log = InMemoryGenerationLog()
+        g = _generator(
+            include_thoughts=True,
+            generation_log=log,
+            thinking_levels={"tool_after_failure": "medium"},
+        )
+
+        await g.choose_tool("prompt", [], purpose="tool_after_failure")
+
+        [entry] = log.recent()
+        assert entry["purpose"] == "tool_after_failure"
+        assert entry["thinking_level"] == "medium"
+        assert entry["thoughts"] == "穴の壁は +3 なので土を積む"
+        assert entry["tool_calls"] == [{"name": "wait", "args": {}}]
+        assert entry["tokens"] == {"prompt": 100, "thoughts": 40, "output": 5}
+        assert entry["prompt"] == "prompt"
+        config = mock_client.return_value.aio.models.generate_content.call_args.kwargs["config"]
+        assert config.thinking_config.include_thoughts is True
+
+    @pytest.mark.asyncio
+    async def test_errors_are_recorded_too(self, mock_client):
+        from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+
+        mock_client.return_value.aio.models.generate_content.side_effect = RuntimeError("down")
+        log = InMemoryGenerationLog()
+        with pytest.raises(TextGenerationError):
+            await _generator(generation_log=log).generate("p", purpose="reply")
+        assert "down" in log.recent()[0]["error"]
+        assert log.recent()[0]["purpose"] == "reply"

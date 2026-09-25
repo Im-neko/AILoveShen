@@ -14,7 +14,9 @@
 見張りの記録は logs/watch/ に残る。
 
 --board-port を付けると、配信のオーバーレイ用に目標を HTTP で出す:
-http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。
+http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。デバッグ用に、Gemini の直近の
+呼び出し（思考の要約、出力、道具の呼び出し）も出す: /api/debug/gemini（JSON）、
+/debug/gemini（表示）。
 
 前提:
 1. Minecraft サーバーが動いている（docker/docker-compose.minecraft.yml）
@@ -52,6 +54,7 @@ from ailoveshen.domain.events import (
 )
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import create_llm_service
+from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
 from ailoveshen.infrastructure.config import load_settings
 from ailoveshen.infrastructure.events import AsyncEventBus
 from ailoveshen.presentation.services import GameService, LLMService, Narrator
@@ -113,6 +116,7 @@ async def run(
     event_bus.subscribe(MidGoalCompletedEvent, on_mid_done)
     event_bus.subscribe(MidGoalDroppedEvent, on_mid_dropped)
 
+    gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
     game = create_game_service(
         gemini=settings.gemini,
         jev=settings.jev,
@@ -120,6 +124,7 @@ async def run(
         character=settings.character,
         event_publisher=event_bus,
         conversation=conversation,
+        generation_log=gemini_calls,
     )
     llm = create_llm_service(
         gemini=settings.gemini,
@@ -127,6 +132,7 @@ async def run(
         event_publisher=event_bus,
         conversation=conversation,
         mid_goals=game.mid_goals,
+        generation_log=gemini_calls,
     )
 
     def activity():
@@ -138,9 +144,10 @@ async def run(
     if board_port is not None:
         from ailoveshen.presentation.web.goal_board import GoalBoard
 
-        goal_board = GoalBoard(activity)
+        goal_board = GoalBoard(activity, gemini_calls=gemini_calls.recent)
         goal_board.subscribe(event_bus)
         board = asyncio.create_task(goal_board.serve(port=board_port))
+        print(f"[debug] Gemini の思考: http://127.0.0.1:{board_port}/debug/gemini", flush=True)
     chat = asyncio.create_task(feed_comments(comments, game, llm)) if comments else None
     try:
         outcome = await game.play(max_steps=max_steps)

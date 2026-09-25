@@ -6,12 +6,14 @@ import asyncio
 import json
 import time
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from google import genai
 from google.genai import errors, types
 from loguru import logger
 
+from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import (
     ITextGenerator,
     ToolChoice,
@@ -47,6 +49,8 @@ class GeminiTextGenerator(ITextGenerator):
         retry_exponential_base: float = 2.0,
         min_request_interval_seconds: float = 1.0,
         thinking_levels: Optional[Mapping[str, str]] = None,
+        include_thoughts: bool = False,
+        generation_log: Optional[IGenerationLog] = None,
     ) -> None:
         """
         Gemini のクライアントを初期化する。
@@ -63,6 +67,8 @@ class GeminiTextGenerator(ITextGenerator):
             min_request_interval_seconds: リクエストの間の最小の間隔
             thinking_levels: 用途（呼び出しの purpose）ごとの thinking_level（設計書 19 §7）。
                 "default" があれば thinking_level より優先する
+            include_thoughts: 思考の要約も返させる（デバッグ用。generation_log に残す）
+            generation_log: 呼び出しごとの記録（用途、深さ、思考の要約、出力、トークン）の残し先
 
         Raises:
             ValueError: api_key が空か、thinking_level に対応していないとき。
@@ -77,12 +83,14 @@ class GeminiTextGenerator(ITextGenerator):
                     f"got {level!r} for {purpose!r}"
                 )
         self._levels = levels
+        self._include_thoughts = include_thoughts
+        self._generation_log = generation_log
 
         self._model = model
         self._min_interval = min_request_interval_seconds
         self._config = types.GenerateContentConfig(
             max_output_tokens=max_output_tokens,
-            thinking_config=types.ThinkingConfig(thinking_level=levels["default"]),
+            thinking_config=self._thinking(levels["default"]),
             # 道具は choose_tool だけが渡し、呼び出しは自分で扱う。自動の関数呼び出しは無効にする
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
@@ -124,7 +132,7 @@ class GeminiTextGenerator(ITextGenerator):
         config = self._config_for(purpose).model_copy(
             update={"system_instruction": system_instruction}
         )
-        return await self._generate_text(prompt, config)
+        return await self._generate_text(prompt, config, purpose)
 
     async def generate_json(
         self,
@@ -146,7 +154,7 @@ class GeminiTextGenerator(ITextGenerator):
                 "response_json_schema": schema,
             }
         )
-        text = await self._generate_text(prompt, config)
+        text = await self._generate_text(prompt, config, purpose)
         try:
             data = json.loads(text)
         except json.JSONDecodeError as e:
@@ -185,7 +193,7 @@ class GeminiTextGenerator(ITextGenerator):
                 ),
             }
         )
-        response = await self._request(prompt, config)
+        response = await self._request(prompt, config, purpose)
         calls = response.function_calls
         if not calls:
             raise TextGenerationError(
@@ -204,17 +212,22 @@ class GeminiTextGenerator(ITextGenerator):
         level = self.thinking_level_for(purpose)
         if level == self._levels["default"]:
             return self._config
-        return self._config.model_copy(
-            update={"thinking_config": types.ThinkingConfig(thinking_level=level)}
-        )
+        return self._config.model_copy(update={"thinking_config": self._thinking(level)})
+
+    def _thinking(self, level: str) -> types.ThinkingConfig:
+        if self._include_thoughts:
+            return types.ThinkingConfig(thinking_level=level, include_thoughts=True)
+        return types.ThinkingConfig(thinking_level=level)
 
     async def close(self) -> None:
         """内部の HTTP クライアントを閉じる。"""
         await self._client.aio.aclose()
 
-    async def _generate_text(self, prompt: str, config: types.GenerateContentConfig) -> str:
+    async def _generate_text(
+        self, prompt: str, config: types.GenerateContentConfig, purpose: Optional[str]
+    ) -> str:
         """API を呼び、空の出力を診断してテキストを返す。"""
-        response = await self._request(prompt, config)
+        response = await self._request(prompt, config, purpose)
         text = (response.text or "").strip()
         finish_reason = self._finish_reason(response)
 
@@ -235,9 +248,9 @@ class GeminiTextGenerator(ITextGenerator):
         return text
 
     async def _request(
-        self, prompt: str, config: types.GenerateContentConfig
+        self, prompt: str, config: types.GenerateContentConfig, purpose: Optional[str]
     ) -> types.GenerateContentResponse:
-        """レート制限と使用量のログを付けて API を呼ぶ。"""
+        """レート制限と使用量のログ、呼び出しの記録を付けて API を呼ぶ。"""
         await self._wait_for_rate_limit()
 
         started = time.monotonic()
@@ -248,13 +261,62 @@ class GeminiTextGenerator(ITextGenerator):
                 config=config,
             )
         except errors.APIError as e:
-            raise TextGenerationError(f"Gemini API error {e.code}: {e.message}") from e
+            error = TextGenerationError(f"Gemini API error {e.code}: {e.message}")
+            self._record(prompt, config, purpose, started, error=str(error))
+            raise error from e
         except Exception as e:
-            raise TextGenerationError(f"Gemini request failed: {e}") from e
+            error = TextGenerationError(f"Gemini request failed: {e}")
+            self._record(prompt, config, purpose, started, error=str(error))
+            raise error from e
 
         elapsed_ms = int((time.monotonic() - started) * 1000)
         self._log_usage(response, elapsed_ms, config)
+        self._record(prompt, config, purpose, started, response=response)
         return response
+
+    def _record(
+        self,
+        prompt: str,
+        config: types.GenerateContentConfig,
+        purpose: Optional[str],
+        started: float,
+        response: Optional[types.GenerateContentResponse] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """呼び出しを 1 件、デバッグの記録に残す（思考の要約、出力、トークン）。"""
+        if self._generation_log is None:
+            return
+        level = config.thinking_config.thinking_level if config.thinking_config else None
+        entry: dict[str, Any] = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "purpose": purpose or "default",
+            "thinking_level": str(getattr(level, "value", level) or "").lower() or None,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "prompt": prompt,
+        }
+        if error is not None:
+            entry["error"] = error
+        if response is not None:
+            parts = []
+            if response.candidates and response.candidates[0].content:
+                parts = response.candidates[0].content.parts or []
+            entry["thoughts"] = "\n".join(p.text for p in parts if p.thought and p.text) or None
+            entry["output"] = (response.text or "").strip() or None
+            calls = response.function_calls or []
+            entry["tool_calls"] = [{"name": c.name, "args": dict(c.args or {})} for c in calls]
+            finish = self._finish_reason(response)
+            entry["finish_reason"] = getattr(finish, "value", finish)
+            usage = response.usage_metadata
+            entry["tokens"] = (
+                {
+                    "prompt": usage.prompt_token_count,
+                    "thoughts": usage.thoughts_token_count,
+                    "output": usage.candidates_token_count,
+                }
+                if usage
+                else None
+            )
+        self._generation_log.record(entry)
 
     async def _wait_for_rate_limit(self) -> None:
         """前のリクエストから min_request_interval が経つまで待つ。"""

@@ -200,3 +200,20 @@ class TestGoalBoard:
         await board._on_event(GoalSetEvent())
 
         assert queue.qsize() == 1
+
+
+def test_debug_gemini_calls_as_json_and_a_page():
+    """デバッグ: Gemini の直近の呼び出しを JSON で、表示するページと一緒に出す。"""
+    from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+
+    log = InMemoryGenerationLog(size=3)
+    for i in range(5):
+        log.record({"purpose": "tool", "thoughts": f"考え {i}"})
+    client = TestClient(GoalBoard(lambda: None, gemini_calls=log.recent).app)
+
+    calls = client.get("/api/debug/gemini", params={"limit": 2}).json()
+    assert [c["thoughts"] for c in calls] == ["考え 4", "考え 3"]  # 新しい順、古いものは消える
+    assert [c["id"] for c in calls] == [5, 4]
+    assert "/api/debug/gemini" in client.get("/debug/gemini").text
+    # 記録を渡していなければ空
+    assert TestClient(GoalBoard(lambda: None).app).get("/api/debug/gemini").json() == []

@@ -2,10 +2,18 @@
 
 **Active Phase**: 設計書 21（A の最初の版: Gemini が道具を呼んで操作し、Jev が実行中に Gemini の質問に答える）を実装した（`minecraft.agent.control: tools`、既定は今までの `candidates`）。実機ではまだ動かしていない（クラウドの環境に API キーと Minecraft サーバーがない）。次はユーザーの環境で `--control tools` を動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 470 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Test Status**: `pytest tests/` 473 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに今回のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### デバッグ: Gemini の思考を見るエンドポイント (2026-09-25)
+
+- ユーザーの依頼「今の Gemini の思考内容が見えるエンドポイントが欲しい。JSON で返すだけでよい」「OBS で JSON を表示できるか」→ OBS は JSON を直接は読めないので、読んで表示するページをブラウザソースで開く形にした
+- `GeminiTextGenerator` が呼び出しごとに記録する（用途、thinking_level、所要時間、思考の要約、出力、道具の呼び出し、finish_reason、トークン、プロンプト、エラー）。思考の要約は `gemini.include_thoughts`（既定 true）で `ThinkingConfig(include_thoughts=True)` を送って受け取る
+- ポート `IGenerationLog`、`InMemoryGenerationLog`（直近 `gemini.debug_log_size` 件、ゲームと会話の生成器で共有）
+- 目標ボードに `GET /api/debug/gemini?limit=N`（JSON、新しい順）と `/debug/gemini`（2 秒ごとに読んで表示。`?limit=5`、`?prompt=1`）。`examples/integration_test_minecraft.py --board-port 8765` で出る
+- 未確認: 3.8 Flash が思考の要約を返すか（実 API）
 
 ### A の最初の版: 道具・共通の状態・Gemini の質問に Jev が答える見張り（設計書 21） (2026-09-25)
 

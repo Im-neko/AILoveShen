@@ -3,6 +3,9 @@
 - GET /api/goals         今の目標（JSON）
 - GET /api/goals/stream  目標が変わるたび、ステップのたびに同じ JSON（Server-Sent Events）
 - GET /overlay           OBS のブラウザソース用のページ（背景は透明）
+- GET /api/debug/gemini  デバッグ: Gemini の直近の呼び出し（用途、考える深さ、思考の要約、出力、
+                         道具の呼び出し、トークン、プロンプト）。新しい順、?limit=N（既定 20）
+- GET /debug/gemini      上を 2 秒ごとに読んで表示するページ（ブラウザや OBS のブラウザソース）
 
 読み取り専用: プレイセッションが持つものを出すだけで、変えることはない。プレイのループと
 同じプロセスで動く（`GoalBoard.serve`）。設計: docs/design/13_goal_hierarchy.md §7。
@@ -36,6 +39,7 @@ from ailoveshen.domain.events import (
 from ailoveshen.domain.value_objects import Activity, GameObservation, MidGoal, MidGoalState
 
 OVERLAY_HTML = Path(__file__).with_name("overlay.html")
+DEBUG_HTML = Path(__file__).with_name("debug_gemini.html")
 KEEPALIVE_SECONDS = 15.0
 QUEUE_SIZE = 16
 # ボードの表示が変わるイベントすべて（ステップで小目標の進み具合が変わる）
@@ -151,15 +155,22 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
 class GoalBoard:
     """プレイ中のセッションの目標を配信オーバーレイに出す。"""
 
-    def __init__(self, activity: Callable[[], Activity | None]) -> None:
+    def __init__(
+        self,
+        activity: Callable[[], Activity | None],
+        gemini_calls: Callable[[int], list[dict[str, Any]]] | None = None,
+    ) -> None:
         """
         ボードを初期化する。
 
         Args:
             activity: 配信者が今していること（ゲームのセッションの activity。プレイを
                 始める前は None）
+            gemini_calls: Gemini の直近の呼び出し（新しい順に最大 N 件）を返すもの。
+                None なら /api/debug/gemini は空のリストを返す
         """
         self._activity = activity
+        self._gemini_calls = gemini_calls
         self._listeners: set[asyncio.Queue[str]] = set()
         self.app = self._create_app()
 
@@ -218,5 +229,15 @@ class GoalBoard:
         @app.get("/overlay", response_class=HTMLResponse)
         async def overlay() -> str:
             return OVERLAY_HTML.read_text(encoding="utf-8")
+
+        @app.get("/api/debug/gemini")
+        async def gemini_calls(limit: int = 20) -> list[dict[str, Any]]:
+            if self._gemini_calls is None:
+                return []
+            return self._gemini_calls(max(1, min(limit, 200)))
+
+        @app.get("/debug/gemini", response_class=HTMLResponse)
+        async def gemini_page() -> str:
+            return DEBUG_HTML.read_text(encoding="utf-8")
 
         return app
