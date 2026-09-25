@@ -17,6 +17,7 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     Goal,
     GoalOutcome,
+    GoalPredicate,
     GoalSpec,
     HouseBlueprint,
     MessageRole,
@@ -421,9 +422,11 @@ class PlaySession(Entity):
             return f"goal {name} is stuck (actions keep failing)"
         if self.stalled_steps >= self.max_stalled_steps:
             return f"goal {name} stalled (no progress in {self.stalled_steps} steps)"
-        if self.steps_in_goal >= self.max_steps_per_goal:
+        # Getting through the night spans dusk, night and dawn and ends itself in the morning
+        spans_the_night = self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
+        if self.steps_in_goal >= self.max_steps_per_goal and not spans_the_night:
             return f"goal {name} ran for {self.steps_in_goal} steps"
-        if self.phase_changed(obs):
+        if self.phase_changed(obs) and not spans_the_night:
             return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
         return ""
 

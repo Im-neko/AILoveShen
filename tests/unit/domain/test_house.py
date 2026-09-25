@@ -250,6 +250,17 @@ class TestPlaySession:
             "the time of day changed from day to dusk"
         )
 
+    def test_getting_through_the_night_is_not_cut_short(self):
+        session = self._session(max_steps_per_goal=2)
+        session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT)), "day")
+        session.record(OK)
+        session.record(OK)
+        assert not session.needs_new_goal(_obs(phase="dusk"))
+        assert not session.needs_new_goal(_obs(phase="night"))
+        assert session.goal_end_reason(_obs(phase="day", met=True)) == (
+            "goal through_night() is met"
+        )
+
     def test_set_goal_resets_counters(self):
         session = self._session(max_stalled_steps=2)
         session.track_progress(_obs(remaining=5))
@@ -310,6 +321,10 @@ class TestMidGoal:
             MidGoal("m1", "家", ())
         with pytest.raises(ValueError, match="title"):
             MidGoal("m1", "", (BUILT,))
+
+    def test_summary_leaves_out_the_sub_steps(self):
+        goal = MidGoal("m1", "家", (BUILT,), progress=("placed 3/70", "  have 12 log (0/12)"))
+        assert goal.summary() == ("placed 3/70",)
 
     def test_survival_goals(self):
         assert is_survival(GoalSpec(GoalPredicate.THROUGH_NIGHT))
