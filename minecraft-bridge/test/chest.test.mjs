@@ -8,6 +8,7 @@ import { makeGoal, evaluate, checkConditions } from '../src/goals.mjs'
 import { chestSpot } from '../src/home.mjs'
 import { ground } from '../src/candidates.mjs'
 import { newMemory, rememberChest, storedCounts } from '../src/memory.mjs'
+import { takeable } from '../src/world.mjs'
 
 const { Vec3 } = vec3Pkg
 const v = (x, y, z) => new Vec3(x, y, z)
@@ -85,4 +86,21 @@ test('a full inventory in the house offers the biggest spare stacks to the chest
     'put 60 cobblestone in the chest at 1,70,1',
     'put 30 dirt in the chest at 1,70,1'
   ])
+})
+
+test('what the mid goals keep in the chests is not taken out, except food when starving', () => {
+  const state = { home, plan: null, memory: newMemory() }
+  const bot = { entity: { position: v(2, 70, 2) }, time: { timeOfDay: 1000 }, inventory: { items: () => [] } }
+  const goal = makeGoal({ predicate: 'have', item: 'food', count: 6, keep: [{ item: 'food', count: 10 }] }, bot, state, k)
+  assert.equal(goal.keep[0].food, true)
+
+  const stored = { mutton: 4, oak_log: 5 }
+  assert.deepEqual(takeable(stored, goal.keep, false), { mutton: 0, oak_log: 5 })
+  assert.deepEqual(takeable(stored, goal.keep, true), stored)
+  const logs = makeGoal({ predicate: 'have', item: 'log', count: 3, keep: [{ item: 'log', count: 2 }] }, bot, state, k).keep
+  assert.deepEqual(takeable(stored, logs, true), { mutton: 4, oak_log: 3 })
+
+  // frun5: have(food) for the stock took the mutton just put in
+  const r = solve(k, world({ stored: takeable(stored, goal.keep, false) }), [{ spec: 'food', count: 6 }])
+  assert.ok(!kinds(r).some((l) => l.startsWith('withdraw')), kinds(r).join())
 })

@@ -45,10 +45,11 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data = await self._request("GET", "/observe")
         return _to_observation(data)
 
-    async def set_goal(self, spec: GoalSpec) -> GoalStatus:
+    async def set_goal(self, spec: GoalSpec, keep: Sequence[GoalSpec] = ()) -> GoalStatus:
         """Set the goal; a 400 from the bridge carries the reason it was rejected."""
+        body = {**spec.to_dict(), "keep": [{"item": k.item, "count": k.count} for k in keep]}
         try:
-            response = await self._client.put("/goal", json=spec.to_dict())
+            response = await self._client.put("/goal", json=body)
         except httpx.RequestError as e:
             raise GameBridgeError(f"Minecraft bridge unreachable (PUT /goal): {e}") from e
         if response.status_code == 400:

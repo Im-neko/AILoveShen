@@ -36,9 +36,14 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
-    async def set_goal(self, spec: GoalSpec) -> GoalStatus:
+    async def set_goal(self, spec: GoalSpec, keep: Sequence[GoalSpec] = ()) -> GoalStatus:
         """
         Set the goal the candidates are grounded for.
+
+        Args:
+            spec: The small goal
+            keep: The stored() conditions of the mid goals: what the chests keep for them is never
+                taken out for this goal (food only when starving)
 
         Raises:
             GoalRejectedError: If the bridge rejects the goal (with the reason)

@@ -38,6 +38,8 @@ from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GameObservation,
     Goal,
+    GoalPredicate,
+    GoalSpec,
     GoalStatus,
     HouseBlueprint,
     Side,
@@ -401,7 +403,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                     )
                 await self._mid_goals.check_new(decision.changes)
                 _serving(decision, self._mid_goals.rehearse(plan, decision.changes))
-                status = await self._bridge.set_goal(decision.spec)
+                status = await self._bridge.set_goal(
+                    decision.spec, _kept(self._mid_goals.rehearse(plan, decision.changes))
+                )
                 # Applied only now, to the plan as it is (a reply may have added to it meanwhile)
                 preview = self._mid_goals.rehearse(plan, decision.changes)
                 _serving(decision, preview)
@@ -459,3 +463,10 @@ def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
     current = plan.current
     mid_goal_id = current.id if decision.serves == Serves.CURRENT and current else None
     return Goal(spec=decision.spec, reason=decision.reason, mid_goal_id=mid_goal_id)
+
+
+def _kept(plan: MidGoalPlan) -> tuple[GoalSpec, ...]:
+    """What the chests keep for the mid goals: their stored() conditions."""
+    return tuple(
+        c for g in plan.pending for c in g.conditions if c.predicate == GoalPredicate.STORED
+    )

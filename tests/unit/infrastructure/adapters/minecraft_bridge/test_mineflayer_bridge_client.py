@@ -84,7 +84,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_set_goal_puts_the_spec(self):
-        """Test set_goal() sends the spec and returns the goal's status."""
+        """Test set_goal() sends the spec with what the chests keep, and returns its status."""
         seen = {}
 
         def handler(req):
@@ -94,13 +94,19 @@ class TestMineflayerBridgeClient:
             return httpx.Response(200, json=OBSERVE["goal"])
 
         status = await _client(handler).set_goal(
-            GoalSpec(GoalPredicate.HAVE, item="planks", count=12)
+            GoalSpec(GoalPredicate.HAVE, item="planks", count=12),
+            keep=(GoalSpec(GoalPredicate.STORED, item="food", count=10),),
         )
 
         assert seen == {
             "method": "PUT",
             "path": "/goal",
-            "body": {"predicate": "have", "item": "planks", "count": 12},
+            "body": {
+                "predicate": "have",
+                "item": "planks",
+                "count": 12,
+                "keep": [{"item": "food", "count": 10}],
+            },
         }
         assert status.remaining == 4
 

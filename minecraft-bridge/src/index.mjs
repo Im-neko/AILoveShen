@@ -1,7 +1,8 @@
 // Minecraft bridge: Mineflayer bot + POV mirror + HTTP API for the Python side.
 //
-//   PUT  /goal {predicate, item?, count?, where?, distance?}
-//                          -> sets the goal (400 with the reason if invalid); returns its status
+//   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}]}
+//                          -> sets the goal (400 with the reason if invalid); returns its status.
+//                             keep: what the chests keep for the mid goals (never taken out for it)
 //   GET  /observe          -> { busy, observation, needs, goal: {spec, met, remaining, lines, blocked} | null,
 //                               candidates: [{id, verb, target, ...}] }
 //   POST /act {id}         -> grounds the candidates again and runs the one with this id to

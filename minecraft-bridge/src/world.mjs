@@ -3,7 +3,7 @@
 
 import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
-import { findTable, isLeaves } from './primitives.mjs'
+import { findTable, isLeaves, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts, recallableKinds } from './memory.mjs'
 
@@ -58,6 +58,23 @@ export function sightings (bot) {
   return [...blocks, ...animals]
 }
 
+// What may be taken out of the chests: all but what the mid goals keep there (food kept for a stock
+// is still eaten when starving)
+export function takeable (stored, keep, starving) {
+  const out = { ...stored }
+  for (const k of keep) {
+    if (k.food && starving) continue
+    let left = k.count
+    for (const m of k.members) {
+      const n = Math.min(out[m] ?? 0, left)
+      if (!n) continue
+      out[m] -= n
+      left -= n
+    }
+  }
+  return out
+}
+
 // The solver's view of the world; dig/hunt lookups are cached for the candidates
 export function snapshot (bot, state) {
   const digCache = new Map()
@@ -68,7 +85,7 @@ export function snapshot (bot, state) {
   const hunt = (name) => huntTargets(bot, [name])
   return {
     inventory: inventoryCounts(bot),
-    stored: storedCounts(state.memory ?? {}),
+    stored: takeable(storedCounts(state.memory ?? {}), state.goal?.keep ?? [], bot.food <= HUNGER_URGENT),
     remembered: state.memory ? recallableKinds(state.memory, bot.entity.position, Number(bot.time.age)) : new Set(),
     blocks: new Proxy({}, { get: (_, name) => typeof name === 'string' ? dig(name).length : undefined }),
     mobs: new Proxy({}, { get: (_, name) => typeof name === 'string' ? hunt(name).length : undefined }),

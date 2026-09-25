@@ -38,9 +38,22 @@ export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored']
 export class NotYetError extends Error {}
 
 // Every goal remembers where it was set: its searches go away from there, never back and forth
+// keep: what the chests keep for the mid goals ([{item, count}], their stored() conditions); the
+// solver never takes it out, except food when starving (world.mjs)
 export function makeGoal (spec, bot, state, knowledge) {
   const p = bot.entity.position
-  return { ...validGoal(spec, bot, state, knowledge), exploreFrom: { x: p.x, y: p.y, z: p.z } }
+  return { ...validGoal(spec, bot, state, knowledge), exploreFrom: { x: p.x, y: p.y, z: p.z }, keep: validKeep(spec.keep ?? [], knowledge) }
+}
+
+function validKeep (keep, knowledge) {
+  if (!Array.isArray(keep)) throw new Error('keep must be a list of {item, count}')
+  const food = new Set(knowledge.resolve('food').members)
+  return keep.map(({ item, count }) => {
+    const n = Number(count)
+    if (!Number.isInteger(n) || n < 1) throw new Error(`keep: count must be a positive integer, got ${count}`)
+    const { members } = knowledge.resolve(String(item))
+    return { item: String(item), count: n, members, food: members.every((m) => food.has(m)) }
+  })
 }
 
 function validGoal (spec, bot, state, knowledge) {

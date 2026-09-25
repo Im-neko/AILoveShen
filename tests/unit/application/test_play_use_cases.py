@@ -341,6 +341,18 @@ class TestAdvancePlay:
         )
 
     @pytest.mark.asyncio
+    async def test_the_chests_keep_what_the_mid_goals_store(self, use_case, text_generator, bridge):
+        """Test a stock mid goal's stored() condition goes with the goal, so it is not taken out."""
+        text_generator.generate_json.return_value = PLANKS
+        plan = _plan()
+        stock = GoalSpec(GoalPredicate.STORED, item="food", count=10)
+        plan.add("食料を蓄える", (stock,))
+
+        await use_case.execute(_session(plan=plan))
+
+        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (stock,))
+
+    @pytest.mark.asyncio
     async def test_first_step_sets_goal_then_acts(
         self, use_case, text_generator, bridge, selector, prompt_builder, events
     ):
@@ -352,7 +364,7 @@ class TestAdvancePlay:
 
         assert report.goal_changed
         assert session.goal.spec == HAVE_PLANKS
-        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS)
+        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, ())
         assert bridge.observe.await_count == 2  # again after the goal: candidates for it
         state, candidates, instructions = selector.select.call_args.args
         assert state == {"goal": "g"} and instructions == "instructions"
@@ -440,7 +452,7 @@ class TestAdvancePlay:
         ]
         assert "count" in errors[1]
         assert "not one of the goals offered" in errors[2]
-        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS)
+        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, ())
 
     @pytest.mark.asyncio
     async def test_gives_up_after_max_goal_attempts(self, use_case, text_generator, bridge):
