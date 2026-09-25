@@ -18,6 +18,7 @@ import { dayPhase, inventoryCounts, EXPLODES, isDark } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
 import { chests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
+import { cooking } from './cooking.mjs'
 import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -219,7 +220,9 @@ export function evaluate (bot, state, knowledge, world) {
         out.remaining += 1
       } else {
         const inv = inventoryCounts(bot)
-        const held = members.filter((m) => inv[m] > 0).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
+        // Raw meat goes in cooked where it can be cooked now (the cook candidate, then the furnace)
+        const cook = cooking(bot, knowledge)
+        const held = members.filter((m) => inv[m] > 0 && m !== cook?.input).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
         if (held.length) out.leaves.push({ kind: 'deposit', items: held })
       }
       addSolved([{ spec: goal.spec.item, count: want }], gathering)

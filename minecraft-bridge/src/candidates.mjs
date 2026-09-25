@@ -15,6 +15,7 @@ import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
 import { recall, visited, chests, chestWith, furnaceWith } from './memory.mjs'
+import { cooking } from './cooking.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -205,6 +206,13 @@ function forNeeds (bot, state, knowledge) {
     const lastResort = bot.food <= HUNGER_URGENT && bot.inventory.items().find((i) => LAST_RESORT_FOOD.includes(i.name))
     const eat = best ?? lastResort
     if (eat) out.push({ id: `eat ${eat.name}`, verb: 'eat', target: eat.name, item: eat.name, inPlace: true })
+  }
+  // Raw meat is cooked where a furnace is at hand, whatever the goal (2.7 times the hunger back)
+  const cook = cooking(bot, knowledge)
+  if (cook) {
+    const pos = cook.furnace.position
+    const { input, count, fuel, fuelCount, product } = cook
+    out.push({ id: `cook ${count} ${input} in the furnace at ${fmt(pos)}`, verb: 'smelt', target: product, item: product, input, count, fuel, fuelCount, pos, distance: dist(bot, pos) })
   }
   out.push(...storeSpare(bot, state, knowledge))
   const weapon = bestWeapon(bot)
