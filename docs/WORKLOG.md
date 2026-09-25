@@ -7,6 +7,10 @@
 
 ## Completed Work
 
+### 配信の手順書（docs/streaming.md） (2026-09-25)
+
+- ユーザーの依頼「この辺全部、配信手順・コマンドとしてドキュメントにしてほしい」→ `docs/streaming.md`: 全体像とポート、初回の準備（依存、.env、音声モデル、仮想オーディオ、OBS の WebSocket とソース）、毎回の起動の順番（Docker → ブリッジ → 視点のクライアント → プレイの処理 → OBS）、オプション、止め方、引き継がれるもの、見るところ、うまくいかないとき。CLAUDE.md から参照し、コマンドやポートを変えたら直す決まりにした
+
 ### Minecraft の例で読み上げる（--speak） (2026-09-25)
 
 - ユーザーの問い「Style-Bert で作った音声モデルで TTS するには？」→ TTS の仕組み（Docker の Style-Bert-VITS2 サーバー、`create_tts_service`）はあったが、`integration_test_minecraft.py` は `[say]` を表示するだけだった

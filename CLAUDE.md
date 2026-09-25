@@ -29,6 +29,8 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 
 ## Common Commands
 
+Streaming runbook (setup, start order, OBS sources, stop, troubleshooting): `docs/streaming.md`. Keep it in sync when commands, ports, options or OBS URLs change.
+
 ### Setup
 ```bash
 pip install -r requirements.txt  # AILoveShen core + all extras + the package itself (-e .); same as pip install -e ".[all]"
