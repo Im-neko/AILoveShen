@@ -76,7 +76,7 @@ AdvancePlay の次のステップの区切り ◀──────────�
 - 後回しの頼み（キュー）、自由文の約束
 - 実況の頻度・間合いの調整（今はイベントごとに1回）
 
-## 8. 実機確認（2026-09-25、`scratchpad/coherence_live.py`、Gemini 3.8 Flash、ブリッジの実際の観測）
+## 8. 実機確認（2026-09-25、`spikes/coherence_live.py`、Gemini 3.8 Flash、ブリッジの実際の観測）
 
 家の中、昼の目標 `have(log, 3)`（剣の材料）、夜の目標 `through_night`。
 

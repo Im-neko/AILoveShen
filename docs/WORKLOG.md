@@ -1,12 +1,25 @@
 ## Current Status
 
-**Active Phase**: 街作りロードマップ（`docs/design/09_town_building_roadmap.md`）の F（根源的な行動の組み合わせ）を実装し、自律実行（frun1）で検証した。frun1 で見つかった窓の穴と、昼に家から出られない問題を直した（`cleared`、壁の出口、外した候補の理由）。次は Gemini + Jev での再検証（frun2）。ブランチ `feat/town-m1-m2`（`feat/phase6-minimal` から派生、PR #19 は未マージ）
+**Active Phase**: つながった意思決定（`docs/design/12_coherent_decisions.md`）を実装し、実際の Gemini で確認した。次は Gemini + Jev での通しの自律実行（frun2: F の修正と 12 を合わせて検証）。ブランチ `feat/town-m1-m2`（`feat/phase6-minimal` から派生、PR #19 は未マージ）
 **Last Updated**: 2026-09-25
-**Test Status**: 311 unit tests passing (`pytest tests/`)、ブリッジ `npm test` 24 件成功
+**Test Status**: 331 unit tests passing (`pytest tests/`)、ブリッジ `npm test` 25 件成功
 
 ---
 
 ## Completed Work
+
+### つながった意思決定: 言うこととやることを一致させる (2026-09-25)
+
+**Commits**: `9a966d1`（設計書 12）、`2aa9f3d`（実装）、`26151d3`（実機確認で見つかった失敗の修正）。確認用スクリプト: `spikes/coherence_live.py`
+
+- ユーザーの方針: 「コメントの指摘を反映させることより何より、全ての意思決定がつながっていることが大切。コメントに応答した事と全く違う事をしていたら視聴者はびっくりする」
+- `PlaySession` だけが目標を持つ。`activity()`（目標と理由、進み具合、これまでの目標と終わった理由、視聴者の頼み）を `prompts/stream_context.py` の 1 つの書式で、目標の決定・実況・返答の 3 つが見る。目標の決定は会話も見る
+- 返答と、その返答が約束する目標を 1 回の生成で出す（`reply_schema`、今出せる述語だけ）。目標は頼みとして `PlaySession` に置き、ステップのループだけが反映する（返答は `/act` と並行して走るため）
+- `GoalEndedEvent` / `GoalSetEvent.requested_by` / `ViewerRequestRejectedEvent` / `ViewerRequestReplacedEvent`。`Narrator` が目標の終了と次の目標を 1 回で言い、約束した目標の開始は繰り返さず、やめた・断った・置き換えた頼みは必ず言う
+- `GenerateResponseUseCase` を書き換えた（互換層なし）。`create_llm_service` / `create_game_service` は `Conversation` を受け取って共有する。`examples/integration_test_minecraft.py --comments` で台本のコメントを流せる
+- 実機確認（家の中、昼 6 件 × 2 周 + 夜 2 件）: 1 回目は、頼みを黙って置き換えた、目標なしの先の約束 2 件、実況が生成中に変わった目標と食い違った、の失敗 → 修正後は目標なしの約束 0/14、「今なにしてるの？」3/3 一致、ベッドの頼みは次のステップで目標になった。遅延 1.1〜2.2 秒。詳細は設計書 12 §8
+- 残る弱点: 頼みを引き受けたあとの別の頼みに「今は原木集めを優先する」と答え、次のステップで始まる頼みの目標に触れなかった
+- 介入: `time set 3000 / 14000 / 1000`、tp
 
 ### F 修正: ドアの前の敵で閉じ込められない、窓の穴をなくす (2026-09-25)
 
@@ -450,7 +463,8 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 街作りロードマップの続き（09）
 
-- **F の再検証（frun2）**: Gemini + Jev で、`cleared` と壁の出口が実際に選ばれるか、夜を被弾なしで越えるか
+- **frun2**: Gemini + Jev の通しの自律実行で、F の修正（`cleared`、壁の出口、目的つきの待機、窓なし）と 12（台本のコメント `--comments`）を合わせて検証。夜を被弾なしで越えるか、朝に自分で外へ出るか、頼みと実況が食い違わないか
+- M2（Twitch）: 12 の返答の仕組みにコメントをつなぐ
 - 被弾ログの「(X nearby)」は最寄りの敵の名前で攻撃者ではない。実際の攻撃者を出す
 - F: Jev と規則（`tools/goal-drive.mjs`）の実機比較、Noul による続行・切り替え判断のスパイク、設計書 06 §10 に検証結果を反映
 - スクショ（vision）と M3 は F の後
@@ -567,6 +581,9 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 ---
 
 ## Session Notes
+
+### 2026-09-25 (つながった意思決定)
+- ユーザーから「Gemini はベッドを作ることを考えないのか、コメントで指摘されたら検討できるか」→ 考えてはいた（frun1 で placed(bed) を選んだが Jev の待機で停滞）。コメントは目標に届かなかった。ユーザーの方針「全ての意思決定がつながっていることが大切」で 12 を設計・実装した。frun2 の順番は聞かれなかったので 12 を先にした
 
 ### 2026-09-25 (F の実装と自律実行 frun1)
 - F を実装し、Gemini + Jev で家の建築から一晩越しまで自律実行した。窓の穴からの被弾と、朝に日陰のスケルトンで家に閉じ込められる問題が見つかった。以前 M1 で「夜を安全に越えた」としたのは、窓の横に敵が来なかっただけだった
