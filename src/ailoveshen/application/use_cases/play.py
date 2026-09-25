@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from loguru import logger
@@ -399,6 +400,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         status: GoalStatus,
     ) -> None:
         session.set_goal(goal, obs.time_phase)
+        # What is seen from now on (the narration of this event, replies) is the new goal's status,
+        # not the ended one's
+        session.observe(replace(obs, goal=status))
         mid = session.plan.get(goal.mid_goal_id) if goal.mid_goal_id else None
         serves = f" for {mid.describe()}" if mid else " for survival"
         logger.info(

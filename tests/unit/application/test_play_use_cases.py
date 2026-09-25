@@ -527,6 +527,24 @@ class TestAdvancePlay:
         assert _published(events, GoalSetEvent)[0].mid_goal == "自分の家を作る"
 
     @pytest.mark.asyncio
+    async def test_new_goal_is_seen_with_its_own_status(self, use_case, text_generator, bridge):
+        """Test what the goal-set narration sees is the new goal's status, not the ended one's."""
+        bridge.set_goal.return_value = GoalStatus(False, 5, lines=("have 4 planks (0/4)",))
+        seen = []
+
+        async def publish(event):
+            if isinstance(event, GoalSetEvent):
+                seen.append(session.activity().observation.goal.lines)
+
+        use_case._event_publisher.publish.side_effect = publish
+        text_generator.generate_json.return_value = PLANKS
+        session = _session()
+
+        await use_case.execute(session)
+
+        assert seen == [("have 4 planks (0/4)",)]
+
+    @pytest.mark.asyncio
     async def test_mid_goals_are_judged_before_deciding(
         self, use_case, text_generator, bridge, prompt_builder, events, store
     ):
