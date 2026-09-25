@@ -36,7 +36,12 @@ test('stored(): a chest is made and placed first, then held items go in', () => 
   const noChest = evaluate(bot, { ...state, goal }, k, world({ inventory: { oak_log: 4 } }))
   assert.equal(noChest.met, false)
   assert.ok(noChest.lines.some((l) => l.startsWith('have 1 chest (0/1): craft chest')), noChest.lines.join('\n'))
-  assert.deepEqual(kinds(noChest), ['craft:oak_planks:']) // 8 planks for the chest, from the logs held
+  assert.ok(kinds(noChest).includes('craft:oak_planks:'), kinds(noChest).join()) // 8 planks for the chest
+
+  // Placing the chest is progress: the remaining work goes down (frun5 stalled when it went up)
+  rememberChest(state.memory, v(1, 70, 1), {}, 0)
+  const placed = evaluate(bot, { ...state, goal }, k, world({ inventory: { oak_log: 4 } }))
+  assert.ok(placed.remaining < noChest.remaining, `${placed.remaining} after placing, ${noChest.remaining} before`)
 
   rememberChest(state.memory, v(1, 70, 1), { oak_log: 3 }, 0)
   const r = evaluate(bot, { ...state, goal }, k, world({ inventory: { oak_log: 4 }, stored: storedCounts(state.memory) }))

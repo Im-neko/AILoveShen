@@ -188,15 +188,17 @@ export function evaluate (bot, state, knowledge, world) {
       const want = n - inChests
       out.remaining += want
       // What the chests hold is never taken out to be put back
+      // The items are gathered with or without a chest, so the remaining work only goes down as
+      // the chest is placed and filled
       const gathering = { ...world, stored: {} }
       if (!chests(state.memory ?? {}).length) {
         if (addSolved([{ spec: 'chest', count: 1 }], gathering).met) out.leaves.push({ kind: 'place_chest' })
         out.remaining += 1
-        break
+      } else {
+        const inv = inventoryCounts(bot)
+        const held = members.filter((m) => inv[m] > 0).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
+        if (held.length) out.leaves.push({ kind: 'deposit', items: held })
       }
-      const inv = inventoryCounts(bot)
-      const held = members.filter((m) => inv[m] > 0).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
-      if (held.length) out.leaves.push({ kind: 'deposit', items: held })
       addSolved([{ spec: goal.spec.item, count: want }], gathering)
       break
     }
