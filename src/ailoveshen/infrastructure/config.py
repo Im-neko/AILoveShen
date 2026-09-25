@@ -254,6 +254,15 @@ class OBSSettings:
 
 
 @dataclass
+class AvatarSettings:
+    """配信者のアバター（VRM、docs/design/24_avatar.md）。目標ボードの /avatar で出す。"""
+
+    model_path: str = "models/vrm/ailoveshen.vrm"
+    # 口の動きの元: auto（TTS の再生のイベントが来たらそれに、来なければ生成した本文に）/ text / tts
+    lip_sync: str = "auto"
+
+
+@dataclass
 class LoggingSettings:
     """ログの設定。"""
 
@@ -284,6 +293,7 @@ class Settings:
     tts: TTSSettings = field(default_factory=TTSSettings)
     mcp: MCPSettings = field(default_factory=MCPSettings)
     obs: OBSSettings = field(default_factory=OBSSettings)
+    avatar: AvatarSettings = field(default_factory=AvatarSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
 
 
@@ -522,6 +532,13 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 short_term_capacity=memory_data.get("short_term_capacity", 20),
                 long_term_db=memory_data.get("long_term_db", "data/memory.db"),
             ),
+        )
+
+    if "avatar" in data:
+        avatar_data = data["avatar"] or {}
+        settings.avatar = AvatarSettings(
+            model_path=avatar_data.get("model_path", AvatarSettings.model_path),
+            lip_sync=avatar_data.get("lip_sync", AvatarSettings.lip_sync),
         )
 
     if "obs" in data:

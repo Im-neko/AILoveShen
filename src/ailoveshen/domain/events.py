@@ -57,6 +57,7 @@ class SpeechStartedEvent(DomainEvent):
     text: str = field(default="")
     source: str = field(default="unknown")  # 例: "commentary"、"chat_response"
     emotion: EmotionState = field(default_factory=EmotionState)
+    duration_ms: int = field(default=0)  # これから再生する音声の長さ（口の動きを合わせる）
 
 
 @dataclass(frozen=True)

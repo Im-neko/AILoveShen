@@ -114,6 +114,7 @@ class SpeakTextUseCase(ISpeakText):
                     text=text,
                     source=request.source,
                     emotion=emotion,
+                    duration_ms=duration_ms,
                 )
             )
 

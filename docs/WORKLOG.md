@@ -2,10 +2,19 @@
 
 **Active Phase**: 設計書 21（Gemini が道具で操作し、Jev が見張る。`--control tools`）と 23（OBS のスクリーンショットを Gemini に見せる）を実装した。どちらも実機では未確認（クラウドの環境に API キー・Minecraft・OBS がない）。次はユーザーの環境で `examples/integration_test_minecraft.py --control tools --board-port 8765` を OBS つきで動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 494 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Test Status**: `pytest tests/` 499 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### アバター（VRM、three-vrm、設計書 24） (2026-09-25)
+
+- ユーザーが VRoid で作った `models/vrm/ailoveshen.vrm`（VRM 1.0、表情 happy/angry/sad/relaxed/surprised、口 aa/ih/ou/ee/oh、blink、スプリングボーン）を `b1c2151` で追加 →「three-vrm で良い感じに動かしたい」
+- `presentation/web/avatar.html`（`/avatar`、OBS のブラウザソース、背景は透明）: 立ち姿（腕を下ろす、息、揺れ）、まばたき、目線（ほとんどカメラ）、本文からかなを母音にして口を動かす、表情、しぐさ（nod / cheer / flinch）。`?demo=1`、`view`、`pos`、`scale`、`model`
+- three.js 0.186.1 と three-vrm 3.5.5 を `presentation/web/vendor/` に同梱（この環境から jsdelivr は拒否された。OBS がネットなしでも動く）
+- `AvatarStage`（`presentation/web/avatar.py`）: ドメインイベント → 合図（`/api/avatar/stream`）。TTS の `SpeechStartedEvent` に `duration_ms` を足した。TTS がなければ生成した本文で口を動かす（`avatar.lip_sync: auto`）。中目標クリアで cheer、被弾で flinch、行き詰まりでかなしい、本文の手がかりで表情
+- 確かめたこと: ヘッドレスの Chromium（ソフトウェアの WebGL）で読み込み・話す口・4 つの表情・cheer・全身を撮った。途中で見つけた不具合 2 つ（腰の高さを毎フレーム縮めてモデルが沈んだ、しぐさの回転がたまった）を直した
+- 実機（OBS、TTS との口の合い方）は未確認。次: 口を音声の大きさに合わせる、Gemini に感情を出させる
 
 ### 配信用の目標のオーバーレイ（/overlay/vtuber） (2026-09-25)
 

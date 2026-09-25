@@ -203,6 +203,14 @@ live2d:
     intensity_threshold: 0.3
     default_expression: "neutral.exp3.json"
 
+# The streamer's avatar (docs/design/24_avatar.md): a VRM shown at /avatar on the goal board
+# (--board-port), an OBS browser source with a transparent background
+avatar:
+  model_path: "models/vrm/ailoveshen.vrm"
+  # Where the mouth movement comes from: auto (the TTS playback events when they come, otherwise
+  # the generated text with an estimated length) / text / tts
+  lip_sync: "auto"
+
 # OBS WebSocket (OBS 28+ / WebSocket 5.x)
 obs:
   enabled: true
