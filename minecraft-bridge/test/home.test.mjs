@@ -32,3 +32,24 @@ test('前の家の中にいれば、その家から出る（town4d: 前の家の
   assert.equal(houseAround(at(102, 70, 2), state), home)
   assert.equal(houseAround(at(0, 70, 0), state), null)
 })
+
+test('家の中のどこかにあるベッドを数え、記録する（手で置いたベッドを「ない」とし、置く目標を立て続けていた）', async () => {
+  const { hasBed } = await import('../src/home.mjs')
+  const blocks = new Map([['103,70,1', 'red_bed'], ['103,70,2', 'red_bed']])
+  const bot = { blockAt: (p) => ({ name: blocks.get(`${p.x},${p.y},${p.z}`) ?? 'air' }) }
+  const h = { ...home, bed: null }
+  assert.equal(hasBed(bot, h), true)
+  assert.deepEqual([h.bed.x, h.bed.y, h.bed.z], [103, 70, 1])
+  // 記録した位置のベッドが壊されたら、ほかを探し、なければ「ない」
+  blocks.clear()
+  assert.equal(hasBed(bot, h), false)
+  assert.equal(h.bed, null)
+})
+
+test('記録したベッドの位置が読み込まれていない（ボットが遠い）ときは記録を信じる', async () => {
+  const { hasBed } = await import('../src/home.mjs')
+  const far = { blockAt: () => null }
+  assert.equal(hasBed(far, { ...home, bed: v(102, 70, 2) }), true)
+  assert.equal(hasBed(far, { ...home, bed: null }), false)
+  assert.equal(hasBed(far, null), false)
+})

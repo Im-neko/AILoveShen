@@ -298,7 +298,30 @@ export async function repairWall (bot, home, signal) {
   }
 }
 
-export const hasBed = (bot, home) => !!home?.bed && !!bot.blockAt(home.bed)?.name.endsWith('_bed')
+// 家にベッドがあるか。記録した位置（place_bed で置いたところ）だけでなく、家の中のどこかにある
+// ベッドも数え、見つけたら記録する: 手で置いたベッド、道具（place）で置いたベッド、記録の前に
+// 置いたベッドを「ない」と判定し、ベッドを置く小目標を立て続けていた。記録した位置が読み込まれて
+// いない（ボットが遠い）ときは記録を信じる
+export function hasBed (bot, home) {
+  if (!home) return false
+  if (home.bed) {
+    const block = bot.blockAt(home.bed)
+    if (!block || block.name.endsWith('_bed')) return true
+  }
+  const found = bedInHome(bot, home)
+  home.bed = found
+  return !!found
+}
+
+function bedInHome (bot, home) {
+  for (let x = home.min.x; x <= home.max.x; x++) {
+    for (let z = home.min.z; z <= home.max.z; z++) {
+      const p = home.min.offset(x - home.min.x, 0, z - home.min.z)
+      if (bot.blockAt(p)?.name.endsWith('_bed')) return p
+    }
+  }
+  return null
+}
 
 // `confront`: ドアの前で待つものと戦いに出る（cleared の目標）ので、それらがいても止めない
 export async function leaveHome (bot, home, signal, { confront = false } = {}) {
