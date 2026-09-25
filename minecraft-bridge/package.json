@@ -6,7 +6,8 @@
   "main": "src/index.mjs",
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node --test 'test/*.test.mjs'"
+    "test": "node --test 'test/*.test.mjs'",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "minecraft-data": "^3.117.0",
@@ -14,5 +15,8 @@
     "mineflayer": "4.39.0",
     "mineflayer-pathfinder": "^2.4.5",
     "vec3": "^0.1.10"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
   }
 }
