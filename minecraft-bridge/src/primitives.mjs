@@ -47,6 +47,8 @@ const TIME_UPDATE_TIMEOUT_MS = 3000 // サーバーは毎秒時刻を送る
 const WEAPONS = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword',
   'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe']
 export const isLeaves = (name) => !!name?.endsWith('_leaves')
+// 歩きながら掘ってよい自然の地形。置いた物（丸石、板材、チェストなど）は入れない
+const TERRAIN = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|mycelium|mud|clay|sand|red_sand|gravel|snow|snow_block|stone|granite|diorite|andesite|deepslate|tuff|calcite|dripstone_block|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|netherrack|moss_block|\w+_ore)$/
 
 // 注意: 経路移動の取り消しには setGoal(null) を使う。pathfinder.stop() は次の移動ティックで
 // 消えるフラグを立てるだけで、止まっているときに呼ぶと次の goto() がすぐ失敗する。
@@ -77,10 +79,14 @@ export function configureMovements (bot, state) {
   })
   // 木の上に行かない: 葉の上を歩くと、降りにくい樹冠に出てしまう。
   step((block) => isLeaves(bot.blockAt(block.position.offset(0, -1, 0))?.name) ? LEAVES_STEP_COST : 0)
-  // 歩きながら壊してよいのは葉だけ（プレイヤーが樹冠をかき分けるように）。家や地形は壊さない。
-  m.exclusionAreasBreak.push((block) => isLeaves(block.name) ? 0 : 100)
-  m.scafoldingBlocks = [] // 足場を積むのに建材を使わない
-  m.allow1by1towers = false
+  // プレイヤーのように、歩きながら葉と自然の地形を掘り、土を積んで登る。掘れない・積めないと、
+  // 下りられても戻れない穴ができる（town4c: 豚を追って洞窟に下り、出られなくなった）。
+  // 家、前の家、建てている家は壊さないし、そこに足場も置かない。
+  m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
+  m.exclusionAreasPlace.push((block) => block.position && !inHouse(state, block.position, 1) ? 0 : 100)
+  // 丸石は石の道具とかまどの材料なので足場にしない。土は掘ればいつも手に入る
+  m.scafoldingBlocks = [bot.registry.itemsByName.dirt.id]
+  m.allow1by1towers = true
   bot.pathfinder.setMovements(m)
 }
 
