@@ -7,6 +7,19 @@
 
 ## Completed Work
 
+### Gemini が設計する建物（設計書 25、1 段目） (2026-09-25)
+
+**Commit**: 次のコミット
+
+- ユーザー「家を広げたり、Gemini が思い描いたものを作れるように」「置き場所は周りを見渡して vision で」「大きな建築も」→ 設計書 25（15 C の一般化）。おすすめのまま: 1 つ 600 ブロック・32x16x32 まで、家から 48 以内、壊せるのは設計が空けると書いた家の壁だけ
+- 形の組み合わせ（`BuildDesign` / `BuildShape` / `ShapeKind` / `BuildAnchor`、domain）: fill・hollow_box・clear・door、材料は planks/log/cobblestone/dirt。展開は空けるマス（上から）→ ブロック（下の層、外周から）→ ドア
+- `BuildDesigner`（application `builds.py`）: スキーマ、`parse_build`、材料の確認（`/check` の impossible）、登録（`PUT /builds/<name>`）、3 回まで理由つきで作り直し。thinking `build_design: high`
+- `MidGoalKeeper`: 条件にまだない `built(name)` があれば先に設計（Gemini 自身の追加と視聴者の頼み）。視聴者の頼みの予算は `max(80, 2×ブロック数 + 40)`（`MidGoal.budget`、保存する）
+- `GoalSpec.name`、観測の `unfinished_builds`、目標の述語（未完成の建物があれば built を出す）、`ABILITIES`（「2 軒目の建物はできない」を消し、設計して建てられると書いた。チャットの「今はその技術がない」の原因）、ゴールボードのラベル、道具 `build_next(name)`
+- ブリッジ: `builds.mjs`（アンカーから原点、守るもの（ドア・ベッド・チェスト・室内・床・ほかの建物・家からの距離）、`buildAllowsDig`、`inBuilds`、`growHome`）、`BuildPlan` の種類（cobblestone、dirt、air）と建物のドアの向き、予定地の自然のブロックは掘って置く、`built(name)` の判定と候補、`place_plan`、状態の保存。`protectedReason` は建物が空けると書いた壁だけ許す。家の室内は `home.cells`（塗りつぶし）
+- テスト: npm 129 件（builds 6、check 1 を追加）、pytest 549 件
+- 未確認: 実機（Gemini がこの書き方で良い形を出すか、壁の入口を空けて部屋がつながるか、高い壁が足場なしで建つか）。次: 地図の画像（2 段目）、大きな建築の段階分け（3 段目）
+
 ### ベッドの置き場所が 1 か所だけだった (2026-09-25)
 
 - ユーザー「家にベッドを置く → 狭くて置けない → 置く…で詰まる。コメントで『家を広くしたら』→『今はその技術がない』」→ `bedSpot` はドアからまっすぐ奥の 1 か所（inside の先の 2 マス）しか見ておらず、最小の家（室内 3x3）ではその列にたいまつなどが 1 つあるだけで `no free spot for the bed in the house` になっていた

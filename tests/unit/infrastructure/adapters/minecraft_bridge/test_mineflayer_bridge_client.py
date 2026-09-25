@@ -308,3 +308,39 @@ class TestToolEndpoints:
         client = _client(handler)
         assert await client.state() == {"action": None, "mobs": []}
         assert await client.abort("woke up: q") is False
+
+
+@pytest.mark.asyncio
+async def test_set_build_puts_the_expanded_blocks_and_a_rejection_carries_the_reason():
+    from ailoveshen.domain.value_objects import (
+        BlockKind,
+        BuildAnchor,
+        BuildDesign,
+        BuildShape,
+        ShapeKind,
+    )
+
+    design = BuildDesign(
+        "annex",
+        "寝室",
+        BuildAnchor.HOME_EAST,
+        (BuildShape(ShapeKind.FILL, (0, 0, 0), (1, 0, 2), BlockKind.PLANKS),),
+    )
+    seen = {}
+
+    def handler(request):
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        if seen.get("reject"):
+            return httpx.Response(400, json={"error": "it would overlap the build shed"})
+        return httpx.Response(200, json={"name": "annex"})
+
+    client = _client(handler)
+    await client.set_build(design)
+    assert seen["path"] == "/builds/annex"
+    assert seen["body"]["anchor"] == "home:east"
+    assert seen["body"]["size"] == {"width": 2, "depth": 3, "height": 1}
+    assert len(seen["body"]["blocks"]) == 6 and seen["body"]["blocks"][0]["block"] == "planks"
+    seen["reject"] = True
+    with pytest.raises(GoalRejectedError, match="overlap the build shed"):
+        await client.set_build(design)

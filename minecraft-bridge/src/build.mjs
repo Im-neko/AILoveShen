@@ -23,8 +23,14 @@ const UNSUITABLE_GROUND = /(_leaves|_log|_planks|_door|water|lava|ice|snow$|sand
 const KINDS = {
   planks: isPlanks,
   log: isLog,
-  door: (name) => name.endsWith('_door')
+  door: (name) => name.endsWith('_door'),
+  cobblestone: (name) => name === 'cobblestone',
+  dirt: (name) => name === 'dirt' || name === 'grass_block',
+  // 空ける（名前付きの建物だけ。docs/design/25_builds.md）: 空気か、刈れる植物
+  air: (name) => name === 'air' || name === 'cave_air'
 }
+// 名前付きの建物で、置く前に掘ってよい自然のブロック（守るものは別に確かめる）
+const NATURAL = /^(dirt|grass_block|coarse_dirt|podzol|stone|granite|diorite|andesite|gravel|sand|clay|mud|tuff|deepslate|short_grass|tall_grass|fern|snow)$/
 
 // 敷地にあってよいブロック: 空気、植物、葉（置く前に掘る）
 const isClearable = (block) => (block.boundingBox === 'empty' && !['water', 'lava'].includes(block.name)) || block.name.endsWith('_leaves')
@@ -32,10 +38,13 @@ const isClearable = (block) => (block.boundingBox === 'empty' && !['water', 'lav
 export class BuildPlan {
   // design: モデルが設計したもの（名前、コンセプト、寸法、ドア）。できた家のために取っておく
   // site: 建てる場所 {x, z}（選んだ候補地）。なければボットのいる所のまわりに建てる
-  constructor ({ blocks, width, depth, height, design = null, site = null }) {
+  // kind: 'house'（家の計画）か 'build'（名前付きの建物）
+  constructor ({ blocks, width, depth, height, design = null, site = null, kind = 'house' }) {
     for (const b of blocks) {
       if (!KINDS[b.block]) throw new Error(`unknown block kind: ${b.block}`)
+      if (b.block === 'air' && kind !== 'build') throw new Error('air is only for named builds')
     }
+    this.kind = kind
     this.blocks = blocks
     this.size = { width, depth, height }
     this.design = design
@@ -50,7 +59,7 @@ export class BuildPlan {
   }
 
   toJSON () {
-    return { blocks: this.blocks, ...this.size, design: this.design, site: this.site, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
+    return { blocks: this.blocks, ...this.size, design: this.design, site: this.site, kind: this.kind, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
   }
 
   static fromJSON (data) {
@@ -65,7 +74,9 @@ export class BuildPlan {
 
   isPlaced (bot, b) {
     const block = bot.blockAt(this.worldPos(b))
-    if (!block || !KINDS[b.block](block.name)) return false
+    if (!block) return false
+    if (b.block === 'air') return block.boundingBox === 'empty' && !/water|lava/.test(block.name)
+    if (!KINDS[b.block](block.name)) return false
     // ドアは壁と直角に向いていないと、開けたときに板が通り道をふさぐ（town4: 西向きのドアで入れなかった）
     return b.block !== 'door' || this.doorOutward(b).facings.includes(block.getProperties().facing)
   }
@@ -73,6 +84,12 @@ export class BuildPlan {
   // ドアのある壁の外向き（{x, z} の単位ベクトル）と、正しい向き（壁と直角の 2 方向）
   doorOutward (b) {
     const { width, depth } = this.size
+    if (this.kind === 'build') {
+      // 建物のドアは、左右（x）の隣が壁なら南北を向く。外は建物の端に近い側
+      const solid = (x, z) => this.blocks.some((o) => o.x === x && o.z === z && o.y === b.y && o.block !== 'air' && o.block !== 'door')
+      if (solid(b.x - 1, b.z) || solid(b.x + 1, b.z)) return { x: 0, z: b.z < depth / 2 ? -1 : 1, facings: ['north', 'south'] }
+      return { x: b.x < width / 2 ? -1 : 1, z: 0, facings: ['east', 'west'] }
+    }
     if (b.z === 0 || b.z === depth - 1) return { x: 0, z: b.z === 0 ? -1 : 1, facings: ['north', 'south'] }
     return { x: b.x === 0 ? -1 : 1, z: 0, facings: ['east', 'west'] }
   }
@@ -97,7 +114,9 @@ export class BuildPlan {
 
   materialsNeeded (bot) {
     const need = {}
-    for (const b of this.pending(bot)) need[b.block] = (need[b.block] ?? 0) + 1
+    for (const b of this.pending(bot)) {
+      if (b.block !== 'air') need[b.block] = (need[b.block] ?? 0) + 1
+    }
     return need
   }
 }
@@ -145,11 +164,16 @@ let lastPlaceAt = 0
 
 const occupied = (block) => block && block.name !== 'air' && block.name !== 'cave_air'
 
-export async function placeOne (bot, plan, b, signal) {
+// 名前付きの建物で、置くマスにあってもよい（掘ってから置く）ブロック
+const removable = (plan, block, pos, allowDig) =>
+  isClearable(block) || (plan.kind === 'build' && (NATURAL.test(block.name) || !!allowDig?.(pos, block)))
+
+export async function placeOne (bot, plan, b, signal, allowDig = null) {
   if (b.block === 'door') return placeDoor(bot, plan, b, signal)
+  if (b.block === 'air') return clearCell(bot, plan, b, signal, allowDig)
   const pos = plan.worldPos(b)
   const found = bot.blockAt(pos)
-  if (occupied(found) && !isClearable(found)) throw new Error(`site blocked by ${found.name} at ${pos}`)
+  if (occupied(found) && !removable(plan, found, pos, allowDig)) throw new Error(`site blocked by ${found.name} at ${pos}`)
   // サーバーが確かめるのは届く距離とカーソルで、視線は確かめない。なので、例えば屋根の最初の
   // ブロックを家の中から壁の上に置ける。
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
@@ -161,7 +185,7 @@ export async function placeOne (bot, plan, b, signal) {
   // 草などは届く所に来てから刈る（遠くから掘るとサーバーは断り、手元の世界だけが空気になる）
   const current = bot.blockAt(pos)
   if (occupied(current)) {
-    if (!isClearable(current)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    if (!removable(plan, current, pos, allowDig)) throw new Error(`site blocked by ${current.name} at ${pos}`)
     await bot.dig(current, true)
   }
   const eye = bot.entity.position.floored().offset(0.5, 1.6, 0.5)
@@ -190,6 +214,18 @@ export async function placeOne (bot, plan, b, signal) {
   } finally {
     lastPlaceAt = Date.now()
   }
+}
+
+// 空けるマス（名前付きの建物）: 届く所まで歩いて掘る。掘ってよいのは植物・自然のブロックと、
+// allowDig が許すもの（建物が空けると書いた家の壁）
+async function clearCell (bot, plan, b, signal, allowDig) {
+  const pos = plan.worldPos(b)
+  const found = bot.blockAt(pos)
+  if (!found || !occupied(found)) return
+  if (!removable(plan, found, pos, allowDig)) throw new Error(`cannot clear ${found.name} at ${pos}`)
+  const goal = new goals.GoalNear(pos.x, pos.y, pos.z, PLACE_RANGE - 1)
+  if (!goal.isEnd(bot.entity.position.floored())) await walkTo(bot, goal, signal)
+  await bot.dig(bot.blockAt(pos), true)
 }
 
 // ドアの向きは、置くときにプレイヤーが向いている方角になる。壁の外側のマス（だめなら内側）に立ち、

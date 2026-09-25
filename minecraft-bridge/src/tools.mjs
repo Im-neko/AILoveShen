@@ -80,7 +80,7 @@ export function createTools (deps) {
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       if (block.boundingBox !== 'block') refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig`)
-      const why = protectedReason(state, pos)
+      const why = protectedReason(state, pos, 0, block)
       if (why) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${why}`)
       const tools = knowledge.harvestTools(block.name)
       if (tools && !tools.some((t) => inventoryCounts(bot)[t] > 0)) refuse(`${block.name} drops nothing without one of: ${tools.join(', ')}`)
@@ -173,7 +173,15 @@ export function createTools (deps) {
       if (!state.home || !hasBed(bot, state.home)) refuse('there is no bed in the home')
       return { c: { verb: 'sleep', target: 'bed', inPlace: true } }
     },
-    build_next () {
+    build_next (args) {
+      // 名前付きの建物（docs/design/25_builds.md）: 名前か、今の目標の built(name)
+      const name = args?.name ?? (state.goal?.spec?.predicate === 'built' ? state.goal.spec.name : null)
+      if (name) {
+        const plan = state.builds?.[name]
+        if (!plan) refuse(`there is no build named ${name}`)
+        if (plan.status(bot).complete) refuse(`the build ${name} is complete`)
+        return { c: { verb: 'place_plan', build: name, target: `the next block of the build ${name}`, inPlace: true } }
+      }
       if (!state.plan) refuse('there is no house plan')
       if (state.plan.status(bot).complete) refuse('the house plan is complete')
       return { c: { verb: 'place_plan', target: 'the next block of the house', inPlace: true } }

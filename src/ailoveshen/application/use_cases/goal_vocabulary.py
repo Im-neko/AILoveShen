@@ -37,6 +37,12 @@ ITEM_DESCRIPTION = (
     "have / stored / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
     "wooden_sword, wooden_pickaxe"
 )
+BUILD_NAME_DESCRIPTION = (
+    "built: the name of a build you design (a-z, 0-9, _; e.g. annex, storehouse, "
+    "watchtower). Leave it out for the house. A new name in a mid goal's conditions "
+    "means you design that build right after (an extension of the home, a shed, a "
+    "tower, a wall...)"
+)
 # 条件を示す順番（frozenset には順番がない）
 _CONDITION_ORDER = [p for p in GoalPredicate if p in PLANNABLE_CONDITIONS]
 
@@ -129,6 +135,10 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
             "minimum": MIN_EXPLORE_DISTANCE,
             "maximum": MAX_EXPLORE_DISTANCE,
             "description": "explored: blocks to go; lit: the radius around the home (8-32)",
+        },
+        "name": {
+            "type": "string",
+            "description": BUILD_NAME_DESCRIPTION,
         },
     }
 
@@ -299,6 +309,9 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT)
             else None,
             dig_depth=int(data["dig_depth"]) if data.get("dig_depth") is not None else None,
+            name=str(data["name"]).strip().lower() or None
+            if predicate == GoalPredicate.BUILT and data.get("name")
+            else None,
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e
@@ -415,7 +428,7 @@ def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicat
     求める中目標があるときだけ（中目標を足した直後の観測には、調査の計画がまだない）。
     """
     out = []
-    if obs.has_plan and not obs.house_complete:
+    if (obs.has_plan and not obs.house_complete) or obs.unfinished_builds:
         out.append(GoalPredicate.BUILT)
     out.append(GoalPredicate.HAVE)
     if obs.has_home:

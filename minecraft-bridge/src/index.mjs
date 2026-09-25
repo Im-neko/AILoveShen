@@ -13,6 +13,9 @@
 //                             （design: モデルの設計図。できた家とともに取っておく。site: 建てる場所 {x, z}。
 //                             建ち終わると家になり、前の家は formerHomes に残る）
 //   GET  /build-plan       -> 建築の状態（placed/total、原点、場所、まだないブロックの先頭）
+//   PUT  /builds/<name>   -> { blocks, size: {width, depth, height}, anchor, purpose } 名前付きの建物を登録する
+//                             （docs/design/25_builds.md。原点はアンカーから決める。守るものに掛かれば 400 と理由）
+//   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
 //   POST /tool {name, args} -> 道具を 1 つ呼ぶ（設計書 21）: { ok, result, seconds, refused? }。行動の道具は /act と同じ経路で
 //                             実行する。断るとき（安全の制約、引数が世界と合わない）は refused: true と理由
 //   GET  /state            -> 共通の状態（実行中の行動の進み具合、まわりの形、モブ、欲求）。見張りの質問と道具の選択が見る
@@ -28,6 +31,7 @@ import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
+import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { summarize, bearing } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
@@ -69,6 +73,7 @@ const state = {
   unreachableDrops: new Set(),
   unreachableBlocks: new Set(),
   formerHomes: [], // 引っ越す前の家（壊さない）
+  builds: {}, // 名前付きの建物（builds.mjs）
   survey: null, // 街の候補地の調査の計画（survey.mjs）
   memory: newMemory() // 前に見た場所（memory.mjs）。state.json に保存する
 }
@@ -87,6 +92,7 @@ function persist () {
 function observation () {
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
+  if (Object.keys(state.builds ?? {}).length) extra.builds = buildsStatus(bot, state)
   extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
   // 調べた候補地の数字（ブリッジが測ったものだけ。まだ調べていない候補地は入らない）
   if (state.survey) extra.survey = { planned: state.survey.sites.length, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) }
@@ -195,6 +201,20 @@ async function handle (req, res) {
     state.plan = new BuildPlan(await readJson(req))
     persist()
     return send(res, 200, state.plan.status(bot))
+  }
+  const buildPath = req.url.match(/^\/builds\/([a-z0-9_]{1,32})$/)
+  if (req.method === 'PUT' && buildPath) {
+    try {
+      const plan = registerBuild(bot, state, { ...(await readJson(req)), name: buildPath[1] })
+      persist()
+      return send(res, 200, { name: buildPath[1], ...plan.status(bot) })
+    } catch (e) {
+      if (e instanceof BuildError) return send(res, 400, { error: e.message })
+      throw e
+    }
+  }
+  if (req.method === 'GET' && req.url === '/builds') {
+    return send(res, 200, buildsStatus(bot, state))
   }
   if (req.method === 'GET' && req.url === '/build-plan') {
     return send(res, state.plan ? 200 : 404, state.plan ? state.plan.status(bot) : { error: 'no plan' })

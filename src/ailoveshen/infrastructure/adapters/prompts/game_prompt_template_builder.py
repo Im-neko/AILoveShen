@@ -10,6 +10,7 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
 from ailoveshen.domain.value_objects import (
     Activity,
+    BuildDesign,
     Candidate,
     CharacterProfile,
     ConversationMessage,
@@ -51,6 +52,43 @@ $site_note
 ## ヒント
 - 配信で完成まで見せられる大きさが良い
 - あなたらしさが伝わる名前とコンセプトにする
+$previous_error
+## 出力
+指定された JSON だけを出力してください。
+""")
+
+BUILD_DESIGN_TEMPLATE = Template("""\
+あなたは「$name」というAI配信者です。性格: $personality_traits
+Minecraft のサバイバルで、建物「$build_name」を設計します。
+
+## 頼まれたこと
+$brief
+
+## 今の家
+$home_note
+$builds_note
+## 書き方（形を並べる。コードがブロックに直して、下から順に建てる）
+- 座標は建物の原点（最小の角）からの相対。x は東、z は南、y は上。すべて 0 以上
+- y=0 は床の層（地面・家の床と同じ高さ）。人が立つのは y=1 から
+- 形（from と to は直方体の両端。両端を含む）:
+  - fill: 埋める（床、壁、柱、屋根）
+  - hollow_box: 外殻だけ（床・壁・屋根の 6 面）。中は触らないので、部屋の中は clear で空ける
+  - clear: 空気にする（入口、窓、部屋の中）
+  - door: ドア（from が下のマス。上のマスも自動でドアになる）。壁の中に置く
+- 後の形が前の形を上書きする（hollow_box のあとに clear で入口や窓を開ける）
+- 材料: planks（木の板材）、log（原木）、cobblestone（丸石）、dirt（土）。すべて自分で集める
+- 大きさ: x と z は $max_side 未満、y は $max_height 未満。展開したブロックは $max_blocks 個まで
+  （空けるマスも数える。中まで埋めずに外殻にすると少なくて済む）
+- 形は $max_shapes 個まで
+- 足場は作れない。高い壁や広い屋根は、下と外周から順に積める形にする（高さ 8 くらいまで）
+
+## 置き場所（anchor）。座標は書かない
+- home:east / home:west / home:north / home:south: 家の増築。建物の家側の面が家の外壁に重なる
+  （east なら x=0 の面、west なら x が最大の面、south なら z=0、north なら z が最大の面）。
+  建物は壁に沿って家の中央にそろう。床の高さは家の床と同じ
+  - 家とつなぐには、その重なる面に clear で入口（幅 1、y=1〜2）を開ける。ドアの位置は避ける
+  - 家の室内や床は変えられない。家のドア・ベッド・チェストには掛けられない
+- near_home: 家の近くの平らな空き地（コードが探す）。独立した建物（倉庫、塔、小屋）
 $previous_error
 ## 出力
 指定された JSON だけを出力してください。
@@ -283,6 +321,36 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     IGamePromptBuilder を文字列のテンプレートで実装する。LLM へのプロンプトは
     他のプロンプトと同じく日本語。行動の選択器には英語を渡す（評価したときの言語）。
     """
+
+    def build_build_design_prompt(
+        self,
+        character: CharacterProfile,
+        name: str,
+        brief: str,
+        home_note: str,
+        builds_note: str = "",
+        previous_error: str = "",
+    ) -> str:
+        """名前付きの建物の設計を頼むプロンプトを組み立てる（docs/design/25_builds.md）。"""
+        error = (
+            f"\n## 前回の設計が使えなかった理由\n{previous_error}\n"
+            "理由を直して設計し直してください。\n"
+            if previous_error
+            else ""
+        )
+        return BUILD_DESIGN_TEMPLATE.substitute(
+            name=character.name,
+            personality_traits="、".join(character.personality_traits) or "特になし",
+            build_name=name,
+            brief=brief,
+            home_note=home_note,
+            builds_note=f"\n## ほかの建物\n{builds_note}\n" if builds_note else "",
+            max_side=BuildDesign.MAX_SIDE,
+            max_height=BuildDesign.MAX_HEIGHT,
+            max_blocks=BuildDesign.MAX_BLOCKS,
+            max_shapes=BuildDesign.MAX_SHAPES,
+            previous_error=error,
+        )
 
     def build_house_design_prompt(
         self, character: CharacterProfile, site_note: str = "", previous_error: str = ""

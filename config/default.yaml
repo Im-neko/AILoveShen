@@ -67,6 +67,7 @@ gemini:
     town: "high"               # the town definition
     site: "high"               # choosing the town site
     house: "medium"            # designing the house
+    build_design: "high"       # designing a named build (docs/design/25_builds.md)
     goal: "low"                # the small goal (with mid-goal edits and notes)
     goal_after_failure: "medium"
     tool: "low"                # one tool call (control: tools)

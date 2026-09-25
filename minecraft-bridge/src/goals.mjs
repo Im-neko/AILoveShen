@@ -90,6 +90,11 @@ function validGoal (spec, bot, state, knowledge) {
       return { spec: { predicate, item: String(spec.item), count } }
     }
     case 'built':
+      if (spec.name) {
+        // 名前付きの建物（docs/design/25_builds.md）。設計は Python が先に登録する
+        if (!state.builds?.[spec.name]) throw new Error(`there is no build named ${spec.name}: design it first`)
+        return { spec: { predicate, name: String(spec.name) } }
+      }
       if (!state.plan) throw new NotYetError('there is no house plan')
       return { spec: { predicate } }
     case 'placed':
@@ -178,17 +183,22 @@ export function evaluate (bot, state, knowledge, world) {
       break
     }
     case 'built': {
-      const plan = state.plan
+      const name = goal.spec.name
+      const plan = name ? state.builds[name] : state.plan
       const status = plan.status(bot)
       out.met = status.complete
       if (out.met) break
       // 原木のブロックのぶんの原木を先に取り、それが板材にされないようにする
       const need = plan.materialsNeeded(bot)
-      addSolved(['log', 'door', 'planks'].filter((k) => need[k]).map((k) => ({ spec: k, count: need[k] })))
-      out.lines.unshift(`house blocks placed ${status.placed}/${status.total}`)
+      addSolved(['log', 'door', 'planks', 'cobblestone', 'dirt'].filter((k) => need[k]).map((k) => ({ spec: k, count: need[k] })))
+      out.lines.unshift(`${name ? `blocks of the build ${name}` : 'house blocks'} placed ${status.placed}/${status.total}`)
       out.remaining += status.total - status.placed
       const next = plan.pending(bot)[0]
-      const held = next && Object.keys(inventoryCounts(bot)).some((n) => knowledge.isMember(next.block, n))
+      const held = next && (next.block === 'air' || Object.keys(inventoryCounts(bot)).some((n) => knowledge.isMember(next.block, n)))
+      if (name) {
+        if (held) out.leaves.push({ kind: 'place_plan', block: next, build: name })
+        break
+      }
       if (!plan.origin && !plan.canSearchSite(bot)) {
         out.blocked.push('no flat site for the house near here')
         out.leaves.push({ kind: 'explore', item: 'a flat site', sources: [] })

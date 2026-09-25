@@ -9,6 +9,7 @@ import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
+import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
@@ -417,6 +418,7 @@ export const PRIMITIVES = {
     return `placed ${c.item} at ${pos}`
   },
   async place_plan (bot, state, c, signal) {
+    if (c.build) return placeBuildBlock(bot, state, c.build, signal)
     const plan = state.plan
     if (!plan.origin) {
       // 選んだ場所に建てる計画なら、まずそこまで歩く
@@ -728,6 +730,20 @@ async function useChest (bot, state, c, signal, use) {
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
 // 最長は 45 秒: Python クライアントの要求のタイムアウト（minecraft.bridge.timeout_seconds）はこれより長くする
+// 名前付きの建物の次のブロック（空けるマスなら掘る）。家の増築ができたら、家の室内を広げる
+async function placeBuildBlock (bot, state, name, signal) {
+  const plan = state.builds?.[name]
+  if (!plan) throw new Error(`there is no build named ${name}`)
+  const b = plan.pending(bot)[0]
+  if (!b) return `the build ${name} is complete`
+  await placeOne(bot, plan, b, signal, (pos, block) => buildAllowsDig(state, pos, block))
+  const s = plan.status(bot)
+  if (s.complete && plan.design?.anchor?.startsWith('home:') && state.home && growHome(bot, state.home)) {
+    return `${b.block === 'air' ? 'cleared' : `placed ${b.block}`}; the build ${name} is complete and the home now includes it`
+  }
+  return `${b.block === 'air' ? 'cleared a block' : `placed ${b.block}`} (${s.placed}/${s.total}) for ${name}`
+}
+
 export const TIMEOUTS_MS = { goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

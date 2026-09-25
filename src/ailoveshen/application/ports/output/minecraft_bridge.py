@@ -8,6 +8,7 @@ from typing import Any
 
 from ailoveshen.domain.value_objects import (
     ActionResult,
+    BuildDesign,
     ConditionStatus,
     GameObservation,
     GoalSpec,
@@ -104,6 +105,22 @@ class IMinecraftBridge(ABC):
         Raises:
             GameBridgeError: ブリッジに届かないとき
         """
+        ...
+
+    @abstractmethod
+    async def set_build(self, design: BuildDesign) -> None:
+        """
+        名前付きの建物を登録する（docs/design/25_builds.md）。ブリッジはアンカーから原点を決め、
+        守るもの（家のドア、ベッド、チェスト、室内と床、ほかの建物）に掛かっていないか確かめる。
+
+        Raises:
+            GoalRejectedError: 置けないとき（メッセージに理由がある。設計を直させる）
+        """
+        ...
+
+    @abstractmethod
+    async def builds(self) -> list[dict[str, Any]]:
+        """登録した建物: [{name, purpose, anchor, placed, total, complete}]。"""
         ...
 
     @abstractmethod

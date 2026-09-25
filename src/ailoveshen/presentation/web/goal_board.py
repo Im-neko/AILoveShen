@@ -169,7 +169,7 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.STORED:
         return f"チェストに{item}を {n} 個ためる"
     if p == GoalPredicate.BUILT:
-        return "家を建てる"
+        return f"「{spec.name}」を建てる" if spec.name else "家を建てる"
     if p == GoalPredicate.PLACED:
         return f"家に{item}を置く"
     if p == GoalPredicate.AT_HOME:

@@ -86,6 +86,7 @@ def _to_dict(goal: MidGoal) -> dict[str, Any]:
         "state": goal.state.value,
         "ended_because": goal.ended_because,
         "steps": goal.steps,
+        "budget": goal.budget,
         "progress": list(goal.progress),
         "stage": goal.stage,
         "prepares_town": goal.prepares_town,
@@ -129,6 +130,7 @@ def _spec(c: dict[str, Any]) -> GoalSpec:
         count=c.get("count"),
         where=c.get("where"),
         distance=c.get("distance"),
+        name=c.get("name"),
     )
 
 
@@ -142,6 +144,7 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
         state=MidGoalState(data.get("state", MidGoalState.PENDING.value)),
         ended_because=data.get("ended_because", ""),
         steps=int(data.get("steps", 0)),
+        budget=int(data["budget"]) if data.get("budget") else None,
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),
         prepares_town=bool(data.get("prepares_town", False)),

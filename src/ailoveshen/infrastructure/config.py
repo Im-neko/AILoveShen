@@ -63,6 +63,7 @@ DEFAULT_THINKING_LEVELS = {
     "town": "high",
     "site": "high",
     "house": "medium",
+    "build_design": "high",
     "goal": "low",
     "goal_after_failure": "medium",
     "tool": "low",

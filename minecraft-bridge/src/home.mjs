@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import vec3Pkg from 'vec3'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
+import { buildAllowsDig, inBuilds, isHomeCell } from './builds.mjs'
 import { walkTo } from './move.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks } from './observe.mjs'
 
@@ -36,14 +37,16 @@ const homeToJSON = (h) => ({
   min: plain(h.min),
   max: plain(h.max),
   bed: h.bed ? plain(h.bed) : null,
-  breach: h.breach
+  breach: h.breach,
+  cells: h.cells ?? null // 増築で広げた室内（docs/design/25_builds.md）
 })
 
-const homeFromJSON = (h) => ({ name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] })
+const homeFromJSON = (h) => ({ name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [], ...(h.cells ? { cells: h.cells } : {}) })
 
 export function saveState (state) {
   const data = {
     plan: state.plan && { ...state.plan.toJSON() },
+    builds: Object.fromEntries(Object.entries(state.builds ?? {}).map(([name, p]) => [name, p.toJSON()])),
     home: state.home && homeToJSON(state.home),
     formerHomes: (state.formerHomes ?? []).map(homeToJSON),
     survey: state.survey ?? null,
@@ -58,6 +61,7 @@ export function loadState (state) {
   if (!fs.existsSync(DATA_FILE)) return
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))
   if (data.plan) state.plan = BuildPlan.fromJSON(data.plan)
+  if (data.builds) state.builds = Object.fromEntries(Object.entries(data.builds).map(([name, p]) => [name, BuildPlan.fromJSON(p)]))
   if (data.home) state.home = homeFromJSON(data.home)
   if (data.formerHomes) state.formerHomes = data.formerHomes.map(homeFromJSON)
   if (data.survey) state.survey = data.survey
@@ -104,8 +108,7 @@ export function settleHome (state, bot) {
 export function isInside (bot, home) {
   if (!home) return false
   const p = bot.entity.position.floored()
-  return p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z &&
-    p.y >= home.min.y && p.y <= home.min.y + 1
+  return isHomeCell(home, p) && p.y >= home.min.y && p.y <= home.min.y + 1
 }
 
 // ボットが中にいる家（今の家か前の家）。前の家のベッドで寝たことがあると、死んだ後はそこで
@@ -175,13 +178,14 @@ export function dangerOutside (bot, home) {
     !(e.position.x >= home.min.x && e.position.x < home.max.x + 1 && e.position.z >= home.min.z && e.position.z < home.max.z + 1))
 }
 
-const inHome = (home, p) => p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z
+const inHome = (home, p) => isHomeCell(home, p)
 
 // 家、前の家、または計画中の家（`margin` だけ広げる）の一部: 掘らないし、何も置かない。
 // すべてを確かめる: 新しい計画や引っ越しのせいで、建てた家が守られなくなってはいけない。
 const HOME_HEIGHT = 5 // 壁は高さ 4 まで、その上に屋根
 export function inHouse (state, p, margin = 0) {
   if ([state.home, ...(state.formerHomes ?? [])].some((h) => h && inBuilt(h, p, margin))) return true
+  if (inBuilds(state, p, margin)) return true
   const o = state.plan?.origin
   if (!o) return false
   const { width, depth, height } = state.plan.size
@@ -191,8 +195,11 @@ export function inHouse (state, p, margin = 0) {
 
 // 道具（設計書 21）で名指しされても壊さない・置かない所: 今の家と、建てている家。前の家は
 // 名指しされれば掘ってよい（town4d: 置いてきたベッドを取りに戻れなかった）。理由か null を返す
-export function protectedReason (state, p, margin = 0) {
+export function protectedReason (state, p, margin = 0, block = null) {
+  // 建物が「空ける」と書いた家の壁は掘ってよい（docs/design/25_builds.md）
+  if (block && buildAllowsDig(state, p, block)) return null
   if (state.home && inBuilt(state.home, p, margin)) return 'it is part of the current home'
+  if (inBuilds(state, p, margin)) return 'it is part of a build (use build_next for it)'
   const o = state.plan?.origin
   if (!o) return null
   const { width, depth, height } = state.plan.size
@@ -206,7 +213,6 @@ function inBuilt (h, p, margin) {
       p.z <= h.max.z + 1 + margin && p.y >= h.min.y - 1 && p.y <= h.min.y + HOME_HEIGHT
 }
 
-// ベッドはドアからまっすぐ奥に置く: 足側は内側のセルの1つ先、頭側はさらに1つ先
 // ベッドを置く場所: 室内の空いた 2 マス（足側 foot と頭側 foot + dir）と、その手前でボットが立つ
 // マス（stand、足側の反対）。ベッドの頭はボットの向いた方に伸びるので、stand から foot を向いて置く。
 // ドアの内側のセル（inside）はふさがない。前はドアからまっすぐ奥の 1 か所だけを見ていて、

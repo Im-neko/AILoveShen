@@ -12,6 +12,7 @@ from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridg
 from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
 from ailoveshen.domain.value_objects import (
     ActionResult,
+    BuildDesign,
     Candidate,
     ConditionStatus,
     GameObservation,
@@ -115,6 +116,33 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data = await self._request("POST", "/abort", json={"reason": reason})
         return bool(data.get("aborted", False))
 
+    async def set_build(self, design: BuildDesign) -> None:
+        """名前付きの建物を送る。400 には置けない理由が入っている。"""
+        width, height, depth = design.size()
+        payload = {
+            "blocks": [
+                {"x": p.x, "y": p.y, "z": p.z, "block": p.kind.value} for p in design.blocks()
+            ],
+            "size": {"width": width, "depth": depth, "height": height},
+            "anchor": design.anchor.value,
+            "purpose": design.purpose,
+        }
+        try:
+            response = await self._client.put(f"/builds/{design.name}", json=payload)
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (PUT /builds): {e}") from e
+        if response.status_code == 400:
+            raise GoalRejectedError(f"build {design.name} rejected: {response.json()['error']}")
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge PUT /builds -> {response.status_code}: {response.text[:200]}"
+            )
+
+    async def builds(self) -> list[dict[str, Any]]:
+        """登録した建物の一覧。"""
+        data: Any = await self._request("GET", "/builds")
+        return list(data) if isinstance(data, list) else []
+
     async def set_build_plan(self, blueprint: HouseBlueprint, site: TownSite | None = None) -> None:
         """設計図のブロックを置く順に、設計と（あれば）建てる場所と一緒に送る。"""
         b = blueprint
@@ -182,6 +210,9 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         has_home=home is not None,
         inside_home=bool(home and home["inside"]),
         bed_in_home=bool(home and home.get("bed")),
+        unfinished_builds=tuple(
+            str(b["name"]) for b in obs.get("builds") or [] if not b.get("complete")
+        ),
         busy=bool(data.get("busy", False)),
         day=int(obs["time"]["day"]) if obs["time"]["day"] is not None else None,
     )

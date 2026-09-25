@@ -32,6 +32,30 @@ class IGamePromptBuilder(ABC):
     """
 
     @abstractmethod
+    def build_build_design_prompt(
+        self,
+        character: CharacterProfile,
+        name: str,
+        brief: str,
+        home_note: str,
+        builds_note: str = "",
+        previous_error: str = "",
+    ) -> str:
+        """
+        名前付きの建物（増築、倉庫、塔…）の設計を頼むプロンプトを組み立てる
+        （docs/design/25_builds.md）。
+
+        Args:
+            character: 配信者
+            name: 建物の名前（中目標の条件の built(name)）
+            brief: 何のための建物か（中目標の題名と理由、視聴者の頼み）
+            home_note: 家の大きさとドアの向き
+            builds_note: ほかの建物（名前、置き場所、大きさ）
+            previous_error: 前回の設計が使えなかった理由（あれば）
+        """
+        ...
+
+    @abstractmethod
     def build_house_design_prompt(
         self, character: CharacterProfile, site_note: str = "", previous_error: str = ""
     ) -> str:

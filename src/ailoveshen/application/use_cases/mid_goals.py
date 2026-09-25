@@ -11,6 +11,7 @@ from loguru import logger
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore
+from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.goal_vocabulary import (
     MidGoalProposal,
     PlanChange,
@@ -25,7 +26,7 @@ from ailoveshen.domain.events import (
     TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError
-from ailoveshen.domain.value_objects import GoalSpec, MidGoal
+from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, MidGoal
 
 
 class MidGoalKeeper:
@@ -46,6 +47,7 @@ class MidGoalKeeper:
         bridge: IMinecraftBridge,
         event_publisher: IEventPublisher,
         store: IMissionStore,
+        builder: BuildDesigner | None = None,
     ) -> None:
         """
         依存を受け取って初期化する（依存性の注入）。
@@ -54,10 +56,13 @@ class MidGoalKeeper:
             bridge: Minecraft ブリッジのアダプター（条件を判定する）
             event_publisher: ドメインイベントの発行器
             store: 再起動をまたいでプランを保つ
+            builder: 条件にまだない建物（built(name)）があるとき、先に設計させる
+                （docs/design/25_builds.md）。None なら、ない建物は判定できずに断られる
         """
         self._bridge = bridge
         self._event_publisher = event_publisher
         self._store = store
+        self._builder = builder
 
     async def judge(self, plan: MidGoalPlan) -> None:
         """
@@ -161,6 +166,7 @@ class MidGoalKeeper:
         """
         for change in changes:
             if change.proposal is not None:
+                await self._design_builds(change.proposal)
                 await self._bridge.check(change.proposal.conditions)
 
     def rehearse(self, plan: MidGoalPlan, changes: Sequence[PlanChange]) -> MidGoalPlan:
@@ -198,6 +204,7 @@ class MidGoalKeeper:
             GoalRejectedError: 条件を判定できないとき
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
+        blocks = await self._design_builds(proposal)
         await self._bridge.check(proposal.conditions)
         goal = plan.add(
             title=proposal.title,
@@ -205,6 +212,8 @@ class MidGoalKeeper:
             reason=proposal.reason,
             requested_by=requested_by,
             position=proposal.position,
+            # 建物は大きさに合わせて予算を広げる（1 ブロック 2 ステップと、材料集め）
+            budget=max(plan.viewer_budget, 2 * blocks + 40) if blocks else None,
         )
         logger.info(
             f"視聴者の頼みを中目標 {goal.id} として受けた: {goal.describe()}（{requested_by}）"
@@ -212,6 +221,28 @@ class MidGoalKeeper:
         self._store.save(plan)
         await self._publish([_added(plan, goal)])
         return goal
+
+    async def _design_builds(self, proposal: MidGoalProposal) -> int:
+        """
+        条件の built(name) のうち、まだない建物を設計させて登録する。建物のブロックの合計を返す。
+
+        Raises:
+            GoalRejectedError: 設計できなかったとき
+        """
+        names = [
+            c.name
+            for c in proposal.conditions
+            if c.predicate == GoalPredicate.BUILT and c.name is not None
+        ]
+        if not names or self._builder is None:
+            return 0
+        known = await self._builder.known()
+        brief = f"{proposal.title}: {proposal.reason}".strip(": ")
+        for name in names:
+            if name not in known:
+                await self._builder.design(name, brief)
+        totals = {str(b["name"]): int(b.get("total", 0)) for b in await self._bridge.builds()}
+        return sum(totals.get(name, 0) for name in names)
 
     async def step_counted(self, plan: MidGoalPlan, goal: MidGoal | None) -> None:
         """ステップを数えたあとにプランを保存する。予算を超えて断念した中目標があれば伝える。"""

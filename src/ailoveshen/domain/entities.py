@@ -313,6 +313,7 @@ class MidGoalPlan(Entity):
         position: Optional[int] = None,
         stage: Optional[int] = None,
         prepares_town: bool = False,
+        budget: Optional[int] = None,
     ) -> MidGoal:
         """
         `position`（未完了のものの中で 0 始まり。None: 最後）に中目標を足す。
@@ -335,6 +336,7 @@ class MidGoalPlan(Entity):
             requested_by=requested_by,
             stage=stage,
             prepares_town=prepares_town,
+            budget=budget,
         )
         earliest = 1 if requested_by is not None and self._goals else 0
         at = (
@@ -388,7 +390,7 @@ class MidGoalPlan(Entity):
         if goal is None:
             return None
         goal = self._replace(goal, replace(goal, steps=goal.steps + 1))
-        if goal.requested_by is not None and goal.steps >= self.viewer_budget:
+        if goal.requested_by is not None and goal.steps >= (goal.budget or self.viewer_budget):
             return self.drop(goal.id, f"it took {goal.steps} steps, over the budget for a request")
         return None
 

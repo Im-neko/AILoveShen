@@ -163,6 +163,13 @@ function fromLeaf (bot, state, world, leaf) {
       return [{ id: `smelt ${leaf.count} ${input} into ${leaf.item}`, verb: 'smelt', target: leaf.item, item: leaf.item, input, count: leaf.count, fuel, fuelCount: leaf.fuelCount, ...where }]
     }
     case 'place_plan': {
+      if (leaf.build) {
+        // 名前付きの建物（docs/design/25_builds.md）: 原点は登録のときに決まっている
+        const s = state.builds[leaf.build].status(bot)
+        const p = state.builds[leaf.build].worldPos(leaf.block)
+        const what = leaf.block.block === 'air' ? 'clear the block at' : `place ${leaf.block.block} at`
+        return [{ id: `${what} ${fmt(p)} for ${leaf.build}`, verb: 'place_plan', build: leaf.build, target: `${leaf.block.block} of the build ${leaf.build}`, progress: `${s.placed}/${s.total}`, pos: p, distance: dist(bot, p) }]
+      }
       const plan = state.plan
       const s = plan.status(bot)
       const p = plan.origin ? plan.worldPos(leaf.block) : null

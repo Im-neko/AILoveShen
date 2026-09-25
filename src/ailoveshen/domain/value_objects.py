@@ -362,7 +362,8 @@ class GoalPredicate(str, Enum):
     - HAVE: アイテムかグループを `count` 個持つ（planks、log、door、bed、wool、food など）
     - STORED: チェストにアイテムかグループが `count` 個ある（最後に開けたときの記憶で）
     - LIT: 家から `distance` ブロック以内に暗い地面がない（周りに松明を置いた）
-    - BUILT: 家のプランのブロックがすべて置かれている
+    - BUILT: 家のプランのブロックがすべて置かれている。`name` があれば、その名前の建物
+      （Gemini が設計したもの、docs/design/25_builds.md）
     - PLACED: アイテムがどこかに置かれている（家の中のベッド）
     - AT_HOME: 家の中にいて、扉が閉まっている
     - THROUGH_NIGHT: 夜が明けた（家の中にいたか、寝ていた）
@@ -402,6 +403,8 @@ class GoalSpec:
     distance: Optional[int] = None
     # 埋まった石・鉱石まで階段で掘り下げてよい深さ（小目標だけ。None: 掘り下げない）
     dig_depth: Optional[int] = None
+    # built の建物の名前（None: 家）
+    name: Optional[str] = None
 
     def __post_init__(self) -> None:
         """述語に要る引数を確かめる。"""
@@ -427,7 +430,7 @@ class GoalSpec:
     def to_dict(self) -> dict[str, Any]:
         """ブリッジに送る形の spec（設定されている引数だけ）。"""
         out: dict[str, Any] = {"predicate": self.predicate.value}
-        for key in ("item", "count", "where", "distance", "dig_depth"):
+        for key in ("item", "count", "where", "distance", "dig_depth", "name"):
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
@@ -435,7 +438,11 @@ class GoalSpec:
 
     def describe(self) -> str:
         """プロンプトとログ用の短い形。例: have(planks, 12)。"""
-        args = [str(v) for v in (self.item, self.count, self.where, self.distance) if v is not None]
+        args = [
+            str(v)
+            for v in (self.name, self.item, self.count, self.where, self.distance)
+            if v is not None
+        ]
         if self.dig_depth is not None:
             args.append(f"dig_depth={self.dig_depth}")
         return f"{self.predicate.value}({', '.join(args)})"
@@ -532,6 +539,8 @@ class MidGoal:
     progress: tuple[str, ...] = ()  # 最後に判定したときの、条件の進み具合
     stage: Optional[int] = None
     prepares_town: bool = False
+    # 視聴者の頼みのステップの予算（None: プランの既定。建物は大きさに合わせて広げる）
+    budget: Optional[int] = None
 
     def __post_init__(self) -> None:
         """条件を確かめる。"""
@@ -590,11 +599,14 @@ class Side(str, Enum):
 
 
 class BlockKind(str, Enum):
-    """家のプランが使うブロックの種類（木の種類は問わない）。"""
+    """建築プランが使うブロックの種類（木の種類は問わない）。AIR は「空ける」（掘る）。"""
 
     PLANKS = "planks"
     LOG = "log"
     DOOR = "door"
+    COBBLESTONE = "cobblestone"
+    DIRT = "dirt"
+    AIR = "air"
 
 
 @dataclass(frozen=True)
@@ -714,6 +726,163 @@ class HouseBlueprint:
         return counts
 
 
+class ShapeKind(str, Enum):
+    """建物の設計の形（docs/design/25_builds.md §2）。どれも直方体で、後の形が前を上書きする。"""
+
+    FILL = "fill"  # 埋める（床、壁、柱、屋根）
+    HOLLOW_BOX = "hollow_box"  # 外殻だけ（中は触らない）
+    CLEAR = "clear"  # 空気にする（入口、窓、部屋の中）
+    DOOR = "door"  # ドア（from の位置が下のマス。上のマスもドアになる）
+
+
+class BuildAnchor(str, Enum):
+    """建物を置く場所。座標は書かず、コードが原点を決める（25 §3）。"""
+
+    HOME_EAST = "home:east"
+    HOME_WEST = "home:west"
+    HOME_NORTH = "home:north"
+    HOME_SOUTH = "home:south"
+    NEAR_HOME = "near_home"
+
+    @property
+    def extends_home(self) -> bool:
+        """家の増築か（家の外壁に重ねて建てる）。"""
+        return self.value.startswith("home:")
+
+
+@dataclass(frozen=True)
+class BuildShape:
+    """
+    設計の形 1 つ。座標は建物の原点（最小の角）からの相対で、両端を含む。
+    y=0 は床の層（地面・家の床と同じ高さ）、立つ高さは y=1。
+
+    Raises:
+        ValueError: 材料が形に合わないとき（clear と door は材料を持たない）。
+    """
+
+    kind: ShapeKind
+    start: tuple[int, int, int]
+    end: tuple[int, int, int]
+    block: Optional[BlockKind] = None
+
+    def __post_init__(self) -> None:
+        if self.kind in (ShapeKind.FILL, ShapeKind.HOLLOW_BOX):
+            if self.block is None or self.block in (BlockKind.AIR, BlockKind.DOOR):
+                raise ValueError(f"{self.kind.value} needs a solid block, got {self.block}")
+
+    def cells(self) -> list[tuple[int, int, int]]:
+        (x0, y0, z0), (x1, y1, z1) = self.start, self.end
+        xs = range(min(x0, x1), max(x0, x1) + 1)
+        ys = range(min(y0, y1), max(y0, y1) + 1)
+        zs = range(min(z0, z1), max(z0, z1) + 1)
+        out = []
+        for x in xs:
+            for y in ys:
+                for z in zs:
+                    if self.kind == ShapeKind.HOLLOW_BOX and not (
+                        x in (xs[0], xs[-1]) or y in (ys[0], ys[-1]) or z in (zs[0], zs[-1])
+                    ):
+                        continue
+                    out.append((x, y, z))
+        return out
+
+
+@dataclass(frozen=True)
+class BuildDesign:
+    """
+    Gemini が設計した建物（docs/design/25_builds.md）。形を並べ、`blocks()` でブロックに展開する。
+
+    Raises:
+        ValueError: 名前、範囲、ブロックの数が決まりに合わないとき（理由は Gemini に返す）。
+    """
+
+    MAX_BLOCKS = 600
+    MAX_SIDE = 32
+    MAX_HEIGHT = 16
+    MAX_SHAPES = 40
+
+    name: str
+    purpose: str
+    anchor: BuildAnchor
+    shapes: tuple[BuildShape, ...]
+
+    def __post_init__(self) -> None:
+        import re
+
+        if not re.fullmatch(r"[a-z0-9_]{1,32}", self.name):
+            raise ValueError(f"name must be 1-32 of a-z, 0-9, _, got {self.name!r}")
+        if not self.shapes:
+            raise ValueError("a design needs at least one shape")
+        if len(self.shapes) > self.MAX_SHAPES:
+            raise ValueError(f"at most {self.MAX_SHAPES} shapes, got {len(self.shapes)}")
+        for shape in self.shapes:
+            for x, y, z in (shape.start, shape.end):
+                if min(x, y, z) < 0:
+                    raise ValueError(f"coordinates must not be negative: {shape.start}-{shape.end}")
+                if x >= self.MAX_SIDE or z >= self.MAX_SIDE or y >= self.MAX_HEIGHT:
+                    raise ValueError(
+                        f"the build must fit in {self.MAX_SIDE}x{self.MAX_HEIGHT}x{self.MAX_SIDE} "
+                        f"(x, y, z < {self.MAX_SIDE}, {self.MAX_HEIGHT}, {self.MAX_SIDE}), "
+                        f"got {(x, y, z)}"
+                    )
+        blocks = self.blocks()
+        if not any(b.kind not in (BlockKind.AIR,) for b in blocks):
+            raise ValueError("a design needs at least one block to place")
+        if len(blocks) > self.MAX_BLOCKS:
+            raise ValueError(
+                f"the design expands to {len(blocks)} blocks, over {self.MAX_BLOCKS}: make it "
+                "smaller or hollow (walls and roof only)"
+            )
+
+    def blocks(self) -> tuple[PlannedBlock, ...]:
+        """
+        置ける順に展開する: 空けるマス（上から）、ブロック（下の層から、外周から内側へ）、ドア。
+        """
+        grid: dict[tuple[int, int, int], BlockKind] = {}
+        for shape in self.shapes:
+            if shape.kind == ShapeKind.DOOR:
+                x, y, z = shape.start
+                grid[(x, y, z)] = BlockKind.DOOR
+                grid.pop((x, y + 1, z), None)  # 上のマスはドアの上半分になる
+                continue
+            kind = BlockKind.AIR if shape.kind == ShapeKind.CLEAR else shape.block
+            assert kind is not None
+            for cell in shape.cells():
+                grid[cell] = kind
+        if not grid:
+            return ()
+        # ドアの上半分のマスに、後の形が何かを置いていたら外す
+        for (x, y, z), kind in list(grid.items()):
+            if kind == BlockKind.DOOR:
+                grid.pop((x, y + 1, z), None)
+        max_x = max(c[0] for c in grid)
+        max_z = max(c[2] for c in grid)
+
+        def edge(c: tuple[int, int, int]) -> int:
+            return min(c[0], max_x - c[0], c[2], max_z - c[2])
+
+        clears = sorted((c for c, k in grid.items() if k == BlockKind.AIR), key=lambda c: -c[1])
+        solids = sorted(
+            (c for c, k in grid.items() if k not in (BlockKind.AIR, BlockKind.DOOR)),
+            key=lambda c: (c[1], edge(c), c[0], c[2]),
+        )
+        doors = sorted(c for c, k in grid.items() if k == BlockKind.DOOR)
+        return tuple(PlannedBlock(x, y, z, grid[(x, y, z)]) for x, y, z in clears + solids + doors)
+
+    def size(self) -> tuple[int, int, int]:
+        """(幅 x, 高さ y, 奥行き z)。"""
+        cells = [(b.x, b.y, b.z) for b in self.blocks()]
+        return tuple(max(c[i] for c in cells) + 1 for i in range(3))  # type: ignore[return-value]
+
+    def material_counts(self) -> dict[BlockKind, int]:
+        """置くブロックの種類ごとの数（空けるマスは数えない）。"""
+        counts: dict[BlockKind, int] = {}
+        for b in self.blocks():
+            if b.kind != BlockKind.AIR:
+                counts[b.kind] = counts.get(b.kind, 0) + 1
+        return counts
+
+
 @dataclass(frozen=True)
 class Candidate:
     """ブリッジが今すぐ実行できる具体的な行動（例: 3,70,5 の oak_log を掘る）。"""
@@ -743,6 +912,8 @@ class GameObservation:
     has_home: bool = False
     inside_home: bool = False
     bed_in_home: bool = False
+    # まだできていない建物（Gemini が設計したもの）の名前
+    unfinished_builds: tuple[str, ...] = ()
     busy: bool = False  # ブリッジが行動か反射を実行している
     # ワールドの何日目か（寝て飛ばした夜も数える。まだ時刻がなければ None）
     day: Optional[int] = None

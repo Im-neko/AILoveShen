@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
+from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
@@ -179,8 +180,16 @@ def create_game_service(
         )
     store = JsonMissionStore(minecraft.mission.store_path)
     notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
-    mid_goals = MidGoalKeeper(bridge=bridge, event_publisher=event_publisher, store=store)
     profile = create_character_profile(character)
+    builder = BuildDesigner(
+        text_generator=text_generator,
+        prompt_builder=prompt_builder,
+        bridge=bridge,
+        character=profile,
+    )
+    mid_goals = MidGoalKeeper(
+        bridge=bridge, event_publisher=event_publisher, store=store, builder=builder
+    )
     designer = HouseDesigner(
         text_generator=text_generator, prompt_builder=prompt_builder, character=profile
     )
