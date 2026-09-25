@@ -189,6 +189,7 @@ class TestGamePromptTemplateBuilder:
         assert "今の小目標: have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
         assert "through_night()（身を守るため）: 夜は危ない（達成" in prompt
         assert "完了条件に使えるのは次だけ" in prompt
+        assert "食べ物を探すときも have(food, n) を選ぶ" in prompt
         assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt
 
     def test_goal_prompt_with_the_home_built_before(self):
