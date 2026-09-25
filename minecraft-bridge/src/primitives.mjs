@@ -123,6 +123,28 @@ async function goto (bot, goal) {
 
 const goNear = (bot, pos, range) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range))
 
+// Where a crafting table or furnace goes: air on a full block, 2-3 blocks from the bot (not where
+// it stands) and up to one block up or down (a fixed ring at its own height found nothing on slopes
+// and in caves), never inside the house or on its planned footprint; the nearest first
+export function stationSpot (bot, state) {
+  const me = bot.entity.position.floored()
+  const spots = []
+  for (let dx = -3; dx <= 3; dx++) {
+    for (let dz = -3; dz <= 3; dz++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) < 2) continue
+      for (const dy of [0, -1, 1]) {
+        const pos = me.offset(dx, dy, dz)
+        const spot = bot.blockAt(pos)
+        const ground = bot.blockAt(pos.offset(0, -1, 0))
+        if (spot?.name !== 'air' || ground?.boundingBox !== 'block' || inHouse(state, pos, 1)) continue
+        spots.push({ pos, d: dx * dx + dz * dz + dy * dy })
+        break
+      }
+    }
+  }
+  return spots.sort((a, b) => a.d - b.d)[0]?.pos ?? null
+}
+
 // A torch stands where the bot stands: an empty cell (no liquid) on a full block
 export function torchSpot (bot) {
   const feet = bot.entity.position.floored()
@@ -326,18 +348,11 @@ export const PRIMITIVES = {
   async place_station (bot, state, c) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
-    const me = bot.entity.position.floored()
-    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [2, -2], [-2, 2]]) {
-      const pos = me.offset(dx, 0, dz)
-      const ground = bot.blockAt(pos.offset(0, -1, 0))
-      const spot = bot.blockAt(pos)
-      // Never inside the house or on its planned footprint
-      if (inHouse(state, pos, 1) || !ground || ground.boundingBox !== 'block' || !spot || spot.name !== 'air') continue
-      await bot.equip(item, 'hand')
-      await bot.placeBlock(ground, { x: 0, y: 1, z: 0 })
-      return `placed ${c.item} at ${pos}`
-    }
-    throw new Error(`no free spot for the ${c.item}`)
+    const pos = stationSpot(bot, state)
+    if (!pos) throw new Error(`no free spot for the ${c.item}`)
+    await bot.equip(item, 'hand')
+    await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
+    return `placed ${c.item} at ${pos}`
   },
   async place_plan (bot, state, c) {
     const plan = state.plan
@@ -459,6 +474,8 @@ export const PRIMITIVES = {
   // Takes out what is done, puts in the input and fuel, and waits a while taking what gets done;
   // the rest is taken out at a later step (the furnace works on meanwhile)
   async smelt (bot, state, c) {
+    const leg = await legToward(bot, c.pos, 'the furnace')
+    if (leg) return leg
     await goNear(bot, c.pos, 2) // a far block reads null: judged only once there
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
@@ -547,6 +564,8 @@ export const PRIMITIVES = {
 
 // Opens the chest at c.pos, runs `use` on its window, and records what it holds after
 async function useChest (bot, state, c, use) {
+  const leg = await legToward(bot, c.pos, 'the chest')
+  if (leg) return leg
   if (state.home && isInside({ entity: { position: c.pos } }, state.home)) await enterHome(bot, state.home)
   await goNear(bot, c.pos, 2)
   const block = bot.blockAt(c.pos)

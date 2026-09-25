@@ -15,7 +15,7 @@ import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
 import { recall, visited, chests, chestWith, furnaceWith } from './memory.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
+import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
@@ -29,7 +29,8 @@ const LAST_RESORT_FOOD = ['rotten_flesh']
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 const dist = (bot, p) => round(bot.entity.position.distanceTo(p))
 
-// { candidates, withheld }: withheld says what the shelter rule held back, if anything
+// { candidates, withheld }: withheld says what was held back (the shelter rule, a station with no
+// room here), if anything
 export function ground (bot, state, knowledge, world, status) {
   const out = []
   for (const leaf of status?.leaves ?? []) out.push(...fromLeaf(bot, state, world, leaf))
@@ -57,6 +58,11 @@ export function ground (bot, state, knowledge, world, status) {
   // Waiting is offered for what the time changes (healing, the morning, a mob burning in the sun),
   // or when nothing else can be done. Offered without a purpose, the selector waited inside while
   // nothing changed: 9 steps in a row by day, and 6 of 6 times with husks at the door and full health.
+  const station = (status?.leaves ?? []).find((l) => l.kind === 'place')
+  if (station && !stationSpot(bot, state)) {
+    const room = `no room here to place the ${station.item}: move to flat open ground`
+    withheld = withheld ? `${withheld}; ${room}` : room
+  }
   safe.push(...(inside ? waitsInside(bot, danger) : []))
   if (!safe.length) {
     safe.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10, purpose: 'nothing else can be done now' })
@@ -122,7 +128,8 @@ function fromLeaf (bot, state, world, leaf) {
       }]
     }
     case 'place':
-      return [{ id: `place ${leaf.item} nearby`, verb: 'place_station', target: leaf.item, item: leaf.item }]
+      // Offered only where it can be placed (it was chosen again and again where nothing fit)
+      return stationSpot(bot, state) ? [{ id: `place ${leaf.item} nearby`, verb: 'place_station', target: leaf.item, item: leaf.item }] : []
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {

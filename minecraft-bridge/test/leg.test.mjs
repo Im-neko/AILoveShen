@@ -32,6 +32,14 @@ test('a far remembered place is walked to one leg per step, then reached', async
   assert.match(await PRIMITIVES.goto_memory(bot, {}, c), /^arrived where sheep was seen/)
 })
 
+test('a far chest or furnace is walked to one leg per step (iron run: a withdraw timed out at 45s)', async () => {
+  const bot = walker(0, 0)
+  const c = { item: 'porkchop', count: 2, pos: new Vec3(0, 70, 130) }
+  assert.match(await PRIMITIVES.withdraw(bot, { home: null }, c), /^walked 48m toward the chest \(82m left\)$/)
+  assert.match(await PRIMITIVES.deposit(bot, { home: null }, c), /toward the chest \(34m left\)$/)
+  assert.match(await PRIMITIVES.smelt(bot, {}, { pos: new Vec3(0, 70, -60) }), /toward the furnace/)
+})
+
 test('every action ends before the Python client gives up on it (60s)', () => {
   assert.ok(Math.max(DEFAULT_TIMEOUT_MS, ...Object.values(TIMEOUTS_MS)) <= 45000)
 })
