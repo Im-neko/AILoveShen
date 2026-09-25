@@ -427,15 +427,94 @@ class GoalSpec:
 @dataclass(frozen=True)
 class Goal:
     """
-    The current direction set by the LLM; the action selector works within it.
+    The small goal: the current direction set by the LLM; the action selector works within it.
 
-    `requested_by` names the viewer whose request it is (the reply promised it).
+    `mid_goal_id` is the mid goal it serves (None: survival, e.g. getting
+    through the night, which does not wait for the mid goals).
     """
 
     spec: GoalSpec
     reason: str = ""
-    requested_by: Optional[str] = None
+    mid_goal_id: Optional[str] = None
     set_at: datetime = field(default_factory=_utc_now)
+
+
+@dataclass(frozen=True)
+class ConditionStatus:
+    """A mid goal's condition judged by the bridge (without setting it as the goal)."""
+
+    spec: GoalSpec
+    met: bool
+    lines: tuple[str, ...] = ()
+
+
+# Judged from the state of the world alone: they can be the completion conditions of mid goals
+CONDITION_PREDICATES = frozenset({GoalPredicate.BUILT, GoalPredicate.PLACED, GoalPredicate.HAVE})
+_SURVIVAL_PREDICATES = frozenset(
+    {GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME, GoalPredicate.CLEARED}
+)
+
+
+def is_survival(spec: GoalSpec) -> bool:
+    """Whether a small goal keeps the streamer alive (it may be set for no mid goal)."""
+    return spec.predicate in _SURVIVAL_PREDICATES or (
+        spec.predicate == GoalPredicate.HAVE and spec.item == "food"
+    )
+
+
+@dataclass(frozen=True)
+class Mission:
+    """The one overarching goal: set in the configuration, never changed by comments."""
+
+    text: str
+
+
+class MidGoalState(str, Enum):
+    """Where a mid goal stands."""
+
+    PENDING = "pending"
+    DONE = "done"
+    DROPPED = "dropped"
+
+
+@dataclass(frozen=True)
+class MidGoal:
+    """
+    A mid goal: a step toward the mission, done when all its conditions hold in the world.
+
+    `requested_by` is the viewer who asked for it (None: the streamer's own).
+    `steps` counts the small goals' steps spent on it (a viewer's has a budget).
+
+    Raises:
+        ValueError: If there are no conditions, or one cannot be judged from the world.
+    """
+
+    id: str
+    title: str
+    conditions: tuple[GoalSpec, ...]
+    reason: str = ""
+    requested_by: Optional[str] = None
+    state: MidGoalState = MidGoalState.PENDING
+    ended_because: str = ""
+    steps: int = 0
+    progress: tuple[str, ...] = ()  # how the conditions stand, as last judged
+
+    def __post_init__(self) -> None:
+        """Check the conditions."""
+        if not self.title:
+            raise ValueError("a mid goal needs a title")
+        if not self.conditions:
+            raise ValueError(f"mid goal {self.title} needs at least one condition")
+        for c in self.conditions:
+            if c.predicate not in CONDITION_PREDICATES:
+                allowed = ", ".join(sorted(p.value for p in CONDITION_PREDICATES))
+                raise ValueError(
+                    f"{c.predicate.value} cannot be a condition of a mid goal; use {allowed}"
+                )
+
+    def describe(self) -> str:
+        """Short form, e.g. 自分の家を作る (built())."""
+        return f"{self.title} ({', '.join(c.describe() for c in self.conditions)})"
 
 
 @dataclass(frozen=True)
@@ -445,15 +524,6 @@ class GoalOutcome:
     goal: Goal
     ended_because: str
     met: bool = False
-
-
-@dataclass(frozen=True)
-class ViewerRequest:
-    """A goal a viewer asked for, promised in the reply, waiting for the next step."""
-
-    goal: Goal
-    user_name: str
-    message: str
 
 
 @dataclass(frozen=True)
@@ -645,13 +715,15 @@ class Activity:
     """
     What the streamer is doing and why: the one view that the goal decision,
     the commentary and the chat replies all see, so what is said matches what
-    is done.
+    is done. From the mission down: the mid goals in order (pending first,
+    then those recently ended), the small goal, and the game.
     """
 
+    mission: Optional[Mission] = None
+    mid_goals: tuple[MidGoal, ...] = ()
     goal: Optional[Goal] = None
     observation: Optional[GameObservation] = None
     recent_goals: tuple[GoalOutcome, ...] = ()
-    request: Optional[ViewerRequest] = None
 
 
 @dataclass(frozen=True)

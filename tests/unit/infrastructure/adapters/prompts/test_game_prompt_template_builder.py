@@ -15,15 +15,21 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     MessageType,
+    MidGoal,
+    MidGoalState,
+    Mission,
     Side,
-    ViewerRequest,
 )
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
 )
 
 BLUEPRINT = HouseBlueprint("ぽかぽか", "明るい家", 5, 5, 3, Side.SOUTH, 2)
-PLANKS = Goal(GoalSpec(GoalPredicate.HAVE, item="planks", count=12), reason="壁の材料")
+PLANKS = Goal(
+    GoalSpec(GoalPredicate.HAVE, item="planks", count=12), reason="壁の材料", mid_goal_id="m1"
+)
+MISSION = Mission("生き延びながら家を建て、街にしていく")
+HOUSE = MidGoal("m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),), progress=("30/70",))
 ALL = list(GoalPredicate)
 
 
@@ -55,11 +61,15 @@ def _obs(**kwargs) -> GameObservation:
     return GameObservation(**params)
 
 
-def _goal_prompt(obs=None, recent_goals=(), request=None, **kwargs) -> str:
+def _goal_prompt(obs=None, recent_goals=(), mid_goals=(HOUSE,), **kwargs) -> str:
     args = {
         "blueprint": BLUEPRINT,
         "activity": Activity(
-            goal=PLANKS, observation=obs or _obs(), recent_goals=recent_goals, request=request
+            mission=MISSION,
+            mid_goals=mid_goals,
+            goal=PLANKS,
+            observation=obs or _obs(),
+            recent_goals=recent_goals,
         ),
         "goal_ended_because": "goal have(planks, 12) is met",
         "recent_messages": (),
@@ -93,15 +103,16 @@ class TestGamePromptTemplateBuilder:
     def test_goal_prompt_lists_only_the_given_predicates(self):
         """Test only the predicates passed in are offered."""
         prompt = _goal_prompt(predicates=[GoalPredicate.HAVE, GoalPredicate.EXPLORED])
+        offered = prompt.split("## 使える目標（小目標）\n")[1].split("\n\n")[0]
 
-        assert "have(item, count)" in prompt and "explored(distance)" in prompt
-        assert "through_night" not in prompt and "built:" not in prompt
+        assert "have(item, count)" in offered and "explored(distance)" in offered
+        assert "through_night" not in offered and "built:" not in offered
 
     def test_goal_prompt_shows_the_current_goal_status(self):
         """Test the subgoal progress and what blocks it reach the LLM."""
         prompt = _goal_prompt()
 
-        assert "have(planks, 12): 壁の材料" in prompt
+        assert "have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
         assert "have 12 planks (5/12): craft spruce_planks x2" in prompt
         assert "進められない理由: no oak_log nearby for oak_log" in prompt
         assert "goal have(planks, 12) is met" in prompt
@@ -132,29 +143,46 @@ class TestGamePromptTemplateBuilder:
 
         prompt = _goal_prompt(recent_goals=recent, previous_error="unknown item or group: x")
 
-        assert "have(planks, 12): 壁の材料（未達成、終了: goal have(planks, 12) stalled" in prompt
+        assert (
+            "have(planks, 12)（「自分の家を作る」のため）: 壁の材料"
+            "（未達成、終了: goal have(planks, 12) stalled"
+        ) in prompt
         assert "unknown item or group: x" in prompt
 
-    def test_goal_prompt_shows_viewer_requests_and_what_was_said(self):
-        """Test the goal decision sees requests, whose goals they were, and the conversation."""
-        bed = Goal(GoalSpec(GoalPredicate.PLACED, item="bed", where="home"), "頼まれた", "neko")
-        request = ViewerRequest(bed, "neko", "ベッド作って")
-        recent = (GoalOutcome(bed, "the time of day changed from day to dusk"),)
+    def test_goal_prompt_shows_the_hierarchy_and_what_was_said(self):
+        """Test the goal decision sees the mission, the mid goals with ids, and the conversation."""
+        bed = MidGoal(
+            "m3",
+            "ベッドで寝る",
+            (GoalSpec(GoalPredicate.PLACED, item="bed", where="home"),),
+            requested_by="neko",
+        )
+        sword = MidGoal(
+            "m2",
+            "剣を持つ",
+            (GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1),),
+            state=MidGoalState.DROPPED,
+            ended_because="it took 80 steps",
+        )
+        night = Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜は危ない")
+        recent = (GoalOutcome(night, "the time of day changed from night to day", met=True),)
         messages = (
             ConversationMessage.from_viewer("ベッド作って", "neko"),
-            ConversationMessage.from_streamer("いいよ、作るね", MessageType.RESPONSE),
+            ConversationMessage.from_streamer("家ができたら作るね", MessageType.RESPONSE),
         )
 
-        prompt = _goal_prompt(recent_goals=recent, request=request, recent_messages=messages)
+        prompt = _goal_prompt(
+            mid_goals=(HOUSE, bed, sword), recent_goals=recent, recent_messages=messages
+        )
 
-        assert (
-            "- 今の目標（nekoさんの頼み「ベッド作って」で今から始める）: "
-            "placed(bed, home): 頼まれた\n"
-            "- 頼みのためにやめる目標: have(planks, 12): 壁の材料\n"
-        ) in prompt
-        assert "5/12" not in prompt  # the old goal's progress no longer matters
-        assert "placed(bed, home)（nekoさんの頼み）: 頼まれた（未達成" in prompt
-        assert "nekoさん: ベッド作って\nあなた: いいよ、作るね" in prompt
+        assert "- 大目標: 生き延びながら家を建て、街にしていく" in prompt
+        assert "1. [m1] 自分の家を作る [取り組み中] 完了条件: built()（30/70）" in prompt
+        assert "2. [m3] ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
+        assert "- 剣を持つ（断念: it took 80 steps）" in prompt
+        assert "今の小目標: have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
+        assert "through_night()（身を守るため）: 夜は危ない（達成" in prompt
+        assert "完了条件に使えるのは次だけ" in prompt
+        assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt
 
     def test_goal_prompt_without_needs(self):
         """Test the bridge's "none" is shown as nothing to watch for."""

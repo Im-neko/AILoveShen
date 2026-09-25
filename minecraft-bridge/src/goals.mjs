@@ -27,11 +27,17 @@ const MORNING = 0 // time of day the sun is up again (dawn ends at 24000 = 0)
 const TICKS_PER_MINUTE = 1200
 
 export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared']
+// Judged from the state of the world alone, so they can be the completion conditions of mid goals
+// (the others depend on the moment or on where the goal was set)
+export const CONDITION_PREDICATES = ['have', 'built', 'placed']
 
 // Validates a goal spec and returns the goal state to keep; throws with the reason
+// A goal that is valid but cannot be pursued until something exists (the home, the plan)
+export class NotYetError extends Error {}
+
 export function makeGoal (spec, bot, state, knowledge) {
   const { predicate } = spec
-  const needHome = () => { if (!state.home) throw new Error('there is no home yet (build the house first)') }
+  const needHome = () => { if (!state.home) throw new NotYetError('there is no home yet (build the house first)') }
   switch (predicate) {
     case 'have': {
       const count = Number(spec.count)
@@ -40,7 +46,7 @@ export function makeGoal (spec, bot, state, knowledge) {
       return { spec: { predicate, item: String(spec.item), count } }
     }
     case 'built':
-      if (!state.plan) throw new Error('there is no house plan')
+      if (!state.plan) throw new NotYetError('there is no house plan')
       return { spec: { predicate } }
     case 'placed':
       if (spec.item !== 'bed' || spec.where !== 'home') throw new Error('only placed(bed, home) is supported')
@@ -168,6 +174,25 @@ export function evaluate (bot, state, knowledge, world) {
     }
   }
   return out
+}
+
+// Judges conditions without setting a goal: [{ spec, met, lines }]; throws for an invalid one.
+// One that cannot be judged yet (a bed in a home not built) is not met.
+export function checkConditions (specs, bot, state, knowledge, world) {
+  return specs.map((spec) => {
+    if (!CONDITION_PREDICATES.includes(spec.predicate)) {
+      throw new Error(`${spec.predicate} cannot be a condition; use one of ${CONDITION_PREDICATES.join(', ')}`)
+    }
+    let goal
+    try {
+      goal = makeGoal(spec, bot, state, knowledge)
+    } catch (e) {
+      if (e instanceof NotYetError) return { spec, met: false, lines: [e.message] }
+      throw e
+    }
+    const r = evaluate(bot, { ...state, goal }, knowledge, world)
+    return { spec: goal.spec, met: r.met, lines: r.lines }
+  })
 }
 
 // What the body needs, with numbers and severity only: no action names (the selector judged

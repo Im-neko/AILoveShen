@@ -246,6 +246,31 @@ minecraft:
     # ... or after this many steps without the remaining work going down
     max_stalled_steps: 8
 
+  # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
+  # mid goals are worked on from the top, completed when their conditions hold in the world.
+  # Conditions: built / placed (item: bed) / have (item, count)
+  mission:
+    text: "生き延びながら家を建て、街にしていく"
+    mid_goals:
+      - title: "自分の家を作る"
+        conditions: [{predicate: built}]
+        reason: "夜を安全に過ごす拠点"
+      - title: "夜に寝られるようにする"
+        conditions: [{predicate: placed, item: bed}]
+        reason: "夜を飛ばして昼に活動する"
+      - title: "身を守る道具を持つ"
+        conditions: [{predicate: have, item: wooden_sword, count: 1}]
+        reason: "敵と戦えるようにする"
+      - title: "食料を蓄える"
+        conditions: [{predicate: have, item: food, count: 8}]
+        reason: "空腹で動けなくならないように"
+    # Limits the code keeps (not left to the model)
+    max_mid_goals: 6
+    max_viewer_mid_goals: 2       # at a time; one per viewer
+    viewer_budget_steps: 80       # a viewer's mid goal is dropped (and told) after this many steps
+    # Carried on across restarts while the mission text stays the same
+    store_path: "data/mission.json"
+
 # Logging
 logging:
   level: "INFO"

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Goal Overlay</title>
+<style>
+  /* An OBS browser source: transparent, readable over the game */
+  :root { --text: #fff; --muted: #d8d8e0; --accent: #ffd166; --done: #8ce99a; --dropped: #adb5bd; --panel: rgba(20, 20, 32, 0.62); }
+  html, body { margin: 0; background: transparent; }
+  body { font-family: "Hiragino Maru Gothic ProN", "M PLUS Rounded 1c", sans-serif; color: var(--text); padding: 16px; text-shadow: 0 1px 3px #000; }
+  .panel { background: var(--panel); border-radius: 12px; padding: 12px 16px; max-width: 520px; }
+  .mission { font-size: 15px; color: var(--muted); margin-bottom: 8px; }
+  .mission b { color: var(--text); }
+  ol { margin: 0; padding-left: 1.4em; }
+  li { font-size: 18px; line-height: 1.5; }
+  li.current { color: var(--accent); font-weight: bold; }
+  li.done { color: var(--done); list-style: none; margin-left: -1.4em; }
+  li.dropped { color: var(--dropped); list-style: none; margin-left: -1.4em; text-decoration: line-through; }
+  .by { font-size: 14px; color: var(--muted); font-weight: normal; }
+  .goal { margin-top: 10px; font-size: 16px; }
+  .goal .label { color: var(--muted); }
+  .progress { font-size: 13px; color: var(--muted); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="panel hidden" id="panel">
+  <div class="mission">大目標 <b id="mission"></b></div>
+  <ol id="mid"></ol>
+  <div class="goal"><span class="label">いま:</span> <span id="goal"></span></div>
+  <div class="progress" id="progress"></div>
+</div>
+<script>
+  const el = (id) => document.getElementById(id);
+
+  function render(data) {
+    el('panel').classList.toggle('hidden', !data.playing);
+    if (!data.playing) return;
+    el('mission').textContent = data.mission ?? '';
+    const mid = el('mid');
+    mid.replaceChildren();
+    for (const g of data.mid_goals) {
+      const li = document.createElement('li');
+      li.className = g.state;
+      const mark = g.state === 'done' ? '✓ ' : g.state === 'dropped' ? '× ' : '';
+      li.textContent = mark + g.title;
+      if (g.requested_by) {
+        const by = document.createElement('span');
+        by.className = 'by';
+        by.textContent = `（${g.requested_by}さんの頼み）`;
+        li.append(by);
+      }
+      mid.append(li);
+    }
+    const goal = data.goal;
+    el('goal').textContent = goal ? goal.goal + (goal.survival ? '（身を守るため）' : '') : '考え中';
+    el('progress').textContent = goal ? goal.progress.join(' / ') : '';
+  }
+
+  // Reconnects on its own (EventSource retries); the first message is the goals now
+  const source = new EventSource('/api/goals/stream');
+  source.onmessage = (e) => render(JSON.parse(e.data));
+</script>
+</body>
+</html>

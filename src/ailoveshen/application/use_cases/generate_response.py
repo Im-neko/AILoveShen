@@ -13,20 +13,19 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_vocabulary import (
-    parse_goal,
-    predicates_now,
+    RequestHandling,
+    parse_proposal,
     reply_schema,
 )
+from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.domain.entities import Conversation, PlaySession
-from ailoveshen.domain.events import ChatResponseGeneratedEvent, ViewerRequestReplacedEvent
-from ailoveshen.domain.exceptions import TextGenerationError
+from ailoveshen.domain.events import ChatResponseGeneratedEvent
+from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GenerationContext,
-    Goal,
-    GoalPredicate,
     MessageType,
-    ViewerRequest,
+    MidGoal,
 )
 
 
@@ -35,16 +34,18 @@ class GenerateResponseUseCase(IGenerateResponse):
     Use case for replying to a viewer's chat (sub loop / interrupt).
 
     While playing, the reply sees what the streamer is doing (the same view as
-    the goal decision) and may take the viewer's request: the reply and the
-    goal come from one generation, so a reply that promises an action always
-    carries its goal. The goal is left in the session as a request; the step
-    loop applies it at the next step (it alone changes the goal).
+    the goal decision: the mission, the mid goals, the small goal) and may
+    accept the viewer's request as a mid goal: the reply and its handling come
+    from one generation, so a reply that accepts always adds the mid goal. It
+    goes behind the mid goal worked on now; the small goal is not interrupted.
+    A request that breaks the plan's limits (one per viewer, ...) or cannot be
+    judged goes back to the model with the reason, to be declined.
 
     It coordinates:
     - Recording the viewer's chat in the conversation history
     - Prompt construction via adapter
-    - Text (or reply + goal) generation via adapter
-    - Leaving a taken request in the session
+    - Text (or reply + request handling) generation via adapter
+    - Adding an accepted request to the mid goals
     - Recording the reply and publishing a domain event
     """
 
@@ -55,6 +56,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         event_publisher: IEventPublisher,
         conversation: Conversation,
         character: CharacterProfile,
+        mid_goals: MidGoalKeeper | None = None,
         history_limit: int = 10,
         max_attempts: int = 2,
     ) -> None:
@@ -67,14 +69,16 @@ class GenerateResponseUseCase(IGenerateResponse):
             event_publisher: Event publisher for domain events
             conversation: Conversation history shared with commentary and the goal decision
             character: The streamer's character profile
+            mid_goals: Adds accepted requests to the mid goals (None: replies only talk)
             history_limit: Number of recent conversation messages given to the model
-            max_attempts: Generations before giving up when the reply's goal is unusable
+            max_attempts: Generations before giving up when the accepted request is unusable
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
         self._event_publisher = event_publisher
         self._conversation = conversation
         self._character = character
+        self._mid_goals = mid_goals
         self._history_limit = history_limit
         self._max_attempts = max_attempts
 
@@ -85,9 +89,8 @@ class GenerateResponseUseCase(IGenerateResponse):
         Flow:
         1. Record the viewer's chat
         2. Build generation context (with the session's activity) and prompts
-        3. Generate the reply, with a goal when it takes the request
-        4. Leave the request in the session, record the reply and publish
-           ChatResponseGeneratedEvent
+        3. Generate the reply, adding the request to the mid goals when it accepts it
+        4. Record the reply and publish ChatResponseGeneratedEvent
         """
         try:
             # History given to the model excludes the chat being answered,
@@ -101,8 +104,6 @@ class GenerateResponseUseCase(IGenerateResponse):
 
             session = request.session
             activity = session.activity() if session is not None else None
-            obs = activity.observation if activity is not None else None
-            predicates = predicates_now(obs) if obs is not None else []
             context = GenerationContext(
                 emotion_state=request.emotion_state,
                 activity=activity,
@@ -110,19 +111,9 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
 
             logger.debug(f"Generating response for: {request.message[:50]}...")
-            text, goal = await self._generate(request, context, predicates)
+            text, mid_goal = await self._generate(request, context, session)
 
             if text:
-                if goal is not None and session is not None:
-                    await self._replace_pending(session, request.user_name)
-                    session.request_goal(
-                        ViewerRequest(
-                            goal=goal, user_name=request.user_name, message=request.message
-                        )
-                    )
-                    logger.info(
-                        f"Viewer request taken: {goal.spec.describe()} ({request.user_name})"
-                    )
                 self._conversation.add_streamer_message(text, MessageType.RESPONSE)
                 await self._event_publisher.publish(
                     ChatResponseGeneratedEvent(
@@ -136,7 +127,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 text=text,
                 original_message=request.message,
                 user_name=request.user_name,
-                goal=goal if text else None,
+                mid_goal=mid_goal,
             )
 
         except Exception as e:
@@ -147,27 +138,14 @@ class GenerateResponseUseCase(IGenerateResponse):
                 user_name=request.user_name,
             )
 
-    async def _replace_pending(self, session: PlaySession, user_name: str) -> None:
-        # The earlier request was promised too: its giving way is told, never silent
-        pending = session.request
-        if pending is None:
-            return
-        await self._event_publisher.publish(
-            ViewerRequestReplacedEvent(
-                goal=pending.goal.spec.describe(),
-                user_name=pending.user_name,
-                replaced_by=user_name,
-            )
-        )
-
     async def _generate(
         self,
         request: GenerateResponseRequest,
         context: GenerationContext,
-        predicates: list[GoalPredicate],
-    ) -> tuple[str, Goal | None]:
+        session: PlaySession | None,
+    ) -> tuple[str, MidGoal | None]:
         system_prompt = self._prompt_builder.build_system_prompt(self._character)
-        if not predicates:
+        if session is None or self._mid_goals is None:
             prompt = self._prompt_builder.build_chat_response_prompt(
                 user_name=request.user_name, message=request.message, context=context
             )
@@ -182,25 +160,24 @@ class GenerateResponseUseCase(IGenerateResponse):
                 user_name=request.user_name,
                 message=request.message,
                 context=context,
-                predicates=predicates,
+                takes_requests=True,
                 previous_error=error,
             )
             data = await self._text_generator.generate_json(
-                prompt, reply_schema(predicates), system_instruction=system_prompt
+                prompt, reply_schema(), system_instruction=system_prompt
             )
             text = str(data.get("reply", "")).strip()
-            if not data.get("change_goal"):
+            if data.get("request") != RequestHandling.ACCEPT.value:
                 return text, None
             try:
-                goal = parse_goal(data, requested_by=request.user_name)
-                if goal.spec.predicate not in predicates:
-                    raise ValueError(f"{goal.spec.predicate.value} is not one of the goals offered")
-            except ValueError as e:
-                # The reply promises something no goal stands for: never say it
+                proposal = parse_proposal(data)
+                mid_goal = await self._mid_goals.accept(
+                    session.plan, proposal, requested_by=request.user_name
+                )
+            except (ValueError, GoalRejectedError) as e:
+                # The reply accepts something the plan does not take: never say it
                 error = str(e)
-                logger.warning(f"Reply {attempt} with an unusable goal: {data!r}: {error}")
+                logger.warning(f"Reply {attempt} with an unusable request: {data!r}: {error}")
                 continue
-            return text, goal
-        raise TextGenerationError(
-            f"no reply with a usable goal after {self._max_attempts} attempts"
-        )
+            return text, mid_goal
+        raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")

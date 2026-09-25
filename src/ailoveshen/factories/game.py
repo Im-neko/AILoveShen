@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
+from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
-from ailoveshen.domain.entities import Conversation
+from ailoveshen.domain.entities import Conversation, MidGoalPlan
+from ailoveshen.domain.value_objects import Mission
 from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
@@ -14,13 +17,37 @@ from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_clien
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
 )
+from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
     GeminiSettings,
     JevSettings,
     MinecraftSettings,
+    MissionSettings,
 )
 from ailoveshen.presentation.services.game_service import GameService
+
+
+def create_mid_goal_plan(settings: MissionSettings) -> MidGoalPlan:
+    """
+    The mission with its first mid goals and limits, from the configuration.
+
+    Raises:
+        ValueError: If a mid goal or a limit in the configuration is invalid
+    """
+    plan = MidGoalPlan(
+        mission=Mission(text=settings.text),
+        max_goals=settings.max_mid_goals,
+        max_viewer_goals=settings.max_viewer_mid_goals,
+        viewer_budget=settings.viewer_budget_steps,
+    )
+    for goal in settings.mid_goals:
+        plan.add(
+            title=goal["title"],
+            conditions=tuple(parse_spec(c) for c in goal["conditions"]),
+            reason=goal.get("reason", ""),
+        )
+    return plan
 
 
 def create_game_service(
@@ -36,6 +63,8 @@ def create_game_service(
 
     Gemini (main slot) designs the house and sets goals, the Mineflayer
     bridge sidecar judges them and grounds the candidates, Jev picks each one.
+    The mission and its mid goals come from settings.minecraft.mission and
+    carry on across restarts (JSON at its store_path).
 
     Args:
         gemini: Gemini settings (settings.gemini)
@@ -83,6 +112,8 @@ def create_game_service(
         timeout_seconds=minecraft.request_timeout_seconds,
     )
     prompt_builder = GamePromptTemplateBuilder()
+    store = JsonMissionStore(minecraft.mission.store_path)
+    mid_goals = MidGoalKeeper(bridge=bridge, event_publisher=event_publisher, store=store)
 
     start = StartPlayUseCase(
         text_generator=text_generator,
@@ -90,6 +121,8 @@ def create_game_service(
         bridge=bridge,
         event_publisher=event_publisher,
         character=create_character_profile(character),
+        plan=create_mid_goal_plan(minecraft.mission),
+        store=store,
         max_steps_per_goal=minecraft.max_steps_per_goal,
         max_consecutive_failures=minecraft.max_consecutive_failures,
         max_stalled_steps=minecraft.max_stalled_steps,
@@ -101,6 +134,7 @@ def create_game_service(
         action_selector=action_selector,
         event_publisher=event_publisher,
         conversation=conversation,
+        mid_goals=mid_goals,
     )
     return GameService(
         start_play=start,
@@ -108,4 +142,5 @@ def create_game_service(
         bridge=bridge,
         text_generator=text_generator,
         action_selector=action_selector,
+        mid_goals=mid_goals,
     )

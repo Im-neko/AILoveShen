@@ -6,6 +6,8 @@
 //                               candidates: [{id, verb, target, ...}] }
 //   POST /act {id}         -> grounds the candidates again and runs the one with this id to
 //                             completion; { ok, result, seconds }
+//   POST /check {specs: [...]} -> judges conditions (have, built, placed) without setting a goal:
+//                             [{ spec, met, lines }] (400 with the reason if one is invalid)
 //   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height } sets the plan to build
 //   GET  /build-plan       -> build status (placed/total, origin, first missing blocks)
 //
@@ -22,7 +24,7 @@ import { configureMovements, PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_T
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
 import { Knowledge } from './knowledge.mjs'
-import { makeGoal, evaluate, needs } from './goals.mjs'
+import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe, needsOutside } from './candidates.mjs'
 import { snapshot } from './world.mjs'
 import { loadState, saveState, homeFromPlan, isInside, isDoorOpen, leaveHome, hasBed } from './home.mjs'
@@ -172,6 +174,14 @@ async function handle (req, res) {
     persist()
     console.log(`[bridge] goal: ${JSON.stringify(state.goal.spec)}`)
     return send(res, 200, publicStatus(decisionView().status))
+  }
+  if (req.method === 'POST' && req.url === '/check') {
+    const { specs } = await readJson(req)
+    try {
+      return send(res, 200, checkConditions(specs, bot, state, knowledge, snapshot(bot, state)))
+    } catch (e) {
+      return send(res, 400, { error: e.message })
+    }
   }
   if (req.method === 'POST' && req.url === '/act') {
     const { id } = await readJson(req)

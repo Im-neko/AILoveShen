@@ -115,6 +115,54 @@ class TestMineflayerBridgeClient:
             await client.set_goal(GoalSpec(GoalPredicate.HAVE, item="x", count=1))
 
     @pytest.mark.asyncio
+    async def test_check_judges_conditions_without_setting_a_goal(self):
+        """Test check() posts the specs and returns each one's status in order."""
+        seen = {}
+
+        def handler(req):
+            seen["path"] = req.url.path
+            seen["body"] = json.loads(req.content)
+            return httpx.Response(
+                200,
+                json=[
+                    {"spec": {"predicate": "built"}, "met": True, "lines": []},
+                    {
+                        "spec": {"predicate": "placed", "item": "bed", "where": "home"},
+                        "met": False,
+                        "lines": ["a bed in the house: no"],
+                    },
+                ],
+            )
+
+        built = GoalSpec(GoalPredicate.BUILT)
+        bed = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
+        statuses = await _client(handler).check([built, bed])
+
+        assert seen == {
+            "path": "/check",
+            "body": {"specs": [{"predicate": "built"}, bed.to_dict()]},
+        }
+        assert [(s.spec, s.met, s.lines) for s in statuses] == [
+            (built, True, ()),
+            (bed, False, ("a bed in the house: no",)),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_check_rejected_condition_raises_with_the_reason(self):
+        """Test a condition the bridge cannot judge becomes GoalRejectedError."""
+        client = _client(
+            lambda req: httpx.Response(400, json={"error": "unknown item or group: diamondz"})
+        )
+
+        with pytest.raises(GoalRejectedError, match="diamondz"):
+            await client.check([GoalSpec(GoalPredicate.HAVE, item="diamondz", count=1)])
+
+    @pytest.mark.asyncio
+    async def test_check_nothing_asks_nothing(self):
+        """Test no conditions make no request."""
+        assert await _client(lambda req: httpx.Response(500)).check([]) == []
+
+    @pytest.mark.asyncio
     async def test_act_posts_candidate_id(self):
         """Test act() posts the id and returns the result."""
         seen = {}

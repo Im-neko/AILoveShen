@@ -123,44 +123,55 @@ class HouseDesignedEvent(DomainEvent):
 @dataclass(frozen=True)
 class GoalSetEvent(DomainEvent):
     """
-    Event raised when a new goal is set (e.g. goal="have(planks, 12)").
+    Event raised when a new small goal is set (e.g. goal="have(planks, 12)").
 
-    `requested_by` is the viewer whose request it is: the reply already said
-    it, so it is not announced again.
+    `mid_goal` is the title of the mid goal it serves ("" for survival).
     """
 
     goal: str = ""
     reason: str = ""
-    requested_by: str = ""
+    mid_goal: str = ""
 
 
 @dataclass(frozen=True)
 class GoalEndedEvent(DomainEvent):
-    """Event raised when a goal ends: met, or given up (stalled, stuck, ...) with the reason."""
+    """Event raised when a small goal ends: met, or given up (stalled, stuck, ...)."""
 
     goal: str = ""
     reason: str = ""
     ended_because: str = ""
     met: bool = False
+
+
+@dataclass(frozen=True)
+class MidGoalAddedEvent(DomainEvent):
+    """
+    Event raised when a mid goal joins the list (`position` 1-based).
+
+    A viewer's (`requested_by`) was already told in the reply.
+    """
+
+    title: str = ""
+    reason: str = ""
+    requested_by: str = ""
+    position: int = 0
+
+
+@dataclass(frozen=True)
+class MidGoalCompletedEvent(DomainEvent):
+    """Event raised when a mid goal's conditions hold in the world."""
+
+    title: str = ""
     requested_by: str = ""
 
 
 @dataclass(frozen=True)
-class ViewerRequestReplacedEvent(DomainEvent):
-    """Event raised when a request taken but not started yet gives way to a newer one."""
+class MidGoalDroppedEvent(DomainEvent):
+    """Event raised when a mid goal is given up (always said on stream)."""
 
-    goal: str = ""
-    user_name: str = ""
-    replaced_by: str = ""
-
-
-@dataclass(frozen=True)
-class ViewerRequestRejectedEvent(DomainEvent):
-    """Event raised when a goal promised to a viewer cannot be set after all."""
-
-    goal: str = ""
-    user_name: str = ""
+    title: str = ""
     reason: str = ""
+    requested_by: str = ""
 
 
 @dataclass(frozen=True)

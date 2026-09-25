@@ -77,9 +77,48 @@ class JevSettings:
     timeout_seconds: float = 10.0
 
 
+def _default_mid_goals() -> list[dict[str, Any]]:
+    return [
+        {
+            "title": "自分の家を作る",
+            "conditions": [{"predicate": "built"}],
+            "reason": "夜を安全に過ごす拠点",
+        },
+        {
+            "title": "夜に寝られるようにする",
+            "conditions": [{"predicate": "placed", "item": "bed"}],
+            "reason": "夜を飛ばして昼に活動する",
+        },
+        {
+            "title": "身を守る道具を持つ",
+            "conditions": [{"predicate": "have", "item": "wooden_sword", "count": 1}],
+            "reason": "敵と戦えるようにする",
+        },
+        {
+            "title": "食料を蓄える",
+            "conditions": [{"predicate": "have", "item": "food", "count": 8}],
+            "reason": "空腹で動けなくならないように",
+        },
+    ]
+
+
+@dataclass
+class MissionSettings:
+    """The mission (never changed by comments), the first mid goals, and the plan's limits."""
+
+    text: str = "生き延びながら家を建て、街にしていく"
+    # [{title, conditions: [{predicate, item?, count?}], reason}]: the list when none is saved
+    mid_goals: list[dict[str, Any]] = field(default_factory=_default_mid_goals)
+    max_mid_goals: int = 6
+    max_viewer_mid_goals: int = 2
+    viewer_budget_steps: int = 80
+    # The mid goals carry on across restarts (for the same mission text)
+    store_path: str = "data/mission.json"
+
+
 @dataclass
 class MinecraftSettings:
-    """Minecraft bridge connection and agent settings."""
+    """Minecraft bridge connection, agent and mission settings."""
 
     bridge_host: str = "localhost"
     bridge_port: int = 3000
@@ -88,6 +127,7 @@ class MinecraftSettings:
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
     max_stalled_steps: int = 8
+    mission: MissionSettings = field(default_factory=MissionSettings)
 
 
 @dataclass
@@ -303,7 +343,9 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         mc_data = data["minecraft"]
         bridge_data = mc_data.get("bridge", {})
         agent_data = mc_data.get("agent", {})
+        mission_data = mc_data.get("mission", {})
         defaults = MinecraftSettings()
+        mission_defaults = defaults.mission
         settings.minecraft = MinecraftSettings(
             bridge_host=bridge_data.get("host", defaults.bridge_host),
             bridge_port=bridge_data.get("port", defaults.bridge_port),
@@ -315,6 +357,18 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 "max_consecutive_failures", defaults.max_consecutive_failures
             ),
             max_stalled_steps=agent_data.get("max_stalled_steps", defaults.max_stalled_steps),
+            mission=MissionSettings(
+                text=mission_data.get("text", mission_defaults.text),
+                mid_goals=mission_data.get("mid_goals", mission_defaults.mid_goals),
+                max_mid_goals=mission_data.get("max_mid_goals", mission_defaults.max_mid_goals),
+                max_viewer_mid_goals=mission_data.get(
+                    "max_viewer_mid_goals", mission_defaults.max_viewer_mid_goals
+                ),
+                viewer_budget_steps=mission_data.get(
+                    "viewer_budget_steps", mission_defaults.viewer_budget_steps
+                ),
+                store_path=mission_data.get("store_path", mission_defaults.store_path),
+            ),
         )
 
     if "tts" in data:

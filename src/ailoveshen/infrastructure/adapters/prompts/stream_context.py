@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 from ailoveshen.domain.value_objects import (
+    CONDITION_PREDICATES,
     Activity,
     ConversationMessage,
     GameObservation,
@@ -16,6 +17,8 @@ from ailoveshen.domain.value_objects import (
     GoalOutcome,
     GoalPredicate,
     MessageRole,
+    MidGoal,
+    MidGoalState,
 )
 
 NO_INFORMATION = "特になし"
@@ -51,31 +54,38 @@ def format_predicates(predicates: list[GoalPredicate]) -> str:
     return "\n".join(f"- {PREDICATE_DESCRIPTIONS[p]}" for p in predicates)
 
 
-def format_activity(activity: Activity | None) -> str:
-    """What the streamer is doing and why, the game situation, and the recent goals."""
+def format_conditions() -> str:
+    """What a mid goal's completion conditions can be, one per line."""
+    return format_predicates([p for p in GoalPredicate if p in CONDITION_PREDICATES])
+
+
+def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
+    """
+    What the streamer is doing and why, from the mission down, the game situation, and the
+    recent small goals. `with_ids` shows the mid goals' ids (for the goal decision's edits;
+    not where they could be read out on stream).
+    """
     if activity is None:
         return "ゲームはしていない"
+    titles = {g.id: g.title for g in activity.mid_goals}
     lines = []
-    if activity.request is not None:
-        # The request taken is what the streamer does now (it starts within seconds). Shown as
-        # "next" beside the old goal's progress, replies still said the old goal came first.
-        r = activity.request
-        lines.append(
-            f"- 今の目標（{r.user_name}さんの頼み「{r.message}」で今から始める）: "
-            f"{r.goal.spec.describe()}: {r.goal.reason}"
-        )
-        if activity.goal is not None:
-            old = activity.goal
-            lines.append(
-                f"- 頼みのためにやめる目標: {old.spec.describe()}{_requested(old)}: {old.reason}"
-            )
-    else:
-        lines.append(f"- 今の目標: {_format_goal(activity.goal, activity.observation)}")
+    if activity.mission is not None:
+        lines.append(f"- 大目標: {activity.mission.text}")
+    pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
+    finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
+    lines.append("- 中目標（上から順に取り組む）:")
+    lines += [
+        f"  {i}. {_format_mid_goal(g, with_ids, current=i == 1)}" for i, g in enumerate(pending, 1)
+    ] or ["  - なし"]
+    if finished:
+        lines.append("- 最近終わった中目標:")
+        lines += [f"  - {_format_finished(g)}" for g in finished]
+    lines.append(f"- 今の小目標: {_format_goal(activity.goal, activity.observation, titles)}")
     if activity.observation is not None:
         lines.append(_format_situation(activity.observation))
-    lines.append("- これまでの目標（古い順）:")
+    lines.append("- これまでの小目標（古い順）:")
     lines.append(
-        "\n".join(f"  - {_format_outcome(o)}" for o in activity.recent_goals) or "  - なし"
+        "\n".join(f"  - {_format_outcome(o, titles)}" for o in activity.recent_goals) or "  - なし"
     )
     return "\n".join(lines)
 
@@ -114,14 +124,35 @@ def format_time_en(time: dict) -> str:
     return f"{phase} ({(MORNING_TICK - tick) / TICKS_PER_MINUTE:.0f} minutes until morning)"
 
 
-def _requested(goal: Goal) -> str:
+def _requested(goal: MidGoal) -> str:
     return f"（{goal.requested_by}さんの頼み）" if goal.requested_by else ""
 
 
-def _format_goal(goal: Goal | None, obs: GameObservation | None) -> str:
+def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
+    conditions = ", ".join(c.describe() for c in goal.conditions)
+    progress = f"（{'; '.join(goal.progress)}）" if goal.progress else ""
+    return (
+        f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}"
+        f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}"
+    )
+
+
+def _format_finished(goal: MidGoal) -> str:
+    how = "完了" if goal.state == MidGoalState.DONE else f"断念: {goal.ended_because}"
+    return f"{goal.title}{_requested(goal)}（{how}）"
+
+
+def _serves(goal: Goal, titles: dict[str, str]) -> str:
+    if goal.mid_goal_id is None:
+        return "（身を守るため）"
+    title = titles.get(goal.mid_goal_id)
+    return f"（「{title}」のため）" if title else ""
+
+
+def _format_goal(goal: Goal | None, obs: GameObservation | None, titles: dict[str, str]) -> str:
     if goal is None:
         return "まだない"
-    lines = [f"{goal.spec.describe()}{_requested(goal)}: {goal.reason}"]
+    lines = [f"{goal.spec.describe()}{_serves(goal, titles)}: {goal.reason}"]
     if obs is not None and obs.goal is not None:
         lines += [f"  {line}" for line in obs.goal.lines]
         if obs.goal.blocked:
@@ -129,10 +160,10 @@ def _format_goal(goal: Goal | None, obs: GameObservation | None) -> str:
     return "\n".join(lines)
 
 
-def _format_outcome(o: GoalOutcome) -> str:
+def _format_outcome(o: GoalOutcome, titles: dict[str, str]) -> str:
     result = "達成" if o.met else "未達成"
     return (
-        f"{o.goal.spec.describe()}{_requested(o.goal)}: {o.goal.reason}"
+        f"{o.goal.spec.describe()}{_serves(o.goal, titles)}: {o.goal.reason}"
         f"（{result}、終了: {o.ended_because}）"
     )
 

@@ -53,12 +53,13 @@ class IGamePromptBuilder(ABC):
 
         Args:
             blueprint: The house being built
-            activity: What the streamer is doing (the ending goal with its status,
-                recent goals), the same view the commentary and replies get
+            activity: What the streamer is doing (the mission and mid goals, the ending
+                goal with its status, recent goals), the same view the commentary and
+                replies get
             goal_ended_because: Why a new goal is due
             recent_messages: What was said on stream (the streamer's words and viewers' chat)
             predicates: The predicates that make sense now
-            previous_error: Why the bridge rejected the previous goal, if it did
+            previous_error: Why the previous goal or mid-goal edit could not be used
         """
         ...
 

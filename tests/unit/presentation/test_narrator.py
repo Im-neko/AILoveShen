@@ -8,8 +8,9 @@ from ailoveshen.domain.events import (
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
-    ViewerRequestRejectedEvent,
-    ViewerRequestReplacedEvent,
+    MidGoalAddedEvent,
+    MidGoalCompletedEvent,
+    MidGoalDroppedEvent,
 )
 from ailoveshen.domain.value_objects import Activity
 from ailoveshen.presentation.services.narrator import Narrator
@@ -55,62 +56,63 @@ class TestNarrator:
         await narrator.on_goal_ended(
             GoalEndedEvent(goal="placed(bed, home)", ended_because="stalled", met=False)
         )
-        await narrator.on_goal_set(GoalSetEvent(goal="through_night()", reason="日が暮れる"))
+        await narrator.on_goal_set(
+            GoalSetEvent(goal="through_night()", reason="日が暮れる", mid_goal="")
+        )
         await narrator.drain()
 
         assert _events(llm) == [
             [
-                "目標 placed(bed, home) が未達成でやめた（stalled）",
-                "新しい目標: through_night()（日が暮れる）",
+                "小目標 placed(bed, home) が未達成でやめた（stalled）",
+                "新しい小目標: through_night()（身を守るため。日が暮れる）",
             ]
         ]
         assert llm.generate_commentary.call_args.kwargs["activity"] is ACTIVITY
         assert said == ["次は羊を探すよ"]
 
     @pytest.mark.asyncio
-    async def test_requested_goal_is_not_announced_again(self, narrator, llm):
-        """Test a goal the reply already promised is not repeated."""
-        await narrator.on_goal_ended(
-            GoalEndedEvent(goal="have(log, 3)", ended_because="viewer neko asked: ベッド")
-        )
+    async def test_the_mid_goal_served_is_told(self, narrator, llm):
+        """Test the next goal is told with the mid goal it is for."""
         await narrator.on_goal_set(
-            GoalSetEvent(goal="placed(bed, home)", reason="頼まれた", requested_by="neko")
-        )
-        await narrator.drain()
-
-        llm.generate_commentary.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_dropped_request_is_told_even_for_another_request(self, narrator, llm):
-        """Test replacing one viewer's unmet request with another's is still told."""
-        await narrator.on_goal_ended(
-            GoalEndedEvent(
-                goal="placed(bed, home)",
-                ended_because="viewer inu asked: 探検して",
-                requested_by="neko",
-            )
-        )
-        await narrator.on_goal_set(
-            GoalSetEvent(goal="explored(40)", reason="頼まれた", requested_by="inu")
-        )
-        await narrator.drain()
-
-        assert _events(llm)[0][0] == (
-            "目標 placed(bed, home)（nekoさんの頼み） が"
-            "未達成でやめた（viewer inu asked: 探検して）"
-        )
-
-    @pytest.mark.asyncio
-    async def test_rejected_request_is_told(self, narrator, llm):
-        """Test a promise that cannot be kept is told (never dropped silently)."""
-        await narrator.on_request_rejected(
-            ViewerRequestRejectedEvent(goal="cleared()", user_name="neko", reason="it is night")
+            GoalSetEvent(goal="have(log, 3)", reason="剣の材料", mid_goal="身を守る道具を持つ")
         )
         await narrator.drain()
 
         assert _events(llm) == [
-            ["nekoさんに引き受けた cleared() は、やっぱりできなかった（it is night）"]
+            ["新しい小目標: have(log, 3)（「身を守る道具を持つ」のため。剣の材料）"]
         ]
+
+    @pytest.mark.asyncio
+    async def test_mid_goals_ended_are_told_with_the_next_goal(self, narrator, llm):
+        """Test completed and dropped mid goals (a viewer's too) are told, never silent."""
+        await narrator.on_mid_goal_completed(MidGoalCompletedEvent(title="自分の家を作る"))
+        await narrator.on_mid_goal_dropped(
+            MidGoalDroppedEvent(title="探検", reason="予算を超えた", requested_by="tori")
+        )
+        await narrator.on_goal_set(
+            GoalSetEvent(goal="placed(bed, home)", reason="", mid_goal="寝る")
+        )
+        await narrator.drain()
+
+        assert _events(llm)[0][:2] == [
+            "中目標「自分の家を作る」が完了した",
+            "中目標「探検」（toriさんの頼み）をやめた（予算を超えた）",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_own_new_mid_goal_is_told_a_viewers_is_not(self, narrator, llm):
+        """Test a request accepted is not told again (the reply said it)."""
+        await narrator.on_mid_goal_added(
+            MidGoalAddedEvent(title="ベッド", reason="頼まれた", requested_by="neko", position=2)
+        )
+        await narrator.on_mid_goal_added(
+            MidGoalAddedEvent(title="剣を持つ", reason="夜に備える", position=3)
+        )
+        await narrator.on_goal_set(GoalSetEvent(goal="built()", reason="", mid_goal="家"))
+        await narrator.drain()
+
+        assert _events(llm)[0][0] == "中目標「剣を持つ」をリストの 3 番目に足した（夜に備える）"
+        assert len(_events(llm)[0]) == 2
 
     @pytest.mark.asyncio
     async def test_empty_commentary_says_nothing(self, narrator, llm, said):
@@ -125,7 +127,7 @@ class TestNarrator:
     async def test_activity_is_taken_when_the_event_happens(self, narrator, llm):
         """Test a goal set while the commentary is generated does not leak into it."""
         await narrator.on_goal_set(GoalSetEvent(goal="built()", reason=""))
-        current[0] = Activity(request=None, recent_goals=())  # the session moves on
+        current[0] = Activity(recent_goals=())  # the session moves on
         try:
             await narrator.drain()
         finally:
@@ -138,27 +140,15 @@ class TestNarrator:
         """Test the completion and what comes next make one utterance."""
         await narrator.on_house_completed(HouseCompletedEvent(name="ぽかぽか"))
         await narrator.on_goal_ended(GoalEndedEvent(goal="built()", ended_because="met", met=True))
-        await narrator.on_goal_set(GoalSetEvent(goal="have(wooden_sword, 1)", reason="身を守る"))
+        await narrator.on_goal_set(
+            GoalSetEvent(goal="have(wooden_sword, 1)", reason="身を守る", mid_goal="剣")
+        )
         await narrator.drain()
 
         assert _events(llm) == [
             [
                 "家「ぽかぽか」が完成した",
-                "目標 built() が達成（met）",
-                "新しい目標: have(wooden_sword, 1)（身を守る）",
+                "小目標 built() が達成（met）",
+                "新しい小目標: have(wooden_sword, 1)（「剣」のため。身を守る）",
             ]
-        ]
-
-    @pytest.mark.asyncio
-    async def test_replaced_request_is_told(self, narrator, llm):
-        """Test a promised request that gave way to a newer one is told."""
-        await narrator.on_request_replaced(
-            ViewerRequestReplacedEvent(
-                goal="placed(bed, home)", user_name="neko", replaced_by="tori"
-            )
-        )
-        await narrator.drain()
-
-        assert _events(llm) == [
-            ["nekoさんに引き受けた placed(bed, home) は、toriさんの頼みに替えたのでやらない"]
         ]

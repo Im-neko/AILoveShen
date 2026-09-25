@@ -41,8 +41,12 @@ game = [
     "httpx>=0.25",
     "typesafe-sdk>=0.7.1",
 ]
+stream = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
 all = [
-    "ailoveshen[dev,tts,llm,game]",
+    "ailoveshen[dev,tts,llm,game,stream]",
 ]
 
 [tool.hatch.build.targets.wheel]

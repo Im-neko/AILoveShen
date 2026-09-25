@@ -5,6 +5,7 @@ from __future__ import annotations
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
+from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import CharacterProfile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
@@ -32,6 +33,7 @@ def create_llm_service(
     character: CharacterSettings,
     event_publisher: IEventPublisher,
     conversation: Conversation,
+    mid_goals: MidGoalKeeper | None = None,
     history_limit: int = 10,
 ) -> LLMService:
     """
@@ -46,6 +48,8 @@ def create_llm_service(
         character: Character settings (settings.character)
         event_publisher: Event publisher for domain events
         conversation: What is said on stream, shared with the game's goal decision
+        mid_goals: The game's mid goals (GameService.mid_goals): replies while playing may
+            accept viewers' requests into them. None: replies only talk
         history_limit: Number of recent messages given to the model
 
     Returns:
@@ -103,6 +107,7 @@ def create_llm_service(
         event_publisher=event_publisher,
         conversation=conversation,
         character=character_profile,
+        mid_goals=mid_goals,
         history_limit=history_limit,
     )
 

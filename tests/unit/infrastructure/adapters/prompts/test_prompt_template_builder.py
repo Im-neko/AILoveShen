@@ -14,13 +14,25 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     MessageType,
+    MidGoal,
+    Mission,
 )
 from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
     PromptTemplateBuilder,
 )
 
 BUILDING = Activity(
-    goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="日暮れまでに家を完成させる"),
+    mission=Mission("生き延びながら家を建て、街にしていく"),
+    mid_goals=(
+        MidGoal("m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),)),
+        MidGoal(
+            "m3",
+            "ベッドで寝る",
+            (GoalSpec(GoalPredicate.PLACED, item="bed", where="home"),),
+            requested_by="neko",
+        ),
+    ),
+    goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="日暮れまでに家を完成させる", mid_goal_id="m1"),
     observation=GameObservation(
         state={"time": {"phase": "day", "time_of_day": 6000}},
         candidates=(Candidate("wait", {"verb": "wait"}),),
@@ -64,9 +76,12 @@ class TestPromptTemplateBuilder:
 
         prompt = PromptTemplateBuilder().build_commentary_prompt(context)
 
-        assert "今の目標: built(): 日暮れまでに家を完成させる" in prompt
+        assert (
+            "今の小目標: built()（「自分の家を作る」のため）: 日暮れまでに家を完成させる" in prompt
+        )
         assert "house blocks placed 30/70" in prompt
         assert "体力 20.0/20" in prompt
+        assert "[m1]" not in prompt  # ids are for the goal decision, not to be read out
         assert "- ゾンビを倒した" in prompt
         assert "nekoさん: がんばれ" in prompt
         assert "あなた: ありがとう！" in prompt
@@ -100,26 +115,28 @@ class TestPromptTemplateBuilder:
             context=GenerationContext(activity=BUILDING),
         )
 
-        assert "今の目標: built(): 日暮れまでに家を完成させる" in prompt
+        assert "- 大目標: 生き延びながら家を建て、街にしていく" in prompt
+        assert "1. 自分の家を作る [取り組み中] 完了条件: built()" in prompt
+        assert "2. ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
         assert "「今していること」のとおりに答える" in prompt
-        # Without goals to offer, the reply is text only
-        assert "行動の頼みについて" not in prompt
+        # Not taking requests, the reply is text only
+        assert "視聴者の頼みについて" not in prompt
         assert "返答テキストのみを出力してください。" in prompt
 
-    def test_chat_response_prompt_offers_goals_for_requests(self):
-        """Test a reply that may take a request lists the goals and the promise rule."""
+    def test_chat_response_prompt_takes_requests_as_mid_goals(self):
+        """Test a reply that may accept a request lists the conditions and the rules."""
         prompt = PromptTemplateBuilder().build_chat_response_prompt(
             user_name="neko",
             message="ベッド作って",
             context=GenerationContext(activity=BUILDING),
-            predicates=[GoalPredicate.PLACED, GoalPredicate.HAVE],
-            previous_error="have needs an item",
+            takes_requests=True,
+            previous_error="neko already has a request in the list",
         )
 
-        assert "placed(item=bed)" in prompt and "have(item, count)" in prompt
-        assert "cleared" not in prompt
-        assert "「やるね」と言うなら必ず目標を出す" in prompt
-        assert "先の予定を約束しない" in prompt
-        assert "前の頼みをやめることを返答で言う" in prompt
-        assert "前回の返答の目標は使えなかった: have needs an item" in prompt
-        assert "change_goal" in prompt
+        assert "placed(item=bed)" in prompt and "have(item, count)" in prompt and "built" in prompt
+        assert "explored(distance)" not in prompt and "cleared:" not in prompt
+        assert "今の小目標は中断しない" in prompt
+        assert "同じ人の頼みは同時に1つまで" in prompt
+        assert "大目標と今の目標は変えない" in prompt
+        assert "前回の返答の頼みは受けられなかった: neko already has a request" in prompt
+        assert "decline" in prompt

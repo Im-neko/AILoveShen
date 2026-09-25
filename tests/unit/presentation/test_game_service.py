@@ -1,11 +1,11 @@
 """Tests for GameService."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from ailoveshen.application.dto.game_dto import PlayStepReport
-from ailoveshen.domain.entities import PlaySession
+from ailoveshen.domain.entities import MidGoalPlan, PlaySession
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
@@ -14,6 +14,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    Mission,
     Side,
 )
 from ailoveshen.presentation.services.game_service import GameService
@@ -36,14 +37,15 @@ def start():
     """Mock start use case returning a session."""
     use_case = AsyncMock()
     use_case.execute.return_value = PlaySession(
-        blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2)
+        blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2),
+        plan=MidGoalPlan(mission=Mission("家を建てる")),
     )
     return use_case
 
 
 def _service(start, advance, closers=None):
     closers = closers or (AsyncMock(), AsyncMock(), AsyncMock())
-    return GameService(start, advance, *closers)
+    return GameService(start, advance, *closers, mid_goals=Mock())
 
 
 class TestGameService:

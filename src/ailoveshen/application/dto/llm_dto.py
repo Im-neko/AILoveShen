@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ailoveshen.domain.entities import PlaySession
-from ailoveshen.domain.value_objects import Activity, EmotionState, Goal
+from ailoveshen.domain.value_objects import Activity, EmotionState, MidGoal
 
 
 @dataclass
@@ -48,7 +48,7 @@ class GenerateResponseRequest:
     Input DTO for the generate chat response use case.
 
     With a play `session`, the reply sees what the streamer is doing and may
-    take the viewer's request as the next goal.
+    accept the viewer's request as a mid goal.
     """
 
     user_name: str
@@ -60,18 +60,22 @@ class GenerateResponseRequest:
 
 @dataclass
 class GenerateResponseResponse:
-    """Output DTO for the generate chat response use case (`goal`: the request taken, if any)."""
+    """Output DTO for the generate chat response use case (`mid_goal`: the request accepted)."""
 
     success: bool
     original_message: str
     user_name: str
     text: str = ""
-    goal: Optional[Goal] = None
+    mid_goal: Optional[MidGoal] = None
     error: Optional[str] = None
 
     @classmethod
     def ok(
-        cls, text: str, original_message: str, user_name: str, goal: Optional[Goal] = None
+        cls,
+        text: str,
+        original_message: str,
+        user_name: str,
+        mid_goal: Optional[MidGoal] = None,
     ) -> GenerateResponseResponse:
         """Create a response; empty text means the model produced nothing usable."""
         return cls(
@@ -79,7 +83,7 @@ class GenerateResponseResponse:
             text=text,
             original_message=original_message,
             user_name=user_name,
-            goal=goal,
+            mid_goal=mid_goal,
         )
 
     @classmethod

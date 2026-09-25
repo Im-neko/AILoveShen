@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 
-from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext, GoalPredicate
+from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext
 
 
 class IPromptBuilder(ABC):
@@ -32,7 +31,7 @@ class IPromptBuilder(ABC):
         user_name: str,
         message: str,
         context: GenerationContext,
-        predicates: Sequence[GoalPredicate] = (),
+        takes_requests: bool = False,
         previous_error: str = "",
     ) -> str:
         """
@@ -42,7 +41,7 @@ class IPromptBuilder(ABC):
             user_name: The viewer
             message: Their chat message
             context: What the streamer is doing and the recent conversation
-            predicates: Goals the reply may take the request as (none: reply only)
-            previous_error: Why the previous reply's goal could not be used
+            takes_requests: Whether the reply may accept the request as a mid goal (JSON output)
+            previous_error: Why the previous reply's accepted request could not be used
         """
         ...

@@ -12,8 +12,9 @@ from ailoveshen.domain.events import (
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
-    ViewerRequestRejectedEvent,
-    ViewerRequestReplacedEvent,
+    MidGoalAddedEvent,
+    MidGoalCompletedEvent,
+    MidGoalDroppedEvent,
 )
 from ailoveshen.domain.value_objects import Activity
 from ailoveshen.presentation.services.llm_service import LLMService
@@ -24,12 +25,11 @@ class Narrator:
     Turns goal changes into commentary, so viewers hear why the streamer does
     something else now.
 
-    A goal's end (and the house's completion) is told together with what comes
-    next (one utterance). A goal set for a viewer's request is not announced
-    again (the reply already said it), unless another viewer's request had to
-    be dropped for it. A request that could not be taken after all, one that
-    gave way to a newer request, and one that ended unmet are always told: a
-    promise is never dropped silently.
+    What happens at a small-goal boundary is told together with the next goal
+    (one utterance): the small goal's end, mid goals completed or dropped
+    (a viewer's request dropped is never silent), mid goals the streamer added,
+    and the house's completion. A viewer's request accepted is not told again
+    (the reply already said when it will be done).
 
     The activity is taken when the event happens, so the commentary talks
     about the goal the bot is on then, not one set while it was generated.
@@ -54,47 +54,45 @@ class Narrator:
         self._activity = activity
         self._say = say
         self._pending: list[str] = []  # what happened, told with the next goal
-        self._dropped = False  # a viewer's request among them ended unmet
         self._tasks: set[asyncio.Task[None]] = set()
 
     def subscribe(self, bus: IEventSubscriber) -> None:
         """Listen to the goal events."""
         bus.subscribe(GoalEndedEvent, self.on_goal_ended)
         bus.subscribe(GoalSetEvent, self.on_goal_set)
-        bus.subscribe(ViewerRequestRejectedEvent, self.on_request_rejected)
-        bus.subscribe(ViewerRequestReplacedEvent, self.on_request_replaced)
+        bus.subscribe(MidGoalAddedEvent, self.on_mid_goal_added)
+        bus.subscribe(MidGoalCompletedEvent, self.on_mid_goal_completed)
+        bus.subscribe(MidGoalDroppedEvent, self.on_mid_goal_dropped)
         bus.subscribe(HouseCompletedEvent, self.on_house_completed)
 
     async def on_goal_ended(self, event: GoalEndedEvent) -> None:
         """Keep the end to tell it with the next goal."""
-        self._pending.append(_describe_end(event))
-        self._dropped = self._dropped or (bool(event.requested_by) and not event.met)
+        result = "達成" if event.met else "未達成でやめた"
+        self._pending.append(f"小目標 {event.goal} が{result}（{event.ended_because}）")
 
     async def on_goal_set(self, event: GoalSetEvent) -> None:
-        """Tell why the goal changed, unless the reply to the viewer already did."""
+        """Tell what happened and the next goal in one utterance."""
         events, self._pending = self._pending, []
-        dropped, self._dropped = self._dropped, False
-        if event.requested_by and not dropped:
-            return
-        events.append(f"新しい目標: {event.goal}（{event.reason}）")
+        serves = f"「{event.mid_goal}」のため" if event.mid_goal else "身を守るため"
+        events.append(f"新しい小目標: {event.goal}（{serves}。{event.reason}）")
         self._comment(events)
 
-    async def on_request_rejected(self, event: ViewerRequestRejectedEvent) -> None:
-        """A promise that cannot be kept is told right away."""
-        self._comment(
-            [
-                f"{event.user_name}さんに引き受けた {event.goal} は、やっぱりできなかった"
-                f"（{event.reason}）"
-            ]
+    async def on_mid_goal_added(self, event: MidGoalAddedEvent) -> None:
+        """The streamer's own new mid goal is told with the next goal; a viewer's was replied."""
+        if event.requested_by:
+            return
+        self._pending.append(
+            f"中目標「{event.title}」をリストの {event.position} 番目に足した（{event.reason}）"
         )
 
-    async def on_request_replaced(self, event: ViewerRequestReplacedEvent) -> None:
-        """A promise that gave way to a newer request is told right away."""
-        self._comment(
-            [
-                f"{event.user_name}さんに引き受けた {event.goal} は、"
-                f"{event.replaced_by}さんの頼みに替えたのでやらない"
-            ]
+    async def on_mid_goal_completed(self, event: MidGoalCompletedEvent) -> None:
+        """Keep a completed mid goal to tell it with the next goal."""
+        self._pending.append(f"中目標「{event.title}」{_requested(event.requested_by)}が完了した")
+
+    async def on_mid_goal_dropped(self, event: MidGoalDroppedEvent) -> None:
+        """Keep a dropped mid goal to tell it with the next goal (never silent)."""
+        self._pending.append(
+            f"中目標「{event.title}」{_requested(event.requested_by)}をやめた（{event.reason}）"
         )
 
     async def on_house_completed(self, event: HouseCompletedEvent) -> None:
@@ -120,7 +118,5 @@ class Narrator:
             logger.error(f"Narration failed: {e}")
 
 
-def _describe_end(e: GoalEndedEvent) -> str:
-    who = f"（{e.requested_by}さんの頼み）" if e.requested_by else ""
-    result = "達成" if e.met else "未達成でやめた"
-    return f"目標 {e.goal}{who} が{result}（{e.ended_because}）"
+def _requested(user_name: str) -> str:
+    return f"（{user_name}さんの頼み）" if user_name else ""

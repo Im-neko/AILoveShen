@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from ailoveshen.domain.value_objects import (
     ActionResult,
+    ConditionStatus,
     GameObservation,
     GoalSpec,
     GoalStatus,
@@ -41,6 +42,17 @@ class IMinecraftBridge(ABC):
 
         Raises:
             GoalRejectedError: If the bridge rejects the goal (with the reason)
+            GameBridgeError: If the bridge is unreachable
+        """
+        ...
+
+    @abstractmethod
+    async def check(self, specs: Sequence[GoalSpec]) -> list[ConditionStatus]:
+        """
+        Judge mid goals' conditions from the world without setting a goal.
+
+        Raises:
+            GoalRejectedError: If a spec cannot be a condition (the message says why)
             GameBridgeError: If the bridge is unreachable
         """
         ...

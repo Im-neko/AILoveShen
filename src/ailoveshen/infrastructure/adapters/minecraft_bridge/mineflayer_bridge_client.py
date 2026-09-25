@@ -12,6 +12,7 @@ from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
 from ailoveshen.domain.value_objects import (
     ActionResult,
     Candidate,
+    ConditionStatus,
     GameObservation,
     GoalSpec,
     GoalStatus,
@@ -57,6 +58,27 @@ class MineflayerBridgeClient(IMinecraftBridge):
                 f"Minecraft bridge PUT /goal -> {response.status_code}: {response.text[:200]}"
             )
         return _to_status(response.json())
+
+    async def check(self, specs: Sequence[GoalSpec]) -> list[ConditionStatus]:
+        """Judge conditions without setting a goal; a 400 carries why one cannot be judged."""
+        if not specs:
+            return []
+        try:
+            response = await self._client.post(
+                "/check", json={"specs": [s.to_dict() for s in specs]}
+            )
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (POST /check): {e}") from e
+        if response.status_code == 400:
+            raise GoalRejectedError(f"conditions rejected: {response.json()['error']}")
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge POST /check -> {response.status_code}: {response.text[:200]}"
+            )
+        return [
+            ConditionStatus(spec=spec, met=bool(r["met"]), lines=tuple(r.get("lines", [])))
+            for spec, r in zip(specs, response.json(), strict=True)
+        ]
 
     async def act(self, action_id: str) -> ActionResult:
         """Run one candidate on the bridge."""

@@ -11,6 +11,7 @@ from ailoveshen.application.ports.input.play import IAdvancePlay, IStartPlay
 from ailoveshen.application.ports.output.action_selector import IActionSelector
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.domain.entities import PlaySession
 
 
@@ -42,6 +43,7 @@ class GameService:
         bridge: IMinecraftBridge,
         text_generator: ITextGenerator,
         action_selector: IActionSelector,
+        mid_goals: MidGoalKeeper,
     ) -> None:
         """
         Initialize game service.
@@ -52,18 +54,25 @@ class GameService:
             bridge: Minecraft bridge, closed together with the service
             text_generator: LLM, closed together with the service
             action_selector: Action selector, closed together with the service
+            mid_goals: Keeps the mid goals (chat replies add viewers' requests through it)
         """
         self._start = start_play
         self._advance = advance_play
         self._bridge = bridge
         self._text_generator = text_generator
         self._action_selector = action_selector
+        self._mid_goals = mid_goals
         self._session: PlaySession | None = None
 
     @property
     def session(self) -> PlaySession | None:
         """The session being played (what commentary and chat replies see), None before play()."""
         return self._session
+
+    @property
+    def mid_goals(self) -> MidGoalKeeper:
+        """Keeps the mid goals; chat replies accept viewers' requests through it."""
+        return self._mid_goals
 
     async def play(self, max_steps: int = 200) -> PlayOutcome:
         """

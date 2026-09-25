@@ -6,12 +6,14 @@ import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
-from ailoveshen.domain.entities import Conversation, PlaySession
-from ailoveshen.domain.events import ChatResponseGeneratedEvent, ViewerRequestReplacedEvent
-from ailoveshen.domain.exceptions import TextGenerationError
+from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
+from ailoveshen.domain.events import ChatResponseGeneratedEvent, MidGoalAddedEvent
+from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     Candidate,
     CharacterProfile,
+    ConditionStatus,
     GameObservation,
     Goal,
     GoalPredicate,
@@ -20,16 +22,32 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     MessageRole,
     MessageType,
+    Mission,
     Side,
 )
 
 BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
+SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
+BED_REQUEST = {
+    "reply": "いいよ、剣ができたら次にベッド作るね！",
+    "request": "accept",
+    "title": "ベッドで寝る",
+    "conditions": [{"predicate": "placed", "item": "bed"}],
+    "position": 2,
+    "reason": "夜を飛ばせる",
+}
 
 
 def _playing(time_phase: str = "day") -> PlaySession:
-    """A session with a home, building nothing, at the given time of day."""
-    session = PlaySession(blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2))
-    session.set_goal(Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "剣の材料"), "day")
+    """A session with a home, working on the sword (m1), then food (m2)."""
+    plan = MidGoalPlan(mission=Mission("生き延びながら街にしていく"))
+    plan.add("剣を持つ", (SWORD,))
+    plan.add("食料を蓄える", (GoalSpec(GoalPredicate.HAVE, item="food", count=8),))
+    session = PlaySession(blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2), plan=plan)
+    session.set_goal(
+        Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "剣の材料", mid_goal_id="m1"),
+        "day",
+    )
     session.observe(
         GameObservation(
             state={},
@@ -76,7 +94,27 @@ def conversation():
 
 
 @pytest.fixture
-def use_case(mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation):
+def bridge():
+    """Mock bridge: every condition can be judged (none met)."""
+    b = AsyncMock()
+
+    async def check(specs):
+        return [ConditionStatus(s, False) for s in specs]
+
+    b.check.side_effect = check
+    return b
+
+
+@pytest.fixture
+def store():
+    """Mock mission store."""
+    return Mock()
+
+
+@pytest.fixture
+def use_case(
+    mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+):
     """Create GenerateResponseUseCase with mocked dependencies."""
     return GenerateResponseUseCase(
         text_generator=mock_text_generator,
@@ -84,7 +122,14 @@ def use_case(mock_text_generator, mock_prompt_builder, mock_event_publisher, con
         event_publisher=mock_event_publisher,
         conversation=conversation,
         character=CharacterProfile(),
+        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
     )
+
+
+def _added(events) -> list[MidGoalAddedEvent]:
+    return [
+        c.args[0] for c in events.publish.call_args_list if isinstance(c.args[0], MidGoalAddedEvent)
+    ]
 
 
 def _request(message: str = "がんばれ") -> GenerateResponseRequest:
@@ -170,117 +215,133 @@ class TestGenerateResponseUseCase:
 
 
 class TestReplyWhilePlaying:
-    """A reply while playing sees the activity and may take the viewer's request."""
+    """A reply while playing sees the activity and may accept the request as a mid goal."""
 
-    def _request(self, session, message="ベッド作って！"):
-        return GenerateResponseRequest(user_name="neko", message=message, session=session)
+    def _request(self, session, message="ベッド作って！", user_name="neko"):
+        return GenerateResponseRequest(user_name=user_name, message=message, session=session)
 
     @pytest.mark.asyncio
-    async def test_reply_sees_the_activity_and_the_goals_on_offer(
+    async def test_reply_sees_the_activity(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):
-        """Test the reply is built from the session's activity with the goals valid now."""
+        """Test the reply is built from the session's activity, able to take requests."""
         mock_text_generator.generate_json.return_value = {
-            "reply": "木を集めてるよ",
-            "change_goal": False,
+            "reply": "剣のために木を集めてるよ",
+            "request": "none",
         }
         session = _playing()
 
         response = await use_case.execute(self._request(session, "今なにしてるの？"))
 
-        assert response.text == "木を集めてるよ"
-        assert response.goal is None
+        assert response.text == "剣のために木を集めてるよ"
+        assert response.mid_goal is None
         kwargs = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs
         assert kwargs["context"].activity.goal.spec.describe() == "have(log, 3)"
-        assert GoalPredicate.PLACED in kwargs["predicates"]
-        assert session.request is None
+        assert kwargs["takes_requests"] is True
+        assert len(session.plan.pending) == 2
 
     @pytest.mark.asyncio
-    async def test_promise_leaves_a_request_for_the_step_loop(self, use_case, mock_text_generator):
-        """Test a reply that takes the request leaves it in the session (the goal is unchanged)."""
-        mock_text_generator.generate_json.return_value = {
-            "reply": "いいよ、ベッド作るね！",
-            "change_goal": True,
-            "predicate": "placed",
-            "item": "bed",
-            "reason": "nekoさんに頼まれた",
-        }
+    async def test_accepted_request_joins_the_mid_goals_behind_the_current(
+        self, use_case, mock_text_generator, mock_event_publisher, store
+    ):
+        """Test an accepted request is a mid goal (after the current one); the goal goes on."""
+        mock_text_generator.generate_json.return_value = BED_REQUEST
         session = _playing()
 
         response = await use_case.execute(self._request(session))
 
-        assert response.goal.spec == BED
-        assert session.request.goal.spec == BED
-        assert session.request.goal.requested_by == "neko"
-        assert session.request.message == "ベッド作って！"
-        assert session.goal.spec.describe() == "have(log, 3)"  # only the step loop changes it
+        assert response.mid_goal.conditions == (BED,)
+        assert [(g.title, g.requested_by) for g in session.plan.pending] == [
+            ("剣を持つ", None),
+            ("ベッドで寝る", "neko"),
+            ("食料を蓄える", None),
+        ]
+        assert session.goal.spec.describe() == "have(log, 3)"  # not interrupted
+        added = _added(mock_event_publisher)[0]
+        assert (added.title, added.requested_by, added.position) == ("ベッドで寝る", "neko", 2)
+        store.save.assert_called_with(session.plan)
 
     @pytest.mark.asyncio
-    async def test_unusable_goal_is_regenerated_never_promised(
+    async def test_request_never_cuts_in(self, use_case, mock_text_generator):
+        """Test a request asked to go first still goes behind the current mid goal."""
+        mock_text_generator.generate_json.return_value = {**BED_REQUEST, "position": 1}
+        session = _playing()
+
+        await use_case.execute(self._request(session, "今すぐベッド作って！"))
+
+        assert session.plan.current.title == "剣を持つ"
+
+    @pytest.mark.asyncio
+    async def test_second_request_from_the_same_viewer_is_declined(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):
-        """Test a promise with a goal not on offer is sent back; the retry's reply is used."""
-        mock_text_generator.generate_json.side_effect = [
-            {"reply": "外で戦うね！", "change_goal": True, "predicate": "cleared", "reason": ""},
-            {"reply": "夜は危ないから朝まで待ってね", "change_goal": False},
-        ]
-        session = _playing("night")
-
-        response = await use_case.execute(self._request(session, "外で戦って"))
-
-        assert response.text == "夜は危ないから朝まで待ってね"
-        assert session.request is None
-        second = mock_prompt_builder.build_chat_response_prompt.call_args_list[1].kwargs
-        assert "not one of the goals offered" in second["previous_error"]
-
-    @pytest.mark.asyncio
-    async def test_no_reply_after_repeated_unusable_goals(self, use_case, mock_text_generator):
-        """Test nothing is said when every generation promises an unusable goal."""
-        mock_text_generator.generate_json.return_value = {
-            "reply": "やるね！",
-            "change_goal": True,
-            "predicate": "have",
-            "reason": "",
-        }
-        session = _playing()
-
-        response = await use_case.execute(self._request(session))
-
-        assert not response.success
-        assert session.request is None
-
-    @pytest.mark.asyncio
-    async def test_newer_request_replaces_a_pending_one_and_says_so(
-        self, use_case, mock_text_generator, mock_event_publisher
-    ):
-        """Test a pending request that gives way is published (never dropped silently)."""
-        bed = {
-            "reply": "ベッド作るね",
-            "change_goal": True,
-            "predicate": "placed",
-            "item": "bed",
-            "reason": "",
-        }
+        """Test a limit hit goes back to the model, whose declining reply is used."""
         explore = {
-            "reply": "探検するね",
-            "change_goal": True,
-            "predicate": "explored",
-            "distance": 30,
+            **BED_REQUEST,
+            "title": "板を集める",
+            "conditions": [{"predicate": "have", "item": "planks", "count": 16}],
         }
-        mock_text_generator.generate_json.side_effect = [bed, explore]
+        declined = {"reply": "ベッドの約束が先だから、また今度ね", "request": "decline"}
+        mock_text_generator.generate_json.side_effect = [BED_REQUEST, explore, declined]
         session = _playing()
 
         await use_case.execute(self._request(session))
-        await use_case.execute(
-            GenerateResponseRequest(user_name="tori", message="探検して", session=session)
+        response = await use_case.execute(self._request(session, "板も集めて"))
+
+        assert response.text == "ベッドの約束が先だから、また今度ね"
+        assert len(session.plan.pending) == 3
+        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
+        assert "neko already has a request" in error
+
+    @pytest.mark.asyncio
+    async def test_condition_the_bridge_cannot_judge_is_never_promised(
+        self, use_case, mock_text_generator, mock_prompt_builder, bridge
+    ):
+        """Test an accepted request the world cannot judge is sent back, not added."""
+        bridge.check.side_effect = GoalRejectedError("conditions rejected: unknown item diamond")
+        mock_text_generator.generate_json.side_effect = [
+            {**BED_REQUEST, "conditions": [{"predicate": "have", "item": "diamond", "count": 1}]},
+            {"reply": "ダイヤはまだ無理かな", "request": "decline"},
+        ]
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "ダイヤ掘って"))
+
+        assert response.text == "ダイヤはまだ無理かな"
+        assert len(session.plan.pending) == 2
+        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
+        assert "unknown item diamond" in error
+
+    @pytest.mark.asyncio
+    async def test_no_reply_after_repeated_unusable_requests(self, use_case, mock_text_generator):
+        """Test nothing is said when every generation accepts something unusable."""
+        mock_text_generator.generate_json.return_value = {
+            "reply": "やるね！",
+            "request": "accept",
+            "title": "探検",
+            "conditions": [{"predicate": "explored", "distance": 30}],
+        }
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "探検して"))
+
+        assert not response.success
+        assert len(session.plan.pending) == 2
+
+    @pytest.mark.asyncio
+    async def test_without_the_mid_goals_replies_only_talk(
+        self, mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation
+    ):
+        """Test a use case given no mid goals replies with text only."""
+        use_case = GenerateResponseUseCase(
+            text_generator=mock_text_generator,
+            prompt_builder=mock_prompt_builder,
+            event_publisher=mock_event_publisher,
+            conversation=conversation,
+            character=CharacterProfile(),
         )
 
-        replaced = [
-            c.args[0]
-            for c in mock_event_publisher.publish.call_args_list
-            if isinstance(c.args[0], ViewerRequestReplacedEvent)
-        ]
-        assert [(e.goal, e.user_name, e.replaced_by) for e in replaced] == [
-            ("placed(bed, home)", "neko", "tori")
-        ]
-        assert session.request.user_name == "tori"
+        response = await use_case.execute(self._request(_playing()))
+
+        assert response.text == "nekoさん、ありがとう！"
+        mock_text_generator.generate_json.assert_not_called()
