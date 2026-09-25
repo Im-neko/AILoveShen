@@ -143,14 +143,13 @@ function findItem (bot, kind) {
 
 let lastPlaceAt = 0
 
+const occupied = (block) => block && block.name !== 'air' && block.name !== 'cave_air'
+
 export async function placeOne (bot, plan, b, signal) {
   if (b.block === 'door') return placeDoor(bot, plan, b, signal)
   const pos = plan.worldPos(b)
-  const current = bot.blockAt(pos)
-  if (current && current.name !== 'air' && current.name !== 'cave_air') {
-    if (!isClearable(current)) throw new Error(`site blocked by ${current.name} at ${pos}`)
-    await bot.dig(current, true)
-  }
+  const found = bot.blockAt(pos)
+  if (occupied(found) && !isClearable(found)) throw new Error(`site blocked by ${found.name} at ${pos}`)
   // サーバーが確かめるのは届く距離とカーソルで、視線は確かめない。なので、例えば屋根の最初の
   // ブロックを家の中から壁の上に置ける。
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
@@ -158,6 +157,12 @@ export async function placeOne (bot, plan, b, signal) {
     const t = Date.now()
     await walkTo(bot, goal, signal)
     if (Date.now() - t > 3000) console.log(`[build] ${pos} に置くための移動が遅い: ${Date.now() - t}ms、出発点 ${bot.entity.position}`)
+  }
+  // 草などは届く所に来てから刈る（遠くから掘るとサーバーは断り、手元の世界だけが空気になる）
+  const current = bot.blockAt(pos)
+  if (occupied(current)) {
+    if (!isClearable(current)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    await bot.dig(current, true)
   }
   const eye = bot.entity.position.floored().offset(0.5, 1.6, 0.5)
   const fr = goal.getFaceAndRef(eye)
@@ -193,11 +198,8 @@ export async function placeOne (bot, plan, b, signal) {
 async function placeDoor (bot, plan, b, signal) {
   const lower = plan.blocks.find((d) => d.block === 'door' && d.x === b.x && d.z === b.z && d.y === b.y - 1) ?? b
   const pos = plan.worldPos(lower)
-  const current = bot.blockAt(pos)
-  if (current && current.name !== 'air' && current.name !== 'cave_air') {
-    if (!isClearable(current) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
-    await bot.dig(current, true)
-  }
+  const found = bot.blockAt(pos)
+  if (occupied(found) && !isClearable(found) && !KINDS.door(found.name)) throw new Error(`site blocked by ${found.name} at ${pos}`)
   const out = plan.doorOutward(lower)
   let error = null
   for (const side of [1, -1]) {
@@ -211,6 +213,12 @@ async function placeDoor (bot, plan, b, signal) {
     }
   }
   if (error) throw new Error(`no place to stand in front of the door at ${pos}: ${error.message}`)
+  // 向きの違うドアや草は、ドアの前に立ってから壊す（遠くから掘るとサーバーは断る）
+  const current = bot.blockAt(pos)
+  if (occupied(current)) {
+    if (!isClearable(current) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    await bot.dig(current, true)
+  }
   // 壊したドアが落ちて拾われるのを待つ（隣のマスに立てば拾える）
   for (let i = 0; i < 40 && !findItem(bot, 'door'); i++) await bot.waitForTicks(1)
   const item = findItem(bot, 'door')

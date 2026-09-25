@@ -24,26 +24,34 @@ test('ドアは壁と直角に向いていないと置けたことにしない�
   assert.ok(!plan.isPlaced(bot('east'), plan.blocks[1]))
 })
 
-test('ドアは壁の外に立ち、床を見て置く。向きの違うドアは壊して置き直す（上のマスからでも下に置く）', async () => {
+test('ドアは壁の外に立ってから、向きの違うドアを壊し、床を見て置き直す（上のマスからでも下に置く）', async () => {
   const log = []
   const world = new Map([['1,70,2', 'spruce_door']])
   const bot = {
-    entity: { position: v(0.5, 70, 0.5) },
+    entity: { position: v(0.5, 70, 20.5) },
     blockAt: (p) => {
       const name = world.get(`${p.x},${p.y},${p.z}`) ?? (p.y < 70 ? 'dirt' : 'air')
       return { name, position: p, boundingBox: name === 'air' ? 'empty' : 'block', getProperties: () => ({ facing: 'west' }) }
     },
-    dig: async (b) => { log.push(`dig ${b.position}`); world.delete(`${b.position.x},${b.position.y},${b.position.z}`) },
+    // サーバーは届かない所の掘りを断る（town4c: 30m 先からドアを掘り、手元の世界だけが空気になった）
+    dig: async (b) => {
+      if (bot.entity.position.distanceTo(b.position.offset(0.5, 0.5, 0.5)) > 4.5) throw new Error(`too far to dig ${b.position}`)
+      log.push(`dig ${b.position}`)
+      world.delete(`${b.position.x},${b.position.y},${b.position.z}`)
+    },
     equip: async () => {},
     lookAt: async (p) => log.push(`look ${p}`),
     placeBlock: async (ref, face) => log.push(`place on ${ref.position} ${face}`),
     inventory: { items: () => [{ name: 'spruce_door', count: 1 }] },
-    pathfinder: { goto: async (g) => log.push(`stand ${g.x},${g.y},${g.z}`), setGoal: () => {} }
+    pathfinder: {
+      goto: async (g) => { log.push(`stand ${g.x},${g.y},${g.z}`); bot.entity.position = v(g.x + 0.5, g.y, g.z + 0.5) },
+      setGoal: () => {}
+    }
   }
   await placeOne(bot, plan, plan.blocks[1], new AbortController().signal)
   assert.deepEqual(log, [
+    'stand 1,70,3', // 南の壁の外。遠くからは掘らない
     'dig (1, 70, 2)',
-    'stand 1,70,3', // 南の壁の外
     'look (1.5, 70, 2.5)',
     'place on (1, 69, 2) (0, 1, 0)'
   ])
