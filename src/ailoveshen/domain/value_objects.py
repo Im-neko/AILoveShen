@@ -793,6 +793,7 @@ class Activity:
     mission: Optional[Mission] = None
     town: Optional[TownDefinition] = None
     town_stage: int = 0  # stages done
+    stage_met: tuple[GoalSpec, ...] = ()  # the current stage's conditions met so far
     mid_goals: tuple[MidGoal, ...] = ()
     goal: Optional[Goal] = None
     observation: Optional[GameObservation] = None

@@ -222,6 +222,7 @@ class StartPlayUseCase(IStartPlay):
                 saved.next_id,
                 town=saved.town,
                 town_stage=saved.town_stage,
+                stage_met=saved.stage_met,
             )
             logger.info(f"Mid goals carried on: {', '.join(g.describe() for g in plan.pending)}")
         else:

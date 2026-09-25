@@ -103,6 +103,9 @@ def _town(activity: Activity) -> dict[str, Any] | None:
                 if i == activity.town_stage
                 else "later",
                 "conditions": [c.describe() for c in s.conditions],
+                "met": [c.describe() for c in s.conditions if c in activity.stage_met]
+                if i == activity.town_stage
+                else [],
                 "unresolved": list(s.unresolved),
             }
             for i, s in enumerate(town.stages)

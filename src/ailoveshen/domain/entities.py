@@ -165,9 +165,11 @@ class MidGoalPlan(Entity):
     """
     The mission and its mid goals in priority order (the first pending one is
     worked on now), and the town the mission builds: its definition and how
-    many of its stages are done. The stage worked on is a mid goal of the
-    streamer's own; it is done like any other (from the world) and moves the
-    town on. It may be moved down the list but not dropped.
+    many of its stages are done. What can be done of the stage worked on is a
+    mid goal of the streamer's own; it is done like any other (from the world)
+    and may be moved down the list but not dropped. The stage is done, and the
+    town moves on, when all of its conditions have been met and no part is
+    left for an ability not there yet.
 
     The limits keep viewers from taking the stream over: a viewer's mid goal
     goes behind the one being worked on, at most one per viewer and
@@ -190,6 +192,7 @@ class MidGoalPlan(Entity):
     _next_id: int = field(default=1, init=False, repr=False)
     _town: Optional[TownDefinition] = field(default=None, init=False, repr=False)
     _town_stage: int = field(default=0, init=False, repr=False)
+    _stage_met: tuple[GoalSpec, ...] = field(default=(), init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Validate limits."""
@@ -234,6 +237,30 @@ class MidGoalPlan(Entity):
     def town_complete(self) -> bool:
         """Whether every stage of the town is done."""
         return self._town is not None and self._town_stage >= len(self._town.stages)
+
+    @property
+    def stage_met(self) -> tuple[GoalSpec, ...]:
+        """The current stage's conditions met so far (by its mid goals)."""
+        return self._stage_met
+
+    @property
+    def stage_remaining(self) -> tuple[GoalSpec, ...]:
+        """The current stage's conditions not met yet (what its next mid goal asks for)."""
+        stage = self.current_stage
+        if stage is None:
+            return ()
+        return tuple(c for c in stage.conditions if c not in self._stage_met)
+
+    def settle_stage(self) -> bool:
+        """Move the town on past the stages that are done; whether it moved."""
+        moved = False
+        while (
+            (stage := self.current_stage) is not None and stage.ready and not self.stage_remaining
+        ):
+            self._town_stage += 1
+            self._stage_met = ()
+            moved = True
+        return moved
 
     def define_town(self, town: TownDefinition) -> None:
         """Set what the town is (its unresolved stages may be written again as abilities come)."""
@@ -307,10 +334,11 @@ class MidGoalPlan(Entity):
         return self._finish(mid_goal_id, MidGoalState.DROPPED, reason)
 
     def complete(self, mid_goal_id: str) -> MidGoal:
-        """Mark a mid goal done (its conditions hold in the world); a stage moves the town on."""
+        """Mark a mid goal done (its conditions hold); a stage's may move the town on."""
         done = self._finish(mid_goal_id, MidGoalState.DONE, "its conditions hold")
         if done.stage is not None and done.stage == self._town_stage:
-            self._town_stage += 1
+            self._stage_met += tuple(c for c in done.conditions if c not in self._stage_met)
+            self.settle_stage()
         return done
 
     def judged(self, mid_goal_id: str, progress: tuple[str, ...]) -> None:
@@ -335,6 +363,7 @@ class MidGoalPlan(Entity):
         next_id: int,
         town: Optional[TownDefinition] = None,
         town_stage: int = 0,
+        stage_met: tuple[GoalSpec, ...] = (),
     ) -> None:
         """Put back a saved plan (ids stay as they were)."""
         self._goals = list(pending)
@@ -343,6 +372,7 @@ class MidGoalPlan(Entity):
         self._next_id = next_id
         self._town = town
         self._town_stage = town_stage
+        self._stage_met = stage_met
 
     @property
     def next_id(self) -> int:
@@ -428,6 +458,7 @@ class PlaySession(Entity):
             mission=self.plan.mission,
             town=self.plan.town,
             town_stage=self.plan.town_stage,
+            stage_met=self.plan.stage_met,
             mid_goals=self.plan.pending + self.plan.finished,
             goal=self.goal,
             observation=self.last_observation,

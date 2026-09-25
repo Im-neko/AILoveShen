@@ -257,6 +257,11 @@ class TestGamePromptTemplateBuilder:
         """Test the stage worked on shows its unresolved parts; a complete town says so."""
         waiting = _goal_prompt(activity=Activity(mission=MISSION, town=TOWN, town_stage=2))
         assert "3. [今] 複数の建物: 街らしく\n     まだできないこと" in waiting
+        half = replace(TOWN, stages=(replace(TOWN.stages[0], unresolved=("柵",)),))
+        started = _goal_prompt(
+            activity=Activity(mission=MISSION, town=half, town_stage=0, stage_met=(FOOD,))
+        )
+        assert "     できたこと: stored(food, 16)\n     まだできないこと" in started
         assert "倉庫を建てる" in waiting
 
         done = _goal_prompt(activity=Activity(mission=MISSION, town=TOWN, town_stage=3))

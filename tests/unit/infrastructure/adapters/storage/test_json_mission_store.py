@@ -69,3 +69,17 @@ class TestJsonMissionStore:
         assert saved.town_stage == 1
         assert saved.pending[0].stage == 1
         assert saved.finished[0].stage == 0
+        assert saved.stage_met == ()
+
+    def test_stage_progress_round_trip(self, tmp_path):
+        """Test the conditions met of a stage waiting for an ability come back."""
+        lit = GoalSpec(GoalPredicate.LIT, distance=16)
+        plan = MidGoalPlan(mission=Mission("街にしていく"))
+        plan.define_town(TownDefinition("街", (TownStage("明かり", "夜", (lit,), ("柵",)),)))
+        plan.complete(plan.add("明かり", (lit,), stage=0).id)
+        store = JsonMissionStore(tmp_path / "mission.json")
+
+        store.save(plan)
+        saved = store.load()
+
+        assert (saved.town_stage, saved.stage_met) == (0, (lit,))

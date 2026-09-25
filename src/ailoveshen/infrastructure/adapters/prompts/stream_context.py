@@ -204,9 +204,16 @@ def _format_town(activity: Activity) -> list[str]:
     for i, stage in enumerate(town.stages):
         mark = "済" if i < activity.town_stage else "今" if i == activity.town_stage else "先"
         lines.append(f"  {i + 1}. [{mark}] {stage.title}: {stage.why}")
-        if i == activity.town_stage and not stage.ready:
+        if i != activity.town_stage:
+            continue
+        met = [c.describe() for c in stage.conditions if c in activity.stage_met]
+        if met:
+            lines.append(f"     できたこと: {', '.join(met)}")
+        if not stage.ready:
             waits = "; ".join(stage.unresolved)
-            lines.append(f"     まだできないこと（できるようになるまで進めない）: {waits}")
+            lines.append(
+                f"     まだできないこと（できるようになるまで、この段階は終わらない）: {waits}"
+            )
     return lines
 
 

@@ -50,6 +50,7 @@ class JsonMissionStore(IMissionStore):
             next_id=int(data["next_id"]),
             town=_town(data["town"]) if data.get("town") else None,
             town_stage=int(data.get("town_stage", 0)),
+            stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
         )
         logger.info(f"Mid goals loaded from {self._path}")
         return saved
@@ -63,6 +64,7 @@ class JsonMissionStore(IMissionStore):
             "next_id": plan.next_id,
             "town": _town_dict(plan.town) if plan.town else None,
             "town_stage": plan.town_stage,
+            "stage_met": [c.to_dict() for c in plan.stage_met],
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")

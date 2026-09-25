@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ailoveshen.domain.entities import MidGoalPlan
-from ailoveshen.domain.value_objects import MidGoal, Mission, TownDefinition
+from ailoveshen.domain.value_objects import GoalSpec, MidGoal, Mission, TownDefinition
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class SavedPlan:
     next_id: int
     town: Optional[TownDefinition] = None
     town_stage: int = 0
+    stage_met: tuple[GoalSpec, ...] = ()  # the current stage's conditions met so far
 
 
 class IMissionStore(ABC):

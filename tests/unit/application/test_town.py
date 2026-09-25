@@ -292,6 +292,37 @@ class TestTownStages:
         assert [g.title for g in plan.pending] == ["羊毛を集める"]
 
     @pytest.mark.asyncio
+    async def test_what_can_be_done_goes_first_the_rest_waits_for_the_ability(
+        self, keeper, bridge, events
+    ):
+        """Test town1: every stage had an unresolved part; its doable part is still worked on."""
+        fence = TownStage("安全", "夜に備える", conditions=(LIT, FOOD), unresolved=("柵",))
+        plan = self._plan(fence, TownStage("備蓄", "冬", conditions=(SWORD,)))
+
+        await keeper.judge(plan)
+        assert plan.current.conditions == (LIT, FOOD) and plan.current.stage == 0
+
+        bridge.check.side_effect = _check(met={LIT, FOOD})
+        await keeper.judge(plan)
+        assert plan.town_stage == 0 and plan.stage_met == (LIT, FOOD)
+        assert plan.stage_goal() is None  # nothing left to do until the fence can be done
+        assert [g.title for g in plan.pending] == ["羊毛を集める"]
+
+        # The fence written again once the ability is there: only it is asked for
+        fenced = GoalSpec(GoalPredicate.HAVE, item="oak_fence", count=16)
+        plan.define_town(
+            _town(TownStage("安全", "夜に備える", (LIT, FOOD, fenced)), plan.town.stages[1])
+        )
+        await keeper.judge(plan)
+        assert plan.current.conditions == (fenced,)
+
+        bridge.check.side_effect = _check(met={LIT, FOOD, fenced})
+        await keeper.judge(plan)
+        assert plan.town_stage == 1 and plan.stage_met == ()
+        assert plan.current.conditions == (SWORD,) and plan.current.stage == 1
+        assert not _published(events, TownCompletedEvent)
+
+    @pytest.mark.asyncio
     async def test_a_stage_is_not_dropped_when_its_conditions_are_rejected(self, keeper, bridge):
         """Test a stage the bridge cannot judge stays (it is never dropped)."""
         plan = self._plan(TownStage("備蓄", "冬に備える", conditions=(FOOD,)))

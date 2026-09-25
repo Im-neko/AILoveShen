@@ -69,10 +69,12 @@ class MidGoalKeeper:
         reason rather than stopping play. A town stage is never dropped: it is
         logged and waits for its conditions to be fixed.
 
-        Then the town moves on: the stage worked on becomes a mid goal at the
-        top of the list once it can be done (no unresolved parts), and the
-        town's completion is told when its last stage is done.
+        Then the town moves on: what can be done now of the stage worked on
+        (its conditions not met yet) becomes a mid goal at the top of the list;
+        the parts left for abilities not there yet wait. The town's completion
+        is told when its last stage is done.
         """
+        was_complete = plan.town_complete
         events: list[DomainEvent] = []
         for goal in plan.pending:
             try:
@@ -94,22 +96,23 @@ class MidGoalKeeper:
                 events.append(
                     MidGoalCompletedEvent(title=done.title, requested_by=done.requested_by or "")
                 )
-                if done.stage is not None and plan.town_complete:
-                    assert plan.town is not None
-                    logger.info(f"Town complete: {plan.town.text}")
-                    events.append(TownCompletedEvent(text=plan.town.text))
         events.extend(self._next_stage(plan))
+        if plan.town_complete and not was_complete:
+            assert plan.town is not None
+            logger.info(f"Town complete: {plan.town.text}")
+            events.append(TownCompletedEvent(text=plan.town.text))
         self._store.save(plan)
         await self._publish(events)
 
     def _next_stage(self, plan: MidGoalPlan) -> list[DomainEvent]:
+        plan.settle_stage()  # a stage written again may be done already
         stage = plan.current_stage
-        if stage is None or not stage.ready or plan.stage_goal() is not None:
+        if stage is None or not plan.stage_remaining or plan.stage_goal() is not None:
             return []
         try:
             goal = plan.add(
                 title=stage.title,
-                conditions=stage.conditions,
+                conditions=plan.stage_remaining,
                 reason=stage.why,
                 position=0,
                 stage=plan.town_stage,
