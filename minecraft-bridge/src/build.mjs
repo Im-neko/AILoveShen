@@ -7,6 +7,7 @@
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
 import { isLog, isPlanks } from './observe.mjs'
+import { walkTo } from './move.mjs'
 
 const { goals } = pathfinderPkg
 const { Vec3 } = vec3Pkg
@@ -133,7 +134,7 @@ function findItem (bot, kind) {
 
 let lastPlaceAt = 0
 
-export async function placeOne (bot, plan, b) {
+export async function placeOne (bot, plan, b, signal) {
   const pos = plan.worldPos(b)
   const current = bot.blockAt(pos)
   if (current && current.name !== 'air' && current.name !== 'cave_air') {
@@ -145,7 +146,7 @@ export async function placeOne (bot, plan, b) {
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
   if (!goal.isEnd(bot.entity.position.floored())) {
     const t = Date.now()
-    await bot.pathfinder.goto(goal)
+    await walkTo(bot, goal, signal)
     if (Date.now() - t > 3000) console.log(`[build] ${pos} に置くための移動が遅い: ${Date.now() - t}ms、出発点 ${bot.entity.position}`)
   }
   const eye = bot.entity.position.floored().offset(0.5, 1.6, 0.5)

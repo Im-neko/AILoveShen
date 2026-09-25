@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import vec3Pkg from 'vec3'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
+import { walkTo } from './move.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -151,13 +152,9 @@ async function walkInto (bot, cell) {
   }
 }
 
-export async function enterHome (bot, home) {
+export async function enterHome (bot, home, signal) {
   if (!isInside(bot, home)) {
-    try {
-      await bot.pathfinder.goto(new goals.GoalBlock(home.outside.x, home.outside.y, home.outside.z))
-    } finally {
-      bot.pathfinder.setGoal(null)
-    }
+    await walkTo(bot, new goals.GoalBlock(home.outside.x, home.outside.y, home.outside.z), signal)
     await setDoor(bot, home, true)
     await walkInto(bot, home.door)
     await walkInto(bot, home.inside)
@@ -252,11 +249,7 @@ export function exitSpots (bot, home, hostiles) {
 export async function digExit (bot, home, spot, signal) {
   const inside = spot.wall.plus(spot.wall.minus(spot.step))
   if (bot.entity.position.floored().xzDistanceTo(inside) > 0) {
-    try {
-      await bot.pathfinder.goto(new goals.GoalBlock(inside.x, inside.y, inside.z))
-    } finally {
-      bot.pathfinder.setGoal(null)
-    }
+    await walkTo(bot, new goals.GoalBlock(inside.x, inside.y, inside.z), signal)
   }
   for (const p of [spot.wall.offset(0, 1, 0), spot.wall]) {
     signal.throwIfAborted()
@@ -268,19 +261,20 @@ export async function digExit (bot, home, spot, signal) {
 }
 
 // 掘った出口から歩いて出る
-export async function stepOut (bot, spot) {
+export async function stepOut (bot, spot, signal) {
+  signal.throwIfAborted()
   await walkInto(bot, spot.wall)
   await walkInto(bot, spot.step)
 }
 
 // 出口のために掘った壁のブロックを戻す（下から: 上のブロックはその上に載る）
-export async function repairWall (bot, home) {
+export async function repairWall (bot, home, signal) {
   for (const b of [...home.breach].sort((a, c) => a.y - c.y)) {
     const pos = new Vec3(b.x, b.y, b.z)
     if (!isWallBlock(bot.blockAt(pos))) {
       const kind = isLog(b.block) ? 'log' : 'planks'
       if (!bot.inventory.items().some((i) => (kind === 'log' ? isLog : isPlanks)(i.name))) throw new Error(`no ${kind} to close the wall at ${pos}`)
-      await placeOne(bot, { worldPos: () => pos }, { block: kind })
+      await placeOne(bot, { worldPos: () => pos }, { block: kind }, signal)
     }
     home.breach.splice(home.breach.indexOf(b), 1)
   }
@@ -289,17 +283,13 @@ export async function repairWall (bot, home) {
 export const hasBed = (bot, home) => !!home?.bed && !!bot.blockAt(home.bed)?.name.endsWith('_bed')
 
 // `confront`: ドアの前で待つものと戦いに出る（cleared の目標）ので、それらがいても止めない
-export async function leaveHome (bot, home, { confront = false } = {}) {
+export async function leaveHome (bot, home, signal, { confront = false } = {}) {
   if (!isInside(bot, home)) return
   const danger = dangerOutside(bot, home)
   if (danger.length && !confront) throw new Error(`staying inside: ${danger.map(({ e }) => e.name).join(', ')} waiting outside the door`)
   if (bot.entity.position.floored().xzDistanceTo(home.inside) > 0) {
     // 閉じた家の中の経路移動は問題ない: 内部に障害物はない
-    try {
-      await bot.pathfinder.goto(new goals.GoalBlock(home.inside.x, home.inside.y, home.inside.z))
-    } finally {
-      bot.pathfinder.setGoal(null)
-    }
+    await walkTo(bot, new goals.GoalBlock(home.inside.x, home.inside.y, home.inside.z), signal)
   }
   await setDoor(bot, home, true)
   await walkInto(bot, home.door)

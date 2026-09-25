@@ -131,7 +131,7 @@ async function act (id) {
   let finished
   state.current = { id, verb: c.verb, abort, done: new Promise((resolve) => { finished = resolve }) }
   try {
-    if (isInside(bot, state.home) && needsOutside(c, state.home)) await leaveHome(bot, state.home, { confront: !!c.confront })
+    if (isInside(bot, state.home) && needsOutside(c, state.home)) await leaveHome(bot, state.home, controller.signal, { confront: !!c.confront })
     controller.signal.throwIfAborted()
     result = await PRIMITIVES[c.verb](bot, state, c, controller.signal)
     if (controller.signal.aborted) throw controller.signal.reason

@@ -14,6 +14,7 @@ import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isIn
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
+import { walkTo as goto } from './move.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // サバイバルで目からブロックに届く距離
@@ -113,15 +114,7 @@ class GoalAwayFrom extends goals.Goal {
   }
 }
 
-async function goto (bot, goal) {
-  try {
-    await bot.pathfinder.goto(goal)
-  } finally {
-    bot.pathfinder.setGoal(null)
-  }
-}
-
-const goNear = (bot, pos, range) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range))
+const goNear = (bot, pos, range, signal) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range), signal)
 
 // 作業台やかまどを置く場所: 完全なブロックの上の空気で、ボットから 2〜3 ブロック（立っている場所では
 // ない）、上下1ブロックまで（自分の高さの決まった輪だけでは、坂や洞窟で何も見つからなかった）。
@@ -157,12 +150,12 @@ export function torchSpot (bot) {
 // 収まるように終え、次のステップでワールドを見直す（270m 先の家まで 45 秒以上かかった）
 export const LEG = 48
 const SMELT_WAIT_MS = 20000 // 1個 10 秒かかる: スタック全部を待つとタイムアウトを過ぎる
-async function legToward (bot, target, what) {
+async function legToward (bot, target, what, signal) {
   const me = bot.entity.position
   const far = Math.hypot(target.x - me.x, target.z - me.z)
   if (far <= LEG) return null
   const k = LEG / far
-  await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3))
+  await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3), signal)
   const left = Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z)
   return `walked ${round(far - left)}m toward ${what} (${round(left)}m left)`
 }
@@ -231,14 +224,18 @@ export function nearbyDrops (bot, state, radius) {
 // ドロップは少し待たないと拾えない。すでにその上に立っていると、歩くのはすぐ終わる。
 // 近くに落ちたドロップを集め、それぞれ拾うのを待つ。
 // まわりのドロップを拾う。最後のドロップに届かなかったら、その理由を返す
-async function collectNearbyDrops (bot, state) {
+async function collectNearbyDrops (bot, state, signal) {
   let why = ''
   for (let i = 0; i < 3; i++) {
     await bot.waitForTicks(10)
+    signal.throwIfAborted()
     const drop = nearbyDrops(bot, state, DROP_COLLECT_RADIUS)[0]
     if (!drop) return why
     const collected = waitForCollect(bot, PICKUP_WAIT_MS)
-    why = await goNear(bot, drop.e.position, 0.5).then(() => '', (e) => e.message)
+    why = await goNear(bot, drop.e.position, 0.5, signal).then(() => '', (e) => {
+      if (signal.aborted) throw signal.reason
+      return e.message
+    })
     await collected
   }
   return why
@@ -283,7 +280,7 @@ export const PRIMITIVES = {
     // 近くではなく、ブロックに届く場所に立つ: そうしないと、頭より高い原木には木の葉の上からしか
     // 「近く」にならない。
     try {
-      await goto(bot, new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH }))
+      await goto(bot, new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH }), signal)
     } catch (e) {
       if (!signal.aborted) markUnreachable(state, c.pos)
       throw e
@@ -294,7 +291,7 @@ export const PRIMITIVES = {
     await equipToolFor(bot, block)
     await bot.dig(bot.blockAt(c.pos), true)
     signal.throwIfAborted()
-    const why = await collectNearbyDrops(bot, state)
+    const why = await collectNearbyDrops(bot, state, signal)
     const gained = totalItems(bot) - before
     if (gained <= 0) {
       const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
@@ -302,13 +299,13 @@ export const PRIMITIVES = {
     }
     return `dug ${c.block}, picked up ${gained} items`
   },
-  async pickup (bot, state, c) {
+  async pickup (bot, state, c, signal) {
     const drop = bot.entities[c.entityId]
     if (!drop) throw new Error('the item is gone')
     const before = totalItems(bot)
     const collected = waitForCollect(bot, PICKUP_WAIT_MS)
     try {
-      await goNear(bot, drop.position, 0.5)
+      await goNear(bot, drop.position, 0.5, signal)
     } catch (e) {
       state.unreachableDrops.add(c.entityId)
       throw e
@@ -330,7 +327,7 @@ export const PRIMITIVES = {
     const before = totalItems(bot)
     const result = await fight(bot, target, signal)
     if (bot.entities[c.entityId]) throw new Error(result)
-    if (!c.hostile) await collectNearbyDrops(bot, state)
+    if (!c.hostile) await collectNearbyDrops(bot, state, signal)
     const gained = totalItems(bot) - before
     return gained > 0 ? `${result}; picked up ${gained} items` : result
   },
@@ -339,7 +336,7 @@ export const PRIMITIVES = {
     if (!h) return `${c.target} is gone`
     return await flee(bot, h, signal)
   },
-  async eat (bot, state, c) {
+  async eat (bot, state, c, signal) {
     const food = bot.inventory.items().find((i) => i.name === c.item)
     if (!food) throw new Error(`no ${c.item}`)
     const before = bot.food
@@ -347,7 +344,7 @@ export const PRIMITIVES = {
     await bot.consume()
     return `ate ${c.item}, hunger ${before} -> ${bot.food}`
   },
-  async equip (bot, state, c) {
+  async equip (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
     await bot.equip(item, 'hand')
@@ -360,7 +357,7 @@ export const PRIMITIVES = {
     if (c.needsTable) {
       table = findTable(bot)
       if (!table) throw new Error('no crafting table nearby')
-      await goNear(bot, table.position, 3)
+      await goNear(bot, table.position, 3, signal)
     }
     const before = itemCount(bot, c.item)
     for (let i = 0; i < c.times; i++) {
@@ -370,7 +367,7 @@ export const PRIMITIVES = {
     return `crafted ${itemCount(bot, c.item) - before} ${c.item}`
   },
   // ボットのそばに作業台かかまどを置く
-  async place_station (bot, state, c) {
+  async place_station (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
     const pos = stationSpot(bot, state)
@@ -379,14 +376,14 @@ export const PRIMITIVES = {
     await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
     return `placed ${c.item} at ${pos}`
   },
-  async place_plan (bot, state, c) {
+  async place_plan (bot, state, c, signal) {
     const plan = state.plan
     if (!plan.origin) {
       // 選んだ場所に建てる計画なら、まずそこまで歩く
       if (plan.site) {
-        const leg = await legToward(bot, plan.site, 'the site of the house')
+        const leg = await legToward(bot, plan.site, 'the site of the house', signal)
         if (leg) return leg
-        await goto(bot, new goals.GoalNearXZ(plan.site.x, plan.site.z, 4))
+        await goto(bot, new goals.GoalNearXZ(plan.site.x, plan.site.z, 4), signal)
       }
       const origin = findSite(bot, plan.size)
       if (!origin) {
@@ -397,16 +394,16 @@ export const PRIMITIVES = {
     }
     const b = plan.pending(bot)[0]
     if (!b) return 'the plan is complete'
-    await placeOne(bot, plan, b)
+    await placeOne(bot, plan, b, signal)
     const s = plan.status(bot)
     return `placed ${b.block} (${s.placed}/${s.total})`
   },
-  async place_bed (bot, state) {
-    await enterHome(bot, state.home)
+  async place_bed (bot, state, c, signal) {
+    await enterHome(bot, state.home, signal)
     const spot = bedSpot(bot, state.home)
     if (!spot) throw new Error('no free spot for the bed in the house')
     const { inside } = state.home
-    await goto(bot, new goals.GoalBlock(inside.x, inside.y, inside.z))
+    await goto(bot, new goals.GoalBlock(inside.x, inside.y, inside.z), signal)
     // ベッドの頭側は、プレイヤーが向いている方向に1ブロック先になる。向きは次の移動パケットで
     // やっとサーバーに届く: すぐに置くと、サーバーはドアを閉めたときの向きを使い、ベッドの頭側が
     // ドアの内側のセルをふさいだ。
@@ -424,7 +421,7 @@ export const PRIMITIVES = {
     return `placed ${bot.blockAt(spot.foot).name} in the house`
   },
   async sleep (bot, state, c, signal) {
-    await enterHome(bot, state.home)
+    await enterHome(bot, state.home, signal)
     await bot.sleep(bot.blockAt(state.home.bed))
     // 全プレイヤーが眠ると夜が飛ばされ、サーバーがボットを起こす
     while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
@@ -440,26 +437,26 @@ export const PRIMITIVES = {
     await digExit(bot, state.home, c.spot, signal)
     // 出る前に掘ったブロック（壁を閉じるのに使う）を拾う: ブロックは内側にも落ちるので、出てから
     // 拾おうとすると、ボットは取りに中へ戻り、自分を閉じ込めた。
-    await collectNearbyDrops(bot, state)
+    await collectNearbyDrops(bot, state, signal)
     signal.throwIfAborted()
-    await stepOut(bot, c.spot)
-    await repairWall(bot, state.home)
+    await stepOut(bot, c.spot, signal)
+    await repairWall(bot, state.home, signal)
     if (isInside(bot, state.home)) throw new Error('closed the wall again but is still inside')
     return `left the house through the ${c.target} and closed it behind`
   },
-  async repair_wall (bot, state) {
-    await repairWall(bot, state.home)
+  async repair_wall (bot, state, c, signal) {
+    await repairWall(bot, state.home, signal)
     return 'the house wall is closed again'
   },
-  async go_home (bot, state) {
-    const leg = await legToward(bot, state.home.outside, 'home')
+  async go_home (bot, state, c, signal) {
+    const leg = await legToward(bot, state.home.outside, 'home', signal)
     if (leg) return leg
-    await enterHome(bot, state.home)
+    await enterHome(bot, state.home, signal)
     return 'inside the house with the door closed'
   },
   async wait (bot, state, c, signal) {
     if (c.inside) {
-      await enterHome(bot, state.home) // 開いたままならドアを閉める
+      await enterHome(bot, state.home, signal) // 開いたままならドアを閉める
       // ドアのほうを向いてじっとし、ときどき横を見る（毎秒向きを変えると、配信の画面が一晩中
       // 回り続けた）
       await bot.lookAt(state.home.door.offset(0.5, 1.2, 0.5))
@@ -472,8 +469,8 @@ export const PRIMITIVES = {
     const door = state.home ? `, door ${isDoorOpen(bot, state.home) ? 'open' : 'closed'}` : ''
     return `waited (time ${bot.time.timeOfDay}${door})`
   },
-  async place_chest (bot, state) {
-    await enterHome(bot, state.home)
+  async place_chest (bot, state, c, signal) {
+    await enterHome(bot, state.home, signal)
     const spot = chestSpot(bot, state.home)
     if (!spot) throw new Error('no free spot for a chest in the house')
     const chest = bot.inventory.items().find((i) => i.name === 'chest')
@@ -485,16 +482,16 @@ export const PRIMITIVES = {
     rememberChest(state.memory, spot, {}, Number(bot.time.age))
     return `placed a chest in the house at ${spot.x},${spot.y},${spot.z}`
   },
-  async deposit (bot, state, c) {
-    return useChest(bot, state, c, async (window) => {
+  async deposit (bot, state, c, signal) {
+    return useChest(bot, state, c, signal, async (window) => {
       const n = Math.min(c.count, inventoryCounts(bot)[c.item] ?? 0)
       if (!n) throw new Error(`no ${c.item} to put in`)
       await window.deposit(bot.registry.itemsByName[c.item].id, null, n)
       return `put ${n} ${c.item} in the chest`
     })
   },
-  async withdraw (bot, state, c) {
-    return useChest(bot, state, c, async (window) => {
+  async withdraw (bot, state, c, signal) {
+    return useChest(bot, state, c, signal, async (window) => {
       const inside = window.containerItems().filter((i) => i.name === c.item).reduce((s, i) => s + i.count, 0)
       const n = Math.min(c.count, inside)
       if (!n) throw new Error(`no ${c.item} in the chest (the record was wrong)`)
@@ -504,10 +501,10 @@ export const PRIMITIVES = {
   },
   // できたものを取り出し、材料と燃料を入れ、しばらく待ってできたものを取る。
   // 残りは後のステップで取り出す（その間もかまどは動く）
-  async smelt (bot, state, c) {
-    const leg = await legToward(bot, c.pos, 'the furnace')
+  async smelt (bot, state, c, signal) {
+    const leg = await legToward(bot, c.pos, 'the furnace', signal)
     if (leg) return leg
-    await goNear(bot, c.pos, 2) // 遠いブロックは null になる: 着いてから判定する
+    await goNear(bot, c.pos, 2, signal) // 遠いブロックは null になる: 着いてから判定する
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
       forgetFurnace(state.memory, c.pos)
@@ -551,10 +548,10 @@ export const PRIMITIVES = {
     return `${took ? `took ${took}` : 'nothing done yet'}${left ? `; ${left} still smelting` : ''}`
   },
   // c.pos の地面に置く（完全なブロックの上の空いたセル）
-  async place_torch_at (bot, state, c) {
+  async place_torch_at (bot, state, c, signal) {
     const torch = bot.inventory.items().find((i) => i.name === 'torch')
     if (!torch) throw new Error('no torch')
-    await goNear(bot, c.pos, 2)
+    await goNear(bot, c.pos, 2, signal)
     const floor = bot.blockAt(c.pos.offset(0, -1, 0))
     if (floor?.boundingBox !== 'block' || bot.blockAt(c.pos)?.boundingBox !== 'empty') throw new Error(`no ground for a torch at ${c.pos.x},${c.pos.z} any more`)
     await bot.equip(torch, 'hand')
@@ -562,7 +559,7 @@ export const PRIMITIVES = {
     if (bot.blockAt(c.pos)?.name !== 'torch') throw new Error('the torch was not placed')
     return `placed a torch at ${c.pos.x},${c.pos.y},${c.pos.z}`
   },
-  async place_torch (bot) {
+  async place_torch (bot, state, c, signal) {
     const spot = torchSpot(bot)
     if (!spot) throw new Error('no floor to stand a torch on here')
     const torch = bot.inventory.items().find((i) => i.name === 'torch')
@@ -572,19 +569,19 @@ export const PRIMITIVES = {
     if (bot.blockAt(spot)?.name !== 'torch') throw new Error('the torch was not placed')
     return `placed a torch at ${spot.x},${spot.y},${spot.z}`
   },
-  async goto_memory (bot, state, c) {
-    const leg = await legToward(bot, c.pos, `where ${c.target} was seen`)
+  async goto_memory (bot, state, c, signal) {
+    const leg = await legToward(bot, c.pos, `where ${c.target} was seen`, signal)
     if (leg) return leg
-    await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3))
+    await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3), signal)
     return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
   },
-  async survey (bot, state, c) {
-    const leg = await legToward(bot, c.pos, `the ${c.target} site`)
+  async survey (bot, state, c, signal) {
+    const leg = await legToward(bot, c.pos, `the ${c.target} site`, signal)
     if (leg) return leg
     // 海や崖で中心まで行けなくても、ここまで来ていればまわりのチャンクは読み込まれている
     // （読み込めた割合は loaded_pct に出る）
     try {
-      await goto(bot, new goals.GoalNearXZ(c.site.x, c.site.z, SURVEY_REACH))
+      await goto(bot, new goals.GoalNearXZ(c.site.x, c.site.z, SURVEY_REACH), signal)
     } catch (e) {
       if (Math.hypot(c.site.x - bot.entity.position.x, c.site.z - bot.entity.position.z) > LEG) throw e
     }
@@ -594,12 +591,12 @@ export const PRIMITIVES = {
     return `surveyed the ${c.target} site: ${numbers.flat_plots} flat plots, water ${numbers.water_pct}%, steep ${numbers.steep_pct}%, ` +
       `stone ${numbers.stone}, coal ${numbers.coal}, iron ${numbers.iron}, logs ${numbers.logs}, animals ${numbers.animals}`
   },
-  async explore (bot, state, c) {
+  async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
     const target = start.offset(c.dx * EXPLORE_DISTANCE, 0, c.dz * EXPLORE_DISTANCE)
     let error = ''
     try {
-      await goto(bot, new goals.GoalNearXZ(target.x, target.z, 3))
+      await goto(bot, new goals.GoalNearXZ(target.x, target.z, 3), signal)
     } catch (e) {
       error = e.message
     }
@@ -610,11 +607,11 @@ export const PRIMITIVES = {
 }
 
 // c.pos のチェストを開けてそのウィンドウで `use` を実行し、そのあとの中身を記録する
-async function useChest (bot, state, c, use) {
-  const leg = await legToward(bot, c.pos, 'the chest')
+async function useChest (bot, state, c, signal, use) {
+  const leg = await legToward(bot, c.pos, 'the chest', signal)
   if (leg) return leg
-  if (state.home && isInside({ entity: { position: c.pos } }, state.home)) await enterHome(bot, state.home)
-  await goNear(bot, c.pos, 2)
+  if (state.home && isInside({ entity: { position: c.pos } }, state.home)) await enterHome(bot, state.home, signal)
+  await goNear(bot, c.pos, 2, signal)
   const block = bot.blockAt(c.pos)
   if (block?.name !== 'chest') {
     forgetChest(state.memory, c.pos)
