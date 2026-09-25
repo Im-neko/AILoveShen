@@ -12,6 +12,7 @@ import { findSite, placeOne } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace } from './memory.mjs'
+import { smeltingProduct } from './knowledge.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // survival block reach from the eyes
@@ -458,12 +459,12 @@ export const PRIMITIVES = {
   // Takes out what is done, puts in the input and fuel, and waits a while taking what gets done;
   // the rest is taken out at a later step (the furnace works on meanwhile)
   async smelt (bot, state, c) {
+    await goNear(bot, c.pos, 2) // a far block reads null: judged only once there
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
       forgetFurnace(state.memory, c.pos)
       throw new Error(`no furnace at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
     }
-    await goNear(bot, c.pos, 2)
     const furnace = await bot.openFurnace(block)
     const got = {}
     const take = async () => {
@@ -491,7 +492,9 @@ export const PRIMITIVES = {
     } finally {
       const making = {}
       if (furnace.outputItem()) making[furnace.outputItem().name] = furnace.outputItem().count
-      if (furnace.inputItem()) making[c.item] = (making[c.item] ?? 0) + furnace.inputItem().count
+      const input = furnace.inputItem()
+      const product = input && smeltingProduct(input.name)
+      if (product) making[product] = (making[product] ?? 0) + input.count
       rememberFurnace(state.memory, c.pos, making, Number(bot.time.age))
       furnace.close()
     }

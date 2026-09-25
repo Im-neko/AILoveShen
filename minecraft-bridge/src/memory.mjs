@@ -121,6 +121,13 @@ export function forgetFurnace (memory, pos) {
   delete memory.furnaces?.[chestKey(pos)]
 }
 
+// The nearest furnace making item
+export function furnaceWith (memory, item, me) {
+  return Object.values(memory.furnaces ?? {})
+    .filter((f) => (f.making[item] ?? 0) > 0)
+    .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
+}
+
 // What the furnaces are making, by product
 export function smeltingCounts (memory) {
   const out = {}

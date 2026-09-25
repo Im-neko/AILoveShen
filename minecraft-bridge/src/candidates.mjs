@@ -14,7 +14,7 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
-import { recall, visited, chests, chestWith } from './memory.mjs'
+import { recall, visited, chests, chestWith, furnaceWith } from './memory.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -126,11 +126,17 @@ function fromLeaf (bot, state, world, leaf) {
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {
+      if (!leaf.count) {
+        // Where it was left to smelt, however far (the solver counted it as coming from there)
+        const f = state.memory && furnaceWith(state.memory, leaf.item, bot.entity.position)
+        if (!f) return []
+        const pos = new Vec3(f.x, f.y, f.z)
+        return [{ id: `take ${leaf.item} from the furnace at ${fmt(pos)}`, verb: 'smelt', target: leaf.item, item: leaf.item, pos, distance: dist(bot, pos) }]
+      }
       const furnace = findFurnace(bot)
       if (!furnace) return []
       const pos = furnace.position
       const where = { pos, distance: dist(bot, pos) }
-      if (!leaf.count) return [{ id: `take ${leaf.item} from the furnace`, verb: 'smelt', target: leaf.item, item: leaf.item, ...where }]
       const inv = inventoryCounts(bot)
       const input = leaf.inputs.find((m) => inv[m] > 0)
       const fuel = leaf.fuels.find((m) => inv[m] >= leaf.fuelCount) ?? leaf.fuels.find((m) => inv[m] > 0)

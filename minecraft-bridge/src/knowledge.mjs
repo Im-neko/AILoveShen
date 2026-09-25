@@ -35,6 +35,14 @@ const SMELTING = {
   cooked_mutton: 'mutton',
   cooked_chicken: 'chicken'
 }
+// What a furnace makes from an input item (an item name), or null
+export function smeltingProduct (input) {
+  return Object.keys(SMELTING).find((out) => {
+    const from = SMELTING[out]
+    return from === input || GROUP_PATTERNS[from]?.test(input)
+  }) ?? null
+}
+
 // Items burnt per item smelted: coal and charcoal burn 8 items, planks and logs 1.5
 export const FUELS = [{ spec: 'coal', per: 8 }, { spec: 'charcoal', per: 8 }, { spec: 'planks', per: 1.5 }, { spec: 'log', per: 1.5 }]
 
@@ -101,11 +109,6 @@ export class Knowledge {
   // The furnace input for item (an item or a group), or null
   smeltingInput (item) {
     return SMELTING[item] ?? null
-  }
-
-  // The item a furnace makes from input (an item name), or null
-  smeltingProduct (input) {
-    return Object.keys(SMELTING).find((out) => this.isMember(SMELTING[out], input)) ?? null
   }
 
   // Tools that can harvest the block, or null when a bare hand does

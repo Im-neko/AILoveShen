@@ -16,11 +16,14 @@ const DY = 6 // ground this far above or below the home floor
 
 const lightIds = (bot) => LIGHT_SOURCES.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined)
 
-// The ground cell (air on a full block) at x,z near the home's floor, or null (water, tree tops, ...)
+// The ground cell (air on a full block) at x,z near the home's floor, null where there is none
+// (water, tree tops, ...), or UNLOADED where the chunk is out of view
+const UNLOADED = 'unloaded'
 function groundAt (bot, x, z, y0) {
   for (let y = y0 + DY; y >= y0 - DY; y--) {
     const b = bot.blockAt(new Vec3(x, y, z))
-    if (!b || b.boundingBox === 'empty') continue
+    if (!b) return UNLOADED
+    if (b.boundingBox === 'empty') continue
     if (b.name.endsWith('_leaves') || b.name.endsWith('_log') || /water|lava/.test(b.name)) return null
     const above = bot.blockAt(new Vec3(x, y + 1, z))
     return above?.boundingBox === 'empty' && !/water|lava/.test(above.name) ? new Vec3(x, y + 1, z) : null
@@ -30,12 +33,14 @@ function groundAt (bot, x, z, y0) {
 
 const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z)
 
-// The dark ground within radius of the home, nearest to the home first
+// The dark ground within radius of the home, nearest to the home first, and how many sampled
+// columns are out of view (then nothing is judged: an unseen spot is never taken as lit)
 export function darkGround (bot, state, radius) {
   const home = state.home
   const center = home.inside
-  const sources = bot.findBlocks({ matching: lightIds(bot), maxDistance: radius + LIT_REACH + DY, count: 512 })
+  const sources = bot.findBlocks({ point: center, matching: lightIds(bot), maxDistance: radius + LIT_REACH + DY, count: 512 })
   const dark = []
+  let unloaded = 0
   for (let dx = -radius; dx <= radius; dx += STEP) {
     for (let dz = -radius; dz <= radius; dz += STEP) {
       if (dx * dx + dz * dz > radius * radius) continue
@@ -43,8 +48,9 @@ export function darkGround (bot, state, radius) {
       const z = center.z + dz
       if (inHouse(state, new Vec3(x, center.y, z), 1)) continue // the house is lit from inside
       const cell = groundAt(bot, x, z, center.y)
-      if (cell && !sources.some((s) => manhattan(s, cell) <= LIT_REACH)) dark.push(cell)
+      if (cell === UNLOADED) unloaded++
+      else if (cell && !sources.some((s) => manhattan(s, cell) <= LIT_REACH)) dark.push(cell)
     }
   }
-  return dark.sort((a, b) => manhattan(a, center) - manhattan(b, center))
+  return { dark: dark.sort((a, b) => manhattan(a, center) - manhattan(b, center)), unloaded }
 }

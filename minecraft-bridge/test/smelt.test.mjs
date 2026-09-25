@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { Knowledge } from '../src/knowledge.mjs'
+import { Knowledge, smeltingProduct } from '../src/knowledge.mjs'
 import { solve } from '../src/solver.mjs'
 import { ground } from '../src/candidates.mjs'
 import { newMemory, rememberFurnace, smeltingCounts } from '../src/memory.mjs'
@@ -66,4 +66,31 @@ test('the smelt candidate names the input and fuel held, at the furnace nearby',
   assert.equal(c.id, 'smelt 2 raw_iron into iron_ingot')
   assert.equal(c.fuel, 'birch_planks')
   assert.deepEqual(c.pos, furnace.position)
+})
+
+test('what is left in a furnace far away is fetched from where it was left', () => {
+  const memory = newMemory()
+  rememberFurnace(memory, new Vec3(200, 70, 0), { iron_ingot: 2 }, 0)
+  const bot = {
+    entity: { position: new Vec3(0.5, 70, 0.5) },
+    entities: {},
+    time: { timeOfDay: 1000 },
+    health: 20,
+    food: 20,
+    heldItem: null,
+    blockAt: () => null, // no light data: never dark
+    findBlock: () => null, // no furnace in sight
+    registry: md,
+    inventory: { items: () => [] }
+  }
+  const state = { home: null, plan: null, unreachableDrops: new Set(), memory }
+  const c = ground(bot, state, k, { dig: () => [], hunt: () => [] }, { leaves: [{ kind: 'smelt', item: 'iron_ingot', count: 0 }] }).candidates.find((c) => c.verb === 'smelt')
+  assert.equal(c.id, 'take iron_ingot from the furnace at 200,70,0')
+})
+
+test('a furnace input is named by what it makes', () => {
+  assert.equal(smeltingProduct('raw_iron'), 'iron_ingot')
+  assert.equal(smeltingProduct('birch_log'), 'charcoal')
+  assert.equal(smeltingProduct('beef'), 'cooked_beef')
+  assert.equal(smeltingProduct('dirt'), null)
 })

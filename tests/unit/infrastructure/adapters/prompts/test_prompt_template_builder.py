@@ -142,5 +142,6 @@ class TestPromptTemplateBuilder:
         assert "## 自分でできること（これ以外はできない）" in prompt
         assert "松明を持っていれば置いて湧き潰しする" in prompt
         assert "できない約束はしない" in prompt
+        assert "頼んだ人の名前は入れない" in prompt
         assert "前回の返答の頼みは受けられなかった: neko already has a request" in prompt
         assert "decline" in prompt

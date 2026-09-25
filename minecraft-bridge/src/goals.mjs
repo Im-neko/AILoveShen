@@ -225,9 +225,15 @@ export function evaluate (bot, state, knowledge, world) {
       break
     }
     case 'lit': {
-      const dark = darkGround(bot, state, goal.spec.distance)
-      out.met = dark.length === 0
-      out.remaining = dark.length
+      const { dark, unloaded } = darkGround(bot, state, goal.spec.distance)
+      out.met = dark.length === 0 && unloaded === 0
+      out.remaining = dark.length + unloaded
+      if (unloaded) {
+        out.lines.push(`the ground within ${goal.spec.distance} of the home: out of view`)
+        out.blocked.push('the home is too far to see its grounds; go back to it')
+        out.leaves.push({ kind: 'go_home' })
+        break
+      }
       out.lines.push(`dark ground within ${goal.spec.distance} of the home: ${dark.length ? `${dark.length} spots` : 'none'}`)
       if (out.met) break
       const torches = inventoryCounts(bot).torch ?? 0

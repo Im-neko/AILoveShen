@@ -14,28 +14,33 @@ const v = (x, y, z) => new Vec3(x, y, z)
 const home = { door: v(2, 70, 4), inside: v(2, 70, 3), outside: v(2, 70, 5), min: v(1, 70, 1), max: v(3, 70, 3), bed: null, breach: [] }
 const world = { inventory: {}, stored: {}, smelting: {}, blocks: {}, mobs: {}, table: 'near', furnace: null, unlocked: () => true, remembered: new Set(), dig: () => [], hunt: () => [] }
 
-function flat (torches, items = []) {
-  return {
+function flat (torches, items = [], { seen = () => true } = {}) {
+  const bot = {
     entity: { position: v(2.5, 70, 6.5) },
     time: { timeOfDay: 1000 },
     registry: md,
-    blockAt: (p) => (p.y < 70 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }),
-    findBlocks: () => torches,
+    blockAt: (p) => (!seen(p) ? null : p.y < 70 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }),
+    findBlocks: (opts) => { bot.searchedFrom = opts.point; return torches },
     inventory: { items: () => items.map((name) => ({ name, count: 8 })) }
   }
+  return bot
 }
+const state = { home, plan: null }
+const reach = (p, q) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y) + Math.abs(p.z - q.z)
 
 test('ground farther than a torch reaches is dark, nearest to the home first; the house is left out', () => {
-  const dark = darkGround(flat([]), { home, plan: null }, 8)
+  const bot = flat([])
+  const { dark, unloaded } = darkGround(bot, state, 8)
+  assert.equal(unloaded, 0)
   assert.ok(dark.length > 0)
   assert.ok(dark.every((p) => !(p.x >= 0 && p.x <= 4 && p.z >= 0 && p.z <= 4)), 'the house and its walls')
-  const d = (p) => Math.abs(p.x - 2) + Math.abs(p.z - 3)
-  assert.ok(d(dark[0]) <= d(dark[dark.length - 1]))
-  assert.equal(darkGround(flat([v(2, 70, 3)]), { home, plan: null }, 8).length, darkGround(flat([]), { home, plan: null }, 8).filter((p) => Math.abs(p.x - 2) + Math.abs(p.y - 70) + Math.abs(p.z - 3) > LIT_REACH).length)
+  assert.ok(reach(dark[0], home.inside) <= reach(dark[dark.length - 1], home.inside))
+  assert.deepEqual(bot.searchedFrom, home.inside, 'the lights are searched around the home, not the bot')
+  const lit = darkGround(flat([v(2, 70, 3)]), state, 8).dark
+  assert.deepEqual(lit, dark.filter((p) => reach(p, v(2, 70, 3)) > LIT_REACH))
 })
 
 test('lit(radius): torches are placed on the dark ground, made first when none are held', () => {
-  const state = { home, plan: null }
   const goal = makeGoal({ predicate: 'lit', distance: 16 }, flat([]), state, k)
   const noTorch = evaluate(flat([]), { ...state, goal }, k, world)
   assert.equal(noTorch.met, false)
@@ -45,8 +50,18 @@ test('lit(radius): torches are placed on the dark ground, made first when none a
   assert.equal(r.leaves[0].kind, 'light')
   assert.match(r.lines[0], /^dark ground within 16 of the home: \d+ spots$/)
 
-  // Torches every 12 blocks around cover it
+  // Torches every 8 blocks around cover it
   const grid = []
   for (let x = -24; x <= 28; x += 8) for (let z = -24; z <= 28; z += 8) grid.push(v(x, 70, z))
   assert.equal(evaluate(flat(grid), { ...state, goal }, k, world).met, true)
+})
+
+test('lit(radius) is never met on ground out of view (the bot far from home): it goes back', () => {
+  const grid = []
+  for (let x = -24; x <= 28; x += 8) for (let z = -24; z <= 28; z += 8) grid.push(v(x, 70, z))
+  const bot = flat(grid, ['torch'], { seen: (p) => p.x < 10 })
+  const goal = makeGoal({ predicate: 'lit', distance: 16 }, bot, state, k)
+  const r = evaluate(bot, { ...state, goal }, k, world)
+  assert.equal(r.met, false)
+  assert.deepEqual(r.leaves, [{ kind: 'go_home' }])
 })
