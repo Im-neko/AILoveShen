@@ -26,7 +26,7 @@ from ailoveshen.domain.events import (
     TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError
-from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, MidGoal
+from ailoveshen.domain.value_objects import BuildDesign, GoalPredicate, GoalSpec, MidGoal
 
 MAX_STAGE_DESIGN_TRIES = 2
 
@@ -235,7 +235,7 @@ class MidGoalKeeper:
             GoalRejectedError: 条件を判定できないとき
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
-        blocks = await self._design_builds(proposal)
+        blocks = await self._design_builds(proposal, BuildDesign.VIEWER_MAX_BLOCKS)
         await self._bridge.check(proposal.conditions)
         goal = plan.add(
             title=proposal.title,
@@ -253,7 +253,9 @@ class MidGoalKeeper:
         await self._publish([_added(plan, goal)])
         return goal
 
-    async def _design_builds(self, proposal: MidGoalProposal) -> int:
+    async def _design_builds(
+        self, proposal: MidGoalProposal, max_blocks: int = BuildDesign.MAX_BLOCKS
+    ) -> int:
         """
         条件の built(name) のうち、まだない建物を設計させて登録する。建物のブロックの合計を返す。
 
@@ -277,7 +279,7 @@ class MidGoalKeeper:
         brief = f"{proposal.title}: {proposal.reason}".strip(": ")
         for name in names:
             if name not in known:
-                await self._builder.design(name, brief)
+                await self._builder.design(name, brief, max_blocks)
         totals = {str(b["name"]): int(b.get("total", 0)) for b in await self._bridge.builds()}
         return sum(totals.get(name, 0) for name in names)
 

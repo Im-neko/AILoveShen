@@ -40,6 +40,7 @@ class IGamePromptBuilder(ABC):
         home_note: str,
         builds_note: str = "",
         map_shown: bool = False,
+        max_blocks: int = 600,
         previous_error: str = "",
     ) -> str:
         """
@@ -53,6 +54,7 @@ class IGamePromptBuilder(ABC):
             home_note: 家の大きさとドアの向き
             builds_note: ほかの建物（名前、置き場所、大きさ）
             map_shown: 地図の画像を添えるか（添えるなら、マス目で置き場所を選べる）
+            max_blocks: 展開したブロックの上限
             previous_error: 前回の設計が使えなかった理由（あれば）
         """
         ...

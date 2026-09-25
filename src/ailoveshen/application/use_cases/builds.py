@@ -75,7 +75,9 @@ BUILD_SCHEMA: dict[str, Any] = {
 }
 
 
-def parse_build(data: dict[str, Any], name: str) -> BuildDesign:
+def parse_build(
+    data: dict[str, Any], name: str, max_blocks: int = BuildDesign.MAX_BLOCKS
+) -> BuildDesign:
     """
     設計をパースする。
 
@@ -101,6 +103,7 @@ def parse_build(data: dict[str, Any], name: str) -> BuildDesign:
             anchor=BuildAnchor(data["anchor"]),
             shapes=tuple(shapes),
             cell=str(data["cell"]).strip().upper() if data.get("cell") else None,
+            max_blocks=max_blocks,
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"malformed build design: missing or wrong {e}") from e
@@ -145,13 +148,16 @@ class BuildDesigner:
         """登録済みの建物の名前。"""
         return {str(b["name"]) for b in await self._bridge.builds()}
 
-    async def design(self, name: str, brief: str) -> BuildDesign:
+    async def design(
+        self, name: str, brief: str, max_blocks: int = BuildDesign.MAX_BLOCKS
+    ) -> BuildDesign:
         """
         設計させ、確かめて登録する。
 
         Args:
             name: 建物の名前（built(name) の name）
             brief: 何のための建物か（中目標の題名と理由）
+            max_blocks: 展開したブロックの上限（視聴者の頼みは小さく）
 
         Raises:
             GoalRejectedError: 使える設計が出なかったとき（最後の理由を持つ）
@@ -167,13 +173,14 @@ class BuildDesigner:
                 home_note=home_note,
                 builds_note=builds_note,
                 map_shown=bool(images),
+                max_blocks=max_blocks,
                 previous_error=error,
             )
             try:
                 data = await self._text_generator.generate_json(
                     prompt, BUILD_SCHEMA, purpose="build_design", images=images
                 )
-                design = parse_build(data, name)
+                design = parse_build(data, name, max_blocks)
                 if design.anchor == BuildAnchor.MAP:
                     if map_data is None or not images:
                         raise ValueError("there is no map now: use near_home or a side of the home")

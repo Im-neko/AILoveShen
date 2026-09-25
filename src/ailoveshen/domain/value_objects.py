@@ -797,9 +797,10 @@ class BuildDesign:
         ValueError: 名前、範囲、ブロックの数が決まりに合わないとき（理由は Gemini に返す）。
     """
 
-    MAX_BLOCKS = 600
-    MAX_SIDE = 32
-    MAX_HEIGHT = 16
+    MAX_BLOCKS = 3000  # 大きな建築（配信者自身・街の段階）
+    VIEWER_MAX_BLOCKS = 600  # 視聴者の頼み（1 つの頼みに何時間も使わない）
+    MAX_SIDE = 48
+    MAX_HEIGHT = 16  # 足場は作らない（25 §2）
     MAX_SHAPES = 40
 
     name: str
@@ -809,6 +810,8 @@ class BuildDesign:
     # anchor が MAP のとき: 地図のマス目（例: C7）と、コードがそこから決めた中心 (x, z)
     cell: Optional[str] = None
     site: Optional[tuple[int, int]] = None
+    # 展開したブロックの上限（視聴者の頼みは VIEWER_MAX_BLOCKS）
+    max_blocks: int = MAX_BLOCKS
 
     def __post_init__(self) -> None:
         import re
@@ -834,9 +837,9 @@ class BuildDesign:
         blocks = self.blocks()
         if not any(b.kind not in (BlockKind.AIR,) for b in blocks):
             raise ValueError("a design needs at least one block to place")
-        if len(blocks) > self.MAX_BLOCKS:
+        if len(blocks) > self.max_blocks:
             raise ValueError(
-                f"the design expands to {len(blocks)} blocks, over {self.MAX_BLOCKS}: make it "
+                f"the design expands to {len(blocks)} blocks, over {self.max_blocks}: make it "
                 "smaller or hollow (walls and roof only)"
             )
 

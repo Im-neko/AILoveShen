@@ -11,7 +11,7 @@ import { BuildPlan } from './build.mjs'
 
 const { Vec3 } = vec3Pkg
 
-export const MAX_BUILD_DISTANCE = 48 // 家からの距離（水平）
+export const MAX_BUILD_DISTANCE = 64 // 家からの距離（水平）
 const NEAR_HOME_RADIUS = 24
 const NEAR_HOME_GAP = 3 // 家や建物とのすき間
 const HOME_HEIGHT = 5

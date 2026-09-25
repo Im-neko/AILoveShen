@@ -81,6 +81,7 @@ $builds_note
   （空けるマスも数える。中まで埋めずに外殻にすると少なくて済む）
 - 形は $max_shapes 個まで
 - 足場は作れない。高い壁や広い屋根は、下と外周から順に積める形にする（高さ 8 くらいまで）
+- 大きな建物は時間がかかる（1 ブロックに 1〜2 ステップと材料集め）。配信で見せ場になる形にする
 
 ## 置き場所（anchor）。座標は書かない
 - home:east / home:west / home:north / home:south: 家の増築。建物の家側の面が家の外壁に重なる
@@ -338,6 +339,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         home_note: str,
         builds_note: str = "",
         map_shown: bool = False,
+        max_blocks: int = BuildDesign.MAX_BLOCKS,
         previous_error: str = "",
     ) -> str:
         """名前付きの建物の設計を頼むプロンプトを組み立てる（docs/design/25_builds.md）。"""
@@ -357,7 +359,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             map_anchor=MAP_ANCHOR_NOTE if map_shown else "",
             max_side=BuildDesign.MAX_SIDE,
             max_height=BuildDesign.MAX_HEIGHT,
-            max_blocks=BuildDesign.MAX_BLOCKS,
+            max_blocks=max_blocks,
             max_shapes=BuildDesign.MAX_SHAPES,
             previous_error=error,
         )

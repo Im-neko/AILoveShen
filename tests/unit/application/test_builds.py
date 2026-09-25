@@ -75,14 +75,21 @@ def test_a_door_takes_two_cells_and_comes_last():
 @pytest.mark.parametrize(
     "shapes, reason",
     [
-        ([BuildShape(ShapeKind.FILL, (0, 0, 0), (31, 15, 31), BlockKind.DIRT)], "over 600"),
-        ([BuildShape(ShapeKind.FILL, (0, 0, 0), (32, 0, 0), BlockKind.DIRT)], "must fit"),
+        ([BuildShape(ShapeKind.FILL, (0, 0, 0), (31, 15, 31), BlockKind.DIRT)], "over 3000"),
+        ([BuildShape(ShapeKind.FILL, (0, 0, 0), (48, 0, 0), BlockKind.DIRT)], "must fit"),
         ([BuildShape(ShapeKind.CLEAR, (0, 0, 0), (1, 1, 1))], "at least one block"),
     ],
 )
 def test_limits_give_reasons(shapes, reason):
     with pytest.raises(ValueError, match=reason):
         BuildDesign("big", "", BuildAnchor.NEAR_HOME, tuple(shapes))
+
+
+def test_a_viewers_build_is_smaller():
+    walls = (BuildShape(ShapeKind.HOLLOW_BOX, (0, 0, 0), (19, 5, 19), BlockKind.PLANKS),)
+    assert len(BuildDesign("hall", "", BuildAnchor.NEAR_HOME, walls).blocks()) > 600
+    with pytest.raises(ValueError, match="over 600"):
+        BuildDesign("hall", "", BuildAnchor.NEAR_HOME, walls, max_blocks=600)
 
 
 def test_bad_input_is_a_value_error_with_a_reason():
@@ -140,7 +147,7 @@ async def test_the_designer_retries_with_the_reason_until_the_bridge_accepts():
                 "shape": "fill",
                 "block": "planks",
                 "from": {"x": 0, "y": 0, "z": 0},
-                "to": {"x": 40, "y": 0, "z": 0},
+                "to": {"x": 60, "y": 0, "z": 0},
             }
         ],
     }
@@ -184,7 +191,8 @@ async def test_the_keeper_designs_a_new_build_before_adding_and_widens_a_viewers
         reason="ベッドを置く場所がほしい",
     )
     goal = await keeper.accept(plan, proposal, requested_by="まめ")
-    builder.design.assert_awaited_once_with("annex", "家を広くする: ベッドを置く場所がほしい")
+    # 視聴者の頼みは小さく（600 ブロックまで）
+    builder.design.assert_awaited_once_with("annex", "家を広くする: ベッドを置く場所がほしい", 600)
     bridge.check.assert_awaited_once()
     assert goal.budget == 280
 
@@ -223,7 +231,7 @@ async def test_a_town_stage_build_is_designed_before_it_becomes_a_mid_goal():
     )
 
     await keeper.judge(plan)
-    builder.design.assert_awaited_once_with("storehouse", "倉庫: 物をしまう")
+    builder.design.assert_awaited_once_with("storehouse", "倉庫: 物をしまう")  # 上限は 3000
     assert plan.stage_goal() is not None  # 段階は中目標になる（設計できるまで条件は未達）
     await keeper.judge(plan)
     await keeper.judge(plan)
