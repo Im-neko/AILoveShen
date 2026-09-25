@@ -8,6 +8,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher,
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore, SavedPlan
+from ailoveshen.application.ports.output.note_store import INoteStore, SavedNotes
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.application.ports.output.speech_synthesizer import ISpeechSynthesizer
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
@@ -20,8 +21,10 @@ __all__ = [
     "IGamePromptBuilder",
     "IMinecraftBridge",
     "IMissionStore",
+    "INoteStore",
     "IPromptBuilder",
     "ISpeechSynthesizer",
     "ITextGenerator",
+    "SavedNotes",
     "SavedPlan",
 ]

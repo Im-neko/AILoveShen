@@ -6,6 +6,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.domain.entities import Conversation, MidGoalPlan
@@ -20,6 +21,7 @@ from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder imp
     GamePromptTemplateBuilder,
 )
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
+from ailoveshen.infrastructure.adapters.storage.json_note_store import JsonNoteStore
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
     GeminiSettings,
@@ -115,6 +117,7 @@ def create_game_service(
     )
     prompt_builder = GamePromptTemplateBuilder()
     store = JsonMissionStore(minecraft.mission.store_path)
+    notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
     mid_goals = MidGoalKeeper(bridge=bridge, event_publisher=event_publisher, store=store)
     profile = create_character_profile(character)
     designer = HouseDesigner(
@@ -138,6 +141,7 @@ def create_game_service(
         plan=create_mid_goal_plan(minecraft.mission),
         store=store,
         town=town,
+        notes=notes,
         max_steps_per_goal=minecraft.max_steps_per_goal,
         max_consecutive_failures=minecraft.max_consecutive_failures,
         max_stalled_steps=minecraft.max_stalled_steps,
@@ -151,6 +155,7 @@ def create_game_service(
         conversation=conversation,
         mid_goals=mid_goals,
         town=town,
+        notes=notes,
     )
     return GameService(
         start_play=start,

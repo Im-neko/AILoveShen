@@ -19,12 +19,14 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     Serves,
     goal_schema,
     parse_decision,
+    parse_note_changes,
     predicates_now,
 )
 from ailoveshen.application.use_cases.house import HouseDesigner, parse_blueprint
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.town import TownPlanner
-from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import Conversation, MidGoalPlan, Notebook, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
     GoalEndedEvent,
@@ -36,12 +38,14 @@ from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     Activity,
+    ConversationMessage,
     GameObservation,
     Goal,
     GoalPredicate,
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    MessageRole,
     is_survival,
 )
 
@@ -81,6 +85,7 @@ class StartPlayUseCase(IStartPlay):
         plan: MidGoalPlan,
         store: IMissionStore,
         town: TownPlanner,
+        notes: NoteKeeper,
         max_steps_per_goal: int = 40,
         max_consecutive_failures: int = 3,
         max_stalled_steps: int = 8,
@@ -95,6 +100,7 @@ class StartPlayUseCase(IStartPlay):
             plan: 設定から作った、大目標と最初の中目標
             store: 再起動をまたいでプランを保つ
             town: 大目標の街を定め、実現できる形に保つ
+            notes: 自分のメモを再起動をまたいで戻す
             max_steps_per_goal: LLM に新しい目標を求めるまでのステップ数
             max_consecutive_failures: 新しい目標を求めるまでに、続けて失敗するステップ数
             max_stalled_steps: 新しい目標を求めるまでに、進まないステップ数
@@ -105,6 +111,7 @@ class StartPlayUseCase(IStartPlay):
         self._plan = plan
         self._store = store
         self._town = town
+        self._notes = notes
         self._max_steps_per_goal = max_steps_per_goal
         self._max_consecutive_failures = max_consecutive_failures
         self._max_stalled_steps = max_stalled_steps
@@ -114,12 +121,14 @@ class StartPlayUseCase(IStartPlay):
         plan = self._load_plan()
         await self._town.prepare(plan)
         obs = await self._bridge.observe()
+        notebook = Notebook()
+        self._notes.load(notebook, obs.day)
         if obs.has_plan:
             blueprint = _plan_blueprint(obs)
             name = f" ({blueprint.name})" if blueprint else ""
             state = "建っている" if obs.house_complete else "建てている途中"
             logger.info(f"家はもう{state}{name}: 新しい家は設計しない")
-            session = self._session(blueprint, plan)
+            session = self._session(blueprint, plan, notebook)
             session.completion_announced = obs.house_complete
             return session
         blueprint = await self._designer.design()
@@ -127,12 +136,15 @@ class StartPlayUseCase(IStartPlay):
             HouseDesignedEvent(name=blueprint.name, concept=blueprint.concept)
         )
         await self._bridge.set_build_plan(blueprint)
-        return self._session(blueprint, plan)
+        return self._session(blueprint, plan, notebook)
 
-    def _session(self, blueprint: HouseBlueprint | None, plan: MidGoalPlan) -> PlaySession:
+    def _session(
+        self, blueprint: HouseBlueprint | None, plan: MidGoalPlan, notebook: Notebook
+    ) -> PlaySession:
         return PlaySession(
             blueprint=blueprint,
             plan=plan,
+            notebook=notebook,
             max_steps_per_goal=self._max_steps_per_goal,
             max_consecutive_failures=self._max_consecutive_failures,
             max_stalled_steps=self._max_stalled_steps,
@@ -191,6 +203,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         conversation: Conversation,
         mid_goals: MidGoalKeeper,
         town: TownPlanner,
+        notes: NoteKeeper,
         history_limit: int = 10,
         max_goal_attempts: int = 3,
     ) -> None:
@@ -206,6 +219,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             conversation: 配信で話されたこと（実況、返答と共有する）
             mid_goals: 中目標を判定し、編集し、保存する（チャットの返答と共有する）
             town: 街の準備（候補地の調査、場所の選択、引っ越し、定義）を進める
+            notes: 自分のメモを寿命で消し、目標の決定の編集を反映する
             history_limit: 目標の決定に渡す最近の会話のメッセージの数
             max_goal_attempts: 拒否が続くとき、あきらめるまでに目標を決める回数
         """
@@ -217,6 +231,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._conversation = conversation
         self._mid_goals = mid_goals
         self._town = town
+        self._notes = notes
         self._history_limit = history_limit
         self._max_goal_attempts = max_goal_attempts
 
@@ -284,6 +299,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 対象にしてはいけない
         await self._mid_goals.judge(session.plan)
         await self._town.advance(session, obs)
+        self._notes.expire(session.notebook, obs.day)
         # 目標が終わる前の見え方: その状態が、終わる理由だ
         activity = session.activity()
         await self._end_goal(session, obs, reason)
@@ -309,17 +325,26 @@ class AdvancePlayUseCase(IAdvancePlay):
     ) -> None:
         plan = session.plan
         predicates = predicates_now(obs, plan)
+        messages = self._conversation.recent_messages(self._history_limit)
+        goals = _shown_goals(activity, reason)
+        viewers = _viewers(messages)
         error = ""
         for attempt in range(1, self._max_goal_attempts + 1):
             prompt = self._prompt_builder.build_goal_prompt(
                 blueprint=session.blueprint,
                 activity=activity,
                 goal_ended_because=reason,
-                recent_messages=self._conversation.recent_messages(self._history_limit),
+                recent_messages=messages,
                 predicates=predicates,
                 previous_error=error,
             )
-            schema = goal_schema(predicates, [g.id for g in plan.pending])
+            schema = goal_schema(
+                predicates,
+                [g.id for g in plan.pending],
+                [n.id for n in session.notebook.notes],
+                len(goals),
+                viewers,
+            )
             data = await self._text_generator.generate_json(prompt, schema)
             try:
                 decision = parse_decision(data)
@@ -340,11 +365,29 @@ class AdvancePlayUseCase(IAdvancePlay):
                 logger.warning(f"目標の決定 {attempt} を差し戻した: {data!r}: {error}")
                 continue
             await self._mid_goals.commit(plan, decision.changes)
+            self._write_notes(session.notebook, data, obs.day, goals, viewers)
             await self._start_goal(session, obs, _goal(decision, plan), reason, status)
             return
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"
         )
+
+    def _write_notes(
+        self,
+        notebook: Notebook,
+        data: dict,
+        day: int | None,
+        goals: list[str],
+        viewers: list[str],
+    ) -> None:
+        """
+        メモの編集を反映する。使えない編集は飛ばす: メモのために目標の決定を
+        やり直させない（メモを失うほうが、目標を決められないより軽い）。
+        """
+        try:
+            self._notes.commit(notebook, parse_note_changes(data), day, goals, viewers)
+        except ValueError as e:
+            logger.warning(f"メモの編集を飛ばした: {data.get('note_changes')!r}: {e}")
 
     async def _start_goal(
         self,
@@ -383,6 +426,23 @@ def _serving(decision: GoalDecision, plan: MidGoalPlan) -> None:
         raise ValueError(
             "there is no mid goal left: add one toward the mission, or choose a survival goal"
         )
+
+
+def _shown_goals(activity: Activity, ended_because: str) -> list[str]:
+    """
+    目標の決定で番号をつけて示す小目標（lesson の根拠）: これまでの小目標（古い順）と、
+    今終わった小目標。番号は stream_context.format_activity(with_ids=True) と同じ。
+    """
+    goals = [f"{o.goal.spec.describe()}: {o.ended_because}" for o in activity.recent_goals]
+    if activity.goal is not None:
+        goals.append(f"{activity.goal.spec.describe()}: {ended_because}")
+    return goals
+
+
+def _viewers(messages: tuple[ConversationMessage, ...]) -> list[str]:
+    """示した会話にいる視聴者（出てきた順）。"""
+    names = [m.speaker_name for m in messages if m.role == MessageRole.VIEWER and m.speaker_name]
+    return list(dict.fromkeys(names))
 
 
 def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:

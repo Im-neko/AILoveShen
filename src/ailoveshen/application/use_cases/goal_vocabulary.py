@@ -15,10 +15,12 @@ from typing import Any, Optional
 
 from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.value_objects import (
+    MAX_NOTE_CHARS,
     PLANNABLE_CONDITIONS,
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    NoteKind,
     TownDefinition,
     TownSite,
     TownStage,
@@ -30,6 +32,7 @@ MAX_EXPLORE_DISTANCE = 128
 MAX_DIG_DEPTH = 64  # minecraft-bridge/src/goals.mjs と同じ
 MAX_CONDITIONS = 3
 MAX_PLAN_CHANGES = 3
+MAX_NOTE_CHANGES = 3
 ITEM_DESCRIPTION = (
     "have / stored / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
     "wooden_sword, wooden_pickaxe"
@@ -51,6 +54,14 @@ class PlanOp(str, Enum):
     ADD = "add"
     MOVE = "move"
     DROP = "drop"
+
+
+class NoteOp(str, Enum):
+    """自分のメモの編集。"""
+
+    ADD = "add"
+    DROP = "drop"
+    KEEP = "keep"  # まだ正しい: 寿命を今日から数え直す
 
 
 class RequestHandling(str, Enum):
@@ -80,6 +91,22 @@ class PlanChange:
     mid_goal_id: str = ""
     position: Optional[int] = None  # 0 始まり
     proposal: Optional[MidGoalProposal] = None
+
+
+@dataclass(frozen=True)
+class NoteChange:
+    """
+    自分のメモの 1 つの編集（add は種類と本文、drop と keep は `note_id`）。
+
+    add の根拠: lesson は示した小目標の番号（1 始まり）、viewer は視聴者の名前。
+    """
+
+    op: NoteOp
+    note_id: str = ""
+    kind: Optional[NoteKind] = None
+    text: str = ""
+    goal: Optional[int] = None
+    viewer: str = ""
 
 
 @dataclass(frozen=True)
@@ -120,8 +147,50 @@ def _conditions_schema() -> dict[str, Any]:
     }
 
 
-def goal_schema(predicates: list[GoalPredicate], mid_goal_ids: list[str]) -> dict[str, Any]:
-    """目標の決定の JSON スキーマ: 小目標と、中目標リストの編集。"""
+def _note_change_schema(note_ids: list[str], goals: int, viewers: list[str]) -> dict[str, Any]:
+    """メモの編集 1 つ。書ける種類と根拠は、今示しているものに合わせる。"""
+    kinds = [NoteKind.PLAN.value]
+    properties: dict[str, Any] = {
+        "op": {"type": "string", "enum": [o.value for o in NoteOp]},
+        "text": {
+            "type": "string",
+            "description": f"add: the note, one sentence of at most {MAX_NOTE_CHARS} characters",
+        },
+    }
+    if goals:
+        kinds.insert(0, NoteKind.LESSON.value)
+        properties["goal"] = {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": goals,
+            "description": "lesson: the number of the small goal it was learned from",
+        }
+    if viewers:
+        kinds.append(NoteKind.VIEWER.value)
+        properties["viewer"] = {
+            "type": "string",
+            "enum": viewers,
+            "description": "viewer: whom the note is about",
+        }
+    properties["kind"] = {"type": "string", "enum": kinds, "description": "add: the kind"}
+    if note_ids:
+        properties["id"] = {"type": "string", "enum": note_ids, "description": "drop / keep"}
+    return {"type": "object", "properties": properties, "required": ["op"]}
+
+
+def goal_schema(
+    predicates: list[GoalPredicate],
+    mid_goal_ids: list[str],
+    note_ids: list[str] | None = None,
+    goals: int = 0,
+    viewers: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    目標の決定の JSON スキーマ: 小目標、中目標リストの編集、自分のメモの編集。
+
+    `goals` は示した小目標の数（lesson の根拠に使える）、`viewers` は示した会話にいる
+    視聴者。
+    """
     change: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -151,6 +220,12 @@ def goal_schema(predicates: list[GoalPredicate], mid_goal_ids: list[str]) -> dic
                 "description": "Edits of the mid-goal list, applied in order (usually none)",
                 "maxItems": MAX_PLAN_CHANGES,
                 "items": change,
+            },
+            "note_changes": {
+                "type": "array",
+                "description": "Edits of your own notes, applied in order (usually none)",
+                "maxItems": MAX_NOTE_CHANGES,
+                "items": _note_change_schema(note_ids or [], goals, viewers or []),
             },
             **_spec_properties(predicates),
             "dig_depth": {
@@ -296,6 +371,42 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         serves=serves,
         changes=tuple(changes),
     )
+
+
+def parse_note_changes(data: dict[str, Any]) -> tuple[NoteChange, ...]:
+    """
+    目標の決定の中のメモの編集をパースする（根拠が示したものかは NoteKeeper が確かめる）。
+
+    Raises:
+        ValueError: 編集の形が正しくないとき。
+    """
+    changes = []
+    for raw in data.get("note_changes") or []:
+        try:
+            op = NoteOp(raw["op"])
+        except (KeyError, ValueError) as e:
+            raise ValueError(f"note change op must be one of {[o.value for o in NoteOp]}") from e
+        if op != NoteOp.ADD:
+            note_id = str(raw.get("id", ""))
+            if not note_id:
+                raise ValueError(f"{op.value} needs the id of a note")
+            changes.append(NoteChange(op=op, note_id=note_id))
+            continue
+        try:
+            kind = NoteKind(raw["kind"])
+        except (KeyError, ValueError) as e:
+            raise ValueError(f"a new note needs a kind: {[k.value for k in NoteKind]}") from e
+        goal = raw.get("goal")
+        changes.append(
+            NoteChange(
+                op=op,
+                kind=kind,
+                text=str(raw.get("text", "")).strip(),
+                goal=int(goal) if goal is not None and kind == NoteKind.LESSON else None,
+                viewer=str(raw.get("viewer", "")) if kind == NoteKind.VIEWER else "",
+            )
+        )
+    return tuple(changes)
 
 
 def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicate]:

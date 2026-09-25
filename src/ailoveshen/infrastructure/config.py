@@ -127,6 +127,8 @@ class MinecraftSettings:
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
     max_stalled_steps: int = 8
+    # 自分のメモ（docs/design/18_notes.md）。再起動をまたいで残す
+    notes_path: str = "data/notes.json"
     mission: MissionSettings = field(default_factory=MissionSettings)
 
 
@@ -356,6 +358,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 "max_consecutive_failures", defaults.max_consecutive_failures
             ),
             max_stalled_steps=agent_data.get("max_stalled_steps", defaults.max_stalled_steps),
+            notes_path=agent_data.get("notes_path", defaults.notes_path),
             mission=MissionSettings(
                 text=mission_data.get("text", mission_defaults.text),
                 mid_goals=mission_data.get("mid_goals", mission_defaults.mid_goals),

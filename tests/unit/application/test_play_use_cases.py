@@ -8,6 +8,7 @@ import pytest
 from ailoveshen.application.ports.output.mission_store import SavedPlan
 from ailoveshen.application.use_cases.house import HOUSE_SCHEMA, HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
 from ailoveshen.domain.events import (
@@ -183,6 +184,7 @@ class TestStartPlay:
             plan=plan or _plan(),
             store=store,
             town=AsyncMock(),
+            notes=Mock(),
             max_steps_per_goal=7,
             max_stalled_steps=5,
         )
@@ -345,6 +347,17 @@ class TestAdvancePlay:
         return AsyncMock()
 
     @pytest.fixture
+    def note_store(self):
+        """メモの保存のモック（保存したものはない）。"""
+        store = Mock()
+        store.load.return_value = None
+        return store
+
+    @pytest.fixture
+    def notes(self, note_store):
+        return NoteKeeper(note_store)
+
+    @pytest.fixture
     def use_case(
         self,
         bridge,
@@ -355,6 +368,7 @@ class TestAdvancePlay:
         conversation,
         mid_goals,
         town,
+        notes,
     ):
         return AdvancePlayUseCase(
             bridge=bridge,
@@ -365,6 +379,7 @@ class TestAdvancePlay:
             conversation=conversation,
             mid_goals=mid_goals,
             town=town,
+            notes=notes,
         )
 
     @pytest.mark.asyncio

@@ -744,6 +744,8 @@ class GameObservation:
     inside_home: bool = False
     bed_in_home: bool = False
     busy: bool = False  # ブリッジが行動か反射を実行している
+    # ワールドの何日目か（寝て飛ばした夜も数える。まだ時刻がなければ None）
+    day: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -827,6 +829,57 @@ class TownSite:
         return self.site_id != HERE_SITE
 
 
+MAX_NOTE_CHARS = 80
+NOTE_LIFETIME_DAYS = 3  # ゲーム内の日。keep で延びる
+
+
+class NoteKind(str, Enum):
+    """
+    自分のメモの種類。
+
+    lesson: やってみて分かったこと（それが起きた小目標を根拠に持つ）
+    viewer: 視聴者について覚えておくこと（その視聴者の名前を持つ。頼みや指示は書かない）
+    plan: 先のためのメモ
+    """
+
+    LESSON = "lesson"
+    VIEWER = "viewer"
+    PLAN = "plan"
+
+
+@dataclass(frozen=True)
+class Note:
+    """
+    配信者が自分で書き残したメモ（確かめていない。世界の事実ではない）。
+
+    `about` は lesson ならその小目標（終わり方も含めた文）、viewer なら視聴者の名前。
+    `expires_day` の日が終わるまで残る。
+
+    Raises:
+        ValueError: 本文が空か長すぎる、種類に要る根拠がないとき。
+    """
+
+    id: str
+    kind: NoteKind
+    text: str
+    written_day: int
+    expires_day: int
+    about: str = ""
+
+    def __post_init__(self) -> None:
+        """本文と根拠を確かめる。"""
+        if not self.text.strip():
+            raise ValueError("a note needs text")
+        if len(self.text) > MAX_NOTE_CHARS:
+            raise ValueError(f"a note is one sentence of at most {MAX_NOTE_CHARS} characters")
+        if self.kind == NoteKind.LESSON and not self.about:
+            raise ValueError("a lesson note needs the small goal it was learned from")
+        if self.kind == NoteKind.VIEWER and not self.about:
+            raise ValueError("a viewer note needs the viewer's name")
+        if self.kind == NoteKind.PLAN and self.about:
+            raise ValueError("a plan note has no small goal or viewer")
+
+
 @dataclass(frozen=True)
 class Activity:
     """
@@ -844,6 +897,7 @@ class Activity:
     goal: Optional[Goal] = None
     observation: Optional[GameObservation] = None
     recent_goals: tuple[GoalOutcome, ...] = ()
+    notes: tuple[Note, ...] = ()  # 自分のメモ（確かめていない）
 
 
 @dataclass(frozen=True)

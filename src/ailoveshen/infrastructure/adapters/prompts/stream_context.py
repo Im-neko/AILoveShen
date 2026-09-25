@@ -20,6 +20,8 @@ from ailoveshen.domain.value_objects import (
     MessageRole,
     MidGoal,
     MidGoalState,
+    Note,
+    NoteKind,
     TownSite,
 )
 
@@ -123,8 +125,8 @@ def format_site_choice(site: TownSite) -> str:
 def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     """
     配信者が何をしていて、なぜか（大目標から下へ）、ゲームの状況、最近の小目標。
-    `with_ids` なら中目標の ID を出す（目標の決定での編集用。配信で読み上げられうる所
-    では出さない）。
+    `with_ids` なら中目標とメモの ID、小目標の番号（メモの根拠）を出す（目標の決定での
+    編集用。配信で読み上げられうる所では出さない）。
     """
     if activity is None:
         return "ゲームはしていない"
@@ -144,13 +146,20 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     if finished:
         lines.append("- 最近終わった中目標:")
         lines += [f"  - {_format_finished(g)}" for g in finished]
-    lines.append(f"- 今の小目標: {_format_goal(activity.goal, activity.observation, titles)}")
+    recent = activity.recent_goals
+    now = f" [{len(recent) + 1}]" if with_ids and activity.goal is not None else ""
+    lines.append(f"- 今の小目標{now}: {_format_goal(activity.goal, activity.observation, titles)}")
     if activity.observation is not None:
         lines.append(_format_situation(activity.observation))
     lines.append("- これまでの小目標（古い順）:")
     lines.append(
-        "\n".join(f"  - {_format_outcome(o, titles)}" for o in activity.recent_goals) or "  - なし"
+        "\n".join(
+            f"  - {f'[{i}] ' if with_ids else ''}{_format_outcome(o, titles)}"
+            for i, o in enumerate(recent, 1)
+        )
+        or "  - なし"
     )
+    lines += _format_notes(activity, with_ids)
     return "\n".join(lines)
 
 
@@ -307,6 +316,26 @@ def _format_outcome(o: GoalOutcome, titles: dict[str, str]) -> str:
         f"{o.goal.spec.describe()}{_serves(o.goal, titles)}: {o.goal.reason}"
         f"（{result}、終了: {o.ended_because}）"
     )
+
+
+NOTE_KINDS = {NoteKind.LESSON: "分かったこと", NoteKind.VIEWER: "視聴者", NoteKind.PLAN: "先のため"}
+
+
+def _format_notes(activity: Activity, with_ids: bool) -> list[str]:
+    """自分のメモ: 世界の事実とは別の欄（確かめていない）。"""
+    day = activity.observation.day if activity.observation is not None else None
+    today = f"、今日は {day} 日目" if day is not None else ""
+    return [
+        f"- 自分のメモ（自分で書いたもの。確かめていない。事実は上のゲームの状況{today}）:",
+        *([f"  - {_format_note(n, with_ids)}" for n in activity.notes] or ["  - なし"]),
+    ]
+
+
+def _format_note(note: Note, with_ids: bool) -> str:
+    about = {NoteKind.LESSON: f"（根拠: {note.about}）", NoteKind.VIEWER: f"（{note.about}さん）"}
+    note_id = f"{note.id} " if with_ids else ""
+    days = f"（{note.written_day} 日目に書いた、{note.expires_day} 日目まで）"
+    return f"{note_id}[{NOTE_KINDS[note.kind]}] {note.text}{about.get(note.kind, '')}{days}"
 
 
 def _format_home(obs: GameObservation) -> str:

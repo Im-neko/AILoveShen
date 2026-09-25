@@ -42,6 +42,11 @@ export function dayPhase (timeOfDay) {
 export const isLog = (name) => name.endsWith('_log')
 export const isPlanks = (name) => name.endsWith('_planks')
 
+// 時間帯と、ワールドの何日目か（寝て飛ばした夜も数える。最初の時刻が届くまでは null）
+export function timeOf (bot) {
+  return { phase: dayPhase(bot.time.timeOfDay), time_of_day: bot.time.timeOfDay, day: bot.time.day, raining: bot.isRaining }
+}
+
 export function inventoryCounts (bot) {
   const counts = {}
   for (const it of bot.inventory.items()) counts[it.name] = (counts[it.name] ?? 0) + it.count
@@ -103,7 +108,7 @@ export function summarize (bot, history, extra = {}) {
     .filter(({ e, dist }) => e.name === 'item' && dist <= DROP_RADIUS)
     .map(({ e, dist }) => ({ item: e.getDroppedItem()?.name ?? 'unknown', distance_m: round(dist), direction: bearing(me, e.position) }))
   return {
-    time: { phase: dayPhase(bot.time.timeOfDay), time_of_day: bot.time.timeOfDay, raining: bot.isRaining },
+    time: timeOf(bot),
     self: {
       health: round(bot.health),
       max_health: 20,

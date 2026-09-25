@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from ailoveshen.domain.value_objects import (
+    NOTE_LIFETIME_DAYS,
     ActionResult,
     Activity,
     ConversationMessage,
@@ -25,6 +26,8 @@ from ailoveshen.domain.value_objects import (
     MidGoal,
     MidGoalState,
     Mission,
+    Note,
+    NoteKind,
     TownDefinition,
     TownSite,
     TownStage,
@@ -435,9 +438,97 @@ class MidGoalPlan(Entity):
 
 
 @dataclass(eq=False)
+class Notebook(Entity):
+    """
+    配信者が自分で書き残すメモ（docs/design/18_notes.md）。確かめていないので、世界の
+    事実とは別に見せる。
+
+    量と寿命をコードが守る: 全部で `max_notes` 件まで（いっぱいなら先に消す）、書いた
+    日から `lifetime_days` 日で消える（keep すると、その日から延びる）。
+
+    Raises:
+        ValueError: 上限が正でないとき（作るとき）、または操作が上限を破るか、ないメモを
+            指すとき（モデルにやり直させる）。
+    """
+
+    max_notes: int = 12
+    lifetime_days: int = NOTE_LIFETIME_DAYS
+    _notes: list[Note] = field(default_factory=list, init=False, repr=False)
+    _next_id: int = field(default=1, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """上限を検証する。"""
+        for label in ("max_notes", "lifetime_days"):
+            if getattr(self, label) <= 0:
+                raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
+
+    @property
+    def notes(self) -> tuple[Note, ...]:
+        """残っているメモ（書いた順）。"""
+        return tuple(self._notes)
+
+    @property
+    def next_id(self) -> int:
+        """次のメモの id につく番号（保存するときに残す）。"""
+        return self._next_id
+
+    def add(self, kind: NoteKind, text: str, day: int, about: str = "") -> Note:
+        """メモを書く。`day` の日から寿命を数える。"""
+        if len(self._notes) >= self.max_notes:
+            raise ValueError(f"the notebook is full ({self.max_notes} notes): drop one first")
+        note = Note(
+            id=f"n{self._next_id}",
+            kind=kind,
+            text=text.strip(),
+            written_day=day,
+            expires_day=day + self.lifetime_days,
+            about=about,
+        )
+        self._next_id += 1
+        self._notes.append(note)
+        self.updated_at = _utc_now()
+        return note
+
+    def keep(self, note_id: str, day: int) -> Note:
+        """まだ正しいメモの寿命を、`day` の日から数え直す。"""
+        note = self._require(note_id)
+        kept = replace(note, expires_day=day + self.lifetime_days)
+        self._notes[self._notes.index(note)] = kept
+        self.updated_at = _utc_now()
+        return kept
+
+    def drop(self, note_id: str) -> Note:
+        """メモを消す。"""
+        note = self._require(note_id)
+        self._notes.remove(note)
+        self.updated_at = _utc_now()
+        return note
+
+    def expire(self, day: int) -> tuple[Note, ...]:
+        """寿命が過ぎたメモ（期限の日が `day` より前）を消す。消したものを返す。"""
+        expired = tuple(n for n in self._notes if n.expires_day < day)
+        if expired:
+            self._notes = [n for n in self._notes if n.expires_day >= day]
+            self.updated_at = _utc_now()
+        return expired
+
+    def restore(self, notes: list[Note], next_id: int) -> None:
+        """保存したメモを戻す（id はそのまま）。"""
+        self._notes = list(notes)
+        self._next_id = next_id
+
+    def _require(self, note_id: str) -> Note:
+        for note in self._notes:
+            if note.id == note_id:
+                return note
+        ids = ", ".join(n.id for n in self._notes) or "none"
+        raise ValueError(f"no note {note_id} (notes: {ids})")
+
+
+@dataclass(eq=False)
 class PlaySession(Entity):
     """
-    プレイセッション: 建てる家、大目標とその中目標、今の（小）目標のライフサイクル。
+    プレイセッション: 建てる家、大目標とその中目標、自分のメモ、今の（小）目標のライフサイクル。
 
     目標を達成したかは、ブリッジが世界から判定する。新しい目標が要る時はセッションが
     決める: まだ目標がない、達成した、役立っていた中目標が完了または断念した、行き
@@ -455,6 +546,7 @@ class PlaySession(Entity):
 
     blueprint: Optional[HouseBlueprint] = field(kw_only=True)  # None: 家は前に建った
     plan: MidGoalPlan = field(kw_only=True)
+    notebook: Notebook = field(default_factory=Notebook, kw_only=True)
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
     max_stalled_steps: int = 8
@@ -497,6 +589,7 @@ class PlaySession(Entity):
             goal=self.goal,
             observation=self.last_observation,
             recent_goals=self.recent_goals,
+            notes=self.notebook.notes,
         )
 
     @property

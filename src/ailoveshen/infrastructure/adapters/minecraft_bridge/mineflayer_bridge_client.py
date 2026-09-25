@@ -166,4 +166,5 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         inside_home=bool(home and home["inside"]),
         bed_in_home=bool(home and home.get("bed")),
         busy=bool(data.get("busy", False)),
+        day=int(obs["time"]["day"]) if obs["time"]["day"] is not None else None,
     )

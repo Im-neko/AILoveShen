@@ -254,8 +254,9 @@ class TestGamePromptTemplateBuilder:
         assert "sub-step" not in prompt  # ソルバーの細かい手順はリストに出さない
         assert "2. [m3] ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
         assert "- 剣を持つ（断念: it took 80 steps）" in prompt
-        assert "今の小目標: have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
-        assert "through_night()（身を守るため）: 夜は危ない（達成" in prompt
+        # 小目標の番号はメモの根拠に使う（今の小目標は、これまでのものの次）
+        assert "今の小目標 [2]: have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
+        assert "  - [1] through_night()（身を守るため）: 夜は危ない（達成" in prompt
         assert "完了条件に使えるのは次だけ" in prompt
         assert "食べ物を探すときも have(food, n) を選ぶ" in prompt
         assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt

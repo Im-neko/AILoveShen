@@ -245,6 +245,8 @@ minecraft:
     max_consecutive_failures: 3
     # ... or after this many steps without the remaining work going down
     max_stalled_steps: 8
+    # The streamer's own notes (docs/design/18_notes.md), kept across restarts
+    notes_path: "data/notes.json"
 
   # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
   # mid goals are worked on from the top, completed when their conditions hold in the world.

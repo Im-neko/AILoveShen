@@ -21,7 +21,7 @@ from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_clien
 OBSERVE = {
     "busy": True,
     "observation": {
-        "time": {"phase": "dusk", "time_of_day": 12500},
+        "time": {"phase": "dusk", "time_of_day": 12500, "day": 4},
         "self": {"health": 18.5, "food": 17},
         "home": {"inside": False, "door_open": False, "bed": True},
         "inventory": {"spruce_log": 3},
@@ -72,6 +72,7 @@ class TestMineflayerBridgeClient:
         assert obs.needs == ("night is coming: hostile mobs spawn outside in the dark",)
         assert obs.state["inventory"] == {"spruce_log": 3}
         assert obs.time_phase == "dusk" and obs.busy
+        assert obs.day == 4
         assert obs.has_plan and not obs.house_complete
         assert obs.has_home and not obs.inside_home and obs.bed_in_home
 
