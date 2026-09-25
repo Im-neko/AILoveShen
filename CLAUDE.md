@@ -29,9 +29,9 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 
 ### Setup
 ```bash
-pip install -r requirements.txt
-python initialize.py  # Downloads BERT models and pretrained weights
-pip install -e ".[all]"  # AILoveShen core + extras (dev, tts, llm=google-genai, game, stream=fastapi)
+pip install -r requirements.txt  # AILoveShen core + all extras + the package itself (-e .); same as pip install -e ".[all]"
+# Keep requirements.txt and pyproject.toml in sync. On Linux, sounddevice needs PortAudio (apt install libportaudio2).
+# The Style-Bert-VITS2 TTS server runs in Docker (docker/Dockerfile.tts-server), not from this requirements.txt.
 export GEMINI_API_KEY=...  # Required for the LLM (Phase 3)
 ```
 

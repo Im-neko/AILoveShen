@@ -1,0 +1,41 @@
+# AILoveShen の依存（pyproject.toml の dependencies と extras: dev, tts, llm, game, stream と同じ）
+#
+#   python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+#   pip install -r requirements.txt
+#
+# 最後の行（-e .）で src/ailoveshen もインストールされ、pytest や examples から import できる。
+# Style-Bert-VITS2 の TTS サーバーは Docker で動かすので、その依存（torch など）はここに入れない
+# （docker/Dockerfile.tts-server）。Minecraft のブリッジは Node.js（cd minecraft-bridge && npm install）。
+# 依存を変えるときは pyproject.toml と両方を直すこと。
+
+# core
+pyyaml>=6.0
+pydantic>=2.0
+pydantic-settings>=2.0
+loguru>=0.7
+
+# llm: Gemini
+google-genai>=2.25
+
+# game: Minecraft ブリッジへの HTTP、Jev（TypeSafe AI）
+httpx>=0.25
+typesafe-sdk>=0.7.1
+
+# stream: 目標ボード、デバッグのエンドポイント
+fastapi>=0.110
+uvicorn>=0.29
+
+# tts: TTS サーバーのクライアントと音声の再生
+sounddevice>=0.4
+numpy>=1.24
+scipy>=1.10
+
+# dev: テストと lint
+pytest>=7.0
+pytest-asyncio>=0.21
+pytest-cov>=4.0
+ruff>=0.1
+mypy>=1.0
+
+# このリポジトリ自体（src/ailoveshen）
+-e .
