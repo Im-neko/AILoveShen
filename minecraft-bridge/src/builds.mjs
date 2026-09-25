@@ -17,6 +17,7 @@ const NEAR_HOME_GAP = 3 // 家や建物とのすき間
 const HOME_HEIGHT = 5
 const PROTECTED = /(_door|_bed|chest|furnace|crafting_table|barrel)$/
 const WALL = /(_planks|_log|_wood|cobblestone)$/
+const NATURAL_GROUND = /^(dirt|grass_block|coarse_dirt|podzol|stone|granite|diorite|andesite|gravel|sand|clay|mud|tuff|deepslate)$/
 const ANCHORS = ['home:east', 'home:west', 'home:north', 'home:south', 'near_home']
 
 export class BuildError extends Error {}
@@ -109,6 +110,15 @@ function checkPlacement (bot, state, plan, anchor) {
     const found = bot.blockAt(p)
     if (found && PROTECTED.test(found.name) && !(b.block === 'door' && found.name.endsWith('_door'))) {
       throw new BuildError(`the block ${rel} would replace the ${found.name} at ${p.x},${p.y},${p.z}: move the build or change that block`)
+    }
+    if (!found) continue
+    // ドアは掘って置けない（置く前に掘るのは植物と自然のブロックだけ）: 家の壁の中のドアは置けずに詰まる
+    if (b.block === 'door' && found.boundingBox === 'block' && !NATURAL_GROUND.test(found.name)) {
+      throw new BuildError(`the door ${rel} is inside the ${found.name} of the home's wall: open the wall with clear and put the door on an outside wall`)
+    }
+    // 木や水は建てる途中で掘れない・埋められない
+    if (/_log$|water|lava/.test(found.name) && !(b.block === 'log' && found.name.endsWith('_log'))) {
+      throw new BuildError(`there is ${found.name} at ${rel} on the ${anchor} side: choose another side or anchor`)
     }
   }
 }

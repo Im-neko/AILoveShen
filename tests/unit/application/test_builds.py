@@ -44,11 +44,13 @@ def test_shapes_expand_in_a_buildable_order():
     design = parse_build(ANNEX, "annex")
     blocks = design.blocks()
     kinds = [b.kind for b in blocks]
-    # 空けるマスが先、ブロックは下の層から、ドアは最後
-    first_solid = next(i for i, k in enumerate(kinds) if k != BlockKind.AIR)
-    assert all(k == BlockKind.AIR for k in kinds[:first_solid])
-    solids = blocks[first_solid:]
+    # ブロックは下の層から、空けるマスはその後（家の壁に先に穴を開けない）、ドアは最後
+    first_clear = kinds.index(BlockKind.AIR)
+    solids = blocks[:first_clear]
+    assert all(k == BlockKind.AIR for k in kinds[first_clear:])
     assert [b.y for b in solids] == sorted(b.y for b in solids)
+    # 家の壁の入口（x=0 の面）は、最後に空ける
+    assert (blocks[-1].x, blocks[-2].x) == (0, 0)
     assert design.size() == (5, 5, 5)
     assert design.anchor == BuildAnchor.HOME_EAST
     assert design.material_counts() == {BlockKind.PLANKS: 98 - 2}
@@ -201,3 +203,40 @@ async def test_a_known_build_is_not_designed_again():
     )
     await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="a")
     builder.design.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_town_stage_build_is_designed_before_it_becomes_a_mid_goal():
+    from ailoveshen.domain.value_objects import TownDefinition, TownSite, TownStage
+
+    storehouse = GoalSpec(GoalPredicate.BUILT, name="storehouse")
+    plan = MidGoalPlan(mission=Mission("街"))
+    plan.choose_site(TownSite("here", 0, 0, "動物が多い", "ひだまり村"))
+    plan.define_town(TownDefinition("小さな街", (TownStage("倉庫", "物をしまう", (storehouse,)),)))
+    bridge = AsyncMock()
+    bridge.check.side_effect = lambda specs: [ConditionStatus(s, False) for s in specs]
+    builder = AsyncMock()
+    builder.known.return_value = set()
+    builder.design.side_effect = GoalRejectedError("no flat place")
+    keeper = MidGoalKeeper(
+        bridge=bridge, event_publisher=AsyncMock(), store=Mock(), builder=builder
+    )
+
+    await keeper.judge(plan)
+    builder.design.assert_awaited_once_with("storehouse", "倉庫: 物をしまう")
+    assert plan.stage_goal() is not None  # 段階は中目標になる（設計できるまで条件は未達）
+    await keeper.judge(plan)
+    await keeper.judge(plan)
+    assert builder.design.await_count == 2  # 失敗した名前は 2 回まで
+
+
+@pytest.mark.asyncio
+async def test_without_a_designer_an_unknown_build_is_rejected():
+    bridge = AsyncMock()
+    bridge.builds.return_value = []
+    keeper = MidGoalKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
+    proposal = MidGoalProposal(
+        title="増築", conditions=(GoalSpec(GoalPredicate.BUILT, name="annex"),), reason=""
+    )
+    with pytest.raises(GoalRejectedError, match="no build named annex"):
+        await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="a")

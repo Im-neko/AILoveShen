@@ -92,7 +92,8 @@ function validGoal (spec, bot, state, knowledge) {
     case 'built':
       if (spec.name) {
         // 名前付きの建物（docs/design/25_builds.md）。設計は Python が先に登録する
-        if (!state.builds?.[spec.name]) throw new Error(`there is no build named ${spec.name}: design it first`)
+        // まだない名前は「まだ」: /check（街の段階の確認）では未達、目標にはできない（PUT /goal は 400）
+        if (!state.builds?.[spec.name]) throw new NotYetError(`there is no build named ${spec.name} yet: it is designed when the mid goal is added`)
         return { spec: { predicate, name: String(spec.name) } }
       }
       if (!state.plan) throw new NotYetError('there is no house plan')

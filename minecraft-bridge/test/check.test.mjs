@@ -31,10 +31,15 @@ test('まだ判定できない条件は未達とし、ほかの条件の判定�
   assert.match(r[1].lines[0], /no home yet/)
 })
 
-test('名前付きの建物（built(name)）: 知らない名前は断り、登録したものは置いた数で判定する（docs/design/25_builds.md）', async () => {
+test('名前付きの建物（built(name)）: 知らない名前はまだ未達（目標にはできない）、登録したものは置いた数で判定する（docs/design/25_builds.md）', async () => {
   const { BuildPlan } = await import('../src/build.mjs')
   const vec3 = (await import('vec3')).default
-  assert.throws(() => checkConditions([{ predicate: 'built', name: 'annex' }], bot, state, k, world({})), /no build named annex/)
+  // まだない名前: 条件としては未達（街の段階の確認）、目標にはできない
+  const [unknown] = checkConditions([{ predicate: 'built', name: 'annex' }], bot, state, k, world({}))
+  assert.equal(unknown.met, false)
+  assert.match(unknown.lines[0], /no build named annex yet/)
+  const { makeGoal } = await import('../src/goals.mjs')
+  assert.throws(() => makeGoal({ predicate: 'built', name: 'annex' }, bot, state, k), /no build named annex/)
   const plan = new BuildPlan({ blocks: [{ x: 0, y: 0, z: 0, block: 'cobblestone' }, { x: 0, y: 1, z: 0, block: 'cobblestone' }], width: 1, depth: 1, height: 2, kind: 'build' })
   plan.origin = new vec3.Vec3(5, 69, 5)
   const placed = new Set(['5,69,5'])

@@ -253,7 +253,7 @@ export function chestSpot (bot, home) {
     for (let z = home.min.z; z <= home.max.z; z++) cells.push(home.min.offset(x - home.min.x, 0, z - home.min.z))
   }
   return cells
-    .filter((p) => !line.some((l) => l.equals(p)) && bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')
+    .filter((p) => isHomeCell(home, p) && !line.some((l) => l.equals(p)) && bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')
     .sort((a, b) => b.distanceTo(home.door) - a.distanceTo(home.door))[0] ?? null
 }
 

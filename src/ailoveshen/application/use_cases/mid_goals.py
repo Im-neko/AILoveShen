@@ -28,6 +28,8 @@ from ailoveshen.domain.events import (
 from ailoveshen.domain.exceptions import GoalRejectedError
 from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, MidGoal
 
+MAX_STAGE_DESIGN_TRIES = 2
+
 
 class MidGoalKeeper:
     """
@@ -63,6 +65,7 @@ class MidGoalKeeper:
         self._event_publisher = event_publisher
         self._store = store
         self._builder = builder
+        self._design_failures: dict[str, int] = {}  # 街の段階の建物の設計に失敗した回数
 
     async def judge(self, plan: MidGoalPlan) -> None:
         """
@@ -99,6 +102,7 @@ class MidGoalKeeper:
                 events.append(
                     MidGoalCompletedEvent(title=done.title, requested_by=done.requested_by or "")
                 )
+        await self._design_stage_builds(plan)
         events.extend(self._next_stage(plan))
         if plan.town_complete and not was_complete:
             assert plan.town is not None
@@ -128,6 +132,33 @@ class MidGoalKeeper:
             return []
         logger.info(f"街の段階 {plan.town_stage + 1} を中目標 {goal.id} にした: {goal.describe()}")
         return [_added(plan, goal)]
+
+    async def _design_stage_builds(self, plan: MidGoalPlan) -> None:
+        """
+        今の街の段階の条件に、まだない建物（built(name)）があれば、中目標にする前に設計させる。
+        失敗した名前は MAX_STAGE_DESIGN_TRIES 回まで（毎回の切れ目で呼び続けない）。
+        """
+        stage = plan.current_stage
+        if self._builder is None or stage is None or plan.site is None or plan.preparing_town:
+            return
+        names = [
+            c.name
+            for c in plan.stage_remaining
+            if c.predicate == GoalPredicate.BUILT
+            and c.name is not None
+            and self._design_failures.get(c.name, 0) < MAX_STAGE_DESIGN_TRIES
+        ]
+        if not names:
+            return
+        known = await self._builder.known()
+        for name in names:
+            if name in known:
+                continue
+            try:
+                await self._builder.design(name, f"{stage.title}: {stage.why}")
+            except GoalRejectedError as e:
+                self._design_failures[name] = self._design_failures.get(name, 0) + 1
+                logger.error(f"街の段階の建物 {name} を設計できない: {e}")
 
     async def add_town_goal(
         self,
@@ -234,7 +265,13 @@ class MidGoalKeeper:
             for c in proposal.conditions
             if c.predicate == GoalPredicate.BUILT and c.name is not None
         ]
-        if not names or self._builder is None:
+        if not names:
+            return 0
+        if self._builder is None:
+            known = {str(b["name"]) for b in await self._bridge.builds()}
+            missing = [n for n in names if n not in known]
+            if missing:
+                raise GoalRejectedError(f"no build named {', '.join(missing)} (cannot design here)")
             return 0
         known = await self._builder.known()
         brief = f"{proposal.title}: {proposal.reason}".strip(": ")

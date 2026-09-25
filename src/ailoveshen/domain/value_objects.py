@@ -836,7 +836,11 @@ class BuildDesign:
 
     def blocks(self) -> tuple[PlannedBlock, ...]:
         """
-        置ける順に展開する: 空けるマス（上から）、ブロック（下の層から、外周から内側へ）、ドア。
+        置ける順に展開する: ブロック（下の層から、外周から内側へ）、空けるマス（上から。家の
+        外壁に重なる面は最後）、ドア。
+
+        空けるのはブロックの後: 増築で家の壁の入口を先に空けると、部屋ができるまで家に穴が
+        開いたままになる（夜に敵が入る）。予定地の土や石は、置くときに掘ってから置く。
         """
         grid: dict[tuple[int, int, int], BlockKind] = {}
         for shape in self.shapes:
@@ -861,13 +865,25 @@ class BuildDesign:
         def edge(c: tuple[int, int, int]) -> int:
             return min(c[0], max_x - c[0], c[2], max_z - c[2])
 
-        clears = sorted((c for c, k in grid.items() if k == BlockKind.AIR), key=lambda c: -c[1])
+        def on_home_face(c: tuple[int, int, int]) -> bool:
+            # 増築で家の外壁に重なる面（そこを空けると家に穴が開く）
+            return {
+                BuildAnchor.HOME_EAST: c[0] == 0,
+                BuildAnchor.HOME_WEST: c[0] == max_x,
+                BuildAnchor.HOME_SOUTH: c[2] == 0,
+                BuildAnchor.HOME_NORTH: c[2] == max_z,
+            }.get(self.anchor, False)
+
+        clears = sorted(
+            (c for c, k in grid.items() if k == BlockKind.AIR),
+            key=lambda c: (on_home_face(c), -c[1]),
+        )
         solids = sorted(
             (c for c, k in grid.items() if k not in (BlockKind.AIR, BlockKind.DOOR)),
             key=lambda c: (c[1], edge(c), c[0], c[2]),
         )
         doors = sorted(c for c, k in grid.items() if k == BlockKind.DOOR)
-        return tuple(PlannedBlock(x, y, z, grid[(x, y, z)]) for x, y, z in clears + solids + doors)
+        return tuple(PlannedBlock(x, y, z, grid[(x, y, z)]) for x, y, z in solids + clears + doors)
 
     def size(self) -> tuple[int, int, int]:
         """(幅 x, 高さ y, 奥行き z)。"""

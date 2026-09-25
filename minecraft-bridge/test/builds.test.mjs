@@ -135,3 +135,13 @@ test('空けるマスは名前付きの建物だけ', () => {
   const p = new BuildPlan({ blocks: [{ x: 0, y: 0, z: 0, block: 'air' }], width: 1, depth: 1, height: 1, kind: 'build' })
   assert.equal(BuildPlan.fromJSON(p.toJSON()).kind, 'build')
 })
+
+test('家の壁の中のドアと、木・水のある側は断る（置けずに詰まるため）', () => {
+  const state = { home: home(), builds: {} }
+  const doorInWall = { blocks: [{ x: 4, y: 1, z: 2, block: 'planks' }, { x: 0, y: 1, z: 2, block: 'door' }], size: { width: 5, depth: 5, height: 2 } }
+  assert.throws(() => registerBuild(world().bot, state, { name: 'a', ...doorInWall, anchor: 'home:east' }), /inside the oak_planks of the home's wall/)
+  const tree = world({ '108,70,2': 'oak_log' }) // 東の壁のマス
+  assert.throws(() => registerBuild(tree.bot, state, { name: 'b', ...annex(), anchor: 'home:east' }), /oak_log .* home:east side/)
+  const pond = world({ '106,69,2': 'water' })
+  assert.throws(() => registerBuild(pond.bot, state, { name: 'c', ...annex(), anchor: 'home:east' }), /water/)
+})
