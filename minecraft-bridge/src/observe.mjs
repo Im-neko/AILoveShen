@@ -111,7 +111,7 @@ export function summarize (bot, history, extra = {}) {
       position: { x: round(me.x), y: round(me.y), z: round(me.z) },
       held_item: bot.heldItem ? bot.heldItem.name : null,
       equipment: equipment(bot),
-      light: lightAt(bot),
+      dark: isDark(bot),
       in_water: !!bot.entity.isInWater
     },
     inventory: inventoryCounts(bot),
@@ -122,18 +122,25 @@ export function summarize (bot, history, extra = {}) {
   }
 }
 
-// Light at the feet: block light (torches, ...) and sky light (15 under open sky, lower when covered)
-export function lightAt (bot) {
-  const b = bot.blockAt(bot.entity.position.floored())
-  return { block: b?.light ?? null, sky: b?.skyLight ?? null }
+// Dark even by day: covered (a cave, an overhang, a roof) with no light source near. Judged from the
+// blocks, not from the light data: mineflayer's light for 1.21.4 read sky light 0 in open air the
+// server lit (checked with a location_check predicate), so it cannot be trusted
+const COVER_HEIGHT = 32
+const LIT_RADIUS = 8 // a torch lights 14 at its block, dropping one per block
+export const LIGHT_SOURCES = ['torch', 'wall_torch', 'lantern', 'soul_torch', 'soul_wall_torch', 'soul_lantern', 'glowstone',
+  'jack_o_lantern', 'sea_lantern', 'shroomlight', 'lava', 'campfire', 'soul_campfire', 'redstone_lamp', 'end_rod', 'ochre_froglight', 'verdant_froglight', 'pearlescent_froglight']
+export function isCovered (bot) {
+  const head = bot.entity.position.floored().offset(0, 2, 0)
+  for (let dy = 0; dy < COVER_HEIGHT; dy++) {
+    const b = bot.blockAt(head.offset(0, dy, 0))
+    if (b?.boundingBox === 'block' && !b.name.endsWith('_leaves') && !b.name.includes('glass')) return true
+  }
+  return false
 }
-
-// Dark even by day (a cave, under an overhang): no block light and little sky. Hostile mobs spawn
-// only where the block light is 0
-export const DARK_SKY = 7
 export function isDark (bot) {
-  const { block, sky } = lightAt(bot)
-  return block === 0 && sky !== null && sky <= DARK_SKY
+  if (!isCovered(bot)) return false
+  const ids = LIGHT_SOURCES.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined)
+  return !bot.findBlock({ matching: ids, maxDistance: LIT_RADIUS })
 }
 
 // Worn armour and the off hand (inventory window slots), null where empty

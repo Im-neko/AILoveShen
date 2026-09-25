@@ -259,7 +259,7 @@ export function needs (bot, state) {
   const phase = dayPhase(bot.time.timeOfDay)
   if (phase === 'dusk') out.push('night is coming: hostile mobs spawn outside in the dark')
   if (phase === 'night' && !isInside(bot, state.home)) out.push('it is night and you are outside')
-  if (isDark(bot)) out.push('dark here (no light, covered): hostile mobs can spawn around you')
+  if (isDark(bot)) out.push('dark here (covered, no light near): hostile mobs can spawn around you')
   for (const { e, dist } of reachableThreats(bot, state)) out.push(`hostile ${e.name} ${Math.round(dist)}m away`)
   for (const { e } of dangerOutside(bot, state.home)) out.push(`${e.name} waiting outside the door`)
   for (const b of state.home?.breach ?? []) out.push(`the house wall has a hole at ${b.x},${b.y},${b.z}`)
