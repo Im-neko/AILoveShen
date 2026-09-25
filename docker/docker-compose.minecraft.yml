@@ -5,6 +5,10 @@
 # - offline-mode so the Mineflayer bot can join without a Microsoft account.
 #   Keep this server local; do not expose port 25565 to the internet.
 # - Starting the server accepts the Minecraft EULA: https://aka.ms/MinecraftEULA
+# - Every recipe is unlocked for the players (the bot) when they join: the bridge crafts through the
+#   recipe book, which only fills the grid for unlocked recipes, while a player placing the items by
+#   hand needs no unlock (vanilla unlocks the torch only with a stone pickaxe, the chest only with 10
+#   slots filled). The unlocks are saved with the player, so a grant ~10s after joining lasts.
 
 services:
   minecraft:
@@ -26,6 +30,7 @@ services:
       SPAWN_PROTECTION: "0"
       ENABLE_RCON: "TRUE"
       RCON_PASSWORD: "${MC_RCON_PASSWORD:-ailoveshen-dev}"
+      RCON_CMDS_ON_CONNECT: "recipe give @a *"
     volumes:
       - minecraft-data:/data
     restart: unless-stopped
