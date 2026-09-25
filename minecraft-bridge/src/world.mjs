@@ -27,7 +27,7 @@ function logReachable (bot, block) {
 const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
 // 空気に接している（水にも当たり判定がない: town2 は海の下の石炭を掘って溺れた）
 const AIR = new Set(['air', 'cave_air'])
-const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => AIR.has(bot.blockAt(p.offset(x, y, z))?.name))
+export const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => AIR.has(bot.blockAt(p.offset(x, y, z))?.name))
 
 // この種類のうちボットが掘れるブロック: 近い順。家の一部は含めない
 export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {

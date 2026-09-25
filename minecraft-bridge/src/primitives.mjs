@@ -11,8 +11,9 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { findSite, placeOne } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
-import { rememberChest, forgetChest, rememberFurnace, forgetFurnace } from './memory.mjs'
+import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct } from './knowledge.mjs'
+import { surveySite, SURVEY_REACH } from './survey.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // サバイバルで目からブロックに届く距離
@@ -381,6 +382,12 @@ export const PRIMITIVES = {
   async place_plan (bot, state, c) {
     const plan = state.plan
     if (!plan.origin) {
+      // 選んだ場所に建てる計画なら、まずそこまで歩く
+      if (plan.site) {
+        const leg = await legToward(bot, plan.site, 'the site of the house')
+        if (leg) return leg
+        await goto(bot, new goals.GoalNearXZ(plan.site.x, plan.site.z, 4))
+      }
       const origin = findSite(bot, plan.size)
       if (!origin) {
         plan.siteSearchFailedAt = bot.entity.position.clone()
@@ -571,6 +578,22 @@ export const PRIMITIVES = {
     await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3))
     return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
   },
+  async survey (bot, state, c) {
+    const leg = await legToward(bot, c.pos, `the ${c.target} site`)
+    if (leg) return leg
+    // 海や崖で中心まで行けなくても、ここまで来ていればまわりのチャンクは読み込まれている
+    // （読み込めた割合は loaded_pct に出る）
+    try {
+      await goto(bot, new goals.GoalNearXZ(c.site.x, c.site.z, SURVEY_REACH))
+    } catch (e) {
+      if (Math.hypot(c.site.x - bot.entity.position.x, c.site.z - bot.entity.position.z) > LEG) throw e
+    }
+    await bot.waitForTicks(20) // 着いた所のチャンクと動物が届くのを待つ
+    const numbers = surveySite(bot, state, c.site)
+    rememberSite(state.memory, numbers, Number(bot.time.age))
+    return `surveyed the ${c.target} site: ${numbers.flat_plots} flat plots, water ${numbers.water_pct}%, steep ${numbers.steep_pct}%, ` +
+      `stone ${numbers.stone}, coal ${numbers.coal}, iron ${numbers.iron}, logs ${numbers.logs}, animals ${numbers.animals}`
+  },
   async explore (bot, state, c) {
     const start = bot.entity.position.clone()
     const target = start.offset(c.dx * EXPLORE_DISTANCE, 0, c.dz * EXPLORE_DISTANCE)
@@ -612,6 +635,6 @@ async function useChest (bot, state, c, use) {
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
 // 最長は 45 秒: Python クライアントの要求のタイムアウト（minecraft.bridge.timeout_seconds）はこれより長くする
-export const TIMEOUTS_MS = { smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

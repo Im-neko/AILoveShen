@@ -26,20 +26,26 @@ const DOOR_DANGER_RADIUS = 8
 const toVec = (p) => new Vec3(p.x, p.y, p.z)
 const plain = (v) => ({ x: v.x, y: v.y, z: v.z })
 
+const homeToJSON = (h) => ({
+  name: h.name ?? null,
+  design: h.design ?? null,
+  door: plain(h.door),
+  inside: plain(h.inside),
+  outside: plain(h.outside),
+  min: plain(h.min),
+  max: plain(h.max),
+  bed: h.bed ? plain(h.bed) : null,
+  breach: h.breach
+})
+
+const homeFromJSON = (h) => ({ name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] })
+
 export function saveState (state) {
   const data = {
     plan: state.plan && { ...state.plan.toJSON() },
-    home: state.home && {
-      name: state.home.name ?? null,
-      design: state.home.design ?? null,
-      door: plain(state.home.door),
-      inside: plain(state.home.inside),
-      outside: plain(state.home.outside),
-      min: plain(state.home.min),
-      max: plain(state.home.max),
-      bed: state.home.bed ? plain(state.home.bed) : null,
-      breach: state.home.breach
-    },
+    home: state.home && homeToJSON(state.home),
+    formerHomes: (state.formerHomes ?? []).map(homeToJSON),
+    survey: state.survey ?? null,
     goal: state.goal,
     memory: state.memory
   }
@@ -51,10 +57,9 @@ export function loadState (state) {
   if (!fs.existsSync(DATA_FILE)) return
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))
   if (data.plan) state.plan = BuildPlan.fromJSON(data.plan)
-  if (data.home) {
-    const h = data.home
-    state.home = { name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] }
-  }
+  if (data.home) state.home = homeFromJSON(data.home)
+  if (data.formerHomes) state.formerHomes = data.formerHomes.map(homeFromJSON)
+  if (data.survey) state.survey = data.survey
   if (data.goal) state.goal = data.goal
   if (data.memory) state.memory = { ...state.memory, ...data.memory }
 }
@@ -78,6 +83,21 @@ export function homeFromPlan (plan) {
     bed: null,
     breach: [] // 出口のために掘ってまだ戻していない壁のブロック: { x, y, z, block }
   }
+}
+
+// 計画が建ち終わったら、それが家になる。別の場所に建てた家なら引っ越し: 今の家は前の家として
+// 残す（壊さない。チェストの中身は記憶に残り、取り出す元になる）。家が変わったら true
+export function settleHome (state, bot) {
+  const plan = state.plan
+  if (!plan?.origin || !plan.status(bot).complete) return false
+  const built = homeFromPlan(plan)
+  if (!built || (state.home && state.home.door.equals(built.door))) return false
+  if (state.home) {
+    state.formerHomes ??= []
+    state.formerHomes.push(state.home)
+  }
+  state.home = built
+  return true
 }
 
 export function isInside (bot, home) {
@@ -154,18 +174,21 @@ export function dangerOutside (bot, home) {
 
 const inHome = (home, p) => p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z
 
-// 家、または計画中の家（`margin` だけ広げる）の一部: 掘らないし、何も置かない。
-// 両方を確かめる: 新しい計画のせいで完成した家が守られなくなってはいけない。
+// 家、前の家、または計画中の家（`margin` だけ広げる）の一部: 掘らないし、何も置かない。
+// すべてを確かめる: 新しい計画や引っ越しのせいで、建てた家が守られなくなってはいけない。
 const HOME_HEIGHT = 5 // 壁は高さ 4 まで、その上に屋根
 export function inHouse (state, p, margin = 0) {
-  const h = state.home
-  if (h && p.x >= h.min.x - 1 - margin && p.x <= h.max.x + 1 + margin && p.z >= h.min.z - 1 - margin &&
-      p.z <= h.max.z + 1 + margin && p.y >= h.min.y - 1 && p.y <= h.min.y + HOME_HEIGHT) return true
+  if ([state.home, ...(state.formerHomes ?? [])].some((h) => h && inBuilt(h, p, margin))) return true
   const o = state.plan?.origin
   if (!o) return false
   const { width, depth, height } = state.plan.size
   return p.x >= o.x - margin && p.x < o.x + width + margin && p.z >= o.z - margin && p.z < o.z + depth + margin &&
     p.y >= o.y - 1 && p.y <= o.y + height
+}
+
+function inBuilt (h, p, margin) {
+  return p.x >= h.min.x - 1 - margin && p.x <= h.max.x + 1 + margin && p.z >= h.min.z - 1 - margin &&
+      p.z <= h.max.z + 1 + margin && p.y >= h.min.y - 1 && p.y <= h.min.y + HOME_HEIGHT
 }
 
 // ベッドはドアからまっすぐ奥に置く: 足側は内側のセルの1つ先、頭側はさらに1つ先

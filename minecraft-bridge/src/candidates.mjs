@@ -13,7 +13,7 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
-import { recall, visited, chests, chestWith, furnaceWith } from './memory.mjs'
+import { recall, visited, homeChests, chestWith, furnaceWith } from './memory.mjs'
 import { cooking } from './cooking.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
@@ -155,19 +155,26 @@ function fromLeaf (bot, state, world, leaf) {
       const s = plan.status(bot)
       const p = plan.origin ? plan.worldPos(leaf.block) : null
       return [{
-        id: p ? `place ${leaf.block.block} at ${fmt(p)}` : `place ${leaf.block.block} (start the house here)`,
+        id: p ? `place ${leaf.block.block} at ${fmt(p)}` : plan.site ? `place ${leaf.block.block} (start the house at ${plan.site.x},${plan.site.z})` : `place ${leaf.block.block} (start the house here)`,
         verb: 'place_plan', target: `${leaf.block.block} of the house`, progress: `${s.placed}/${s.total}`,
-        ...(p ? { pos: p, distance: dist(bot, p) } : {})
+        ...(p ? { pos: p, distance: dist(bot, p) } : plan.site ? { site: plan.site, distance: round(Math.hypot(plan.site.x - bot.entity.position.x, plan.site.z - bot.entity.position.z)) } : {})
       }]
     }
     case 'withdraw': {
-      const chest = state.memory && chestWith(state.memory, [leaf.item], bot.entity.position)
+      // 家のチェストに蓄える目標のときは、家のチェストからは取り出さない（入れ直すだけになる）
+      const away = state.goal?.spec?.predicate === 'stored' ? homeChests(state.memory ?? {}, state.home) : []
+      const chest = state.memory && chestWith(state.memory, [leaf.item], bot.entity.position, away)
       if (!chest) return []
       const pos = new Vec3(chest.x, chest.y, chest.z)
       return [{ id: `take ${leaf.count} ${leaf.item} from the chest at ${fmt(pos)}`, verb: 'withdraw', target: leaf.item, item: leaf.item, count: leaf.count, pos, distance: dist(bot, pos) }]
     }
     case 'deposit':
       return leaf.items.flatMap(({ item, count }) => toChest(bot, state, item, count))
+    case 'survey': {
+      const { site } = leaf
+      const pos = new Vec3(site.x, bot.entity.position.y, site.z)
+      return [{ id: `survey the ${site.id} site at ${site.x},${site.z}`, verb: 'survey', target: site.id, pos, site, distance: dist(bot, pos) }]
+    }
     case 'place_chest':
       return [{ id: 'place a chest in the house', verb: 'place_chest', target: 'chest', pos: state.home.inside, distance: dist(bot, state.home.inside) }]
     case 'place_bed':
@@ -244,7 +251,7 @@ function awayFrom (bot, start, dx, dz) {
 
 // 一番近いチェスト（家のもの）にアイテムを入れる
 function toChest (bot, state, item, count) {
-  const chest = state.memory && chests(state.memory).sort((a, b) => dist(bot, new Vec3(a.x, a.y, a.z)) - dist(bot, new Vec3(b.x, b.y, b.z)))[0]
+  const chest = state.memory && homeChests(state.memory, state.home).sort((a, b) => dist(bot, new Vec3(a.x, a.y, a.z)) - dist(bot, new Vec3(b.x, b.y, b.z)))[0]
   if (!chest) return []
   const pos = new Vec3(chest.x, chest.y, chest.z)
   return [{ id: `put ${count} ${item} in the chest at ${fmt(pos)}`, verb: 'deposit', target: item, item, count, pos, distance: dist(bot, pos) }]
@@ -257,7 +264,7 @@ const TOOL = /_(sword|pickaxe|axe|shovel|hoe)$/
 const GOAL_GROUPS = { built: ['log', 'planks', 'door'], placed: ['bed', 'wool', 'planks'] }
 
 function storeSpare (bot, state, knowledge) {
-  if (!knowledge || !state.memory || !chests(state.memory).length || !isInside(bot, state.home)) return []
+  if (!knowledge || !state.memory || !homeChests(state.memory, state.home).length || !isInside(bot, state.home)) return []
   if (bot.inventory.emptySlotCount() >= FREE_SLOTS_WANTED) return []
   const spec = state.goal?.spec
   const groups = ['food', ...(GOAL_GROUPS[spec?.predicate] ?? []), ...(spec?.item ? [spec.item] : [])]
@@ -273,6 +280,6 @@ function storeSpare (bot, state, knowledge) {
 
 // 選ぶ側に見せる候補の中身（位置のオブジェクトやエンティティの参照は除く）
 export function describe (c) {
-  const { id, pos, entityId, inPlace, inside, dx, dz, block, needsTable, item, spot, confront, ...rest } = c
+  const { id, pos, entityId, inPlace, inside, dx, dz, block, needsTable, item, spot, confront, site, ...rest } = c
   return rest
 }

@@ -30,13 +30,15 @@ const isClearable = (block) => (block.boundingBox === 'empty' && !['water', 'lav
 
 export class BuildPlan {
   // design: モデルが設計したもの（名前、コンセプト、寸法、ドア）。できた家のために取っておく
-  constructor ({ blocks, width, depth, height, design = null }) {
+  // site: 建てる場所 {x, z}（選んだ候補地）。なければボットのいる所のまわりに建てる
+  constructor ({ blocks, width, depth, height, design = null, site = null }) {
     for (const b of blocks) {
       if (!KINDS[b.block]) throw new Error(`unknown block kind: ${b.block}`)
     }
     this.blocks = blocks
     this.size = { width, depth, height }
     this.design = design
+    this.site = site && { x: Math.floor(site.x), z: Math.floor(site.z) }
     this.origin = null
     this.siteSearchFailedAt = null
   }
@@ -47,7 +49,7 @@ export class BuildPlan {
   }
 
   toJSON () {
-    return { blocks: this.blocks, ...this.size, design: this.design, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
+    return { blocks: this.blocks, ...this.size, design: this.design, site: this.site, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
   }
 
   static fromJSON (data) {
@@ -74,6 +76,7 @@ export class BuildPlan {
     const pending = this.pending(bot)
     return {
       origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z },
+      site: this.site,
       total: this.blocks.length,
       placed: this.blocks.length - pending.length,
       complete: !!this.origin && pending.length === 0,

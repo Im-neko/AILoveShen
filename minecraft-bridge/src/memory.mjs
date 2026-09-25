@@ -25,7 +25,7 @@ export const REMEMBERED_BLOCK = /^(?!stripped_).*_log$|^(deepslate_)?(coal|iron)
 export const REMEMBERED_ANIMALS = new Set(['cow', 'pig', 'sheep', 'chicken'])
 
 export function newMemory () {
-  return { places: {}, explored: {}, deaths: [], chests: {}, furnaces: {} }
+  return { places: {}, explored: {}, deaths: [], chests: {}, furnaces: {}, sites: {} }
 }
 
 export const regionOf = (p) => `${Math.floor(p.x / REGION)},${Math.floor(p.z / REGION)}`
@@ -95,18 +95,33 @@ export function forgetChest (memory, pos) {
 export const chests = (memory) => Object.values(memory.chests ?? {})
 
 // すべてのチェストの中身。アイテム名ごと
-export function storedCounts (memory) {
+// 家の中のチェスト（街のチェスト）。前の家のチェストは入らない
+export function homeChests (memory, home) {
+  if (!home) return []
+  return chests(memory).filter((c) => c.x >= home.min.x - 1 && c.x <= home.max.x + 1 && c.z >= home.min.z - 1 &&
+    c.z <= home.max.z + 1 && c.y >= home.min.y - 1 && c.y <= home.min.y + 3)
+}
+
+// チェストの中身の合計。home を渡すと家の中のチェストだけ（stored の判定）、渡さなければ全部
+// （取り出す元。引っ越した後も前の家から運べる）
+export function storedCounts (memory, home = null) {
   const out = {}
-  for (const c of chests(memory)) {
+  for (const c of home ? homeChests(memory, home) : chests(memory)) {
     for (const [name, n] of Object.entries(c.contents)) out[name] = (out[name] ?? 0) + n
   }
   return out
 }
 
+// 調べた候補地の数字（survey.mjs）。数字だけで、判断は入れない
+export function rememberSite (memory, numbers, now) {
+  memory.sites ??= {}
+  memory.sites[numbers.id] = { ...numbers, seen: now }
+}
+
 // names のどれかが入っている一番近いチェスト
-export function chestWith (memory, names, me) {
+export function chestWith (memory, names, me, except = []) {
   return chests(memory)
-    .filter((c) => names.some((n) => (c.contents[n] ?? 0) > 0))
+    .filter((c) => !except.includes(c) && names.some((n) => (c.contents[n] ?? 0) > 0))
     .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
 }
 

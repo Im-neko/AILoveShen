@@ -9,9 +9,11 @@
 //                             { ok, result, seconds }
 //   POST /check {specs: [...]} -> 目標を設定せずに条件（have, built, placed）を判定する:
 //                             [{ spec, met, lines }]（1つでも不正なら理由を添えて 400）
-//   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height, design } 建てる計画を設定する
-//                             （design: モデルの設計図。できた家とともに取っておく）
-//   GET  /build-plan       -> 建築の状態（placed/total、原点、まだないブロックの先頭）
+//   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height, design, site? } 建てる計画を設定する
+//                             （design: モデルの設計図。できた家とともに取っておく。site: 建てる場所 {x, z}。
+//                             建ち終わると家になり、前の家は formerHomes に残る）
+//   GET  /build-plan       -> 建築の状態（placed/total、原点、場所、まだないブロックの先頭）
+//   GET  /sites            -> 調べた候補地の数字 { center, planned, sites: [{id, x, z, distance, flat_plots, ...}] }
 //
 // 設計: docs/design/11_primitive_actions.md
 // 環境変数: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
@@ -29,9 +31,10 @@ import { Knowledge } from './knowledge.mjs'
 import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe, needsOutside } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
-import { loadState, saveState, homeFromPlan, isInside, isDoorOpen, leaveHome, hasBed } from './home.mjs'
+import { loadState, saveState, settleHome, isInside, isDoorOpen, leaveHome, hasBed } from './home.mjs'
 import { startReflex } from './reflex.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory } from './memory.mjs'
+import { surveyedSites } from './survey.mjs'
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
 const VERSION = '1.21.4'
@@ -57,6 +60,8 @@ const state = {
   recipeBook: new RecipeBook(bot),
   unreachableDrops: new Set(),
   unreachableBlocks: new Set(),
+  formerHomes: [], // 引っ越す前の家（壊さない）
+  survey: null, // 街の候補地の調査の計画（survey.mjs）
   memory: newMemory() // 前に見た場所（memory.mjs）。state.json に保存する
 }
 loadState(state)
@@ -64,12 +69,10 @@ const knowledge = new Knowledge(minecraftData(VERSION))
 
 const worldAge = () => Number(bot.time.age)
 
-// 完成した計画は家になる。計画、家、目標は再起動しても残る
+// 完成した計画は家になる（別の場所なら引っ越し）。計画、家、前の家、調査、目標は再起動しても残る
 function persist () {
-  if (state.plan?.origin && !state.home && state.plan.status(bot).complete) {
-    state.home = homeFromPlan(state.plan)
-    console.log(`[bridge] 家を設定: ドア ${state.home?.door}`)
-  }
+  const former = state.home
+  if (settleHome(state, bot)) console.log(`[bridge] ${former ? '引っ越した' : '家を設定'}: ドア ${state.home.door}`)
   saveState(state)
 }
 
@@ -77,6 +80,7 @@ function observation () {
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
   extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
+  if (state.survey) extra.survey = { planned: state.survey.sites.length, surveyed: surveyedSites(state).length }
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
@@ -187,6 +191,7 @@ async function handle (req, res) {
   }
   if (req.method === 'POST' && req.url === '/check') {
     const { specs } = await readJson(req)
+    persist() // 建ち終わったばかりの家を、判定の前に家にする
     try {
       return send(res, 200, checkConditions(specs, bot, state, knowledge, snapshot(bot, state)))
     } catch (e) {
@@ -202,6 +207,10 @@ async function handle (req, res) {
     state.plan = new BuildPlan(await readJson(req))
     persist()
     return send(res, 200, state.plan.status(bot))
+  }
+  if (req.method === 'GET' && req.url === '/sites') {
+    // 調べた候補地の数字（ブリッジが測ったものだけ）。まだ調べていない候補地は入らない
+    return send(res, 200, { center: state.survey?.center ?? null, planned: state.survey?.sites.length ?? 0, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) })
   }
   if (req.method === 'GET' && req.url === '/build-plan') {
     return send(res, state.plan ? 200 : 404, state.plan ? state.plan.status(bot) : { error: 'no plan' })

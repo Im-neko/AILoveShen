@@ -10,16 +10,19 @@
 //   through_night()          夜が明けた（家の中にいたか、寝ていた）
 //   explored(distance)       目標を立てた場所から（水平に）この距離だけ離れた
 //   cleared()                ドアの近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
-//   stored(item, count)      チェストにアイテムかグループが `count` 個ある（最後に開けたときの中身で）
+//   stored(item, count)      家のチェストにアイテムかグループが `count` 個ある（最後に開けたときの中身で）
+//   lit(distance)            家のまわり半径 `distance` の地面に暗い所がない
+//   surveyed(count)          街の候補地を `count` か所調べた（docs/design/16_town_site.md）
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
 import { dayPhase, inventoryCounts, EXPLODES, isDark } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
-import { chests, storedCounts } from './memory.mjs'
+import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
 import { cooking } from './cooking.mjs'
-import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
+import { ensureSurvey, surveyedSites } from './survey.mjs'
+import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
@@ -32,10 +35,10 @@ const DAY_TICKS = 24000
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed']
 // ワールドの状態だけから判定するので、中目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed']
 
 // 目標の指定を検証し、保持する目標の状態を返す。不正なら理由を添えて投げる
 // 正しいが、何か（家、計画）ができるまで追えない目標
@@ -97,6 +100,12 @@ function validGoal (spec, bot, state, knowledge) {
       }
       const p = bot.entity.position
       return { spec: { predicate, distance }, start: { x: p.x, y: p.y, z: p.z } }
+    }
+    case 'surveyed': {
+      const count = Number(spec.count)
+      const planned = ensureSurvey(state, bot).sites.length
+      if (!Number.isInteger(count) || count < 1 || count > planned) throw new Error(`count must be 1-${planned} (the candidate sites)`)
+      return { spec: { predicate, count } }
     }
     case 'lit': {
       needHome()
@@ -201,9 +210,26 @@ export function evaluate (bot, state, knowledge, world) {
       }
       break
     }
+    case 'surveyed': {
+      const survey = ensureSurvey(state, bot)
+      const done = surveyedSites(state).length
+      const n = goal.spec.count
+      out.met = done >= n
+      out.lines.push(`candidate sites surveyed ${Math.min(done, n)}/${n}`)
+      if (out.met) break
+      // 一番近い未調査の候補地へ。残りは候補地の数と、そこまでのレッグの数（歩くたびに減る）
+      const me = bot.entity.position
+      const next = survey.sites.filter((s) => !state.memory?.sites?.[s.id])
+        .map((s) => ({ ...s, distance: Math.hypot(s.x - me.x, s.z - me.z) }))
+        .sort((a, b) => a.distance - b.distance)[0]
+      out.remaining = (n - done) * 10 + Math.ceil(next.distance / LEG)
+      out.lines.push(`next: the ${next.id} site at ${next.x},${next.z} (${Math.round(next.distance)}m)`)
+      out.leaves.push({ kind: 'survey', site: next })
+      break
+    }
     case 'stored': {
       const { members } = knowledge.resolve(goal.spec.item)
-      const stored = storedCounts(state.memory ?? {})
+      const stored = storedCounts(state.memory ?? {}, state.home)
       const n = goal.spec.count
       const inChests = members.reduce((s, m) => s + (stored[m] ?? 0), 0)
       out.met = inChests >= n
@@ -211,11 +237,14 @@ export function evaluate (bot, state, knowledge, world) {
       if (out.met) break
       const want = n - inChests
       out.remaining += want
-      // チェストの中身を取り出してまた入れることはしない
+      // 家のチェストの中身を取り出してまた入れることはしない。ほかのチェスト（引っ越す前の家）
+      // からは取り出して運んでよい
       // アイテムはチェストがあってもなくても集めるので、残りの作業量はチェストを置いて中身を
       // 入れるにつれて減るだけ
-      const gathering = { ...world, stored: {} }
-      if (!chests(state.memory ?? {}).length) {
+      const elsewhere = Object.fromEntries(Object.entries(world.stored ?? {})
+        .map(([m, c]) => [m, Math.max(0, c - (stored[m] ?? 0))]).filter(([, c]) => c > 0))
+      const gathering = { ...world, stored: elsewhere }
+      if (!homeChests(state.memory ?? {}, state.home).length) {
         if (addSolved([{ spec: 'chest', count: 1 }], gathering).met) out.leaves.push({ kind: 'place_chest' })
         out.remaining += 1
       } else {
