@@ -7,17 +7,19 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ailoveshen.domain.entities import MidGoalPlan
-from ailoveshen.domain.value_objects import MidGoal, Mission
+from ailoveshen.domain.value_objects import MidGoal, Mission, TownDefinition
 
 
 @dataclass(frozen=True)
 class SavedPlan:
-    """What is kept of a plan: the mission, the mid goals, and the next id's number."""
+    """What is kept of a plan: the mission, the mid goals, the next id's number, the town."""
 
     mission: Mission
     pending: tuple[MidGoal, ...]
     finished: tuple[MidGoal, ...]
     next_id: int
+    town: Optional[TownDefinition] = None
+    town_stage: int = 0
 
 
 class IMissionStore(ABC):

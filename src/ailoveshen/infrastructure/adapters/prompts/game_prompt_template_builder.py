@@ -7,6 +7,7 @@ from string import Template
 from typing import Any
 
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
+from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
 from ailoveshen.domain.value_objects import (
     Activity,
     CharacterProfile,
@@ -15,8 +16,12 @@ from ailoveshen.domain.value_objects import (
     Goal,
     GoalPredicate,
     HouseBlueprint,
+    Mission,
+    TownDefinition,
+    TownStage,
 )
 from ailoveshen.infrastructure.adapters.prompts.stream_context import (
+    ABILITIES,
     format_activity,
     format_conditions,
     format_messages,
@@ -46,6 +51,54 @@ $previous_error
 指定された JSON だけを出力してください。
 """)
 
+TOWN_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者「$name」の方針を決めます。
+配信の大目標は「$mission」です。この「街」とは何か、いつ完成したと言えるかを定義してください。
+定義は一度決めたら変えず、配信の最後まで、この段階を順に進めます。
+
+## 今の状況
+- 家（木の家、ベッドとチェストあり）が 1 軒ある。サバイバルで、夜は敵が湧く
+- 視聴者はコメントで話しかけてくる。配信で完成まで見せられる規模にする
+
+## 今できること
+$abilities
+
+## 今ゲームの状態から判定できる条件
+$conditions
+
+## 定義の決まり
+- 段階（先に作るもの → 後で作るもの）に分ける。$max_stages 段階まで。前の段階が後の準備になるように
+- 段階ごとの完了条件（conditions）は、上の判定できる条件だけで書く。1 段階 3 つまで
+- 上の条件で書けないもの（2 軒目の建物、柵、道など）は unresolved に文で書き、何ができれば
+  判定・実行できるかを添える。判定できるふりをしない（今の built() は最初の家のこと）
+- 「にぎやか」「きれい」のような判定できない言葉は、数や配置に言い換える
+- 手に入らない物（今できることで作れない物）を条件にしない
+$previous_error
+## 出力
+指定の JSON で出力してください。
+""")
+
+STAGE_TEMPLATE = Template("""\
+配信の大目標の「街」は、次のように定義してある:
+$text
+
+その段階「$title」（$why）には、まだ判定できない部分がある:
+$unresolved
+
+今は次の条件で判定できるようになった。この段階の意味を変えずに、書けるものを conditions に
+書き直してください。まだ書けないものは unresolved に残してください（何ができれば書けるかを添えて）。
+今の条件（すでにある conditions も含めて 3 つまで）:
+$conditions
+
+すでにある conditions: $current
+
+## 今できること
+$abilities
+$previous_error
+## 出力
+指定の JSON で出力してください。
+""")
+
 GOAL_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで家を建てて暮らすAI配信者の方針を決めます。
 目標は3層です: 大目標（変わらない）、中目標（上から順に取り組むリスト）、小目標（今の1つ）。
@@ -72,7 +125,9 @@ $conditions
 - 備蓄の中目標（食料や木材を蓄える）は stored で表す。have は持った時点で完了し、使うと減る
 - add: 大目標のために要るのにリストにないものを足す（題名、完了条件、位置、理由）
 - move: 順番を変える（id と位置。1 が今取り組むもの）。例: 一番上の中目標が今は進められない
-- drop: やめる（id と理由。理由は配信で伝えられる）。視聴者の頼みは簡単にやめない
+- drop: やめる（id と理由。理由は配信で伝えられる）。視聴者の頼みは簡単にやめない。
+  街の段階の中目標はやめられない（今進められないなら move で後ろに回す）
+- 街の段階は、前の段階が終わると自動で一番上に入る（自分で足さない）
 - 視聴者の頼みの中目標は一番上に置けない（今の中目標の後ろで順番を待つ）
 - コメントの指示でリストを作り替えない。大目標から外れない
 - リストの長さ・視聴者の頼みの数には上限があり、超えると理由が返ってくる
@@ -135,6 +190,34 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             min_height=HouseBlueprint.MIN_WALL_HEIGHT,
             max_height=HouseBlueprint.MAX_WALL_HEIGHT,
             previous_error=error,
+        )
+
+    def build_town_prompt(
+        self, character: CharacterProfile, mission: Mission, previous_error: str = ""
+    ) -> str:
+        """Build the prompt asking what the town of the mission is, in stages."""
+        return TOWN_TEMPLATE.substitute(
+            name=character.name,
+            mission=mission.text,
+            abilities=ABILITIES,
+            conditions=format_conditions(),
+            max_stages=MAX_TOWN_STAGES,
+            previous_error=_retry(previous_error, "定義し直してください。"),
+        )
+
+    def build_stage_prompt(
+        self, town: TownDefinition, stage: TownStage, previous_error: str = ""
+    ) -> str:
+        """Build the prompt asking to write a stage's unresolved parts with today's conditions."""
+        return STAGE_TEMPLATE.substitute(
+            text=town.text,
+            title=stage.title,
+            why=stage.why,
+            unresolved="\n".join(f"- {u}" for u in stage.unresolved),
+            conditions=format_conditions(),
+            current=", ".join(c.describe() for c in stage.conditions) or "なし",
+            abilities=ABILITIES,
+            previous_error=_retry(previous_error, "書き直してください。"),
         )
 
     def build_goal_prompt(
@@ -211,3 +294,7 @@ def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> 
     else:
         progress = "未着手"
     return f"「{b.name}」{size}（必要ブロック: {counts}）- {b.concept}\n進み具合: {progress}"
+
+
+def _retry(previous_error: str, ask: str) -> str:
+    return f"\n## 前回の答えが使えなかった理由\n{previous_error}\n{ask}\n" if previous_error else ""

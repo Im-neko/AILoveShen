@@ -23,6 +23,18 @@ from ailoveshen.domain.value_objects import (
 
 NO_INFORMATION = "特になし"
 
+# What the Minecraft bridge's primitives and reflexes do (minecraft-bridge/src/primitives.mjs,
+# candidates.mjs): keep in step with them, so replies never promise what the streamer cannot do
+ABILITIES = """\
+- 木を切る、石・石炭・鉄を掘る、動物を狩る、道具・ベッド・チェストなどをクラフトする
+- かまどで焼く（鉄の延べ棒、木炭、焼いた肉）。鉄の道具や剣、石炭がなくても木炭で松明が作れる
+- 家を 1 軒建てる、ベッドで寝る、家のチェストに物を入れる・出す
+- 近くの敵と戦う・逃げる、お腹が空いたら食べる
+- 地上を方角を決めて探索する、前に見た場所（資源・動物・チェスト）を覚えていて戻る
+- 暗い場所（洞窟の入口や張り出しの下など、光のない所）では、松明を持っていれば置いて湧き潰しする
+- 家のまわりの地面に松明を並べて、敵が湧かないように明るくする
+- まだできない: 洞窟の奥へ降りて探検する、2 軒目の建物、畑、釣り、ネザー"""
+
 PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.BUILT: "built: 設計図の家を完成させる（材料集めとクラフトも含めて進む）",
     GoalPredicate.HAVE: (
@@ -91,6 +103,8 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     lines = []
     if activity.mission is not None:
         lines.append(f"- 大目標: {activity.mission.text}")
+    if activity.town is not None:
+        lines += _format_town(activity)
     pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
     finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
     lines.append("- 中目標（上から順に取り組む）:")
@@ -180,12 +194,29 @@ def _format_equipment(me: dict) -> str:
     return "、".join(held + worn) or "なし"
 
 
+def _format_town(activity: Activity) -> list[str]:
+    town = activity.town
+    assert town is not None
+    n = len(town.stages)
+    lines = [f"- 街の定義: {town.text}"]
+    if activity.town_stage >= n:
+        return [*lines, f"  - 街は完成した（全 {n} 段階）"]
+    for i, stage in enumerate(town.stages):
+        mark = "済" if i < activity.town_stage else "今" if i == activity.town_stage else "先"
+        lines.append(f"  {i + 1}. [{mark}] {stage.title}: {stage.why}")
+        if i == activity.town_stage and not stage.ready:
+            waits = "; ".join(stage.unresolved)
+            lines.append(f"     まだできないこと（できるようになるまで進めない）: {waits}")
+    return lines
+
+
 def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
     conditions = ", ".join(c.describe() for c in goal.conditions)
     summary = goal.summary()
     progress = f"（{'; '.join(summary)}）" if summary else ""
+    stage = f" [街の段階 {goal.stage + 1}: やめられない]" if goal.stage is not None else ""
     return (
-        f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}"
+        f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}{stage}"
         f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}"
     )
 

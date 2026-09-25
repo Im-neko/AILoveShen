@@ -453,6 +453,7 @@ class ConditionStatus:
     spec: GoalSpec
     met: bool
     lines: tuple[str, ...] = ()
+    impossible: tuple[str, ...] = ()  # what nothing the streamer can do now gets
 
 
 # Judged from the state of the world alone: they can be the completion conditions of mid goals
@@ -498,6 +499,7 @@ class MidGoal:
     A mid goal: a step toward the mission, done when all its conditions hold in the world.
 
     `requested_by` is the viewer who asked for it (None: the streamer's own).
+    `stage` is the town's stage it stands for (None: not a stage).
     `steps` counts the small goals' steps spent on it (a viewer's has a budget).
 
     Raises:
@@ -513,6 +515,7 @@ class MidGoal:
     ended_because: str = ""
     steps: int = 0
     progress: tuple[str, ...] = ()  # how the conditions stand, as last judged
+    stage: Optional[int] = None
 
     def __post_init__(self) -> None:
         """Check the conditions."""
@@ -730,6 +733,55 @@ class GameObservation:
 
 
 @dataclass(frozen=True)
+class TownStage:
+    """
+    A stage of the town: done when its conditions hold in the world.
+
+    `unresolved` are the parts the streamer cannot do or judge yet (they wait
+    for an ability to be added; the stage cannot be finished before).
+
+    Raises:
+        ValueError: If it has no title, nothing to do, or a condition that
+            cannot be judged from the world.
+    """
+
+    title: str
+    why: str
+    conditions: tuple[GoalSpec, ...] = ()
+    unresolved: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Check the stage."""
+        if not self.title:
+            raise ValueError("a town stage needs a title")
+        if not self.conditions and not self.unresolved:
+            raise ValueError(f"town stage {self.title} has nothing to do")
+        for c in self.conditions:
+            if c.predicate not in CONDITION_PREDICATES:
+                raise ValueError(f"{c.predicate.value} cannot be a condition of a town stage")
+
+    @property
+    def ready(self) -> bool:
+        """Whether every part can be done and judged now."""
+        return not self.unresolved
+
+
+@dataclass(frozen=True)
+class TownDefinition:
+    """What the town of the mission is (said on stream) and its stages, in order."""
+
+    text: str
+    stages: tuple[TownStage, ...]
+
+    def __post_init__(self) -> None:
+        """Check the definition."""
+        if not self.text:
+            raise ValueError("the town needs a definition")
+        if not self.stages:
+            raise ValueError("the town needs at least one stage")
+
+
+@dataclass(frozen=True)
 class Activity:
     """
     What the streamer is doing and why: the one view that the goal decision,
@@ -739,6 +791,8 @@ class Activity:
     """
 
     mission: Optional[Mission] = None
+    town: Optional[TownDefinition] = None
+    town_stage: int = 0  # stages done
     mid_goals: tuple[MidGoal, ...] = ()
     goal: Optional[Goal] = None
     observation: Optional[GameObservation] = None

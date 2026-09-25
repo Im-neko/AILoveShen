@@ -21,6 +21,8 @@ from ailoveshen.domain.value_objects import (  # noqa: E402
     HouseBlueprint,
     Mission,
     Side,
+    TownDefinition,
+    TownStage,
 )
 from ailoveshen.presentation.web.goal_board import GoalBoard, goals_snapshot  # noqa: E402
 
@@ -54,11 +56,36 @@ def _session() -> PlaySession:
 class TestGoalsSnapshot:
     """Tests for the JSON the overlay reads."""
 
+    def test_town(self):
+        """Test the town's stages are shown done, current or later, with what they wait for."""
+        session = _session()
+        session.plan.define_town(
+            TownDefinition(
+                "小さな街",
+                (
+                    TownStage("家", "住む", conditions=(GoalSpec(GoalPredicate.BUILT),)),
+                    TownStage("倉庫", "街らしく", unresolved=("2 軒目",)),
+                ),
+            )
+        )
+        session.plan.complete(session.plan.add("家", (GoalSpec(GoalPredicate.BUILT),), stage=0).id)
+
+        town = goals_snapshot(session.activity())["town"]
+
+        assert town["text"] == "小さな街" and not town["complete"]
+        assert [(s["title"], s["state"]) for s in town["stages"]] == [
+            ("家", "done"),
+            ("倉庫", "current"),
+        ]
+        assert town["stages"][1]["unresolved"] == ["2 軒目"]
+        assert goals_snapshot(session.activity())["mid_goals"][-1]["stage"] == 0
+
     def test_not_playing(self):
         """Test before play starts nothing is shown."""
         assert goals_snapshot(None) == {
             "playing": False,
             "mission": None,
+            "town": None,
             "mid_goals": [],
             "goal": None,
             "home": None,

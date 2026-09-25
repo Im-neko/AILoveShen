@@ -23,6 +23,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     predicates_now,
 )
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
@@ -128,6 +129,8 @@ class StartPlayUseCase(IStartPlay):
 
     The mission and its mid goals carry on from the saved plan when it is for
     the same mission; otherwise the plan made from the configuration starts.
+    The town of the mission is defined when the plan has none yet (then kept),
+    and its unresolved stages are written again with the abilities of today.
     """
 
     def __init__(
@@ -139,6 +142,7 @@ class StartPlayUseCase(IStartPlay):
         character: CharacterProfile,
         plan: MidGoalPlan,
         store: IMissionStore,
+        town: TownPlanner,
         max_attempts: int = 3,
         max_steps_per_goal: int = 40,
         max_consecutive_failures: int = 3,
@@ -155,6 +159,7 @@ class StartPlayUseCase(IStartPlay):
             character: The streamer's character profile (the design reflects it)
             plan: The mission with its first mid goals, from the configuration
             store: Keeps the plan across restarts
+            town: Defines the town of the mission and keeps it doable
             max_attempts: Design attempts before giving up
             max_steps_per_goal: Steps before the LLM is asked for a new goal
             max_consecutive_failures: Failed steps in a row before a new goal is asked for
@@ -167,19 +172,22 @@ class StartPlayUseCase(IStartPlay):
         self._character = character
         self._plan = plan
         self._store = store
+        self._town = town
         self._max_attempts = max_attempts
         self._max_steps_per_goal = max_steps_per_goal
         self._max_consecutive_failures = max_consecutive_failures
         self._max_stalled_steps = max_stalled_steps
 
     async def execute(self) -> PlaySession:
-        """Design the house (unless one is built), send its plan, and return the new session."""
+        """Load the plan and its town, design the house (unless one is built), start a session."""
+        plan = self._load_plan()
+        await self._town.prepare(plan)
         obs = await self._bridge.observe()
         if obs.has_home:
             blueprint = _home_blueprint(obs)
             name = f" ({blueprint.name})" if blueprint else ""
             logger.info(f"A home is already built{name}: no new house is designed")
-            session = self._session(blueprint)
+            session = self._session(blueprint, plan)
             session.completion_announced = True
             return session
         blueprint = await self._design()
@@ -193,12 +201,12 @@ class StartPlayUseCase(IStartPlay):
             HouseDesignedEvent(name=blueprint.name, concept=blueprint.concept)
         )
         await self._bridge.set_build_plan(blueprint)
-        return self._session(blueprint)
+        return self._session(blueprint, plan)
 
-    def _session(self, blueprint: HouseBlueprint | None) -> PlaySession:
+    def _session(self, blueprint: HouseBlueprint | None, plan: MidGoalPlan) -> PlaySession:
         return PlaySession(
             blueprint=blueprint,
-            plan=self._load_plan(),
+            plan=plan,
             max_steps_per_goal=self._max_steps_per_goal,
             max_consecutive_failures=self._max_consecutive_failures,
             max_stalled_steps=self._max_stalled_steps,
@@ -208,7 +216,13 @@ class StartPlayUseCase(IStartPlay):
         plan = self._plan
         saved = self._store.load()
         if saved is not None and saved.mission == plan.mission:
-            plan.restore(list(saved.pending), list(saved.finished), saved.next_id)
+            plan.restore(
+                list(saved.pending),
+                list(saved.finished),
+                saved.next_id,
+                town=saved.town,
+                town_stage=saved.town_stage,
+            )
             logger.info(f"Mid goals carried on: {', '.join(g.describe() for g in plan.pending)}")
         else:
             if saved is not None:

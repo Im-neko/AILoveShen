@@ -115,14 +115,15 @@ function validGoal (spec, bot, state, knowledge) {
   }
 }
 
-// { spec, met, remaining, lines, blocked, leaves } for the current goal
+// { spec, met, remaining, lines, blocked, impossible, leaves } for the current goal
 export function evaluate (bot, state, knowledge, world) {
   const goal = state.goal
-  const out = { spec: goal.spec, met: false, remaining: 0, lines: [], blocked: [], leaves: [] }
+  const out = { spec: goal.spec, met: false, remaining: 0, lines: [], blocked: [], impossible: [], leaves: [] }
   const addSolved = (needs, w = world) => {
     const r = solve(knowledge, w, needs)
     out.lines.push(...r.lines)
     out.blocked.push(...r.blocked)
+    out.impossible.push(...r.impossible)
     // Searching for what is not nearby: away from where the goal was set (it walked back and
     // forth around the start before, never finding food 20m further)
     out.leaves.push(...r.leaves.map((l) => l.kind === 'explore' && !l.away && goal.exploreFrom ? { ...l, away: goal.exploreFrom } : l))
@@ -257,7 +258,8 @@ export function evaluate (bot, state, knowledge, world) {
   return out
 }
 
-// Judges conditions without setting a goal: [{ spec, met, lines }]; throws for an invalid one.
+// Judges conditions without setting a goal: [{ spec, met, lines, impossible }] (impossible: what
+// nothing the bot can do now gets); throws for an invalid one.
 // One that cannot be judged yet (a bed in a home not built) is not met.
 export function checkConditions (specs, bot, state, knowledge, world) {
   return specs.map((spec) => {
@@ -268,11 +270,11 @@ export function checkConditions (specs, bot, state, knowledge, world) {
     try {
       goal = makeGoal(spec, bot, state, knowledge)
     } catch (e) {
-      if (e instanceof NotYetError) return { spec, met: false, lines: [e.message] }
+      if (e instanceof NotYetError) return { spec, met: false, lines: [e.message], impossible: [] }
       throw e
     }
     const r = evaluate(bot, { ...state, goal }, knowledge, world)
-    return { spec: goal.spec, met: r.met, lines: r.lines }
+    return { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)] }
   })
 }
 

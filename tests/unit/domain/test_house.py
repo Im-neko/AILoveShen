@@ -16,6 +16,8 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Mission,
     Side,
+    TownDefinition,
+    TownStage,
     is_survival,
 )
 
@@ -400,6 +402,32 @@ class TestMidGoalPlan:
         plan = _plan(viewer_budget=1)
         assert plan.charge("m1") is None
         assert plan.get("m1").steps == 1
+
+    def test_a_town_stage_is_moved_not_dropped(self):
+        plan = _plan()
+        plan.define_town(TownDefinition("街", (TownStage("家", "w", conditions=(BUILT,)),)))
+        stage = plan.add("家", (BUILT,), position=0, stage=0)
+        with pytest.raises(ValueError, match="stage of the town"):
+            plan.drop(stage.id, "やめた")
+        plan.move(stage.id, 2)
+        assert plan.stage_goal() == plan.get(stage.id)
+
+    def test_completing_the_stage_moves_the_town_on(self):
+        stages = (
+            TownStage("家", "w", conditions=(BUILT,)),
+            TownStage("倉庫", "w", unresolved=("x",)),
+        )
+        plan = _plan()
+        plan.define_town(TownDefinition("街", stages))
+        plan.complete(plan.add("家", (BUILT,), stage=0).id)
+        assert (plan.town_stage, plan.current_stage, plan.town_complete) == (1, stages[1], False)
+        assert plan.stage_goal() is None
+
+    def test_a_stage_needs_something_to_do(self):
+        with pytest.raises(ValueError, match="nothing to do"):
+            TownStage("空", "w")
+        with pytest.raises(ValueError, match="cannot be a condition"):
+            TownStage("夜", "w", conditions=(GoalSpec(GoalPredicate.AT_HOME),))
 
     def test_dropping_needs_a_reason(self):
         with pytest.raises(ValueError, match="needs a reason"):

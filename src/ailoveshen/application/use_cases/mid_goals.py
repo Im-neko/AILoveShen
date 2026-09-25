@@ -21,6 +21,7 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError
 from ailoveshen.domain.value_objects import MidGoal
@@ -65,14 +66,21 @@ class MidGoalKeeper:
 
         A mid goal whose conditions the bridge rejects (it could not have been
         added so, but the world's rules may have changed) is dropped with the
-        reason rather than stopping play.
+        reason rather than stopping play. A town stage is never dropped: it is
+        logged and waits for its conditions to be fixed.
+
+        Then the town moves on: the stage worked on becomes a mid goal at the
+        top of the list once it can be done (no unresolved parts), and the
+        town's completion is told when its last stage is done.
         """
         events: list[DomainEvent] = []
         for goal in plan.pending:
             try:
                 statuses = await self._bridge.check(goal.conditions)
             except GoalRejectedError as e:
-                if plan.get(goal.id) is not None:
+                if goal.stage is not None:
+                    logger.error(f"Town stage mid goal {goal.describe()} cannot be judged: {e}")
+                elif plan.get(goal.id) is not None:
                     events.append(
                         _dropped(plan.drop(goal.id, f"its conditions cannot be judged: {e}"))
                     )
@@ -86,8 +94,33 @@ class MidGoalKeeper:
                 events.append(
                     MidGoalCompletedEvent(title=done.title, requested_by=done.requested_by or "")
                 )
+                if done.stage is not None and plan.town_complete:
+                    assert plan.town is not None
+                    logger.info(f"Town complete: {plan.town.text}")
+                    events.append(TownCompletedEvent(text=plan.town.text))
+        events.extend(self._next_stage(plan))
         self._store.save(plan)
         await self._publish(events)
+
+    def _next_stage(self, plan: MidGoalPlan) -> list[DomainEvent]:
+        stage = plan.current_stage
+        if stage is None or not stage.ready or plan.stage_goal() is not None:
+            return []
+        try:
+            goal = plan.add(
+                title=stage.title,
+                conditions=stage.conditions,
+                reason=stage.why,
+                position=0,
+                stage=plan.town_stage,
+            )
+        except ValueError as e:
+            logger.warning(f"Town stage {plan.town_stage + 1} waits for room in the list: {e}")
+            return []
+        logger.info(
+            f"Town stage {plan.town_stage + 1} is now mid goal {goal.id}: {goal.describe()}"
+        )
+        return [_added(plan, goal)]
 
     async def check_new(self, changes: Sequence[PlanChange]) -> None:
         """

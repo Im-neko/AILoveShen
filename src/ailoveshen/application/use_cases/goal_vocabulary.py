@@ -18,6 +18,8 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    TownDefinition,
+    TownStage,
 )
 
 MAX_GOAL_COUNT = 64
@@ -302,3 +304,87 @@ def predicates_now(obs: GameObservation) -> list[GoalPredicate]:
         out.append(GoalPredicate.LIT)
     out.append(GoalPredicate.EXPLORED)
     return out
+
+
+MAX_TOWN_STAGES = 5
+
+
+def _stage_properties() -> dict[str, Any]:
+    return {
+        "conditions": {
+            **_conditions_schema(),
+            "minItems": 0,
+            "description": "What is judged done from the world, with the conditions available now",
+        },
+        "unresolved": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Parts that cannot be written with the conditions available now "
+            "(each with what would be needed to do or judge it)",
+        },
+    }
+
+
+def town_schema() -> dict[str, Any]:
+    """JSON schema of a town definition: the text and its stages, in order."""
+    return {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "What the town is, in 2-3 sentences"},
+            "stages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_TOWN_STAGES,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "why": {"type": "string", "description": "Why the town needs it"},
+                        **_stage_properties(),
+                    },
+                    "required": ["title", "why", "conditions", "unresolved"],
+                },
+            },
+        },
+        "required": ["text", "stages"],
+    }
+
+
+def stage_schema() -> dict[str, Any]:
+    """JSON schema of a stage written again with the conditions available now."""
+    return {
+        "type": "object",
+        "properties": _stage_properties(),
+        "required": ["conditions", "unresolved"],
+    }
+
+
+def parse_stage(data: dict[str, Any], title: str, why: str) -> TownStage:
+    """
+    Parse a stage's conditions and the parts not resolved yet.
+
+    Raises:
+        ValueError: If a condition is malformed or cannot be judged from the world
+    """
+    conditions = tuple(parse_spec(c) for c in data.get("conditions") or [])
+    for c in conditions:
+        if c.predicate not in CONDITION_PREDICATES:
+            raise ValueError(f"{c.predicate.value} cannot be a condition of a town stage")
+    unresolved = tuple(str(u).strip() for u in data.get("unresolved") or [] if str(u).strip())
+    return TownStage(title=title, why=why, conditions=conditions, unresolved=unresolved)
+
+
+def parse_town(data: dict[str, Any]) -> TownDefinition:
+    """
+    Parse a town definition.
+
+    Raises:
+        ValueError: If the text or a stage is missing or malformed
+    """
+    stages = []
+    for raw in data.get("stages") or []:
+        title = str(raw.get("title", "")).strip()
+        if not title:
+            raise ValueError("a town stage needs a title")
+        stages.append(parse_stage(raw, title, str(raw.get("why", ""))))
+    return TownDefinition(text=str(data.get("text", "")).strip(), stages=tuple(stages))

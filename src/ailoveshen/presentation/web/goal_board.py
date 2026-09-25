@@ -50,7 +50,14 @@ EVENTS: tuple[type[DomainEvent], ...] = (
 def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
     """The goals as the board shows them (the /api/goals JSON)."""
     if activity is None:
-        return {"playing": False, "mission": None, "mid_goals": [], "goal": None, "home": None}
+        return {
+            "playing": False,
+            "mission": None,
+            "town": None,
+            "mid_goals": [],
+            "goal": None,
+            "home": None,
+        }
     pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
     finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
     titles = {g.id: g.title for g in activity.mid_goals}
@@ -60,6 +67,7 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
     return {
         "playing": True,
         "mission": activity.mission.text if activity.mission else None,
+        "town": _town(activity),
         "mid_goals": [
             _mid_goal(g, "current" if i == 0 else "pending") for i, g in enumerate(pending)
         ]
@@ -74,6 +82,31 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             "progress": list(status.lines) if status else [],
         },
         "home": _home(obs),
+    }
+
+
+def _town(activity: Activity) -> dict[str, Any] | None:
+    town = activity.town
+    if town is None:
+        return None
+    return {
+        "text": town.text,
+        "complete": activity.town_stage >= len(town.stages),
+        "stages": [
+            {
+                "title": s.title,
+                "why": s.why,
+                # done / current / later
+                "state": "done"
+                if i < activity.town_stage
+                else "current"
+                if i == activity.town_stage
+                else "later",
+                "conditions": [c.describe() for c in s.conditions],
+                "unresolved": list(s.unresolved),
+            }
+            for i, s in enumerate(town.stages)
+        ],
     }
 
 
@@ -95,6 +128,7 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
         "title": goal.title,
         "state": state,  # current / pending / done / dropped
         "requested_by": goal.requested_by,
+        "stage": goal.stage,  # the town stage it stands for (index), if any
         "conditions": [c.describe() for c in goal.conditions],
         "progress": list(goal.progress),
         "summary": list(goal.summary()),  # without the solver's sub-steps

@@ -25,6 +25,8 @@ from ailoveshen.domain.value_objects import (
     MidGoal,
     MidGoalState,
     Mission,
+    TownDefinition,
+    TownStage,
 )
 
 if TYPE_CHECKING:
@@ -162,7 +164,10 @@ class Conversation(Entity):
 class MidGoalPlan(Entity):
     """
     The mission and its mid goals in priority order (the first pending one is
-    worked on now).
+    worked on now), and the town the mission builds: its definition and how
+    many of its stages are done. The stage worked on is a mid goal of the
+    streamer's own; it is done like any other (from the world) and moves the
+    town on. It may be moved down the list but not dropped.
 
     The limits keep viewers from taking the stream over: a viewer's mid goal
     goes behind the one being worked on, at most one per viewer and
@@ -183,6 +188,8 @@ class MidGoalPlan(Entity):
     _goals: list[MidGoal] = field(default_factory=list, init=False, repr=False)
     _finished: deque[MidGoal] = field(init=False, repr=False)
     _next_id: int = field(default=1, init=False, repr=False)
+    _town: Optional[TownDefinition] = field(default=None, init=False, repr=False)
+    _town_stage: int = field(default=0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Validate limits."""
@@ -206,6 +213,37 @@ class MidGoalPlan(Entity):
         """The mid goal worked on now (the first pending one)."""
         return self._goals[0] if self._goals else None
 
+    @property
+    def town(self) -> Optional[TownDefinition]:
+        """What the town is and its stages (None until defined)."""
+        return self._town
+
+    @property
+    def town_stage(self) -> int:
+        """How many of the town's stages are done."""
+        return self._town_stage
+
+    @property
+    def current_stage(self) -> Optional[TownStage]:
+        """The town's stage worked on (None: no town yet, or it is complete)."""
+        if self._town is None or self._town_stage >= len(self._town.stages):
+            return None
+        return self._town.stages[self._town_stage]
+
+    @property
+    def town_complete(self) -> bool:
+        """Whether every stage of the town is done."""
+        return self._town is not None and self._town_stage >= len(self._town.stages)
+
+    def define_town(self, town: TownDefinition) -> None:
+        """Set what the town is (its unresolved stages may be written again as abilities come)."""
+        self._town = town
+        self.updated_at = _utc_now()
+
+    def stage_goal(self) -> Optional[MidGoal]:
+        """The pending mid goal standing for the town's current stage."""
+        return next((g for g in self._goals if g.stage == self._town_stage), None)
+
     def get(self, mid_goal_id: str) -> Optional[MidGoal]:
         """A pending mid goal by id."""
         return next((g for g in self._goals if g.id == mid_goal_id), None)
@@ -217,6 +255,7 @@ class MidGoalPlan(Entity):
         reason: str = "",
         requested_by: Optional[str] = None,
         position: Optional[int] = None,
+        stage: Optional[int] = None,
     ) -> MidGoal:
         """
         Add a mid goal at `position` (0-based among the pending; None: last).
@@ -237,6 +276,7 @@ class MidGoalPlan(Entity):
             conditions=conditions,
             reason=reason,
             requested_by=requested_by,
+            stage=stage,
         )
         earliest = 1 if requested_by is not None and self._goals else 0
         at = (
@@ -260,11 +300,18 @@ class MidGoalPlan(Entity):
         """Give a mid goal up; the reason is required (it is said on stream)."""
         if not reason:
             raise ValueError(f"dropping {mid_goal_id} needs a reason")
+        if self._require(mid_goal_id).stage is not None:
+            raise ValueError(
+                f"{mid_goal_id} is a stage of the town: move it down instead of dropping it"
+            )
         return self._finish(mid_goal_id, MidGoalState.DROPPED, reason)
 
     def complete(self, mid_goal_id: str) -> MidGoal:
-        """Mark a mid goal done (its conditions hold in the world)."""
-        return self._finish(mid_goal_id, MidGoalState.DONE, "its conditions hold")
+        """Mark a mid goal done (its conditions hold in the world); a stage moves the town on."""
+        done = self._finish(mid_goal_id, MidGoalState.DONE, "its conditions hold")
+        if done.stage is not None and done.stage == self._town_stage:
+            self._town_stage += 1
+        return done
 
     def judged(self, mid_goal_id: str, progress: tuple[str, ...]) -> None:
         """Keep how a mid goal's conditions stand."""
@@ -281,12 +328,21 @@ class MidGoalPlan(Entity):
             return self.drop(goal.id, f"it took {goal.steps} steps, over the budget for a request")
         return None
 
-    def restore(self, pending: list[MidGoal], finished: list[MidGoal], next_id: int) -> None:
+    def restore(
+        self,
+        pending: list[MidGoal],
+        finished: list[MidGoal],
+        next_id: int,
+        town: Optional[TownDefinition] = None,
+        town_stage: int = 0,
+    ) -> None:
         """Put back a saved plan (ids stay as they were)."""
         self._goals = list(pending)
         self._finished.clear()
         self._finished.extend(finished)
         self._next_id = next_id
+        self._town = town
+        self._town_stage = town_stage
 
     @property
     def next_id(self) -> int:
@@ -370,6 +426,8 @@ class PlaySession(Entity):
         """What the streamer is doing and why (seen by goal decisions, commentary and replies)."""
         return Activity(
             mission=self.plan.mission,
+            town=self.plan.town,
+            town_stage=self.plan.town_stage,
             mid_goals=self.plan.pending + self.plan.finished,
             goal=self.goal,
             observation=self.last_observation,

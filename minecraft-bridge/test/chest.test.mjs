@@ -105,3 +105,14 @@ test('what the mid goals keep in the chests is not taken out, except food when s
   const r = solve(k, world({ stored: takeable(stored, goal.keep, false) }), [{ spec: 'food', count: 6 }])
   assert.ok(!kinds(r).some((l) => l.startsWith('withdraw')), kinds(r).join())
 })
+
+test('check names what nothing the bot can do gets (a town stage must not ask for it)', () => {
+  const bot = { entity: { position: v(2, 70, 2) }, time: { timeOfDay: 1000 }, inventory: { items: () => [] } }
+  const state = { home, plan: null, memory: newMemory() }
+  // From nothing: smelted from raw iron dug with a stone pickaxe made from ... logs (was too deep for the solver)
+  const [sword] = checkConditions([{ predicate: 'have', item: 'iron_sword', count: 1 }], bot, state, k, world())
+  assert.equal(sword.met, false)
+  assert.deepEqual(sword.impossible, [])
+  const [bedrock] = checkConditions([{ predicate: 'have', item: 'bedrock', count: 1 }], bot, state, k, world())
+  assert.deepEqual(bedrock.impossible, ['no way to get bedrock'])
+})

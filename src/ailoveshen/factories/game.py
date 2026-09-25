@@ -6,6 +6,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
+from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.domain.entities import Conversation, MidGoalPlan
 from ailoveshen.domain.value_objects import Mission
 from ailoveshen.factories.llm import create_character_profile
@@ -114,15 +115,25 @@ def create_game_service(
     prompt_builder = GamePromptTemplateBuilder()
     store = JsonMissionStore(minecraft.mission.store_path)
     mid_goals = MidGoalKeeper(bridge=bridge, event_publisher=event_publisher, store=store)
+    profile = create_character_profile(character)
+    town = TownPlanner(
+        text_generator=text_generator,
+        prompt_builder=prompt_builder,
+        bridge=bridge,
+        event_publisher=event_publisher,
+        character=profile,
+        store=store,
+    )
 
     start = StartPlayUseCase(
         text_generator=text_generator,
         prompt_builder=prompt_builder,
         bridge=bridge,
         event_publisher=event_publisher,
-        character=create_character_profile(character),
+        character=profile,
         plan=create_mid_goal_plan(minecraft.mission),
         store=store,
+        town=town,
         max_steps_per_goal=minecraft.max_steps_per_goal,
         max_consecutive_failures=minecraft.max_consecutive_failures,
         max_stalled_steps=minecraft.max_stalled_steps,

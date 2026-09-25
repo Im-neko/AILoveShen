@@ -77,7 +77,12 @@ class MineflayerBridgeClient(IMinecraftBridge):
                 f"Minecraft bridge POST /check -> {response.status_code}: {response.text[:200]}"
             )
         return [
-            ConditionStatus(spec=spec, met=bool(r["met"]), lines=tuple(r.get("lines", [])))
+            ConditionStatus(
+                spec=spec,
+                met=bool(r["met"]),
+                lines=tuple(r.get("lines", [])),
+                impossible=tuple(r.get("impossible", [])),
+            )
             for spec, r in zip(specs, response.json(), strict=True)
         ]
 

@@ -189,3 +189,18 @@ class HouseCompletedEvent(DomainEvent):
     """Event raised when every block of the house is in place."""
 
     name: str = ""
+
+
+@dataclass(frozen=True)
+class TownDefinedEvent(DomainEvent):
+    """Event raised when the streamer has decided what the town of the mission is."""
+
+    text: str = ""
+    stages: tuple[str, ...] = ()  # their titles, in order
+
+
+@dataclass(frozen=True)
+class TownCompletedEvent(DomainEvent):
+    """Event raised when every stage of the town is done."""
+
+    text: str = ""

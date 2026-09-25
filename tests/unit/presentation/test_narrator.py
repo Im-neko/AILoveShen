@@ -11,6 +11,8 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    TownCompletedEvent,
+    TownDefinedEvent,
 )
 from ailoveshen.domain.value_objects import Activity
 from ailoveshen.presentation.services.narrator import Narrator
@@ -151,4 +153,17 @@ class TestNarrator:
                 "小目標 built() が達成（met）",
                 "新しい小目標: have(wooden_sword, 1)（「剣」のため。身を守る）",
             ]
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_town_is_told_when_decided_and_when_done(self, narrator, llm):
+        """Test the town's definition and its completion are told with the next goal."""
+        await narrator.on_town_defined(TownDefinedEvent(text="小さな街", stages=("備蓄", "明かり")))
+        await narrator.on_town_completed(TownCompletedEvent(text="小さな街"))
+        await narrator.on_goal_set(GoalSetEvent(goal="at_home()", reason="夜", mid_goal=""))
+        await narrator.drain()
+
+        assert _events(llm)[0][:2] == [
+            "大目標の街をこう決めた: 小さな街（段階: 備蓄 → 明かり）",
+            "街が完成した（小さな街）",
         ]

@@ -16,7 +16,7 @@
 
 import { FUELS } from './knowledge.mjs'
 
-const MAX_DEPTH = 6
+const MAX_DEPTH = 10 // from nothing to an iron sword: ingot, raw iron, stone pickaxe, cobblestone, wooden pickaxe, planks, log
 const EXPLORE_COST = 100 // a source not in sight has to be searched for first
 const RECALL_COST = 50 // one seen before: a trip back to where it was
 const IMPOSSIBLE = 1e6
@@ -29,12 +29,14 @@ export function solve (knowledge, world, needs) {
   const nodes = needs.map(({ spec, count }) => need(knowledge, world, spec, count, ledger, [], 0).node)
   const leaves = []
   const blocked = []
-  for (const n of nodes) collect(n, leaves, blocked)
+  const impossible = []
+  for (const n of nodes) collect(n, leaves, blocked, impossible)
   return {
     met: nodes.every((n) => n.have >= n.need),
     nodes,
     leaves,
     blocked,
+    impossible, // what nothing the bot can do gets (blocked too)
     remaining: nodes.reduce((s, n) => s + n.units, 0),
     lines: nodes.flatMap((n) => lines(n, 0))
   }
@@ -234,13 +236,15 @@ function needAny (k, world, items, ledger, path, depth) {
   return best
 }
 
-function collect (node, leaves, blocked) {
+function collect (node, leaves, blocked, impossible) {
   if (node.have >= node.need) return
-  for (const c of node.children) collect(c, leaves, blocked)
+  for (const c of node.children) collect(c, leaves, blocked, impossible)
   const leaf = node.leaf
   if (!leaf) return
-  if (leaf.kind === 'none') blocked.push(leaf.reason)
-  else if (leaf.kind === 'explore') { blocked.push(leaf.reason); leaves.push(leaf) } else if (leaf.kind === 'craft') {
+  if (leaf.kind === 'none') {
+    blocked.push(leaf.reason)
+    impossible.push(leaf.reason)
+  } else if (leaf.kind === 'explore') { blocked.push(leaf.reason); leaves.push(leaf) } else if (leaf.kind === 'craft') {
     if (!leaf.ready) return
     if (leaf.unlocked) leaves.push(leaf)
     else blocked.push(`the recipe for ${leaf.item} is not unlocked yet`)

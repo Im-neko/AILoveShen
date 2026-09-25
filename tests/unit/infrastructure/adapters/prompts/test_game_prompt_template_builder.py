@@ -19,6 +19,8 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Mission,
     Side,
+    TownDefinition,
+    TownStage,
 )
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
@@ -33,6 +35,19 @@ HOUSE = MidGoal(
     "m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),), progress=("30/70", "  sub-step")
 )
 ALL = list(GoalPredicate)
+FOOD = GoalSpec(GoalPredicate.STORED, item="food", count=16)
+TOWN = TownDefinition(
+    "安全で備えのある小さな街",
+    (
+        TownStage("備蓄", "冬に備える", conditions=(FOOD,)),
+        TownStage(
+            "敷地の安全", "夜に備える", conditions=(GoalSpec(GoalPredicate.LIT, distance=16),)
+        ),
+        TownStage(
+            "複数の建物", "街らしく", unresolved=("倉庫を建てる（2 軒目を建てる行動が要る）",)
+        ),
+    ),
+)
 
 
 def _obs(**kwargs) -> GameObservation:
@@ -72,10 +87,11 @@ def _obs(**kwargs) -> GameObservation:
     return GameObservation(**params)
 
 
-def _goal_prompt(obs=None, recent_goals=(), mid_goals=(HOUSE,), **kwargs) -> str:
+def _goal_prompt(obs=None, recent_goals=(), mid_goals=(HOUSE,), activity=None, **kwargs) -> str:
     args = {
         "blueprint": BLUEPRINT,
-        "activity": Activity(
+        "activity": activity
+        or Activity(
             mission=MISSION,
             mid_goals=mid_goals,
             goal=PLANKS,
@@ -224,6 +240,47 @@ class TestGamePromptTemplateBuilder:
         assert "完了条件に使えるのは次だけ" in prompt
         assert "食べ物を探すときも have(food, n) を選ぶ" in prompt
         assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt
+
+    def test_goal_prompt_shows_the_town_and_its_stage(self):
+        """Test the town's stages are marked, and the stage goal cannot be dropped."""
+        stage = MidGoal("m4", "備蓄", (FOOD,), stage=0)
+        activity = Activity(mission=MISSION, town=TOWN, town_stage=0, mid_goals=(stage,))
+
+        prompt = _goal_prompt(activity=activity)
+
+        assert "- 街の定義: 安全で備えのある小さな街" in prompt
+        assert "  1. [今] 備蓄: 冬に備える\n  2. [先] 敷地の安全: 夜に備える" in prompt
+        assert "[m4] 備蓄 [街の段階 1: やめられない] [取り組み中]" in prompt
+        assert "街の段階の中目標はやめられない" in prompt
+
+    def test_goal_prompt_shows_what_the_town_waits_for(self):
+        """Test the stage worked on shows its unresolved parts; a complete town says so."""
+        waiting = _goal_prompt(activity=Activity(mission=MISSION, town=TOWN, town_stage=2))
+        assert "3. [今] 複数の建物: 街らしく\n     まだできないこと" in waiting
+        assert "倉庫を建てる" in waiting
+
+        done = _goal_prompt(activity=Activity(mission=MISSION, town=TOWN, town_stage=3))
+        assert "街は完成した（全 3 段階）" in done
+
+    def test_town_prompt(self):
+        """Test the town prompt has the mission, the abilities, the conditions and the error."""
+        prompt = GamePromptTemplateBuilder().build_town_prompt(
+            CharacterProfile(), MISSION, previous_error="no way to get iron_sword"
+        )
+
+        assert "「生き延びながら家を建て、街にしていく」" in prompt
+        assert "stored(" in prompt and "lit(" in prompt
+        assert "5 段階まで" in prompt
+        assert "no way to get iron_sword\n定義し直してください" in prompt
+
+    def test_stage_prompt(self):
+        """Test the stage prompt keeps the stage and lists what is not resolved."""
+        prompt = GamePromptTemplateBuilder().build_stage_prompt(TOWN, TOWN.stages[2])
+
+        assert "その段階「複数の建物」（街らしく）" in prompt
+        assert "- 倉庫を建てる（2 軒目を建てる行動が要る）" in prompt
+        assert "すでにある conditions: なし" in prompt
+        assert "前回の答え" not in prompt
 
     def test_goal_prompt_with_the_home_built_before(self):
         """Test no house to build is shown when the home was built in an earlier run."""

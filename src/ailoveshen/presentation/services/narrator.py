@@ -15,6 +15,8 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    TownCompletedEvent,
+    TownDefinedEvent,
 )
 from ailoveshen.domain.value_objects import Activity
 from ailoveshen.presentation.services.llm_service import LLMService
@@ -28,7 +30,8 @@ class Narrator:
     What happens at a small-goal boundary is told together with the next goal
     (one utterance): the small goal's end, mid goals completed or dropped
     (a viewer's request dropped is never silent), mid goals the streamer added,
-    and the house's completion. A viewer's request accepted is not told again
+    the house's completion, and the town (what it is when decided, and its
+    completion). A viewer's request accepted is not told again
     (the reply already said when it will be done).
 
     The activity is taken when the event happens, so the commentary talks
@@ -64,6 +67,8 @@ class Narrator:
         bus.subscribe(MidGoalCompletedEvent, self.on_mid_goal_completed)
         bus.subscribe(MidGoalDroppedEvent, self.on_mid_goal_dropped)
         bus.subscribe(HouseCompletedEvent, self.on_house_completed)
+        bus.subscribe(TownDefinedEvent, self.on_town_defined)
+        bus.subscribe(TownCompletedEvent, self.on_town_completed)
 
     async def on_goal_ended(self, event: GoalEndedEvent) -> None:
         """Keep the end to tell it with the next goal."""
@@ -98,6 +103,16 @@ class Narrator:
     async def on_house_completed(self, event: HouseCompletedEvent) -> None:
         """The house is done: told with the next goal (the build goal ends with it)."""
         self._pending.append(f"家「{event.name}」が完成した")
+
+    async def on_town_defined(self, event: TownDefinedEvent) -> None:
+        """The town the streamer decided on is told with the next goal."""
+        self._pending.append(
+            f"大目標の街をこう決めた: {event.text}（段階: {' → '.join(event.stages)}）"
+        )
+
+    async def on_town_completed(self, event: TownCompletedEvent) -> None:
+        """The town is done: told with the next goal."""
+        self._pending.append(f"街が完成した（{event.text}）")
 
     async def drain(self) -> None:
         """Wait for the commentary still being generated."""

@@ -187,6 +187,7 @@ class TestStartPlay:
             character=CharacterProfile(),
             plan=plan or _plan(),
             store=store,
+            town=AsyncMock(),
             max_steps_per_goal=7,
             max_stalled_steps=5,
         )

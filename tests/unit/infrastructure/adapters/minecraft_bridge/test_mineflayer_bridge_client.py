@@ -136,6 +136,7 @@ class TestMineflayerBridgeClient:
                         "spec": {"predicate": "placed", "item": "bed", "where": "home"},
                         "met": False,
                         "lines": ["a bed in the house: no"],
+                        "impossible": ["no way to get white_wool"],
                     },
                 ],
             )
@@ -148,9 +149,9 @@ class TestMineflayerBridgeClient:
             "path": "/check",
             "body": {"specs": [{"predicate": "built"}, bed.to_dict()]},
         }
-        assert [(s.spec, s.met, s.lines) for s in statuses] == [
-            (built, True, ()),
-            (bed, False, ("a bed in the house: no",)),
+        assert [(s.spec, s.met, s.lines, s.impossible) for s in statuses] == [
+            (built, True, (), ()),
+            (bed, False, ("a bed in the house: no",), ("no way to get white_wool",)),
         ]
 
     @pytest.mark.asyncio

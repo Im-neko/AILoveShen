@@ -1,7 +1,14 @@
 """Tests for JsonMissionStore adapter."""
 
 from ailoveshen.domain.entities import MidGoalPlan
-from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, MidGoalState, Mission
+from ailoveshen.domain.value_objects import (
+    GoalPredicate,
+    GoalSpec,
+    MidGoalState,
+    Mission,
+    TownDefinition,
+    TownStage,
+)
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
 
 BUILT = GoalSpec(GoalPredicate.BUILT)
@@ -37,3 +44,28 @@ class TestJsonMissionStore:
         assert saved.pending[0].steps == 1
         assert saved.next_id == 4
         assert not (tmp_path / "sub" / "mission.json.tmp").exists()
+
+    def test_town_round_trip(self, tmp_path):
+        """Test the town, its stage done and the stage goal come back as they were."""
+        town = TownDefinition(
+            "小さな街",
+            (
+                TownStage("家", "住む", conditions=(BUILT,)),
+                TownStage("明かり", "夜", conditions=(GoalSpec(GoalPredicate.LIT, distance=16),)),
+                TownStage("倉庫", "街らしく", unresolved=("2 軒目",)),
+            ),
+        )
+        plan = MidGoalPlan(mission=Mission("街にしていく"))
+        plan.define_town(town)
+        plan.add("家", (BUILT,), stage=0)
+        plan.complete("m1")
+        plan.add("明かり", town.stages[1].conditions, stage=1)
+        store = JsonMissionStore(tmp_path / "mission.json")
+
+        store.save(plan)
+        saved = store.load()
+
+        assert saved.town == town
+        assert saved.town_stage == 1
+        assert saved.pending[0].stage == 1
+        assert saved.finished[0].stage == 0

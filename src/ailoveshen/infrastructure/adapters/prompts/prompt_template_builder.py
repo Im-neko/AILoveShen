@@ -11,6 +11,7 @@ from ailoveshen.domain.value_objects import (
     GenerationContext,
 )
 from ailoveshen.infrastructure.adapters.prompts.stream_context import (
+    ABILITIES,
     NO_INFORMATION,
     format_activity,
     format_conditions,
@@ -122,16 +123,6 @@ $conditions
 $abilities
 $previous_error""")
 
-# What the Minecraft bridge's primitives and reflexes do (minecraft-bridge/src/primitives.mjs,
-# candidates.mjs): keep in step with them, so replies never promise what the streamer cannot do
-ABILITIES = """\
-- 木を切る、石・石炭・鉄を掘る、動物を狩る、道具・ベッド・チェストなどをクラフトする
-- かまどで焼く（鉄の延べ棒、木炭、焼いた肉）。鉄の道具や剣、石炭がなくても木炭で松明が作れる
-- 家を 1 軒建てる、ベッドで寝る、家のチェストに物を入れる・出す
-- 近くの敵と戦う・逃げる、お腹が空いたら食べる
-- 地上を方角を決めて探索する、前に見た場所（資源・動物・チェスト）を覚えていて戻る
-- 暗い場所（洞窟の入口や張り出しの下など、光のない所）では、松明を持っていれば置いて湧き潰しする
-- まだできない: 洞窟の奥へ降りて探検する、2 軒目の建物、畑、釣り、ネザー"""
 
 OUTPUT_TEXT = "返答テキストのみを出力してください。"
 OUTPUT_JSON = (

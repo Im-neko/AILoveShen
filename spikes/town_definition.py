@@ -13,8 +13,7 @@ import asyncio
 import json
 
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
-from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import ABILITIES
-from ailoveshen.infrastructure.adapters.prompts.stream_context import format_conditions
+from ailoveshen.infrastructure.adapters.prompts.stream_context import ABILITIES, format_conditions
 from ailoveshen.infrastructure.config import load_settings
 
 PROMPT = """\
