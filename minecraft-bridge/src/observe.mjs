@@ -111,6 +111,7 @@ export function summarize (bot, history, extra = {}) {
       position: { x: round(me.x), y: round(me.y), z: round(me.z) },
       held_item: bot.heldItem ? bot.heldItem.name : null,
       equipment: equipment(bot),
+      light: lightAt(bot),
       in_water: !!bot.entity.isInWater
     },
     inventory: inventoryCounts(bot),
@@ -119,6 +120,20 @@ export function summarize (bot, history, extra = {}) {
     recent_actions: history.slice(-HISTORY),
     ...extra
   }
+}
+
+// Light at the feet: block light (torches, ...) and sky light (15 under open sky, lower when covered)
+export function lightAt (bot) {
+  const b = bot.blockAt(bot.entity.position.floored())
+  return { block: b?.light ?? null, sky: b?.skyLight ?? null }
+}
+
+// Dark even by day (a cave, under an overhang): no block light and little sky. Hostile mobs spawn
+// only where the block light is 0
+export const DARK_SKY = 7
+export function isDark (bot) {
+  const { block, sky } = lightAt(bot)
+  return block === 0 && sky !== null && sky <= DARK_SKY
 }
 
 // Worn armour and the off hand (inventory window slots), null where empty

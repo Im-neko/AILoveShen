@@ -122,6 +122,14 @@ async function goto (bot, goal) {
 
 const goNear = (bot, pos, range) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range))
 
+// A torch stands where the bot stands: an empty cell (no liquid) on a full block
+export function torchSpot (bot) {
+  const feet = bot.entity.position.floored()
+  const cell = bot.blockAt(feet)
+  const floor = bot.blockAt(feet.offset(0, -1, 0))
+  return cell?.boundingBox === 'empty' && !/water|lava/.test(cell.name) && floor?.boundingBox === 'block' ? feet : null
+}
+
 // A long trip is walked one leg per step, like exploring: each action stays short, so it ends well
 // within its timeout and the next step sees the world again (270m home took longer than 45s)
 export const LEG = 48
@@ -440,6 +448,16 @@ export const PRIMITIVES = {
       await window.withdraw(bot.registry.itemsByName[c.item].id, null, n)
       return `took ${n} ${c.item} from the chest`
     })
+  },
+  async place_torch (bot) {
+    const spot = torchSpot(bot)
+    if (!spot) throw new Error('no floor to stand a torch on here')
+    const torch = bot.inventory.items().find((i) => i.name === 'torch')
+    if (!torch) throw new Error('no torch')
+    await bot.equip(torch, 'hand')
+    await bot.placeBlock(bot.blockAt(spot.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
+    if (bot.blockAt(spot)?.name !== 'torch') throw new Error('the torch was not placed')
+    return `placed a torch at ${spot.x},${spot.y},${spot.z}`
   },
   async goto_memory (bot, state, c) {
     const leg = await legToward(bot, c.pos, `where ${c.target} was seen`)

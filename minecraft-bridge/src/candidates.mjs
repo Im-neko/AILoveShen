@@ -12,10 +12,10 @@
 // next /act, which grounds the candidates again and runs the one with that id.
 
 import vec3Pkg from 'vec3'
-import { round, bearing, dayPhase, burningInDaylight } from './observe.mjs'
+import { round, bearing, dayPhase, burningInDaylight, isDark } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
 import { recall, visited, chests, chestWith } from './memory.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
+import { reachableThreats, bestWeapon, nearbyDrops, findTable, torchSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
@@ -185,6 +185,10 @@ function forNeeds (bot, state, knowledge) {
   // A fight given up at critical health (e.g. for cleared) needs a way back whatever the goal
   if (state.home && bot.health <= HEALTH_CRITICAL && !isInside(bot, state.home)) {
     out.push({ id: 'go home', verb: 'go_home', target: 'home', inPlace: true, distance: dist(bot, state.home.inside) })
+  }
+  // Lighting the dark keeps mobs from spawning; once lit, it is offered again only farther on
+  if (isDark(bot) && bot.inventory.items().some((i) => i.name === 'torch') && torchSpot(bot)) {
+    out.push({ id: 'place a torch here', verb: 'place_torch', target: 'torch', inPlace: true })
   }
   const hole = state.home?.breach[0]
   if (hole) out.push({ id: 'close the hole in the house wall', verb: 'repair_wall', target: 'house wall', inPlace: true, at: fmt(hole) })

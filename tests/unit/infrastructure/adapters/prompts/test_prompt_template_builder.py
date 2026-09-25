@@ -138,5 +138,9 @@ class TestPromptTemplateBuilder:
         assert "今の小目標は中断しない" in prompt
         assert "同じ人の頼みは同時に1つまで" in prompt
         assert "大目標と今の目標は変えない" in prompt
+        # A request about how to do things is answered from what the streamer can really do
+        assert "## 自分でできること（これ以外はできない）" in prompt
+        assert "松明を持っていれば置いて湧き潰しする" in prompt
+        assert "できない約束はしない" in prompt
         assert "前回の返答の頼みは受けられなかった: neko already has a request" in prompt
         assert "decline" in prompt

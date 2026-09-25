@@ -17,6 +17,7 @@ function eats (food, items) {
     health: 20,
     food,
     heldItem: null,
+    blockAt: () => null, // no light data: never dark
     registry: md,
     inventory: { items: () => items.map((name) => ({ name, count: 1 })) }
   }

@@ -63,6 +63,7 @@ test('searching offers the places remembered first, then directions not covered 
     health: 20,
     food: 20,
     heldItem: null,
+    blockAt: () => null, // no light data: never dark
     inventory: { items: () => [] }
   }
   const state = { home: null, plan: null, unreachableDrops: new Set(), memory }

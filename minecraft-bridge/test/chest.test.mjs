@@ -77,6 +77,7 @@ test('a full inventory in the house offers the biggest spare stacks to the chest
     health: 20,
     food: 20,
     heldItem: null,
+    blockAt: () => null, // no light data: never dark
     registry: md,
     inventory: { items: () => items, emptySlotCount: () => 3 }
   }
