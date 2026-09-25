@@ -9,7 +9,7 @@
 
 ### Gemini が設計する建物（設計書 25、1 段目） (2026-09-25)
 
-**Commit**: 次のコミット
+**Commit**: `d21bcfb`
 
 - ユーザー「家を広げたり、Gemini が思い描いたものを作れるように」「置き場所は周りを見渡して vision で」「大きな建築も」→ 設計書 25（15 C の一般化）。おすすめのまま: 1 つ 600 ブロック・32x16x32 まで、家から 48 以内、壊せるのは設計が空けると書いた家の壁だけ
 - 形の組み合わせ（`BuildDesign` / `BuildShape` / `ShapeKind` / `BuildAnchor`、domain）: fill・hollow_box・clear・door、材料は planks/log/cobblestone/dirt。展開は空けるマス（上から）→ ブロック（下の層、外周から）→ ドア
