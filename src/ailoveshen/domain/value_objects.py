@@ -360,6 +360,7 @@ class GoalPredicate(str, Enum):
     The vocabulary goals are set in (judged by the Minecraft bridge from the world).
 
     - HAVE: hold `count` of an item or group (planks, log, door, bed, wool, food, ...)
+    - STORED: `count` of an item or group in the chests (as remembered when last opened)
     - BUILT: every block of the house plan is in place
     - PLACED: an item placed somewhere (a bed in the home)
     - AT_HOME: inside the house with the door closed
@@ -375,6 +376,7 @@ class GoalPredicate(str, Enum):
     THROUGH_NIGHT = "through_night"
     EXPLORED = "explored"
     CLEARED = "cleared"
+    STORED = "stored"
 
 
 @dataclass(frozen=True)
@@ -397,11 +399,12 @@ class GoalSpec:
 
     def __post_init__(self) -> None:
         """Check the arguments the predicate needs."""
-        if self.predicate == GoalPredicate.HAVE:
+        if self.predicate in (GoalPredicate.HAVE, GoalPredicate.STORED):
+            name = self.predicate.value
             if not self.item:
-                raise ValueError("have needs an item")
+                raise ValueError(f"{name} needs an item")
             if self.count is None or self.count < 1:
-                raise ValueError(f"have needs a positive count, got {self.count}")
+                raise ValueError(f"{name} needs a positive count, got {self.count}")
         if self.predicate == GoalPredicate.PLACED and not (self.item and self.where):
             raise ValueError("placed needs an item and where")
         if self.predicate == GoalPredicate.EXPLORED and (
@@ -449,7 +452,9 @@ class ConditionStatus:
 
 
 # Judged from the state of the world alone: they can be the completion conditions of mid goals
-CONDITION_PREDICATES = frozenset({GoalPredicate.BUILT, GoalPredicate.PLACED, GoalPredicate.HAVE})
+CONDITION_PREDICATES = frozenset(
+    {GoalPredicate.BUILT, GoalPredicate.PLACED, GoalPredicate.HAVE, GoalPredicate.STORED}
+)
 _SURVIVAL_PREDICATES = frozenset(
     {GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME, GoalPredicate.CLEARED}
 )

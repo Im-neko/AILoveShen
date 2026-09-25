@@ -365,7 +365,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_predicates_offered_follow_the_house(self, use_case, text_generator, bridge):
-        """Test goals about the house and home are offered only when they make sense."""
+        """Test goals about the house, home and chests are offered only when they make sense."""
         text_generator.generate_json.return_value = PLANKS
 
         await use_case.execute(_session())
@@ -388,6 +388,7 @@ class TestAdvancePlay:
             "through_night",
             "cleared",
             "placed",
+            "stored",
             "explored",
         ]
 

@@ -179,6 +179,20 @@ export function bedSpot (bot, home) {
   return free(foot) && free(head) ? { foot, inward } : null
 }
 
+// Where a chest goes: an interior cell off the line from the door to the bed (kept free to walk and
+// sleep), farthest from the door first
+export function chestSpot (bot, home) {
+  const inward = home.inside.minus(home.door)
+  const line = [0, 1, 2].map((i) => home.inside.plus(inward.scaled(i)))
+  const cells = []
+  for (let x = home.min.x; x <= home.max.x; x++) {
+    for (let z = home.min.z; z <= home.max.z; z++) cells.push(home.min.offset(x - home.min.x, 0, z - home.min.z))
+  }
+  return cells
+    .filter((p) => !line.some((l) => l.equals(p)) && bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')
+    .sort((a, b) => b.distanceTo(home.door) - a.distanceTo(home.door))[0] ?? null
+}
+
 const isWallBlock = (block) => !!block && (isPlanks(block.name) || isLog(block.name))
 const standable = (bot, p) => bot.blockAt(p)?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' &&
   bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'

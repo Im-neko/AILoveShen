@@ -31,7 +31,7 @@ from ailoveshen.domain.events import (
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
 )
-from ailoveshen.domain.value_objects import Activity, MidGoal, MidGoalState
+from ailoveshen.domain.value_objects import Activity, GameObservation, MidGoal, MidGoalState
 
 OVERLAY_HTML = Path(__file__).with_name("overlay.html")
 KEEPALIVE_SECONDS = 15.0
@@ -50,12 +50,13 @@ EVENTS: tuple[type[DomainEvent], ...] = (
 def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
     """The goals as the board shows them (the /api/goals JSON)."""
     if activity is None:
-        return {"playing": False, "mission": None, "mid_goals": [], "goal": None}
+        return {"playing": False, "mission": None, "mid_goals": [], "goal": None, "home": None}
     pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
     finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
     titles = {g.id: g.title for g in activity.mid_goals}
     goal = activity.goal
-    status = activity.observation.goal if activity.observation else None
+    obs = activity.observation
+    status = obs.goal if obs else None
     return {
         "playing": True,
         "mission": activity.mission.text if activity.mission else None,
@@ -72,6 +73,19 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             "survival": goal.mid_goal_id is None,
             "progress": list(status.lines) if status else [],
         },
+        "home": _home(obs),
+    }
+
+
+def _home(obs: GameObservation | None) -> dict[str, Any] | None:
+    if obs is None or not obs.has_home:
+        return None
+    chests = (obs.state.get("memory") or {}).get("chests", [])
+    return {
+        "name": (obs.state.get("home") or {}).get("name"),
+        "bed": obs.bed_in_home,
+        # As they were when last opened (only the streamer uses them)
+        "chests": [{"contents": c["contents"], "minutes_ago": c["minutes_ago"]} for c in chests],
     }
 
 

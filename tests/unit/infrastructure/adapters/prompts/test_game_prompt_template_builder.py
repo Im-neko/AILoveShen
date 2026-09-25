@@ -151,7 +151,30 @@ class TestGamePromptTemplateBuilder:
         prompt = _goal_prompt(obs)
 
         assert "時間帯: 夜（朝まで約 5 分）" in prompt
-        assert "家: 家の中にいる、ベッドあり" in prompt
+        assert "家: 家の中にいる、ベッドあり、チェスト 0" in prompt
+        assert "チェストの中身: なし" in prompt
+
+    def test_goal_prompt_home_name_and_chests(self):
+        """Test the home's name and what its chests held when last opened."""
+        obs = replace(_obs(), has_home=True, inside_home=False, bed_in_home=False)
+        obs.state["home"] = {"name": "ぽかぽかログハウス"}
+        obs.state["memory"]["chests"] = [
+            {
+                "direction": "N",
+                "distance_m": 3,
+                "contents": {"oak_log": 20, "cobblestone": 14},
+                "minutes_ago": 2,
+            },
+            {"direction": "N", "distance_m": 3, "contents": {}, "minutes_ago": 5},
+        ]
+
+        prompt = _goal_prompt(obs)
+
+        assert "家: ぽかぽかログハウス、完成している（外にいる）、ベッドなし、チェスト 2" in prompt
+        assert (
+            "チェストの中身: oak_log 20、cobblestone 14（2 分前に開けたとき）"
+            " / 空（5 分前に開けたとき）"
+        ) in prompt
 
     def test_goal_prompt_recent_goals_and_previous_error(self):
         """Test past goals show how they ended, and a rejected goal's reason is shown."""

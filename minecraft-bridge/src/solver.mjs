@@ -3,10 +3,11 @@
 // Pure (no bot): it reads a snapshot of the world. Items already held are allocated to the needs
 // in order from a shared ledger, so e.g. the logs for a house's corner pillars are set aside
 // before the rest become planks. A missing item is obtained the cheapest way among crafting (each
-// recipe), digging a natural block and hunting an animal. The result is a tree of subgoals with
+// recipe), digging a natural block and hunting an animal. What the chests hold (as last seen) is
+// taken out before anything is gathered or crafted: it is near and certain. The result is a tree of subgoals with
 // progress, the leaves that can be acted on now, the reasons some cannot, and the remaining work.
 //
-// world: { inventory: {name: count}, blocks: {name: count}, mobs: {name: count},
+// world: { inventory: {name: count}, stored: {name: count} (in chests), blocks: {name: count}, mobs: {name: count},
 //          table: 'reach' | 'near' | null, unlocked: (item) => bool }
 //   blocks and mobs are the sources nearby (natural, reachable blocks outside the house; animals)
 
@@ -14,9 +15,10 @@ const MAX_DEPTH = 6
 const EXPLORE_COST = 100 // a source not in sight has to be searched for first
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
+const WITHDRAW_COST = 0.5
 
 export function solve (knowledge, world, needs) {
-  const ledger = { items: { ...world.inventory }, table: !!world.table }
+  const ledger = { items: { ...world.inventory }, stored: { ...(world.stored ?? {}) }, table: !!world.table }
   const nodes = needs.map(({ spec, count }) => need(knowledge, world, spec, count, ledger, [], 0).node)
   const leaves = []
   const blocked = []
@@ -44,18 +46,37 @@ function need (k, world, spec, count, ledger, path, depth) {
   const node = { label: `have ${count} ${label}`, have, need: count, units: 0, children: [], leaf: null }
   if (have >= count) return { node, cost: 0 }
 
+  // Taken out of the chests: one child per item, and only the rest is acquired
+  const fromChests = []
+  let taken = 0
+  for (const m of members) {
+    const take = Math.min(ledger.stored[m] ?? 0, count - have - taken)
+    if (take <= 0) continue
+    ledger.stored[m] -= take
+    taken += take
+    fromChests.push({ label: `take ${take} ${m} from a chest`, have: 0, need: take, units: take, children: [], leaf: { kind: 'withdraw', item: m, count: take } })
+  }
+  if (taken) {
+    node.children = fromChests
+    node.units = taken
+    if (have + taken >= count) {
+      node.method = 'withdraw'
+      return { node, cost: taken * WITHDRAW_COST }
+    }
+  }
+
   let best = null
   for (const m of members) {
     const trial = cloneLedger(ledger)
-    const option = acquire(k, world, m, count - have, trial, path, depth)
+    const option = acquire(k, world, m, count - have - taken, trial, path, depth)
     if (!best || option.cost < best.cost) best = { ...option, ledger: trial }
   }
   Object.assign(ledger, best.ledger)
-  node.units = best.units
-  node.children = best.children
+  node.units += best.units
+  node.children = [...fromChests, ...best.children]
   node.leaf = best.leaf
   node.method = best.method
-  return { node, cost: best.cost }
+  return { node, cost: best.cost + taken * WITHDRAW_COST }
 }
 
 function acquire (k, world, item, n, ledger, path, depth) {
@@ -189,8 +210,9 @@ function describe (leaf, method) {
     case 'kill': return `hunt ${leaf.sources.join('/')}`
     case 'explore': return `find ${leaf.sources.join('/')}`
     case 'place': return `place ${leaf.item}`
+    case 'withdraw': return 'take it out of the chest'
     default: return leaf.reason ?? ''
   }
 }
 
-const cloneLedger = (l) => ({ items: { ...l.items }, table: l.table })
+const cloneLedger = (l) => ({ items: { ...l.items }, stored: { ...l.stored }, table: l.table })

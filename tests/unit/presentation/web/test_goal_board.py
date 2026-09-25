@@ -61,6 +61,7 @@ class TestGoalsSnapshot:
             "mission": None,
             "mid_goals": [],
             "goal": None,
+            "home": None,
         }
 
     def test_the_goals_from_the_mission_down(self):
@@ -81,6 +82,33 @@ class TestGoalsSnapshot:
             "mid_goal": "自分の家を作る",
             "survival": False,
             "progress": ["have 3 log (1/3)"],
+        }
+
+        assert data["home"] is None  # not built yet
+
+    def test_home_with_its_chests(self):
+        """Test the home's name and what its chests held when last opened."""
+        session = _session()
+        memory = {
+            "chests": [
+                {"direction": "N", "distance_m": 3, "contents": {"oak_log": 20}, "minutes_ago": 2}
+            ]
+        }
+        session.observe(
+            GameObservation(
+                state={"home": {"name": "ぽかぽかログハウス"}, "memory": memory},
+                candidates=(Candidate("wait", {"verb": "wait"}),),
+                health=20.0,
+                food=20,
+                has_home=True,
+                bed_in_home=True,
+            )
+        )
+
+        assert goals_snapshot(session.activity())["home"] == {
+            "name": "ぽかぽかログハウス",
+            "bed": True,
+            "chests": [{"contents": {"oak_log": 20}, "minutes_ago": 2}],
         }
 
 

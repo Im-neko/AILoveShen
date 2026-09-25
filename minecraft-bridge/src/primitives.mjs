@@ -10,7 +10,8 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
+import { rememberChest, forgetChest } from './memory.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // survival block reach from the eyes
@@ -392,6 +393,36 @@ export const PRIMITIVES = {
     const door = state.home ? `, door ${isDoorOpen(bot, state.home) ? 'open' : 'closed'}` : ''
     return `waited (time ${bot.time.timeOfDay}${door})`
   },
+  async place_chest (bot, state) {
+    await enterHome(bot, state.home)
+    const spot = chestSpot(bot, state.home)
+    if (!spot) throw new Error('no free spot for a chest in the house')
+    const chest = bot.inventory.items().find((i) => i.name === 'chest')
+    if (!chest) throw new Error('no chest')
+    await bot.equip(chest, 'hand')
+    await bot.lookAt(spot.offset(0.5, 0, 0.5), true)
+    await bot.placeBlock(bot.blockAt(spot.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
+    if (bot.blockAt(spot)?.name !== 'chest') throw new Error('the chest was not placed')
+    rememberChest(state.memory, spot, {}, Number(bot.time.age))
+    return `placed a chest in the house at ${spot.x},${spot.y},${spot.z}`
+  },
+  async deposit (bot, state, c) {
+    return useChest(bot, state, c, async (window) => {
+      const n = Math.min(c.count, inventoryCounts(bot)[c.item] ?? 0)
+      if (!n) throw new Error(`no ${c.item} to put in`)
+      await window.deposit(bot.registry.itemsByName[c.item].id, null, n)
+      return `put ${n} ${c.item} in the chest`
+    })
+  },
+  async withdraw (bot, state, c) {
+    return useChest(bot, state, c, async (window) => {
+      const inside = window.containerItems().filter((i) => i.name === c.item).reduce((s, i) => s + i.count, 0)
+      const n = Math.min(c.count, inside)
+      if (!n) throw new Error(`no ${c.item} in the chest (the record was wrong)`)
+      await window.withdraw(bot.registry.itemsByName[c.item].id, null, n)
+      return `took ${n} ${c.item} from the chest`
+    })
+  },
   async goto_memory (bot, state, c) {
     await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3))
     return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
@@ -411,9 +442,29 @@ export const PRIMITIVES = {
   }
 }
 
+// Opens the chest at c.pos, runs `use` on its window, and records what it holds after
+async function useChest (bot, state, c, use) {
+  if (state.home && isInside({ entity: { position: c.pos } }, state.home)) await enterHome(bot, state.home)
+  await goNear(bot, c.pos, 2)
+  const block = bot.blockAt(c.pos)
+  if (block?.name !== 'chest') {
+    forgetChest(state.memory, c.pos)
+    throw new Error(`no chest at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+  }
+  const window = await bot.openContainer(block)
+  try {
+    return await use(window)
+  } finally {
+    const contents = {}
+    for (const i of window.containerItems()) contents[i.name] = (contents[i.name] ?? 0) + i.count
+    rememberChest(state.memory, c.pos, contents, Number(bot.time.age))
+    window.close()
+  }
+}
+
 // Which primitive answers damage itself: taking damage does not interrupt it
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
-export const TIMEOUTS_MS = { goto_memory: 60000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 60000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

@@ -14,7 +14,7 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
-import { recall, visited } from './memory.mjs'
+import { recall, visited, chests, chestWith } from './memory.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -133,6 +133,16 @@ function fromLeaf (bot, state, world, leaf) {
         ...(p ? { pos: p, distance: dist(bot, p) } : {})
       }]
     }
+    case 'withdraw': {
+      const chest = state.memory && chestWith(state.memory, [leaf.item], bot.entity.position)
+      if (!chest) return []
+      const pos = new Vec3(chest.x, chest.y, chest.z)
+      return [{ id: `take ${leaf.count} ${leaf.item} from the chest at ${fmt(pos)}`, verb: 'withdraw', target: leaf.item, item: leaf.item, count: leaf.count, pos, distance: dist(bot, pos) }]
+    }
+    case 'deposit':
+      return leaf.items.flatMap(({ item, count }) => toChest(bot, state, item, count))
+    case 'place_chest':
+      return [{ id: 'place a chest in the house', verb: 'place_chest', target: 'chest', pos: state.home.inside, distance: dist(bot, state.home.inside) }]
     case 'place_bed':
       return [{ id: 'place the bed in the house', verb: 'place_bed', target: 'bed', inPlace: true, distance: dist(bot, state.home.inside) }]
     case 'go_home':
@@ -169,6 +179,7 @@ function forNeeds (bot, state, knowledge) {
     const eat = best ?? lastResort
     if (eat) out.push({ id: `eat ${eat.name}`, verb: 'eat', target: eat.name, item: eat.name, inPlace: true })
   }
+  out.push(...storeSpare(bot, state, knowledge))
   const weapon = bestWeapon(bot)
   if (weapon && bot.heldItem?.name !== weapon.name) out.push({ id: `equip ${weapon.name}`, verb: 'equip', target: weapon.name, item: weapon.name, inPlace: true })
   // A fight given up at critical health (e.g. for cleared) needs a way back whatever the goal
@@ -188,6 +199,35 @@ function awayFrom (bot, start, dx, dz) {
   const vx = bot.entity.position.x - start.x
   const vz = bot.entity.position.z - start.z
   return Math.hypot(vx, vz) < 1 || vx * dx + vz * dz >= 0
+}
+
+// Putting an item in the nearest chest (the house's)
+function toChest (bot, state, item, count) {
+  const chest = state.memory && chests(state.memory).sort((a, b) => dist(bot, new Vec3(a.x, a.y, a.z)) - dist(bot, new Vec3(b.x, b.y, b.z)))[0]
+  if (!chest) return []
+  const pos = new Vec3(chest.x, chest.y, chest.z)
+  return [{ id: `put ${count} ${item} in the chest at ${fmt(pos)}`, verb: 'deposit', target: item, item, count, pos, distance: dist(bot, pos) }]
+}
+
+// A full inventory in the house: the biggest stacks the goal does not need can go in the chest
+const FREE_SLOTS_WANTED = 8
+const STORE_OFFERED = 3
+const TOOL = /_(sword|pickaxe|axe|shovel|hoe)$/
+const GOAL_GROUPS = { built: ['log', 'planks', 'door'], placed: ['bed', 'wool', 'planks'] }
+
+function storeSpare (bot, state, knowledge) {
+  if (!knowledge || !state.memory || !chests(state.memory).length || !isInside(bot, state.home)) return []
+  if (bot.inventory.emptySlotCount() >= FREE_SLOTS_WANTED) return []
+  const spec = state.goal?.spec
+  const groups = ['food', ...(GOAL_GROUPS[spec?.predicate] ?? []), ...(spec?.item ? [spec.item] : [])]
+  const keep = new Set(groups.flatMap((g) => knowledge.resolve(g).members))
+  const counts = {}
+  for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] ?? 0) + i.count
+  return Object.entries(counts)
+    .filter(([name]) => !keep.has(name) && !TOOL.test(name) && !['chest', 'crafting_table'].includes(name))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, STORE_OFFERED)
+    .flatMap(([name, n]) => toChest(bot, state, name, n))
 }
 
 // What the selector sees of a candidate (no positions objects or entity references)

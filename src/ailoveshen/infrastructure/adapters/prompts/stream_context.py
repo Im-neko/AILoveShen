@@ -29,6 +29,11 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "have(item, count): アイテムを count 個持つ。item はアイテム名かグループ"
         "（planks, log, door, bed, wool, food）。例: have(wooden_sword, 1)、have(food, 4)"
     ),
+    GoalPredicate.STORED: (
+        "stored(item, count): 家のチェストに count 個しまってある状態にする"
+        "（チェストがなければ作って家に置くところから）。使っても減らない備蓄になる。"
+        "例: stored(food, 16)、stored(log, 32)"
+    ),
     GoalPredicate.PLACED: (
         "placed(item=bed): 家の中にベッドを置く（ベッドがなければ作るところから）"
     ),
@@ -149,6 +154,18 @@ def _format_memory(memory: dict) -> str:
     return "、".join(parts) or "なし"
 
 
+def _format_chests(memory: dict) -> str:
+    chests = memory.get("chests", [])
+    if not chests:
+        return "なし"
+
+    def contents(c: dict) -> str:
+        items = "、".join(f"{name} {n}" for name, n in c["contents"].items()) or "空"
+        return f"{items}（{c['minutes_ago']} 分前に開けたとき）"
+
+    return " / ".join(contents(c) for c in chests)
+
+
 def _format_equipment(me: dict) -> str:
     worn = [
         f"{EQUIPMENT_NAMES[part]} {item}"
@@ -203,9 +220,11 @@ def _format_outcome(o: GoalOutcome, titles: dict[str, str]) -> str:
 def _format_home(obs: GameObservation) -> str:
     if not obs.has_home:
         return "まだない（夜までに建てる必要がある）"
+    name = (obs.state.get("home") or {}).get("name")
     where = "家の中にいる" if obs.inside_home else "完成している（外にいる）"
     bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
-    return f"{where}、{bed}"
+    chests = len((obs.state.get("memory") or {}).get("chests", []))
+    return f"{f'{name}、' if name else ''}{where}、{bed}、チェスト {chests}"
 
 
 def _format_situation(obs: GameObservation) -> str:
@@ -217,6 +236,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {json.dumps(s.get('inventory', {}), ensure_ascii=False)}",
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
+        f"- チェストの中身: {_format_chests(s.get('memory') or {})}",
         f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",
     ]
     recent = s.get("recent_actions", [])

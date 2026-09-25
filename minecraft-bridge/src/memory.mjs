@@ -5,6 +5,8 @@
 // - places: per kind (a block or animal name), one entry per 16x16 region with a count
 // - explored: when each region was last visited
 // - deaths: where the bot died
+// - chests: what each chest held when it was last opened (only the bot uses them: the record holds
+//   until the next opening, which overwrites it)
 // A remembered place near the bot that is not seen now is forgotten (dug out, walked away, or
 // never there), so a trip to it is not repeated.
 
@@ -22,7 +24,7 @@ export const REMEMBERED_BLOCK = /^(?!stripped_).*_log$|^(deepslate_)?(coal|iron)
 export const REMEMBERED_ANIMALS = new Set(['cow', 'pig', 'sheep', 'chicken'])
 
 export function newMemory () {
-  return { places: {}, explored: {}, deaths: [] }
+  return { places: {}, explored: {}, deaths: [], chests: {} }
 }
 
 export const regionOf = (p) => `${Math.floor(p.x / REGION)},${Math.floor(p.z / REGION)}`
@@ -70,6 +72,34 @@ export function recall (memory, kinds, me, now) {
     .slice(0, RECALLED_OFFERED)
 }
 
+const chestKey = (p) => `${p.x},${p.y},${p.z}`
+
+export function rememberChest (memory, pos, contents, now) {
+  memory.chests[chestKey(pos)] = { x: pos.x, y: pos.y, z: pos.z, contents, seen: now }
+}
+
+export function forgetChest (memory, pos) {
+  delete memory.chests[chestKey(pos)]
+}
+
+export const chests = (memory) => Object.values(memory.chests ?? {})
+
+// What all the chests hold, by item name
+export function storedCounts (memory) {
+  const out = {}
+  for (const c of chests(memory)) {
+    for (const [name, n] of Object.entries(c.contents)) out[name] = (out[name] ?? 0) + n
+  }
+  return out
+}
+
+// The nearest chest holding any of the names
+export function chestWith (memory, names, me) {
+  return chests(memory)
+    .filter((c) => names.some((n) => (c.contents[n] ?? 0) > 0))
+    .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
+}
+
 export const visited = (memory, pos) => memory.explored[regionOf(pos)] !== undefined
 
 // What the decision makers see: the nearest place of each kind, and where the bot died
@@ -82,6 +112,7 @@ export function summarizeMemory (memory, me, now, bearing) {
   }).sort((a, b) => a.distance_m - b.distance_m).slice(0, SUMMARY_PLACES)
   return {
     places,
+    chests: chests(memory).map((c) => ({ direction: bearing(me, c), distance_m: Math.round(flatDistance(c, me)), contents: c.contents, minutes_ago: Math.round((now - c.seen) / TICKS_PER_MINUTE) })),
     explored_regions: Object.keys(memory.explored).length,
     deaths: memory.deaths.map((d) => ({ direction: bearing(me, d), distance_m: Math.round(flatDistance(d, me)), minutes_ago: Math.round((now - d.seen) / TICKS_PER_MINUTE) }))
   }

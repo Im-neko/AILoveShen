@@ -10,11 +10,13 @@
 //   through_night()          the night has passed (inside the house, or asleep)
 //   explored(distance)       this far (horizontally) from where the goal was set
 //   cleared()                no hostile waits near the door (by day only: go out and fight them)
+//   stored(item, count)      the chests hold `count` of an item or group (as last opened)
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
 import { dayPhase, inventoryCounts, EXPLODES } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
+import { chests, storedCounts } from './memory.mjs'
 import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -26,10 +28,10 @@ const DAY_TICKS = 24000
 const MORNING = 0 // time of day the sun is up again (dawn ends at 24000 = 0)
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored']
 // Judged from the state of the world alone, so they can be the completion conditions of mid goals
 // (the others depend on the moment or on where the goal was set)
-export const CONDITION_PREDICATES = ['have', 'built', 'placed']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored']
 
 // Validates a goal spec and returns the goal state to keep; throws with the reason
 // A goal that is valid but cannot be pursued until something exists (the home, the plan)
@@ -49,6 +51,13 @@ function validGoal (spec, bot, state, knowledge) {
       const count = Number(spec.count)
       if (!Number.isInteger(count) || count < 1 || count > MAX_COUNT) throw new Error(`count must be 1-${MAX_COUNT}`)
       knowledge.resolve(String(spec.item))
+      return { spec: { predicate, item: String(spec.item), count } }
+    }
+    case 'stored': {
+      const count = Number(spec.count)
+      if (!Number.isInteger(count) || count < 1 || count > MAX_COUNT) throw new Error(`count must be 1-${MAX_COUNT}`)
+      knowledge.resolve(String(spec.item))
+      needHome() // the chest goes in the house
       return { spec: { predicate, item: String(spec.item), count } }
     }
     case 'built':
@@ -88,8 +97,8 @@ function validGoal (spec, bot, state, knowledge) {
 export function evaluate (bot, state, knowledge, world) {
   const goal = state.goal
   const out = { spec: goal.spec, met: false, remaining: 0, lines: [], blocked: [], leaves: [] }
-  const addSolved = (needs) => {
-    const r = solve(knowledge, world, needs)
+  const addSolved = (needs, w = world) => {
+    const r = solve(knowledge, w, needs)
     out.lines.push(...r.lines)
     out.blocked.push(...r.blocked)
     // Searching for what is not nearby: away from where the goal was set (it walked back and
@@ -166,6 +175,29 @@ export function evaluate (bot, state, knowledge, world) {
         out.remaining = Math.ceil((goal.spec.distance - d) / EXPLORE_STEP)
         out.leaves.push({ kind: 'explore', item: 'new places', sources: [], away: start })
       }
+      break
+    }
+    case 'stored': {
+      const { members } = knowledge.resolve(goal.spec.item)
+      const stored = storedCounts(state.memory ?? {})
+      const n = goal.spec.count
+      const inChests = members.reduce((s, m) => s + (stored[m] ?? 0), 0)
+      out.met = inChests >= n
+      out.lines.push(`${goal.spec.item} in the chests (${Math.min(inChests, n)}/${n})`)
+      if (out.met) break
+      const want = n - inChests
+      out.remaining += want
+      // What the chests hold is never taken out to be put back
+      const gathering = { ...world, stored: {} }
+      if (!chests(state.memory ?? {}).length) {
+        if (addSolved([{ spec: 'chest', count: 1 }], gathering).met) out.leaves.push({ kind: 'place_chest' })
+        out.remaining += 1
+        break
+      }
+      const inv = inventoryCounts(bot)
+      const held = members.filter((m) => inv[m] > 0).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
+      if (held.length) out.leaves.push({ kind: 'deposit', items: held })
+      addSolved([{ spec: goal.spec.item, count: want }], gathering)
       break
     }
     case 'cleared': {

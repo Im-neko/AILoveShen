@@ -26,7 +26,7 @@ MAX_EXPLORE_DISTANCE = 128
 MAX_CONDITIONS = 3
 MAX_PLAN_CHANGES = 3
 ITEM_DESCRIPTION = (
-    "have / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
+    "have / stored / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
     "wooden_sword, wooden_pickaxe"
 )
 # The order the conditions are offered in (a frozenset has none)
@@ -202,9 +202,11 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
         return GoalSpec(
             predicate=predicate,
             item=str(data["item"])
-            if predicate in (GoalPredicate.HAVE, GoalPredicate.PLACED)
+            if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.PLACED)
             else None,
-            count=int(data["count"]) if predicate == GoalPredicate.HAVE else None,
+            count=int(data["count"])
+            if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED)
+            else None,
             where="home" if predicate == GoalPredicate.PLACED else None,
             distance=int(data["distance"]) if predicate == GoalPredicate.EXPLORED else None,
         )
@@ -293,5 +295,6 @@ def predicates_now(obs: GameObservation) -> list[GoalPredicate]:
             out.append(GoalPredicate.CLEARED)
         if not obs.bed_in_home:
             out.append(GoalPredicate.PLACED)
+        out.append(GoalPredicate.STORED)
     out.append(GoalPredicate.EXPLORED)
     return out

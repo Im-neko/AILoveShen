@@ -5,7 +5,7 @@ import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
 import { findTable, isLeaves } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
-import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS } from './memory.mjs'
+import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts } from './memory.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // blocks above or below the feet the bot digs without climbing or tunnelling
@@ -68,6 +68,7 @@ export function snapshot (bot, state) {
   const hunt = (name) => huntTargets(bot, [name])
   return {
     inventory: inventoryCounts(bot),
+    stored: storedCounts(state.memory ?? {}),
     blocks: new Proxy({}, { get: (_, name) => typeof name === 'string' ? dig(name).length : undefined }),
     mobs: new Proxy({}, { get: (_, name) => typeof name === 'string' ? hunt(name).length : undefined }),
     table: findTable(bot) ? 'near' : null,
