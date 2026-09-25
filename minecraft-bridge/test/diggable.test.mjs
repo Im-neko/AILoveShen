@@ -25,6 +25,12 @@ test('only ore touching air is remembered (town2: buried coal sent it off explor
   assert.deepEqual(sightings(bot).map((s) => s.pos), [v(3, 69, 0)])
 })
 
+test('ore under water is neither offered nor remembered (town2 drowned digging it)', () => {
+  const wet = { ...bot, blockAt: (p) => (bot.blockAt(p).name === 'air' ? { name: 'water', boundingBox: 'empty' } : bot.blockAt(p)) }
+  assert.deepEqual(sightings(wet), [])
+  assert.deepEqual(digTargets(wet, { home: null, plan: null, unreachableBlocks: new Set() }, 'coal_ore'), [])
+})
+
 test('a block no path reached is not offered again', () => {
   const state = { home: null, plan: null, unreachableBlocks: new Set() }
   assert.deepEqual(digTargets(bot, state, 'coal_ore'), [v(3, 69, 0)])

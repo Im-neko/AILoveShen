@@ -25,7 +25,9 @@ function logReachable (bot, block) {
 }
 
 const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => bot.blockAt(p.offset(x, y, z))?.boundingBox === 'empty')
+// Touching air (water has no collision box either: town2 drowned digging coal under the sea)
+const AIR = new Set(['air', 'cave_air'])
+const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => AIR.has(bot.blockAt(p.offset(x, y, z))?.name))
 
 // Blocks of this kind the bot can dig: nearest first, never part of the house
 export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
