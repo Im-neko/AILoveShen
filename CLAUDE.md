@@ -15,8 +15,9 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 - **Main loop**: Minecraft Bridge (Mineflayer) plays game → Gemini 3.8 Flash generates commentary/thoughts → TTS speaks
 - **Sub loop**: Twitch comments → Gemini 3.8 Flash filters → Gemini 3.8 Flash responds (interrupts main)
 - **Three-layer LLM → Jev → Minecraft Bridge link** (`GameService.play`; design: `docs/design/10_agent_lifecycle.md`, `11_primitive_actions.md`):
-  - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and sets goals in a predicate vocabulary (`have(item, n)`, `built`, `placed(bed, home)`, `at_home`, `through_night`, `explored(distance)`, `cleared` (by day: fight what waits at the door)); a goal the bridge rejects goes back with the reason
+  - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and sets goals in a predicate vocabulary (`have(item, n)`, `built`, `placed(bed, home)`, `at_home`, `through_night`, `explored(distance)`, `cleared` (by day: fight what waits at the door), `stored(item, n)` (in the home's chests)); the house is designed only when there is no home yet (a home keeps its name and design across restarts); a goal the bridge rejects goes back with the reason
   - Minecraft Bridge: judges the goal from the world (never from the models), decomposes it with a dependency solver over minecraft-data (recipes, drops, with corrections), grounds concrete candidates (dig this block, craft that item, ...) plus what the body needs, removes unsafe ones (nothing outside while sheltering; what is held back goes to the goal's `blocked`, and by day a wall exit is offered), and runs one bounded primitive (aborted on damage). A reflex handles nearby hostiles and keeps the bot afloat
+  - World memory (`docs/design/14_world_memory.md`, bridge `memory.mjs`, saved in `state.json`): only what was seen and is out of view now, with when (places per 16x16 region, explored regions, deaths, chest contents as last opened). Recalled places are offered as trips before blind exploration, the solver takes stored items from a chest before gathering, and `/observe` summarises it for the prompts and the goal board
   - Jev: picks one candidate per step (`Choice`), seeing the goal's progress and the body's needs (no priority order: measured in `spikes/primitive_choice_eval.py`)
   - `PlaySession` ends a goal when it is met, the mid goal it served ended, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
 - **Goal hierarchy** (`docs/design/13_goal_hierarchy.md`): mission (config `minecraft.mission`, never changed on stream) → mid goals (`MidGoalPlan`: prioritised list, done when their conditions `built`/`placed`/`have` hold, judged by the bridge's `POST /check` at small-goal boundaries; limits kept by code: 6 in the list, 2 viewers' at a time, one per viewer, a viewer's never ahead of the current one, 80-step budget) → the small goal (serves the top mid goal, or survival). Gemini edits the list with the small goal (add/move/drop with a reason); `MidGoalKeeper` applies edits atomically, saves (`data/mission.json`) and publishes MidGoal events
@@ -126,7 +127,7 @@ src/ailoveshen/
 └── factories/                 # Composition Roots (tts.py, llm.py, game.py)
 
 minecraft-bridge/              # Node sidecar: goals, solver, candidates, primitives, reflex, POV mirror,
-                               # HTTP API (goal/check/observe/act/build-plan); tests: npm test
+                               # world memory, chests, HTTP API (goal/check/observe/act/build-plan); tests: npm test
 ```
 
 **Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.
