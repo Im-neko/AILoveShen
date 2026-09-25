@@ -5,7 +5,7 @@ import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
 import { findTable, findFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
-import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
+import { REMEMBERED_BLOCK, REMEMBERED_STONE, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
@@ -41,6 +41,19 @@ export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
     .slice(0, limit)
 }
 
+// 空気に面していない（埋まった）この種類のブロックのうち、足元より下にあるもの: 近い順、
+// depth は surfaceY（目標を立てたときの足元）から何段下か。階段で掘り下げる先（17_dig_down.md）
+export function buriedTargets (bot, state, name, surfaceY, limit = TARGETS_PER_KIND) {
+  const id = bot.registry.blocksByName[name]?.id
+  if (id == null) return []
+  const me = bot.entity.position
+  return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 256 })
+    .filter((p) => p.y < Math.floor(me.y) && !inHouse(state, p) && !exposed(bot, p) && !isUnreachable(state, p))
+    .map((p) => ({ pos: p, depth: Math.max(1, surfaceY - p.y) }))
+    .sort((a, b) => a.depth - b.depth || a.pos.distanceTo(me) - b.pos.distanceTo(me))
+    .slice(0, limit)
+}
+
 export function huntTargets (bot, names, limit = TARGETS_PER_KIND) {
   const me = bot.entity.position
   return nearbyEntities(bot)
@@ -52,11 +65,14 @@ export function huntTargets (bot, names, limit = TARGETS_PER_KIND) {
 // 掘れる、空気に接しているものだけ: 埋まった鉱石も数えると探索に出てしまった（town2: 「家のまわり」に
 // 石炭鉱石が 64 個あったが、どれにも届かなかった）
 export function sightings (bot) {
-  const ids = Object.values(bot.registry.blocksByName).filter((b) => REMEMBERED_BLOCK.test(b.name)).map((b) => b.id)
-  const blocks = bot.findBlocks({ matching: ids, maxDistance: DIG_RADIUS, count: 512 })
-    .filter((p) => exposed(bot, p))
-    .map((p) => ({ kind: bot.blockAt(p)?.name, pos: p }))
-    .filter((s) => s.kind)
+  const seen = (pattern, count) => {
+    const ids = Object.values(bot.registry.blocksByName).filter((b) => pattern.test(b.name)).map((b) => b.id)
+    return bot.findBlocks({ matching: ids, maxDistance: DIG_RADIUS, count })
+      .filter((p) => exposed(bot, p))
+      .map((p) => ({ kind: bot.blockAt(p)?.name, pos: p }))
+      .filter((s) => s.kind)
+  }
+  const blocks = [...seen(REMEMBERED_BLOCK, 512), ...seen(REMEMBERED_STONE, 64)]
   const animals = nearbyEntities(bot)
     .filter(({ e, dist }) => REMEMBERED_ANIMALS.has(e.name) && dist <= HUNT_RADIUS)
     .map(({ e }) => ({ kind: e.name, pos: e.position }))
@@ -88,6 +104,13 @@ export function snapshot (bot, state) {
     return digCache.get(name)
   }
   const hunt = (name) => huntTargets(bot, [name])
+  // 掘り下げ: 深さは小目標の dig_depth（Gemini が決める。なければ掘り下げない）
+  const surfaceY = Math.floor(state.goal?.surfaceY ?? bot.entity.position.y)
+  const buriedCache = new Map()
+  const buried = (name) => {
+    if (!buriedCache.has(name)) buriedCache.set(name, buriedTargets(bot, state, name, surfaceY))
+    return buriedCache.get(name)
+  }
   return {
     inventory: inventoryCounts(bot),
     stored: takeable(storedCounts(state.memory ?? {}), state.goal?.keep ?? [], bot.food <= HUNGER_URGENT),
@@ -99,6 +122,8 @@ export function snapshot (bot, state) {
     smelting: smeltingCounts(state.memory ?? {}),
     unlocked: (item) => state.recipeBook.recipesFor(item).length > 0,
     dig,
-    hunt
+    hunt,
+    buried,
+    digDepth: state.goal?.spec?.dig_depth ?? 0
   }
 }

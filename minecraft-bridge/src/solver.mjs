@@ -12,12 +12,15 @@
 //          smelting: {product: count}（かまどの中。できたものとこれからできるもの）, unlocked: (item) => bool }
 //   blocks と mobs は近くの入手元（家の外の、届く自然のブロック。動物）。
 //   remembered: 前に見た、いまは見えていない入手元（memory.mjs）。探すより戻るほうが安い
+//   buried: (name) => [{ pos, depth }]（空気に面していない、足元より下のブロック）、digDepth: 小目標が許す
+//   掘り下げの深さ。許す深さにあれば、探すより階段で掘り下げるほうが安い（17_dig_down.md）
 
 import { FUELS } from './knowledge.mjs'
 
 const MAX_DEPTH = 10 // 何もない状態から鉄の剣まで: インゴット、鉄の原石、石のツルハシ、丸石、木のツルハシ、板材、原木
 const EXPLORE_COST = 100 // 見えていない入手元はまず探さないといけない
 const RECALL_COST = 50 // 前に見たもの: あった場所まで戻る
+const DIG_DOWN_COST = 30 // 埋まったもの: 階段で掘り下げる（深さ 1 段ごとに 1 足す）
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
 const WITHDRAW_COST = 0.5
@@ -213,10 +216,25 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   }
   const known = sources.filter((s) => world.remembered?.has(s))
   const sought = known.length ? known : sources
-  const leaf = inSight.length
-    ? { kind, item, count: n, sources: inSight }
-    : { kind: 'explore', item, sources: sought, reason: `no ${sought.join('/')} nearby for ${item}${known.length ? ' (seen before)' : ''}` }
-  if (!inSight.length) cost += known.length ? RECALL_COST : EXPLORE_COST
+  // 埋まっているもの: 一番浅いもの。小目標が許す深さにあれば掘り下げる
+  const buried = kind === 'dig' && !inSight.length
+    ? sources.map((s) => ({ s, t: world.buried?.(s)?.[0] })).filter((b) => b.t).sort((a, b) => a.t.depth - b.t.depth)[0]
+    : null
+  const digDown = buried && buried.t.depth <= (world.digDepth ?? 0) &&
+    DIG_DOWN_COST + buried.t.depth < (known.length ? RECALL_COST : EXPLORE_COST)
+  let leaf
+  if (inSight.length) {
+    leaf = { kind, item, count: n, sources: inSight }
+  } else if (digDown) {
+    leaf = { kind: 'dig_down', item, sources: [buried.s], depth: buried.t.depth }
+    cost += DIG_DOWN_COST + buried.t.depth
+  } else {
+    const hint = buried && buried.t.depth > (world.digDepth ?? 0)
+      ? `; ${buried.s} is buried ${buried.t.depth} blocks down (set dig_depth to ${buried.t.depth} or more to dig stairs down)`
+      : ''
+    leaf = { kind: 'explore', item, sources: sought, reason: `no ${sought.join('/')} nearby for ${item}${known.length ? ' (seen before)' : ''}${hint}` }
+    cost += known.length ? RECALL_COST : EXPLORE_COST
+  }
   const units = n + children.reduce((s, c) => s + c.units, 0)
   return { cost, units, children, leaf: children.every((c) => c.have >= c.need) ? leaf : null, method: kind }
 }
@@ -268,6 +286,7 @@ function describe (leaf, method) {
     case 'dig': return `dig ${leaf.sources.join('/')}`
     case 'kill': return `hunt ${leaf.sources.join('/')}`
     case 'explore': return `find ${leaf.sources.join('/')}`
+    case 'dig_down': return `dig stairs down to ${leaf.sources.join('/')} (${leaf.depth} blocks down)`
     case 'place': return `place ${leaf.item}`
     case 'withdraw': return 'take it out of the chest'
     case 'smelt': return leaf.count ? `smelt ${leaf.input} in a furnace` : 'take it out of the furnace'

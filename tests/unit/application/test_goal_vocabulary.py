@@ -78,3 +78,33 @@ class TestSiteChoice:
         with pytest.raises(ValueError, match="reason"):
             parse_site({"site_id": "here", "reason": " ", "town_name": "n"}, ROWS)
         assert not parse_site({"site_id": "here", "reason": "r", "town_name": "n"}, ROWS).moving
+
+
+class TestDigDepth:
+    """dig_depth: 埋まった石・鉱石まで掘り下げてよい深さ（Gemini が小目標で決める）。"""
+
+    def test_parsed_and_sent_to_the_bridge(self):
+        """小目標に付けた深さは、ブリッジに送る形と短い表記に入る。付けなければ入らない。"""
+        spec = parse_spec({"predicate": "have", "item": "cobblestone", "count": 3, "dig_depth": 12})
+        assert spec.dig_depth == 12
+        assert spec.to_dict() == {
+            "predicate": "have",
+            "item": "cobblestone",
+            "count": 3,
+            "dig_depth": 12,
+        }
+        assert spec.describe() == "have(cobblestone, 3, dig_depth=12)"
+        plain = parse_spec({"predicate": "have", "item": "cobblestone", "count": 3})
+        assert plain.dig_depth is None and "dig_depth" not in plain.to_dict()
+
+    def test_offered_on_the_small_goal_only(self):
+        """小目標のスキーマにはあり、中目標の条件（世界から判定する）にはない。"""
+        schema = goal_schema([GoalPredicate.HAVE], [])
+        assert schema["properties"]["dig_depth"]["maximum"] == 64
+        condition = schema["properties"]["plan_changes"]["items"]["properties"]["conditions"]
+        assert "dig_depth" not in condition["items"]["properties"]
+
+    def test_negative_is_refused(self):
+        """負の深さは断る。"""
+        with pytest.raises(ValueError, match="dig_depth"):
+            GoalSpec(GoalPredicate.HAVE, item="stone", count=1, dig_depth=-1)

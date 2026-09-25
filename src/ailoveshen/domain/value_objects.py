@@ -400,9 +400,13 @@ class GoalSpec:
     count: Optional[int] = None
     where: Optional[str] = None
     distance: Optional[int] = None
+    # 埋まった石・鉱石まで階段で掘り下げてよい深さ（小目標だけ。None: 掘り下げない）
+    dig_depth: Optional[int] = None
 
     def __post_init__(self) -> None:
         """述語に要る引数を確かめる。"""
+        if self.dig_depth is not None and self.dig_depth < 0:
+            raise ValueError(f"dig_depth must not be negative, got {self.dig_depth}")
         if self.predicate in (GoalPredicate.HAVE, GoalPredicate.STORED):
             name = self.predicate.value
             if not self.item:
@@ -423,7 +427,7 @@ class GoalSpec:
     def to_dict(self) -> dict[str, Any]:
         """ブリッジに送る形の spec（設定されている引数だけ）。"""
         out: dict[str, Any] = {"predicate": self.predicate.value}
-        for key in ("item", "count", "where", "distance"):
+        for key in ("item", "count", "where", "distance", "dig_depth"):
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
@@ -432,6 +436,8 @@ class GoalSpec:
     def describe(self) -> str:
         """プロンプトとログ用の短い形。例: have(planks, 12)。"""
         args = [str(v) for v in (self.item, self.count, self.where, self.distance) if v is not None]
+        if self.dig_depth is not None:
+            args.append(f"dig_depth={self.dig_depth}")
         return f"{self.predicate.value}({', '.join(args)})"
 
 

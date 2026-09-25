@@ -15,6 +15,7 @@ import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSit
 import { smeltingProduct } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto } from './move.mjs'
+import { digTargets } from './world.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // サバイバルで目からブロックに届く距離
@@ -269,6 +270,36 @@ export const isUnreachable = (state, pos) => !!state.unreachableBlocks?.has(bloc
 async function equipToolFor (bot, block) {
   const tool = bot.pathfinder.bestHarvestTool(block)
   if (tool) await bot.equip(tool, 'hand')
+}
+
+// 階段掘り（docs/design/17_dig_down.md）: 1 マス幅・2 マスの高さで、前に 1、下に 1 ずつ下りる。
+// 真下には掘らない（溶岩に落ちる、出られない穴になる）。階段なら歩いて戻れる
+const STAIR_STEPS = 6 // 1 回の行動で下りる段数（タイムアウトの 45 秒に収まる）
+const FALLING = /(^|_)(sand|gravel)$|concrete_powder$/
+const FLUID = /water|lava/
+const STAIR_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+// 次の段で掘る 3 マス（頭、足、1 段下の足）と、その下の床
+function stairCells (me, [dx, dz]) {
+  return { cells: [me.offset(dx, 1, dz), me.offset(dx, 0, dz), me.offset(dx, -1, dz)], floor: me.offset(dx, -2, dz) }
+}
+
+// その方向に 1 段下りられない理由（なし: ''）
+function stairDanger (bot, state, { cells, floor }) {
+  for (const p of cells) {
+    const b = bot.blockAt(p)
+    if (!b) return 'the ground ahead is not loaded'
+    if (inHouse(state, p)) return 'the house is in the way'
+    if (b.name === 'bedrock') return 'bedrock'
+    for (const [x, y, z] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [0, 0, 0]]) {
+      const n = bot.blockAt(p.offset(x, y, z))
+      if (n && FLUID.test(n.name)) return `${n.name.includes('lava') ? 'lava' : 'water'} next to the stairs`
+    }
+  }
+  if (FALLING.test(bot.blockAt(cells[0].offset(0, 1, 0))?.name ?? '')) return 'sand or gravel above would fall in'
+  const below = bot.blockAt(floor)
+  if (!below || below.boundingBox !== 'block') return 'a cave or a drop below the next step'
+  return ''
 }
 
 // 実行関数: (bot, state, candidate, signal) -> 結果の文字列。対象は候補が持っている
@@ -591,6 +622,40 @@ export const PRIMITIVES = {
     return `surveyed the ${c.target} site: ${numbers.flat_plots} flat plots, water ${numbers.water_pct}%, steep ${numbers.steep_pct}%, ` +
       `stone ${numbers.stone}, coal ${numbers.coal}, iron ${numbers.iron}, logs ${numbers.logs}, animals ${numbers.animals}`
   },
+  async dig_down (bot, state, c, signal) {
+    const surfaceY = state.goal?.surfaceY ?? Math.floor(bot.entity.position.y)
+    const maxDepth = state.goal?.spec?.dig_depth ?? 0
+    let steps = 0
+    let stop = ''
+    for (; steps < STAIR_STEPS; steps++) {
+      signal.throwIfAborted()
+      if (digTargets(bot, state, c.target).length) { stop = `${c.target} can be dug now`; break }
+      const me = bot.entity.position.floored()
+      if (surfaceY - (me.y - 1) > maxDepth) { stop = `dig_depth ${maxDepth} reached`; break }
+      // 目標へ向かう向きから順に試し、下りられる最初の向き（砂利の下や水のそばは避ける）
+      const toward = ([dx, dz]) => -(dx * (c.pos.x - me.x) + dz * (c.pos.z - me.z))
+      const tried = [...STAIR_DIRECTIONS].sort((a, b) => toward(a) - toward(b)).map((d) => ({ d, step: stairCells(me, d) }))
+        .map((t) => ({ ...t, danger: stairDanger(bot, state, t.step) }))
+      const next = tried.find((t) => !t.danger)
+      if (!next) { stop = `cannot go down here (${[...new Set(tried.map((t) => t.danger))].join('; ')})`; break }
+      for (const p of next.step.cells) {
+        const block = bot.blockAt(p)
+        if (!block || block.boundingBox === 'empty') continue
+        await equipToolFor(bot, block)
+        await bot.dig(block, true)
+        signal.throwIfAborted()
+      }
+      const [feet] = next.step.cells.slice(-1)
+      await goto(bot, new goals.GoalBlock(feet.x, feet.y, feet.z), signal)
+    }
+    if (!steps) {
+      markUnreachable(state, c.pos)
+      throw new Error(`could not dig stairs down toward ${c.target}: ${stop}`)
+    }
+    await collectNearbyDrops(bot, state, signal)
+    const depth = surfaceY - Math.floor(bot.entity.position.y)
+    return `dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${stop ? `; stopped: ${stop}` : ''}`
+  },
   async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
     const target = start.offset(c.dx * EXPLORE_DISTANCE, 0, c.dz * EXPLORE_DISTANCE)
@@ -632,6 +697,6 @@ async function useChest (bot, state, c, signal, use) {
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
 // 最長は 45 秒: Python クライアントの要求のタイムアウト（minecraft.bridge.timeout_seconds）はこれより長くする
-export const TIMEOUTS_MS = { smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

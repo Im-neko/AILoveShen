@@ -27,6 +27,7 @@ from ailoveshen.domain.value_objects import (
 MAX_GOAL_COUNT = 64
 MIN_EXPLORE_DISTANCE = 8
 MAX_EXPLORE_DISTANCE = 128
+MAX_DIG_DEPTH = 64  # minecraft-bridge/src/goals.mjs と同じ
 MAX_CONDITIONS = 3
 MAX_PLAN_CHANGES = 3
 ITEM_DESCRIPTION = (
@@ -152,6 +153,13 @@ def goal_schema(predicates: list[GoalPredicate], mid_goal_ids: list[str]) -> dic
                 "items": change,
             },
             **_spec_properties(predicates),
+            "dig_depth": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": MAX_DIG_DEPTH,
+                "description": "Optional: how many blocks below where you stand you may dig "
+                "stairs down to buried stone or ore for this goal (omit: do not dig down)",
+            },
             "serves": {
                 "type": "string",
                 "enum": [s.value for s in Serves],
@@ -215,6 +223,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             distance=int(data["distance"])
             if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT)
             else None,
+            dig_depth=int(data["dig_depth"]) if data.get("dig_depth") is not None else None,
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e

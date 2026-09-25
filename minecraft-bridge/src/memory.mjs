@@ -22,6 +22,9 @@ const RECALLED_OFFERED = 3
 const SUMMARY_PLACES = 10
 
 export const REMEMBERED_BLOCK = /^(?!stripped_).*_log$|^(deepslate_)?(coal|iron)_ore$/
+// 石: 掘り下げた階段の底や崖で見えた所に、次に石が要るときに戻る（docs/design/17_dig_down.md）。
+// 地表のどこにでもあるので、ほかのものとは別に数える
+export const REMEMBERED_STONE = /^(stone|deepslate)$/
 export const REMEMBERED_ANIMALS = new Set(['cow', 'pig', 'sheep', 'chicken'])
 
 export function newMemory () {

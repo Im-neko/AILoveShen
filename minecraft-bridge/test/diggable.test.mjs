@@ -14,7 +14,8 @@ const bot = {
   registry: md,
   entity: { position: v(0, 70, 0) },
   entities: {},
-  findBlocks: () => ORES,
+  // 探す種類（matching）に合うものだけ返す
+  findBlocks: ({ matching }) => ORES.filter(() => [].concat(matching).includes(md.blocksByName.coal_ore.id)),
   blockAt: (p) => {
     if (ORES.some((o) => o.equals(p))) return { name: 'coal_ore', boundingBox: 'block' }
     return p.y < 70 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }

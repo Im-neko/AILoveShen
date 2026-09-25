@@ -101,6 +101,12 @@ function fromLeaf (bot, state, world, leaf) {
       return leaf.sources.flatMap((name) => world.hunt(name).map(({ e, dist: d }) => ({
         id: `attack ${name} #${e.id}`, verb: 'attack', target: name, distance: round(d), pos: e.position, entityId: e.id, hostile: false
       })))
+    case 'dig_down': {
+      const [name] = leaf.sources
+      const t = world.buried?.(name)?.[0]
+      if (!t) return []
+      return [{ id: `dig stairs down toward ${name} at ${fmt(t.pos)}`, verb: 'dig_down', target: name, pos: t.pos, distance: dist(bot, t.pos), depth: t.depth }]
+    }
     case 'explore': {
       const lookingFor = leaf.sources.length ? leaf.sources.join('/') : leaf.item
       const me = bot.entity.position

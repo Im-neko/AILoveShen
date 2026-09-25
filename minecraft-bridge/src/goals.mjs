@@ -26,6 +26,7 @@ import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
+const MAX_DIG_DEPTH = 64
 const MIN_EXPLORE = 8
 const MIN_LIT = 8
 const MAX_LIT = 32
@@ -47,9 +48,17 @@ export class NotYetError extends Error {}
 // どの目標も立てた場所を覚えている: 探索はそこから離れる方向に行い、行ったり来たりしない
 // keep: 中目標のためにチェストに取っておくもの（[{item, count}]、中目標の stored() の条件）。
 // ソルバーはこれを取り出さない。ただし飢えているときの食料は除く（world.mjs）
+// dig_depth: 埋まった石・鉱石まで階段で掘り下げてよい深さ（目標を立てた足元から。Gemini が決める。
+// なければ掘り下げない。docs/design/17_dig_down.md）
 export function makeGoal (spec, bot, state, knowledge) {
   const p = bot.entity.position
-  return { ...validGoal(spec, bot, state, knowledge), exploreFrom: { x: p.x, y: p.y, z: p.z }, keep: validKeep(spec.keep ?? [], knowledge) }
+  const goal = validGoal(spec, bot, state, knowledge)
+  if (spec.dig_depth !== undefined && spec.dig_depth !== null) {
+    const depth = Number(spec.dig_depth)
+    if (!Number.isInteger(depth) || depth < 0 || depth > MAX_DIG_DEPTH) throw new Error(`dig_depth must be 0-${MAX_DIG_DEPTH}`)
+    goal.spec.dig_depth = depth
+  }
+  return { ...goal, exploreFrom: { x: p.x, y: p.y, z: p.z }, surfaceY: Math.floor(p.y), keep: validKeep(spec.keep ?? [], knowledge) }
 }
 
 function validKeep (keep, knowledge) {
