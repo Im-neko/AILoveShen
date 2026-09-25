@@ -1088,3 +1088,24 @@ class ScreenNote:
     concern: str = ""
     matches_goal: bool = True
     taken_at: datetime = field(default_factory=_utc_now)
+
+
+@dataclass(frozen=True)
+class ChatComment:
+    """
+    配信のチャットのコメント 1 つ（Twitch など）。
+
+    Raises:
+        ValueError: 名前か本文が空のとき。
+    """
+
+    user_name: str
+    message: str
+    user_id: Optional[str] = None
+    received_at: datetime = field(default_factory=_utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.user_name.strip():
+            raise ValueError("a chat comment needs a user name")
+        if not self.message.strip():
+            raise ValueError("a chat comment needs a message")

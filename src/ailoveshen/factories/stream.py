@@ -1,0 +1,145 @@
+"""本番の配信のファクトリー（Composition Root、docs/streaming.md）。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+
+from ailoveshen.domain.entities import Conversation
+from ailoveshen.domain.value_objects import SpeechPriority
+from ailoveshen.factories.game import create_game_service
+from ailoveshen.factories.llm import create_llm_service
+from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+from ailoveshen.infrastructure.config import Settings
+from ailoveshen.infrastructure.events import AsyncEventBus
+from ailoveshen.presentation.services import ChatResponder, Narrator
+from ailoveshen.presentation.services.stream import Stream
+
+
+class StreamSetupError(RuntimeError):
+    """配信を始められない（TTS サーバーにつながらないなど）。理由と直し方を持つ。"""
+
+
+async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir: Path) -> Stream:
+    """
+    配信の全部をつないだ Stream を作る。
+
+    - 読み上げ（`stream.speak`）: TTS サーバーにつながらなければ始めない（黙った配信を防ぐ）
+    - 目標ボード・アバター（`stream.board_port`、0 なら出さない）
+    - Twitch のチャット（`twitch.enabled` かつ `twitch.channel`）: 匿名で読むだけ
+
+    Args:
+        settings: 設定
+        tts_config: 設定の tts セクション（辞書。TTS のファクトリーが辞書で受け取る）
+        base_dir: リポジトリの直下（アバターのモデルと記録の基準）
+
+    Raises:
+        StreamSetupError: 読み上げがオンで、TTS サーバーにつながらないとき
+    """
+    bus = AsyncEventBus()
+    conversation = Conversation()
+    gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
+    game = create_game_service(
+        gemini=settings.gemini,
+        jev=settings.jev,
+        minecraft=settings.minecraft,
+        character=settings.character,
+        event_publisher=bus,
+        conversation=conversation,
+        generation_log=gemini_calls,
+        obs=settings.obs,
+    )
+    llm = create_llm_service(
+        gemini=settings.gemini,
+        character=settings.character,
+        event_publisher=bus,
+        conversation=conversation,
+        mid_goals=game.mid_goals,
+        generation_log=gemini_calls,
+    )
+    closers: list[Any] = []
+
+    tts = None
+    if settings.stream.speak:
+        from ailoveshen.factories.tts import create_and_connect_tts_service
+
+        try:
+            tts = await create_and_connect_tts_service(
+                config=tts_config, event_publisher=bus, get_current_emotion=llm.get_current_emotion
+            )
+        except Exception as e:  # noqa: BLE001 - どの失敗でも理由を言って始めない
+            await game.close()
+            await llm.close()
+            server = tts_config.get("server", {})
+            raise StreamSetupError(
+                f"TTS サーバー（{server.get('host')}:{server.get('port')}）につながらない: {e}。"
+                "cd docker && docker compose up -d で起動し、"
+                "curl http://localhost:5001/models/info で確かめる。"
+                "読み上げなしで配信するなら --no-speak"
+            ) from e
+        closers.append(tts.stop)
+        voice = tts_config.get("voice", {}).get("model_name")
+        logger.info(f"[tts] 読み上げる（モデル {voice}）")
+
+    async def say(text: str) -> None:
+        logger.info(f"[say] {text}")
+        if tts is not None:
+            await tts.speak(text, source="commentary")
+
+    async def say_reply(text: str) -> None:
+        if tts is not None:
+            # 視聴者への返事は実況より先に読む
+            await tts.speak(text, priority=SpeechPriority.HIGH, source="chat")
+
+    def activity():
+        return game.session.activity() if game.session else None
+
+    Narrator(llm, activity=activity, say=say).subscribe(bus)
+
+    board = None
+    if settings.stream.board_port:
+        from ailoveshen.factories.avatar import create_avatar_stage
+        from ailoveshen.presentation.web.goal_board import GoalBoard
+
+        avatar = create_avatar_stage(settings.avatar, settings.jev, activity, base_dir=base_dir)
+        avatar.subscribe(bus)
+        closers.append(avatar.close)
+        board = GoalBoard(
+            activity,
+            gemini_calls=gemini_calls.recent,
+            gemini_image=gemini_calls.image,
+            avatar=avatar,
+        )
+        board.subscribe(bus)
+
+    chat = responder = None
+    twitch = settings.twitch
+    if twitch.enabled and twitch.channel.strip():
+        from ailoveshen.infrastructure.adapters.twitch import TwitchIrcChat
+
+        chat = TwitchIrcChat(twitch.channel)
+        responder = ChatResponder(
+            llm,
+            session=lambda: game.session,
+            say=say_reply,
+            min_interval_seconds=twitch.min_interval_seconds,
+            backlog=twitch.backlog,
+        )
+        logger.info(f"[chat] Twitch #{chat.channel} のチャットを読む（読むだけ）")
+    else:
+        logger.info("[chat] Twitch のチャットは読まない（.env の TWITCH_CHANNEL が空か、オフ）")
+
+    stream = Stream(
+        game,
+        llm,
+        board=board,
+        board_port=settings.stream.board_port,
+        chat=chat,
+        responder=responder,
+        closers=tuple(closers),
+    )
+    stream.subscribe(bus)
+    logger.info(f"[control] {settings.minecraft.control}")
+    return stream

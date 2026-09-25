@@ -26,6 +26,7 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 - **Coherent decisions** (`docs/design/12_coherent_decisions.md`, request flow replaced by 13): `PlaySession` alone owns the goals; its `activity()` (mission, mid goals, small goal and status, recent goals) is rendered by one formatter (`prompts/stream_context.py`) for the goal decision, the commentary and the chat replies, and the goal decision also sees the conversation. A chat reply and its handling of a request (none/accept/decline) come from one generation; an accepted request becomes a viewer's mid goal behind the current one (the small goal is not interrupted). `Narrator` says why goals change and never drops a promise silently
 - **Goal board** (`presentation/web/goal_board.py`, extra `ailoveshen[stream]`): `GET /api/goals`, `/api/goals/stream` (SSE), `/overlay` (OBS browser source), `/overlay/vtuber` (the styled stream overlay: mission, mid goals with progress bars and viewer requests, the small goal as a speech bubble with a Japanese `label` and the `intent`, toasts when a mid goal clears; `?demo=1&pos=right&theme=mint|sky|lemon&scale=&compact=1&toast=0`), read-only in the play process (`examples/integration_test_minecraft.py --board-port 8765`). Debug: `GET /api/debug/gemini?limit=N` (the last Gemini calls, newest first: purpose, thinking level, thought summary with `gemini.include_thoughts`, output, tool calls, tokens, prompt; kept by `InMemoryGenerationLog`, shared by the game and chat generators) and `/debug/gemini` (a page that polls it; works as an OBS browser source); the screenshots attached to calls are served by id from `/api/debug/screen/<id>`
 - **Avatar** (`docs/design/24_avatar.md`, `presentation/web/avatar.py` + `avatar.html`): the VRM (`avatar.model_path`, `models/vrm/ailoveshen.vrm`, VRoid VRM 1.0) at `/avatar` on the goal board (OBS browser source, transparent; three.js + three-vrm vendored in `presentation/web/vendor/`, served at `/vendor/`). `AvatarStage` turns domain events into cues on `/api/avatar/stream` (SSE): speak (text + length; the page makes mouth shapes from kana), quiet, emote (happy/sad/angry/surprised/relaxed + nod/cheer/flinch/tilt/wave). With `avatar.judge: jev` (and a TypeSafe key) `AvatarDirector` asks Jev in one `system_one` call for the expression, its strength and a gesture from the moment, the line and `activity()`; the rules above are the fallback (error, `judge_timeout_seconds`, low confidence); the mouth moves at once and the face follows; Jev vs rule records in `logs/avatar/*.jsonl` (24 §8). Lip sync from TTS playback events, or from generated text when there is no TTS (`avatar.lip_sync: auto|text|tts`); `?demo=1&view=full&pos=left|center|right&scale=`
+- **The stream** (`python -m ailoveshen.stream`, `src/ailoveshen/stream.py` → `factories/stream.py` → `presentation/services/stream.py`; runbook `docs/streaming.md`): runs until Ctrl-C with no step limit; `GameService.play(max_steps=None, keep_going=True)` logs a failed start or step and retries after 5 s doubling to 60 s (reset on success); refuses to start if `stream.speak` and the TTS server is unreachable. Twitch chat (`twitch.enabled` and `TWITCH_CHANNEL`) is read anonymously over IRC (`TwitchIrcChat`, `justinfan` nick, reconnects with back-off, 15 s connect timeout); `ChatResponder` answers one comment at a time (`twitch.response.min_interval_seconds`, keeps the newest `backlog`, skips `!` commands) through `LLMService.generate_response` with the session, spoken at HIGH priority. Goal board and avatar on `stream.board_port` (0: off); on stop the SSE streams get an end mark so uvicorn shuts down cleanly. `examples/integration_test_minecraft.py` stays as the test harness (step budget, scripted comments)
 
 ## Common Commands
 
@@ -75,6 +76,8 @@ python examples/demo_phase1.py  # Demo Phase 1 components
 python examples/demo_phase2.py  # Demo Phase 2 TTS pipeline
 python examples/demo_phase3.py  # Demo Phase 3 LLM conversation (fake generator, no API key)
 GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gemini API (+ TTS)
+# The stream (docs/streaming.md): Docker servers + bridge first, then
+python -m ailoveshen.stream [--control tools] [--no-speak] [--no-chat] [--no-board] [--debug]
 # Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
 docker compose -f docker/docker-compose.minecraft.yml up -d
 cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)
@@ -112,7 +115,7 @@ src/ailoveshen/
 ├── application/
 │   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse, IStartPlay, IAdvancePlay
 │   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder,
-│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder, IMissionStore, IFastJudge, IWatchRecorder, IScreenCapture, IGenerationLog
+│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder, IMissionStore, IFastJudge, IWatchRecorder, IScreenCapture, IGenerationLog, IChatSource
 │   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase,
 │   │                          # StartPlayUseCase, AdvancePlayUseCase, MidGoalKeeper, goal_vocabulary (schemas),
 │   │                          # tool_catalog (tools for Gemini), ToolWatcher (Jev answers watch questions),
@@ -130,12 +133,14 @@ src/ailoveshen/
 │       ├── jev/               # JevActionSelector, JevFastJudge (typesafe-sdk)
 │       ├── minecraft_bridge/  # MineflayerBridgeClient (HTTP to minecraft-bridge/)
 │       ├── obs/               # ObsScreenCapture (obsws-python; screenshots of the game source)
+│       ├── twitch/            # TwitchIrcChat (anonymous read-only IRC)
 │       ├── storage/           # JsonMissionStore (mid goals across restarts), JsonlWatchRecorder
 │       └── prompts/           # PromptTemplateBuilder, GamePromptTemplateBuilder, stream_context
 ├── presentation/
-│   ├── services/              # TTSService (priority queue), LLMService, GameService, Narrator
+│   ├── services/              # TTSService (priority queue), LLMService, GameService, Narrator, ChatResponder, Stream
 │   └── web/                   # GoalBoard (FastAPI: /api/goals, SSE, /overlay)
-└── factories/                 # Composition Roots (tts.py, llm.py, game.py, avatar.py)
+├── factories/                 # Composition Roots (tts.py, llm.py, game.py, avatar.py, stream.py)
+└── stream.py                  # python -m ailoveshen.stream (the stream's entry point)
 
 minecraft-bridge/              # Node sidecar: goals, solver, candidates, primitives, reflex, POV mirror,
                                # world memory, chests, tools, shared state, HTTP API

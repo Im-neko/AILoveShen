@@ -279,7 +279,7 @@ class GoalBoard:
         self._gemini_calls = gemini_calls
         self._gemini_image = gemini_image
         self._avatar = avatar
-        self._listeners: set[asyncio.Queue[str]] = set()
+        self._listeners: set[asyncio.Queue[str | None]] = set()
         self.app = self._create_app()
 
     def subscribe(self, bus: IEventSubscriber) -> None:
@@ -295,7 +295,18 @@ class GoalBoard:
             )
         )
         logger.info(f"目標ボード: http://{host}:{port}/overlay")
-        await server.serve()
+        task = asyncio.ensure_future(server.serve())
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # SSE を終わらせてから uvicorn 自身に止めさせる。タスクを直接キャンセルすると、
+            # 開いたままの接続（OBS のブラウザソース）の処理が打ち切られてトレースバックが出る
+            end_streams(self._listeners)
+            if self._avatar is not None:
+                self._avatar.end_streams()
+            server.should_exit = True
+            await task
+            raise
 
     def snapshot(self) -> dict[str, Any]:
         """今の目標。"""
@@ -309,7 +320,7 @@ class GoalBoard:
             queue.put_nowait(data)
 
     async def _stream(self, request: Request) -> AsyncIterator[str]:
-        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=QUEUE_SIZE)
+        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=QUEUE_SIZE)
         self._listeners.add(queue)
         try:
             yield f"data: {json.dumps(self.snapshot(), ensure_ascii=False)}\n\n"
@@ -319,6 +330,8 @@ class GoalBoard:
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if data is None:  # サーバーを止める
+                    return
                 yield f"data: {data}\n\n"
         finally:
             self._listeners.discard(queue)
@@ -368,3 +381,11 @@ class GoalBoard:
             return DEBUG_HTML.read_text(encoding="utf-8")
 
         return app
+
+
+def end_streams(listeners: set[asyncio.Queue[str | None]]) -> None:
+    """開いている SSE に終わりの合図（None）を入れる。"""
+    for queue in listeners:
+        if queue.full():
+            queue.get_nowait()
+        queue.put_nowait(None)

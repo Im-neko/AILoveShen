@@ -283,3 +283,15 @@ def test_the_embedded_server_leaves_ctrl_c_to_the_play_process():
     server = _EmbeddedServer(uvicorn.Config(GoalBoard(lambda: None).app))
     with server.capture_signals():
         assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_stopping_the_server_ends_the_open_streams():
+    import asyncio as aio
+
+    from ailoveshen.presentation.web.goal_board import end_streams
+
+    full = aio.Queue(maxsize=1)
+    full.put_nowait("old")
+    empty = aio.Queue(maxsize=1)
+    end_streams({full, empty})
+    assert full.get_nowait() is None and empty.get_nowait() is None

@@ -3,7 +3,7 @@
 Minecraft を AI（Gemini + Jev）にプレイさせ、実況・アバター・目標の表示を OBS で配信するまでの手順とコマンド。
 初回の準備（1 回だけ）と、毎回の起動・停止に分けてある。
 
-> いまの制限: Twitch のチャットはまだつながっていない。視聴者コメントは台本（`--comments` の JSON）で試す。
+配信の起動は `python -m ailoveshen.stream`。`examples/integration_test_minecraft.py` は試験用（ステップ数で終わる、台本のコメント）。
 
 ## 全体像
 
@@ -12,8 +12,9 @@ Minecraft サーバー (Docker, :25565)
    ↑ ボットが参加
 ブリッジ (Node, minecraft-bridge, HTTP :3000) ── 視点のミラー :25578 ← Minecraft クライアント（OBS で映す）
    ↑ HTTP
-プレイの処理 (Python, examples/integration_test_minecraft.py)
+配信 (Python, python -m ailoveshen.stream)
    ├─ Gemini（目標、実況、返事）/ Jev（行動の選択、見張り、アバターの表情）
+   ├─ Twitch のチャット（IRC、匿名で読むだけ）→ 返事
    ├─ TTS サーバー (Docker, Style-Bert-VITS2, :5001) → 音声 → 仮想オーディオ → OBS
    ├─ OBS WebSocket (:4455) で画面を撮って Gemini に見せる
    └─ 目標ボード (HTTP :8765) → OBS のブラウザソース（目標の表示、アバター）
@@ -24,7 +25,7 @@ Minecraft サーバー (Docker, :25565)
 | Minecraft サーバー（Paper 1.21.4） | Docker | 25565 |
 | TTS サーバー（Style-Bert-VITS2） | Docker | 5001 |
 | ブリッジ（ボット、視点のミラー） | `npm start` | 3000（HTTP）、25578（視点） |
-| プレイの処理 + 目標ボード | `python examples/integration_test_minecraft.py` | 8765（`--board-port`） |
+| 配信（プレイ、実況、チャット、目標ボード） | `python -m ailoveshen.stream` | 8765（`stream.board_port`） |
 | OBS WebSocket | OBS | 4455 |
 
 ## 初回の準備
@@ -62,6 +63,9 @@ cp .env.example .env
 | `OBS_PASSWORD` | OBS の WebSocket のパスワード（下の 6） |
 | `OBS_GAME_SOURCE` | ゲームを映す OBS のソース名（既定 `Minecraft`） |
 | `TTS_MODEL_NAME` | 読み上げに使う Style-Bert-VITS2 のモデル名（既定 `shen`） |
+| `TWITCH_CHANNEL` | 配信するチャンネル名（`twitch.tv/<ここ>`）。チャットを読む。空なら読まない |
+
+Twitch のチャットは匿名で読むだけなので、トークンやアプリの登録は要らない（返事は声で返す）。
 
 `.env` は git に入らない。Python とブリッジの両方が読む（シェルで `export` した値が優先）。
 
@@ -147,31 +151,46 @@ cd minecraft-bridge && npm start
 
 Minecraft 1.21.4 のクライアントで「マルチプレイ」→「ダイレクト接続」→ `127.0.0.1:25578`。ボットの目線がそのまま映る（操作はできない、見るだけ）。このウィンドウを OBS の `Minecraft` ソースで映す。
 
-### 4. プレイの処理（ターミナル 2）
+### 4. 配信（ターミナル 2）
 
 ```bash
-python examples/integration_test_minecraft.py --board-port 8765 --speak --max-steps 1000
+python -m ailoveshen.stream
 ```
 
-起動すると次が出る:
+リポジトリの直下で動かす。起動すると次が出る:
 
 ```
+[tts] 読み上げる（モデル <モデル名>）
+[chat] Twitch #<チャンネル> のチャットを読む（読むだけ）
+[obs] 目標: http://127.0.0.1:8765/overlay/vtuber  アバター: http://127.0.0.1:8765/avatar
 [debug] Gemini の思考: http://127.0.0.1:8765/debug/gemini
-[avatar] アバター: http://127.0.0.1:8765/avatar
-[tts] モデル <モデル名>
+Twitch のチャット #<チャンネル> を読み始めた
 ```
 
-オプション:
+- Ctrl-C まで止まらない（ステップの上限はない）
+- Gemini・Jev・ブリッジが失敗しても止まらない。「… 秒待ってやり直す」と出して 5 秒から倍々（最長 60 秒）に待ち、やり直す。ブリッジを再起動しても配信はそのまま続く
+- TTS サーバーにつながらなければ始めない（黙った配信を防ぐ）。直し方が出る
+- チャットのコメントには 1 つずつ声で返事をする。返事の間は 5 秒以上。作っている間に来たコメントは新しい 3 件だけ取っておく（`twitch.response`）。`!` で始まるコメントには返事をしない。頼みごとは中目標に足すことがある
+- 画面のログ（`[say]` 実況、`[chat]`、`[reply]`、`[goal]` 小目標、`[mid+]` / `[mid✓]` / `[mid×]` 中目標）は `data/logs/ailoveshen.log` にも残る
+
+既定は設定（`config/default.yaml` の `stream` と `twitch`）。その回だけ変えるオプション:
 
 | オプション | 内容 |
 |---|---|
-| `--board-port 8765` | 目標の表示・アバター・デバッグの Web サーバーを出す（OBS のブラウザソースに要る） |
-| `--speak` | 実況と返事を読み上げる（TTS サーバーが要る） |
-| `--max-steps N` | N ステップで終わる（既定 300） |
-| `--control tools` | Gemini が道具を呼んで直接操作する（既定 `candidates` は候補から Jev が選ぶ）。設定は `minecraft.agent.control` |
-| `--comments c.json` | 台本の視聴者コメントを流す |
+| `--control tools` | Gemini が道具を呼んで直接操作する（既定 `candidates` は候補から Jev が選ぶ。設定は `minecraft.agent.control`） |
+| `--no-speak` | 読み上げない（TTS サーバーなしで試すとき） |
+| `--no-chat` | Twitch のチャットを読まない |
+| `--no-board` | 目標ボードとアバターを出さない |
+| `--board-port N` | 目標ボードのポート（既定 8765） |
+| `--debug` | DEBUG のログも出す |
 
-`--comments` の JSON（`after_seconds` はプレイ開始からの秒数）:
+試験用（ステップ数で終わる、台本のコメントを流す）:
+
+```bash
+python examples/integration_test_minecraft.py --board-port 8765 --speak --max-steps 300 --comments c.json
+```
+
+`c.json`（`after_seconds` はプレイ開始からの秒数）:
 
 ```json
 [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}]
@@ -183,7 +202,7 @@ OBS を開く（すでに開いていればブラウザソースを「再読み�
 
 ## 止め方
 
-1. プレイの処理: Ctrl-C（「[stop] Ctrl-C で止めた」と出て終わる）
+1. 配信: Ctrl-C（「配信を止めた」「[stop] Ctrl-C で止めた」と出て終わる。OBS のブラウザソースはつないだままでよい）
 2. ブリッジ: Ctrl-C
 3. Docker（片付けるとき）:
 
@@ -211,13 +230,20 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
 | 見張りの記録（`--control tools`） | `logs/watch/*.jsonl` |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
+| 配信のログ | ターミナルと `data/logs/ailoveshen.log` |
 | ボットの様子 | ブリッジのターミナルの出力 |
 
 ## うまくいかないとき
 
 | 出るもの | 原因と対処 |
 |---|---|
-| `Minecraft bridge unreachable` | ブリッジが動いていない → 起動の 2 |
+| `プレイを始められない（GameBridgeError: Minecraft bridge unreachable …）。N 秒待ってやり直す` | ブリッジが動いていない → 起動の 2。起動すれば配信はそのまま始まる |
+| `ステップが失敗した（…）。N 秒待ってやり直す` | Gemini・Jev・ブリッジの一時的な失敗。続くなら中身（…）を見る |
+| `TTS サーバー（…）につながらない` で起動しない | TTS サーバーを起動する（起動の 1）。読み上げなしなら `--no-speak` |
+| `Twitch のチャットにつながらない` | ネットワークを確かめる。自動でつなぎ直す |
+| `Twitch から: … NOTICE …` | チャンネル名を確かめる（`TWITCH_CHANNEL`） |
+| `.env に GEMINI_API_KEY … を書く` | `.env` にキーを書く |
+| `config/default.yaml がない` | リポジトリの直下で動かす |
 | `OBS から画面を撮れない（…）` | OBS が開いていない、パスワード違い、WebSocket がオフ → 準備の 6。画面なしでプレイは続く |
 | `OBS と話すためのモジュール obsws_python がない` | `pip install -r requirements.txt` |
 | `OBS にソース「Minecraft」がない` | OBS のソース名を `OBS_GAME_SOURCE` と同じにする |
@@ -225,7 +251,7 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | 読み上げで 422 | `tts.emotion_style_map` にモデルにないスタイル名がある |
 | 音が OBS に入らない | `tts.audio.device` と OBS の音声入力キャプチャのデバイスを確かめる |
 | Ctrl-C で止まらない | 最新のコードにする（`git pull`） |
-| ブラウザソースが空 | `--board-port` を付けたか。付けていれば OBS でソースを再読み込み |
+| ブラウザソースが空 | 配信が動いているか、`--no-board` にしていないか。動いていれば OBS でソースを再読み込み |
 
 ## 関係する設計書
 

@@ -129,7 +129,7 @@ class AvatarStage:
         self._model = Path(model_path) if model_path else None
         self._lip_sync = lip_sync
         self._tts_seen = False
-        self._listeners: set[asyncio.Queue[str]] = set()
+        self._listeners: set[asyncio.Queue[str | None]] = set()
         self._director = director
         self._pending: set[asyncio.Task] = set()  # Jev の答えを待っている判断
 
@@ -262,6 +262,13 @@ class AvatarStage:
             }
         )
 
+    def end_streams(self) -> None:
+        """開いているページへのストリームを終わらせる（サーバーを止めるとき）。"""
+        for queue in self._listeners:
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(None)
+
     def _send(self, cue: dict[str, Any]) -> None:
         self._broadcast(json.dumps(cue, ensure_ascii=False))
 
@@ -272,7 +279,7 @@ class AvatarStage:
             queue.put_nowait(data)
 
     async def _stream(self, request: Request) -> AsyncIterator[str]:
-        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=QUEUE_SIZE)
+        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=QUEUE_SIZE)
         self._listeners.add(queue)
         logger.debug(f"アバターのページがつながった（{len(self._listeners)}）")
         try:
@@ -283,6 +290,8 @@ class AvatarStage:
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if data is None:  # サーバーを止める
+                    return
                 yield f"data: {data}\n\n"
         finally:
             self._listeners.discard(queue)

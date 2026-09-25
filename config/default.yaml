@@ -4,6 +4,11 @@
 app_name: AILoveShen
 debug: false
 
+# The stream (python -m ailoveshen.stream, docs/streaming.md)
+stream:
+  board_port: 8765         # goal board, avatar and debug pages for OBS; 0: off
+  speak: true              # read the commentary and replies aloud (the TTS server must be up)
+
 # Twitch Integration
 twitch:
   enabled: true
@@ -12,9 +17,11 @@ twitch:
   client_secret: "${TWITCH_CLIENT_SECRET:-}"
   access_token: "${TWITCH_ACCESS_TOKEN:-}"
 
-  # Response rate limit
+  # Replies to chat (python -m ailoveshen.stream). The chat is read anonymously: only the channel
+  # is needed (TWITCH_CHANNEL), no token.
   response:
     min_interval_seconds: 5.0
+    backlog: 3             # comments kept while a reply is being made (the newest ones)
 
   # Reconnection settings
   reconnect:

@@ -31,10 +31,15 @@ class ConfigurationError(Exception):
 class TwitchSettings:
     """Twitch 連携の設定。"""
 
+    # 配信（python -m ailoveshen.stream）でチャットを読むか。channel が空なら読まない
+    enabled: bool = True
     channel: str = ""
     client_id: str = ""
     client_secret: str = ""
     access_token: str = ""
+    # 返事と返事の最短の間、返事を待つコメントを何件まで取っておくか
+    min_interval_seconds: float = 5.0
+    backlog: int = 3
 
 
 @dataclass
@@ -268,6 +273,16 @@ class AvatarSettings:
 
 
 @dataclass
+class StreamSettings:
+    """本番の配信（python -m ailoveshen.stream、docs/streaming.md）。"""
+
+    # 目標ボード・アバター・デバッグの Web サーバーのポート。0 なら出さない
+    board_port: int = 8765
+    # 実況と返事を TTS で読み上げる
+    speak: bool = True
+
+
+@dataclass
 class LoggingSettings:
     """ログの設定。"""
 
@@ -300,6 +315,7 @@ class Settings:
     obs: OBSSettings = field(default_factory=OBSSettings)
     avatar: AvatarSettings = field(default_factory=AvatarSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    stream: StreamSettings = field(default_factory=StreamSettings)
 
 
 # =============================================================================
@@ -396,11 +412,24 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
 
     if "twitch" in data:
         twitch_data = data["twitch"]
+        response_data = twitch_data.get("response") or {}
         settings.twitch = TwitchSettings(
+            enabled=bool(twitch_data.get("enabled", True)),
             channel=twitch_data.get("channel", ""),
             client_id=twitch_data.get("client_id", ""),
             client_secret=twitch_data.get("client_secret", ""),
             access_token=twitch_data.get("access_token", ""),
+            min_interval_seconds=float(
+                response_data.get("min_interval_seconds", TwitchSettings.min_interval_seconds)
+            ),
+            backlog=int(response_data.get("backlog", TwitchSettings.backlog)),
+        )
+
+    if "stream" in data:
+        stream_data = data["stream"] or {}
+        settings.stream = StreamSettings(
+            board_port=int(stream_data.get("board_port") or 0),
+            speak=bool(stream_data.get("speak", StreamSettings.speak)),
         )
 
     if "gemini" in data:

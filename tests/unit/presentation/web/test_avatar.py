@@ -153,3 +153,13 @@ async def test_without_a_director_rules_are_sent_directly():
     sent = _sent(stage)
     await stage._on_event(MidGoalCompletedEvent(title="家"))
     assert (sent[0]["emotion"], sent[0]["gesture"]) == ("happy", "cheer")
+
+
+def test_ending_the_streams_puts_the_end_mark():
+    import asyncio
+
+    stage = AvatarStage()
+    queue = asyncio.Queue(maxsize=2)
+    stage._listeners.add(queue)
+    stage.end_streams()
+    assert queue.get_nowait() is None

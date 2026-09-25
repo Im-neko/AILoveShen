@@ -96,3 +96,60 @@ class TestGameService:
 
         for c in closers:
             c.close.assert_awaited_once()
+
+
+class TestKeepGoing:
+    """配信用（keep_going）: 失敗しても止めずに待ってやり直す。"""
+
+    @pytest.mark.asyncio
+    async def test_failures_are_retried_with_growing_waits(self, start, monkeypatch):
+        waits = []
+
+        async def fake_sleep(seconds):
+            waits.append(seconds)
+
+        monkeypatch.setattr("asyncio.sleep", fake_sleep)
+        start.execute.side_effect = [ConnectionError("bridge down"), start.execute.return_value]
+        advance = AsyncMock()
+        advance.execute.side_effect = [
+            RuntimeError("gemini 503"),
+            RuntimeError("gemini 503"),
+            _report(),
+            RuntimeError("jev"),
+            _report(),
+        ]
+        service = _service(start, advance)
+
+        outcome = await service.play(max_steps=2, keep_going=True)
+
+        assert outcome.steps == 2
+        # 開始の失敗 1 回、ステップの失敗 2 回（倍に）、成功で戻って 1 回
+        assert waits == [5.0, 5.0, 10.0, 5.0]
+
+    @pytest.mark.asyncio
+    async def test_without_keep_going_errors_propagate(self, start):
+        advance = AsyncMock()
+        advance.execute.side_effect = RuntimeError("boom")
+        with pytest.raises(RuntimeError):
+            await _service(start, advance).play(max_steps=1)
+
+    @pytest.mark.asyncio
+    async def test_no_step_limit_runs_until_cancelled(self, start):
+        import asyncio
+
+        advance = AsyncMock()
+        calls = 0
+
+        async def step(session):
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(0)
+            return _report()
+
+        advance.execute.side_effect = step
+        task = asyncio.create_task(_service(start, advance).play(max_steps=None, keep_going=True))
+        while calls < 50:
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
