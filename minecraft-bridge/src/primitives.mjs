@@ -31,7 +31,7 @@ const DROP_COLLECT_RADIUS = 8
 const WAIT_TICKS = 200
 const GLANCE_TICKS = 50
 const GLANCE_ANGLE = Math.PI / 3
-const EXPLORE_DISTANCE = 24
+export const EXPLORE_DISTANCE = 24
 const EXPLORE_MIN_PROGRESS = 5
 const RECIPE_UNLOCK_TICKS = 40
 // Sleeping is possible from this time of day (Mineflayer's own check: 12541..23458)
@@ -392,6 +392,10 @@ export const PRIMITIVES = {
     const door = state.home ? `, door ${isDoorOpen(bot, state.home) ? 'open' : 'closed'}` : ''
     return `waited (time ${bot.time.timeOfDay}${door})`
   },
+  async goto_memory (bot, state, c) {
+    await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3))
+    return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
+  },
   async explore (bot, state, c) {
     const start = bot.entity.position.clone()
     const target = start.offset(c.dx * EXPLORE_DISTANCE, 0, c.dz * EXPLORE_DISTANCE)
@@ -410,6 +414,6 @@ export const PRIMITIVES = {
 // Which primitive answers damage itself: taking damage does not interrupt it
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
-export const TIMEOUTS_MS = { go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { goto_memory: 60000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

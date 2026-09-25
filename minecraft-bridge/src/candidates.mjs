@@ -11,10 +11,13 @@
 // A candidate id names its target (a position or an entity id) so it stays the same until the
 // next /act, which grounds the candidates again and runs the one with that id.
 
+import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
+import { recall, visited } from './memory.mjs'
+import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
+const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
 const DROPS_OFFERED = 3
 const THREATS_OFFERED = 2
@@ -92,12 +95,25 @@ function fromLeaf (bot, state, world, leaf) {
       return leaf.sources.flatMap((name) => world.hunt(name).map(({ e, dist: d }) => ({
         id: `attack ${name} #${e.id}`, verb: 'attack', target: name, distance: round(d), pos: e.position, entityId: e.id, hostile: false
       })))
-    case 'explore':
-      return Object.entries(EXPLORE_DIRECTIONS)
+    case 'explore': {
+      const lookingFor = leaf.sources.length ? leaf.sources.join('/') : leaf.item
+      const me = bot.entity.position
+      // Where it was seen before comes first; then directions, marking ground already covered
+      const recalled = state.memory
+        ? recall(state.memory, leaf.sources, me, Number(bot.time.age)).map((p) => ({
+          id: `go to ${p.kind} seen at ${p.x},${p.z}`, verb: 'goto_memory', target: p.kind, pos: new Vec3(p.x, p.y, p.z),
+          distance: p.distance, seen_minutes_ago: p.minutesAgo, count: p.count
+        }))
+        : []
+      const directions = Object.entries(EXPLORE_DIRECTIONS)
         .filter(([, [dx, dz]]) => !leaf.away || awayFrom(bot, leaf.away, dx, dz))
         .map(([dir, [dx, dz]]) => ({
-          id: `explore ${dir}`, verb: 'explore', target: dir, looking_for: leaf.sources.length ? leaf.sources.join('/') : leaf.item, dx, dz
+          id: `explore ${dir}`, verb: 'explore', target: dir, looking_for: lookingFor, dx, dz,
+          been_there: !!state.memory && visited(state.memory, me.offset(dx * EXPLORE_DISTANCE, 0, dz * EXPLORE_DISTANCE))
         }))
+        .sort((a, b) => a.been_there - b.been_there)
+      return [...recalled, ...directions]
+    }
     case 'craft': {
       const table = leaf.needsTable ? findTable(bot) : null
       return [{

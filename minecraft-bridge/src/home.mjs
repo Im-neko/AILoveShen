@@ -41,7 +41,8 @@ export function saveState (state) {
       bed: state.home.bed ? plain(state.home.bed) : null,
       breach: state.home.breach
     },
-    goal: state.goal
+    goal: state.goal,
+    memory: state.memory
   }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true })
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 1))
@@ -56,6 +57,7 @@ export function loadState (state) {
     state.home = { name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] }
   }
   if (data.goal) state.goal = data.goal
+  if (data.memory) state.memory = { ...state.memory, ...data.memory }
 }
 
 // The finished plan becomes the home: the door's lower half, the cells just inside and outside it,

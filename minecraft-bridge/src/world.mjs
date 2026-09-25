@@ -5,6 +5,7 @@ import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
 import { findTable, isLeaves } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
+import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS } from './memory.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // blocks above or below the feet the bot digs without climbing or tunnelling
@@ -43,6 +44,18 @@ export function huntTargets (bot, names, limit = TARGETS_PER_KIND) {
   return nearbyEntities(bot)
     .filter(({ e, dist }) => names.includes(e.name) && HUNTABLE.has(e.name) && dist <= HUNT_RADIUS && Math.abs(e.position.y - me.y) < 4)
     .slice(0, limit)
+}
+
+// What is around now that is worth remembering (memory.mjs): [{ kind, pos }]
+export function sightings (bot) {
+  const ids = Object.values(bot.registry.blocksByName).filter((b) => REMEMBERED_BLOCK.test(b.name)).map((b) => b.id)
+  const blocks = bot.findBlocks({ matching: ids, maxDistance: DIG_RADIUS, count: 512 })
+    .map((p) => ({ kind: bot.blockAt(p)?.name, pos: p }))
+    .filter((s) => s.kind)
+  const animals = nearbyEntities(bot)
+    .filter(({ e, dist }) => REMEMBERED_ANIMALS.has(e.name) && dist <= HUNT_RADIUS)
+    .map(({ e }) => ({ kind: e.name, pos: e.position }))
+  return [...blocks, ...animals]
 }
 
 // The solver's view of the world; dig/hunt lookups are cached for the candidates

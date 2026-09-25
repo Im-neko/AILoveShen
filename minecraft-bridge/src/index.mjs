@@ -20,16 +20,17 @@ import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
-import { summarize, round, threats } from './observe.mjs'
+import { summarize, round, threats, bearing } from './observe.mjs'
 import { configureMovements, PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CRITICAL } from './primitives.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
 import { Knowledge } from './knowledge.mjs'
 import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe, needsOutside } from './candidates.mjs'
-import { snapshot } from './world.mjs'
+import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, homeFromPlan, isInside, isDoorOpen, leaveHome, hasBed } from './home.mjs'
 import { startReflex } from './reflex.mjs'
+import { newMemory, remember, rememberDeath, summarizeMemory } from './memory.mjs'
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
 const VERSION = '1.21.4'
@@ -53,10 +54,13 @@ const state = {
   reflex: false, // the reflex is handling a nearby threat
   current: null, // { id, verb, abort(reason), done } of the running action
   recipeBook: new RecipeBook(bot),
-  unreachableDrops: new Set()
+  unreachableDrops: new Set(),
+  memory: newMemory() // places seen before (memory.mjs), kept in state.json
 }
 loadState(state)
 const knowledge = new Knowledge(minecraftData(VERSION))
+
+const worldAge = () => Number(bot.time.age)
 
 // A finished plan becomes the home; plan, home and goal survive restarts
 function persist () {
@@ -70,6 +74,7 @@ function persist () {
 function observation () {
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
+  extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
@@ -135,6 +140,8 @@ async function act (id) {
     state.busy = false
     state.current = null
     finished()
+    // What came into view on the way (after moving is when it changes)
+    remember(state.memory, sightings(bot), bot.entity.position, worldAge())
     persist()
   }
   const seconds = round((Date.now() - t) / 1000)
@@ -213,6 +220,12 @@ startReflex(bot, state, {
     return true
   },
   record (entry) { state.history.push(entry) }
+})
+
+bot.on('death', () => {
+  rememberDeath(state.memory, bot.entity.position, worldAge())
+  persist()
+  console.log(`[bot] died at ${bot.entity.position}`)
 })
 
 bot.once('spawn', () => {

@@ -44,6 +44,12 @@ def _obs(**kwargs) -> GameObservation:
         },
         "inventory": {"spruce_log": 2},
         "mobs": [{"name": "zombie", "hostile": True, "distance_m": 9.5, "visible": True}],
+        "memory": {
+            "places": [
+                {"kind": "sheep", "count": 3, "direction": "NE", "distance_m": 80, "minutes_ago": 4}
+            ],
+            "deaths": [{"direction": "S", "distance_m": 40, "minutes_ago": 12}],
+        },
         "recent_actions": [
             {"action": "dig oak_log at 1,2,3", "ok": True, "result": "dug"},
             {"action": "craft oak_door x1", "ok": False, "result": "failed: no table"},
@@ -132,6 +138,10 @@ class TestGamePromptTemplateBuilder:
         assert "家: まだない" in prompt
         assert "craft oak_door x1=失敗（failed: no table）" in prompt
         assert "装備: 手に wooden_sword、頭 leather_helmet、左手 shield" in prompt
+        assert (
+            "覚えている場所（前に見た、今は見えない）: sheep 3（北東 80m、4 分前）、"
+            "死んだ場所（南 40m、12 分前）"
+        ) in prompt
 
     def test_goal_prompt_at_night_counts_to_morning(self):
         """Test at night the time until morning is shown, and the home."""

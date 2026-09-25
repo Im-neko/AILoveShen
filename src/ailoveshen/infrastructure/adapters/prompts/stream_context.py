@@ -47,6 +47,16 @@ TICKS_PER_MINUTE = 20 * 60
 DUSK_TICK = 12000
 MORNING_TICK = 24000
 PHASE_NAMES = {"day": "昼", "dusk": "夕方", "night": "夜", "dawn": "明け方"}
+DIRECTION_NAMES = {
+    "N": "北",
+    "NE": "北東",
+    "E": "東",
+    "SE": "南東",
+    "S": "南",
+    "SW": "南西",
+    "W": "西",
+    "NW": "北西",
+}
 EQUIPMENT_NAMES = {"head": "頭", "chest": "胴", "legs": "脚", "feet": "足", "off_hand": "左手"}
 
 
@@ -129,6 +139,16 @@ def _requested(goal: MidGoal) -> str:
     return f"（{goal.requested_by}さんの頼み）" if goal.requested_by else ""
 
 
+def _format_memory(memory: dict) -> str:
+    def where(p: dict) -> str:
+        direction = DIRECTION_NAMES.get(p["direction"], p["direction"])
+        return f"{direction} {p['distance_m']}m、{p['minutes_ago']} 分前"
+
+    parts = [f"{p['kind']} {p['count']}（{where(p)}）" for p in memory.get("places", [])]
+    parts += [f"死んだ場所（{where(d)}）" for d in memory.get("deaths", [])]
+    return "、".join(parts) or "なし"
+
+
 def _format_equipment(me: dict) -> str:
     worn = [
         f"{EQUIPMENT_NAMES[part]} {item}"
@@ -197,6 +217,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {json.dumps(s.get('inventory', {}), ensure_ascii=False)}",
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
+        f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",
     ]
     recent = s.get("recent_actions", [])
     if recent:
