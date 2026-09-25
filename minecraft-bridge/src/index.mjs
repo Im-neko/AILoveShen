@@ -16,6 +16,7 @@
 //   PUT  /builds/<name>   -> { blocks, size: {width, depth, height}, anchor, purpose } 名前付きの建物を登録する
 //                             （docs/design/25_builds.md。原点はアンカーから決める。守るものに掛かれば 400 と理由）
 //   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
+//   GET  /map              -> 家のまわりの真上から見た地図（map.mjs）: { center, radius, base_y, cells, home, builds }
 //   POST /tool {name, args} -> 道具を 1 つ呼ぶ（設計書 21）: { ok, result, seconds, refused? }。行動の道具は /act と同じ経路で
 //                             実行する。断るとき（安全の制約、引数が世界と合わない）は refused: true と理由
 //   GET  /state            -> 共通の状態（実行中の行動の進み具合、まわりの形、モブ、欲求）。見張りの質問と道具の選択が見る
@@ -32,6 +33,7 @@ import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
+import { mapAround } from './map.mjs'
 import { summarize, bearing } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
@@ -212,6 +214,9 @@ async function handle (req, res) {
       if (e instanceof BuildError) return send(res, 400, { error: e.message })
       throw e
     }
+  }
+  if (req.method === 'GET' && req.url === '/map') {
+    return send(res, 200, mapAround(bot, state))
   }
   if (req.method === 'GET' && req.url === '/builds') {
     return send(res, 200, buildsStatus(bot, state))

@@ -53,6 +53,7 @@ class GeminiTextGenerator(ITextGenerator):
         include_thoughts: bool = False,
         generation_log: Optional[IGenerationLog] = None,
         media_resolution: str = "low",
+        media_resolutions: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         Gemini のクライアントを初期化する。
@@ -73,6 +74,7 @@ class GeminiTextGenerator(ITextGenerator):
             generation_log: 呼び出しごとの記録（用途、深さ、思考の要約、出力、トークン）の残し先
             media_resolution: 画像を添えるときの解像度（"low"、"medium"、"high"）。低いほど
                 画像のトークンが少ない（docs/design/23）
+            media_resolutions: 用途ごとの解像度（例: 建物の設計の地図は medium。25 §3）
 
         Raises:
             ValueError: api_key が空か、thinking_level に対応していないとき。
@@ -93,9 +95,14 @@ class GeminiTextGenerator(ITextGenerator):
             "medium": types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
             "high": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
         }
-        if media_resolution not in resolutions:
-            raise ValueError(f"media_resolution must be one of {list(resolutions)}")
-        self._media_resolution = resolutions[media_resolution]
+        by_purpose = {"default": media_resolution, **dict(media_resolutions or {})}
+        for purpose, resolution in by_purpose.items():
+            if resolution not in resolutions:
+                raise ValueError(
+                    f"media_resolution must be one of {list(resolutions)}, "
+                    f"got {resolution!r} for {purpose!r}"
+                )
+        self._media_resolutions = {p: resolutions[r] for p, r in by_purpose.items()}
         self._generation_log = generation_log
 
         self._model = model
@@ -281,7 +288,10 @@ class GeminiTextGenerator(ITextGenerator):
                 types.Part.from_text(text=prompt),
                 *[types.Part.from_bytes(data=i.data, mime_type=i.mime_type) for i in images],
             ]
-            config = config.model_copy(update={"media_resolution": self._media_resolution})
+            resolution = self._media_resolutions.get(
+                purpose or "default", self._media_resolutions["default"]
+            )
+            config = config.model_copy(update={"media_resolution": resolution})
         started = time.monotonic()
         try:
             response = await self._client.aio.models.generate_content(

@@ -145,3 +145,24 @@ test('家の壁の中のドアと、木・水のある側は断る（置けず�
   const pond = world({ '106,69,2': 'water' })
   assert.throws(() => registerBuild(pond.bot, state, { name: 'c', ...annex(), anchor: 'home:east' }), /water/)
 })
+
+test('地図のマス（anchor map）: 選んだ場所のまわりの平らな所に置く。マスがなければ断る', async () => {
+  const { mapAround, mapKind } = await import('../src/map.mjs')
+  const { bot } = world({ '112,70,12': 'oak_log' })
+  bot.entity = { position: v(102.5, 70, 2.5) }
+  const state = { home: home(), builds: {} }
+  const small = { blocks: [{ x: 0, y: 0, z: 0, block: 'cobblestone' }, { x: 2, y: 2, z: 2, block: 'cobblestone' }], size: { width: 3, depth: 3, height: 3 } }
+  assert.throws(() => registerBuild(bot, state, { name: 's', ...small, anchor: 'map' }), /needs the chosen cell/)
+  const plan = registerBuild(bot, state, { name: 's', ...small, anchor: 'map', site: { x: 110, z: 10 } })
+  assert.ok(Math.abs(plan.origin.x + 1 - 110) <= 6 && Math.abs(plan.origin.z + 1 - 10) <= 6)
+  assert.equal(plan.origin.y, 69)
+  // 地図: 家の中心から 64x64、家と建物の範囲、種類
+  const map = mapAround(bot, state, 8)
+  assert.deepEqual(map.center, { x: 102, z: 2 })
+  assert.equal(map.cells.length, 16)
+  assert.deepEqual(map.cells[8][8], ['built', 4]) // 家の屋根（床の層から +4）
+  assert.deepEqual(map.cells[0][0], ['ground', 0])
+  assert.equal(map.builds[0].name, 's')
+  assert.equal(mapKind('water'), 'water')
+  assert.equal(mapKind('oak_log'), 'tree')
+})

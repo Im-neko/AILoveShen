@@ -54,7 +54,7 @@ def test_shapes_expand_in_a_buildable_order():
     assert design.size() == (5, 5, 5)
     assert design.anchor == BuildAnchor.HOME_EAST
     assert design.material_counts() == {BlockKind.PLANKS: 98 - 2}
-    assert BUILD_SCHEMA["properties"]["anchor"]["enum"][-1] == "near_home"
+    assert {"near_home", "map"} <= set(BUILD_SCHEMA["properties"]["anchor"]["enum"])
 
 
 def test_a_door_takes_two_cells_and_comes_last():
@@ -240,3 +240,61 @@ async def test_without_a_designer_an_unknown_build_is_rejected():
     )
     with pytest.raises(GoalRejectedError, match="no build named annex"):
         await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="a")
+
+
+MAP = {
+    "center": {"x": 100, "z": 0},
+    "radius": 8,
+    "base_y": 69,
+    "cells": [[["ground", 0]] * 16 for _ in range(16)],
+    "home": {"min": {"x": 98, "z": -2}, "max": {"x": 102, "z": 2}, "door": {"x": 100, "z": -2}},
+    "builds": [{"name": "shed", "min": {"x": 104, "z": 4}, "max": {"x": 106, "z": 6}}],
+}
+
+
+def test_a_cell_becomes_the_world_center_of_that_cell():
+    from ailoveshen.application.use_cases.builds import cell_center
+
+    assert cell_center(MAP, "A1") == (94, -6)
+    assert cell_center(MAP, "d4") == (106, 6)
+    with pytest.raises(ValueError, match="outside the map"):
+        cell_center(MAP, "E1")
+    with pytest.raises(ValueError, match="bad cell"):
+        cell_center(MAP, "7C")
+
+
+def test_the_map_is_drawn_as_a_png_with_labels():
+    pytest.importorskip("PIL")
+    from ailoveshen.infrastructure.adapters.map import PilMapRenderer
+
+    with_gaps = {**MAP, "cells": [[None] * 16] + MAP["cells"][1:]}
+    image = PilMapRenderer().render(with_gaps)
+    assert image is not None and image.mime_type == "image/png"
+    assert image.data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert PilMapRenderer().render({**MAP, "cells": []}) is None
+
+
+@pytest.mark.asyncio
+async def test_the_designer_shows_the_map_and_turns_the_chosen_cell_into_a_site():
+    from ailoveshen.domain.value_objects import Screenshot
+
+    tower = {**ANNEX, "anchor": "map", "cell": "d4"}
+    designer, generator, prompts, bridge = _designer([tower])
+    bridge.map.return_value = MAP
+    renderer = Mock()
+    renderer.render.return_value = Screenshot(b"PNG", "image/png")
+    designer._renderer = renderer
+    design = await designer.design("tower", "見張り台")
+    assert design.cell == "D4" and design.site == (106, 6)
+    assert generator.generate_json.call_args.kwargs["images"] == (renderer.render.return_value,)
+    assert prompts.build_build_design_prompt.call_args.kwargs["map_shown"] is True
+
+
+@pytest.mark.asyncio
+async def test_without_a_map_the_map_anchor_is_sent_back():
+    designer, generator, prompts, bridge = _designer(
+        [{**ANNEX, "anchor": "map", "cell": "A1"}, ANNEX]
+    )
+    design = await designer.design("annex", "x")
+    assert design.anchor == BuildAnchor.HOME_EAST
+    assert "no map" in prompts.build_build_design_prompt.call_args.kwargs["previous_error"]

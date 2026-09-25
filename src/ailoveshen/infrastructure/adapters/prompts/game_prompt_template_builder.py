@@ -89,10 +89,18 @@ $builds_note
   - 家とつなぐには、その重なる面に clear で入口（幅 1、y=1〜2）を開ける。ドアの位置は避ける
   - 家の室内や床は変えられない。家のドア・ベッド・チェストには掛けられない
 - near_home: 家の近くの平らな空き地（コードが探す）。独立した建物（倉庫、塔、小屋）
-$previous_error
+$map_anchor$previous_error
 ## 出力
 指定された JSON だけを出力してください。
 """)
+
+MAP_ANCHOR_NOTE = """\
+- map: 添えた地図の画像のマス目を cell に書く（例: C7）。建物はそのマスのまわりの平らな所に建つ
+  - 地図は真上から見たもので、北が上、東が右。1 マスは 4x4 ブロック。家は赤い枠、ほかの建物は橙の枠
+  - 色: 緑 草地・土、灰 石、薄い黄 砂、青 水、赤橙 溶岩、濃い緑 葉、茶 木の幹、薄茶 作ったもの、
+    黒 まだ見ていない所。明るいほど高く、暗いほど低い（家の床と同じ高さが基準）
+  - 家からの見え方（街並み、道、眺め）を考えて選ぶ。水・溶岩・木・黒い所は避ける
+"""
 
 SITE_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者「$name」（性格: $personality_traits）です。
@@ -329,6 +337,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         brief: str,
         home_note: str,
         builds_note: str = "",
+        map_shown: bool = False,
         previous_error: str = "",
     ) -> str:
         """名前付きの建物の設計を頼むプロンプトを組み立てる（docs/design/25_builds.md）。"""
@@ -345,6 +354,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             brief=brief,
             home_note=home_note,
             builds_note=f"\n## ほかの建物\n{builds_note}\n" if builds_note else "",
+            map_anchor=MAP_ANCHOR_NOTE if map_shown else "",
             max_side=BuildDesign.MAX_SIDE,
             max_height=BuildDesign.MAX_HEIGHT,
             max_blocks=BuildDesign.MAX_BLOCKS,

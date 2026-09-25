@@ -93,6 +93,7 @@ def create_llm_service(
         include_thoughts=gemini.include_thoughts,
         generation_log=generation_log,
         media_resolution=gemini.media_resolution,
+        media_resolutions=gemini.media_resolutions,
     )
     prompt_builder = PromptTemplateBuilder()
 

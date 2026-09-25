@@ -93,6 +93,8 @@ class GeminiSettings:
     debug_log_size: int = 50
     # 画像を添えるときの解像度（low / medium / high。低いほど画像のトークンが少ない）
     media_resolution: str = "low"
+    # 用途ごとの解像度（建物の設計の地図は、細かい色を読むので medium）
+    media_resolutions: dict[str, str] = field(default_factory=lambda: {"build_design": "medium"})
     retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
     rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
 
@@ -451,6 +453,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             include_thoughts=gemini_data.get("include_thoughts", True),
             debug_log_size=gemini_data.get("debug_log_size", 50),
             media_resolution=gemini_data.get("media_resolution", "low"),
+            media_resolutions={
+                "build_design": "medium",
+                **dict(gemini_data.get("media_resolutions") or {}),
+            },
             retry=GeminiRetrySettings(
                 max_attempts=retry_data.get("max_attempts", 3),
                 base_delay_seconds=retry_data.get("base_delay_seconds", 1.0),

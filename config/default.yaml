@@ -81,6 +81,8 @@ gemini:
   debug_log_size: 50
   # Resolution of attached screenshots (low / medium / high): lower costs fewer image tokens
   media_resolution: "low"
+  media_resolutions:
+    build_design: "medium"     # the top-down map for placing a build (docs/design/25)
 
   # Retry settings (max_attempts includes the original request;
   # retried on 408/429/5xx only)

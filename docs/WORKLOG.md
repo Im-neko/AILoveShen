@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 建物の置き場所を地図の画像で選ぶ（設計書 25、2 段目） (2026-09-25)
+
+**Commit**: 次のコミット
+
+- ブリッジ `map.mjs` / `GET /map`: 家を中心に 64x64、列ごとの一番上のブロックの種類（ground、stone、sand、water、lava、leaves、tree、built、snow、other）と家の床からの高さ、家と建物の範囲。読み込まれていない列は null。アンカー `map` + `site` は、その中心から 6 マス以内の平らな場所（家・建物と 1 マス空ける）
+- Python: `IMapRenderer` と `PilMapRenderer`（真上、北が上、4x4 ブロックで 1 マス、列 A〜P・行 1〜16、家は赤、建物は橙と名前、高さで明るさ）。`BuildAnchor.MAP` と `BuildDesign.cell/site`、`cell_center`（マス目 → 座標はコードだけ）。`BuildDesigner` は地図を画像で添え、`map` を選んだらマス目から中心を決める。地図がなければ map を差し戻す
+- Gemini の画像の解像度を用途ごとに（`gemini.media_resolutions`、既定 `build_design: medium`。ほかは low のまま）
+- 見た目: 地形らしい見本を描いて確かめた（名前は白い下地で枠の上、矢印はフォントにないので「N up」）
+- テスト: npm 131、pytest 555
+
 ### Gemini が設計する建物（設計書 25、1 段目） (2026-09-25)
 
 **Commit**: `d21bcfb`

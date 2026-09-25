@@ -8,14 +8,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from loguru import logger
 
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
+from ailoveshen.application.ports.output.map_renderer import IMapRenderer
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     BlockKind,
     BuildAnchor,
@@ -24,9 +26,11 @@ from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GoalPredicate,
     GoalSpec,
+    Screenshot,
     ShapeKind,
 )
 
+CELL = 4  # 地図のマス目の 1 辺（ブロック）
 MAX_HAVE_COUNT = 64  # ブリッジの have の上限（手に入るかを確かめるだけなので、数はここまでで十分）
 _MATERIALS = [BlockKind.PLANKS, BlockKind.LOG, BlockKind.COBBLESTONE, BlockKind.DIRT]
 _POINT = {
@@ -62,6 +66,10 @@ BUILD_SCHEMA: dict[str, Any] = {
                 "required": ["shape", "from"],
             },
         },
+        "cell": {
+            "type": "string",
+            "description": "anchor map only: the cell of the map image (e.g. C7)",
+        },
     },
     "required": ["purpose", "anchor", "shapes"],
 }
@@ -92,6 +100,7 @@ def parse_build(data: dict[str, Any], name: str) -> BuildDesign:
             purpose=str(data.get("purpose", "")).strip(),
             anchor=BuildAnchor(data["anchor"]),
             shapes=tuple(shapes),
+            cell=str(data["cell"]).strip().upper() if data.get("cell") else None,
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"malformed build design: missing or wrong {e}") from e
@@ -114,6 +123,7 @@ class BuildDesigner:
         bridge: IMinecraftBridge,
         character: CharacterProfile,
         max_attempts: int = 3,
+        renderer: IMapRenderer | None = None,
     ) -> None:
         """
         Args:
@@ -122,12 +132,14 @@ class BuildDesigner:
             bridge: 材料の確認と登録
             character: 配信者（設計に性格を反映する）
             max_attempts: あきらめるまでに設計させる回数
+            renderer: 地図を画像にするもの。あれば地図を見せ、マス目で置き場所を選ばせる
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
         self._bridge = bridge
         self._character = character
         self._max_attempts = max_attempts
+        self._renderer = renderer
 
     async def known(self) -> set[str]:
         """登録済みの建物の名前。"""
@@ -145,6 +157,7 @@ class BuildDesigner:
             GoalRejectedError: 使える設計が出なかったとき（最後の理由を持つ）
         """
         home_note, builds_note = await self._notes()
+        map_data, images = await self._map()
         error = ""
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_build_design_prompt(
@@ -153,13 +166,19 @@ class BuildDesigner:
                 brief=brief,
                 home_note=home_note,
                 builds_note=builds_note,
+                map_shown=bool(images),
                 previous_error=error,
             )
             try:
                 data = await self._text_generator.generate_json(
-                    prompt, BUILD_SCHEMA, purpose="build_design"
+                    prompt, BUILD_SCHEMA, purpose="build_design", images=images
                 )
                 design = parse_build(data, name)
+                if design.anchor == BuildAnchor.MAP:
+                    if map_data is None or not images:
+                        raise ValueError("there is no map now: use near_home or a side of the home")
+                    assert design.cell is not None
+                    design = replace(design, site=cell_center(map_data, design.cell))
                 await self._check_materials(design)
                 await self._bridge.set_build(design)
             except (ValueError, GoalRejectedError) as e:
@@ -179,6 +198,18 @@ class BuildDesigner:
         raise GoalRejectedError(
             f"could not design the build {name} after {self._max_attempts} attempts: {error}"
         )
+
+    async def _map(self) -> tuple[dict[str, Any] | None, tuple[Screenshot, ...]]:
+        """地図のデータと画像。描けなければ (None か地図, ())（アンカーの map は使えない）。"""
+        if self._renderer is None:
+            return None, ()
+        try:
+            map_data = await self._bridge.map()
+        except GameBridgeError as e:
+            logger.warning(f"地図を取れない: {e}")
+            return None, ()
+        image = self._renderer.render(map_data)
+        return map_data, ((image,) if image is not None else ())
 
     async def _check_materials(self, design: BuildDesign) -> None:
         specs = [
@@ -211,3 +242,37 @@ class BuildDesigner:
             for b in builds
         )
         return home_note, builds_note
+
+
+def column_label(index: int) -> str:
+    """地図のマス目の列のラベル（西から A, B, ...）。"""
+    return chr(ord("A") + index)
+
+
+def row_label(index: int) -> str:
+    """地図のマス目の行のラベル（北から 1, 2, ...）。"""
+    return str(index + 1)
+
+
+def cell_center(map_data: dict[str, Any], cell: str) -> tuple[int, int]:
+    """
+    地図のマス目（例: C7）の中心のワールドの (x, z)。座標にするのはコードだけ。
+
+    Raises:
+        ValueError: 地図にないマス目のとき
+    """
+    cell = cell.strip().upper()
+    radius = int(map_data["radius"])
+    per_side = 2 * radius // CELL
+    try:
+        col = ord(cell[0]) - ord("A")
+        row = int(cell[1:]) - 1
+    except (IndexError, ValueError) as e:
+        raise ValueError(f"bad cell {cell!r}: a letter and a number, e.g. C7") from e
+    if not (0 <= col < per_side and 0 <= row < per_side):
+        raise ValueError(
+            f"cell {cell} is outside the map (A-{column_label(per_side - 1)}, 1-{per_side})"
+        )
+    x = map_data["center"]["x"] - radius + col * CELL + CELL // 2
+    z = map_data["center"]["z"] - radius + row * CELL + CELL // 2
+    return x, z

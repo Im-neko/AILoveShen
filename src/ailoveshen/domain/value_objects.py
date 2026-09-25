@@ -743,6 +743,7 @@ class BuildAnchor(str, Enum):
     HOME_NORTH = "home:north"
     HOME_SOUTH = "home:south"
     NEAR_HOME = "near_home"
+    MAP = "map"  # 地図の画像のマス目（`BuildDesign.cell`）
 
     @property
     def extends_home(self) -> bool:
@@ -805,10 +806,15 @@ class BuildDesign:
     purpose: str
     anchor: BuildAnchor
     shapes: tuple[BuildShape, ...]
+    # anchor が MAP のとき: 地図のマス目（例: C7）と、コードがそこから決めた中心 (x, z)
+    cell: Optional[str] = None
+    site: Optional[tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         import re
 
+        if self.anchor == BuildAnchor.MAP and not self.cell:
+            raise ValueError("anchor map needs a cell of the map (e.g. C7)")
         if not re.fullmatch(r"[a-z0-9_]{1,32}", self.name):
             raise ValueError(f"name must be 1-32 of a-z, 0-9, _, got {self.name!r}")
         if not self.shapes:

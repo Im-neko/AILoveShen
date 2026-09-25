@@ -127,6 +127,8 @@ class MineflayerBridgeClient(IMinecraftBridge):
             "anchor": design.anchor.value,
             "purpose": design.purpose,
         }
+        if design.site is not None:
+            payload["site"] = {"x": design.site[0], "z": design.site[1]}
         try:
             response = await self._client.put(f"/builds/{design.name}", json=payload)
         except httpx.RequestError as e:
@@ -137,6 +139,10 @@ class MineflayerBridgeClient(IMinecraftBridge):
             raise GameBridgeError(
                 f"Minecraft bridge PUT /builds -> {response.status_code}: {response.text[:200]}"
             )
+
+    async def map(self) -> dict[str, Any]:
+        """家のまわりの真上から見た地図のデータ（minecraft-bridge/src/map.mjs）。"""
+        return await self._request("GET", "/map")
 
     async def builds(self) -> list[dict[str, Any]]:
         """登録した建物の一覧。"""

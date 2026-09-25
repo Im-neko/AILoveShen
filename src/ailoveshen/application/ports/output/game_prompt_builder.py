@@ -39,6 +39,7 @@ class IGamePromptBuilder(ABC):
         brief: str,
         home_note: str,
         builds_note: str = "",
+        map_shown: bool = False,
         previous_error: str = "",
     ) -> str:
         """
@@ -51,6 +52,7 @@ class IGamePromptBuilder(ABC):
             brief: 何のための建物か（中目標の題名と理由、視聴者の頼み）
             home_note: 家の大きさとドアの向き
             builds_note: ほかの建物（名前、置き場所、大きさ）
+            map_shown: 地図の画像を添えるか（添えるなら、マス目で置き場所を選べる）
             previous_error: 前回の設計が使えなかった理由（あれば）
         """
         ...

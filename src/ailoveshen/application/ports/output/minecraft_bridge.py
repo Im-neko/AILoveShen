@@ -119,6 +119,14 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def map(self) -> dict[str, Any]:
+        """
+        家のまわりの真上から見た地図のデータ: {center, radius, base_y, cells, home, builds}。
+        cells[z][x] は [種類, 家の床の層からの高さ] か None（読み込まれていない）。
+        """
+        ...
+
+    @abstractmethod
     async def builds(self) -> list[dict[str, Any]]:
         """登録した建物: [{name, purpose, anchor, placed, total, complete}]。"""
         ...

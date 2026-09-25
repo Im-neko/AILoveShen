@@ -18,19 +18,23 @@ const HOME_HEIGHT = 5
 const PROTECTED = /(_door|_bed|chest|furnace|crafting_table|barrel)$/
 const WALL = /(_planks|_log|_wood|cobblestone)$/
 const NATURAL_GROUND = /^(dirt|grass_block|coarse_dirt|podzol|stone|granite|diorite|andesite|gravel|sand|clay|mud|tuff|deepslate)$/
-const ANCHORS = ['home:east', 'home:west', 'home:north', 'home:south', 'near_home']
+const ANCHORS = ['home:east', 'home:west', 'home:north', 'home:south', 'near_home', 'map']
+const MAP_SEARCH = 6 // 地図のマスの中心から、平らな場所を探す範囲
 
 export class BuildError extends Error {}
 
 // 名前付きの建物を登録する。原点を決めて確かめ、state.builds[name] に入れる。理由つきの BuildError
-export function registerBuild (bot, state, { name, blocks, size, anchor, purpose = '' }) {
+export function registerBuild (bot, state, { name, blocks, size, anchor, purpose = '', site = null }) {
   if (!/^[a-z0-9_]{1,32}$/.test(name ?? '')) throw new BuildError(`bad build name ${JSON.stringify(name)}`)
   if (!ANCHORS.includes(anchor)) throw new BuildError(`unknown anchor ${anchor} (one of ${ANCHORS.join(', ')})`)
   if (!state.home) throw new BuildError('there is no home yet: build the house first')
   state.builds ??= {}
   if (state.builds[name]) throw new BuildError(`a build named ${name} already exists`)
   const plan = new BuildPlan({ blocks, width: size.width, depth: size.depth, height: size.height, design: { name, purpose, anchor }, kind: 'build' })
-  plan.origin = anchor === 'near_home' ? nearHomeOrigin(bot, state, plan) : homeSideOrigin(state.home, plan, anchor.slice(5))
+  if (anchor === 'map' && !site) throw new BuildError('anchor map needs the chosen cell')
+  plan.origin = anchor === 'near_home'
+    ? nearHomeOrigin(bot, state, plan)
+    : anchor === 'map' ? siteOrigin(bot, state, plan, site) : homeSideOrigin(state.home, plan, anchor.slice(5))
   checkPlacement(bot, state, plan, anchor)
   state.builds[name] = plan
   return plan
@@ -51,6 +55,39 @@ export function homeSideOrigin (home, plan, side) {
     case 'north': return new Vec3(midX, y, wallMin.z - (depth - 1))
   }
   throw new BuildError(`unknown side ${side}`)
+}
+
+// 地図で選んだマスの中心のまわり（MAP_SEARCH 以内）で、平らで空いた場所。家とほかの建物から離す
+function siteOrigin (bot, state, plan, site) {
+  const { width, depth, height } = plan.size
+  const taken = [homeBox(state.home), ...Object.values(state.builds ?? {}).map(buildBox)]
+  const offsets = []
+  for (let dx = -MAP_SEARCH; dx <= MAP_SEARCH; dx++) {
+    for (let dz = -MAP_SEARCH; dz <= MAP_SEARCH; dz++) offsets.push([dx, dz, dx * dx + dz * dz])
+  }
+  offsets.sort((a, b) => a[2] - b[2])
+  const surface = surfaceY(bot, Math.floor(site.x), Math.floor(site.z), state.home.min.y - 1)
+  if (surface == null) throw new BuildError('the chosen cell is not loaded: choose a cell nearer the home')
+  for (const [dx, dz] of offsets) {
+    const x = Math.floor(site.x) - Math.floor(width / 2) + dx
+    const z = Math.floor(site.z) - Math.floor(depth / 2) + dz
+    const box = { min: new Vec3(x, 0, z), max: new Vec3(x + width - 1, 0, z + depth - 1) }
+    if (taken.some((t) => overlaps2d(box, t, 1))) continue
+    for (const dy of [0, 1, -1, 2, -2]) {
+      const floor = new Vec3(x, surface + dy, z)
+      if (flatAndFree(bot, floor, width, depth, height)) return floor
+    }
+  }
+  throw new BuildError(`no flat ${width}x${depth} place in the chosen cell: choose another cell or make the build smaller`)
+}
+
+function surfaceY (bot, x, z, baseY) {
+  for (let y = baseY + 12; y >= baseY - 12; y--) {
+    const b = bot.blockAt(new Vec3(x, y, z))
+    if (!b) return null
+    if (b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)) return y
+  }
+  return null
 }
 
 // 家の近くの平らな場所: 足元が地面のブロックで、その上が空いている（植物・葉は刈る）。家とほかの建物から離す

@@ -19,6 +19,7 @@ from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
 from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
+from ailoveshen.infrastructure.adapters.map import PilMapRenderer
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
     MineflayerBridgeClient,
 )
@@ -122,6 +123,7 @@ def create_game_service(
         include_thoughts=gemini.include_thoughts,
         generation_log=generation_log,
         media_resolution=gemini.media_resolution,
+        media_resolutions=gemini.media_resolutions,
     )
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
@@ -186,6 +188,7 @@ def create_game_service(
         prompt_builder=prompt_builder,
         bridge=bridge,
         character=profile,
+        renderer=PilMapRenderer(),
     )
     mid_goals = MidGoalKeeper(
         bridge=bridge, event_publisher=event_publisher, store=store, builder=builder
