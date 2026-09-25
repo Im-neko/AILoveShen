@@ -224,7 +224,7 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
   // 設定のパケット（known packs、registry data、tags、feature flags）を再生する。
   const server = mc.createServer({
     'online-mode': false, port, host: '127.0.0.1', version: VERSION,
-    registryCodec: {}, enforceSecureProfile: false, motd: `${BOT_NAME} POV mirror`, maxPlayers: 4
+    registryCodec: {}, enforceSecureProfile: false, motd: `${BOT_NAME} の視点（POV ミラー）`, maxPlayers: 4
   })
 
   server.on('login', (viewer) => {
@@ -236,7 +236,7 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
   })
 
   server.on('playerJoin', (viewer) => {
-    if (!rec.login) { viewer.end('bot is not in the world yet'); return }
+    if (!rec.login) { viewer.end('ボットがまだワールドに入っていません'); return }
     log(`[mirror] 視聴者 ${viewer.username} が参加した`)
     viewer.write('login', { ...rec.login.data, maxPlayers: 4 })
     replayWorld(viewer, rec, bot)
