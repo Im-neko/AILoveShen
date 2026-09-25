@@ -172,3 +172,45 @@ test('まわりの形: 3 段の縦穴の底では、隣がすべて歩いて上�
   assert.equal(view.head_blocked, false)
   assert.equal(view.standing_on, 'stone')
 })
+
+// 高さの格子は、足元の高さから一番近い立てる所で測る。上から見下ろすと、天井・屋根・葉を地面と読む
+const air = { name: 'air', boundingBox: 'empty' }
+const stone = { name: 'stone', boundingBox: 'block' }
+
+test('まわりの形: 岩の天井のある高さ 2 の東西のトンネルでは、前後は同じ高さ、横は壁（洞窟）', () => {
+  // y 60..61 が空いた東西のトンネル（z = 10 の 1 列）、ほかは岩
+  const tunnel = (p) => (p.z === 10 && (p.y === 60 || p.y === 61)) ? air : stone
+  const view = lookAround({ entity: { position: v(10.5, 60, 10.5) }, blockAt: tunnel }, 1)
+  assert.deepEqual(view.grid, [
+    ' #  #  #',
+    ' 0  @  0',
+    ' #  #  #'
+  ])
+  assert.equal(view.walls_around, 6)
+  assert.equal(view.head_blocked, true)
+})
+
+test('まわりの形: 家の中では、床は同じ高さ、壁は屋根の上（屋根を地面と読まない）', () => {
+  // 床 y 70、壁 x/z = 0 と 4（y 70..72）、屋根 y 73（x/z 0..4）、ボットは (2, 70, 2)
+  const house = (p) => {
+    if (p.y < 70) return stone
+    const inFootprint = p.x >= 0 && p.x <= 4 && p.z >= 0 && p.z <= 4
+    if (inFootprint && p.y === 73) return { name: 'oak_planks', boundingBox: 'block' }
+    const wall = inFootprint && (p.x === 0 || p.x === 4 || p.z === 0 || p.z === 4)
+    return wall && p.y <= 72 ? { name: 'oak_planks', boundingBox: 'block' } : air
+  }
+  const view = lookAround({ entity: { position: v(2.5, 70, 2.5) }, blockAt: house }, 2)
+  assert.deepEqual(view.grid[2], '+4  0  @  0 +4')
+  assert.deepEqual(view.grid[1], '+4  0  0  0 +4')
+  assert.equal(view.walls_around, 0) // 隣は床
+})
+
+test('まわりの形: 木の葉の下の平らな地面は、同じ高さ（葉を地面と読まない）', () => {
+  const canopy = (p) => {
+    if (p.y < 70) return { name: 'grass_block', boundingBox: 'block' }
+    if (p.y >= 73 && p.y <= 75) return { name: 'oak_leaves', boundingBox: 'block' }
+    return air
+  }
+  const view = lookAround({ entity: { position: v(0.5, 70, 0.5) }, blockAt: canopy }, 1)
+  assert.deepEqual(view.grid, [' 0  0  0', ' 0  @  0', ' 0  0  0'])
+})

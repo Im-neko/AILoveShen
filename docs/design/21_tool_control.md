@@ -119,16 +119,16 @@ Jev の質問と、Gemini の道具の選択の両方が見る 1 つの書式（
 |---|---|
 | bridge `runner.mjs` | `run(c, label)`: `/act` と `/tool` の共通の実行の経路（反射・busy・時間の上限・被弾での中断・家を出る・履歴・保存）。`abortCurrent`（終わった行動には何もしない） |
 | bridge `progress.mjs` | 実行中の進み具合（動いた距離 1 秒・5 秒・全体、目標までの距離、経路の更新と見つからない回数、`forcedMove` の回数、掘っているブロック、持ち物と体力の変化） |
-| bridge `state.mjs` | 共通の状態と `lookAround`（半径 3 の格子。セルは足元から見た立てる高さの差、`#` 高い壁、`v` 深い穴、`~` 水、`!` 溶岩、`?` 未読み込み） |
+| bridge `state.mjs` | 共通の状態と `lookAround`（半径 3 の格子。セルは足元の高さから 0, +1, -1, +2, … の順に探した一番近い立てる高さの差。`#` 近くに立てる所のない壁、`v` 深い穴、`~` 水、`!` 溶岩、`?` 未読み込み。上から見下ろすと洞窟の天井・家の屋根・木の葉を地面と読むため） |
 | bridge `tools.mjs` | 道具（§3）。避難中は外に出る道具を断る（昼にドアの前の敵と戦うのは許す）。今の家・建てている家は掘らない・置かない（`protectedReason`）。前の家は掘れる。知識と合わない引数も理由つきで断る（プレイを止めない） |
-| bridge `primitives.mjs` | `goto_pos`、`place_at` を追加 |
+| bridge `primitives.mjs` | `goto_pos`（1 回 48m、時間の上限 45 秒）、`place_at` を追加 |
 | Python domain | `ToolCall`、`WatchQuestion`、`WatchAction`、`ToolOutcome`、`FastQuestion` / `FastAnswer` / `FastVerdict`、`PlaySession.intent`、`Activity.intent` |
 | Python application | `tool_catalog.py`（道具の JSON Schema、`parse_tool_call`）、`watcher.py`（`ToolWatcher`、`WatchPolicy`）、`AdvancePlayUseCase(control, tool_watcher)`、ポート `IFastJudge` / `IWatchRecorder`、`ITextGenerator.choose_tool` と `purpose` |
 | Python infrastructure | `GeminiTextGenerator.choose_tool` と用途の表、`JevFastJudge`、`JsonlWatchRecorder`、`build_tool_prompt`、`stream_context` の「今やろうとしていること」、設定 |
 | example | `examples/integration_test_minecraft.py --control tools` |
 
 確かめたこと:
-- `npm test` 113 件、`pytest tests/` 470 件
+- `npm test` 117 件（縦穴・天井のあるトンネル・家の中・木の葉の下の格子を含む）、`pytest tests/` 470 件
 - 模擬サーバーで Gemini への実際のリクエスト本文を見た: `toolConfig.functionCallingConfig.mode = ANY`、用途の `thinkingConfig`（例 `tool_after_failure` → MEDIUM）、20 個の関数宣言。SDK は宣言の中を `parameters_json_schema` と snake_case で送る（`thinking_level` と同じ。実 API が受け付けるかは未確認）
 
 まだ確かめていないこと（ユーザーの環境で）:

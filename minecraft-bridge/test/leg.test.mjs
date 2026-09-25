@@ -45,3 +45,10 @@ test('遠いチェストやかまどへは 1 ステップに 1 区間ずつ歩�
 test('どの行動も、Python クライアントが待つのをやめる（60 秒）前に終わる', () => {
   assert.ok(Math.max(DEFAULT_TIMEOUT_MS, ...Object.values(TIMEOUTS_MS)) <= 45000)
 })
+
+test('道具の goto も 1 回 1 区間で、区間を歩ける時間の上限を持つ（既定の 20 秒では 48m が切れる）', async () => {
+  const bot = walker(0, 0)
+  const c = { pos: new Vec3(0, 70, 100), range: 1 }
+  assert.match(await PRIMITIVES.goto_pos(bot, {}, c, signal), /^walked 48m toward 0,70,100 \(52m left\)$/)
+  assert.ok(TIMEOUTS_MS.goto_pos > DEFAULT_TIMEOUT_MS)
+})

@@ -2,20 +2,20 @@
 
 **Active Phase**: 設計書 21（A の最初の版: Gemini が道具を呼んで操作し、Jev が実行中に Gemini の質問に答える）を実装した（`minecraft.agent.control: tools`、既定は今までの `candidates`）。実機ではまだ動かしていない（クラウドの環境に API キーと Minecraft サーバーがない）。次はユーザーの環境で `--control tools` を動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 470 passed, 1 skipped。ブリッジ `npm test` 113 件
+**Test Status**: `pytest tests/` 470 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに今回のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
 
 ### A の最初の版: 道具・共通の状態・Gemini の質問に Jev が答える見張り（設計書 21） (2026-09-25)
 
-**Commits**: `16ad1fb`（設計書 21）、`d07fdd0`（ブリッジ: 実行を run() 1 つに、進み具合）、`d1d1721`（ブリッジ: /tool /state /abort）、`c90f24c`（Python: 道具のステップ、見張り、用途ごとの thinking_level）
+**Commits**: `16ad1fb`（設計書 21）、`d07fdd0`（ブリッジ: 実行を run() 1 つに、進み具合）、`d1d1721`（ブリッジ: /tool /state /abort）、`c90f24c`（Python: 道具のステップ、見張り、用途ごとの thinking_level）、`3e6c1e0`（文書）、次のコミット（格子を足元から測る、goto の時間の上限 45 秒）
 
 - ユーザーの指示「その方針で一度設計・実装してみて」（Jev は Gemini が書いた質問に高頻度で答える役。19 §13 の 9・11・12 を承認）
 - ブリッジ
   - `runner.mjs`: `/act` と `/tool` の共通の実行（反射・busy・時間の上限・被弾での中断・家を出る・履歴・保存）。`abortCurrent` は終わった行動には何もしない
   - `progress.mjs`: 実行中の進み具合（移動量、目標までの距離、経路が見つからない回数、`forcedMove` の回数、掘り、持ち物・体力の変化）。行動の種類ごとの判定は書かない
-  - `state.mjs`: 共通の状態と `lookAround`（足元から見た立てる高さの格子。town4c の縦穴なら隣 8 つが +3）
+  - `state.mjs`: 共通の状態と `lookAround`（足元の高さから一番近い立てる高さの格子。空の見える縦穴なら隣 8 つが +3、天井のあるトンネルは横が #、家の中は床が 0 で壁が +4。最初は上から見下ろしていて、天井・屋根・葉を地面と読む誤りがあった → 足元から探すように直した）
   - `tools.mjs`: 行動の道具 17（`do_suggestion` でソルバーの候補も呼べる）と調べもの 3。避難中は外に出る道具を理由つきで断る（昼のドアの前の敵とは戦える）。今の家・建てている家は掘らない・置かない、前の家は掘れる（town4d のベッド）。引数は世界と知識から導いて確かめ、合わなければ理由を返す（プレイを止めない）
 - Python
   - `tool_catalog.py`（道具の JSON Schema、行動の道具は `intent` 必須・`watch` 最大 3）、`watcher.py`（1 秒ごとに全質問を 1 回の Jev 呼び出しに。0.7 以上の「はい」が 2 回で stop / wake / maybe_done。コードの「進んでいるか」は記録だけ）
