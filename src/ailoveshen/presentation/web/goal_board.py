@@ -17,8 +17,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -241,6 +242,18 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
     }
 
 
+class _EmbeddedServer(uvicorn.Server):
+    """
+    プレイの処理の中で動かす uvicorn。Ctrl-C（SIGINT / SIGTERM）を横取りしない: uvicorn は
+    シグナルを取ると、開いている接続（OBS のブラウザソースの SSE は閉じない）が閉じるまで待ち、
+    プレイも止まらなかった。止めるのはシグナルを受けた呼び出し側で、このタスクをキャンセルする。
+    """
+
+    @contextlib.contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
+
+
 class GoalBoard:
     """プレイ中のセッションの目標を配信オーバーレイに出す。"""
 
@@ -276,7 +289,11 @@ class GoalBoard:
 
     async def serve(self, host: str = "127.0.0.1", port: int = 8765) -> None:
         """キャンセルされるまで Web サーバーを動かす。"""
-        server = uvicorn.Server(uvicorn.Config(self.app, host=host, port=port, log_level="warning"))
+        server = _EmbeddedServer(
+            uvicorn.Config(
+                self.app, host=host, port=port, log_level="warning", timeout_graceful_shutdown=2
+            )
+        )
         logger.info(f"目標ボード: http://{host}:{port}/overlay")
         await server.serve()
 

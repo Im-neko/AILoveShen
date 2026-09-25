@@ -196,7 +196,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     comments = json.loads(args.comments.read_text()) if args.comments else []
-    sys.exit(0 if asyncio.run(run(args.max_steps, comments, args.board_port, args.control)) else 1)
+    try:
+        ok = asyncio.run(run(args.max_steps, comments, args.board_port, args.control))
+    except KeyboardInterrupt:
+        print("\n[stop] Ctrl-C で止めた", flush=True)
+        sys.exit(130)
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == "__main__":

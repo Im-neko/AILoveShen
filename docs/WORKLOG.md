@@ -7,6 +7,12 @@
 
 ## Completed Work
 
+### Ctrl-C で止まらない (2026-09-25)
+
+- ユーザー「サーバー止めたくなっても Ctrl-C で止まらない」→ `--board-port` のとき、uvicorn の `Server.serve` が SIGINT を横取りし、開いている接続（OBS のブラウザソースの SSE は閉じない）が閉じるまで待っていた。プレイにも Ctrl-C が届かなかった
+- `goal_board._EmbeddedServer`: `capture_signals` を何もしないものにして、シグナルはプレイの処理（`asyncio.run`）に任せる。`timeout_graceful_shutdown=2`。例は Ctrl-C で「止めた」と出して 130 で終わる
+- 確かめたこと: SSE を 1 本つないだまま SIGINT を送る再現で、直す前は 8 秒たっても止まらず、直した後は 0.1 秒で止まり `finally`（後片付け）も走った。テストはシグナルの処理を変えないこと
+
 ### OBS: obsws-python がないときのログ (2026-09-25)
 
 - ユーザーの環境で「OBS から画面を撮れない（ModuleNotFoundError）。60 秒は画面なしで続ける」→ requirements.txt を足す前の環境で obsws-python が入っていなかった。ログから分からなかったので、ImportError なら入れ方を 1 回出して以降は撮らないようにした（テストあり）。23 §6 に手順 0

@@ -269,3 +269,17 @@ def test_the_vtuber_overlay_reads_the_label_and_the_intent():
     assert goals["intent"] == "近くの木を切りにいく"
     page = client.get("/overlay/vtuber").text
     assert "/api/goals/stream" in page and "goal.label" in page
+
+
+def test_the_embedded_server_leaves_ctrl_c_to_the_play_process():
+    # uvicorn がシグナルを取ると、OBS の SSE が閉じるまで待って Ctrl-C で止まらなかった
+    import signal
+
+    import uvicorn
+
+    from ailoveshen.presentation.web.goal_board import _EmbeddedServer
+
+    before = signal.getsignal(signal.SIGINT)
+    server = _EmbeddedServer(uvicorn.Config(GoalBoard(lambda: None).app))
+    with server.capture_signals():
+        assert signal.getsignal(signal.SIGINT) is before
