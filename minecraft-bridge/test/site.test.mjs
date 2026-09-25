@@ -127,7 +127,7 @@ test('別の場所に建て終わったら引っ越し、前の家は残して�
 
   const state = { home, plan, formerHomes: [] }
   const placedAll = (p) => (p.x >= 100 && p.x <= 102 && p.z >= 0 && p.z <= 2 && p.y === 70
-    ? { name: p.x === 101 && p.z === 0 ? 'oak_door' : 'oak_planks', boundingBox: 'block' }
+    ? { name: p.x === 101 && p.z === 0 ? 'oak_door' : 'oak_planks', boundingBox: 'block', getProperties: () => ({ facing: 'north' }) }
     : flat(p))
   // 建てている間は今の家のまま
   assert.equal(settleHome(state, bot(v(0, 70, 0))), false)

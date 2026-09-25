@@ -136,6 +136,12 @@ function validGoal (spec, bot, state, knowledge) {
 }
 
 // いまの目標についての { spec, met, remaining, lines, blocked, impossible, leaves }
+// 家の計画のうち、置けていないドア（向きが違うものを含む）
+function brokenDoor (bot, state) {
+  if (!state.home || !state.plan?.origin) return null
+  return state.plan.pending(bot).find((b) => b.block === 'door') ?? null
+}
+
 export function evaluate (bot, state, knowledge, world) {
   const goal = state.goal
   const out = { spec: goal.spec, met: false, remaining: 0, lines: [], blocked: [], impossible: [], leaves: [] }
@@ -152,6 +158,19 @@ export function evaluate (bot, state, knowledge, world) {
   }
   const phase = dayPhase(bot.time.timeOfDay)
   const inside = isInside(bot, state.home)
+  // 向きの違うドア（開けても板が通り道をふさぐ）は、家に入る目標の前に置き直す。今のドアは壊して使う
+  if (['at_home', 'through_night', 'placed'].includes(goal.spec.predicate) && !inside) {
+    const door = brokenDoor(bot, state)
+    if (door) {
+      out.blocked.push('the door of the house is turned the wrong way (it blocks the doorway when open): replace it')
+      const pos = state.plan.worldPos(door)
+      const reusable = [pos, pos.offset(0, -1, 0)].some((p) => bot.blockAt(p)?.name.endsWith('_door'))
+      if (reusable || Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_door'))) out.leaves.push({ kind: 'place_plan', block: door })
+      else addSolved([{ spec: 'door', count: 1 }])
+      out.remaining += 1
+      return out
+    }
+  }
   switch (goal.spec.predicate) {
     case 'have': {
       const r = addSolved([{ spec: goal.spec.item, count: goal.spec.count }])

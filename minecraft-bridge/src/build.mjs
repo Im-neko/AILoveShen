@@ -65,7 +65,16 @@ export class BuildPlan {
 
   isPlaced (bot, b) {
     const block = bot.blockAt(this.worldPos(b))
-    return !!block && KINDS[b.block](block.name)
+    if (!block || !KINDS[b.block](block.name)) return false
+    // ドアは壁と直角に向いていないと、開けたときに板が通り道をふさぐ（town4: 西向きのドアで入れなかった）
+    return b.block !== 'door' || this.doorOutward(b).facings.includes(block.getProperties().facing)
+  }
+
+  // ドアのある壁の外向き（{x, z} の単位ベクトル）と、正しい向き（壁と直角の 2 方向）
+  doorOutward (b) {
+    const { width, depth } = this.size
+    if (b.z === 0 || b.z === depth - 1) return { x: 0, z: b.z === 0 ? -1 : 1, facings: ['north', 'south'] }
+    return { x: b.x === 0 ? -1 : 1, z: 0, facings: ['east', 'west'] }
   }
 
   pending (bot) {
@@ -135,6 +144,7 @@ function findItem (bot, kind) {
 let lastPlaceAt = 0
 
 export async function placeOne (bot, plan, b, signal) {
+  if (b.block === 'door') return placeDoor(bot, plan, b, signal)
   const pos = plan.worldPos(b)
   const current = bot.blockAt(pos)
   if (current && current.name !== 'air' && current.name !== 'cave_air') {
@@ -175,4 +185,38 @@ export async function placeOne (bot, plan, b, signal) {
   } finally {
     lastPlaceAt = Date.now()
   }
+}
+
+// ドアの向きは、置くときにプレイヤーが向いている方角になる。壁の外側のマス（だめなら内側）に立ち、
+// ドアのマスの床を見て置く: 視線が壁と直角になる。向きの違うドアは壊して置き直す。ドアは下の
+// マスに置けば上のマスもできる
+async function placeDoor (bot, plan, b, signal) {
+  const lower = plan.blocks.find((d) => d.block === 'door' && d.x === b.x && d.z === b.z && d.y === b.y - 1) ?? b
+  const pos = plan.worldPos(lower)
+  const current = bot.blockAt(pos)
+  if (current && current.name !== 'air' && current.name !== 'cave_air') {
+    if (!isClearable(current) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    await bot.dig(current, true)
+  }
+  const out = plan.doorOutward(lower)
+  let error = null
+  for (const side of [1, -1]) {
+    try {
+      await walkTo(bot, new goals.GoalBlock(pos.x + out.x * side, pos.y, pos.z + out.z * side), signal)
+      error = null
+      break
+    } catch (e) {
+      signal.throwIfAborted()
+      error = e
+    }
+  }
+  if (error) throw new Error(`no place to stand in front of the door at ${pos}: ${error.message}`)
+  // 壊したドアが落ちて拾われるのを待つ（隣のマスに立てば拾える）
+  for (let i = 0; i < 40 && !findItem(bot, 'door'); i++) await bot.waitForTicks(1)
+  const item = findItem(bot, 'door')
+  if (!item) throw new Error('no door to place (the old door was not picked up)')
+  await bot.equip(item, 'hand')
+  await bot.lookAt(pos.offset(0.5, 0, 0.5), true)
+  await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), new Vec3(0, 1, 0))
+  lastPlaceAt = Date.now()
 }
