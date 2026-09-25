@@ -1,1 +1,1 @@
-"""Application ports - Input and Output interfaces."""
+"""アプリケーションのポート。入力と出力のインターフェース。"""

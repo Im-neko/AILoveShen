@@ -1,4 +1,4 @@
-"""Generate commentary use case implementation."""
+"""実況生成のユースケースの実装。"""
 
 from __future__ import annotations
 
@@ -19,13 +19,13 @@ from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext,
 
 class GenerateCommentaryUseCase(IGenerateCommentary):
     """
-    Use case for generating game commentary (main loop).
+    ゲーム実況を生成するユースケース（メインループ）。
 
-    It coordinates:
-    - Building the generation context from the request and conversation history
-    - Prompt construction via adapter
-    - Text generation via adapter
-    - Recording the utterance and publishing a domain event
+    次のことをまとめる:
+    - リクエストと会話履歴から生成の文脈を作る
+    - アダプターでプロンプトを組み立てる
+    - アダプターでテキストを生成する
+    - 発言を記録し、ドメインイベントを発行する
     """
 
     def __init__(
@@ -39,16 +39,16 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
         history_limit: int = 10,
     ) -> None:
         """
-        Initialize use case with dependencies (Dependency Injection).
+        依存を受け取ってユースケースを初期化する（依存性の注入）。
 
         Args:
-            text_generator: LLM text generator adapter
-            prompt_builder: Prompt builder adapter
-            event_publisher: Event publisher for domain events
-            conversation: Conversation history shared with the chat response use case
-            character: The streamer's character profile
-            max_recent_events: Number of recent game events given to the model
-            history_limit: Number of recent conversation messages given to the model
+            text_generator: LLM のテキスト生成のアダプター
+            prompt_builder: プロンプト組み立てのアダプター
+            event_publisher: ドメインイベントの発行器
+            conversation: チャット返答のユースケースと共有する会話履歴
+            character: 配信者のキャラクターのプロフィール
+            max_recent_events: モデルに渡す最近のゲームのイベントの数
+            history_limit: モデルに渡す最近の会話のメッセージの数
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -60,13 +60,13 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
 
     async def execute(self, request: GenerateCommentaryRequest) -> GenerateCommentaryResponse:
         """
-        Execute the generate commentary use case.
+        実況生成のユースケースを実行する。
 
-        Flow:
-        1. Build generation context
-        2. Build prompts
-        3. Generate text
-        4. Record the commentary and publish CommentaryGeneratedEvent
+        流れ:
+        1. 生成の文脈を作る
+        2. プロンプトを組み立てる
+        3. テキストを生成する
+        4. 実況を記録し、CommentaryGeneratedEvent を発行する
         """
         try:
             context = GenerationContext(
@@ -79,7 +79,7 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
             system_prompt = self._prompt_builder.build_system_prompt(self._character)
             prompt = self._prompt_builder.build_commentary_prompt(context)
 
-            logger.debug("Generating commentary")
+            logger.debug("実況を生成する")
             text = await self._text_generator.generate(
                 prompt=prompt,
                 system_instruction=system_prompt,
@@ -92,5 +92,5 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
             return GenerateCommentaryResponse.ok(text)
 
         except Exception as e:
-            logger.error(f"Commentary generation failed: {e}")
+            logger.error(f"実況の生成に失敗した: {e}")
             return GenerateCommentaryResponse.error_response(str(e))

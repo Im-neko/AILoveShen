@@ -14,11 +14,11 @@ print("=" * 60)
 from ailoveshen.infrastructure.config import load_settings
 
 settings = load_settings()
-print(f"  App Name: {settings.app_name}")
-print(f"  Debug: {settings.debug}")
-print(f"  Gemini Model: {settings.gemini.main_model}")
-print(f"  TTS Server: {settings.tts.server.host}:{settings.tts.server.port}")
-print(f"  Log Level: {settings.logging.level}")
+print(f"  アプリ名: {settings.app_name}")
+print(f"  デバッグ: {settings.debug}")
+print(f"  Gemini モデル: {settings.gemini.main_model}")
+print(f"  TTS サーバー: {settings.tts.server.host}:{settings.tts.server.port}")
+print(f"  ログレベル: {settings.logging.level}")
 print()
 
 # =============================================================================
@@ -57,16 +57,16 @@ from ailoveshen.domain.value_objects import (
 
 # EmotionState
 emotion = EmotionState(EmotionType.HAPPY, 0.8)
-print(f"  Emotion: {emotion.primary.value} (intensity: {emotion.intensity})")
+print(f"  感情: {emotion.primary.value} (強さ: {emotion.intensity})")
 
 # 感情の減衰
 decayed = emotion.decay(0.3)
-print(f"  After decay: {decayed.primary.value} (intensity: {decayed.intensity})")
+print(f"  減衰後: {decayed.primary.value} (強さ: {decayed.intensity})")
 
 # Position
 pos1 = Position(0, 0, 0)
 pos2 = Position(3, 4, 0)
-print(f"  Distance from {pos1} to {pos2}: {pos1.distance_to(pos2)}")
+print(f"  {pos1} から {pos2} までの距離: {pos1.distance_to(pos2)}")
 
 # SpeechRequest
 speech = SpeechRequest(
@@ -75,11 +75,11 @@ speech = SpeechRequest(
     emotion=EmotionState(EmotionType.HAPPY, 0.8),
     source="commentary",
 )
-print(f"  Speech: '{speech.text[:20]}...' (priority: {speech.priority.name})")
+print(f"  発話: '{speech.text[:20]}...' (優先度: {speech.priority.name})")
 
 # FilterResult
 result = FilterResult.accept(0.85, "Interesting question")
-print(f"  Filter: should_respond={result.should_respond}, score={result.score}")
+print(f"  フィルター: should_respond={result.should_respond}, score={result.score}")
 print()
 
 # =============================================================================
@@ -113,12 +113,12 @@ class MessageReceived(DomainEvent):
 msg1 = UserMessage(content="Hello!", user_name="TestUser")
 msg2 = UserMessage(content="World!", user_name="TestUser")
 
-print(f"  Message 1: {msg1}")
-print(f"  Message 2: {msg2}")
-print(f"  Same entity? {msg1 == msg2}")  # False (異なるID)
+print(f"  メッセージ 1: {msg1}")
+print(f"  メッセージ 2: {msg2}")
+print(f"  同じエンティティか: {msg1 == msg2}")  # False (異なるID)
 
 # タイムスタンプがUTCか確認
-print(f"  Created at (UTC): {msg1.created_at}")
+print(f"  作成時刻 (UTC): {msg1.created_at}")
 print()
 
 # =============================================================================
@@ -138,29 +138,29 @@ async def demo_event_bus():
     # イベントハンドラーを定義
     async def on_message_received(event: MessageReceived) -> None:
         received_events.append(event)
-        print(f"    [Handler] Received: '{event.content}'")
+        print(f"    [ハンドラー] 受信: '{event.content}'")
 
     # 購読
     unsubscribe = bus.subscribe(MessageReceived, on_message_received)
-    print(f"  Subscribed to MessageReceived (handlers: {bus.handler_count()})")
+    print(f"  MessageReceived を購読 (ハンドラー数: {bus.handler_count()})")
 
     # イベント発行
     event1 = MessageReceived(message_id="1", content="Hello from EventBus!")
     event2 = MessageReceived(message_id="2", content="Second message!")
 
-    print("  Publishing events...")
+    print("  イベントを発行中...")
     await bus.publish(event1)
     await bus.publish(event2)
 
-    print(f"  Total events received: {len(received_events)}")
+    print(f"  受け取ったイベント数: {len(received_events)}")
 
     # 購読解除
     unsubscribe()
-    print(f"  Unsubscribed (handlers: {bus.handler_count()})")
+    print(f"  購読を解除 (ハンドラー数: {bus.handler_count()})")
 
     # 購読解除後はイベントを受け取らない
     await bus.publish(MessageReceived(message_id="3", content="Won't be received"))
-    print(f"  Events after unsubscribe: {len(received_events)}")
+    print(f"  購読解除後のイベント数: {len(received_events)}")
 
 
 asyncio.run(demo_event_bus())

@@ -1,4 +1,4 @@
-"""Audio player output port."""
+"""音声再生の出力ポート。"""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from typing import Optional
 
 class IAudioPlayer(ABC):
     """
-    Output port for audio playback.
+    音声再生の出力ポート。
 
-    This interface is defined in the Application layer.
-    Infrastructure adapters implement this interface.
+    このインターフェースはアプリケーション層で定義する。
+    インフラ層のアダプターがこれを実装する。
     """
 
     @abstractmethod
@@ -22,52 +22,52 @@ class IAudioPlayer(ABC):
         interrupt_event: Optional[asyncio.Event] = None,
     ) -> bool:
         """
-        Play audio data.
+        音声データを再生する。
 
         Args:
-            audio_data: Audio data to play (WAV format)
-            interrupt_event: Optional event to monitor for interruption.
-                           When set, playback should stop immediately.
+            audio_data: 再生する音声データ（WAV 形式）
+            interrupt_event: 割り込みを監視するイベント（任意）。
+                           セットされたら、すぐに再生を止める。
 
         Returns:
-            True if playback completed normally, False if interrupted.
+            最後まで再生したら True、割り込まれたら False。
 
         Raises:
-            AudioPlaybackError: If playback fails due to an error.
+            AudioPlaybackError: エラーで再生に失敗したとき。
         """
         ...
 
     @abstractmethod
     def stop(self) -> None:
         """
-        Stop current playback immediately.
+        今の再生をすぐに止める。
 
-        Safe to call even if nothing is playing.
+        何も再生していなくても呼んでよい。
         """
         ...
 
     @abstractmethod
     def is_playing(self) -> bool:
         """
-        Check if audio is currently playing.
+        今、音声を再生しているかを調べる。
 
         Returns:
-            True if audio is currently playing.
+            再生中なら True。
         """
         ...
 
     @abstractmethod
     def get_duration_ms(self, audio_data: bytes) -> int:
         """
-        Get duration of audio data in milliseconds.
+        音声データの長さをミリ秒で返す。
 
         Args:
-            audio_data: Audio data (WAV format)
+            audio_data: 音声データ（WAV 形式）
 
         Returns:
-            Duration in milliseconds.
+            長さ（ミリ秒）。
 
         Raises:
-            AudioPlaybackError: If audio data is invalid.
+            AudioPlaybackError: 音声データが不正なとき。
         """
         ...

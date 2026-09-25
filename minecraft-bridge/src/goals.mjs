@@ -1,16 +1,16 @@
-// Goals: the vocabulary Gemini sets goals in, whether a goal is met, and what can be done for it.
+// 目標: Gemini が目標を立てる語彙、目標を満たしたかの判定、目標のためにできること。
 //
-// A goal is judged from the world only (never from what the models say). Item needs are
-// decomposed by the solver; the house, the home and the night add their own steps.
+// 目標はワールドだけから判定する（モデルの言うことからは判定しない）。必要なアイテムはソルバーが
+// 分解する。家、帰る家、夜はそれぞれ独自の手順を足す。
 //
-//   have(item, count)        hold `count` of an item or group (planks, log, door, bed, wool, food, ...)
-//   built()                  every block of the house plan is in place
-//   placed(item, where)      a bed in the home (the only placement supported so far)
-//   at_home()                inside the house with the door closed
-//   through_night()          the night has passed (inside the house, or asleep)
-//   explored(distance)       this far (horizontally) from where the goal was set
-//   cleared()                no hostile waits near the door (by day only: go out and fight them)
-//   stored(item, count)      the chests hold `count` of an item or group (as last opened)
+//   have(item, count)        アイテムかグループ（planks, log, door, bed, wool, food, ...）を `count` 個持っている
+//   built()                  家の計画のブロックがすべて置かれている
+//   placed(item, where)      家にベッドがある（いまのところ対応している配置はこれだけ）
+//   at_home()                ドアを閉めて家の中にいる
+//   through_night()          夜が明けた（家の中にいたか、寝ていた）
+//   explored(distance)       目標を立てた場所から（水平に）この距離だけ離れた
+//   cleared()                ドアの近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
+//   stored(item, count)      チェストにアイテムかグループが `count` 個ある（最後に開けたときの中身で）
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
@@ -27,23 +27,23 @@ const MIN_EXPLORE = 8
 const MIN_LIT = 8
 const MAX_LIT = 32
 const MAX_EXPLORE = 256
-const EXPLORE_STEP = 20 // about how far one explore step gets
+const EXPLORE_STEP = 20 // 探索の1ステップで進むおよその距離
 const DAY_TICKS = 24000
-const MORNING = 0 // time of day the sun is up again (dawn ends at 24000 = 0)
+const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
 export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit']
-// Judged from the state of the world alone, so they can be the completion conditions of mid goals
-// (the others depend on the moment or on where the goal was set)
+// ワールドの状態だけから判定するので、中目標の完了条件にできる
+// （ほかはその時点や、目標を立てた場所によって変わる）
 export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit']
 
-// Validates a goal spec and returns the goal state to keep; throws with the reason
-// A goal that is valid but cannot be pursued until something exists (the home, the plan)
+// 目標の指定を検証し、保持する目標の状態を返す。不正なら理由を添えて投げる
+// 正しいが、何か（家、計画）ができるまで追えない目標
 export class NotYetError extends Error {}
 
-// Every goal remembers where it was set: its searches go away from there, never back and forth
-// keep: what the chests keep for the mid goals ([{item, count}], their stored() conditions); the
-// solver never takes it out, except food when starving (world.mjs)
+// どの目標も立てた場所を覚えている: 探索はそこから離れる方向に行い、行ったり来たりしない
+// keep: 中目標のためにチェストに取っておくもの（[{item, count}]、中目標の stored() の条件）。
+// ソルバーはこれを取り出さない。ただし飢えているときの食料は除く（world.mjs）
 export function makeGoal (spec, bot, state, knowledge) {
   const p = bot.entity.position
   return { ...validGoal(spec, bot, state, knowledge), exploreFrom: { x: p.x, y: p.y, z: p.z }, keep: validKeep(spec.keep ?? [], knowledge) }
@@ -74,7 +74,7 @@ function validGoal (spec, bot, state, knowledge) {
       const count = Number(spec.count)
       if (!Number.isInteger(count) || count < 1 || count > MAX_COUNT) throw new Error(`count must be 1-${MAX_COUNT}`)
       knowledge.resolve(String(spec.item))
-      needHome() // the chest goes in the house
+      needHome() // チェストは家の中に置く
       return { spec: { predicate, item: String(spec.item), count } }
     }
     case 'built':
@@ -106,7 +106,7 @@ function validGoal (spec, bot, state, knowledge) {
     }
     case 'cleared': {
       needHome()
-      // In the dark more keep spawning: the night is waited out inside (through_night)
+      // 暗いうちは次々に湧く: 夜は中で明けるのを待つ（through_night）
       const phase = dayPhase(bot.time.timeOfDay)
       if (phase !== 'day') throw new Error(`it is ${phase}: hostile mobs keep spawning in the dark; stay inside until morning`)
       return { spec: { predicate } }
@@ -116,7 +116,7 @@ function validGoal (spec, bot, state, knowledge) {
   }
 }
 
-// { spec, met, remaining, lines, blocked, impossible, leaves } for the current goal
+// いまの目標についての { spec, met, remaining, lines, blocked, impossible, leaves }
 export function evaluate (bot, state, knowledge, world) {
   const goal = state.goal
   const out = { spec: goal.spec, met: false, remaining: 0, lines: [], blocked: [], impossible: [], leaves: [] }
@@ -125,8 +125,8 @@ export function evaluate (bot, state, knowledge, world) {
     out.lines.push(...r.lines)
     out.blocked.push(...r.blocked)
     out.impossible.push(...r.impossible)
-    // Searching for what is not nearby: away from where the goal was set (it walked back and
-    // forth around the start before, never finding food 20m further)
+    // 近くにないものを探す: 目標を立てた場所から離れる方向に（以前は出発点のまわりを行ったり
+    // 来たりして、20m 先の食料を見つけられなかった）
     out.leaves.push(...r.leaves.map((l) => l.kind === 'explore' && !l.away && goal.exploreFrom ? { ...l, away: goal.exploreFrom } : l))
     out.remaining += r.remaining
     return r
@@ -144,7 +144,7 @@ export function evaluate (bot, state, knowledge, world) {
       const status = plan.status(bot)
       out.met = status.complete
       if (out.met) break
-      // Logs for log blocks first, so none of them become planks
+      // 原木のブロックのぶんの原木を先に取り、それが板材にされないようにする
       const need = plan.materialsNeeded(bot)
       addSolved(['log', 'door', 'planks'].filter((k) => need[k]).map((k) => ({ spec: k, count: need[k] })))
       out.lines.unshift(`house blocks placed ${status.placed}/${status.total}`)
@@ -183,7 +183,7 @@ export function evaluate (bot, state, knowledge, world) {
       out.met = goal.sawNight && phase === 'day'
       out.lines.push(`the night has passed: ${out.met ? 'yes' : `no (${phase})`}`)
       if (out.met) break
-      // Minutes until morning: waiting shows as progress, so it is not taken for a stall
+      // 朝までの分数: 待つことが進み具合に表れるので、停滞とみなされない
       const tod = bot.time.timeOfDay
       out.remaining = Math.max(1, Math.ceil(((MORNING - tod + DAY_TICKS) % DAY_TICKS) / TICKS_PER_MINUTE))
       if (!inside) out.leaves.push({ kind: 'go_home' })
@@ -211,16 +211,16 @@ export function evaluate (bot, state, knowledge, world) {
       if (out.met) break
       const want = n - inChests
       out.remaining += want
-      // What the chests hold is never taken out to be put back
-      // The items are gathered with or without a chest, so the remaining work only goes down as
-      // the chest is placed and filled
+      // チェストの中身を取り出してまた入れることはしない
+      // アイテムはチェストがあってもなくても集めるので、残りの作業量はチェストを置いて中身を
+      // 入れるにつれて減るだけ
       const gathering = { ...world, stored: {} }
       if (!chests(state.memory ?? {}).length) {
         if (addSolved([{ spec: 'chest', count: 1 }], gathering).met) out.leaves.push({ kind: 'place_chest' })
         out.remaining += 1
       } else {
         const inv = inventoryCounts(bot)
-        // Raw meat goes in cooked where it can be cooked now (the cook candidate, then the furnace)
+        // いま焼ける生肉は焼いてから入れる（焼く候補、次にかまど）
         const cook = cooking(bot, knowledge)
         const held = members.filter((m) => inv[m] > 0 && m !== cook?.input).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
         if (held.length) out.leaves.push({ kind: 'deposit', items: held })
@@ -252,7 +252,7 @@ export function evaluate (bot, state, knowledge, world) {
       out.lines.push(`hostiles near the door: ${danger.length ? danger.map(({ e }) => e.name).join(', ') : 'none'}`)
       if (out.met) break
       if (phase !== 'day') out.blocked.push(`it is ${phase}: stay inside until morning`)
-      // A creeper blows up the doorway when fought in melee there (it happened in M1)
+      // そこでクリーパーと近接で戦うと入口を吹き飛ばされる（M1 で起きた）
       else if (danger.some(({ e }) => EXPLODES.has(e.name))) out.blocked.push('a creeper is near the door: it explodes when fought in melee; wait for it to leave')
       else out.leaves.push({ kind: 'clear', mobs: danger.map(({ e }) => e) })
       break
@@ -261,9 +261,9 @@ export function evaluate (bot, state, knowledge, world) {
   return out
 }
 
-// Judges conditions without setting a goal: [{ spec, met, lines, impossible }] (impossible: what
-// nothing the bot can do now gets); throws for an invalid one.
-// One that cannot be judged yet (a bed in a home not built) is not met.
+// 目標を立てずに条件を判定する: [{ spec, met, lines, impossible }]（impossible: いまボットに何を
+// しても手に入らないもの）。不正な条件なら投げる。
+// まだ判定できない条件（建っていない家のベッド）は満たしていないとする。
 export function checkConditions (specs, bot, state, knowledge, world) {
   return specs.map((spec) => {
     if (!CONDITION_PREDICATES.includes(spec.predicate)) {
@@ -281,8 +281,8 @@ export function checkConditions (specs, bot, state, knowledge, world) {
   })
 }
 
-// What the body needs, with numbers and severity only: no action names (the selector judged
-// better with these stated, and worse when told what to do)
+// 体の欲求。数値と重さだけで、行動の名前は書かない（選ぶ側は、これを明示すると判断がよくなり、
+// 何をすべきか書くと悪くなった）
 export function needs (bot, state) {
   const out = []
   if (bot.health <= HEALTH_CRITICAL) out.push(`health critical (${Math.round(bot.health)}/20)`)

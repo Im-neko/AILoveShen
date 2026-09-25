@@ -1,4 +1,4 @@
-"""Generate commentary input port (use case interface)."""
+"""実況生成の入力ポート（ユースケースのインターフェース）。"""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ from ailoveshen.application.dto.llm_dto import (
 
 
 class IGenerateCommentary(ABC):
-    """Input port for the game commentary use case (main loop)."""
+    """ゲーム実況のユースケースの入力ポート（メインループ）。"""
 
     @abstractmethod
     async def execute(self, request: GenerateCommentaryRequest) -> GenerateCommentaryResponse:
         """
-        Execute commentary generation.
+        実況を生成する。
 
         Args:
-            request: Commentary request parameters
+            request: 実況のリクエストのパラメータ
 
         Returns:
-            Response containing the generated text, or an error.
+            生成したテキスト、またはエラーを含むレスポンス。
         """
         ...

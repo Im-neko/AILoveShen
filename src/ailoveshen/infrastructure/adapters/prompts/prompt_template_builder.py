@@ -1,4 +1,4 @@
-"""Prompt template builder adapter."""
+"""テンプレートでプロンプトを組み立てるアダプター。"""
 
 from __future__ import annotations
 
@@ -133,14 +133,14 @@ OUTPUT_JSON = (
 
 class PromptTemplateBuilder(IPromptBuilder):
     """
-    Infrastructure adapter for prompt building.
+    プロンプトを組み立てるインフラ側アダプター。
 
-    Implements IPromptBuilder output port with string templates.
-    Prompts are model-independent, so this adapter is shared by all LLMs.
+    出力ポート IPromptBuilder を文字列のテンプレートで実装する。
+    プロンプトはモデルに依存しないので、すべての LLM でこのアダプターを共有する。
     """
 
     def build_system_prompt(self, character: CharacterProfile) -> str:
-        """Build the system instruction describing the character."""
+        """キャラクターを説明するシステム指示を組み立てる。"""
         return CHARACTER_SYSTEM_TEMPLATE.substitute(
             name=character.name,
             description=character.description.strip(),
@@ -151,7 +151,7 @@ class PromptTemplateBuilder(IPromptBuilder):
         )
 
     def build_commentary_prompt(self, context: GenerationContext) -> str:
-        """Build the prompt for game commentary."""
+        """ゲーム実況のプロンプトを組み立てる。"""
         return COMMENTARY_TEMPLATE.substitute(
             activity=format_activity(context.activity),
             recent_events=_format_events(context.recent_events),
@@ -167,7 +167,7 @@ class PromptTemplateBuilder(IPromptBuilder):
         takes_requests: bool = False,
         previous_error: str = "",
     ) -> str:
-        """Build the prompt for replying to a viewer's chat (and maybe accepting their request)."""
+        """視聴者のチャットへの返答（と、場合によっては頼みを受けること）のプロンプトを組み立てる。"""
         error = (
             f"\n前回の返答の頼みは受けられなかった: {previous_error}\n"
             "直せるなら直し、無理なら decline にして返答で理由を言う。\n"
@@ -193,12 +193,12 @@ class PromptTemplateBuilder(IPromptBuilder):
 
 
 def _format_events(events: tuple[str, ...]) -> str:
-    """Format recent game events as a bullet list."""
+    """最近のゲーム内の出来事を箇条書きにする。"""
     if not events:
         return NO_INFORMATION
     return "\n".join(f"- {event}" for event in events)
 
 
 def _format_emotion(emotion: EmotionState) -> str:
-    """Format emotion state for the prompt."""
+    """感情状態をプロンプト用の文字列にする。"""
     return f"{emotion.primary.value}（強度: {emotion.intensity:.1f}）"

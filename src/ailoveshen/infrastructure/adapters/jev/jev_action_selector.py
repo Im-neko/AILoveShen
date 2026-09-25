@@ -1,4 +1,4 @@
-"""Jev action selector adapter (typesafe-sdk)."""
+"""Jev で行動を選ぶアダプター（typesafe-sdk）。"""
 
 from __future__ import annotations
 
@@ -18,25 +18,25 @@ QUESTION = "action"
 
 class JevActionSelector(IActionSelector):
     """
-    Infrastructure adapter for TypeSafe AI's System One model (Jev).
+    TypeSafe AI の System One モデル（Jev）のインフラ側アダプター。
 
-    Implements IActionSelector with one Choice question whose criteria are
-    the candidate ids and their descriptions (JSON objects).
+    IActionSelector を、Choice の質問 1つで実装する。質問の criteria は
+    候補の ID とその説明（JSON オブジェクト）。
     """
 
     def __init__(
         self, api_key: str, model: str = "jev-latest", timeout_seconds: float = 10.0
     ) -> None:
         """
-        Initialize the Jev client.
+        Jev のクライアントを初期化する。
 
         Args:
-            api_key: TypeSafe API key
-            model: Model name or alias
-            timeout_seconds: Per-request timeout
+            api_key: TypeSafe の API キー
+            model: モデル名またはエイリアス
+            timeout_seconds: リクエストごとのタイムアウト
 
         Raises:
-            ValueError: If api_key is empty.
+            ValueError: api_key が空のとき。
         """
         if not api_key:
             raise ValueError("TypeSafe API key is required (set TYPESAFE_API_KEY)")
@@ -50,10 +50,10 @@ class JevActionSelector(IActionSelector):
         instructions: str,
     ) -> ActionDecision:
         """
-        Ask Jev to pick one action.
+        Jev に行動を 1つ選ばせる。
 
         Raises:
-            ActionSelectionError: If the request fails
+            ActionSelectionError: リクエストが失敗したとき
         """
         criteria = {a.action_id: a.description for a in actions}
         started = time.monotonic()
@@ -70,7 +70,7 @@ class JevActionSelector(IActionSelector):
         elapsed_ms = int((time.monotonic() - started) * 1000)
         logger.info(
             f"Jev {response.model}: {elapsed_ms}ms, input={response.usage.input_tokens} "
-            f"-> {answer.choice} (confidence {answer.confidence:.2f})"
+            f"-> {answer.choice}（確信度 {answer.confidence:.2f}）"
         )
         return ActionDecision(
             action_id=answer.choice,
@@ -79,5 +79,5 @@ class JevActionSelector(IActionSelector):
         )
 
     async def close(self) -> None:
-        """Close the underlying HTTP client."""
+        """内部の HTTP クライアントを閉じる。"""
         await self._client.aclose()

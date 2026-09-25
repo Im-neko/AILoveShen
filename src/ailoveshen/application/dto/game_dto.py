@@ -1,4 +1,4 @@
-"""DTOs for the game agent use cases."""
+"""ゲームエージェントのユースケースの DTO。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ailoveshen.domain.value_objects import ActionDecision, ActionResult, Goal, 
 
 @dataclass(frozen=True)
 class PlayStepReport:
-    """What happened in one step of the play session."""
+    """プレイセッションの 1 ステップで起きたこと。"""
 
     goal: Optional[Goal]
     goal_changed: bool
@@ -18,4 +18,4 @@ class PlayStepReport:
     decision: Optional[ActionDecision]
     result: Optional[ActionResult]
     house_complete: bool
-    waiting: bool = False  # nothing done: the bridge was busy (reflex)
+    waiting: bool = False  # 何もしていない: ブリッジが反射で塞がっていた

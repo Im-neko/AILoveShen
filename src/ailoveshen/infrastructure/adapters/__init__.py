@@ -1,1 +1,1 @@
-"""Infrastructure adapters implementing application output ports."""
+"""アプリケーション層の出力ポートを実装するインフラのアダプター。"""

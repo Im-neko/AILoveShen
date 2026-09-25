@@ -1,4 +1,4 @@
-"""Configuration management with YAML and environment variable support."""
+"""YAML と環境変数に対応した設定の管理。"""
 
 from __future__ import annotations
 
@@ -11,24 +11,24 @@ from typing import Any
 import yaml
 
 # =============================================================================
-# Exceptions
+# 例外
 # =============================================================================
 
 
 class ConfigurationError(Exception):
-    """Raised when configuration loading or parsing fails."""
+    """設定の読み込みか解析に失敗したときに送出する。"""
 
     pass
 
 
 # =============================================================================
-# Settings Data Classes
+# 設定のデータクラス
 # =============================================================================
 
 
 @dataclass
 class TwitchSettings:
-    """Twitch integration settings."""
+    """Twitch 連携の設定。"""
 
     channel: str = ""
     client_id: str = ""
@@ -38,9 +38,9 @@ class TwitchSettings:
 
 @dataclass
 class GeminiRetrySettings:
-    """Gemini API retry settings (exponential backoff)."""
+    """Gemini API の再試行の設定（指数バックオフ）。"""
 
-    max_attempts: int = 3  # Including the original request
+    max_attempts: int = 3  # 最初のリクエストを含む
     base_delay_seconds: float = 1.0
     max_delay_seconds: float = 10.0
     exponential_base: float = 2.0
@@ -48,21 +48,21 @@ class GeminiRetrySettings:
 
 @dataclass
 class GeminiRateLimitSettings:
-    """Gemini API rate limit settings."""
+    """Gemini API のレート制限の設定。"""
 
     min_interval_seconds: float = 1.0
 
 
 @dataclass
 class GeminiSettings:
-    """Gemini API settings."""
+    """Gemini API の設定。"""
 
     api_key: str = ""
     main_model: str = "gemini-3.8-flash"
     filter_model: str = "gemini-3.8-flash"
     main_thinking_level: str = "low"
     filter_thinking_level: str = "low"
-    # Includes thinking tokens; too small a value yields empty output
+    # 思考のトークンを含む。小さすぎると出力が空になる
     max_output_tokens: int = 8192
     retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
     rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
@@ -70,7 +70,7 @@ class GeminiSettings:
 
 @dataclass
 class JevSettings:
-    """Jev (TypeSafe AI System One) settings."""
+    """Jev（TypeSafe AI の System One）の設定。"""
 
     api_key: str = ""
     model: str = "jev-latest"
@@ -104,25 +104,25 @@ def _default_mid_goals() -> list[dict[str, Any]]:
 
 @dataclass
 class MissionSettings:
-    """The mission (never changed by comments), the first mid goals, and the plan's limits."""
+    """大目標（コメントでは変わらない）、最初の中目標、計画の上限。"""
 
     text: str = "生き延びながら家を建て、街にしていく"
-    # [{title, conditions: [{predicate, item?, count?}], reason}]: the list when none is saved
+    # [{title, conditions: [{predicate, item?, count?}], reason}]: 保存したものがないときのリスト
     mid_goals: list[dict[str, Any]] = field(default_factory=_default_mid_goals)
     max_mid_goals: int = 6
     max_viewer_mid_goals: int = 2
     viewer_budget_steps: int = 80
-    # The mid goals carry on across restarts (for the same mission text)
+    # 中目標は再起動をまたいで引き継ぐ（大目標の文が同じなら）
     store_path: str = "data/mission.json"
 
 
 @dataclass
 class MinecraftSettings:
-    """Minecraft bridge connection, agent and mission settings."""
+    """Minecraft ブリッジへの接続、エージェント、大目標の設定。"""
 
     bridge_host: str = "localhost"
     bridge_port: int = 3000
-    # Must exceed the bridge's longest action timeout (45s, TIMEOUTS_MS in primitives.mjs)
+    # ブリッジの行動の最も長いタイムアウト（45秒、primitives.mjs の TIMEOUTS_MS）より長くすること
     request_timeout_seconds: float = 60.0
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
@@ -132,7 +132,7 @@ class MinecraftSettings:
 
 @dataclass
 class CharacterSettings:
-    """AI streamer character settings."""
+    """AI 配信者のキャラクターの設定。"""
 
     name: str = "AILoveShen"
     description: str = "明るく元気なAI配信者"
@@ -151,7 +151,7 @@ class CharacterSettings:
 
 @dataclass
 class TTSServerSettings:
-    """TTS server connection settings."""
+    """TTS サーバーへの接続の設定。"""
 
     host: str = "localhost"
     port: int = 5000
@@ -159,7 +159,7 @@ class TTSServerSettings:
 
 @dataclass
 class TTSSettings:
-    """TTS (Style-Bert-VITS2) settings."""
+    """TTS（Style-Bert-VITS2）の設定。"""
 
     server: TTSServerSettings = field(default_factory=TTSServerSettings)
     model_name: str = "default"
@@ -169,7 +169,7 @@ class TTSSettings:
 
 @dataclass
 class MemorySettings:
-    """Memory management settings."""
+    """記憶の管理の設定。"""
 
     short_term_capacity: int = 20
     long_term_db: str = "data/memory.db"
@@ -177,14 +177,14 @@ class MemorySettings:
 
 @dataclass
 class MCPSettings:
-    """MCP (Model Context Protocol) settings."""
+    """MCP（Model Context Protocol）の設定。"""
 
     memory: MemorySettings = field(default_factory=MemorySettings)
 
 
 @dataclass
 class OBSSettings:
-    """OBS WebSocket settings."""
+    """OBS WebSocket の設定。"""
 
     host: str = "localhost"
     port: int = 4455
@@ -193,7 +193,7 @@ class OBSSettings:
 
 @dataclass
 class LoggingSettings:
-    """Logging configuration."""
+    """ログの設定。"""
 
     level: str = "INFO"
     format: str = "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
@@ -206,10 +206,9 @@ class LoggingSettings:
 @dataclass
 class Settings:
     """
-    Application settings.
+    アプリケーションの設定。
 
-    Supports hierarchical configuration loading from YAML files
-    with environment variable expansion.
+    YAML ファイルから階層的に設定を読み込み、環境変数を展開する。
     """
 
     app_name: str = "AILoveShen"
@@ -227,18 +226,18 @@ class Settings:
 
 
 # =============================================================================
-# Configuration Loading
+# 設定の読み込み
 # =============================================================================
 
 
 def _expand_env_vars(value: Any) -> Any:
     """
-    Recursively expand environment variables in string values.
+    文字列の値の中の環境変数を再帰的に展開する。
 
-    Supports ${VAR} and ${VAR:-default} syntax.
+    ${VAR} と ${VAR:-default} の構文に対応する。
     """
     if isinstance(value, str):
-        # Pattern: ${VAR} or ${VAR:-default}
+        # パターン: ${VAR} または ${VAR:-default}
         pattern = r"\$\{([^}:]+)(?::-([^}]*))?\}"
 
         def replacer(match: re.Match[str]) -> str:
@@ -259,9 +258,9 @@ def _expand_env_vars(value: Any) -> Any:
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """
-    Deep merge two dictionaries.
+    2つの辞書を深くマージする。
 
-    Values from override take precedence. Nested dicts are merged recursively.
+    override の値を優先する。入れ子の辞書は再帰的にマージする。
     """
     result = base.copy()
 
@@ -275,7 +274,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _dict_to_settings(data: dict[str, Any]) -> Settings:
-    """Convert a dictionary to Settings dataclass."""
+    """辞書を Settings データクラスに変換する。"""
     settings = Settings()
 
     if "app_name" in data:
@@ -421,16 +420,16 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
 
 def load_yaml_file(path: Path) -> dict[str, Any]:
     """
-    Load and parse a YAML file.
+    YAML ファイルを読み込んで解析する。
 
     Args:
-        path: Path to the YAML file.
+        path: YAML ファイルのパス。
 
     Returns:
-        Parsed YAML content as a dictionary.
+        解析した YAML の内容（辞書）。
 
     Raises:
-        ConfigurationError: If the file cannot be read or parsed.
+        ConfigurationError: ファイルを読めないか、解析できないとき。
     """
     if not path.exists():
         return {}
@@ -450,19 +449,19 @@ def load_settings(
     env: str | None = None,
 ) -> Settings:
     """
-    Load settings from YAML files with hierarchical override.
+    YAML ファイルから、階層的に上書きして設定を読み込む。
 
-    Loading order (later overrides earlier):
+    読み込む順（後のものが前のものを上書きする）:
     1. default.yaml
-    2. {env}.yaml (e.g., development.yaml, production.yaml)
-    3. Environment variables
+    2. {env}.yaml（例: development.yaml、production.yaml）
+    3. 環境変数
 
     Args:
-        config_dir: Directory containing config files. Defaults to 'config/'.
-        env: Environment name. Defaults to APP_ENV or 'development'.
+        config_dir: 設定ファイルのあるディレクトリ。既定は 'config/'。
+        env: 環境名。既定は APP_ENV、なければ 'development'。
 
     Returns:
-        Settings object with all configuration loaded.
+        すべての設定を読み込んだ Settings。
     """
     if config_dir is None:
         config_dir = Path("config")
@@ -472,19 +471,19 @@ def load_settings(
     if env is None:
         env = os.environ.get("APP_ENV", "development")
 
-    # Load default config
+    # 既定の設定を読み込む
     config: dict[str, Any] = {}
     default_path = config_dir / "default.yaml"
     if default_path.exists():
         config = load_yaml_file(default_path)
 
-    # Load environment-specific config
+    # 環境ごとの設定を読み込む
     env_path = config_dir / f"{env}.yaml"
     if env_path.exists():
         env_config = load_yaml_file(env_path)
         config = _deep_merge(config, env_config)
 
-    # Expand environment variables
+    # 環境変数を展開する
     config = _expand_env_vars(config)
 
     return _dict_to_settings(config)

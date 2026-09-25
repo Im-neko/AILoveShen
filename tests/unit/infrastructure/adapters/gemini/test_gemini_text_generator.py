@@ -1,10 +1,10 @@
-"""Tests for GeminiTextGenerator adapter."""
+"""GeminiTextGenerator アダプタのテスト。"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Skip all tests in this module if google-genai is not installed
+# google-genai がなければ、このモジュールのテストは全部飛ばす
 pytest.importorskip("google.genai", reason="google-genai not installed")
 
 from google.genai import errors, types  # noqa: E402
@@ -22,7 +22,7 @@ def _response(
     finish_reason: types.FinishReason = types.FinishReason.STOP,
     block_reason: types.BlockedReason | None = None,
 ) -> types.GenerateContentResponse:
-    """Build a real GenerateContentResponse."""
+    """本物の GenerateContentResponse を作る。"""
     candidates = None
     if text is not None:
         candidates = [
@@ -49,7 +49,7 @@ def _response(
 
 @pytest.fixture
 def mock_client():
-    """Patch genai.Client and return the mock instance."""
+    """genai.Client を差し替えて、モックのインスタンスを返す。"""
     with patch(f"{MODULE}.genai.Client") as client_cls:
         client = MagicMock()
         client.aio.models.generate_content = AsyncMock(return_value=_response())
@@ -65,21 +65,21 @@ def _generator(**kwargs) -> GeminiTextGenerator:
 
 
 class TestGeminiTextGeneratorInit:
-    """Tests for constructor validation and client configuration."""
+    """コンストラクタの検証とクライアントの設定のテスト。"""
 
     def test_empty_api_key_raises(self, mock_client):
-        """Test that a missing API key raises ValueError."""
+        """API キーがなければ ValueError。"""
         with pytest.raises(ValueError, match="API key is required"):
             GeminiTextGenerator(api_key="")
 
     @pytest.mark.parametrize("level", ["minimal", "none", "LOW"])
     def test_unsupported_thinking_level_raises(self, mock_client, level):
-        """Test that unsupported thinking levels raise ValueError."""
+        """対応していない thinking level なら ValueError。"""
         with pytest.raises(ValueError, match="thinking_level must be one of"):
             _generator(thinking_level=level)
 
     def test_retry_options_configured(self, mock_client):
-        """Test SDK retry options follow the constructor arguments."""
+        """SDK のリトライの設定はコンストラクタの引数に従う。"""
         _generator(
             retry_attempts=3,
             retry_initial_delay_seconds=1.0,
@@ -97,11 +97,11 @@ class TestGeminiTextGeneratorInit:
 
 
 class TestGeminiTextGeneratorGenerate:
-    """Tests for generate()."""
+    """generate() のテスト。"""
 
     @pytest.mark.asyncio
     async def test_generate_returns_stripped_text(self, mock_client):
-        """Test generated text is returned stripped."""
+        """生成したテキストを前後の空白を除いて返す。"""
         client = mock_client.return_value
         client.aio.models.generate_content.return_value = _response("  洞窟だ！\n")
 
@@ -111,7 +111,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_generate_passes_model_and_config(self, mock_client):
-        """Test model, prompt, system instruction and thinking config are sent."""
+        """モデル、プロンプト、システム指示、thinking の設定が送られる。"""
         generator = _generator(
             model="gemini-3.8-flash", thinking_level="low", max_output_tokens=2048
         )
@@ -130,7 +130,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_system_instruction_not_shared_between_calls(self, mock_client):
-        """Test each call gets its own config copy."""
+        """呼び出しごとに設定のコピーを使う。"""
         generator = _generator()
         await generator.generate("p1", system_instruction="s1")
         await generator.generate("p2")
@@ -141,7 +141,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_api_error_raises_text_generation_error(self, mock_client):
-        """Test APIError is converted to TextGenerationError."""
+        """APIError は TextGenerationError に変える。"""
         client = mock_client.return_value
         client.aio.models.generate_content.side_effect = errors.ClientError(
             400, {"error": {"code": 400, "message": "bad request", "status": "INVALID_ARGUMENT"}}
@@ -152,7 +152,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_unexpected_error_raises_text_generation_error(self, mock_client):
-        """Test other exceptions are converted to TextGenerationError."""
+        """ほかの例外も TextGenerationError に変える。"""
         client = mock_client.return_value
         client.aio.models.generate_content.side_effect = RuntimeError("network down")
 
@@ -161,7 +161,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_blocked_prompt_returns_empty(self, mock_client):
-        """Test a blocked prompt returns an empty string."""
+        """ブロックされたプロンプトは空文字列を返す。"""
         client = mock_client.return_value
         client.aio.models.generate_content.return_value = _response(
             text=None, block_reason=types.BlockedReason.SAFETY
@@ -171,7 +171,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_max_tokens_returns_truncated_text(self, mock_client):
-        """Test MAX_TOKENS still returns the (truncated) text."""
+        """MAX_TOKENS でも（途中で切れた）テキストを返す。"""
         client = mock_client.return_value
         client.aio.models.generate_content.return_value = _response(
             text="途中まで", finish_reason=types.FinishReason.MAX_TOKENS
@@ -181,7 +181,7 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_rate_limit_sleeps_between_requests(self, mock_client):
-        """Test the minimum interval is enforced between requests."""
+        """リクエストの間は最小の間隔を空ける。"""
         generator = _generator(min_request_interval_seconds=1.0)
 
         with patch(f"{MODULE}.asyncio.sleep", new_callable=AsyncMock) as sleep:
@@ -193,20 +193,20 @@ class TestGeminiTextGeneratorGenerate:
 
     @pytest.mark.asyncio
     async def test_close(self, mock_client):
-        """Test close() closes the async client."""
+        """close() は非同期クライアントを閉じる。"""
         generator = _generator()
         await generator.close()
         mock_client.return_value.aio.aclose.assert_awaited_once()
 
 
 class TestGeminiTextGeneratorGenerateJson:
-    """Tests for generate_json()."""
+    """generate_json() のテスト。"""
 
     SCHEMA = {"type": "object", "properties": {"goal": {"type": "string"}}}
 
     @pytest.mark.asyncio
     async def test_returns_parsed_object(self, mock_client):
-        """Test the JSON text is parsed into a dict."""
+        """JSON のテキストを dict に解析する。"""
         client = mock_client.return_value
         client.aio.models.generate_content.return_value = _response('{"goal": "explore"}')
 
@@ -216,7 +216,7 @@ class TestGeminiTextGeneratorGenerateJson:
 
     @pytest.mark.asyncio
     async def test_sends_schema_as_json_mode(self, mock_client):
-        """Test the schema and JSON mime type go into the request config."""
+        """スキーマと JSON の MIME タイプがリクエストの設定に入る。"""
         client = mock_client.return_value
         client.aio.models.generate_content.return_value = _response("{}")
 
@@ -229,7 +229,7 @@ class TestGeminiTextGeneratorGenerateJson:
 
     @pytest.mark.asyncio
     async def test_plain_generate_is_not_json_mode(self, mock_client):
-        """Test JSON settings do not leak into plain text calls."""
+        """JSON の設定はテキストだけの呼び出しに漏れない。"""
         generator = _generator()
         client = mock_client.return_value
         client.aio.models.generate_content.return_value = _response("{}")
@@ -245,7 +245,7 @@ class TestGeminiTextGeneratorGenerateJson:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("text", ["not json", "[1, 2]"])
     async def test_non_object_raises(self, mock_client, text):
-        """Test invalid JSON or a non-object raises TextGenerationError."""
+        """不正な JSON やオブジェクトでないものは TextGenerationError。"""
         mock_client.return_value.aio.models.generate_content.return_value = _response(text)
 
         with pytest.raises(TextGenerationError, match="JSON"):

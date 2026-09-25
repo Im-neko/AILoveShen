@@ -6,7 +6,7 @@ import { configureMovements } from '../src/primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 
-test('a path reaching chunks not loaded yet does not throw (stand-in blocks have no position)', () => {
+test('まだ読み込まれていないチャンクに届く経路でも例外にならない（代わりのブロックは位置を持たない）', () => {
   let m
   const bot = { registry: minecraftData('1.21.4'), entities: {}, entity: { position: new Vec3(0, 70, 0) }, blockAt: () => null, pathfinder: { setMovements: (set) => { m = set } } }
   const state = { plan: { origin: new Vec3(10, 70, 10), size: { width: 5, depth: 5 } } }

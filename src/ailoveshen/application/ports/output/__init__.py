@@ -1,4 +1,4 @@
-"""Output ports (driven adapter interfaces)."""
+"""出力ポート（被駆動アダプターのインターフェース）。"""
 
 from __future__ import annotations
 

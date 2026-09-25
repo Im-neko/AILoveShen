@@ -1,4 +1,4 @@
-"""Value objects for Domain layer."""
+"""ドメイン層の値オブジェクト。"""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from typing import Any, Optional
 
 
 def _utc_now() -> datetime:
-    """Return current UTC datetime."""
+    """今の UTC の日時を返す。"""
     return datetime.now(timezone.utc)
 
 
 # =============================================================================
-# Emotion Value Objects
+# 感情の値オブジェクト
 # =============================================================================
 
 
 class EmotionType(str, Enum):
-    """Types of emotions the AI character can express."""
+    """AI のキャラクターが表せる感情の種類。"""
 
     NEUTRAL = "neutral"
     HAPPY = "happy"
@@ -33,32 +33,32 @@ class EmotionType(str, Enum):
 @dataclass(frozen=True)
 class EmotionState:
     """
-    Emotion state value object.
+    感情の状態の値オブジェクト。
 
-    Value objects are immutable and compared by their attributes.
+    値オブジェクトは不変で、属性で比較する。
 
     Raises:
-        ValueError: If intensity is not between 0.0 and 1.0.
+        ValueError: intensity が 0.0 から 1.0 の間にないとき。
     """
 
     primary: EmotionType = EmotionType.NEUTRAL
     intensity: float = 0.5  # 0.0 - 1.0
 
     def __post_init__(self) -> None:
-        """Validate intensity range."""
+        """intensity の範囲を検証する。"""
         if not 0.0 <= self.intensity <= 1.0:
             raise ValueError(f"intensity must be between 0.0 and 1.0, got {self.intensity}")
 
     def with_intensity(self, new_intensity: float) -> EmotionState:
-        """Create a new EmotionState with different intensity (clamped)."""
+        """intensity を変えた新しい EmotionState を作る（範囲内に収める）。"""
         clamped = max(0.0, min(1.0, new_intensity))
         return EmotionState(primary=self.primary, intensity=clamped)
 
     def decay(self, rate: float = 0.1) -> EmotionState:
         """
-        Decay emotion intensity over time.
+        時間とともに感情の intensity を弱める。
 
-        Returns neutral if intensity drops below threshold.
+        intensity がしきい値を下回ったら neutral を返す。
         """
         new_intensity = max(0.0, self.intensity - rate)
         if new_intensity < 0.3:
@@ -67,12 +67,12 @@ class EmotionState:
 
 
 # =============================================================================
-# Speech Value Objects
+# 発話の値オブジェクト
 # =============================================================================
 
 
 class SpeechPriority(IntEnum):
-    """Priority levels for speech requests."""
+    """発話のリクエストの優先度。"""
 
     LOW = 0
     NORMAL = 1
@@ -83,9 +83,9 @@ class SpeechPriority(IntEnum):
 @dataclass(frozen=True)
 class SpeechRequest:
     """
-    Speech request value object.
+    発話のリクエストの値オブジェクト。
 
-    Represents a request to synthesize and play speech.
+    音声を合成して再生するリクエストを表す。
     """
 
     text: str
@@ -94,12 +94,12 @@ class SpeechRequest:
     source: str = "unknown"  # "commentary" | "response" | "game_event"
 
     def should_interrupt(self) -> bool:
-        """Check if this request should interrupt current speech."""
+        """このリクエストが今の発話に割り込むべきかを調べる。"""
         return self.priority >= SpeechPriority.INTERRUPT
 
 
 class SpeechStatus(str, Enum):
-    """Speech playback status."""
+    """発話の再生の状態。"""
 
     QUEUED = "queued"
     SYNTHESIZING = "synthesizing"
@@ -112,9 +112,9 @@ class SpeechStatus(str, Enum):
 @dataclass(frozen=True)
 class SpeechResult:
     """
-    Value object representing speech synthesis/playback result.
+    音声の合成・再生の結果を表す値オブジェクト。
 
-    Immutable record of what happened with a speech request.
+    発話のリクエストがどうなったかの、不変の記録。
     """
 
     request_text: str
@@ -125,7 +125,7 @@ class SpeechResult:
 
     @classmethod
     def queued(cls, text: str) -> SpeechResult:
-        """Create a queued result."""
+        """キューに入れたときの結果を作る。"""
         return cls(
             request_text=text,
             status=SpeechStatus.QUEUED,
@@ -133,7 +133,7 @@ class SpeechResult:
 
     @classmethod
     def completed(cls, text: str, duration_ms: int) -> SpeechResult:
-        """Create a completed result."""
+        """完了したときの結果を作る。"""
         return cls(
             request_text=text,
             status=SpeechStatus.COMPLETED,
@@ -142,7 +142,7 @@ class SpeechResult:
 
     @classmethod
     def interrupted(cls, text: str) -> SpeechResult:
-        """Create an interrupted result."""
+        """割り込まれたときの結果を作る。"""
         return cls(
             request_text=text,
             status=SpeechStatus.INTERRUPTED,
@@ -150,7 +150,7 @@ class SpeechResult:
 
     @classmethod
     def failed(cls, text: str, error: str) -> SpeechResult:
-        """Create a failed result."""
+        """失敗したときの結果を作る。"""
         return cls(
             request_text=text,
             status=SpeechStatus.FAILED,
@@ -159,37 +159,37 @@ class SpeechResult:
 
     @property
     def is_success(self) -> bool:
-        """Check if the speech completed successfully."""
+        """発話が最後まで成功したかを調べる。"""
         return self.status == SpeechStatus.COMPLETED
 
 
 # =============================================================================
-# Conversation Value Objects
+# 会話の値オブジェクト
 # =============================================================================
 
 
 class MessageRole(str, Enum):
-    """Who sent a conversation message."""
+    """会話のメッセージを送ったのは誰か。"""
 
     VIEWER = "viewer"
     STREAMER = "streamer"
 
 
 class MessageType(str, Enum):
-    """What kind of utterance a conversation message is."""
+    """会話のメッセージがどんな種類の発言か。"""
 
-    CHAT = "chat"  # Viewer chat comment
-    COMMENTARY = "commentary"  # Streamer's game commentary / thoughts
-    RESPONSE = "response"  # Streamer's reply to a viewer
+    CHAT = "chat"  # 視聴者のチャットのコメント
+    COMMENTARY = "commentary"  # 配信者のゲーム実況 / 考え
+    RESPONSE = "response"  # 配信者から視聴者への返答
 
 
 @dataclass(frozen=True)
 class ConversationMessage:
     """
-    A single message in the stream conversation.
+    配信の会話の 1 つのメッセージ。
 
     Raises:
-        ValueError: If content is empty.
+        ValueError: content が空のとき。
     """
 
     role: MessageRole
@@ -200,7 +200,7 @@ class ConversationMessage:
     timestamp: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
-        """Validate content."""
+        """content を検証する。"""
         if not self.content.strip():
             raise ValueError("content must not be empty")
 
@@ -211,7 +211,7 @@ class ConversationMessage:
         user_name: str,
         user_id: Optional[str] = None,
     ) -> ConversationMessage:
-        """Create a chat message sent by a viewer."""
+        """視聴者が送ったチャットのメッセージを作る。"""
         return cls(
             role=MessageRole.VIEWER,
             message_type=MessageType.CHAT,
@@ -222,7 +222,7 @@ class ConversationMessage:
 
     @classmethod
     def from_streamer(cls, content: str, message_type: MessageType) -> ConversationMessage:
-        """Create a message spoken by the AI streamer."""
+        """AI の配信者が話したメッセージを作る。"""
         return cls(
             role=MessageRole.STREAMER,
             message_type=message_type,
@@ -233,10 +233,10 @@ class ConversationMessage:
 @dataclass(frozen=True)
 class CharacterProfile:
     """
-    The AI streamer's character.
+    AI の配信者のキャラクター。
 
     Raises:
-        ValueError: If name is empty.
+        ValueError: name が空のとき。
     """
 
     name: str = "AILoveShen"
@@ -252,7 +252,7 @@ class CharacterProfile:
     )
 
     def __post_init__(self) -> None:
-        """Validate name."""
+        """name を検証する。"""
         if not self.name.strip():
             raise ValueError("name must not be empty")
 
@@ -260,10 +260,10 @@ class CharacterProfile:
 @dataclass(frozen=True)
 class GenerationContext:
     """
-    Everything the streamer knows when generating an utterance.
+    発言を生成するときに、配信者が知っていることのすべて。
 
-    `activity` is what the streamer is doing and why (the same view the goal
-    decision gets), None while no game is being played.
+    `activity` は配信者が今していることとその理由（目標の決定が見るものと同じ）。
+    ゲームをプレイしていない間は None。
     """
 
     emotion_state: EmotionState = field(default_factory=EmotionState)
@@ -273,20 +273,20 @@ class GenerationContext:
 
 
 # =============================================================================
-# Position Value Objects
+# 位置の値オブジェクト
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class Position:
-    """3D position in the game world."""
+    """ゲームの世界の 3 次元の位置。"""
 
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
 
     def distance_to(self, other: Position) -> float:
-        """Calculate Euclidean distance to another position."""
+        """別の位置までのユークリッド距離を計算する。"""
         return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2 + (self.z - other.z) ** 2) ** 0.5
 
     def __str__(self) -> str:
@@ -296,17 +296,17 @@ class Position:
 @dataclass(frozen=True)
 class Rotation:
     """
-    Player rotation (yaw and pitch).
+    プレイヤーの向き（yaw と pitch）。
 
     Raises:
-        ValueError: If yaw is not between -180 and 180, or pitch is not between -90 and 90.
+        ValueError: yaw が -180 から 180 の間にないか、pitch が -90 から 90 の間にないとき。
     """
 
-    yaw: float = 0.0  # -180 to 180
-    pitch: float = 0.0  # -90 to 90
+    yaw: float = 0.0  # -180 から 180
+    pitch: float = 0.0  # -90 から 90
 
     def __post_init__(self) -> None:
-        """Validate rotation ranges."""
+        """向きの範囲を検証する。"""
         if not -180.0 <= self.yaw <= 180.0:
             raise ValueError(f"yaw must be between -180 and 180, got {self.yaw}")
         if not -90.0 <= self.pitch <= 90.0:
@@ -317,57 +317,57 @@ class Rotation:
 
 
 # =============================================================================
-# Filter Result Value Objects
+# フィルター結果の値オブジェクト
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class FilterResult:
     """
-    Result of comment filtering.
+    コメントのフィルターの結果。
 
     Raises:
-        ValueError: If score is not between 0.0 and 1.0.
+        ValueError: score が 0.0 から 1.0 の間にないとき。
     """
 
     should_respond: bool
-    score: float  # 0.0 - 1.0, how important/relevant the comment is
+    score: float  # 0.0 - 1.0。コメントがどれだけ重要で関係があるか
     reason: str
 
     def __post_init__(self) -> None:
-        """Validate score range."""
+        """score の範囲を検証する。"""
         if not 0.0 <= self.score <= 1.0:
             raise ValueError(f"score must be between 0.0 and 1.0, got {self.score}")
 
     @classmethod
     def accept(cls, score: float, reason: str = "Accepted") -> FilterResult:
-        """Create an accepting filter result."""
+        """受け入れるフィルターの結果を作る。"""
         return cls(should_respond=True, score=score, reason=reason)
 
     @classmethod
     def reject(cls, score: float, reason: str = "Rejected") -> FilterResult:
-        """Create a rejecting filter result."""
+        """退けるフィルターの結果を作る。"""
         return cls(should_respond=False, score=score, reason=reason)
 
 
 # =============================================================================
-# Minecraft Value Objects
+# Minecraft の値オブジェクト
 # =============================================================================
 
 
 class GoalPredicate(str, Enum):
     """
-    The vocabulary goals are set in (judged by the Minecraft bridge from the world).
+    目標を書く語彙（Minecraft ブリッジが世界から判定する）。
 
-    - HAVE: hold `count` of an item or group (planks, log, door, bed, wool, food, ...)
-    - STORED: `count` of an item or group in the chests (as remembered when last opened)
-    - LIT: no dark ground within `distance` blocks of the home (torches placed around it)
-    - BUILT: every block of the house plan is in place
-    - PLACED: an item placed somewhere (a bed in the home)
-    - AT_HOME: inside the house with the door closed
-    - THROUGH_NIGHT: the night has passed (inside the house, or asleep)
-    - EXPLORED: `distance` blocks away from where the goal was set
-    - CLEARED: no hostile waits near the door (by day only: go out and fight them)
+    - HAVE: アイテムかグループを `count` 個持つ（planks、log、door、bed、wool、food など）
+    - STORED: チェストにアイテムかグループが `count` 個ある（最後に開けたときの記憶で）
+    - LIT: 家から `distance` ブロック以内に暗い地面がない（周りに松明を置いた）
+    - BUILT: 家のプランのブロックがすべて置かれている
+    - PLACED: アイテムがどこかに置かれている（家の中のベッド）
+    - AT_HOME: 家の中にいて、扉が閉まっている
+    - THROUGH_NIGHT: 夜が明けた（家の中にいたか、寝ていた）
+    - EXPLORED: 目標を設定した場所から `distance` ブロック離れた
+    - CLEARED: 扉の近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
     """
 
     HAVE = "have"
@@ -384,13 +384,13 @@ class GoalPredicate(str, Enum):
 @dataclass(frozen=True)
 class GoalSpec:
     """
-    A goal in the predicate vocabulary with its arguments.
+    述語の語彙で書いた目標と、その引数。
 
-    Only the shape is checked here; whether an item exists or the goal makes
-    sense in the world (e.g. a home to go to) is checked by the bridge.
+    ここで確かめるのは形だけ。アイテムが実在するか、目標が世界で意味をなすか
+    （例: 帰る家があるか）は、ブリッジが確かめる。
 
     Raises:
-        ValueError: If an argument the predicate needs is missing or invalid.
+        ValueError: 述語に要る引数がないか、正しくないとき。
     """
 
     predicate: GoalPredicate
@@ -400,7 +400,7 @@ class GoalSpec:
     distance: Optional[int] = None
 
     def __post_init__(self) -> None:
-        """Check the arguments the predicate needs."""
+        """述語に要る引数を確かめる。"""
         if self.predicate in (GoalPredicate.HAVE, GoalPredicate.STORED):
             name = self.predicate.value
             if not self.item:
@@ -417,7 +417,7 @@ class GoalSpec:
             )
 
     def to_dict(self) -> dict[str, Any]:
-        """The spec as sent to the bridge (arguments that are set only)."""
+        """ブリッジに送る形の spec（設定されている引数だけ）。"""
         out: dict[str, Any] = {"predicate": self.predicate.value}
         for key in ("item", "count", "where", "distance"):
             value = getattr(self, key)
@@ -426,7 +426,7 @@ class GoalSpec:
         return out
 
     def describe(self) -> str:
-        """Short form for prompts and logs, e.g. have(planks, 12)."""
+        """プロンプトとログ用の短い形。例: have(planks, 12)。"""
         args = [str(v) for v in (self.item, self.count, self.where, self.distance) if v is not None]
         return f"{self.predicate.value}({', '.join(args)})"
 
@@ -434,10 +434,10 @@ class GoalSpec:
 @dataclass(frozen=True)
 class Goal:
     """
-    The small goal: the current direction set by the LLM; the action selector works within it.
+    小目標: LLM が決めた今の方向。行動選択器はその中で動く。
 
-    `mid_goal_id` is the mid goal it serves (None: survival, e.g. getting
-    through the night, which does not wait for the mid goals).
+    `mid_goal_id` は、それが役立つ中目標（None: 生存のため。例えば夜を越すことは、
+    中目標を待ってくれない）。
     """
 
     spec: GoalSpec
@@ -448,15 +448,15 @@ class Goal:
 
 @dataclass(frozen=True)
 class ConditionStatus:
-    """A mid goal's condition judged by the bridge (without setting it as the goal)."""
+    """ブリッジが判定した中目標の条件（目標としては設定しない）。"""
 
     spec: GoalSpec
     met: bool
     lines: tuple[str, ...] = ()
-    impossible: tuple[str, ...] = ()  # what nothing the streamer can do now gets
+    impossible: tuple[str, ...] = ()  # 配信者が今できることでは手に入らないもの
 
 
-# Judged from the state of the world alone: they can be the completion conditions of mid goals
+# 世界の状態だけから判定できる: 中目標の完了条件になれる
 CONDITION_PREDICATES = frozenset(
     {
         GoalPredicate.BUILT,
@@ -472,7 +472,7 @@ _SURVIVAL_PREDICATES = frozenset(
 
 
 def is_survival(spec: GoalSpec) -> bool:
-    """Whether a small goal keeps the streamer alive (it may be set for no mid goal)."""
+    """小目標が配信者を生き延びさせるためのものか（どの中目標のためでなくてもよい）。"""
     return spec.predicate in _SURVIVAL_PREDICATES or (
         spec.predicate == GoalPredicate.HAVE and spec.item == "food"
     )
@@ -480,13 +480,13 @@ def is_survival(spec: GoalSpec) -> bool:
 
 @dataclass(frozen=True)
 class Mission:
-    """The one overarching goal: set in the configuration, never changed by comments."""
+    """全体を貫く唯一の目標: 設定で決め、コメントでは変わらない。"""
 
     text: str
 
 
 class MidGoalState(str, Enum):
-    """Where a mid goal stands."""
+    """中目標の状態。"""
 
     PENDING = "pending"
     DONE = "done"
@@ -496,14 +496,14 @@ class MidGoalState(str, Enum):
 @dataclass(frozen=True)
 class MidGoal:
     """
-    A mid goal: a step toward the mission, done when all its conditions hold in the world.
+    中目標: 大目標への一歩。条件がすべて世界で満たされたら完了する。
 
-    `requested_by` is the viewer who asked for it (None: the streamer's own).
-    `stage` is the town's stage it stands for (None: not a stage).
-    `steps` counts the small goals' steps spent on it (a viewer's has a budget).
+    `requested_by` は頼んだ視聴者（None: 配信者自身のもの）。
+    `stage` は、それが表す街の段階（None: 段階ではない）。
+    `steps` は、そのために小目標が使ったステップの数（視聴者のものには予算がある）。
 
     Raises:
-        ValueError: If there are no conditions, or one cannot be judged from the world.
+        ValueError: 条件がないか、世界から判定できない条件があるとき。
     """
 
     id: str
@@ -514,11 +514,11 @@ class MidGoal:
     state: MidGoalState = MidGoalState.PENDING
     ended_because: str = ""
     steps: int = 0
-    progress: tuple[str, ...] = ()  # how the conditions stand, as last judged
+    progress: tuple[str, ...] = ()  # 最後に判定したときの、条件の進み具合
     stage: Optional[int] = None
 
     def __post_init__(self) -> None:
-        """Check the conditions."""
+        """条件を確かめる。"""
         if not self.title:
             raise ValueError("a mid goal needs a title")
         if not self.conditions:
@@ -531,17 +531,17 @@ class MidGoal:
                 )
 
     def summary(self) -> tuple[str, ...]:
-        """How the conditions stand without the sub-steps (the indented progress lines)."""
+        """細かい手順（字下げした進み具合の行）を除いた、条件の進み具合。"""
         return tuple(line for line in self.progress if not line.startswith(" "))
 
     def describe(self) -> str:
-        """Short form, e.g. 自分の家を作る (built())."""
+        """短い形。例: 自分の家を作る (built())。"""
         return f"{self.title} ({', '.join(c.describe() for c in self.conditions)})"
 
 
 @dataclass(frozen=True)
 class GoalOutcome:
-    """A past goal and why it ended."""
+    """過去の目標と、それが終わった理由。"""
 
     goal: Goal
     ended_because: str
@@ -551,11 +551,11 @@ class GoalOutcome:
 @dataclass(frozen=True)
 class GoalStatus:
     """
-    The current goal judged from the world by the bridge.
+    ブリッジが世界から判定した今の目標。
 
-    `remaining` is the work left (items to gather, crafts, blocks to place);
-    progress is it going down. `lines` show the subgoals with their progress,
-    `blocked` why some of them cannot be advanced right now.
+    `remaining` は残りの作業（集めるアイテム、クラフト、置くブロック）。これが減る
+    ことを進んだとみなす。`lines` はサブゴールとその進み具合、`blocked` はその一部を
+    今進められない理由。
     """
 
     met: bool
@@ -565,7 +565,7 @@ class GoalStatus:
 
 
 class Side(str, Enum):
-    """Wall side of a house (Minecraft: north is -Z, east is +X)."""
+    """家の壁の面（Minecraft: 北は -Z、東は +X）。"""
 
     NORTH = "north"
     EAST = "east"
@@ -574,7 +574,7 @@ class Side(str, Enum):
 
 
 class BlockKind(str, Enum):
-    """Kinds of blocks a house plan uses (any wood type)."""
+    """家のプランが使うブロックの種類（木の種類は問わない）。"""
 
     PLANKS = "planks"
     LOG = "log"
@@ -583,7 +583,7 @@ class BlockKind(str, Enum):
 
 @dataclass(frozen=True)
 class PlannedBlock:
-    """A block of a build plan, relative to the site origin (min corner, ground level)."""
+    """建築プランのブロック 1 つ。敷地の原点（最小の角、地面の高さ）からの相対位置。"""
 
     x: int
     y: int
@@ -594,17 +594,16 @@ class PlannedBlock:
 @dataclass(frozen=True)
 class HouseBlueprint:
     """
-    A small single-room house: walls, a flat roof, one door.
+    一部屋の小さな家: 壁、平らな屋根、扉 1 つ。
 
-    No windows: an opening without glass let mobs outside hit the bot inside
-    (glass needs smelting, which the bridge cannot do yet).
+    窓はない: ガラスのない開口部から、外のモブが中のボットを攻撃した
+    （ガラスには製錬が要り、ブリッジはまだそれができない）。
 
-    Size bounds come from what the Minecraft bridge was measured to build
-    reliably (5x5x3 and 7x7x4 both completed without failed placements).
+    大きさの範囲は、Minecraft ブリッジが確実に建てられると計測したものから決めた
+    （5x5x3 と 7x7x4 はどちらも、置くのに一度も失敗せずに完成した）。
 
     Raises:
-        ValueError: If a dimension is out of bounds, or the door does not fit on
-            its wall.
+        ValueError: 寸法が範囲の外か、扉がその壁に収まらないとき。
     """
 
     MIN_SIDE = 5
@@ -614,15 +613,15 @@ class HouseBlueprint:
 
     name: str
     concept: str
-    width: int  # along x
-    depth: int  # along z
+    width: int  # x 方向
+    depth: int  # z 方向
     wall_height: int
     door_side: Side
     door_offset: int
-    corner_pillars: bool = False  # logs at the four corners instead of planks
+    corner_pillars: bool = False  # 四隅を板材ではなく原木にする
 
     def __post_init__(self) -> None:
-        """Validate dimensions and the door."""
+        """寸法と扉を検証する。"""
         for label, value in (("width", self.width), ("depth", self.depth)):
             if not self.MIN_SIDE <= value <= self.MAX_SIDE:
                 raise ValueError(f"{label} must be {self.MIN_SIDE}-{self.MAX_SIDE}, got {value}")
@@ -637,7 +636,7 @@ class HouseBlueprint:
         return self.width if side in (Side.NORTH, Side.SOUTH) else self.depth
 
     def _check_offset(self, label: str, side: Side, offset: int) -> None:
-        # Corners are excluded: a door there would cut the wall's support
+        # 角は除く: そこに扉があると、壁の支えが切れる
         if not 1 <= offset <= self._wall_length(side) - 2:
             raise ValueError(
                 f"{label} offset on the {side.value} wall must be "
@@ -645,7 +644,7 @@ class HouseBlueprint:
             )
 
     def _wall_position(self, side: Side, offset: int) -> tuple[int, int]:
-        """(x, z) of the given position along a wall."""
+        """壁に沿った、与えられた位置の (x, z)。"""
         if side == Side.NORTH:
             return offset, 0
         if side == Side.SOUTH:
@@ -656,16 +655,15 @@ class HouseBlueprint:
 
     @property
     def height(self) -> int:
-        """Total height including the roof."""
+        """屋根を含めた全体の高さ。"""
         return self.wall_height + 1
 
     def blocks(self) -> tuple[PlannedBlock, ...]:
         """
-        Expand to blocks in a placeable order.
+        置ける順にブロックへ展開する。
 
-        Walls go up layer by layer, the roof is laid ring by ring from the
-        edges inward (each block rests on a wall or a previous roof block),
-        and the door comes last.
+        壁は 1 段ずつ積み、屋根は外側から内側へ 1 周ずつ敷く（どのブロックも壁か、
+        先に置いた屋根のブロックの上に載る）。扉は最後。
         """
         door_x, door_z = self._wall_position(self.door_side, self.door_offset)
         last_x, last_z = self.width - 1, self.depth - 1
@@ -693,7 +691,7 @@ class HouseBlueprint:
         return tuple(out)
 
     def material_counts(self) -> dict[BlockKind, int]:
-        """Number of blocks of each kind the whole house needs."""
+        """家全体に要る、種類ごとのブロックの数。"""
         counts: dict[BlockKind, int] = {}
         for b in self.blocks():
             counts[b.kind] = counts.get(b.kind, 0) + 1
@@ -702,7 +700,7 @@ class HouseBlueprint:
 
 @dataclass(frozen=True)
 class Candidate:
-    """A concrete action the bridge can execute right now (e.g. dig oak_log at 3,70,5)."""
+    """ブリッジが今すぐ実行できる具体的な行動（例: 3,70,5 の oak_log を掘る）。"""
 
     action_id: str
     description: dict[str, Any] = field(default_factory=dict)
@@ -711,10 +709,10 @@ class Candidate:
 @dataclass(frozen=True)
 class GameObservation:
     """
-    A compact snapshot of the game for decision making.
+    判断のための、ゲームの簡潔なスナップショット。
 
-    `state` is the bridge's JSON summary of the world; the typed fields are
-    what the application logic reads.
+    `state` はブリッジによる世界の JSON の要約。型のあるフィールドは、
+    アプリケーションのロジックが読むもの。
     """
 
     state: dict
@@ -729,20 +727,20 @@ class GameObservation:
     has_home: bool = False
     inside_home: bool = False
     bed_in_home: bool = False
-    busy: bool = False  # the bridge is running an action or a reflex
+    busy: bool = False  # ブリッジが行動か反射を実行している
 
 
 @dataclass(frozen=True)
 class TownStage:
     """
-    A stage of the town: done when its conditions hold in the world.
+    街の段階: 条件が世界で満たされたら済む。
 
-    `unresolved` are the parts the streamer cannot do or judge yet (they wait
-    for an ability to be added; the stage cannot be finished before).
+    `unresolved` は、配信者がまだできないか判定できない部分（能力が足されるのを
+    待つ。それまで段階は終えられない）。
 
     Raises:
-        ValueError: If it has no title, nothing to do, or a condition that
-            cannot be judged from the world.
+        ValueError: 題名がないか、やることがないか、世界から判定できない条件が
+            あるとき。
     """
 
     title: str
@@ -751,7 +749,7 @@ class TownStage:
     unresolved: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """Check the stage."""
+        """段階を確かめる。"""
         if not self.title:
             raise ValueError("a town stage needs a title")
         if not self.conditions and not self.unresolved:
@@ -762,19 +760,19 @@ class TownStage:
 
     @property
     def ready(self) -> bool:
-        """Whether every part can be done and judged now."""
+        """すべての部分を今実行でき、判定できるか。"""
         return not self.unresolved
 
 
 @dataclass(frozen=True)
 class TownDefinition:
-    """What the town of the mission is (said on stream) and its stages, in order."""
+    """大目標の街がどんなものか（配信で言う）と、順に並べた段階。"""
 
     text: str
     stages: tuple[TownStage, ...]
 
     def __post_init__(self) -> None:
-        """Check the definition."""
+        """定義を確かめる。"""
         if not self.text:
             raise ValueError("the town needs a definition")
         if not self.stages:
@@ -784,16 +782,15 @@ class TownDefinition:
 @dataclass(frozen=True)
 class Activity:
     """
-    What the streamer is doing and why: the one view that the goal decision,
-    the commentary and the chat replies all see, so what is said matches what
-    is done. From the mission down: the mid goals in order (pending first,
-    then those recently ended), the small goal, and the game.
+    配信者が今していることとその理由: 目標の決定、実況、チャットの返答がすべて見る
+    唯一の見え方。これで、言うこととすることが合う。大目標から下へ: 順に並べた
+    中目標（未完了のものが先、次に最近終わったもの）、小目標、ゲーム。
     """
 
     mission: Optional[Mission] = None
     town: Optional[TownDefinition] = None
-    town_stage: int = 0  # stages done
-    stage_met: tuple[GoalSpec, ...] = ()  # the current stage's conditions met so far
+    town_stage: int = 0  # 済んだ段階の数
+    stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
     mid_goals: tuple[MidGoal, ...] = ()
     goal: Optional[Goal] = None
     observation: Optional[GameObservation] = None
@@ -802,7 +799,7 @@ class Activity:
 
 @dataclass(frozen=True)
 class ActionDecision:
-    """The action picked by the selector, with its confidence (0.0 - 1.0)."""
+    """選択器が選んだ行動と、その確信度（0.0 - 1.0）。"""
 
     action_id: str
     confidence: float
@@ -811,7 +808,7 @@ class ActionDecision:
 
 @dataclass(frozen=True)
 class ActionResult:
-    """Outcome of executing one bridge action."""
+    """ブリッジの行動を 1 つ実行した結果。"""
 
     action_id: str
     ok: bool

@@ -31,7 +31,7 @@ function bot (items, { furnace = true } = {}) {
   }
 }
 
-test('raw meat is cooked at a furnace with fuel held; nothing to cook, no fuel or no furnace: not offered', () => {
+test('燃料を持っていれば生肉をかまどで焼く。焼く物・燃料・かまどのどれかが無ければ候補に出さない', () => {
   assert.deepEqual(cooking(bot({ beef: 5, oak_planks: 4 }), k), {
     furnace: FURNACE, input: 'beef', product: 'cooked_beef', count: 5, fuel: 'oak_planks', fuelCount: 4
   })
@@ -41,13 +41,13 @@ test('raw meat is cooked at a furnace with fuel held; nothing to cook, no fuel o
   assert.equal(cooking(bot({ beef: 5, coal: 1 }, { furnace: false }), k), null)
 })
 
-test('the cook candidate is offered whatever the goal', () => {
+test('焼く候補は目標に関係なく出す', () => {
   const state = { home, plan: null, unreachableDrops: new Set(), memory: newMemory() }
   const { candidates } = ground(bot({ beef: 3, coal: 1 }), state, k, world, { leaves: [] })
   assert.ok(candidates.some((c) => c.id === 'cook 3 beef in the furnace at 5,70,2' && c.verb === 'smelt' && c.fuel === 'coal'))
 })
 
-test('a food stock takes raw meat in cooked where it can be cooked, raw where it cannot', () => {
+test('食料の備蓄には、焼ける所では生肉を焼いてから入れ、焼けない所では生のまま入れる', () => {
   const memory = newMemory()
   rememberChest(memory, v(1, 70, 1), {}, 0)
   const state = { home, plan: null, memory }

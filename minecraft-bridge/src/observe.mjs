@@ -1,24 +1,24 @@
-// Compact observation of the bot's situation, shared by action enumeration and /observe.
+// ボットの状況を簡潔にまとめた観測。行動の列挙と /observe で共有する。
 
 export const MOB_RADIUS = 48
 export const MOB_LIMIT = 16
 export const DROP_RADIUS = 24
 export const THREAT_RADIUS = 16
-const MELEE_RADIUS = 4 // this close a hostile is a threat even when leaves or a corner hide it
+const MELEE_RADIUS = 4 // ここまで近い敵対モブは、葉や角に隠れていても脅威とする
 export const HISTORY = 5
 
-// Mineflayer tags these as "hostile", but they only attack when provoked.
+// Mineflayer はこれらを "hostile" とするが、挑発されたときしか攻撃しない。
 const NEUTRAL = new Set(['enderman', 'zombified_piglin', 'piglin', 'wolf', 'bee', 'llama', 'trader_llama',
   'polar_bear', 'dolphin', 'panda', 'goat', 'iron_golem'])
-// Spiders are neutral in daylight.
+// クモは日中は中立。
 const DAY_NEUTRAL = new Set(['spider', 'cave_spider'])
-// Explode when close: never fought in melee near the house
+// 近づくと爆発する: 家の近くでは近接で戦わない
 export const EXPLODES = new Set(['creeper'])
-// Burn in daylight under the open sky (husks and wither skeletons do not)
+// 空の下では日光で燃える（ハスクとウィザースケルトンは燃えない）
 export const BURNS = new Set(['zombie', 'zombie_villager', 'skeleton', 'stray', 'drowned', 'phantom'])
 const FULL_SKY_LIGHT = 15
 
-// Whether daylight sets the mob on fire where it stands now (helmets are not checked)
+// いまいる場所でモブが日光で燃えるか（ヘルメットは確認しない）
 export function burningInDaylight (bot, e) {
   if (!BURNS.has(e.name) || dayPhase(bot.time.timeOfDay) !== 'day') return false
   return bot.blockAt(e.position.offset(0, e.height ?? 1.8, 0).floored())?.skyLight === FULL_SKY_LIGHT
@@ -27,7 +27,7 @@ export function burningInDaylight (bot, e) {
 export const round = (v, d = 1) => Math.round(v * 10 ** d) / 10 ** d
 
 export function bearing (from, to) {
-  // Compass direction of `to` seen from `from` (Minecraft: -Z north, +X east)
+  // `from` から見た `to` の方位（Minecraft: -Z が北、+X が東）
   const deg = (Math.atan2(to.x - from.x, -(to.z - from.z)) * 180 / Math.PI + 360) % 360
   return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8]
 }
@@ -66,7 +66,7 @@ export function isHostile (bot, e) {
   return true
 }
 
-// True when nothing solid blocks the straight line between the bot's eyes and the entity.
+// ボットの目とエンティティを結ぶ直線を固体がさえぎっていなければ true。
 export function canSee (bot, e) {
   const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
   const target = e.position.offset(0, (e.height ?? 1) * 0.8, 0)
@@ -77,8 +77,8 @@ export function canSee (bot, e) {
   return !hit
 }
 
-// Hostile mobs that can actually reach the bot now: close, roughly level and in line of sight.
-// Mobs in caves below or behind walls are reported in the observation but are not threats.
+// いま実際にボットに届く敵対モブ: 近く、高さがほぼ同じで、視線が通るもの。
+// 下の洞窟や壁の向こうのモブは観測には出すが、脅威にはしない。
 export function threats (bot) {
   const me = bot.entity.position
   return nearbyEntities(bot).filter(({ e, dist }) =>
@@ -122,11 +122,11 @@ export function summarize (bot, history, extra = {}) {
   }
 }
 
-// Dark even by day: covered (a cave, an overhang, a roof) with no light source near. Judged from the
-// blocks, not from the light data: mineflayer's light for 1.21.4 read sky light 0 in open air the
-// server lit (checked with a location_check predicate), so it cannot be trusted
+// 昼でも暗い: 覆われていて（洞窟、張り出し、屋根）近くに光源がない。光のデータではなくブロックから
+// 判定する: mineflayer の 1.21.4 の光は、サーバーが明るいとした屋外で空の光 0 を読んだ
+// （location_check の述語で確認）ので信用できない
 const COVER_HEIGHT = 32
-const LIT_RADIUS = 8 // a torch lights 14 at its block, dropping one per block
+const LIT_RADIUS = 8 // たいまつはそのブロックで 14、1ブロックごとに 1 下がる
 export const LIGHT_SOURCES = ['torch', 'wall_torch', 'lantern', 'soul_torch', 'soul_wall_torch', 'soul_lantern', 'glowstone',
   'jack_o_lantern', 'sea_lantern', 'shroomlight', 'lava', 'campfire', 'soul_campfire', 'redstone_lamp', 'end_rod', 'ochre_froglight', 'verdant_froglight', 'pearlescent_froglight']
 export function isCovered (bot) {
@@ -143,7 +143,7 @@ export function isDark (bot) {
   return !bot.findBlock({ matching: ids, maxDistance: LIT_RADIUS })
 }
 
-// Worn armour and the off hand (inventory window slots), null where empty
+// 身につけた防具とオフハンド（インベントリのウィンドウのスロット）。空なら null
 const EQUIPMENT_SLOTS = { head: 5, chest: 6, legs: 7, feet: 8, off_hand: 45 }
 
 export function equipment (bot) {

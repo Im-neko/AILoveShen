@@ -1,1 +1,1 @@
-"""AILoveShen tests."""
+"""AILoveShen のテスト。"""

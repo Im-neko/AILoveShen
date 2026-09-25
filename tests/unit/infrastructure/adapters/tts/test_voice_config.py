@@ -1,4 +1,4 @@
-"""Tests for Style-Bert-VITS2 voice configuration."""
+"""Style-Bert-VITS2 の声の設定のテスト。"""
 
 import pytest
 
@@ -6,10 +6,10 @@ from ailoveshen.infrastructure.adapters.tts.voice_config import VoiceConfig
 
 
 class TestVoiceConfig:
-    """Tests for VoiceConfig value object."""
+    """VoiceConfig 値オブジェクトのテスト。"""
 
     def test_create_with_defaults(self):
-        """Test creating config with defaults."""
+        """既定値で設定を作る。"""
         config = VoiceConfig()
         assert config.model_name == "default"
         assert config.speaker_id == 0
@@ -20,7 +20,7 @@ class TestVoiceConfig:
         assert config.length == 1.0
 
     def test_create_with_custom_values(self):
-        """Test creating config with custom values."""
+        """値を指定して設定を作る。"""
         config = VoiceConfig(
             model_name="my_model",
             speaker_id=1,
@@ -33,12 +33,12 @@ class TestVoiceConfig:
         assert config.sdp_ratio == 0.3
 
     def test_negative_speaker_id_raises(self):
-        """Test that negative speaker_id raises ValueError."""
+        """speaker_id が負なら ValueError。"""
         with pytest.raises(ValueError, match="speaker_id must be non-negative"):
             VoiceConfig(speaker_id=-1)
 
     def test_is_immutable(self):
-        """Test that VoiceConfig is immutable."""
+        """VoiceConfig は変更できない。"""
         config = VoiceConfig()
         with pytest.raises(AttributeError):
             config.model_name = "modified"  # type: ignore

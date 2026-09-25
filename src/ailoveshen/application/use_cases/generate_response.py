@@ -1,4 +1,4 @@
-"""Generate chat response use case implementation."""
+"""チャット返答生成のユースケースの実装。"""
 
 from __future__ import annotations
 
@@ -31,22 +31,21 @@ from ailoveshen.domain.value_objects import (
 
 class GenerateResponseUseCase(IGenerateResponse):
     """
-    Use case for replying to a viewer's chat (sub loop / interrupt).
+    視聴者のチャットに返答するユースケース（サブループ / 割り込み）。
 
-    While playing, the reply sees what the streamer is doing (the same view as
-    the goal decision: the mission, the mid goals, the small goal) and may
-    accept the viewer's request as a mid goal: the reply and its handling come
-    from one generation, so a reply that accepts always adds the mid goal. It
-    goes behind the mid goal worked on now; the small goal is not interrupted.
-    A request that breaks the plan's limits (one per viewer, ...) or cannot be
-    judged goes back to the model with the reason, to be declined.
+    プレイ中の返答は、配信者が今していること（目標の決定と同じもの: 大目標、
+    中目標、小目標）を見て、視聴者の頼みを中目標として受けることがある。返答と
+    頼みの扱いは 1 回の生成から出るので、受けると言った返答は必ず中目標を足す。
+    足した中目標は、今取り組んでいる中目標の後ろに入る。小目標は中断しない。
+    プランの上限（1 人 1 つ、など）を破る頼みや判定できない頼みは、理由をつけて
+    モデルに戻し、断らせる。
 
-    It coordinates:
-    - Recording the viewer's chat in the conversation history
-    - Prompt construction via adapter
-    - Text (or reply + request handling) generation via adapter
-    - Adding an accepted request to the mid goals
-    - Recording the reply and publishing a domain event
+    次のことをまとめる:
+    - 視聴者のチャットを会話履歴に記録する
+    - アダプターでプロンプトを組み立てる
+    - アダプターでテキスト（または返答と頼みの扱い）を生成する
+    - 受けた頼みを中目標に足す
+    - 返答を記録し、ドメインイベントを発行する
     """
 
     def __init__(
@@ -61,17 +60,17 @@ class GenerateResponseUseCase(IGenerateResponse):
         max_attempts: int = 2,
     ) -> None:
         """
-        Initialize use case with dependencies (Dependency Injection).
+        依存を受け取ってユースケースを初期化する（依存性の注入）。
 
         Args:
-            text_generator: LLM text generator adapter
-            prompt_builder: Prompt builder adapter
-            event_publisher: Event publisher for domain events
-            conversation: Conversation history shared with commentary and the goal decision
-            character: The streamer's character profile
-            mid_goals: Adds accepted requests to the mid goals (None: replies only talk)
-            history_limit: Number of recent conversation messages given to the model
-            max_attempts: Generations before giving up when the accepted request is unusable
+            text_generator: LLM のテキスト生成のアダプター
+            prompt_builder: プロンプト組み立てのアダプター
+            event_publisher: ドメインイベントの発行器
+            conversation: 実況と目標の決定と共有する会話履歴
+            character: 配信者のキャラクターのプロフィール
+            mid_goals: 受けた頼みを中目標に足す（None: 返答は話すだけ）
+            history_limit: モデルに渡す最近の会話のメッセージの数
+            max_attempts: 受けた頼みが使えないとき、あきらめるまでに生成する回数
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -84,17 +83,17 @@ class GenerateResponseUseCase(IGenerateResponse):
 
     async def execute(self, request: GenerateResponseRequest) -> GenerateResponseResponse:
         """
-        Execute the generate chat response use case.
+        チャット返答生成のユースケースを実行する。
 
-        Flow:
-        1. Record the viewer's chat
-        2. Build generation context (with the session's activity) and prompts
-        3. Generate the reply, adding the request to the mid goals when it accepts it
-        4. Record the reply and publish ChatResponseGeneratedEvent
+        流れ:
+        1. 視聴者のチャットを記録する
+        2. 生成の文脈（セッションの activity を含む）とプロンプトを組み立てる
+        3. 返答を生成する。頼みを受けたときは、それを中目標に足す
+        4. 返答を記録し、ChatResponseGeneratedEvent を発行する
         """
         try:
-            # History given to the model excludes the chat being answered,
-            # which the prompt presents separately.
+            # モデルに渡す履歴には、返答するチャットを含めない。
+            # そのチャットはプロンプトが別に示す。
             history = self._conversation.recent_messages(self._history_limit)
             self._conversation.add_viewer_message(
                 content=request.message,
@@ -110,7 +109,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 recent_messages=history,
             )
 
-            logger.debug(f"Generating response for: {request.message[:50]}...")
+            logger.debug(f"返答を生成する: {request.message[:50]}...")
             text, mid_goal = await self._generate(request, context, session)
 
             if text:
@@ -131,7 +130,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
 
         except Exception as e:
-            logger.error(f"Response generation failed: {e}")
+            logger.error(f"返答の生成に失敗した: {e}")
             return GenerateResponseResponse.error_response(
                 error=str(e),
                 original_message=request.message,
@@ -175,9 +174,9 @@ class GenerateResponseUseCase(IGenerateResponse):
                     session.plan, proposal, requested_by=request.user_name
                 )
             except (ValueError, GoalRejectedError) as e:
-                # The reply accepts something the plan does not take: never say it
+                # 返答が、プランに入らないものを受けている: それは決して言わせない
                 error = str(e)
-                logger.warning(f"Reply {attempt} with an unusable request: {data!r}: {error}")
+                logger.warning(f"返答 {attempt} の頼みが使えない: {data!r}: {error}")
                 continue
             return text, mid_goal
         raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")

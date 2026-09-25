@@ -1,16 +1,16 @@
-"""Primitive-action spike: can Jev pick the right grounded primitive among many candidates?
+"""プリミティブ行動のスパイク: 多くの候補の中から、Jev は正しい具体化されたプリミティブを選べるか。
 
-Candidates are concrete primitive instances (dig this block, craft that item, attack that mob), as
-the bridge would enumerate them. Each scenario has the goal (an item/state predicate with its
-subgoals, as a dependency solver would derive them), the bot's state, a few relevant candidates
-and the acceptable choices; unrelated but executable candidates pad the list to N.
+候補はブリッジが列挙するのと同じ、具体的なプリミティブ（このブロックを掘る、あのアイテムを
+クラフトする、あのモブを攻撃する）。各シナリオには、目標（依存ソルバーが導くのと同じ、下位目標つきの
+アイテム・状態の述語）、ボットの状態、関係する候補がいくつか、正解とする選択がある。関係はないが
+実行できる候補で、リストを N 件まで埋める。
 
-Compared, on the same shuffled candidates:
-- jev: descriptions without hints
-- jev_hint (results/primitives/full.json only): descriptions say which subgoal a candidate advances
-- jev_needs: the state also lists needs (critical health, urgent hunger, night coming, threats)
-- jev_prio: the instructions give a general priority order
-- rule: safety rules, then the nearest candidate advancing the first open subgoal (a hand baseline)
+同じ順にシャッフルした候補で比べる:
+- jev: ヒントのない説明文
+- jev_hint（results/primitives/full.json のみ）: 候補がどの下位目標を進めるかを説明文に書く
+- jev_needs: 状態に体の必要（体力の危機、ひどい空腹、夜が近い、脅威）も並べる
+- jev_prio: 指示で一般的な優先順位を与える
+- rule: 安全の規則、次に最初の未達の下位目標を進める一番近い候補（手で書いた基準）
 
     TYPESAFE_API_KEY=... python spikes/primitive_choice_eval.py --sizes 10 20 50 --repeat 3
 """
@@ -39,7 +39,7 @@ PRIORITY_INSTRUCTIONS = (
 
 
 def needs(state: dict) -> list[str]:
-    """Generic needs from the numbers, stated without naming actions (what the bridge could compute)."""
+    """数値から出す一般的な必要。行動の名前は出さない（ブリッジでも計算できるもの）。"""
     s, out = state["self"], []
     if s["health"] <= 8:
         out.append(f"health critical ({s['health']}/20)")
@@ -54,7 +54,7 @@ def needs(state: dict) -> list[str]:
 
 
 def c(key, verb, target=None, advances=None, **info):
-    """A grounded candidate: key, description (verb, target, extra facts) and the subgoal it advances."""
+    """具体化した候補: キー、説明（動詞、対象、補足の事実）、進める下位目標。"""
     desc = {"verb": verb}
     if target:
         desc["target"] = target
@@ -65,7 +65,9 @@ def c(key, verb, target=None, advances=None, **info):
 BASE_SELF = {"health": 20, "food": 20, "time": "day (7 minutes until dusk)", "weapon": None}
 
 
-def scenario(goal, subgoals, self_=None, inventory=None, nearby=None, relevant=(), accept=(), note=""):
+def scenario(
+    goal, subgoals, self_=None, inventory=None, nearby=None, relevant=(), accept=(), note=""
+):
     return {
         "state": {
             "goal": goal,
@@ -82,179 +84,302 @@ def scenario(goal, subgoals, self_=None, inventory=None, nearby=None, relevant=(
 
 SCENARIOS = {
     "logs_empty": scenario(
-        "have 4 oak_planks", ["have 1 oak_log (0/1)", "craft oak_planks"],
+        "have 4 oak_planks",
+        ["have 1 oak_log (0/1)", "craft oak_planks"],
         relevant=[
             c("dig oak_log at 3m", "dig", "oak_log", "have 1 oak_log", distance=3),
             c("dig oak_log at 9m", "dig", "oak_log", "have 1 oak_log", distance=9),
         ],
-        accept={"dig oak_log at 3m"}),
+        accept={"dig oak_log at 3m"},
+    ),
     "craft_planks": scenario(
-        "have 4 oak_planks", ["have 1 oak_log (1/1) done", "craft oak_planks"], inventory={"oak_log": 1},
+        "have 4 oak_planks",
+        ["have 1 oak_log (1/1) done", "craft oak_planks"],
+        inventory={"oak_log": 1},
         relevant=[
-            c("craft oak_planks x4", "craft", "oak_planks", "craft oak_planks", uses={"oak_log": 1}),
+            c(
+                "craft oak_planks x4",
+                "craft",
+                "oak_planks",
+                "craft oak_planks",
+                uses={"oak_log": 1},
+            ),
             c("dig oak_log at 4m", "dig", "oak_log", None, distance=4),
         ],
-        accept={"craft oak_planks x4"}),
+        accept={"craft oak_planks x4"},
+    ),
     "drop_on_ground": scenario(
-        "have 3 oak_log", ["have 3 oak_log (1/3)"], inventory={"oak_log": 1},
+        "have 3 oak_log",
+        ["have 3 oak_log (1/3)"],
+        inventory={"oak_log": 1},
         nearby=[{"item_on_ground": "oak_log x2", "distance": 2}],
         relevant=[
             c("pick up oak_log x2 at 2m", "pickup", "oak_log x2", "have 3 oak_log", distance=2),
             c("dig oak_log at 6m", "dig", "oak_log", "have 3 oak_log", distance=6),
         ],
-        accept={"pick up oak_log x2 at 2m"}),
+        accept={"pick up oak_log x2 at 2m"},
+    ),
     "zombie_unarmed": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"time": "night"},
+        "have 3 oak_log",
+        ["have 3 oak_log (0/3)"],
+        self_={"time": "night"},
         nearby=[{"mob": "zombie", "hostile": True, "distance": 4}],
         relevant=[
             c("flee from zombie", "flee", "zombie", None, distance=4),
             c("attack zombie", "attack", "zombie", None, distance=4, weapon="none (fist)"),
             c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
         ],
-        accept={"flee from zombie"}),
+        accept={"flee from zombie"},
+    ),
     "zombie_armed": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"time": "night", "weapon": "wooden_sword (in hand)"},
-        inventory={"wooden_sword": 1}, nearby=[{"mob": "zombie", "hostile": True, "distance": 4}],
+        "have 3 oak_log",
+        ["have 3 oak_log (0/3)"],
+        self_={"time": "night", "weapon": "wooden_sword (in hand)"},
+        inventory={"wooden_sword": 1},
+        nearby=[{"mob": "zombie", "hostile": True, "distance": 4}],
         relevant=[
             c("flee from zombie", "flee", "zombie", None, distance=4),
             c("attack zombie", "attack", "zombie", None, distance=4, weapon="wooden_sword"),
             c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
         ],
-        accept={"attack zombie", "flee from zombie"}),
+        accept={"attack zombie", "flee from zombie"},
+    ),
     "creeper_armed": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"weapon": "wooden_sword (in hand)"},
-        inventory={"wooden_sword": 1}, nearby=[{"mob": "creeper", "hostile": True, "distance": 5}],
+        "have 3 oak_log",
+        ["have 3 oak_log (0/3)"],
+        self_={"weapon": "wooden_sword (in hand)"},
+        inventory={"wooden_sword": 1},
+        nearby=[{"mob": "creeper", "hostile": True, "distance": 5}],
         relevant=[
             c("flee from creeper", "flee", "creeper", None, distance=5),
             c("attack creeper", "attack", "creeper", None, distance=5, weapon="wooden_sword"),
             c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
         ],
-        accept={"flee from creeper"}),
+        accept={"flee from creeper"},
+    ),
     "hungry": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"food": 5}, inventory={"cooked_beef": 2},
+        "have 3 oak_log",
+        ["have 3 oak_log (0/3)"],
+        self_={"food": 5},
+        inventory={"cooked_beef": 2},
         relevant=[
             c("eat cooked_beef", "eat", "cooked_beef", None),
             c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
         ],
-        accept={"eat cooked_beef"}),
+        accept={"eat cooked_beef"},
+    ),
     "wool_sheep_vs_cow": scenario(
-        "have 1 white_bed", ["have 3 white_wool (0/3)", "have 3 oak_planks (3/3) done", "craft white_bed at a crafting_table"],
-        inventory={"oak_planks": 3, "wooden_sword": 1}, self_={"weapon": "wooden_sword (in hand)"},
+        "have 1 white_bed",
+        [
+            "have 3 white_wool (0/3)",
+            "have 3 oak_planks (3/3) done",
+            "craft white_bed at a crafting_table",
+        ],
+        inventory={"oak_planks": 3, "wooden_sword": 1},
+        self_={"weapon": "wooden_sword (in hand)"},
         relevant=[
-            c("attack sheep at 10m", "attack", "sheep", "have 3 white_wool", distance=10, drops="white_wool, mutton"),
+            c(
+                "attack sheep at 10m",
+                "attack",
+                "sheep",
+                "have 3 white_wool",
+                distance=10,
+                drops="white_wool, mutton",
+            ),
             c("attack cow at 5m", "attack", "cow", None, distance=5, drops="beef, leather"),
             c("attack pig at 6m", "attack", "pig", None, distance=6, drops="porkchop"),
         ],
-        accept={"attack sheep at 10m"}),
+        accept={"attack sheep at 10m"},
+    ),
     "place_table": scenario(
-        "have 1 wooden_pickaxe", ["have 3 oak_planks (3/3) done", "have 2 stick (2/2) done",
-                                  "a crafting_table within reach (none)", "craft wooden_pickaxe"],
+        "have 1 wooden_pickaxe",
+        [
+            "have 3 oak_planks (3/3) done",
+            "have 2 stick (2/2) done",
+            "a crafting_table within reach (none)",
+            "craft wooden_pickaxe",
+        ],
         inventory={"oak_planks": 3, "stick": 2, "crafting_table": 1},
         relevant=[
-            c("place crafting_table at 2m", "place", "crafting_table", "a crafting_table within reach", distance=2),
+            c(
+                "place crafting_table at 2m",
+                "place",
+                "crafting_table",
+                "a crafting_table within reach",
+                distance=2,
+            ),
             c("craft oak_button", "craft", "oak_button", None, uses={"oak_planks": 1}),
             c("craft stick x4", "craft", "stick", None, uses={"oak_planks": 2}),
         ],
-        accept={"place crafting_table at 2m"}),
+        accept={"place crafting_table at 2m"},
+    ),
     "craft_bed_at_table": scenario(
-        "have 1 white_bed", ["have 3 white_wool (3/3) done", "have 3 oak_planks (3/3) done",
-                             "a crafting_table within reach (2m) done", "craft white_bed"],
+        "have 1 white_bed",
+        [
+            "have 3 white_wool (3/3) done",
+            "have 3 oak_planks (3/3) done",
+            "a crafting_table within reach (2m) done",
+            "craft white_bed",
+        ],
         inventory={"white_wool": 3, "oak_planks": 3},
         relevant=[
-            c("craft white_bed at crafting_table", "craft", "white_bed", "craft white_bed",
-              uses={"white_wool": 3, "oak_planks": 3}, station="crafting_table 2m"),
-            c("craft oak_pressure_plate", "craft", "oak_pressure_plate", None, uses={"oak_planks": 2}),
+            c(
+                "craft white_bed at crafting_table",
+                "craft",
+                "white_bed",
+                "craft white_bed",
+                uses={"white_wool": 3, "oak_planks": 3},
+                station="crafting_table 2m",
+            ),
+            c(
+                "craft oak_pressure_plate",
+                "craft",
+                "oak_pressure_plate",
+                None,
+                uses={"oak_planks": 2},
+            ),
         ],
-        accept={"craft white_bed at crafting_table"}),
+        accept={"craft white_bed at crafting_table"},
+    ),
     "night_sleep": scenario(
-        "have 12 oak_log", ["have 12 oak_log (4/12)"], self_={"time": "night (just began)", "in_home": True},
+        "have 12 oak_log",
+        ["have 12 oak_log (4/12)"],
+        self_={"time": "night (just began)", "in_home": True},
         nearby=[{"block": "white_bed", "distance": 2}],
         relevant=[
             c("sleep in white_bed", "use", "white_bed", None, distance=2, effect="skips the night"),
             c("open oak_door", "use", "oak_door", None, distance=1),
             c("dig oak_log at 12m", "dig", "oak_log", "have 12 oak_log", distance=12, outside=True),
         ],
-        accept={"sleep in white_bed"}),
+        accept={"sleep in white_bed"},
+    ),
     "low_hp_zombie_far": scenario(
-        "have 12 oak_log", ["have 12 oak_log (4/12)"], self_={"health": 5, "time": "night",
-                                                              "weapon": "wooden_sword (in hand)"},
-        inventory={"wooden_sword": 1}, nearby=[{"mob": "zombie", "hostile": True, "distance": 9}],
+        "have 12 oak_log",
+        ["have 12 oak_log (4/12)"],
+        self_={"health": 5, "time": "night", "weapon": "wooden_sword (in hand)"},
+        inventory={"wooden_sword": 1},
+        nearby=[{"mob": "zombie", "hostile": True, "distance": 9}],
         relevant=[
             c("flee from zombie", "flee", "zombie", None, distance=9),
             c("attack zombie", "attack", "zombie", None, distance=9, weapon="wooden_sword"),
             c("dig oak_log at 4m", "dig", "oak_log", "have 12 oak_log", distance=4),
         ],
-        accept={"flee from zombie"}),
+        accept={"flee from zombie"},
+    ),
     "dusk_far_home": scenario(
-        "have 12 oak_log", ["have 12 oak_log (9/12)"], self_={"time": "dusk (1 minute until night)",
-                                                              "home": "58m away, door closes"},
+        "have 12 oak_log",
+        ["have 12 oak_log (9/12)"],
+        self_={"time": "dusk (1 minute until night)", "home": "58m away, door closes"},
         relevant=[
             c("go to home (58m)", "goto", "home", None, distance=58),
             c("dig oak_log at 3m", "dig", "oak_log", "have 12 oak_log", distance=3),
         ],
-        accept={"go to home (58m)"}),
+        accept={"go to home (58m)"},
+    ),
 }
 
-# Held out: written after the needs/priority variants were first measured
-SCENARIOS.update({
-    "h_hungry_zombie_close": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"food": 5, "time": "night"}, inventory={"cooked_beef": 2},
-        nearby=[{"mob": "zombie", "hostile": True, "distance": 3}],
-        relevant=[
-            c("eat cooked_beef", "eat", "cooked_beef", None),
-            c("flee from zombie", "flee", "zombie", None, distance=3),
-            c("attack zombie", "attack", "zombie", None, distance=3, weapon="none (fist)"),
-            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
-        ],
-        accept={"flee from zombie"}),
-    "h_food_ok": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"food": 14}, inventory={"cooked_beef": 2},
-        relevant=[
-            c("eat cooked_beef", "eat", "cooked_beef", None),
-            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
-        ],
-        accept={"dig oak_log at 3m"}),
-    "h_zombie_far_day": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], self_={"weapon": "wooden_sword (in hand)"},
-        inventory={"wooden_sword": 1}, nearby=[{"mob": "zombie", "hostile": True, "distance": 22}],
-        relevant=[
-            c("flee from zombie", "flee", "zombie", None, distance=22),
-            c("attack zombie", "attack", "zombie", None, distance=22, weapon="wooden_sword"),
-            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
-        ],
-        accept={"dig oak_log at 3m"}),
-    "h_creeper_far": scenario(
-        "have 3 oak_log", ["have 3 oak_log (0/3)"], nearby=[{"mob": "creeper", "hostile": True, "distance": 18}],
-        relevant=[
-            c("flee from creeper", "flee", "creeper", None, distance=18),
-            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3, direction="away from the creeper"),
-        ],
-        accept={"dig oak_log at 3m"}),
-    "h_low_hp_no_threat": scenario(
-        "have 3 oak_log", ["have 3 oak_log (1/3)"], self_={"health": 7}, inventory={"oak_log": 1},
-        relevant=[
-            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
-            c("flee", "flee", "nothing nearby", None),
-        ],
-        accept={"dig oak_log at 3m"}),
-    "h_low_hp_hungry": scenario(
-        "have 3 oak_log", ["have 3 oak_log (1/3)"], self_={"health": 6, "food": 4}, inventory={"oak_log": 1, "bread": 3},
-        relevant=[
-            c("eat bread", "eat", "bread", None),
-            c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
-        ],
-        accept={"eat bread"}),
-    "h_night_home_no_bed": scenario(
-        "have 12 oak_log", ["have 12 oak_log (4/12)"], self_={"time": "night (just began)", "in_home": True},
-        relevant=[
-            c("wait inside", "wait", "inside the house", None, duration="10s"),
-            c("open oak_door", "use", "oak_door", None, distance=1),
-            c("dig oak_log at 12m", "dig", "oak_log", "have 12 oak_log", distance=12, outside=True),
-        ],
-        accept={"wait inside"}),
-})
+# 取り置き: needs と優先順位の条件を最初に測った後で書いたシナリオ
+SCENARIOS.update(
+    {
+        "h_hungry_zombie_close": scenario(
+            "have 3 oak_log",
+            ["have 3 oak_log (0/3)"],
+            self_={"food": 5, "time": "night"},
+            inventory={"cooked_beef": 2},
+            nearby=[{"mob": "zombie", "hostile": True, "distance": 3}],
+            relevant=[
+                c("eat cooked_beef", "eat", "cooked_beef", None),
+                c("flee from zombie", "flee", "zombie", None, distance=3),
+                c("attack zombie", "attack", "zombie", None, distance=3, weapon="none (fist)"),
+                c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+            ],
+            accept={"flee from zombie"},
+        ),
+        "h_food_ok": scenario(
+            "have 3 oak_log",
+            ["have 3 oak_log (0/3)"],
+            self_={"food": 14},
+            inventory={"cooked_beef": 2},
+            relevant=[
+                c("eat cooked_beef", "eat", "cooked_beef", None),
+                c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+            ],
+            accept={"dig oak_log at 3m"},
+        ),
+        "h_zombie_far_day": scenario(
+            "have 3 oak_log",
+            ["have 3 oak_log (0/3)"],
+            self_={"weapon": "wooden_sword (in hand)"},
+            inventory={"wooden_sword": 1},
+            nearby=[{"mob": "zombie", "hostile": True, "distance": 22}],
+            relevant=[
+                c("flee from zombie", "flee", "zombie", None, distance=22),
+                c("attack zombie", "attack", "zombie", None, distance=22, weapon="wooden_sword"),
+                c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+            ],
+            accept={"dig oak_log at 3m"},
+        ),
+        "h_creeper_far": scenario(
+            "have 3 oak_log",
+            ["have 3 oak_log (0/3)"],
+            nearby=[{"mob": "creeper", "hostile": True, "distance": 18}],
+            relevant=[
+                c("flee from creeper", "flee", "creeper", None, distance=18),
+                c(
+                    "dig oak_log at 3m",
+                    "dig",
+                    "oak_log",
+                    "have 3 oak_log",
+                    distance=3,
+                    direction="away from the creeper",
+                ),
+            ],
+            accept={"dig oak_log at 3m"},
+        ),
+        "h_low_hp_no_threat": scenario(
+            "have 3 oak_log",
+            ["have 3 oak_log (1/3)"],
+            self_={"health": 7},
+            inventory={"oak_log": 1},
+            relevant=[
+                c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+                c("flee", "flee", "nothing nearby", None),
+            ],
+            accept={"dig oak_log at 3m"},
+        ),
+        "h_low_hp_hungry": scenario(
+            "have 3 oak_log",
+            ["have 3 oak_log (1/3)"],
+            self_={"health": 6, "food": 4},
+            inventory={"oak_log": 1, "bread": 3},
+            relevant=[
+                c("eat bread", "eat", "bread", None),
+                c("dig oak_log at 3m", "dig", "oak_log", "have 3 oak_log", distance=3),
+            ],
+            accept={"eat bread"},
+        ),
+        "h_night_home_no_bed": scenario(
+            "have 12 oak_log",
+            ["have 12 oak_log (4/12)"],
+            self_={"time": "night (just began)", "in_home": True},
+            relevant=[
+                c("wait inside", "wait", "inside the house", None, duration="10s"),
+                c("open oak_door", "use", "oak_door", None, distance=1),
+                c(
+                    "dig oak_log at 12m",
+                    "dig",
+                    "oak_log",
+                    "have 12 oak_log",
+                    distance=12,
+                    outside=True,
+                ),
+            ],
+            accept={"wait inside"},
+        ),
+    }
+)
 
-# Executable but unrelated to every scenario's goal (padding)
+# 実行できるが、どのシナリオの目標とも関係のない候補（埋め草）
 DISTRACTORS = [
     c("dig dirt at 1m", "dig", "dirt", None, distance=1),
     c("dig grass_block at 2m", "dig", "grass_block", None, distance=2),
@@ -287,7 +412,14 @@ DISTRACTORS = [
     c("dig tall_grass at 5m", "dig", "tall_grass", None, distance=5),
     c("dig azure_bluet at 6m", "dig", "azure_bluet", None, distance=6),
     c("dig coarse_dirt at 9m", "dig", "coarse_dirt", None, distance=9),
-    c("dig mossy_cobblestone at 21m", "dig", "mossy_cobblestone", None, distance=21, needs="a pickaxe"),
+    c(
+        "dig mossy_cobblestone at 21m",
+        "dig",
+        "mossy_cobblestone",
+        None,
+        distance=21,
+        needs="a pickaxe",
+    ),
     c("dig coal_ore at 14m", "dig", "coal_ore", None, distance=14, needs="a pickaxe"),
     c("dig iron_ore at 26m", "dig", "iron_ore", None, distance=26, needs="a stone pickaxe"),
     c("place dirt at 2m (tower up)", "place", "dirt", None, distance=0),
@@ -307,7 +439,7 @@ DISTRACTORS = [
 ]
 
 
-# variant -> ask() options
+# 比べる条件 -> ask() の引数
 VARIANTS = {
     "jev": {"hint": False},
     "jev_needs": {"hint": False, "with_needs": True},
@@ -335,7 +467,10 @@ def criteria(cands: list[dict], hint: bool) -> dict:
 
 
 def rule(sc: dict, cands: list[dict]) -> str:
-    """Hand baseline: flee a close/unfightable threat, eat when hungry, else nearest subgoal step."""
+    """手で書いた基準。
+
+    近いか勝てない脅威からは逃げ、空腹なら食べ、それ以外は下位目標を進める一番近い候補を選ぶ。
+    """
     s = sc["state"]
     by_verb = {}
     for x in cands:
@@ -345,7 +480,9 @@ def rule(sc: dict, cands: list[dict]) -> str:
         t = min(threats, key=lambda m: m["distance"])
         armed = bool(s["self"]["weapon"])
         if t["distance"] <= 6 or s["self"]["health"] <= 8:
-            want = "attack" if armed and t["mob"] != "creeper" and s["self"]["health"] > 8 else "flee"
+            want = (
+                "attack" if armed and t["mob"] != "creeper" and s["self"]["health"] > 8 else "flee"
+            )
             for x in by_verb.get(want, []):
                 if x["desc"].get("target") == t["mob"]:
                     return x["key"]
@@ -363,11 +500,16 @@ async def ask(client, sc, cands, hint, with_needs=False, instructions=INSTRUCTIO
     state = {**sc["state"], "needs": needs(sc["state"])} if with_needs else sc["state"]
     t = time.perf_counter()
     r = await client.system_one(
-        state=state, questions={"action": Choice(instructions=instructions, criteria=criteria(cands, hint))}
+        state=state,
+        questions={"action": Choice(instructions=instructions, criteria=criteria(cands, hint))},
     )
     a = r.choices["action"]
-    return {"choice": a.choice, "confidence": round(a.confidence, 3), "latency_s": round(time.perf_counter() - t, 3),
-            "input_tokens": r.usage.input_tokens}
+    return {
+        "choice": a.choice,
+        "confidence": round(a.confidence, 3),
+        "latency_s": round(time.perf_counter() - t, 3),
+        "input_tokens": r.usage.input_tokens,
+    }
 
 
 async def run(sizes, repeat, only, seed):
@@ -385,28 +527,37 @@ async def run(sizes, repeat, only, seed):
                     for variant, kw in VARIANTS.items():
                         try:
                             row[variant] = await ask(client, sc, cands, **kw)
-                        except Exception as e:  # record API errors (payload limits) as results
+                        except (
+                            Exception
+                        ) as e:  # API のエラー（ペイロードの上限）も結果として記録する
                             row[variant] = {"error": f"{type(e).__name__}: {e}"[:300]}
                     for v in ("rule", *VARIANTS):
                         row[v]["ok"] = row[v].get("choice") in sc["accept"]
                     rows.append(row)
-                    print(f"{name:20} n={n:2} " + " ".join(
-                        f"{v}={'o' if row[v]['ok'] else 'x'}:{row[v].get('choice') or row[v].get('error')}"
-                        for v in ("rule", *VARIANTS)), flush=True)
+                    print(
+                        f"{name:20} n={n:2} "
+                        + " ".join(
+                            f"{v}={'o' if row[v]['ok'] else 'x'}:{row[v].get('choice') or row[v].get('error')}"
+                            for v in ("rule", *VARIANTS)
+                        ),
+                        flush=True,
+                    )
     return rows
 
 
 def summarize(rows, sizes):
     names = ("rule", *VARIANTS)
-    print(f"\n== accuracy by candidates ({' / '.join(names)}), latency median, input tokens median")
+    print(f"\n== 候補数ごとの正解率（{' / '.join(names)}）、レイテンシ中央値、入力トークン中央値")
     for n in sizes:
         rs = [r for r in rows if r["n"] == n]
         acc = "  ".join(f"{v} {sum(r[v]['ok'] for r in rs) / len(rs):.0%}" for v in names)
         lat = [r[v]["latency_s"] for r in rs for v in VARIANTS if "latency_s" in r[v]]
         tok = [r[v]["input_tokens"] for r in rs for v in VARIANTS if "input_tokens" in r[v]]
-        print(f"n={n:2}: {acc}  latency {statistics.median(lat) if lat else '-'}s  "
-              f"tokens {statistics.median(tok) if tok else '-'}")
-    print(f"\n== per scenario (all sizes): {' / '.join(names)}")
+        print(
+            f"n={n:2}: {acc}  レイテンシ {statistics.median(lat) if lat else '-'}s  "
+            f"トークン {statistics.median(tok) if tok else '-'}"
+        )
+    print(f"\n== シナリオごと（全候補数）: {' / '.join(names)}")
     for name in dict.fromkeys(r["scenario"] for r in rows):
         rs = [r for r in rows if r["scenario"] == name]
         print(f"{name:20} " + " ".join(f"{sum(r[v]['ok'] for r in rs)}/{len(rs)}" for v in names))

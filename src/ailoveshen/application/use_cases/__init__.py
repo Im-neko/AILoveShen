@@ -1,4 +1,4 @@
-"""Application use cases."""
+"""アプリケーションのユースケース。"""
 
 from __future__ import annotations
 

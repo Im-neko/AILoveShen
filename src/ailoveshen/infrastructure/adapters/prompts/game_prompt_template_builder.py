@@ -1,4 +1,4 @@
-"""Game prompt template builder adapter."""
+"""テンプレートでゲームのプロンプトを組み立てるアダプター。"""
 
 from __future__ import annotations
 
@@ -157,8 +157,8 @@ $previous_error
 その理由（短い1文）を指定の JSON で出力してください。
 """)
 
-# Measured with spikes/primitive_choice_eval.py: stating needs in the state helped; a priority
-# order in the instructions made the selector flee from mobs 20m away.
+# spikes/primitive_choice_eval.py で測った: 体が必要とするもの（needs）を状態に書くと効いた。
+# 指示に優先順位を書くと、選択器は 20m 先の敵からも逃げるようになった。
 ACTION_INSTRUCTIONS = (
     "You control a Minecraft survival player working toward the goal in the state. "
     "Choose the single best next primitive action. Stay alive first; otherwise make progress on "
@@ -170,17 +170,16 @@ RECENT_ACTIONS_SHOWN = 3
 
 class GamePromptTemplateBuilder(IGamePromptBuilder):
     """
-    Infrastructure adapter for game prompts.
+    ゲームのプロンプトのインフラ側アダプター。
 
-    Implements IGamePromptBuilder with string templates. Prompts for the LLM
-    are Japanese like the other prompts; the action selector gets English,
-    which is what it was evaluated with.
+    IGamePromptBuilder を文字列のテンプレートで実装する。LLM へのプロンプトは
+    他のプロンプトと同じく日本語。行動の選択器には英語を渡す（評価したときの言語）。
     """
 
     def build_house_design_prompt(
         self, character: CharacterProfile, previous_error: str = ""
     ) -> str:
-        """Build the prompt asking the LLM to design a small house."""
+        """LLM に小さな家を設計させるプロンプトを組み立てる。"""
         error = (
             f"\n## 前回の設計が使えなかった理由\n{previous_error}\n"
             "条件を守って設計し直してください。\n"
@@ -200,7 +199,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     def build_town_prompt(
         self, character: CharacterProfile, mission: Mission, previous_error: str = ""
     ) -> str:
-        """Build the prompt asking what the town of the mission is, in stages."""
+        """大目標の街とは何かを、段階に分けて答えさせるプロンプトを組み立てる。"""
         return TOWN_TEMPLATE.substitute(
             name=character.name,
             mission=mission.text,
@@ -213,7 +212,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     def build_stage_prompt(
         self, town: TownDefinition, stage: TownStage, previous_error: str = ""
     ) -> str:
-        """Build the prompt asking to write a stage's unresolved parts with today's conditions."""
+        """段階のまだ判定できない部分を、今の条件で書き直させるプロンプトを組み立てる。"""
         return STAGE_TEMPLATE.substitute(
             text=town.text,
             title=stage.title,
@@ -234,7 +233,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         predicates: Sequence[GoalPredicate],
         previous_error: str = "",
     ) -> str:
-        """Build the prompt asking the LLM to set the next goal."""
+        """LLM に次の目標を決めさせるプロンプトを組み立てる。"""
         error = (
             f"\n## 前回の出力が使えなかった理由\n{previous_error}\n"
             "使える目標の形で、実行できる目標とリストの編集を選び直してください。\n"
@@ -254,7 +253,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     def build_action_context(
         self, goal: Goal, observation: GameObservation
     ) -> tuple[dict[str, Any], str]:
-        """Build the selector's state (goal, progress, needs, surroundings) and instructions."""
+        """選択器に渡す状態（目標、進み具合、体が必要とするもの、周り）と指示を組み立てる。"""
         s = observation.state
         status = observation.goal
         state = {

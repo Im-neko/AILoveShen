@@ -1,21 +1,21 @@
-// World memory: what was seen and is out of view now (docs/design/14_world_memory.md §4).
+// ワールドの記憶: 前に見て、いまは見えていないもの（docs/design/14_world_memory.md §4）。
 //
-// What can be read at any time (inventory, health, the goal's progress) is never copied here;
-// only places seen before are kept, each with when it was last seen (world age in ticks):
-// - places: per kind (a block or animal name), one entry per 16x16 region with a count
-// - explored: when each region was last visited
-// - deaths: where the bot died
-// - chests: what each chest held when it was last opened (only the bot uses them: the record holds
-//   until the next opening, which overwrites it)
-// - furnaces: what each furnace was making when it was last opened (made and still to be made)
-// A remembered place near the bot that is not seen now is forgotten (dug out, walked away, or
-// never there), so a trip to it is not repeated.
+// いつでも読めるもの（インベントリ、体力、目標の進み具合）はここに写さない。前に見た場所だけを、
+// 最後に見た時刻（ワールドの経過ティック）とともに持つ:
+// - places: 種類（ブロック名か動物名）ごとに、16x16 の区域1つにつき数つきの項目1つ
+// - explored: 各区域を最後に訪れた時刻
+// - deaths: ボットが死んだ場所
+// - chests: 各チェストを最後に開けたときの中身（使うのはボットだけなので、次に開けて上書き
+//   するまでこの記録が正しい）
+// - furnaces: 各かまどを最後に開けたときに作っていたもの（できたものとこれからできるもの）
+// ボットの近くにあるはずの場所がいま見えていなければ忘れる（掘り尽くした、歩いて去った、または
+// 最初からなかった）。同じ場所へ何度も行かないようにするため。
 
 export const REGION = 16
 export const MAX_PLACES_PER_KIND = 8
-export const ANIMAL_STALE_TICKS = 24000 // a game day: animals wander
-export const FORGET_WITHIN = 20 // a place remembered this near and not seen now is gone
-export const RECALL_BEYOND = 32 // nearer ones are in view: the candidates offer them directly
+export const ANIMAL_STALE_TICKS = 24000 // ゲーム内の1日: 動物は歩き回る
+export const FORGET_WITHIN = 20 // この距離内で覚えていて、いま見えていない場所はもうない
+export const RECALL_BEYOND = 32 // これより近いものは見えている: 候補が直接出す
 const TICKS_PER_MINUTE = 1200
 const MAX_DEATHS = 3
 const RECALLED_OFFERED = 3
@@ -31,7 +31,7 @@ export function newMemory () {
 export const regionOf = (p) => `${Math.floor(p.x / REGION)},${Math.floor(p.z / REGION)}`
 const flatDistance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z)
 
-// What was just seen around `me`: sightings are [{ kind, pos }]
+// `me` のまわりでいま見たもの: sightings は [{ kind, pos }]
 export function remember (memory, sightings, me, now) {
   const seen = {}
   for (const { kind, pos } of sightings) {
@@ -66,7 +66,7 @@ const stale = (kind, place, now) => REMEMBERED_ANIMALS.has(kind) && now - place.
 
 const worthATrip = (kind, p, me, now) => !stale(kind, p, now) && flatDistance(p, me) > RECALL_BEYOND
 
-// Places of these kinds out of view and still worth a trip, nearest first
+// これらの種類のうち、見えていなくて行く価値がまだある場所。近い順
 export function recall (memory, kinds, me, now) {
   return kinds.flatMap((kind) => (memory.places[kind] ?? [])
     .filter((p) => worthATrip(kind, p, me, now))
@@ -75,7 +75,7 @@ export function recall (memory, kinds, me, now) {
     .slice(0, RECALLED_OFFERED)
 }
 
-// The kinds with a place worth a trip (the solver prefers them to searching blindly)
+// 行く価値のある場所がある種類（ソルバーはあてのない探索よりこちらを優先する）
 export function recallableKinds (memory, me, now) {
   return new Set(Object.entries(memory.places ?? {})
     .filter(([kind, list]) => list.some((p) => worthATrip(kind, p, me, now)))
@@ -94,7 +94,7 @@ export function forgetChest (memory, pos) {
 
 export const chests = (memory) => Object.values(memory.chests ?? {})
 
-// What all the chests hold, by item name
+// すべてのチェストの中身。アイテム名ごと
 export function storedCounts (memory) {
   const out = {}
   for (const c of chests(memory)) {
@@ -103,14 +103,14 @@ export function storedCounts (memory) {
   return out
 }
 
-// The nearest chest holding any of the names
+// names のどれかが入っている一番近いチェスト
 export function chestWith (memory, names, me) {
   return chests(memory)
     .filter((c) => names.some((n) => (c.contents[n] ?? 0) > 0))
     .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
 }
 
-// making: {product: count} made or still to be made (the fuel is put in with the input)
+// making: {product: count} できたものとこれからできるもの（燃料は材料と一緒に入れる）
 export function rememberFurnace (memory, pos, making, now) {
   memory.furnaces ??= {}
   if (Object.values(making).some((n) => n > 0)) memory.furnaces[chestKey(pos)] = { x: pos.x, y: pos.y, z: pos.z, making, seen: now }
@@ -121,14 +121,14 @@ export function forgetFurnace (memory, pos) {
   delete memory.furnaces?.[chestKey(pos)]
 }
 
-// The nearest furnace making item
+// item を作っている一番近いかまど
 export function furnaceWith (memory, item, me) {
   return Object.values(memory.furnaces ?? {})
     .filter((f) => (f.making[item] ?? 0) > 0)
     .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
 }
 
-// What the furnaces are making, by product
+// かまどが作っているもの。できるものごと
 export function smeltingCounts (memory) {
   const out = {}
   for (const f of Object.values(memory.furnaces ?? {})) {
@@ -139,7 +139,7 @@ export function smeltingCounts (memory) {
 
 export const visited = (memory, pos) => memory.explored[regionOf(pos)] !== undefined
 
-// What the decision makers see: the nearest place of each kind, and where the bot died
+// 判断する側が見るもの: 種類ごとの一番近い場所と、ボットが死んだ場所
 export function summarizeMemory (memory, me, now, bearing) {
   const places = Object.entries(memory.places).flatMap(([kind, list]) => {
     const fresh = list.filter((p) => !stale(kind, p, now))

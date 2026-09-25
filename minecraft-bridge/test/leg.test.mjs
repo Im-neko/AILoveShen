@@ -5,7 +5,7 @@ import { PRIMITIVES, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, LEG } from '../src/primiti
 
 const { Vec3 } = vec3Pkg
 
-// A bot whose pathfinder arrives at once at the goal it is given
+// 経路探索が、渡された目的地にすぐ着くボット
 function walker (x, z) {
   const bot = {
     entity: { position: new Vec3(x, 70, z) },
@@ -17,7 +17,7 @@ function walker (x, z) {
   return bot
 }
 
-test('a far trip home is walked one leg per step (frun5: 270m took longer than the timeout)', async () => {
+test('遠い帰宅は 1 ステップに 1 区間ずつ歩く（frun5: 270m の帰宅が時間切れより長くかかった）', async () => {
   const bot = walker(0, 0)
   const state = { home: { outside: new Vec3(0, 70, 200) } }
   const r = await PRIMITIVES.go_home(bot, state)
@@ -25,14 +25,14 @@ test('a far trip home is walked one leg per step (frun5: 270m took longer than t
   assert.equal(Math.round(bot.entity.position.z), LEG)
 })
 
-test('a far remembered place is walked to one leg per step, then reached', async () => {
+test('覚えている遠い場所へは 1 ステップに 1 区間ずつ歩き、やがて着く', async () => {
   const bot = walker(0, 0)
   const c = { target: 'sheep', pos: new Vec3(0, 70, 80) }
   assert.match(await PRIMITIVES.goto_memory(bot, {}, c), /toward where sheep was seen \(32m left\)/)
   assert.match(await PRIMITIVES.goto_memory(bot, {}, c), /^arrived where sheep was seen/)
 })
 
-test('a far chest or furnace is walked to one leg per step (iron run: a withdraw timed out at 45s)', async () => {
+test('遠いチェストやかまどへは 1 ステップに 1 区間ずつ歩く（iron run: 取り出しが 45 秒で時間切れになった）', async () => {
   const bot = walker(0, 0)
   const c = { item: 'porkchop', count: 2, pos: new Vec3(0, 70, 130) }
   assert.match(await PRIMITIVES.withdraw(bot, { home: null }, c), /^walked 48m toward the chest \(82m left\)$/)
@@ -40,6 +40,6 @@ test('a far chest or furnace is walked to one leg per step (iron run: a withdraw
   assert.match(await PRIMITIVES.smelt(bot, {}, { pos: new Vec3(0, 70, -60) }), /toward the furnace/)
 })
 
-test('every action ends before the Python client gives up on it (60s)', () => {
+test('どの行動も、Python クライアントが待つのをやめる（60 秒）前に終わる', () => {
   assert.ok(Math.max(DEFAULT_TIMEOUT_MS, ...Object.values(TIMEOUTS_MS)) <= 45000)
 })

@@ -1,4 +1,4 @@
-"""Speech synthesizer output port."""
+"""音声合成の出力ポート。"""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from ailoveshen.domain.value_objects import EmotionState
 
 class ISpeechSynthesizer(ABC):
     """
-    Output port for speech synthesis.
+    音声合成の出力ポート。
 
-    This interface is defined in the Application layer.
-    Infrastructure adapters implement this interface.
+    このインターフェースはアプリケーション層で定義する。
+    インフラ層のアダプターがこれを実装する。
     """
 
     @abstractmethod
@@ -24,49 +24,49 @@ class ISpeechSynthesizer(ABC):
         language: str = "JP",
     ) -> bytes:
         """
-        Synthesize speech from text.
+        テキストから音声を合成する。
 
         Args:
-            text: Text to synthesize
-            emotion: Emotion to express. Adapters map it to engine-specific styles.
-            speaker_id: Speaker ID for multi-speaker models
-            language: Language code ("JP", "EN", "ZH")
+            text: 合成するテキスト
+            emotion: 表す感情。アダプターがエンジン固有のスタイルに対応づける。
+            speaker_id: 複数話者モデルの話者 ID
+            language: 言語コード（"JP"、"EN"、"ZH"）
 
         Returns:
-            Audio data as bytes (WAV format)
+            音声データのバイト列（WAV 形式）
 
         Raises:
-            SynthesisError: If synthesis fails
+            SynthesisError: 合成に失敗したとき
         """
         ...
 
     @abstractmethod
     async def connect(self) -> None:
         """
-        Establish connection to synthesis service.
+        音声合成サービスに接続する。
 
-        Should be called before synthesis operations.
+        合成の前に呼ぶ。
 
         Raises:
-            ConnectionError: If connection fails
+            ConnectionError: 接続に失敗したとき
         """
         ...
 
     @abstractmethod
     async def disconnect(self) -> None:
         """
-        Close connection to synthesis service.
+        音声合成サービスとの接続を閉じる。
 
-        Should be called during cleanup.
+        後始末のときに呼ぶ。
         """
         ...
 
     @abstractmethod
     def is_connected(self) -> bool:
         """
-        Check if connected to synthesis service.
+        音声合成サービスに接続しているかを調べる。
 
         Returns:
-            True if connected and ready for synthesis.
+            接続していて合成できるなら True。
         """
         ...

@@ -1,4 +1,4 @@
-"""Presentation services."""
+"""プレゼンテーション層のサービス。"""
 
 from __future__ import annotations
 

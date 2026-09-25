@@ -1,4 +1,4 @@
-"""Domain layer - Business entities, value objects and events."""
+"""ドメイン層。業務のエンティティ、値オブジェクト、イベント。"""
 
 from ailoveshen.domain.entities import AggregateRoot, Conversation, Entity
 from ailoveshen.domain.events import DomainEvent

@@ -1,4 +1,4 @@
-"""Tests for TTS DTOs."""
+"""TTS の DTO のテスト。"""
 
 import pytest
 
@@ -10,10 +10,10 @@ from ailoveshen.application.dto.speech_dto import (
 
 
 class TestSpeakTextRequest:
-    """Tests for SpeakTextRequest DTO."""
+    """SpeakTextRequest DTO のテスト。"""
 
     def test_create_with_defaults(self):
-        """Test creating request with defaults."""
+        """既定値でリクエストを作る。"""
         request = SpeakTextRequest(text="hello")
         assert request.text == "hello"
         assert request.priority == SpeechPriority.NORMAL
@@ -23,7 +23,7 @@ class TestSpeakTextRequest:
         assert request.speaker_id == 0
 
     def test_create_with_all_fields(self):
-        """Test creating request with all fields."""
+        """全項目を指定してリクエストを作る。"""
         request = SpeakTextRequest(
             text="hello world",
             priority=SpeechPriority.HIGH,
@@ -41,10 +41,10 @@ class TestSpeakTextRequest:
 
 
 class TestSpeakTextResponse:
-    """Tests for SpeakTextResponse DTO."""
+    """SpeakTextResponse DTO のテスト。"""
 
     def test_create_basic_response(self):
-        """Test creating a basic response."""
+        """基本の応答を作る。"""
         response = SpeakTextResponse(success=True)
         assert response.success is True
         assert response.queued is False
@@ -53,7 +53,7 @@ class TestSpeakTextResponse:
         assert response.error is None
 
     def test_ok_factory(self):
-        """Test ok factory method."""
+        """ok ファクトリメソッド。"""
         response = SpeakTextResponse.ok("Speech done", duration_ms=1500)
         assert response.success is True
         assert response.message == "Speech done"
@@ -62,26 +62,26 @@ class TestSpeakTextResponse:
         assert response.error is None
 
     def test_ok_factory_default_message(self):
-        """Test ok factory with default message."""
+        """ok ファクトリの既定のメッセージ。"""
         response = SpeakTextResponse.ok()
         assert response.message == "Speech completed"
 
     def test_interrupted_factory(self):
-        """Test interrupted factory method."""
+        """interrupted ファクトリメソッド。"""
         response = SpeakTextResponse.interrupted()
         assert response.success is True
         assert response.message == "Speech interrupted"
         assert response.duration_ms is None
 
     def test_queued_response_factory(self):
-        """Test queued_response factory method."""
+        """queued_response ファクトリメソッド。"""
         response = SpeakTextResponse.queued_response()
         assert response.success is True
         assert response.queued is True
         assert response.message == "Speech queued"
 
     def test_error_response_factory(self):
-        """Test error_response factory method."""
+        """error_response ファクトリメソッド。"""
         response = SpeakTextResponse.error_response("Connection failed")
         assert response.success is False
         assert response.error == "Connection failed"

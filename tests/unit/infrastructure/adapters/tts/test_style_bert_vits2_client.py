@@ -1,10 +1,10 @@
-"""Tests for StyleBertVits2Client adapter."""
+"""StyleBertVits2Client アダプタのテスト。"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Skip all tests in this module if httpx is not installed
+# httpx がなければ、このモジュールのテストは全部飛ばす
 httpx = pytest.importorskip("httpx", reason="httpx not installed")
 
 from ailoveshen.domain.exceptions import SynthesisError
@@ -15,11 +15,11 @@ from ailoveshen.infrastructure.adapters.tts.style_bert_vits2_client import (
 
 
 class TestStyleBertVits2Client:
-    """Tests for StyleBertVits2Client adapter."""
+    """StyleBertVits2Client アダプタのテスト。"""
 
     @pytest.fixture
     def client(self):
-        """Create a StyleBertVits2Client."""
+        """StyleBertVits2Client を作る。"""
         return StyleBertVits2Client(
             host="localhost",
             port=5000,
@@ -28,31 +28,31 @@ class TestStyleBertVits2Client:
         )
 
     def test_init_defaults(self):
-        """Test initialization with defaults."""
+        """既定値で初期化する。"""
         client = StyleBertVits2Client()
         assert client._base_url == "http://localhost:5000"
         assert client._timeout == 30.0
         assert client._model_name == "default"
 
     def test_init_custom_values(self, client):
-        """Test initialization with custom values."""
+        """値を指定して初期化する。"""
         assert client._base_url == "http://localhost:5000"
         assert client._timeout == 10.0
         assert client._model_name == "test_model"
 
     def test_is_connected_initially_false(self, client):
-        """Test is_connected returns False before connect."""
+        """connect の前は is_connected が False を返す。"""
         assert client.is_connected() is False
 
     @pytest.mark.asyncio
     async def test_synthesize_without_connect_raises(self, client):
-        """Test synthesize raises error when not connected."""
+        """接続していなければ synthesize はエラー。"""
         with pytest.raises(SynthesisError, match="not connected"):
             await client.synthesize("Hello", EmotionState())
 
     @pytest.mark.asyncio
     async def test_connect_success(self, client):
-        """Test successful connection."""
+        """接続できる。"""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"test_model": {"style2id": {"Neutral": 0}}}
@@ -66,8 +66,8 @@ class TestStyleBertVits2Client:
 
     @pytest.mark.asyncio
     async def test_disconnect(self, client):
-        """Test disconnect clears client."""
-        # First connect
+        """disconnect はクライアントを消す。"""
+        # まず接続する
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {}
@@ -76,18 +76,16 @@ class TestStyleBertVits2Client:
             mock_get.return_value = mock_response
             await client.connect()
 
-        # Then disconnect
-        with patch.object(
-            httpx.AsyncClient, "aclose", new_callable=AsyncMock
-        ) as mock_close:
+        # 次に切断する
+        with patch.object(httpx.AsyncClient, "aclose", new_callable=AsyncMock) as mock_close:
             await client.disconnect()
 
         assert client.is_connected() is False
 
     @pytest.mark.asyncio
     async def test_synthesize_success(self, client):
-        """Test successful synthesis."""
-        # Setup connected client
+        """音声を合成できる。"""
+        # 接続済みのクライアントを用意する
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {}
@@ -98,7 +96,7 @@ class TestStyleBertVits2Client:
             mock_get.return_value = mock_response
             await client.connect()
 
-            # Call synthesize
+            # synthesize を呼ぶ
             result = await client.synthesize(
                 text="Hello",
                 emotion=EmotionState(EmotionType.HAPPY, 0.8),
@@ -107,7 +105,7 @@ class TestStyleBertVits2Client:
             )
 
             assert result == b"audio_data"
-            # Verify correct parameters were passed
+            # 正しい引数が渡ったか確かめる
             call_args = mock_get.call_args_list[-1]
             params = call_args.kwargs.get("params", {})
             assert params["text"] == "Hello"
@@ -117,8 +115,8 @@ class TestStyleBertVits2Client:
 
     @pytest.mark.asyncio
     async def test_synthesize_http_error(self, client):
-        """Test synthesis handles HTTP errors."""
-        # Setup connected client
+        """合成は HTTP のエラーを扱う。"""
+        # 接続済みのクライアントを用意する
         mock_connect_response = MagicMock()
         mock_connect_response.raise_for_status = MagicMock()
         mock_connect_response.json.return_value = {}
@@ -131,11 +129,11 @@ class TestStyleBertVits2Client:
         )
 
         with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
-            # First call for connect
+            # 1 回目は connect の呼び出し
             mock_get.return_value = mock_connect_response
             await client.connect()
 
-            # Second call for synthesize - should fail
+            # 2 回目は synthesize の呼び出しで、失敗する
             mock_get.return_value = mock_error_response
 
             with pytest.raises(SynthesisError, match="500"):
@@ -143,7 +141,7 @@ class TestStyleBertVits2Client:
 
     @pytest.mark.asyncio
     async def test_get_available_styles_success(self, client):
-        """Test getting available styles."""
+        """使えるスタイルを取る。"""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
@@ -168,13 +166,13 @@ class TestStyleBertVits2Client:
 
     @pytest.mark.asyncio
     async def test_get_available_styles_not_connected(self, client):
-        """Test get_available_styles returns default when not connected."""
+        """接続していなければ、get_available_styles は既定を返す。"""
         styles = await client.get_available_styles()
         assert styles == ["Neutral"]
 
     @pytest.mark.asyncio
     async def test_get_available_styles_model_not_found(self, client):
-        """Test get_available_styles returns default when model not in response."""
+        """応答にモデルがなければ、get_available_styles は既定を返す。"""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"other_model": {}}

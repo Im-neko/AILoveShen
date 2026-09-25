@@ -1,4 +1,4 @@
-"""Game prompt builder output port."""
+"""ゲームのプロンプト組み立ての出力ポート。"""
 
 from __future__ import annotations
 
@@ -22,10 +22,10 @@ from ailoveshen.domain.value_objects import (
 
 class IGamePromptBuilder(ABC):
     """
-    Output port for building the prompts that direct the game agent.
+    ゲームのエージェントを方向づけるプロンプトを組み立てる出力ポート。
 
-    This interface is defined in the Application layer.
-    Infrastructure adapters implement this interface.
+    このインターフェースはアプリケーション層で定義する。
+    インフラ層のアダプターがこれを実装する。
     """
 
     @abstractmethod
@@ -33,11 +33,11 @@ class IGamePromptBuilder(ABC):
         self, character: CharacterProfile, previous_error: str = ""
     ) -> str:
         """
-        Build the prompt asking the LLM to design a small house.
+        LLM に小さな家の設計を頼むプロンプトを組み立てる。
 
         Args:
-            character: The streamer, whose personality the design should reflect
-            previous_error: Why the previous design was rejected, if any
+            character: 配信者。設計にはその性格を反映する
+            previous_error: 前回の設計が拒否された理由（あれば）
         """
         ...
 
@@ -46,12 +46,12 @@ class IGamePromptBuilder(ABC):
         self, character: CharacterProfile, mission: Mission, previous_error: str = ""
     ) -> str:
         """
-        Build the prompt asking the LLM what the town of the mission is, in stages.
+        大目標の街がどんなものかを、段階に分けて LLM に尋ねるプロンプトを組み立てる。
 
         Args:
-            character: The streamer
-            mission: The mission whose town is defined
-            previous_error: Why the previous definition was rejected, if any
+            character: 配信者
+            mission: 街を定める大目標
+            previous_error: 前回の定義が拒否された理由（あれば）
         """
         ...
 
@@ -60,13 +60,13 @@ class IGamePromptBuilder(ABC):
         self, town: TownDefinition, stage: TownStage, previous_error: str = ""
     ) -> str:
         """
-        Build the prompt asking the LLM to write a stage's unresolved parts with the conditions
-        available now (the stage keeps its title and meaning).
+        段階のうち未解決の部分を、今使える条件で書くよう LLM に頼むプロンプトを組み立てる
+        （段階の題名と意味は変えない）。
 
         Args:
-            town: The town the stage belongs to
-            stage: The stage with parts not resolved yet
-            previous_error: Why the previous answer was rejected, if any
+            town: その段階が属する街
+            stage: まだ解決していない部分がある段階
+            previous_error: 前回の答えが拒否された理由（あれば）
         """
         ...
 
@@ -81,17 +81,16 @@ class IGamePromptBuilder(ABC):
         previous_error: str = "",
     ) -> str:
         """
-        Build the prompt asking the LLM to set the next goal.
+        LLM に次の目標を決めさせるプロンプトを組み立てる。
 
         Args:
-            blueprint: The house being built (None: the home was built in an earlier run)
-            activity: What the streamer is doing (the mission and mid goals, the ending
-                goal with its status, recent goals), the same view the commentary and
-                replies get
-            goal_ended_because: Why a new goal is due
-            recent_messages: What was said on stream (the streamer's words and viewers' chat)
-            predicates: The predicates that make sense now
-            previous_error: Why the previous goal or mid-goal edit could not be used
+            blueprint: 建てている家（None: 家は前の実行で建った）
+            activity: 配信者が今していること（大目標と中目標、終わる目標とその状態、
+                最近の目標）。実況と返答が見るものと同じ
+            goal_ended_because: 新しい目標が要る理由
+            recent_messages: 配信で話されたこと（配信者の言葉と視聴者のチャット）
+            predicates: 今意味のある述語
+            previous_error: 前回の目標、または中目標の編集が使えなかった理由
         """
         ...
 
@@ -100,10 +99,9 @@ class IGamePromptBuilder(ABC):
         self, goal: Goal, observation: GameObservation
     ) -> tuple[dict[str, Any], str]:
         """
-        Build what the action selector sees: the state and the instructions.
+        行動選択器が見るもの（状態と指示）を組み立てる。
 
-        The state states the body's needs (numbers and severity) but never
-        which action to take; the instructions give no priority order (both
-        measured: spikes/primitive_choice_eval.py).
+        状態は体の必要（数値と深刻さ）を示すが、どの行動を取るかは示さない。指示は
+        優先順位をつけない（どちらも計測した: spikes/primitive_choice_eval.py）。
         """
         ...

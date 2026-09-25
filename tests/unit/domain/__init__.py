@@ -1,1 +1,1 @@
-"""Domain layer unit tests."""
+"""domain 層の単体テスト。"""

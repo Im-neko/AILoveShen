@@ -1,29 +1,29 @@
-// Crafting through the recipe book, like the vanilla client's recipe book button.
+// バニラのクライアントのレシピ本ボタンと同じく、レシピ本を通してクラフトする。
 //
-// Mineflayer's bot.craft() moves ingredients with predicted cursor clicks. It sends them
-// back to back without waiting, so on this server its inventory model drifts after the
-// first resync and a later click swaps items onto the cursor. Each craft then loses the
-// rest of the ingredient stack (5 logs -> 4 planks, 0 logs).
+// Mineflayer の bot.craft() は、カーソルのクリックを予測して材料を動かす。クリックを待たずに
+// 続けて送るので、このサーバーでは最初の再同期のあとインベントリのモデルがずれ、後のクリックで
+// アイテムがカーソルに入れ替わる。するとクラフトのたびに材料のスタックの残りを失う
+// （原木 5 → 板材 4、原木 0）。
 //
-// Here the server fills the crafting grid itself (craft_recipe_request), the result is
-// taken with a shift-click (server-side quick move, no cursor involved), and the window
-// is resynced from the server before the inventory is read again.
+// ここでは、サーバー自身がクラフトのグリッドを埋め（craft_recipe_request）、結果はシフトクリックで
+// 取り（サーバー側のクイック移動で、カーソルを使わない）、インベントリを読み直す前にウィンドウを
+// サーバーから再同期する。
 
 import { once } from 'node:events'
 
 const RESULT_SLOT = 0
 const GRID_FILL_TIMEOUT_MS = 2000
 const WINDOW_OPEN_TIMEOUT_MS = 3000
-// Paper silently drops recipe requests beyond recipe-spam-limit (20, spigot.yml), a budget that
-// refills by one per tick. Crafting 19 logs one by one took 0.1s and the next request (a crafting
-// table) was dropped twice. One request per 2 ticks stays well inside the budget.
+// Paper は recipe-spam-limit（20、spigot.yml）を超えたレシピ要求を黙って捨てる。この枠は1ティックに
+// 1 ずつ回復する。原木 19 個を1つずつクラフトすると 0.1 秒かかり、次の要求（作業台）が2回捨てられた。
+// 2ティックに1要求なら枠に十分収まる。
 const RECIPE_REQUEST_INTERVAL_MS = 100
 let lastRecipeRequestAt = 0
 
 export class RecipeBook {
   constructor (bot) {
     this.bot = bot
-    this.byResult = new Map() // result item id -> Map(displayId -> display)
+    this.byResult = new Map() // 結果のアイテム id -> Map(displayId -> display)
     bot._client.on('recipe_book_add', (packet) => {
       if (packet.replace) this.byResult.clear()
       for (const { recipe } of packet.entries) {
@@ -38,7 +38,7 @@ export class RecipeBook {
     })
   }
 
-  // Recipes the player has unlocked that produce itemName: [{ displayId, fitsInventory }]
+  // プレイヤーが解放済みで itemName を作るレシピ: [{ displayId, fitsInventory }]
   recipesFor (itemName) {
     const item = this.bot.registry.itemsByName[itemName]
     const recipes = item && this.byResult.get(item.id)
@@ -53,7 +53,7 @@ function fits2x2 (display) {
   return false
 }
 
-// Resolves when the server puts itemName into the result slot, false on timeout.
+// サーバーが結果スロットに itemName を入れたら解決する。タイムアウトなら false。
 function waitForResult (window, itemName) {
   return new Promise((resolve) => {
     const onUpdate = (_old, item) => {
@@ -67,8 +67,8 @@ function waitForResult (window, itemName) {
   })
 }
 
-// Returns anything left in the 2x2 grid or on the cursor to the inventory (like closing the
-// inventory screen), then resyncs so the next step starts from the server's real state.
+// 2x2 のグリッドやカーソルに残ったものを（インベントリ画面を閉じるように）インベントリに戻し、
+// 次のステップがサーバーの実際の状態から始まるよう再同期する。
 async function resetInventory (bot) {
   bot._client.write('close_window', { windowId: 0 })
   await bot._syncWindow(bot.inventory)
@@ -81,8 +81,8 @@ async function openTable (bot, tableBlock) {
   return window
 }
 
-// Crafts itemName: makeAll fills the grid with as many sets as the inventory allows (vanilla
-// shift-click on a recipe). Returns how many of the item were gained.
+// itemName をクラフトする: makeAll はインベントリが許すだけのセットでグリッドを埋める（バニラで
+// レシピをシフトクリックするのと同じ）。増えた個数を返す。
 export async function craftWithRecipeBook (bot, book, itemName, { table = null, makeAll = false } = {}) {
   const recipes = book.recipesFor(itemName).filter((r) => table || r.fitsInventory)
   if (recipes.length === 0) throw new Error(`no unlocked recipe for ${itemName}${table ? '' : ' in the 2x2 grid'}`)
@@ -97,7 +97,7 @@ export async function craftWithRecipeBook (bot, book, itemName, { table = null, 
       lastRecipeRequestAt = Date.now()
       const filled = waitForResult(window, itemName)
       bot._client.write('craft_recipe_request', { windowId: window.id, recipeId: recipe.displayId, makeAll })
-      if (!(await filled)) continue // ingredients missing for this recipe variant
+      if (!(await filled)) continue // このレシピの変種には材料が足りない
       await bot.clickWindow(RESULT_SLOT, 0, 1)
       await bot._syncWindow(window)
       break

@@ -1,11 +1,11 @@
-"""Goal board: the streamer's goals, readable from outside for the stream overlay.
+"""目標ボード: 配信者の目標を、配信オーバーレイのために外から読めるようにする。
 
-- GET /api/goals         the goals now (JSON)
-- GET /api/goals/stream  the same JSON on every goal change and step (Server-Sent Events)
-- GET /overlay           a page for an OBS browser source (transparent background)
+- GET /api/goals         今の目標（JSON）
+- GET /api/goals/stream  目標が変わるたび、ステップのたびに同じ JSON（Server-Sent Events）
+- GET /overlay           OBS のブラウザソース用のページ（背景は透明）
 
-Read-only: it serves what the play session holds and never changes it. It runs in the same
-process as the play loop (`GoalBoard.serve`). Design: docs/design/13_goal_hierarchy.md §7.
+読み取り専用: プレイセッションが持つものを出すだけで、変えることはない。プレイのループと
+同じプロセスで動く（`GoalBoard.serve`）。設計: docs/design/13_goal_hierarchy.md §7。
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from ailoveshen.domain.value_objects import Activity, GameObservation, MidGoal, 
 OVERLAY_HTML = Path(__file__).with_name("overlay.html")
 KEEPALIVE_SECONDS = 15.0
 QUEUE_SIZE = 16
-# Every change of what the board shows (a step moves the small goal's progress)
+# ボードの表示が変わるイベントすべて（ステップで小目標の進み具合が変わる）
 EVENTS: tuple[type[DomainEvent], ...] = (
     GoalSetEvent,
     GoalEndedEvent,
@@ -48,7 +48,7 @@ EVENTS: tuple[type[DomainEvent], ...] = (
 
 
 def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
-    """The goals as the board shows them (the /api/goals JSON)."""
+    """ボードに出す形の目標（/api/goals の JSON）。"""
     if activity is None:
         return {
             "playing": False,
@@ -120,7 +120,7 @@ def _home(obs: GameObservation | None) -> dict[str, Any] | None:
     return {
         "name": (obs.state.get("home") or {}).get("name"),
         "bed": obs.bed_in_home,
-        # As they were when last opened (only the streamer uses them)
+        # 最後に開けたときの中身（使うのは配信者だけ）
         "chests": [{"contents": c["contents"], "minutes_ago": c["minutes_ago"]} for c in chests],
     }
 
@@ -131,49 +131,49 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
         "title": goal.title,
         "state": state,  # current / pending / done / dropped
         "requested_by": goal.requested_by,
-        "stage": goal.stage,  # the town stage it stands for (index), if any
+        "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None
         "conditions": [c.describe() for c in goal.conditions],
         "progress": list(goal.progress),
-        "summary": list(goal.summary()),  # without the solver's sub-steps
+        "summary": list(goal.summary()),  # ソルバーの細かい手順は除く
         "ended_because": goal.ended_because,
     }
 
 
 class GoalBoard:
-    """Serves the goals of the play session being played to the stream overlay."""
+    """プレイ中のセッションの目標を配信オーバーレイに出す。"""
 
     def __init__(self, activity: Callable[[], Activity | None]) -> None:
         """
-        Initialize the board.
+        ボードを初期化する。
 
         Args:
-            activity: What the streamer is doing now (the game session's activity; None
-                before play starts)
+            activity: 配信者が今していること（ゲームのセッションの activity。プレイを
+                始める前は None）
         """
         self._activity = activity
         self._listeners: set[asyncio.Queue[str]] = set()
         self.app = self._create_app()
 
     def subscribe(self, bus: IEventSubscriber) -> None:
-        """Push the goals to the connected overlays on every change."""
+        """変わるたびに、接続中のオーバーレイへ目標を送る。"""
         for event_type in EVENTS:
             bus.subscribe(event_type, self._on_event)
 
     async def serve(self, host: str = "127.0.0.1", port: int = 8765) -> None:
-        """Run the web server until cancelled."""
+        """キャンセルされるまで Web サーバーを動かす。"""
         server = uvicorn.Server(uvicorn.Config(self.app, host=host, port=port, log_level="warning"))
-        logger.info(f"Goal board on http://{host}:{port}/overlay")
+        logger.info(f"目標ボード: http://{host}:{port}/overlay")
         await server.serve()
 
     def snapshot(self) -> dict[str, Any]:
-        """The goals now."""
+        """今の目標。"""
         return goals_snapshot(self._activity())
 
     async def _on_event(self, event: DomainEvent) -> None:
         data = json.dumps(self.snapshot(), ensure_ascii=False)
         for queue in self._listeners:
             if queue.full():
-                queue.get_nowait()  # a slow overlay only needs the latest
+                queue.get_nowait()  # 遅いオーバーレイには最新のものだけあればよい
             queue.put_nowait(data)
 
     async def _stream(self, request: Request) -> AsyncIterator[str]:

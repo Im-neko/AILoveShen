@@ -1,4 +1,4 @@
-"""Tests for JevActionSelector adapter."""
+"""JevActionSelector アダプタのテスト。"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +23,7 @@ ACTIONS = (
 
 @pytest.fixture
 def mock_client():
-    """Patch AsyncTypeSafeClient and return the mock class."""
+    """AsyncTypeSafeClient を差し替えて、モックのクラスを返す。"""
     with patch(f"{MODULE}.AsyncTypeSafeClient") as client_cls:
         client = MagicMock()
         answer = MagicMock(
@@ -38,16 +38,16 @@ def mock_client():
 
 
 class TestJevActionSelector:
-    """Tests for select() and construction."""
+    """select() と生成のテスト。"""
 
     def test_empty_api_key_raises(self, mock_client):
-        """Test a missing API key raises ValueError."""
+        """API キーがなければ ValueError。"""
         with pytest.raises(ValueError, match="API key is required"):
             JevActionSelector(api_key="")
 
     @pytest.mark.asyncio
     async def test_sends_one_choice_question(self, mock_client):
-        """Test the candidates (JSON descriptions) become the criteria of one Choice question."""
+        """候補（JSON の説明）が、1 つの Choice の質問の criteria になる。"""
         selector = JevActionSelector(api_key="k", model="jev-latest")
 
         await selector.select({"hp": 20}, ACTIONS, "pick one")
@@ -65,7 +65,7 @@ class TestJevActionSelector:
 
     @pytest.mark.asyncio
     async def test_returns_decision(self, mock_client):
-        """Test the answer becomes an ActionDecision."""
+        """答えが ActionDecision になる。"""
         decision = await JevActionSelector(api_key="k").select({}, ACTIONS, "pick")
 
         assert decision.action_id == "collect_log"
@@ -74,7 +74,7 @@ class TestJevActionSelector:
 
     @pytest.mark.asyncio
     async def test_sdk_error_raises_selection_error(self, mock_client):
-        """Test SDK errors become ActionSelectionError."""
+        """SDK のエラーは ActionSelectionError になる。"""
         mock_client.return_value.system_one.side_effect = TypeSafeAPIConnectionError("down")
 
         with pytest.raises(ActionSelectionError, match="Jev request failed"):
@@ -82,7 +82,7 @@ class TestJevActionSelector:
 
     @pytest.mark.asyncio
     async def test_close(self, mock_client):
-        """Test close() closes the SDK client."""
+        """close() は SDK のクライアントを閉じる。"""
         await JevActionSelector(api_key="k").close()
 
         mock_client.return_value.aclose.assert_awaited_once()

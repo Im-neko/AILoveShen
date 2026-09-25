@@ -1,4 +1,4 @@
-"""Tests for the game agent Composition Root."""
+"""ゲームのエージェントの Composition Root のテスト。"""
 
 from unittest.mock import AsyncMock
 
@@ -33,11 +33,11 @@ def _create(gemini_key="g", jev_key="j"):
 
 
 class TestCreateGameService:
-    """Tests for create_game_service."""
+    """create_game_service のテスト。"""
 
     @pytest.mark.asyncio
     async def test_creates_service(self):
-        """Test the service is wired with valid settings."""
+        """正しい設定ならサービスが組み立てられる。"""
         service = _create()
 
         assert isinstance(service, GameService)
@@ -45,21 +45,21 @@ class TestCreateGameService:
         await service.close()
 
     def test_missing_gemini_key_raises(self):
-        """Test a missing Gemini key fails fast."""
+        """Gemini のキーがなければすぐ失敗する。"""
         with pytest.raises(ValueError, match="Gemini API key"):
             _create(gemini_key="")
 
     def test_missing_jev_key_raises(self):
-        """Test a missing TypeSafe key fails fast."""
+        """TypeSafe のキーがなければすぐ失敗する。"""
         with pytest.raises(ValueError, match="TypeSafe API key"):
             _create(jev_key="")
 
 
 class TestCreateMidGoalPlan:
-    """Tests for the plan made from the mission settings."""
+    """大目標の設定から作る計画のテスト。"""
 
     def test_default_mission_and_mid_goals(self):
-        """Test the configured mid goals are the list, in order, with the limits."""
+        """設定した中目標が、順番どおり、上限つきでリストになる。"""
         plan = create_mid_goal_plan(MissionSettings(viewer_budget_steps=50))
 
         assert plan.mission.text == "生き延びながら家を建て、街にしていく"
@@ -72,7 +72,7 @@ class TestCreateMidGoalPlan:
         assert plan.viewer_budget == 50
 
     def test_condition_not_judged_from_the_world_is_rejected(self):
-        """Test a mid goal that the bridge could not judge fails at start."""
+        """ブリッジが判定できない中目標は、開始時に失敗する。"""
         settings = MissionSettings(
             mid_goals=[{"title": "探検", "conditions": [{"predicate": "explored", "distance": 30}]}]
         )
@@ -80,7 +80,7 @@ class TestCreateMidGoalPlan:
             create_mid_goal_plan(settings)
 
     def test_conditions_are_parsed(self):
-        """Test placed means placed at home."""
+        """placed は拠点に置くことを表す。"""
         plan = create_mid_goal_plan(
             MissionSettings(
                 mid_goals=[

@@ -1,4 +1,4 @@
-"""LLM module factory (Composition Root)."""
+"""LLM モジュールのファクトリー（Composition Root）。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ailoveshen.presentation.services.llm_service import LLMService
 
 
 def create_character_profile(settings: CharacterSettings) -> CharacterProfile:
-    """Convert character settings into the domain value object."""
+    """キャラクターの設定をドメインの値オブジェクトに変換する。"""
     return CharacterProfile(
         name=settings.name,
         description=settings.description,
@@ -37,26 +37,26 @@ def create_llm_service(
     history_limit: int = 10,
 ) -> LLMService:
     """
-    Create LLM service with all dependencies wired up.
+    依存をすべてつないだ LLM サービスを作る。
 
-    This is the Composition Root for the LLM module. Commentary and chat
-    responses use the main model slot and share one conversation history,
-    which the game's goal decision also reads (create_game_service).
+    LLM モジュールの Composition Root。実況とチャットへの返答は main モデルの枠を
+    使い、会話の履歴を 1つ共有する。ゲームの目標の決定もこの履歴を読む
+    （create_game_service）。
 
     Args:
-        gemini: Gemini settings (settings.gemini)
-        character: Character settings (settings.character)
-        event_publisher: Event publisher for domain events
-        conversation: What is said on stream, shared with the game's goal decision
-        mid_goals: The game's mid goals (GameService.mid_goals): replies while playing may
-            accept viewers' requests into them. None: replies only talk
-        history_limit: Number of recent messages given to the model
+        gemini: Gemini の設定（settings.gemini）
+        character: キャラクターの設定（settings.character）
+        event_publisher: ドメインイベントの発行先
+        conversation: 配信で話したこと。ゲームの目標の決定と共有する
+        mid_goals: ゲームの中目標（GameService.mid_goals）。プレイ中の返答は、視聴者の
+            頼みをここに受けることがある。None なら返答は話すだけ
+        history_limit: モデルに渡す最近のメッセージの数
 
     Returns:
-        Configured LLMService ready to use
+        設定済みで、すぐ使える LLMService
 
     Raises:
-        ValueError: If the API key is missing or thinking_level is unsupported
+        ValueError: API キーがないか、thinking_level に対応していないとき
 
     Example:
         ```python
@@ -75,7 +75,7 @@ def create_llm_service(
         await llm_service.close()
         ```
     """
-    # Create infrastructure adapters
+    # インフラのアダプターを作る
     text_generator = GeminiTextGenerator(
         api_key=gemini.api_key,
         model=gemini.main_model,
@@ -89,10 +89,10 @@ def create_llm_service(
     )
     prompt_builder = PromptTemplateBuilder()
 
-    # Create domain objects
+    # ドメインのオブジェクトを作る
     character_profile = create_character_profile(character)
 
-    # Create use cases
+    # ユースケースを作る
     generate_commentary_use_case = GenerateCommentaryUseCase(
         text_generator=text_generator,
         prompt_builder=prompt_builder,
@@ -111,7 +111,7 @@ def create_llm_service(
         history_limit=history_limit,
     )
 
-    # Create presentation service
+    # プレゼンテーション層のサービスを作る
     return LLMService(
         generate_commentary_use_case=generate_commentary_use_case,
         generate_response_use_case=generate_response_use_case,

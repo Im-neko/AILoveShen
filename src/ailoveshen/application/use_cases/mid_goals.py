@@ -1,4 +1,4 @@
-"""Keeping the mid goals: judged from the world, edited within the plan's limits, saved, told."""
+"""中目標の管理: 世界から判定し、プランの上限の中で編集し、保存し、伝える。"""
 
 from __future__ import annotations
 
@@ -29,17 +29,15 @@ from ailoveshen.domain.value_objects import MidGoal
 
 class MidGoalKeeper:
     """
-    The one way the mid-goal list changes after the plan is made.
+    プランを作ったあと、中目標のリストを変える唯一の経路。
 
-    Two callers edit it concurrently: the goal decision (the streamer's own
-    edits, at small-goal boundaries) and chat replies (a viewer's request
-    accepted). Edits are rehearsed on a copy, then applied to the plan with
-    no await in between, so neither overwrites the other; the plan object is
-    never replaced (the goal board and the narrator hold it).
+    2 つの呼び出し元が並行して編集する: 目標の決定（小目標の切れ目での配信者自身の
+    編集）と、チャットの返答（視聴者の頼みを受けたとき）。編集は写しの上で試して
+    から、await を挟まずにプランへ反映する。こうして互いに上書きしない。プランの
+    オブジェクトは差し替えない（ゴールボードとナレーターが持っている）。
 
-    A mid goal's conditions are checked by the bridge before it is added, so
-    nothing is promised that the world cannot judge. Every change is saved
-    and published (MidGoalAdded/Completed/DroppedEvent).
+    中目標の条件は、足す前にブリッジが確かめる。世界から判定できないことは約束
+    しない。変更はすべて保存し、発行する（MidGoalAdded/Completed/DroppedEvent）。
     """
 
     def __init__(
@@ -49,12 +47,12 @@ class MidGoalKeeper:
         store: IMissionStore,
     ) -> None:
         """
-        Initialize with dependencies (Dependency Injection).
+        依存を受け取って初期化する（依存性の注入）。
 
         Args:
-            bridge: Minecraft bridge adapter (judges conditions)
-            event_publisher: Event publisher for domain events
-            store: Keeps the plan across restarts
+            bridge: Minecraft ブリッジのアダプター（条件を判定する）
+            event_publisher: ドメインイベントの発行器
+            store: 再起動をまたいでプランを保つ
         """
         self._bridge = bridge
         self._event_publisher = event_publisher
@@ -62,17 +60,15 @@ class MidGoalKeeper:
 
     async def judge(self, plan: MidGoalPlan) -> None:
         """
-        Judge the pending mid goals from the world; those whose conditions all hold are done.
+        未完了の中目標を世界から判定する。条件がすべて満たされたものは完了にする。
 
-        A mid goal whose conditions the bridge rejects (it could not have been
-        added so, but the world's rules may have changed) is dropped with the
-        reason rather than stopping play. A town stage is never dropped: it is
-        logged and waits for its conditions to be fixed.
+        ブリッジが条件を拒否した中目標（そのままでは足せなかったはずだが、世界の
+        ルールが変わったのかもしれない）は、プレイを止めずに理由をつけて断念する。
+        街の段階は断念しない: ログに残し、条件が直るのを待つ。
 
-        Then the town moves on: what can be done now of the stage worked on
-        (its conditions not met yet) becomes a mid goal at the top of the list;
-        the parts left for abilities not there yet wait. The town's completion
-        is told when its last stage is done.
+        次に街を進める: 取り組んでいる段階のうち今できること（まだ満たしていない
+        条件）を、リストの一番上の中目標にする。まだない能力のために残した部分は
+        待つ。最後の段階が済んだら、街の完成を伝える。
         """
         was_complete = plan.town_complete
         events: list[DomainEvent] = []
@@ -81,7 +77,7 @@ class MidGoalKeeper:
                 statuses = await self._bridge.check(goal.conditions)
             except GoalRejectedError as e:
                 if goal.stage is not None:
-                    logger.error(f"Town stage mid goal {goal.describe()} cannot be judged: {e}")
+                    logger.error(f"街の段階の中目標 {goal.describe()} を判定できない: {e}")
                 elif plan.get(goal.id) is not None:
                     events.append(
                         _dropped(plan.drop(goal.id, f"its conditions cannot be judged: {e}"))
@@ -92,20 +88,20 @@ class MidGoalKeeper:
             plan.judged(goal.id, tuple(line for s in statuses for line in s.lines))
             if all(s.met for s in statuses):
                 done = plan.complete(goal.id)
-                logger.info(f"Mid goal done: {done.describe()}")
+                logger.info(f"中目標を達成した: {done.describe()}")
                 events.append(
                     MidGoalCompletedEvent(title=done.title, requested_by=done.requested_by or "")
                 )
         events.extend(self._next_stage(plan))
         if plan.town_complete and not was_complete:
             assert plan.town is not None
-            logger.info(f"Town complete: {plan.town.text}")
+            logger.info(f"街が完成した: {plan.town.text}")
             events.append(TownCompletedEvent(text=plan.town.text))
         self._store.save(plan)
         await self._publish(events)
 
     def _next_stage(self, plan: MidGoalPlan) -> list[DomainEvent]:
-        plan.settle_stage()  # a stage written again may be done already
+        plan.settle_stage()  # 書き直した段階は、もう済んでいるかもしれない
         stage = plan.current_stage
         if stage is None or not plan.stage_remaining or plan.stage_goal() is not None:
             return []
@@ -118,19 +114,17 @@ class MidGoalKeeper:
                 stage=plan.town_stage,
             )
         except ValueError as e:
-            logger.warning(f"Town stage {plan.town_stage + 1} waits for room in the list: {e}")
+            logger.warning(f"街の段階 {plan.town_stage + 1} はリストに空きが出るのを待つ: {e}")
             return []
-        logger.info(
-            f"Town stage {plan.town_stage + 1} is now mid goal {goal.id}: {goal.describe()}"
-        )
+        logger.info(f"街の段階 {plan.town_stage + 1} を中目標 {goal.id} にした: {goal.describe()}")
         return [_added(plan, goal)]
 
     async def check_new(self, changes: Sequence[PlanChange]) -> None:
         """
-        Have the bridge check the conditions of the mid goals the changes add.
+        変更が足す中目標の条件を、ブリッジに確かめさせる。
 
         Raises:
-            GoalRejectedError: If a condition cannot be judged (the message says why)
+            GoalRejectedError: 条件を判定できないとき（メッセージに理由がある）
         """
         for change in changes:
             if change.proposal is not None:
@@ -138,10 +132,10 @@ class MidGoalKeeper:
 
     def rehearse(self, plan: MidGoalPlan, changes: Sequence[PlanChange]) -> MidGoalPlan:
         """
-        The plan as it would be after the changes (the plan itself is untouched).
+        変更を反映したらどうなるかのプラン（プラン自体には触れない）。
 
         Raises:
-            ValueError: If a change breaks a limit or names no pending mid goal
+            ValueError: 変更が上限を破るか、未完了の中目標を指していないとき
         """
         preview = copy.deepcopy(plan)
         _apply(preview, changes)
@@ -149,10 +143,10 @@ class MidGoalKeeper:
 
     async def commit(self, plan: MidGoalPlan, changes: Sequence[PlanChange]) -> None:
         """
-        Apply the streamer's own changes to the plan, save and publish them.
+        配信者自身の変更をプランに反映し、保存して発行する。
 
         Raises:
-            ValueError: If a change breaks a limit (nothing is applied then)
+            ValueError: 変更が上限を破るとき（そのときは何も反映しない）
         """
         if not changes:
             return
@@ -165,11 +159,11 @@ class MidGoalKeeper:
         self, plan: MidGoalPlan, proposal: MidGoalProposal, requested_by: str
     ) -> MidGoal:
         """
-        Add a viewer's request as a mid goal (behind the one worked on now).
+        視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。
 
         Raises:
-            GoalRejectedError: If a condition cannot be judged
-            ValueError: If it breaks a limit (e.g. the viewer already has one)
+            GoalRejectedError: 条件を判定できないとき
+            ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
         await self._bridge.check(proposal.conditions)
         goal = plan.add(
@@ -180,17 +174,17 @@ class MidGoalKeeper:
             position=proposal.position,
         )
         logger.info(
-            f"Viewer request accepted as mid goal {goal.id}: {goal.describe()} ({requested_by})"
+            f"視聴者の頼みを中目標 {goal.id} として受けた: {goal.describe()}（{requested_by}）"
         )
         self._store.save(plan)
         await self._publish([_added(plan, goal)])
         return goal
 
     async def step_counted(self, plan: MidGoalPlan, goal: MidGoal | None) -> None:
-        """Save the plan after a step was counted, telling a mid goal dropped over its budget."""
+        """ステップを数えたあとにプランを保存する。予算を超えて断念した中目標があれば伝える。"""
         self._store.save(plan)
         if goal is not None:
-            logger.info(f"Mid goal dropped: {goal.describe()} ({goal.ended_because})")
+            logger.info(f"中目標を断念した: {goal.describe()}（{goal.ended_because}）")
             await self._publish([_dropped(goal)])
 
     async def _publish(self, events: list[DomainEvent]) -> None:

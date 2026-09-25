@@ -1,4 +1,4 @@
-"""Tests for PromptTemplateBuilder adapter."""
+"""PromptTemplateBuilder アダプタのテスト。"""
 
 from ailoveshen.domain.value_objects import (
     Activity,
@@ -44,10 +44,10 @@ BUILDING = Activity(
 
 
 class TestPromptTemplateBuilder:
-    """Tests for PromptTemplateBuilder."""
+    """PromptTemplateBuilder のテスト。"""
 
     def test_system_prompt_includes_character(self):
-        """Test the system prompt reflects the character profile."""
+        """システムプロンプトはキャラクタープロフィールを反映する。"""
         character = CharacterProfile(
             name="シェン",
             first_person="ボク",
@@ -63,7 +63,7 @@ class TestPromptTemplateBuilder:
         assert "元気" in prompt
 
     def test_commentary_prompt_with_context(self):
-        """Test commentary prompt includes state, events, history and emotion."""
+        """実況のプロンプトは状態、出来事、履歴、感情を含む。"""
         context = GenerationContext(
             emotion_state=EmotionState(EmotionType.HAPPY, 0.8),
             activity=BUILDING,
@@ -81,14 +81,14 @@ class TestPromptTemplateBuilder:
         )
         assert "house blocks placed 30/70" in prompt
         assert "体力 20.0/20" in prompt
-        assert "[m1]" not in prompt  # ids are for the goal decision, not to be read out
+        assert "[m1]" not in prompt  # id は小目標の決定のためのもので、読み上げるものではない
         assert "- ゾンビを倒した" in prompt
         assert "nekoさん: がんばれ" in prompt
         assert "あなた: ありがとう！" in prompt
         assert "happy（強度: 0.8）" in prompt
 
     def test_commentary_prompt_without_information(self):
-        """Test placeholders are used when context is empty."""
+        """コンテキストが空ならプレースホルダを使う。"""
         prompt = PromptTemplateBuilder().build_commentary_prompt(GenerationContext())
 
         assert "## 今していること\nゲームはしていない" in prompt
@@ -96,7 +96,7 @@ class TestPromptTemplateBuilder:
         assert "## 最近の会話\n特になし" in prompt
 
     def test_chat_response_prompt(self):
-        """Test chat response prompt includes the viewer's comment."""
+        """返答のプロンプトは視聴者のコメントを含む。"""
         prompt = PromptTemplateBuilder().build_chat_response_prompt(
             user_name="neko",
             message="がんばれ",
@@ -108,7 +108,7 @@ class TestPromptTemplateBuilder:
         assert "neutral（強度: 0.5）" in prompt
 
     def test_chat_response_prompt_sees_the_real_goal(self):
-        """Test the reply sees what the streamer is actually doing (no made-up activity)."""
+        """返答は配信者が実際にしていることを見る（作り話のことはしない）。"""
         prompt = PromptTemplateBuilder().build_chat_response_prompt(
             user_name="neko",
             message="今なにしてるの？",
@@ -119,12 +119,12 @@ class TestPromptTemplateBuilder:
         assert "1. 自分の家を作る [取り組み中] 完了条件: built()" in prompt
         assert "2. ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
         assert "「今していること」のとおりに答える" in prompt
-        # Not taking requests, the reply is text only
+        # 頼みを受けないときは、返答はテキストだけ
         assert "視聴者の頼みについて" not in prompt
         assert "返答テキストのみを出力してください。" in prompt
 
     def test_chat_response_prompt_takes_requests_as_mid_goals(self):
-        """Test a reply that may accept a request lists the conditions and the rules."""
+        """頼みを受けられる返答には、条件と規則を並べる。"""
         prompt = PromptTemplateBuilder().build_chat_response_prompt(
             user_name="neko",
             message="ベッド作って",
@@ -138,7 +138,7 @@ class TestPromptTemplateBuilder:
         assert "今の小目標は中断しない" in prompt
         assert "同じ人の頼みは同時に1つまで" in prompt
         assert "大目標と今の目標は変えない" in prompt
-        # A request about how to do things is answered from what the streamer can really do
+        # やり方についての頼みには、配信者が実際にできることから答える
         assert "## 自分でできること（これ以外はできない）" in prompt
         assert "松明を持っていれば置いて湧き潰しする" in prompt
         assert "できない約束はしない" in prompt

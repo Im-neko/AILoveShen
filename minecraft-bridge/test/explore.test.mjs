@@ -8,7 +8,7 @@ const k = new Knowledge(minecraftData('1.21.4'))
 const world = { inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, dig: () => [], hunt: () => [] }
 const bot = (x, z) => ({ time: { timeOfDay: 1000 }, entity: { position: { x, y: 70, z, floored: () => ({ x, y: 70, z }) } } })
 
-test('a goal searches away from where it was set, not back and forth', () => {
+test('目標は設定した場所から離れる向きに探し、行ったり来たりしない', () => {
   const state = { home: null, plan: null }
   const goal = makeGoal({ predicate: 'have', item: 'food', count: 1 }, bot(10, 20), state, k)
   assert.deepEqual(goal.exploreFrom, { x: 10, y: 70, z: 20 })

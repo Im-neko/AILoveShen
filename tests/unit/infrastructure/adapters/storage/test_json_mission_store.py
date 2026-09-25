@@ -1,4 +1,4 @@
-"""Tests for JsonMissionStore adapter."""
+"""JsonMissionStore アダプタのテスト。"""
 
 from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.value_objects import (
@@ -17,14 +17,14 @@ SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
 
 
 class TestJsonMissionStore:
-    """Tests for keeping the plan across restarts."""
+    """再起動をまたいで計画を残すことのテスト。"""
 
     def test_nothing_saved(self, tmp_path):
-        """Test a missing file means nothing was saved."""
+        """ファイルがなければ、何も保存していない。"""
         assert JsonMissionStore(tmp_path / "mission.json").load() is None
 
     def test_round_trip(self, tmp_path):
-        """Test what is saved comes back as it was (ids, viewers, steps, finished)."""
+        """保存したものがそのまま戻る（id、視聴者、ステップ、終わったもの）。"""
         plan = MidGoalPlan(mission=Mission("街にしていく"))
         plan.add("家", (BUILT,))
         request = plan.add("ベッド", (BED,), reason="頼まれた", requested_by="neko")
@@ -46,7 +46,7 @@ class TestJsonMissionStore:
         assert not (tmp_path / "sub" / "mission.json.tmp").exists()
 
     def test_town_round_trip(self, tmp_path):
-        """Test the town, its stage done and the stage goal come back as they were."""
+        """街、済んだ段階、段階の小目標がそのまま戻る。"""
         town = TownDefinition(
             "小さな街",
             (
@@ -72,7 +72,7 @@ class TestJsonMissionStore:
         assert saved.stage_met == ()
 
     def test_stage_progress_round_trip(self, tmp_path):
-        """Test the conditions met of a stage waiting for an ability come back."""
+        """能力を待つ段階の、満たした条件が戻る。"""
         lit = GoalSpec(GoalPredicate.LIT, distance=16)
         plan = MidGoalPlan(mission=Mission("街にしていく"))
         plan.define_town(TownDefinition("街", (TownStage("明かり", "夜", (lit,), ("柵",)),)))

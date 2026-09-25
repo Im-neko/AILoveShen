@@ -13,31 +13,31 @@ const k = new Knowledge(md)
 const world = (o = {}) => ({ inventory: {}, stored: {}, smelting: {}, blocks: {}, mobs: {}, table: 'near', furnace: null, unlocked: () => true, remembered: new Set(), ...o })
 const kinds = (r) => r.leaves.map((l) => `${l.kind}:${l.item ?? ''}`)
 
-test('an iron sword: dig iron with a stone pickaxe, make and place a furnace, smelt, craft', () => {
+test('鉄の剣: 石のツルハシで鉄を掘り、かまどを作って置き、精錬してクラフトする', () => {
   const r = solve(k, world({ inventory: { stone_pickaxe: 1, oak_planks: 8 }, blocks: { iron_ore: 3, stone: 20 } }), [{ spec: 'iron_sword', count: 1 }])
   assert.equal(r.lines[1], '  have 2 iron_ingot (0/2): smelt raw_iron in a furnace')
   assert.ok(r.lines.some((l) => l.includes('a furnace nearby')), r.lines.join('\n'))
   assert.deepEqual(kinds(r), ['dig:raw_iron', 'dig:cobblestone', 'craft:stick'])
 })
 
-test('with the input and a furnace near, the smelt is the leaf; fuel held is used first', () => {
+test('材料があり近くにかまどがあれば精錬が末端になる。燃料は持っている物を先に使う', () => {
   const r = solve(k, world({ inventory: { raw_iron: 2, coal: 1, stick: 1 }, furnace: 'near' }), [{ spec: 'iron_sword', count: 1 }])
   const smelt = r.leaves.find((l) => l.kind === 'smelt')
   assert.equal(smelt.count, 2)
   assert.ok(smelt.fuels.includes('coal') && smelt.fuelCount === 1, JSON.stringify(smelt))
 })
 
-test('what a furnace is making is taken out, not gathered again', () => {
+test('かまどで作っている物は取り出し、集め直さない', () => {
   const r = solve(k, world({ inventory: { stick: 1 }, smelting: { iron_ingot: 2 } }), [{ spec: 'iron_sword', count: 1 }])
   assert.deepEqual(r.leaves, [{ kind: 'smelt', item: 'iron_ingot', count: 0 }])
 })
 
-test('no coal: logs become charcoal for torches', () => {
+test('石炭がなければ、原木を焼いた木炭で松明を作る', () => {
   const r = solve(k, world({ inventory: { oak_log: 3, stick: 1 }, furnace: 'near' }), [{ spec: 'torch', count: 4 }])
   assert.equal(r.lines[1], '  have 1 charcoal (0/1): smelt log in a furnace')
 })
 
-test('the furnaces remembered: made and still to be made, by product; emptied ones are dropped', () => {
+test('覚えているかまど: できた物とこれからできる物を製品ごとに数え、空にしたかまどは外す', () => {
   const m = newMemory()
   rememberFurnace(m, new Vec3(1, 70, 1), { iron_ingot: 3 }, 0)
   rememberFurnace(m, new Vec3(5, 70, 1), { iron_ingot: 1, charcoal: 2 }, 0)
@@ -46,7 +46,7 @@ test('the furnaces remembered: made and still to be made, by product; emptied on
   assert.deepEqual(smeltingCounts(m), { iron_ingot: 1, charcoal: 2 })
 })
 
-test('the smelt candidate names the input and fuel held, at the furnace nearby', () => {
+test('精錬の候補は、近くのかまどで使う材料と手持ちの燃料を示す', () => {
   const furnace = { position: new Vec3(3, 70, 0), name: 'furnace' }
   const bot = {
     entity: { position: new Vec3(0.5, 70, 0.5) },
@@ -55,7 +55,7 @@ test('the smelt candidate names the input and fuel held, at the furnace nearby',
     health: 20,
     food: 20,
     heldItem: null,
-    blockAt: () => null, // no light data: never dark
+    blockAt: () => null, // 明るさのデータがない: 暗いとは判定しない
     findBlock: () => furnace,
     registry: md,
     inventory: { items: () => [{ name: 'raw_iron', count: 2 }, { name: 'birch_planks', count: 5 }] }
@@ -68,7 +68,7 @@ test('the smelt candidate names the input and fuel held, at the furnace nearby',
   assert.deepEqual(c.pos, furnace.position)
 })
 
-test('what is left in a furnace far away is fetched from where it was left', () => {
+test('遠くのかまどに残した物は、残した所まで取りに行く', () => {
   const memory = newMemory()
   rememberFurnace(memory, new Vec3(200, 70, 0), { iron_ingot: 2 }, 0)
   const bot = {
@@ -78,8 +78,8 @@ test('what is left in a furnace far away is fetched from where it was left', () 
     health: 20,
     food: 20,
     heldItem: null,
-    blockAt: () => null, // no light data: never dark
-    findBlock: () => null, // no furnace in sight
+    blockAt: () => null, // 明るさのデータがない: 暗いとは判定しない
+    findBlock: () => null, // 見える所にかまどはない
     registry: md,
     inventory: { items: () => [] }
   }
@@ -88,7 +88,7 @@ test('what is left in a furnace far away is fetched from where it was left', () 
   assert.equal(c.id, 'take iron_ingot from the furnace at 200,70,0')
 })
 
-test('a furnace input is named by what it makes', () => {
+test('かまどに入れる物は、できる物で呼ぶ', () => {
   assert.equal(smeltingProduct('raw_iron'), 'iron_ingot')
   assert.equal(smeltingProduct('birch_log'), 'charcoal')
   assert.equal(smeltingProduct('beef'), 'cooked_beef')

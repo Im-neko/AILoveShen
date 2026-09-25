@@ -1,4 +1,4 @@
-"""Mineflayer bridge HTTP client adapter."""
+"""Mineflayer のブリッジへの HTTP クライアントのアダプター。"""
 
 from __future__ import annotations
 
@@ -22,31 +22,32 @@ from ailoveshen.domain.value_objects import (
 
 class MineflayerBridgeClient(IMinecraftBridge):
     """
-    Infrastructure adapter for the Node.js Mineflayer sidecar (minecraft-bridge/).
+    Node.js の Mineflayer サイドカー（minecraft-bridge/）のインフラ側アダプター。
 
-    Implements IMinecraftBridge over the sidecar's HTTP API.
+    IMinecraftBridge を、サイドカーの HTTP API で実装する。
     """
 
     def __init__(
         self, host: str = "localhost", port: int = 3000, timeout_seconds: float = 60.0
     ) -> None:
         """
-        Initialize the client.
+        クライアントを初期化する。
 
         Args:
-            host: Bridge hostname
-            port: Bridge HTTP port
-            timeout_seconds: Request timeout; must exceed the bridge's action timeout
+            host: ブリッジのホスト名
+            port: ブリッジの HTTP ポート
+            timeout_seconds: リクエストのタイムアウト。ブリッジの行動のタイムアウトより
+                長くすること
         """
         self._client = httpx.AsyncClient(base_url=f"http://{host}:{port}", timeout=timeout_seconds)
 
     async def observe(self) -> GameObservation:
-        """Fetch the observation, the goal's status and the candidates."""
+        """観測、目標の状態、候補を取得する。"""
         data = await self._request("GET", "/observe")
         return _to_observation(data)
 
     async def set_goal(self, spec: GoalSpec, keep: Sequence[GoalSpec] = ()) -> GoalStatus:
-        """Set the goal; a 400 from the bridge carries the reason it was rejected."""
+        """目標を設定する。ブリッジが返す 400 には、拒否した理由が入っている。"""
         body = {**spec.to_dict(), "keep": [{"item": k.item, "count": k.count} for k in keep]}
         try:
             response = await self._client.put("/goal", json=body)
@@ -61,7 +62,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
         return _to_status(response.json())
 
     async def check(self, specs: Sequence[GoalSpec]) -> list[ConditionStatus]:
-        """Judge conditions without setting a goal; a 400 carries why one cannot be judged."""
+        """目標を設定せずに条件を判定する。400 には、判定できない理由が入っている。"""
         if not specs:
             return []
         try:
@@ -87,7 +88,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
         ]
 
     async def act(self, action_id: str) -> ActionResult:
-        """Run one candidate on the bridge."""
+        """ブリッジで候補を 1つ実行する。"""
         data = await self._request("POST", "/act", json={"id": action_id})
         return ActionResult(
             action_id=action_id,
@@ -97,7 +98,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
         )
 
     async def set_build_plan(self, blueprint: HouseBlueprint) -> None:
-        """Send the plan's blocks in placement order, with the design."""
+        """設計図のブロックを置く順に、設計と一緒に送る。"""
         b = blueprint
         payload = {
             "blocks": [{"x": p.x, "y": p.y, "z": p.z, "block": p.kind.value} for p in b.blocks()],
@@ -118,7 +119,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
         await self._request("PUT", "/build-plan", json=payload)
 
     async def close(self) -> None:
-        """Close the HTTP client."""
+        """HTTP クライアントを閉じる。"""
         await self._client.aclose()
 
     async def _request(self, method: str, path: str, json: Any = None) -> dict[str, Any]:

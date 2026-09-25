@@ -9,7 +9,7 @@ const { Vec3 } = vec3Pkg
 const at = (x, z) => ({ x, y: 70, z })
 const sheep = (x, z) => ({ kind: 'sheep', pos: at(x, z) })
 
-test('sightings are kept per 16x16 region with a count and when', () => {
+test('見たものは 16x16 の区画ごとに、数といつ見たかと一緒に覚える', () => {
   const m = newMemory()
   remember(m, [sheep(100, 100), sheep(101, 102), sheep(140, 100)], at(0, 0), 500)
   assert.deepEqual(m.places.sheep.map((p) => [p.region, p.count, p.seen]), [['6,6', 2, 500], ['8,6', 1, 500]])
@@ -17,21 +17,21 @@ test('sightings are kept per 16x16 region with a count and when', () => {
   assert.ok(!visited(m, at(40, 3)))
 })
 
-test('a place remembered nearby and not seen now is forgotten; far ones stay', () => {
+test('近くで覚えていた場所が今見えなければ忘れる。遠い場所は残す', () => {
   const m = newMemory()
   remember(m, [sheep(10, 10), sheep(200, 200)], at(0, 0), 0)
-  remember(m, [], at(12, 12), 100) // came back: nothing there
+  remember(m, [], at(12, 12), 100) // 戻ってきたら何もない
   assert.deepEqual(m.places.sheep.map((p) => p.region), ['12,12'])
 })
 
-test('each kind keeps the most recent places only', () => {
+test('種類ごとに一番新しい場所だけを残す', () => {
   const m = newMemory()
   for (let i = 0; i < MAX_PLACES_PER_KIND + 3; i++) remember(m, [sheep(1000 + i * 32, 0)], at(1000 + i * 32, 0), i)
   assert.equal(m.places.sheep.length, MAX_PLACES_PER_KIND)
   assert.equal(m.places.sheep[0].seen, MAX_PLACES_PER_KIND + 2)
 })
 
-test('recall: out of view, fresh, nearest first; animals go stale after a day, logs do not', () => {
+test('recall: 見えていない新しい場所を近い順に返す。動物は 1 日で古くなり、原木は古くならない', () => {
   const m = newMemory()
   remember(m, [sheep(100, 0), sheep(300, 0), { kind: 'oak_log', pos: at(0, 200) }, sheep(10, 0)], at(500, 500), 0)
   const me = at(0, 0)
@@ -40,7 +40,7 @@ test('recall: out of view, fresh, nearest first; animals go stale after a day, l
   assert.equal(recall(m, ['oak_log'], me, ANIMAL_STALE_TICKS * 5).length, 1)
 })
 
-test('the summary shows the nearest place of each kind and deaths', () => {
+test('要約には種類ごとの一番近い場所と、死んだ場所を出す', () => {
   const m = newMemory()
   remember(m, [sheep(0, -100), sheep(0, -300), { kind: 'iron_ore', pos: at(50, 0) }], at(1000, 1000), 0)
   rememberDeath(m, at(0, 40), 0)
@@ -52,10 +52,10 @@ test('the summary shows the nearest place of each kind and deaths', () => {
   assert.deepEqual(s.deaths, [{ direction: 'S', distance_m: 40, minutes_ago: 2 }])
 })
 
-test('searching offers the places remembered first, then directions not covered yet', () => {
+test('探すときは覚えている場所を先に出し、次にまだ行っていない方角を出す', () => {
   const memory = newMemory()
-  remember(memory, [sheep(0, -100)], at(0, 0), 0) // the start region is visited
-  remember(memory, [], at(24, 0), 0) // so is the one east
+  remember(memory, [sheep(0, -100)], at(0, 0), 0) // 最初の区画は行ったことがある
+  remember(memory, [], at(24, 0), 0) // 東の区画も同じ
   const bot = {
     entity: { position: new Vec3(0, 70, 0) },
     entities: {},
@@ -63,7 +63,7 @@ test('searching offers the places remembered first, then directions not covered 
     health: 20,
     food: 20,
     heldItem: null,
-    blockAt: () => null, // no light data: never dark
+    blockAt: () => null, // 明るさのデータがない: 暗いとは判定しない
     inventory: { items: () => [] }
   }
   const state = { home: null, plan: null, unreachableDrops: new Set(), memory }

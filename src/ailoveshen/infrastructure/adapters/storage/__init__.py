@@ -1,4 +1,4 @@
-"""Storage adapter implementations."""
+"""ストレージのアダプター実装。"""
 
 from __future__ import annotations
 

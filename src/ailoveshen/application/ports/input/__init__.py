@@ -1,4 +1,4 @@
-"""Input ports (use case interfaces)."""
+"""入力ポート（ユースケースのインターフェース）。"""
 
 from __future__ import annotations
 

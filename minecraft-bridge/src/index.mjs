@@ -1,20 +1,20 @@
-// Minecraft bridge: Mineflayer bot + POV mirror + HTTP API for the Python side.
+// Minecraft ブリッジ: Mineflayer のボット + 視点のミラー + Python 側のための HTTP API。
 //
 //   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}]}
-//                          -> sets the goal (400 with the reason if invalid); returns its status.
-//                             keep: what the chests keep for the mid goals (never taken out for it)
+//                          -> 目標を設定する（不正なら理由を添えて 400）。目標の状態を返す。
+//                             keep: 中目標のためにチェストに取っておくもの（この目標のために取り出さない）
 //   GET  /observe          -> { busy, observation, needs, goal: {spec, met, remaining, lines, blocked} | null,
 //                               candidates: [{id, verb, target, ...}] }
-//   POST /act {id}         -> grounds the candidates again and runs the one with this id to
-//                             completion; { ok, result, seconds }
-//   POST /check {specs: [...]} -> judges conditions (have, built, placed) without setting a goal:
-//                             [{ spec, met, lines }] (400 with the reason if one is invalid)
-//   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height, design } sets the plan to build
-//                             (design: the model's blueprint, kept with the home it becomes)
-//   GET  /build-plan       -> build status (placed/total, origin, first missing blocks)
+//   POST /act {id}         -> 候補をもう一度作り、この id の候補を終わるまで実行する。
+//                             { ok, result, seconds }
+//   POST /check {specs: [...]} -> 目標を設定せずに条件（have, built, placed）を判定する:
+//                             [{ spec, met, lines }]（1つでも不正なら理由を添えて 400）
+//   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height, design } 建てる計画を設定する
+//                             （design: モデルの設計図。できた家とともに取っておく）
+//   GET  /build-plan       -> 建築の状態（placed/total、原点、まだないブロックの先頭）
 //
-// Design: docs/design/11_primitive_actions.md
-// env: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
+// 設計: docs/design/11_primitive_actions.md
+// 環境変数: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
 
 import http from 'node:http'
 import mineflayer from 'mineflayer'
@@ -49,26 +49,26 @@ startMirror(bot)
 const state = {
   plan: null,
   home: null,
-  goal: null, // { spec, ...what the predicate keeps (start position, night seen) }
+  goal: null, // { spec, ...述語が保持するもの（開始位置、夜を見たか） }
   history: [],
-  busy: false, // an action is running
-  reflex: false, // the reflex is handling a nearby threat
-  current: null, // { id, verb, abort(reason), done } of the running action
+  busy: false, // 行動の実行中
+  reflex: false, // 反射が近くの脅威に対処中
+  current: null, // 実行中の行動の { id, verb, abort(reason), done }
   recipeBook: new RecipeBook(bot),
   unreachableDrops: new Set(),
   unreachableBlocks: new Set(),
-  memory: newMemory() // places seen before (memory.mjs), kept in state.json
+  memory: newMemory() // 前に見た場所（memory.mjs）。state.json に保存する
 }
 loadState(state)
 const knowledge = new Knowledge(minecraftData(VERSION))
 
 const worldAge = () => Number(bot.time.age)
 
-// A finished plan becomes the home; plan, home and goal survive restarts
+// 完成した計画は家になる。計画、家、目標は再起動しても残る
 function persist () {
   if (state.plan?.origin && !state.home && state.plan.status(bot).complete) {
     state.home = homeFromPlan(state.plan)
-    console.log(`[bridge] home set: door ${state.home?.door}`)
+    console.log(`[bridge] 家を設定: ドア ${state.home?.door}`)
   }
   saveState(state)
 }
@@ -81,21 +81,21 @@ function observation () {
   return summarize(bot, state.history, extra)
 }
 
-// The goal's status and the candidates, from one snapshot of the world
+// 目標の状態と候補。ワールドの1つのスナップショットから作る
 function decisionView () {
   const world = snapshot(bot, state)
   const status = state.goal ? evaluate(bot, state, knowledge, world) : null
   const { candidates, withheld } = ground(bot, state, knowledge, world, status)
-  // What the shelter rule holds back is part of why the goal does not advance
+  // 避難の規則で外したものは、目標が進まない理由の一部
   if (status && withheld) status.blocked.push(withheld)
   return { status, candidates }
 }
 
 const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)] }
 
-// Runs one candidate. It is aborted on timeout, or when the bot takes damage (a reflex: the decision
-// maker then sees the attacker and can fight or flee). Aborting cancels pathing and digging, and
-// the executor is awaited until it has really stopped, so actions never overlap.
+// 候補を1つ実行する。タイムアウトか、ボットがダメージを受けたら中断する（反射: 判断する側は
+// そのあと攻撃してきた相手を見て、戦うか逃げるかを選べる）。中断すると経路移動と採掘を取り消し、
+// 実行関数が本当に止まるまで待つので、行動が重なることはない。
 async function act (id) {
   if (state.reflex) return { ok: false, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
   const c = decisionView().candidates.find((x) => x.id === id)
@@ -114,7 +114,7 @@ async function act (id) {
   const onHurt = (entity) => {
     if (entity !== bot.entity) return
     if (DAMAGE_TOLERANT.has(c.verb)) {
-      // Fleeing goes on at any health; a fight is given up
+      // 逃走は体力にかかわらず続ける。戦いはやめる
       if (c.verb === 'attack' && bot.health <= HEALTH_CRITICAL) abort(`stopped: health critical (${round(bot.health)}/20)`)
       return
     }
@@ -142,13 +142,13 @@ async function act (id) {
     state.busy = false
     state.current = null
     finished()
-    // What came into view on the way (after moving is when it changes)
+    // 途中で見えたもの（変わるのは移動したあと）
     remember(state.memory, sightings(bot), bot.entity.position, worldAge())
     persist()
   }
   const seconds = round((Date.now() - t) / 1000)
   state.history.push({ action: id, ok, result, seconds })
-  console.log(`[act] ${id}: ${ok ? 'ok' : 'FAILED'} ${result} (${seconds}s)`)
+  console.log(`[act] ${id}: ${ok ? '成功' : '失敗'} ${result}（${seconds}秒）`)
   return { ok, result, seconds }
 }
 
@@ -182,7 +182,7 @@ async function handle (req, res) {
       return send(res, 400, { error: e.message })
     }
     persist()
-    console.log(`[bridge] goal: ${JSON.stringify(state.goal.spec)}`)
+    console.log(`[bridge] 目標: ${JSON.stringify(state.goal.spec)}`)
     return send(res, 200, publicStatus(decisionView().status))
   }
   if (req.method === 'POST' && req.url === '/check') {
@@ -210,13 +210,13 @@ async function handle (req, res) {
 }
 
 http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
-  .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] http://127.0.0.1:${BRIDGE_PORT}`))
+  .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] 待ち受け中 http://127.0.0.1:${BRIDGE_PORT}`))
 
 startReflex(bot, state, {
   async preempt (reason) {
     const current = state.current
     if (!current) return true
-    if (DAMAGE_TOLERANT.has(current.verb)) return false // already dealing with the threat
+    if (DAMAGE_TOLERANT.has(current.verb)) return false // すでに脅威に対処している
     current.abort(reason)
     await current.done
     return true
@@ -227,20 +227,20 @@ startReflex(bot, state, {
 bot.on('death', () => {
   rememberDeath(state.memory, bot.entity.position, worldAge())
   persist()
-  console.log(`[bot] died at ${bot.entity.position}`)
+  console.log(`[bot] ${bot.entity.position} で死んだ`)
 })
 
 bot.once('spawn', () => {
   configureMovements(bot, state)
-  console.log(`[bot] spawned at ${bot.entity.position}`)
+  console.log(`[bot] ${bot.entity.position} にスポーンした`)
 })
-// Every dig start, including those the pathfinder makes to clear its way
+// 採掘の開始をすべて記録する。pathfinder が道を開けるために掘るものも含む
 let lastDig = null
 bot.on('physicsTick', () => {
   const t = bot.targetDigBlock
-  if (t && t !== lastDig) console.log(`[bot] digging ${t.name} at ${t.position}`)
+  if (t && t !== lastDig) console.log(`[bot] ${t.position} の ${t.name} を掘る`)
   lastDig = t
 })
-bot.on('death', () => { console.log('[bot] died'); state.history.push({ action: 'event', ok: false, result: 'died', seconds: 0 }) })
-bot.on('kicked', (r) => console.log('[bot] kicked', JSON.stringify(r)))
-bot.on('error', (e) => console.log('[bot] error', e.message))
+bot.on('death', () => { console.log('[bot] 死んだ'); state.history.push({ action: 'event', ok: false, result: 'died', seconds: 0 }) })
+bot.on('kicked', (r) => console.log('[bot] キックされた', JSON.stringify(r)))
+bot.on('error', (e) => console.log('[bot] エラー', e.message))

@@ -1,14 +1,13 @@
-"""Live check of the goal hierarchy (docs/design/13 §9): real Gemini and bridge, scripted chat.
+"""目標の階層の実機確認（docs/design/13 §9）: 本物の Gemini とブリッジに、台本のチャットを送る。
 
-- spam: one viewer asks the same thing 5 times (at most one mid goal, the small goal goes on)
-- unrelated to the mission, and a hijack attempt (the mission, the current mid goal and the small
-  goal stay)
-- a request accepted "for later" (the reply says when; it sits behind the current mid goal)
-- "what are you doing?" (matches the hierarchy)
-Then one goal decision with all this in the conversation, to see the edits Gemini makes.
+- スパム: 1 人の視聴者が同じことを 5 回頼む（中目標は多くても 1 つ、小目標は続く）
+- ミッションと関係のない頼みと、乗っ取りの試み（ミッション、今の中目標、小目標は変わらない）
+- 「あとで」と引き受けた頼み（返事でいつやるかを言い、今の中目標の後ろに入る）
+- 「今なにしてるの？」（答えが階層と合う）
+最後に、ここまでの会話を踏まえて目標を 1 回決め、Gemini が中目標をどう編集するかを見る。
 
-The mid goals are kept in a scratch file, not data/mission.json. Interventions: tp into the
-house and time set (said when run); none are used in autonomous runs.
+中目標は data/mission.json ではなく一時ファイルに置く。介入: 家の中への tp と時刻の設定
+（実行時に表示する）。自律実行ではどちらも使わない。
 """
 
 import asyncio
@@ -44,7 +43,7 @@ OTHERS = [
 
 
 def rcon(cmd: str) -> None:
-    print(f"  (intervention) {cmd}")
+    print(f"  （介入） {cmd}")
     subprocess.run(["docker", "exec", "ailoveshen-minecraft", "rcon-cli", cmd], capture_output=True)
 
 
@@ -64,7 +63,7 @@ async def main() -> None:
     llm = create_llm_service(
         s.gemini, s.character, bus, conversation=conversation, mid_goals=game.mid_goals
     )
-    bridge = game._bridge  # the same client the play loop uses
+    bridge = game._bridge  # プレイのループと同じクライアント
 
     async def say(text: str) -> None:
         print(f"  [say] {text}")
@@ -79,7 +78,7 @@ async def main() -> None:
         print(f"  [mid×] {e.title}: {e.reason}")
 
     async def on_goal(e: GoalSetEvent) -> None:
-        print(f"  [goal] {e.goal} for={e.mid_goal or 'survival'}: {e.reason}")
+        print(f"  [goal] {e.goal} for={e.mid_goal or '生存'}: {e.reason}")
 
     for event_type, handler in (
         (MidGoalAddedEvent, on_added),
@@ -92,48 +91,48 @@ async def main() -> None:
     plan = create_mid_goal_plan(s.minecraft.mission)
     blueprint = HouseBlueprint("ぽかぽかログハウス", "木の家", 5, 5, 3, Side.SOUTH, 2)
     session = PlaySession(blueprint=blueprint, plan=plan)
-    session.completion_announced = True  # the house was finished in an earlier run
+    session.completion_announced = True  # 家は前の実行で完成している
     narrator = Narrator(llm, activity=session.activity, say=say)
     narrator.subscribe(bus)
 
     rcon("tp AILoveShen 408.5 72 -270.5")
     rcon("time set 3000")
-    await game.mid_goals.judge(plan)  # the house already stands
+    await game.mid_goals.judge(plan)  # 家はもう建っている
     current = plan.current
     spec = GoalSpec(GoalPredicate.HAVE, item="log", count=3)
     await bridge.set_goal(spec)
     session.set_goal(Goal(spec, reason="材料の原木を集める", mid_goal_id=current.id), "day")
     session.observe(await bridge.observe())
-    print(f"mid goals: {show_plan(session)}")
-    print(f"small goal: {session.goal.spec.describe()} for {current.title}")
+    print(f"中目標: {show_plan(session)}")
+    print(f"小目標: {session.goal.spec.describe()}（{current.title} のため）")
 
     async def ask(user: str, message: str) -> None:
         before = len(plan.pending)
         t = time.monotonic()
         reply = await llm.generate_response(user, message, session=session)
-        added = "accepted" if len(plan.pending) > before else "-"
+        added = "引き受けた" if len(plan.pending) > before else "-"
         print(f"[{user}] {message}\n  ({time.monotonic() - t:.1f}s, {added}) {reply}")
 
-    print("\n=== spam ===")
+    print("\n=== スパム ===")
     for user, message in SPAM:
         await ask(user, message)
-    print("\n=== others ===")
+    print("\n=== そのほか ===")
     for user, message in OTHERS:
         await ask(user, message)
 
-    print(f"\nmid goals: {show_plan(session)}")
-    print(f"mission: {plan.mission.text}")
-    print(f"small goal: {session.goal.spec.describe()} (unchanged: {session.goal.spec == spec})")
-    print(f"current mid goal unchanged: {plan.current.id == current.id}")
+    print(f"\n中目標: {show_plan(session)}")
+    print(f"ミッション: {plan.mission.text}")
+    print(f"小目標: {session.goal.spec.describe()}（変わっていない: {session.goal.spec == spec}）")
+    print(f"今の中目標は変わっていない: {plan.current.id == current.id}")
 
-    print("\n=== one goal decision with all this said ===")
+    print("\n=== ここまでの発言を踏まえて目標を 1 回決める ===")
     session.end_goal("live check: decide again with the comments in the conversation", met=False)
     session.goal = None
     advance: AdvancePlayUseCase = game._advance
     report = await advance.execute(session)
-    print(f"mid goals: {show_plan(session)}")
+    print(f"中目標: {show_plan(session)}")
     print(
-        f"goal now: {session.goal.spec.describe()} mid={session.goal.mid_goal_id} "
+        f"今の目標: {session.goal.spec.describe()} mid={session.goal.mid_goal_id} "
         f"action={report.decision.action_id if report.decision else None}"
     )
     await narrator.drain()

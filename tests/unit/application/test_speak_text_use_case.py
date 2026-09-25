@@ -1,4 +1,4 @@
-"""Tests for SpeakTextUseCase."""
+"""SpeakTextUseCase のテスト。"""
 
 import asyncio
 from unittest.mock import AsyncMock, Mock
@@ -13,7 +13,7 @@ from ailoveshen.domain.events import SpeechCompletedEvent, SpeechStartedEvent
 
 @pytest.fixture
 def mock_synthesizer():
-    """Create mock synthesizer."""
+    """音声合成のモック。"""
     synthesizer = AsyncMock()
     synthesizer.synthesize.return_value = b"fake_audio_data"
     return synthesizer
@@ -21,10 +21,10 @@ def mock_synthesizer():
 
 @pytest.fixture
 def mock_audio_player():
-    """Create mock audio player."""
+    """音声再生のモック。"""
     player = AsyncMock()
     player.play.return_value = True
-    # These are sync methods, use Mock not AsyncMock
+    # 同期メソッドなので AsyncMock でなく Mock を使う
     player.is_playing = Mock(return_value=False)
     player.get_duration_ms = Mock(return_value=1000)
     player.stop = Mock()
@@ -33,13 +33,13 @@ def mock_audio_player():
 
 @pytest.fixture
 def mock_event_publisher():
-    """Create mock event publisher."""
+    """イベント発行のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def neutral_emotion_provider():
-    """Create neutral emotion provider."""
+    """neutral の感情を返すプロバイダ。"""
     return lambda: EmotionState(primary=EmotionType.NEUTRAL, intensity=0.5)
 
 
@@ -50,7 +50,7 @@ def use_case(
     mock_event_publisher,
     neutral_emotion_provider,
 ):
-    """Create SpeakTextUseCase with mocked dependencies."""
+    """依存をモックにした SpeakTextUseCase。"""
     return SpeakTextUseCase(
         synthesizer=mock_synthesizer,
         audio_player=mock_audio_player,
@@ -60,13 +60,11 @@ def use_case(
 
 
 class TestSpeakTextUseCase:
-    """Tests for SpeakTextUseCase."""
+    """SpeakTextUseCase のテスト。"""
 
     @pytest.mark.asyncio
-    async def test_execute_successful_speech(
-        self, use_case, mock_synthesizer, mock_audio_player
-    ):
-        """Test successful speech synthesis and playback."""
+    async def test_execute_successful_speech(self, use_case, mock_synthesizer, mock_audio_player):
+        """音声を合成して再生できる。"""
         request = SpeakTextRequest(text="Hello world")
 
         response = await use_case.execute(request)
@@ -78,7 +76,7 @@ class TestSpeakTextUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_empty_text_returns_error(self, use_case):
-        """Test empty text returns error response."""
+        """テキストが空ならエラーの応答を返す。"""
         request = SpeakTextRequest(text="")
 
         response = await use_case.execute(request)
@@ -88,7 +86,7 @@ class TestSpeakTextUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_whitespace_text_returns_error(self, use_case):
-        """Test whitespace-only text returns error response."""
+        """空白だけのテキストならエラーの応答を返す。"""
         request = SpeakTextRequest(text="   ")
 
         response = await use_case.execute(request)
@@ -103,7 +101,7 @@ class TestSpeakTextUseCase:
         mock_audio_player,
         mock_event_publisher,
     ):
-        """Test that current emotion is used when no emotion specified."""
+        """感情の指定がなければ、今の感情を使う。"""
         happy_emotion = lambda: EmotionState(primary=EmotionType.HAPPY, intensity=0.8)
 
         use_case = SpeakTextUseCase(
@@ -122,7 +120,7 @@ class TestSpeakTextUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_uses_override_emotion(self, use_case, mock_synthesizer):
-        """Test that override emotion is used when specified."""
+        """感情を指定したら、その感情を使う。"""
         sad = EmotionState(primary=EmotionType.SAD, intensity=0.7)
         request = SpeakTextRequest(text="Hello", emotion=sad)
 
@@ -133,12 +131,12 @@ class TestSpeakTextUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_publishes_started_event(self, use_case, mock_event_publisher):
-        """Test that SpeechStartedEvent is published."""
+        """SpeechStartedEvent が発行される。"""
         request = SpeakTextRequest(text="Hello", source="test")
 
         await use_case.execute(request)
 
-        # Check that publish was called with SpeechStartedEvent
+        # SpeechStartedEvent で publish が呼ばれたか
         calls = mock_event_publisher.publish.call_args_list
         started_events = [c for c in calls if isinstance(c[0][0], SpeechStartedEvent)]
         assert len(started_events) == 1
@@ -146,19 +144,15 @@ class TestSpeakTextUseCase:
         assert started_events[0][0][0].source == "test"
 
     @pytest.mark.asyncio
-    async def test_execute_publishes_completed_event(
-        self, use_case, mock_event_publisher
-    ):
-        """Test that SpeechCompletedEvent is published."""
+    async def test_execute_publishes_completed_event(self, use_case, mock_event_publisher):
+        """SpeechCompletedEvent が発行される。"""
         request = SpeakTextRequest(text="Hello", source="test")
 
         await use_case.execute(request)
 
-        # Check that publish was called with SpeechCompletedEvent
+        # SpeechCompletedEvent で publish が呼ばれたか
         calls = mock_event_publisher.publish.call_args_list
-        completed_events = [
-            c for c in calls if isinstance(c[0][0], SpeechCompletedEvent)
-        ]
+        completed_events = [c for c in calls if isinstance(c[0][0], SpeechCompletedEvent)]
         assert len(completed_events) == 1
         assert completed_events[0][0][0].text == "Hello"
         assert completed_events[0][0][0].completed is True
@@ -167,8 +161,8 @@ class TestSpeakTextUseCase:
     async def test_execute_interrupted_speech(
         self, use_case, mock_audio_player, mock_event_publisher
     ):
-        """Test interrupted speech publishes correct event."""
-        mock_audio_player.play.return_value = False  # Indicates interrupted
+        """中断した発話は、それに合ったイベントを発行する。"""
+        mock_audio_player.play.return_value = False  # 中断を表す
 
         request = SpeakTextRequest(text="Hello")
         response = await use_case.execute(request)
@@ -176,11 +170,9 @@ class TestSpeakTextUseCase:
         assert response.success is True
         assert "interrupted" in response.message.lower()
 
-        # Check completed event shows not completed
+        # 完了イベントが未完了を示すか
         calls = mock_event_publisher.publish.call_args_list
-        completed_events = [
-            c for c in calls if isinstance(c[0][0], SpeechCompletedEvent)
-        ]
+        completed_events = [c for c in calls if isinstance(c[0][0], SpeechCompletedEvent)]
         assert completed_events[0][0][0].completed is False
 
     @pytest.mark.asyncio
@@ -191,7 +183,7 @@ class TestSpeakTextUseCase:
         mock_event_publisher,
         neutral_emotion_provider,
     ):
-        """Test interrupt priority stops current playback."""
+        """interrupt の優先度は、今の再生を止める。"""
         mock_audio_player.is_playing.return_value = True
 
         use_case = SpeakTextUseCase(
@@ -208,7 +200,7 @@ class TestSpeakTextUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_handles_synthesis_error(self, use_case, mock_synthesizer):
-        """Test error handling when synthesis fails."""
+        """合成に失敗したときの扱い。"""
         mock_synthesizer.synthesize.side_effect = Exception("Synthesis failed")
 
         request = SpeakTextRequest(text="Hello")
@@ -218,7 +210,7 @@ class TestSpeakTextUseCase:
         assert "Synthesis failed" in response.error
 
     def test_is_speaking(self, use_case, mock_audio_player):
-        """Test is_speaking delegates to audio player."""
+        """is_speaking は音声再生に委ねる。"""
         mock_audio_player.is_playing.return_value = True
         assert use_case.is_speaking() is True
 
@@ -226,6 +218,6 @@ class TestSpeakTextUseCase:
         assert use_case.is_speaking() is False
 
     def test_request_interrupt(self, use_case, mock_audio_player):
-        """Test request_interrupt stops playback."""
+        """request_interrupt は再生を止める。"""
         use_case.request_interrupt()
         mock_audio_player.stop.assert_called()

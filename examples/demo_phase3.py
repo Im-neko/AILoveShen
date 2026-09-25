@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Phase 3 Demo: LLM Conversation
+Phase 3 デモ: LLM の会話
 
-This demo showcases the LLM conversation pipeline implemented in Phase 3.
-It demonstrates:
-- Domain layer: Conversation, ConversationMessage, CharacterProfile, events
-- Application layer: GenerateCommentaryUseCase, GenerateResponseUseCase
-- Infrastructure layer: PromptTemplateBuilder (real), text generator (fake)
-- Presentation layer: LLMService
+Phase 3 で実装した LLM の会話パイプラインを動かす。
+見せるもの:
+- ドメイン層: Conversation、ConversationMessage、CharacterProfile、イベント
+- アプリケーション層: GenerateCommentaryUseCase、GenerateResponseUseCase
+- インフラ層: PromptTemplateBuilder（本物）、テキスト生成（偽物）
+- プレゼンテーション層: LLMService
 
-Note: This demo uses a fake text generator and needs no Gemini API key.
-For the real Gemini API, see examples/integration_test_llm.py.
+注: テキスト生成は偽物を使うので、Gemini の API キーは要らない。
+本物の Gemini API は examples/integration_test_llm.py を使う。
 """
 
 from __future__ import annotations
@@ -32,14 +32,14 @@ from ailoveshen.presentation.services.llm_service import LLMService
 
 
 def print_header(title: str) -> None:
-    """Print a formatted section header."""
+    """整形したセクション見出しを表示する。"""
     print(f"\n{'=' * 60}")
     print(f"  {title}")
     print(f"{'=' * 60}\n")
 
 
 class FakeTextGenerator(ITextGenerator):
-    """Text generator that returns canned replies and remembers the last prompt."""
+    """決まった返事を返し、最後のプロンプトを覚えておくテキスト生成。"""
 
     def __init__(self) -> None:
         self.last_prompt = ""
@@ -60,16 +60,16 @@ class FakeTextGenerator(ITextGenerator):
     async def generate_json(
         self, prompt: str, schema: dict[str, Any], system_instruction: Optional[str] = None
     ) -> dict[str, Any]:
-        raise NotImplementedError("the conversation demo uses plain text only")
+        raise NotImplementedError("会話のデモはプレーンテキストしか使わない")
 
     async def close(self) -> None:
         pass
 
 
 async def main() -> None:
-    """Run the demo."""
+    """デモを実行する。"""
     print("\n" + "=" * 60)
-    print("  AILoveShen Phase 3: LLM Conversation Demo")
+    print("  AILoveShen Phase 3: LLM の会話のデモ")
     print("=" * 60)
 
     event_bus = AsyncEventBus()
@@ -84,7 +84,7 @@ async def main() -> None:
     event_bus.subscribe(CommentaryGeneratedEvent, on_commentary)
     event_bus.subscribe(ChatResponseGeneratedEvent, on_response)
 
-    # Wire the same way as factories/llm.py, but with a fake generator
+    # factories/llm.py と同じように組み立てる（テキスト生成だけ偽物）
     generator = FakeTextGenerator()
     prompt_builder = PromptTemplateBuilder()
     conversation = Conversation()
@@ -99,37 +99,37 @@ async def main() -> None:
         text_generator=generator,
     )
 
-    print_header("Commentary (Main Loop)")
+    print_header("実況（メインループ）")
     service.update_emotion(EmotionState(EmotionType.EXCITED, 0.8))
     text = await service.generate_commentary(recent_events=["洞窟を見つけた"])
-    print(f"Commentary: {text}")
+    print(f"実況: {text}")
 
-    print_header("Chat Response (Sub Loop)")
+    print_header("チャットへの返事（サブループ）")
     text = await service.generate_response("neko", "がんばれー！", user_id="42")
-    print(f"Response: {text}")
+    print(f"返事: {text}")
 
-    print_header("Commentary with History")
+    print_header("履歴のある実況")
     service.update_emotion(EmotionState(EmotionType.SCARED, 0.6))
     text = await service.generate_commentary(recent_events=["ゾンビに遭遇", "ゾンビを倒した"])
-    print(f"Commentary: {text}")
-    print("\nPrompt sent to the model:")
+    print(f"実況: {text}")
+    print("\nモデルに送ったプロンプト:")
     print(generator.last_prompt)
 
-    print_header("System Instruction")
+    print_header("システム指示")
     print(generator.last_system_instruction)
 
     await asyncio.sleep(0.1)
-    print_header("Events Received")
+    print_header("受け取ったイベント")
     for event in events:
         print(f"  - {event}")
 
-    print_header("Conversation History")
+    print_header("会話の履歴")
     for message in conversation:
-        speaker = message.speaker_name or "streamer"
+        speaker = message.speaker_name or "配信者"
         print(f"  [{message.message_type.value}] {speaker}: {message.content}")
 
     await service.close()
-    print_header("Demo Complete")
+    print_header("デモ完了")
 
 
 if __name__ == "__main__":

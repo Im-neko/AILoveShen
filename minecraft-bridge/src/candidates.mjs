@@ -1,15 +1,14 @@
-// Candidates: concrete primitive actions the selector may pick from, grounded in the world.
+// 候補: 選ぶ側が選べる、ワールドに即した具体的なプリミティブの行動。
 //
-// They come from the goal's leaves (what advances it now) and from the body's needs (threats,
-// hunger, a weapon, drops nearby, a hole in the wall), plus waiting. Safety is enforced here, not
-// left to the selector: while sheltering in the house (at night, or with a hostile at the door)
-// nothing outside is offered. The selector did pick "go dig a log outside" at night in 5 of 9 trials.
-// What is held back is reported (it is why the goal does not advance), and by day there are ways
-// out: fighting what waits at the door (the cleared goal) or digging an exit through another wall.
-// Without them the bot stayed inside all morning while skeletons stood near the door.
+// 目標の末端（いま目標を進めるもの）と体の欲求（脅威、空腹、武器、近くのドロップ、壁の穴）から
+// 作り、待つことも加える。安全はここで守り、選ぶ側には任せない: 家に避難している間（夜、または
+// ドアの前に敵対モブがいるとき）は外での行動を出さない。選ぶ側は、夜に「外で原木を掘りに行く」を
+// 9回中5回選んだ。外したものは報告し（目標が進まない理由になる）、昼には出る方法を用意する:
+// ドアの前で待つものと戦う（cleared の目標）か、別の壁を掘って出口にする。これがないと、
+// スケルトンがドアの近くに立っている間、ボットは朝のあいだずっと中にいた。
 //
-// A candidate id names its target (a position or an entity id) so it stays the same until the
-// next /act, which grounds the candidates again and runs the one with that id.
+// 候補の id は対象（位置かエンティティの id）を名指しするので、次の /act まで変わらない。/act は
+// 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
@@ -23,15 +22,15 @@ const DROP_RADIUS = 16
 const DROPS_OFFERED = 3
 const THREATS_OFFERED = 2
 const EXPLORE_DIRECTIONS = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] }
-// Eaten only when starving and nothing better is held: 4 hunger points against a likely short
-// Hunger effect (frun2: it held rotten flesh and starved)
+// 飢えていて、ほかによい食料を持っていないときだけ食べる: 満腹度 4 と引き換えに、たいてい短い
+// 空腹の効果を受ける（frun2: 腐った肉を持ったまま飢えた）
 const LAST_RESORT_FOOD = ['rotten_flesh']
 
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 const dist = (bot, p) => round(bot.entity.position.distanceTo(p))
 
-// { candidates, withheld }: withheld says what was held back (the shelter rule, a station with no
-// room here), if anything
+// { candidates, withheld }: withheld は外したものがあればその内容（避難の規則、ここに置く場所が
+// ない作業台やかまど）
 export function ground (bot, state, knowledge, world, status) {
   const out = []
   for (const leaf of status?.leaves ?? []) out.push(...fromLeaf(bot, state, world, leaf))
@@ -41,7 +40,7 @@ export function ground (bot, state, knowledge, world, status) {
   const day = dayPhase(bot.time.timeOfDay) === 'day'
   const danger = dangerOutside(bot, home)
   const sheltering = inside && (!day || danger.length > 0)
-  // The first of a kind wins: a goal's candidate carries what the goal allows (confront)
+  // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている
   const unique = [...out.reduce((m, c) => m.has(c.id) ? m : m.set(c.id, c), new Map()).values()]
   const safe = sheltering ? unique.filter((c) => c.confront || !needsOutside(c, home)) : unique
   const held = unique.length - safe.length
@@ -56,9 +55,9 @@ export function ground (bot, state, knowledge, world, status) {
       }
     }
   }
-  // Waiting is offered for what the time changes (healing, the morning, a mob burning in the sun),
-  // or when nothing else can be done. Offered without a purpose, the selector waited inside while
-  // nothing changed: 9 steps in a row by day, and 6 of 6 times with husks at the door and full health.
+  // 待つことは、時間が変えるもの（回復、朝、日光で燃えるモブ）のためか、ほかに何もできないときに
+  // 出す。目的なしに出すと、選ぶ側は何も変わらないのに中で待った: 昼に9ステップ続けて、また
+  // ドアの前にハスクがいて体力が満タンのとき6回中6回。
   const station = (status?.leaves ?? []).find((l) => l.kind === 'place')
   if (station && !stationSpot(bot, state)) {
     const room = `no room here to place the ${station.item}: move to flat open ground`
@@ -71,7 +70,7 @@ export function ground (bot, state, knowledge, world, status) {
   return { candidates: safe, withheld }
 }
 
-// Natural regeneration needs a nearly full hunger bar
+// 自然回復には満腹度がほぼ満タンである必要がある
 const REGEN_FOOD = 18
 const MAX_HEALTH = 20
 
@@ -85,8 +84,8 @@ function waitsInside (bot, danger) {
   return out
 }
 
-// Whether running the candidate takes the bot out of the house (it then leaves through the door
-// first). Candidates without a position act around the bot outside (exploring, placing a table).
+// 候補を実行するとボットが家の外に出るか（その場合は先にドアから出る）。位置のない候補は、
+// 外でボットのまわりに対して行う（探索、作業台を置く）。
 export function needsOutside (c, home) {
   if (c.inPlace) return false
   return !c.pos || !isInside({ entity: { position: c.pos } }, home)
@@ -105,7 +104,7 @@ function fromLeaf (bot, state, world, leaf) {
     case 'explore': {
       const lookingFor = leaf.sources.length ? leaf.sources.join('/') : leaf.item
       const me = bot.entity.position
-      // Where it was seen before comes first; then directions, marking ground already covered
+      // 前に見た場所を先に出す。次に方角を、すでに行った場所には印をつけて出す
       const recalled = state.memory
         ? recall(state.memory, leaf.sources, me, Number(bot.time.age)).map((p) => ({
           id: `go to ${p.kind} seen at ${p.x},${p.z}`, verb: 'goto_memory', target: p.kind, pos: new Vec3(p.x, p.y, p.z),
@@ -129,13 +128,13 @@ function fromLeaf (bot, state, world, leaf) {
       }]
     }
     case 'place':
-      // Offered only where it can be placed (it was chosen again and again where nothing fit)
+      // 置ける場所でだけ出す（何も置けない場所で何度も選ばれた）
       return stationSpot(bot, state) ? [{ id: `place ${leaf.item} nearby`, verb: 'place_station', target: leaf.item, item: leaf.item }] : []
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {
       if (!leaf.count) {
-        // Where it was left to smelt, however far (the solver counted it as coming from there)
+        // 精錬に置いてきた場所。どれだけ遠くても出す（ソルバーはそこから来るものとして数えた）
         const f = state.memory && furnaceWith(state.memory, leaf.item, bot.entity.position)
         if (!f) return []
         const pos = new Vec3(f.x, f.y, f.z)
@@ -176,8 +175,8 @@ function fromLeaf (bot, state, world, leaf) {
     case 'go_home':
       return [{ id: 'go home', verb: 'go_home', target: 'home', inPlace: true, distance: dist(bot, state.home.inside) }]
     case 'clear': {
-      // Armed or not: the selector weighs it against the other ways (the health it sees, waiting,
-      // an exit through the wall); a fight stops at critical health
+      // 武器があってもなくても出す: 選ぶ側がほかの方法（見えている体力、待つ、壁を掘った出口）と
+      // 比べる。戦いは体力が危険になったら止まる
       const weapon = bestWeapon(bot)?.name ?? 'none (fist)'
       return leaf.mobs.map((e) => ({
         id: `attack ${e.name} #${e.id}`, verb: 'attack', target: e.name, distance: dist(bot, e.position), pos: e.position, entityId: e.id,
@@ -199,7 +198,7 @@ function forNeeds (bot, state, knowledge) {
     out.push({ id: `flee from ${e.name} #${e.id}`, verb: 'flee', target: e.name, distance: round(dist), entityId: e.id, inPlace: false, pos: e.position })
   }
   if (bot.food < 20) {
-    // Only what the food goals count as food: rotten flesh and the like do harm
+    // 食料の目標が食料と数えるものだけ: 腐った肉などは害がある
     const edible = new Set(knowledge.resolve('food').members)
     const foods = bot.inventory.items().filter((i) => edible.has(i.name))
     const best = foods.sort((a, b) => bot.registry.foodsByName[b.name].foodPoints - bot.registry.foodsByName[a.name].foodPoints)[0]
@@ -207,7 +206,7 @@ function forNeeds (bot, state, knowledge) {
     const eat = best ?? lastResort
     if (eat) out.push({ id: `eat ${eat.name}`, verb: 'eat', target: eat.name, item: eat.name, inPlace: true })
   }
-  // Raw meat is cooked where a furnace is at hand, whatever the goal (2.7 times the hunger back)
+  // 近くにかまどがあれば、目標に関係なく生肉を焼く（回復する満腹度が 2.7 倍）
   const cook = cooking(bot, knowledge)
   if (cook) {
     const pos = cook.furnace.position
@@ -217,14 +216,14 @@ function forNeeds (bot, state, knowledge) {
   out.push(...storeSpare(bot, state, knowledge))
   const weapon = bestWeapon(bot)
   if (weapon && bot.heldItem?.name !== weapon.name) out.push({ id: `equip ${weapon.name}`, verb: 'equip', target: weapon.name, item: weapon.name, inPlace: true })
-  // A fight given up at critical health (e.g. for cleared) needs a way back whatever the goal. Only
-  // with danger around: healing needs food, not the house, so by day with no threat the search for
-  // food goes on (going home each step kept the bot from ever finding any, frun3 and after)
+  // 体力が危険になってやめた戦い（cleared など）には、目標に関係なく帰る道が要る。まわりに危険が
+  // あるときだけ: 回復に要るのは家ではなく食料なので、昼に脅威がなければ食料探しを続ける
+  // （ステップごとに家に帰ると、いつまでも食料を見つけられなかった。frun3 以降）
   const danger = reachableThreats(bot, state).length > 0 || dayPhase(bot.time.timeOfDay) !== 'day'
   if (state.home && bot.health <= HEALTH_CRITICAL && danger && !isInside(bot, state.home)) {
     out.push({ id: 'go home', verb: 'go_home', target: 'home', inPlace: true, distance: dist(bot, state.home.inside) })
   }
-  // Lighting the dark keeps mobs from spawning; once lit, it is offered again only farther on
+  // 暗い場所を照らすとモブが湧かなくなる。一度照らしたら、もっと先に行くまで再び出さない
   if (isDark(bot) && bot.inventory.items().some((i) => i.name === 'torch') && torchSpot(bot)) {
     out.push({ id: 'place a torch here', verb: 'place_torch', target: 'torch', inPlace: true })
   }
@@ -243,7 +242,7 @@ function awayFrom (bot, start, dx, dz) {
   return Math.hypot(vx, vz) < 1 || vx * dx + vz * dz >= 0
 }
 
-// Putting an item in the nearest chest (the house's)
+// 一番近いチェスト（家のもの）にアイテムを入れる
 function toChest (bot, state, item, count) {
   const chest = state.memory && chests(state.memory).sort((a, b) => dist(bot, new Vec3(a.x, a.y, a.z)) - dist(bot, new Vec3(b.x, b.y, b.z)))[0]
   if (!chest) return []
@@ -251,7 +250,7 @@ function toChest (bot, state, item, count) {
   return [{ id: `put ${count} ${item} in the chest at ${fmt(pos)}`, verb: 'deposit', target: item, item, count, pos, distance: dist(bot, pos) }]
 }
 
-// A full inventory in the house: the biggest stacks the goal does not need can go in the chest
+// 家の中でインベントリがいっぱい: 目標に要らない一番大きいスタックをチェストに入れてよい
 const FREE_SLOTS_WANTED = 8
 const STORE_OFFERED = 3
 const TOOL = /_(sword|pickaxe|axe|shovel|hoe)$/
@@ -272,7 +271,7 @@ function storeSpare (bot, state, knowledge) {
     .flatMap(([name, n]) => toChest(bot, state, name, n))
 }
 
-// What the selector sees of a candidate (no positions objects or entity references)
+// 選ぶ側に見せる候補の中身（位置のオブジェクトやエンティティの参照は除く）
 export function describe (c) {
   const { id, pos, entityId, inPlace, inside, dx, dz, block, needsTable, item, spot, confront, ...rest } = c
   return rest

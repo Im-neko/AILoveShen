@@ -1,4 +1,4 @@
-"""Game agent factory (Composition Root)."""
+"""ゲームのエージェントのファクトリー（Composition Root）。"""
 
 from __future__ import annotations
 
@@ -31,10 +31,10 @@ from ailoveshen.presentation.services.game_service import GameService
 
 def create_mid_goal_plan(settings: MissionSettings) -> MidGoalPlan:
     """
-    The mission with its first mid goals and limits, from the configuration.
+    設定から、最初の中目標と上限を持つ大目標を作る。
 
     Raises:
-        ValueError: If a mid goal or a limit in the configuration is invalid
+        ValueError: 設定の中目標か上限が不正なとき
     """
     plan = MidGoalPlan(
         mission=Mission(text=settings.text),
@@ -60,27 +60,27 @@ def create_game_service(
     conversation: Conversation,
 ) -> GameService:
     """
-    Create the game agent service with all dependencies wired up.
+    依存をすべてつないだゲームのエージェントのサービスを作る。
 
-    Gemini (main slot) designs the house and sets goals, the Mineflayer
-    bridge sidecar judges them and grounds the candidates, Jev picks each one.
-    The mission and its mid goals come from settings.minecraft.mission and
-    carry on across restarts (JSON at its store_path).
+    Gemini（main の枠）が家を設計して目標を決め、Mineflayer のブリッジ
+    （サイドカー）が目標を判定して候補を具体化し、Jev が候補を 1つずつ選ぶ。
+    大目標とその中目標は settings.minecraft.mission から取り、再起動をまたいで
+    引き継ぐ（store_path の JSON）。
 
     Args:
-        gemini: Gemini settings (settings.gemini)
-        jev: Jev settings (settings.jev)
-        minecraft: Bridge and agent settings (settings.minecraft)
-        character: Character settings (settings.character)
-        event_publisher: Event publisher for domain events
-        conversation: What is said on stream (shared with create_llm_service): the goal
-            decision reads it so goals do not contradict what was said
+        gemini: Gemini の設定（settings.gemini）
+        jev: Jev の設定（settings.jev）
+        minecraft: ブリッジとエージェントの設定（settings.minecraft）
+        character: キャラクターの設定（settings.character）
+        event_publisher: ドメインイベントの発行先
+        conversation: 配信で話したこと（create_llm_service と共有する）。目標の決定が
+            これを読み、話したことと食い違う目標を立てないようにする
 
     Returns:
-        Configured GameService
+        設定済みの GameService
 
     Raises:
-        ValueError: If an API key is missing or thinking_level is unsupported
+        ValueError: API キーがないか、thinking_level に対応していないとき
 
     Example:
         ```python

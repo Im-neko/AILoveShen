@@ -1,4 +1,4 @@
-"""Text generator output port."""
+"""テキスト生成の出力ポート。"""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from typing import Any, Optional
 
 class ITextGenerator(ABC):
     """
-    Output port for LLM text generation.
+    LLM のテキスト生成の出力ポート。
 
-    This interface is defined in the Application layer.
-    Infrastructure adapters implement this interface.
+    このインターフェースはアプリケーション層で定義する。
+    インフラ層のアダプターがこれを実装する。
     """
 
     @abstractmethod
@@ -21,18 +21,18 @@ class ITextGenerator(ABC):
         system_instruction: Optional[str] = None,
     ) -> str:
         """
-        Generate text from a prompt.
+        プロンプトからテキストを生成する。
 
         Args:
-            prompt: User prompt
-            system_instruction: System instruction (character context)
+            prompt: ユーザーのプロンプト
+            system_instruction: システム指示（キャラクターの前提）
 
         Returns:
-            Generated text. Empty string if the model returned no usable text
-            (e.g., blocked content).
+            生成したテキスト。モデルが使えるテキストを返さなかったとき（ブロックされた
+            など）は空文字列。
 
         Raises:
-            TextGenerationError: If generation fails
+            TextGenerationError: 生成に失敗したとき
         """
         ...
 
@@ -44,26 +44,26 @@ class ITextGenerator(ABC):
         system_instruction: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Generate a JSON object that conforms to a schema.
+        スキーマに従う JSON オブジェクトを生成する。
 
         Args:
-            prompt: User prompt
-            schema: JSON Schema of the expected object (plain dict, model-independent)
-            system_instruction: System instruction (character context)
+            prompt: ユーザーのプロンプト
+            schema: 期待するオブジェクトの JSON Schema（ただの dict。モデルに依存しない）
+            system_instruction: システム指示（キャラクターの前提）
 
         Returns:
-            The parsed JSON object.
+            パースした JSON オブジェクト。
 
         Raises:
-            TextGenerationError: If generation fails or the output is not a JSON object
+            TextGenerationError: 生成に失敗したか、出力が JSON オブジェクトでないとき
         """
         ...
 
     @abstractmethod
     async def close(self) -> None:
         """
-        Release resources held by the generator.
+        生成器が持つリソースを解放する。
 
-        Should be called during cleanup.
+        後始末のときに呼ぶ。
         """
         ...

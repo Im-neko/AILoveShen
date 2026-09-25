@@ -1,1 +1,1 @@
-"""Web presentation: the goal board for the stream overlay (extra: ailoveshen[stream])."""
+"""Web のプレゼンテーション: 配信オーバーレイ用の目標ボード（extra: ailoveshen[stream]）。"""

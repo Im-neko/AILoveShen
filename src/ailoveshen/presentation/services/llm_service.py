@@ -1,4 +1,4 @@
-"""LLM service for presentation layer."""
+"""プレゼンテーション層の LLM サービス。"""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ from ailoveshen.domain.value_objects import Activity, EmotionState
 
 class LLMService:
     """
-    Presentation layer service for LLM operations.
+    LLM の操作をまとめるプレゼンテーション層のサービス。
 
-    Provides a simple interface for other components (orchestrator, chat
-    handler) to get commentary and chat replies. Holds the current emotion
-    passed to generation. Returns an empty string when generation fails.
+    他のコンポーネント（オーケストレーター、チャットの処理）が実況とチャットへの
+    返答を得るための簡単な窓口。生成に渡す今の感情を持つ。生成に失敗したときは
+    空文字列を返す。
     """
 
     def __init__(
@@ -31,12 +31,12 @@ class LLMService:
         text_generator: ITextGenerator,
     ) -> None:
         """
-        Initialize LLM service.
+        LLM サービスを初期化する。
 
         Args:
-            generate_commentary_use_case: Use case for game commentary
-            generate_response_use_case: Use case for chat responses
-            text_generator: Text generator, closed together with the service
+            generate_commentary_use_case: ゲーム実況のユースケース
+            generate_response_use_case: チャットへの返答のユースケース
+            text_generator: テキスト生成器。サービスと一緒に閉じる
         """
         self._generate_commentary = generate_commentary_use_case
         self._generate_response = generate_response_use_case
@@ -49,14 +49,14 @@ class LLMService:
         activity: Optional[Activity] = None,
     ) -> str:
         """
-        Generate game commentary.
+        ゲーム実況を生成する。
 
         Args:
-            recent_events: Recent game event descriptions (newest last: what to talk about)
-            activity: What the streamer is doing and why (PlaySession.activity())
+            recent_events: 最近のゲーム内の出来事の説明（最後が最新で、話す内容）
+            activity: 配信者が何をしていて、なぜか（PlaySession.activity()）
 
         Returns:
-            Generated commentary, or empty string on failure
+            生成した実況。失敗したときは空文字列
         """
         response = await self._generate_commentary.execute(
             GenerateCommentaryRequest(
@@ -75,17 +75,17 @@ class LLMService:
         session: Optional[PlaySession] = None,
     ) -> str:
         """
-        Generate a reply to a viewer's chat message.
+        視聴者のチャットへの返答を生成する。
 
         Args:
-            user_name: Viewer's display name
-            message: Chat message content
-            user_id: Viewer's platform ID, if known
-            session: The play session, if playing: the reply sees what the
-                streamer is doing and may take the viewer's request as the next goal
+            user_name: 視聴者の表示名
+            message: チャットの内容
+            user_id: 視聴者のプラットフォーム上の ID（分かれば）
+            session: プレイ中ならそのプレイセッション。返答は配信者が何をしているかを
+                見て、視聴者の頼みを次の目標として受けることがある
 
         Returns:
-            Generated reply, or empty string on failure
+            生成した返答。失敗したときは空文字列
         """
         response = await self._generate_response.execute(
             GenerateResponseRequest(
@@ -99,13 +99,13 @@ class LLMService:
         return response.text if response.success else ""
 
     def update_emotion(self, emotion_state: EmotionState) -> None:
-        """Update the emotion used for subsequent generations."""
+        """以降の生成で使う感情を更新する。"""
         self._current_emotion = emotion_state
 
     def get_current_emotion(self) -> EmotionState:
-        """Get the emotion used for generation."""
+        """生成で使う感情を返す。"""
         return self._current_emotion
 
     async def close(self) -> None:
-        """Release resources held by the text generator."""
+        """テキスト生成器が持つリソースを解放する。"""
         await self._text_generator.close()

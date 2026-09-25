@@ -1,4 +1,4 @@
-"""Tests for StartPlayUseCase and AdvancePlayUseCase."""
+"""StartPlayUseCase と AdvancePlayUseCase のテスト。"""
 
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
@@ -90,7 +90,7 @@ SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
 
 
 def _plan(**kwargs) -> MidGoalPlan:
-    """The house (m1), then the bed (m2)."""
+    """家（m1）、次にベッド（m2）。"""
     plan = MidGoalPlan(mission=MISSION, **kwargs)
     plan.add("自分の家を作る", (BUILT,))
     plan.add("夜に寝られるようにする", (BED,))
@@ -105,7 +105,7 @@ def _session(goal: GoalSpec | None = None, plan: MidGoalPlan | None = None) -> P
 
 
 def _judged(met: set[GoalSpec] = frozenset()):
-    """bridge.check: the conditions in `met` hold, the others do not."""
+    """bridge.check: `met` の条件は満たし、ほかは満たさない。"""
 
     async def check(specs):
         return [ConditionStatus(s, s in met, (f"{s.describe()}: {s in met}",)) for s in specs]
@@ -115,13 +115,13 @@ def _judged(met: set[GoalSpec] = frozenset()):
 
 @pytest.fixture
 def text_generator():
-    """Mock LLM with structured output."""
+    """構造化出力つきの LLM のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def prompt_builder():
-    """Mock game prompt builder (sync methods)."""
+    """ゲームのプロンプトビルダーのモック（同期メソッド）。"""
     builder = Mock()
     builder.build_house_design_prompt.return_value = "design prompt"
     builder.build_goal_prompt.return_value = "goal prompt"
@@ -131,7 +131,7 @@ def prompt_builder():
 
 @pytest.fixture
 def bridge():
-    """Mock Minecraft bridge."""
+    """Minecraft ブリッジのモック。"""
     b = AsyncMock()
     b.observe.return_value = _obs()
     b.set_goal.return_value = GoalStatus(met=False, remaining=3)
@@ -142,7 +142,7 @@ def bridge():
 
 @pytest.fixture
 def store():
-    """Mock mission store (nothing saved yet)."""
+    """ミッションストアのモック（まだ何も保存していない）。"""
     s = Mock()
     s.load.return_value = None
     return s
@@ -150,13 +150,13 @@ def store():
 
 @pytest.fixture
 def mid_goals(bridge, events, store):
-    """The real keeper over the mocks."""
+    """モックの上で動く本物の MidGoalKeeper。"""
     return MidGoalKeeper(bridge=bridge, event_publisher=events, store=store)
 
 
 @pytest.fixture
 def selector():
-    """Mock action selector."""
+    """行動選択のモック。"""
     s = AsyncMock()
     s.select.return_value = ActionDecision("dig oak_log at 1,70,2", 0.9)
     return s
@@ -164,7 +164,7 @@ def selector():
 
 @pytest.fixture
 def events():
-    """Mock event publisher."""
+    """イベント発行のモック。"""
     return AsyncMock()
 
 
@@ -173,7 +173,7 @@ def _published(events, event_type):
 
 
 class TestStartPlay:
-    """Tests for StartPlayUseCase."""
+    """StartPlayUseCase のテスト。"""
 
     def _use_case(self, text_generator, prompt_builder, bridge, events, store=None, plan=None):
         if store is None:
@@ -194,7 +194,7 @@ class TestStartPlay:
 
     @pytest.mark.asyncio
     async def test_design_is_sent_to_bridge(self, text_generator, prompt_builder, bridge, events):
-        """Test a valid design starts the session and its plan is sent."""
+        """正しい設計ならセッションが始まり、その設計がブリッジに送られる。"""
         text_generator.generate_json.return_value = VALID_DESIGN
 
         project = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
@@ -211,7 +211,7 @@ class TestStartPlay:
     async def test_invalid_design_is_retried_with_error(
         self, text_generator, prompt_builder, bridge, events
     ):
-        """Test a rejected design is sent back with the validation error."""
+        """通らない設計は、検証エラーをつけて差し戻す。"""
         text_generator.generate_json.side_effect = [{**VALID_DESIGN, "width": 9}, VALID_DESIGN]
 
         project = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
@@ -224,7 +224,7 @@ class TestStartPlay:
     async def test_gives_up_after_max_attempts(
         self, text_generator, prompt_builder, bridge, events
     ):
-        """Test repeated invalid designs raise TextGenerationError without a plan."""
+        """不正な設計が続いたら、設計を送らずに TextGenerationError を出す。"""
         text_generator.generate_json.return_value = {"name": "x"}
 
         with pytest.raises(TextGenerationError, match="no valid house design"):
@@ -235,12 +235,12 @@ class TestStartPlay:
     async def test_built_home_is_used_without_designing(
         self, text_generator, prompt_builder, bridge, events
     ):
-        """Test a home built in an earlier run is kept: nothing designed, no plan sent."""
+        """前の実行で建てた家は残す。設計もせず、建てる計画も送らない。"""
         bridge.observe.return_value = _obs(has_plan=True, house_complete=True, has_home=True)
 
         session = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
 
-        assert session.blueprint is None  # its design was not kept (built before designs were)
+        assert session.blueprint is None  # 設計は残っていない（設計を保存する前に建てた家）
         assert session.completion_announced
         text_generator.generate_json.assert_not_called()
         bridge.set_build_plan.assert_not_called()
@@ -250,7 +250,7 @@ class TestStartPlay:
     async def test_built_home_keeps_its_design(
         self, text_generator, prompt_builder, bridge, events
     ):
-        """Test the home's design kept by the bridge comes back (its name is not lost)."""
+        """ブリッジが持っている家の設計が戻る（名前もなくならない）。"""
         home = _obs(has_plan=True, house_complete=True, has_home=True)
         home.state["home"] = {"name": "ひだまり", "design": VALID_DESIGN}
         bridge.observe.return_value = home
@@ -265,7 +265,7 @@ class TestStartPlay:
     async def test_new_plan_comes_from_the_configuration_and_is_saved(
         self, text_generator, prompt_builder, bridge, events, store
     ):
-        """Test with nothing saved, the configured mid goals start (and are saved)."""
+        """何も保存していなければ、設定の中目標から始める（保存もする）。"""
         text_generator.generate_json.return_value = VALID_DESIGN
         plan = _plan()
 
@@ -281,7 +281,7 @@ class TestStartPlay:
     async def test_saved_plan_carries_on_for_the_same_mission(
         self, text_generator, prompt_builder, bridge, events, store
     ):
-        """Test the mid goals carry on across restarts."""
+        """中目標は再起動をまたいで続く。"""
         text_generator.generate_json.return_value = VALID_DESIGN
         store.load.return_value = SavedPlan(
             mission=MISSION,
@@ -303,7 +303,7 @@ class TestStartPlay:
     async def test_saved_plan_for_another_mission_is_not_used(
         self, text_generator, prompt_builder, bridge, events, store
     ):
-        """Test a changed mission starts the configured mid goals anew."""
+        """大目標が変わったら、設定の中目標から始め直す。"""
         text_generator.generate_json.return_value = VALID_DESIGN
         store.load.return_value = SavedPlan(
             mission=Mission("村を作る"),
@@ -321,7 +321,7 @@ class TestStartPlay:
 
 
 class TestAdvancePlay:
-    """Tests for AdvancePlayUseCase."""
+    """AdvancePlayUseCase のテスト。"""
 
     @pytest.fixture
     def conversation(self):
@@ -343,7 +343,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_the_chests_keep_what_the_mid_goals_store(self, use_case, text_generator, bridge):
-        """Test a stock mid goal's stored() condition goes with the goal, so it is not taken out."""
+        """蓄える中目標の stored() の条件は小目標と一緒に送り、チェストから取り出させない。"""
         text_generator.generate_json.return_value = PLANKS
         plan = _plan()
         stock = GoalSpec(GoalPredicate.STORED, item="food", count=10)
@@ -357,7 +357,7 @@ class TestAdvancePlay:
     async def test_first_step_sets_goal_then_acts(
         self, use_case, text_generator, bridge, selector, prompt_builder, events
     ):
-        """Test the LLM sets a goal, the bridge takes it, the selector picks, the bridge runs."""
+        """LLM が小目標を決め、ブリッジが受け、行動選択が選び、ブリッジが実行する。"""
         text_generator.generate_json.return_value = PLANKS
         session = _session()
 
@@ -366,7 +366,7 @@ class TestAdvancePlay:
         assert report.goal_changed
         assert session.goal.spec == HAVE_PLANKS
         bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, ())
-        assert bridge.observe.await_count == 2  # again after the goal: candidates for it
+        assert bridge.observe.await_count == 2  # 小目標を決めたあと、もう一度: その小目標の候補
         state, candidates, instructions = selector.select.call_args.args
         assert state == {"goal": "g"} and instructions == "instructions"
         assert [c.action_id for c in candidates] == ["dig oak_log at 1,70,2", "wait"]
@@ -378,7 +378,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_predicates_offered_follow_the_house(self, use_case, text_generator, bridge):
-        """Test goals about the house, home, chests and lights are offered only when they apply."""
+        """家・拠点・チェスト・明かりの小目標は、当てはまるときだけ出す。"""
         text_generator.generate_json.return_value = PLANKS
 
         await use_case.execute(_session())
@@ -406,7 +406,7 @@ class TestAdvancePlay:
             "explored",
         ]
 
-        # Clearing the door is a daytime goal: at night more keep spawning
+        # 入口の掃除は昼の小目標。夜は湧き続ける
         bridge.observe.return_value = _obs(
             goal=False, has_plan=True, house_complete=True, has_home=True, time_phase="night"
         )
@@ -418,7 +418,7 @@ class TestAdvancePlay:
     async def test_goal_rejected_by_bridge_is_retried_with_reason(
         self, use_case, text_generator, bridge, prompt_builder
     ):
-        """Test the bridge's rejection goes back to the LLM."""
+        """ブリッジが断った理由は LLM に返す。"""
         text_generator.generate_json.side_effect = [
             {**PLANKS, "item": "unobtainium", "count": 1},
             PLANKS,
@@ -439,7 +439,7 @@ class TestAdvancePlay:
     async def test_malformed_or_unoffered_goal_is_retried(
         self, use_case, text_generator, bridge, prompt_builder
     ):
-        """Test a goal missing arguments, or not offered, is sent back."""
+        """引数の足りない小目標や、出していない小目標は差し戻す。"""
         text_generator.generate_json.side_effect = [
             {"predicate": "have", "item": "planks", "serves": "current", "reason": ""},
             {"predicate": "at_home", "serves": "survival", "reason": ""},
@@ -458,7 +458,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_gives_up_after_max_goal_attempts(self, use_case, text_generator, bridge):
-        """Test repeated rejections raise TextGenerationError without acting."""
+        """断られ続けたら、行動せずに TextGenerationError を出す。"""
         text_generator.generate_json.return_value = {
             "predicate": "have",
             "serves": "current",
@@ -471,7 +471,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_single_candidate_skips_selector(self, use_case, selector, bridge):
-        """Test a lone candidate is taken without a model call."""
+        """候補が 1 つだけなら、モデルを呼ばずにそれを選ぶ。"""
         bridge.observe.return_value = _obs(("wait inside",))
 
         report = await use_case.execute(_session(HAVE_PLANKS))
@@ -484,7 +484,7 @@ class TestAdvancePlay:
     async def test_met_goal_is_replaced_and_remembered(
         self, use_case, text_generator, bridge, prompt_builder, events
     ):
-        """Test a met goal ends (announced, remembered); the LLM sees it with why it ended."""
+        """達成した小目標は終わる（実況し、覚える）。LLM は終わった理由とともに見る。"""
         bridge.observe.return_value = _obs(met=True, remaining=0)
         text_generator.generate_json.return_value = {
             "predicate": "explored",
@@ -508,13 +508,13 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_stalled_goal_is_replaced(self, use_case, text_generator, bridge, prompt_builder):
-        """Test a goal whose remaining work stops going down ends as stalled."""
+        """残りの作業が減らなくなった小目標は stalled で終わる。"""
         text_generator.generate_json.return_value = PLANKS
-        session = _session(HAVE_PLANKS)  # max_stalled_steps=2; remaining stays 3
+        session = _session(HAVE_PLANKS)  # max_stalled_steps=2。残りは 3 のまま
 
-        assert not (await use_case.execute(session)).goal_changed  # first reading of the work
-        assert not (await use_case.execute(session)).goal_changed  # no progress: 1
-        report = await use_case.execute(session)  # no progress: 2
+        assert not (await use_case.execute(session)).goal_changed  # 作業量の最初の読み取り
+        assert not (await use_case.execute(session)).goal_changed  # 進まない: 1
+        report = await use_case.execute(session)  # 進まない: 2
 
         assert report.goal_changed
         reason = prompt_builder.build_goal_prompt.call_args.kwargs["goal_ended_because"]
@@ -522,7 +522,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_completion_is_announced_once_and_play_goes_on(self, use_case, bridge, events):
-        """Test completion publishes one event and the session keeps taking steps."""
+        """完了したらイベントを 1 つ発行し、セッションは手を進め続ける。"""
         bridge.observe.return_value = _obs(has_plan=True, house_complete=True)
         session = _session(HAVE_PLANKS)
 
@@ -535,7 +535,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_busy_bridge_skips_the_step(self, use_case, text_generator, bridge):
-        """Test nothing is decided or run while the bridge's reflex is busy."""
+        """ブリッジの反射が動いている間は、何も決めず何も実行しない。"""
         bridge.observe.return_value = replace(_obs(), busy=True)
 
         report = await use_case.execute(_session())
@@ -548,7 +548,7 @@ class TestAdvancePlay:
     async def test_goal_decision_sees_what_was_said(
         self, use_case, text_generator, prompt_builder, conversation
     ):
-        """Test the goal decision gets the conversation (what the streamer said and was asked)."""
+        """小目標の決定に会話（配信者が言ったこと、頼まれたこと）が渡る。"""
         conversation.add_viewer_message("家まだ？", "neko")
         conversation.add_streamer_message("もうすぐ完成するよ", MessageType.RESPONSE)
         text_generator.generate_json.return_value = PLANKS
@@ -560,7 +560,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_small_goal_serves_the_top_mid_goal(self, use_case, text_generator, events):
-        """Test the goal is set for the mid goal worked on now, and says so."""
+        """小目標は今取り組む中目標のために決まり、そのことを示す。"""
         text_generator.generate_json.return_value = PLANKS
         session = _session()
 
@@ -571,7 +571,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_new_goal_is_seen_with_its_own_status(self, use_case, text_generator, bridge):
-        """Test what the goal-set narration sees is the new goal's status, not the ended one's."""
+        """小目標の決定を語る実況が見るのは、終わった小目標でなく新しい小目標の状態。"""
         bridge.set_goal.return_value = GoalStatus(False, 5, lines=("have 4 planks (0/4)",))
         seen = []
 
@@ -591,7 +591,7 @@ class TestAdvancePlay:
     async def test_mid_goals_are_judged_before_deciding(
         self, use_case, text_generator, bridge, prompt_builder, events, store
     ):
-        """Test a mid goal already done (the house from an earlier run) is completed first."""
+        """もう済んでいる中目標（前の実行で建てた家）は、最初に完了にする。"""
         bridge.check.side_effect = _judged({BUILT})
         text_generator.generate_json.return_value = PLANKS
         session = _session()
@@ -608,7 +608,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_survival_goal_serves_no_mid_goal(self, use_case, text_generator, events):
-        """Test a survival goal is set for no mid goal."""
+        """生存のための小目標は、どの中目標のためでもない。"""
         text_generator.generate_json.return_value = {
             "predicate": "have",
             "item": "food",
@@ -627,7 +627,7 @@ class TestAdvancePlay:
     async def test_only_survival_goals_may_skip_the_mid_goals(
         self, use_case, text_generator, prompt_builder
     ):
-        """Test a goal that is not about staying alive must serve the top mid goal."""
+        """生存に関係ない小目標は、一番上の中目標のためでなければならない。"""
         text_generator.generate_json.side_effect = [{**PLANKS, "serves": "survival"}, PLANKS]
         session = _session()
 
@@ -639,7 +639,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_no_mid_goal_left_needs_one_added(self, use_case, text_generator, prompt_builder):
-        """Test with the list empty, a goal must add a mid goal or be for survival."""
+        """リストが空なら、小目標は中目標を足すか、生存のためのものでなければならない。"""
         text_generator.generate_json.side_effect = [
             PLANKS,
             {
@@ -667,7 +667,7 @@ class TestAdvancePlay:
     async def test_plan_changes_are_applied_with_the_goal(
         self, use_case, text_generator, prompt_builder, events, store
     ):
-        """Test the streamer's own edits: added (told), moved, then the goal serves the top."""
+        """配信者自身の編集: 足す（言う）、動かす、そして小目標は一番上のために。"""
         text_generator.generate_json.return_value = {
             **PLANKS,
             "plan_changes": [
@@ -702,7 +702,7 @@ class TestAdvancePlay:
     async def test_unusable_edit_is_retried_and_nothing_is_applied(
         self, use_case, text_generator, prompt_builder, bridge
     ):
-        """Test an edit breaking the rules goes back with the reason; the plan is untouched."""
+        """規則を破る編集は理由をつけて差し戻し、計画は変えない。"""
         text_generator.generate_json.side_effect = [
             {
                 **PLANKS,
@@ -725,7 +725,7 @@ class TestAdvancePlay:
     async def test_new_mid_goal_the_bridge_cannot_judge_is_retried(
         self, use_case, text_generator, prompt_builder, bridge
     ):
-        """Test an added mid goal's conditions are checked by the bridge first."""
+        """足す中目標の条件は、先にブリッジが確かめる。"""
         judged = _judged()
 
         async def check(specs):
@@ -756,11 +756,11 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_request_accepted_during_a_goal_decision_is_kept(self, use_case, text_generator):
-        """Test a viewer's mid goal added while the LLM decides is not overwritten by its edits."""
+        """LLM が決めている間に足された視聴者の中目標は、LLM の編集で上書きされない。"""
         session = _session()
 
         async def decide(*args, **kwargs):
-            # The chat reply accepts a request meanwhile
+            # その間にコメントへの返答が頼みを受ける
             session.plan.add("剣", (SWORD,), requested_by="neko", position=1)
             return {
                 **PLANKS,
@@ -789,7 +789,7 @@ class TestAdvancePlay:
     async def test_viewer_mid_goal_over_budget_is_dropped_and_told(
         self, use_case, text_generator, bridge, events, store
     ):
-        """Test a request past its step budget is dropped (told) and its goal ends next step."""
+        """ステップの予算を超えた頼みはやめ（言う）、その小目標は次のステップで終わる。"""
         plan = MidGoalPlan(mission=MISSION, viewer_budget=1)
         request = plan.add("剣", (SWORD,), requested_by="neko")
         session = PlaySession(blueprint=_blueprint(), plan=plan)

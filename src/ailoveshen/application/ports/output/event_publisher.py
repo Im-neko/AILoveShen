@@ -1,4 +1,4 @@
-"""Output ports (interfaces) for the Application layer."""
+"""アプリケーション層の出力ポート（インターフェース）。"""
 
 from __future__ import annotations
 
@@ -10,44 +10,44 @@ if TYPE_CHECKING:
 
 T = TypeVar("T", bound="DomainEvent")
 
-# Type alias for event handlers
+# イベントハンドラーの型エイリアス
 EventHandler = Callable[[T], Awaitable[None]]
 
 
 class IEventPublisher(ABC):
     """
-    Event publisher output port.
+    イベント発行の出力ポート。
 
-    Defines the interface for publishing domain events.
-    Infrastructure layer provides the concrete implementation.
+    ドメインイベントを発行するインターフェースを定める。
+    具体的な実装はインフラ層が用意する。
     """
 
     @abstractmethod
     async def publish(self, event: "DomainEvent") -> None:
         """
-        Publish a domain event.
+        ドメインイベントを発行する。
 
         Args:
-            event: The domain event to publish.
+            event: 発行するドメインイベント。
         """
         ...
 
     @abstractmethod
     async def publish_all(self, events: list["DomainEvent"]) -> None:
         """
-        Publish multiple domain events.
+        複数のドメインイベントを発行する。
 
         Args:
-            events: List of domain events to publish.
+            events: 発行するドメインイベントのリスト。
         """
         ...
 
 
 class IEventSubscriber(ABC):
     """
-    Event subscriber output port.
+    イベント購読の出力ポート。
 
-    Defines the interface for subscribing to domain events.
+    ドメインイベントを購読するインターフェースを定める。
     """
 
     @abstractmethod
@@ -57,14 +57,14 @@ class IEventSubscriber(ABC):
         handler: EventHandler[T],
     ) -> Callable[[], None]:
         """
-        Subscribe to a specific event type.
+        特定の型のイベントを購読する。
 
         Args:
-            event_type: The type of event to subscribe to.
-            handler: Async function to handle the event.
+            event_type: 購読するイベントの型。
+            handler: イベントを処理する非同期関数。
 
         Returns:
-            Unsubscribe function that can be called to remove the subscription.
+            購読を解除する関数。呼ぶと購読を外す。
         """
         ...
 
@@ -75,13 +75,13 @@ class IEventSubscriber(ABC):
         handler: EventHandler[T],
     ) -> bool:
         """
-        Unsubscribe from a specific event type.
+        特定の型のイベントの購読を解除する。
 
         Args:
-            event_type: The type of event to unsubscribe from.
-            handler: The handler to remove.
+            event_type: 購読を解除するイベントの型。
+            handler: 外すハンドラー。
 
         Returns:
-            True if the handler was found and removed, False otherwise.
+            ハンドラーが見つかって外せたら True、そうでなければ False。
         """
         ...

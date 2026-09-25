@@ -5,7 +5,7 @@ import { PRIMITIVES } from '../src/primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 
-// A bot that digs at once; the drop lies where it fell, 3 blocks below, and no path reaches it
+// すぐ掘り終えるボット。ドロップは 3 ブロック下の落ちた所にあり、そこへの経路はない
 function digger ({ drop, full = false }) {
   const bot = {
     entity: { position: new Vec3(0, 70, 0), onGround: true },
@@ -29,7 +29,7 @@ const state = { unreachableDrops: new Set() }
 const c = { block: 'coal_ore', pos: new Vec3(1, 69, 0) }
 const controller = new AbortController()
 
-test('a drop not picked up is explained: where it lies and why it was not reached', async () => {
+test('拾えなかったドロップは、どこにあるかと、なぜ届かなかったかを説明する', async () => {
   await assert.rejects(PRIMITIVES.dig(digger({ drop: new Vec3(1.5, 67, 0.5) }), state, c, controller.signal),
     /dug coal_ore but picked nothing up \(item 3\.4m away, -3 up; path: No path to the goal!\)/)
   await assert.rejects(PRIMITIVES.dig(digger({ drop: null, full: true }), state, c, controller.signal),

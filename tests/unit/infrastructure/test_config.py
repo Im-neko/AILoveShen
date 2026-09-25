@@ -1,4 +1,4 @@
-"""Unit tests for configuration management."""
+"""設定の管理の単体テスト。"""
 
 import os
 import tempfile
@@ -24,10 +24,10 @@ from ailoveshen.infrastructure.config import (
 
 
 class TestExpandEnvVars:
-    """Tests for environment variable expansion."""
+    """環境変数の展開のテスト。"""
 
     def test_expand_simple_var(self):
-        """Test expanding simple ${VAR} syntax."""
+        """単純な ${VAR} を展開する。"""
         os.environ["TEST_VAR"] = "test_value"
         try:
             result = _expand_env_vars("${TEST_VAR}")
@@ -36,8 +36,8 @@ class TestExpandEnvVars:
             del os.environ["TEST_VAR"]
 
     def test_expand_with_default(self):
-        """Test expanding ${VAR:-default} syntax."""
-        # When var exists
+        """${VAR:-default} を展開する。"""
+        # 変数があるとき
         os.environ["TEST_VAR"] = "test_value"
         try:
             result = _expand_env_vars("${TEST_VAR:-default}")
@@ -45,17 +45,17 @@ class TestExpandEnvVars:
         finally:
             del os.environ["TEST_VAR"]
 
-        # When var doesn't exist
+        # 変数がないとき
         result = _expand_env_vars("${NONEXISTENT_VAR:-default}")
         assert result == "default"
 
     def test_expand_missing_var_empty(self):
-        """Test missing var without default returns empty."""
+        """既定値のない変数がなければ空になる。"""
         result = _expand_env_vars("${NONEXISTENT_VAR}")
         assert result == ""
 
     def test_expand_in_dict(self):
-        """Test expanding vars in nested dict."""
+        """入れ子の dict の中の変数を展開する。"""
         os.environ["TEST_KEY"] = "key_value"
         try:
             data = {"nested": {"key": "${TEST_KEY}"}}
@@ -65,7 +65,7 @@ class TestExpandEnvVars:
             del os.environ["TEST_KEY"]
 
     def test_expand_in_list(self):
-        """Test expanding vars in list."""
+        """リストの中の変数を展開する。"""
         os.environ["TEST_ITEM"] = "item_value"
         try:
             data = ["${TEST_ITEM}", "plain"]
@@ -75,38 +75,38 @@ class TestExpandEnvVars:
             del os.environ["TEST_ITEM"]
 
     def test_no_expansion_for_non_string(self):
-        """Test non-string values pass through unchanged."""
+        """文字列でない値はそのまま通る。"""
         assert _expand_env_vars(123) == 123
         assert _expand_env_vars(True) is True
         assert _expand_env_vars(None) is None
 
 
 class TestDeepMerge:
-    """Tests for deep merge functionality."""
+    """深いマージのテスト。"""
 
     def test_simple_merge(self):
-        """Test simple dict merge."""
+        """単純な dict のマージ。"""
         base = {"a": 1, "b": 2}
         override = {"b": 3, "c": 4}
         result = _deep_merge(base, override)
         assert result == {"a": 1, "b": 3, "c": 4}
 
     def test_nested_merge(self):
-        """Test nested dict merge."""
+        """入れ子の dict のマージ。"""
         base = {"outer": {"a": 1, "b": 2}}
         override = {"outer": {"b": 3, "c": 4}}
         result = _deep_merge(base, override)
         assert result == {"outer": {"a": 1, "b": 3, "c": 4}}
 
     def test_override_replaces_non_dict(self):
-        """Test override replaces non-dict values."""
+        """dict でない値は上書きで置き換わる。"""
         base = {"key": "original"}
         override = {"key": "new"}
         result = _deep_merge(base, override)
         assert result["key"] == "new"
 
     def test_original_unchanged(self):
-        """Test original dict is not modified."""
+        """元の dict は変わらない。"""
         base = {"a": 1}
         override = {"b": 2}
         _deep_merge(base, override)
@@ -114,10 +114,10 @@ class TestDeepMerge:
 
 
 class TestLoadYamlFile:
-    """Tests for YAML file loading."""
+    """YAML ファイルの読み込みのテスト。"""
 
     def test_load_existing_file(self):
-        """Test loading existing YAML file."""
+        """ある YAML ファイルを読む。"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("key: value\nnumber: 42")
             f.flush()
@@ -130,12 +130,12 @@ class TestLoadYamlFile:
             path.unlink()
 
     def test_load_nonexistent_file(self):
-        """Test loading nonexistent file returns empty dict."""
+        """ないファイルを読むと空の dict を返す。"""
         result = load_yaml_file(Path("/nonexistent/file.yaml"))
         assert result == {}
 
     def test_load_empty_file(self):
-        """Test loading empty file returns empty dict."""
+        """空のファイルを読むと空の dict を返す。"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("")
             f.flush()
@@ -148,7 +148,7 @@ class TestLoadYamlFile:
             path.unlink()
 
     def test_load_invalid_yaml_raises_error(self):
-        """Test loading invalid YAML raises ConfigurationError."""
+        """不正な YAML を読むと ConfigurationError。"""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: yaml: content: [")
             f.flush()
@@ -162,17 +162,17 @@ class TestLoadYamlFile:
 
 
 class TestLoadSettings:
-    """Tests for settings loading."""
+    """設定の読み込みのテスト。"""
 
     def test_load_default_settings(self):
-        """Test loading with no config files returns defaults."""
+        """設定ファイルがなければ既定値を返す。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             settings = load_settings(config_dir=tmpdir)
             assert settings.app_name == "AILoveShen"
             assert settings.debug is False
 
     def test_load_from_default_yaml(self):
-        """Test loading from default.yaml."""
+        """default.yaml から読む。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             default_yaml = config_dir / "default.yaml"
@@ -183,7 +183,7 @@ class TestLoadSettings:
             assert settings.debug is True
 
     def test_env_specific_overrides_default(self):
-        """Test environment-specific config overrides default."""
+        """環境ごとの設定が default を上書きする。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
 
@@ -194,11 +194,11 @@ class TestLoadSettings:
             dev_yaml.write_text("debug: true")
 
             settings = load_settings(config_dir=config_dir, env="development")
-            assert settings.app_name == "DefaultApp"  # From default
-            assert settings.debug is True  # Overridden
+            assert settings.app_name == "DefaultApp"  # default から
+            assert settings.debug is True  # 上書きしたもの
 
     def test_env_var_expansion(self):
-        """Test environment variables are expanded."""
+        """環境変数が展開される。"""
         os.environ["TEST_CHANNEL"] = "testchannel"
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -213,10 +213,10 @@ class TestLoadSettings:
 
 
 class TestLoadGeminiAndCharacterSettings:
-    """Tests for loading Gemini and character sections."""
+    """gemini と character の節の読み込みのテスト。"""
 
     def test_load_gemini_section(self):
-        """Test gemini section including nested retry/rate_limit is parsed."""
+        """gemini の節を、入れ子の retry・rate_limit も含めて読む。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             (config_dir / "default.yaml").write_text(
@@ -234,15 +234,15 @@ class TestLoadGeminiAndCharacterSettings:
             settings = load_settings(config_dir=config_dir)
             assert settings.gemini.main_model == "gemini-x"
             assert settings.gemini.main_thinking_level == "high"
-            assert settings.gemini.filter_thinking_level == "low"  # default
+            assert settings.gemini.filter_thinking_level == "low"  # 既定値
             assert settings.gemini.max_output_tokens == 1024
             assert settings.gemini.retry.max_attempts == 5
             assert settings.gemini.retry.max_delay_seconds == 20.0
-            assert settings.gemini.retry.base_delay_seconds == 1.0  # default
+            assert settings.gemini.retry.base_delay_seconds == 1.0  # 既定値
             assert settings.gemini.rate_limit.min_interval_seconds == 0.5
 
     def test_load_character_section(self):
-        """Test character section is parsed with defaults for missing keys."""
+        """character の節を読み、ないキーは既定値にする。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             (config_dir / "default.yaml").write_text(
@@ -252,10 +252,10 @@ class TestLoadGeminiAndCharacterSettings:
             settings = load_settings(config_dir=config_dir)
             assert settings.character.name == "Shen"
             assert settings.character.sentence_endings == ["のだ"]
-            assert settings.character.first_person == "私"  # default
+            assert settings.character.first_person == "私"  # 既定値
 
     def test_project_default_yaml_loads(self):
-        """Test the project's config/default.yaml loads the Phase 3 sections."""
+        """プロジェクトの config/default.yaml は Phase 3 の節を読める。"""
         config_dir = Path(__file__).resolve().parents[3] / "config"
         settings = load_settings(config_dir=config_dir, env="nonexistent")
         assert settings.gemini.main_model == "gemini-3.8-flash"
@@ -265,10 +265,10 @@ class TestLoadGeminiAndCharacterSettings:
 
 
 class TestSettingsDataclasses:
-    """Tests for settings dataclasses."""
+    """設定の dataclass のテスト。"""
 
     def test_settings_defaults(self):
-        """Test Settings has correct defaults."""
+        """Settings の既定値が正しい。"""
         settings = Settings()
         assert settings.app_name == "AILoveShen"
         assert isinstance(settings.twitch, TwitchSettings)
@@ -277,13 +277,13 @@ class TestSettingsDataclasses:
         assert isinstance(settings.logging, LoggingSettings)
 
     def test_twitch_settings_defaults(self):
-        """Test TwitchSettings defaults."""
+        """TwitchSettings の既定値。"""
         twitch = TwitchSettings()
         assert twitch.channel == ""
         assert twitch.client_id == ""
 
     def test_gemini_settings_defaults(self):
-        """Test GeminiSettings defaults."""
+        """GeminiSettings の既定値。"""
         gemini = GeminiSettings()
         assert gemini.main_model == "gemini-3.8-flash"
         assert gemini.filter_model == "gemini-3.8-flash"
@@ -296,21 +296,21 @@ class TestSettingsDataclasses:
         assert gemini.rate_limit.min_interval_seconds == 1.0
 
     def test_character_settings_defaults(self):
-        """Test CharacterSettings defaults."""
+        """CharacterSettings の既定値。"""
         character = CharacterSettings()
         assert character.name == "AILoveShen"
         assert character.first_person == "私"
         assert character.sentence_endings == ["だよ", "だね", "かな", "！"]
 
     def test_tts_settings_defaults(self):
-        """Test TTSSettings defaults."""
+        """TTSSettings の既定値。"""
         tts = TTSSettings()
         assert isinstance(tts.server, TTSServerSettings)
         assert tts.server.host == "localhost"
         assert tts.server.port == 5000
 
     def test_logging_settings_defaults(self):
-        """Test LoggingSettings defaults."""
+        """LoggingSettings の既定値。"""
         logging = LoggingSettings()
         assert logging.level == "INFO"
         assert logging.rotation == "10 MB"
@@ -318,10 +318,10 @@ class TestSettingsDataclasses:
 
 
 class TestLoadJevAndMinecraftSettings:
-    """Tests for loading the jev and minecraft sections."""
+    """jev と minecraft の節の読み込みのテスト。"""
 
     def test_load_sections(self):
-        """Test jev and minecraft (bridge + agent) are parsed."""
+        """jev と minecraft（ブリッジとエージェント）を読む。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             (config_dir / "default.yaml").write_text(
@@ -350,7 +350,7 @@ class TestLoadJevAndMinecraftSettings:
             assert settings.minecraft.max_stalled_steps == 4
 
     def test_load_mission(self):
-        """Test the mission, its first mid goals and the limits are parsed."""
+        """大目標、最初の中目標、上限を読む。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             (config_dir / "default.yaml").write_text(
@@ -373,7 +373,7 @@ class TestLoadJevAndMinecraftSettings:
             assert mission.store_path == "data/mission.json"
 
     def test_project_default_yaml_reads_typesafe_key(self):
-        """Test the shipped default.yaml takes the Jev key from TYPESAFE_API_KEY."""
+        """同梱の default.yaml は、Jev のキーを TYPESAFE_API_KEY から取る。"""
         os.environ["TYPESAFE_API_KEY"] = "from-env"
         try:
             settings = load_settings(config_dir=Path(__file__).parents[3] / "config")

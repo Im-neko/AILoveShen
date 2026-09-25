@@ -1,5 +1,5 @@
-// Test helper: a fixed house plan (walls layer by layer, roof outside-in, door last).
-// The real plans come from the Python side (HouseBlueprint); this only exercises the executor.
+// テスト用: 決まった家の計画（壁は1層ずつ、屋根は外側から内側へ、ドアは最後）。
+// 本当の計画は Python 側（HouseBlueprint）から来る。これは実行側を動かしてみるためだけのもの。
 const [w, d, h] = (process.argv[2] ?? '5x5x3').split('x').map(Number)
 const blocks = []
 const doorX = Math.floor(w / 2)

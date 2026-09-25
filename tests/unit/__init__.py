@@ -1,1 +1,1 @@
-"""Unit tests for AILoveShen."""
+"""AILoveShen の単体テスト。"""

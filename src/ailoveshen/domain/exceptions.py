@@ -1,57 +1,57 @@
-"""Core exceptions for AILoveShen."""
+"""AILoveShen の基本の例外。"""
 
 from __future__ import annotations
 
 
 class AILoveShenError(Exception):
-    """Base exception for all AILoveShen errors."""
+    """AILoveShen のすべてのエラーの基底の例外。"""
 
     pass
 
 
 class ConfigurationError(AILoveShenError):
-    """Raised when configuration is invalid or missing."""
+    """設定が不正、または足りないときに送出する。"""
 
     pass
 
 
 class SynthesisError(AILoveShenError):
-    """Raised when speech synthesis fails."""
+    """音声合成に失敗したときに送出する。"""
 
     pass
 
 
 class AudioPlaybackError(AILoveShenError):
-    """Raised when audio playback fails."""
+    """音声の再生に失敗したときに送出する。"""
 
     pass
 
 
 class ConnectionError(AILoveShenError):
-    """Raised when connection to external service fails."""
+    """外部サービスへの接続に失敗したときに送出する。"""
 
     pass
 
 
 class TextGenerationError(AILoveShenError):
-    """Raised when LLM text generation fails."""
+    """LLM のテキスト生成に失敗したときに送出する。"""
 
     pass
 
 
 class GameBridgeError(AILoveShenError):
-    """Raised when the game bridge cannot be reached or rejects a request."""
+    """ゲームのブリッジに届かないか、ブリッジが要求を拒否したときに送出する。"""
 
     pass
 
 
 class GoalRejectedError(GameBridgeError):
-    """Raised when the game bridge rejects a goal (unknown item, no home yet, ...)."""
+    """ブリッジが目標を拒否したときに送出する（知らないアイテム、まだ家がない、など）。"""
 
     pass
 
 
 class ActionSelectionError(AILoveShenError):
-    """Raised when the action selector (Jev) fails to decide."""
+    """行動選択器（Jev）が決められなかったときに送出する。"""
 
     pass

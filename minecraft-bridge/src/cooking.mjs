@@ -1,15 +1,15 @@
-// Cooking meat in a furnace: cooked beef restores 8 hunger (12.8 saturation), raw 3 (1.8).
+// かまどで肉を焼く: 焼いた牛肉は満腹度 8（隠し満腹度 12.8）、生は 3（1.8）回復する。
 //
-// Only where a furnace is at hand and fuel is held: without one (no stone for a furnace yet) raw
-// meat stays food as before, so no food goal becomes harder than it was.
+// 近くにかまどがあり、燃料を持っているときだけ焼く。かまどがなければ（まだかまど用の石がない）
+// 生肉はこれまでどおり食料のままなので、食料の目標がこれまでより難しくなることはない。
 
 import { smeltingProduct, FUELS } from './knowledge.mjs'
 import { inventoryCounts } from './observe.mjs'
 import { findFurnace } from './primitives.mjs'
 
-const COOK_AT_ONCE = 8 // one coal's worth; the rest waits in the furnace or for the next time
+const COOK_AT_ONCE = 8 // 石炭1個ぶん。残りはかまどの中か次の機会を待つ
 
-// { furnace, input, product, count, fuel, fuelCount } for the raw meat held, or null
+// 持っている生肉についての { furnace, input, product, count, fuel, fuelCount }。なければ null
 export function cooking (bot, knowledge) {
   const inv = inventoryCounts(bot)
   const input = Object.keys(inv).find((name) => inv[name] > 0 && isRawMeat(knowledge, name))
@@ -26,7 +26,7 @@ export function cooking (bot, knowledge) {
   return null
 }
 
-// Meat the furnace cooks into better food
+// かまどで焼くとよりよい食料になる肉
 export function isRawMeat (knowledge, name) {
   const product = smeltingProduct(name)
   const foods = knowledge.md.foodsByName

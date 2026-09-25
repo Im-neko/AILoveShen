@@ -1,4 +1,4 @@
-"""Play use cases: the LLM designs and sets goals, the bridge judges them, the selector plays."""
+"""プレイのユースケース: LLM が設計して目標を決め、ブリッジが判定し、選択器が遊ぶ。"""
 
 from __future__ import annotations
 
@@ -106,31 +106,30 @@ def _parse_blueprint(data: dict[str, Any]) -> HouseBlueprint:
 
 
 def _home_blueprint(obs: GameObservation) -> HouseBlueprint | None:
-    """The design of the home built before, when the bridge kept it."""
+    """前に建てた家の設計（ブリッジが持っていれば）。"""
     design = (obs.state.get("home") or {}).get("design")
     if not design:
         return None
     try:
         return _parse_blueprint(design)
     except ValueError as e:
-        logger.warning(f"The home's design cannot be read: {e}")
+        logger.warning(f"家の設計を読めない: {e}")
         return None
 
 
 class StartPlayUseCase(IStartPlay):
     """
-    Use case: the LLM designs a house, its block plan is sent to the bridge, a session starts.
+    ユースケース: LLM が家を設計し、そのブロックのプランをブリッジに送り、セッションを始める。
 
-    The design is validated by HouseBlueprint; an invalid design is sent back
-    to the LLM with the validation error, up to max_attempts times.
+    設計は HouseBlueprint が検証する。正しくない設計は、検証のエラーをつけて LLM に
+    差し戻す（max_attempts 回まで）。
 
-    When the bridge already has a finished home (an earlier run built it), no
-    house is designed: the home is used as it is and the mid goals move on.
+    ブリッジにもう完成した家があるとき（前の実行が建てた）は、家を設計しない: その家を
+    そのまま使い、中目標を先に進める。
 
-    The mission and its mid goals carry on from the saved plan when it is for
-    the same mission; otherwise the plan made from the configuration starts.
-    The town of the mission is defined when the plan has none yet (then kept),
-    and its unresolved stages are written again with the abilities of today.
+    保存したプランが同じ大目標のものなら、大目標と中目標はそこから続ける。そうでなければ、
+    設定から作ったプランで始める。大目標の街は、プランにまだなければ定め（以後は保つ）、
+    未解決の段階は今の能力で書き直す。
     """
 
     def __init__(
@@ -149,21 +148,21 @@ class StartPlayUseCase(IStartPlay):
         max_stalled_steps: int = 8,
     ) -> None:
         """
-        Initialize use case with dependencies (Dependency Injection).
+        依存を受け取ってユースケースを初期化する（依存性の注入）。
 
         Args:
-            text_generator: LLM adapter (structured output)
-            prompt_builder: Game prompt builder adapter
-            bridge: Minecraft bridge adapter
-            event_publisher: Event publisher for domain events
-            character: The streamer's character profile (the design reflects it)
-            plan: The mission with its first mid goals, from the configuration
-            store: Keeps the plan across restarts
-            town: Defines the town of the mission and keeps it doable
-            max_attempts: Design attempts before giving up
-            max_steps_per_goal: Steps before the LLM is asked for a new goal
-            max_consecutive_failures: Failed steps in a row before a new goal is asked for
-            max_stalled_steps: Steps without progress before a new goal is asked for
+            text_generator: LLM のアダプター（構造化出力）
+            prompt_builder: ゲームのプロンプト組み立てのアダプター
+            bridge: Minecraft ブリッジのアダプター
+            event_publisher: ドメインイベントの発行器
+            character: 配信者のキャラクターのプロフィール（設計に反映する）
+            plan: 設定から作った、大目標と最初の中目標
+            store: 再起動をまたいでプランを保つ
+            town: 大目標の街を定め、実現できる形に保つ
+            max_attempts: あきらめるまでに設計を試す回数
+            max_steps_per_goal: LLM に新しい目標を求めるまでのステップ数
+            max_consecutive_failures: 新しい目標を求めるまでに、続けて失敗するステップ数
+            max_stalled_steps: 新しい目標を求めるまでに、進まないステップ数
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -179,20 +178,20 @@ class StartPlayUseCase(IStartPlay):
         self._max_stalled_steps = max_stalled_steps
 
     async def execute(self) -> PlaySession:
-        """Load the plan and its town, design the house (unless one is built), start a session."""
+        """プランと街を読み込み、家を設計して（建っていなければ）、セッションを始める。"""
         plan = self._load_plan()
         await self._town.prepare(plan)
         obs = await self._bridge.observe()
         if obs.has_home:
             blueprint = _home_blueprint(obs)
             name = f" ({blueprint.name})" if blueprint else ""
-            logger.info(f"A home is already built{name}: no new house is designed")
+            logger.info(f"家はもう建っている{name}: 新しい家は設計しない")
             session = self._session(blueprint, plan)
             session.completion_announced = True
             return session
         blueprint = await self._design()
         logger.info(
-            f"House designed: {blueprint.name} "
+            f"家を設計した: {blueprint.name} "
             f"{blueprint.width}x{blueprint.depth}x{blueprint.wall_height} "
             f"door={blueprint.door_side.value}:{blueprint.door_offset} "
             f"pillars={blueprint.corner_pillars} - {blueprint.concept}"
@@ -224,10 +223,10 @@ class StartPlayUseCase(IStartPlay):
                 town_stage=saved.town_stage,
                 stage_met=saved.stage_met,
             )
-            logger.info(f"Mid goals carried on: {', '.join(g.describe() for g in plan.pending)}")
+            logger.info(f"中目標を引き継いだ: {', '.join(g.describe() for g in plan.pending)}")
         else:
             if saved is not None:
-                logger.info(f"Mission changed from '{saved.mission.text}': mid goals start anew")
+                logger.info(f"大目標が「{saved.mission.text}」から変わった: 中目標は最初からにする")
             self._store.save(plan)
         return plan
 
@@ -242,7 +241,7 @@ class StartPlayUseCase(IStartPlay):
                 return _parse_blueprint(data)
             except ValueError as e:
                 error = str(e)
-                logger.warning(f"House design attempt {attempt} rejected: {error}")
+                logger.warning(f"家の設計の試行 {attempt} を差し戻した: {error}")
         raise TextGenerationError(
             f"no valid house design after {self._max_attempts} attempts: {error}"
         )
@@ -250,28 +249,24 @@ class StartPlayUseCase(IStartPlay):
 
 class AdvancePlayUseCase(IAdvancePlay):
     """
-    Use case: one step of the play session.
+    ユースケース: プレイセッションの 1 ステップ。
 
-    1. Observe. While the bridge is busy (its reflex is handling a nearby
-       threat) the step does nothing. Completing the house is announced once
-    2. If a new small goal is due (none, met, its mid goal ended, stuck,
-       stalled, too long, or the time of day changed), the mid goals are
-       judged from the world first (those done are completed), then the
-       current goal ends (GoalEndedEvent) and the LLM decides the next one,
-       seeing the mission, the mid goals, what the streamer is doing and the
-       recent conversation. With it the LLM may edit the mid-goal list (add,
-       move, drop with a reason; the plan's limits hold). The small goal
-       serves the mid goal at the top of the list after the edits, or
-       survival. A goal or edit that cannot be used goes back to it with the
-       reason
-    3. The action selector (Jev) picks one of the candidates the bridge
-       grounded for the goal and the body's needs; a single candidate is taken
-       without a model call
-    4. The bridge runs it, and the session counts the step toward the goal and
-       its mid goal (a viewer's request over its budget is dropped and told)
+    1. 観測する。ブリッジが塞がっている間（反射が近くの脅威に対処している）は、
+       何もしない。家の完成は一度だけ伝える
+    2. 新しい小目標が要るとき（目標がない、達成した、その中目標が終わった、
+       行き詰まった、進まない、長すぎる、時間帯が変わった）は、まず中目標を世界から
+       判定し（済んだものは完了にする）、次に今の目標を終わらせて（GoalEndedEvent）、
+       LLM が次の目標を決める。LLM は大目標、中目標、配信者が今していること、最近の
+       会話を見る。同時に LLM は中目標リストを編集できる（追加、移動、理由つきの
+       断念。プランの上限は守る）。小目標は、編集後のリストの一番上の中目標のため
+       か、生存のためのもの。使えない目標や編集は、理由をつけて LLM に戻す
+    3. 行動選択器（Jev）が、ブリッジが目標と体の必要から具体化した候補を 1 つ選ぶ。
+       候補が 1 つだけならモデルを呼ばずにそれを取る
+    4. ブリッジがそれを実行し、セッションはそのステップを目標とその中目標の分として
+       数える（予算を超えた視聴者の頼みは断念し、そのことを伝える）
 
-    Only this loop changes the small goal: chat replies run concurrently and
-    may add a viewer's mid goal behind the current one, never interrupting.
+    小目標を変えるのはこのループだけ: チャットの返答は並行して走り、視聴者の中目標を
+    今の中目標の後ろに足すことはあるが、割り込むことはない。
     """
 
     def __init__(
@@ -287,18 +282,18 @@ class AdvancePlayUseCase(IAdvancePlay):
         max_goal_attempts: int = 3,
     ) -> None:
         """
-        Initialize use case with dependencies (Dependency Injection).
+        依存を受け取ってユースケースを初期化する（依存性の注入）。
 
         Args:
-            bridge: Minecraft bridge adapter
-            text_generator: LLM adapter (structured output) for goal decisions
-            prompt_builder: Game prompt builder adapter
-            action_selector: Fast decision model adapter (Jev)
-            event_publisher: Event publisher for domain events
-            conversation: What was said on stream (shared with commentary and replies)
-            mid_goals: Judges, edits and saves the mid goals (shared with chat replies)
-            history_limit: Number of recent conversation messages given to the goal decision
-            max_goal_attempts: Goal decisions before giving up when they are rejected
+            bridge: Minecraft ブリッジのアダプター
+            text_generator: 目標の決定に使う LLM のアダプター（構造化出力）
+            prompt_builder: ゲームのプロンプト組み立てのアダプター
+            action_selector: 高速な判断モデルのアダプター（Jev）
+            event_publisher: ドメインイベントの発行器
+            conversation: 配信で話されたこと（実況、返答と共有する）
+            mid_goals: 中目標を判定し、編集し、保存する（チャットの返答と共有する）
+            history_limit: 目標の決定に渡す最近の会話のメッセージの数
+            max_goal_attempts: 拒否が続くとき、あきらめるまでに目標を決める回数
         """
         self._bridge = bridge
         self._text_generator = text_generator
@@ -311,7 +306,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._max_goal_attempts = max_goal_attempts
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
-        """Take one step of the session."""
+        """セッションを 1 ステップ進める。"""
         obs = await self._bridge.observe()
         session.observe(obs)
         if obs.house_complete and not session.completion_announced:
@@ -345,7 +340,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         else:
             state, instructions = self._prompt_builder.build_action_context(goal, obs)
             logger.info(
-                f"Candidates ({len(candidates)}): " + " | ".join(c.action_id for c in candidates)
+                f"候補（{len(candidates)}）: " + " | ".join(c.action_id for c in candidates)
             )
             decision = await self._action_selector.select(state, candidates, instructions)
 
@@ -370,10 +365,10 @@ class AdvancePlayUseCase(IAdvancePlay):
 
     async def _change_goal(self, session: PlaySession, obs: GameObservation) -> None:
         reason = session.goal_end_reason(obs)
-        # Judged before deciding: a mid goal already done (the house built in an earlier run)
-        # must not be the one the next goal serves
+        # 決める前に判定する: もう済んでいる中目標（前の実行で建てた家）を、次の目標の
+        # 対象にしてはいけない
         await self._mid_goals.judge(session.plan)
-        # The view before the goal ends: its status is why it ends
+        # 目標が終わる前の見え方: その状態が、終わる理由だ
         activity = session.activity()
         await self._end_goal(session, obs, reason)
         await self._decide_goal(session, obs, activity, reason)
@@ -421,12 +416,12 @@ class AdvancePlayUseCase(IAdvancePlay):
                 status = await self._bridge.set_goal(
                     decision.spec, _kept(self._mid_goals.rehearse(plan, decision.changes))
                 )
-                # Applied only now, to the plan as it is (a reply may have added to it meanwhile)
+                # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
                 _serving(decision, preview)
             except (ValueError, GoalRejectedError) as e:
                 error = str(e)
-                logger.warning(f"Goal decision {attempt} rejected: {data!r}: {error}")
+                logger.warning(f"目標の決定 {attempt} を差し戻した: {data!r}: {error}")
                 continue
             await self._mid_goals.commit(plan, decision.changes)
             await self._start_goal(session, obs, _goal(decision, plan), reason, status)
@@ -444,14 +439,14 @@ class AdvancePlayUseCase(IAdvancePlay):
         status: GoalStatus,
     ) -> None:
         session.set_goal(goal, obs.time_phase)
-        # What is seen from now on (the narration of this event, replies) is the new goal's status,
-        # not the ended one's
+        # これから見えるもの（このイベントの語り、返答）は、終わった目標ではなく
+        # 新しい目標の状態
         session.observe(replace(obs, goal=status))
         mid = session.plan.get(goal.mid_goal_id) if goal.mid_goal_id else None
-        serves = f" for {mid.describe()}" if mid else " for survival"
+        serves = f"（{mid.describe()} のため）" if mid else "（生存のため）"
         logger.info(
-            f"Goal: {goal.spec.describe()}{serves} ({reason}) - {goal.reason}; "
-            f"remaining {status.remaining}"
+            f"目標: {goal.spec.describe()}{serves}（{reason}） - {goal.reason}; "
+            f"残り {status.remaining}"
         )
         await self._event_publisher.publish(
             GoalSetEvent(
@@ -461,7 +456,7 @@ class AdvancePlayUseCase(IAdvancePlay):
 
 
 def _serving(decision: GoalDecision, plan: MidGoalPlan) -> None:
-    """Check the small goal serves what it says, in the plan after the edits."""
+    """小目標が、言っている対象のためのものかを、編集後のプランで確かめる。"""
     if decision.serves == Serves.SURVIVAL:
         if not is_survival(decision.spec):
             raise ValueError(
@@ -481,7 +476,7 @@ def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
 
 
 def _kept(plan: MidGoalPlan) -> tuple[GoalSpec, ...]:
-    """What the chests keep for the mid goals: their stored() conditions."""
+    """チェストが中目標のために取っておくもの: その stored() 条件。"""
     return tuple(
         c for g in plan.pending for c in g.conditions if c.predicate == GoalPredicate.STORED
     )

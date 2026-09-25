@@ -1,4 +1,4 @@
-"""Tests for speech value objects."""
+"""発話の値オブジェクトのテスト。"""
 
 import pytest
 from datetime import timezone
@@ -10,10 +10,10 @@ from ailoveshen.domain.value_objects import (
 
 
 class TestSpeechStatus:
-    """Tests for SpeechStatus enum."""
+    """SpeechStatus 列挙型のテスト。"""
 
     def test_status_values(self):
-        """Test all status values exist."""
+        """状態の値が全部ある。"""
         assert SpeechStatus.QUEUED == "queued"
         assert SpeechStatus.SYNTHESIZING == "synthesizing"
         assert SpeechStatus.PLAYING == "playing"
@@ -22,16 +22,16 @@ class TestSpeechStatus:
         assert SpeechStatus.FAILED == "failed"
 
     def test_status_is_string_enum(self):
-        """Test status can be used as string."""
+        """状態は文字列として使える。"""
         assert str(SpeechStatus.COMPLETED) == "SpeechStatus.COMPLETED"
         assert SpeechStatus.COMPLETED.value == "completed"
 
 
 class TestSpeechResult:
-    """Tests for SpeechResult value object."""
+    """SpeechResult 値オブジェクトのテスト。"""
 
     def test_create_basic_result(self):
-        """Test creating a basic result."""
+        """基本の結果を作る。"""
         result = SpeechResult(
             request_text="hello",
             status=SpeechStatus.COMPLETED,
@@ -42,7 +42,7 @@ class TestSpeechResult:
         assert result.error_message is None
 
     def test_completed_at_uses_utc(self):
-        """Test completed_at is UTC timezone aware."""
+        """completed_at はタイムゾーンつきの UTC。"""
         result = SpeechResult(
             request_text="test",
             status=SpeechStatus.COMPLETED,
@@ -50,7 +50,7 @@ class TestSpeechResult:
         assert result.completed_at.tzinfo == timezone.utc
 
     def test_completed_factory(self):
-        """Test completed factory method."""
+        """completed ファクトリメソッド。"""
         result = SpeechResult.completed("hello", 1000)
         assert result.request_text == "hello"
         assert result.status == SpeechStatus.COMPLETED
@@ -58,26 +58,26 @@ class TestSpeechResult:
         assert result.is_success is True
 
     def test_interrupted_factory(self):
-        """Test interrupted factory method."""
+        """interrupted ファクトリメソッド。"""
         result = SpeechResult.interrupted("hello")
         assert result.status == SpeechStatus.INTERRUPTED
         assert result.is_success is False
 
     def test_failed_factory(self):
-        """Test failed factory method."""
+        """failed ファクトリメソッド。"""
         result = SpeechResult.failed("hello", "Connection error")
         assert result.status == SpeechStatus.FAILED
         assert result.error_message == "Connection error"
         assert result.is_success is False
 
     def test_queued_factory(self):
-        """Test queued factory method."""
+        """queued ファクトリメソッド。"""
         result = SpeechResult.queued("hello")
         assert result.status == SpeechStatus.QUEUED
         assert result.is_success is False
 
     def test_is_immutable(self):
-        """Test that SpeechResult is immutable."""
+        """SpeechResult は変更できない。"""
         result = SpeechResult.completed("test", 500)
         with pytest.raises(AttributeError):
             result.request_text = "modified"  # type: ignore

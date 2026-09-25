@@ -1,4 +1,4 @@
-"""Jev (TypeSafe AI System One) adapter implementations."""
+"""Jev（TypeSafe AI の System One）のアダプター実装。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str):
-    """Lazy load modules with heavy dependencies."""
+    """重い依存を持つモジュールを遅延読み込みする。"""
     if name == "JevActionSelector":
         from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
 

@@ -1,4 +1,4 @@
-"""Logging configuration using loguru."""
+"""loguru によるログの設定。"""
 
 from __future__ import annotations
 
@@ -24,23 +24,23 @@ def setup_logging(
     debug: bool = False,
 ) -> None:
     """
-    Setup logging with loguru.
+    loguru でログを設定する。
 
-    Configures both console and file logging with structured output,
-    rotation, and retention policies.
+    コンソールとファイルの両方に、構造化した出力、ローテーション、保持期間を
+    設定する。
 
     Args:
-        settings: LoggingSettings from config. If provided, other args are ignored.
-        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-        log_file: Path to log file. If None, file logging is disabled.
-        rotation: When to rotate (e.g., "10 MB", "1 day", "00:00").
-        retention: How long to keep rotated files (e.g., "7 days", "10 files").
-        compression: Compression format for rotated files (e.g., "zip", "gz").
-        format_string: Custom format string for log messages.
-        debug: Enable debug mode (shows variable values in tracebacks).
-               WARNING: Set to False in production to avoid leaking secrets.
+        settings: 設定の LoggingSettings。渡したときは他の引数を無視する。
+        level: ログレベル（DEBUG、INFO、WARNING、ERROR、CRITICAL）。
+        log_file: ログファイルのパス。None ならファイルに出さない。
+        rotation: ローテーションの契機（例: "10 MB"、"1 day"、"00:00"）。
+        retention: ローテーションしたファイルを残す期間（例: "7 days"、"10 files"）。
+        compression: ローテーションしたファイルの圧縮形式（例: "zip"、"gz"）。
+        format_string: ログメッセージの独自のフォーマット文字列。
+        debug: デバッグモードにする（トレースバックに変数の値を出す）。
+               注意: 秘密情報が漏れないよう、本番では False にすること。
     """
-    # Extract settings if provided
+    # 設定が渡されたらそこから取り出す
     if settings is not None:
         level = settings.level
         log_file = settings.file
@@ -48,10 +48,10 @@ def setup_logging(
         retention = settings.retention
         compression = settings.compression
         format_string = settings.format
-        # Infer debug from log level if not explicitly set
+        # 明示されていなければ、ログレベルから debug を決める
         debug = debug or level.upper() == "DEBUG"
 
-    # Default format
+    # 既定のフォーマット
     if format_string is None:
         format_string = (
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -60,28 +60,28 @@ def setup_logging(
             "<level>{message}</level>"
         )
 
-    # Remove default handler
+    # 既定のハンドラーを外す
     logger.remove()
 
-    # Add console handler with color
-    # diagnose=True shows variable values in tracebacks - SECURITY RISK in production
+    # 色付きのコンソールのハンドラーを加える
+    # diagnose=True はトレースバックに変数の値を出す。本番ではセキュリティ上の危険がある
     logger.add(
         sys.stderr,
         format=format_string,
         level=level,
         colorize=True,
         backtrace=True,
-        diagnose=debug,  # Only enable in debug mode
+        diagnose=debug,  # デバッグモードのときだけ有効にする
     )
 
-    # Add file handler if log_file is specified
+    # log_file が指定されていればファイルのハンドラーを加える
     if log_file is not None:
         log_path = Path(log_file)
 
-        # Create parent directories if needed
+        # 必要なら親ディレクトリを作る
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # File format without color codes
+        # 色コードを除いたファイル用のフォーマット
         file_format = format_string.replace("<green>", "").replace("</green>", "")
         file_format = file_format.replace("<level>", "").replace("</level>", "")
         file_format = file_format.replace("<cyan>", "").replace("</cyan>", "")
@@ -95,26 +95,26 @@ def setup_logging(
             compression=compression,
             encoding="utf-8",
             backtrace=True,
-            diagnose=debug,  # Only enable in debug mode
+            diagnose=debug,  # デバッグモードのときだけ有効にする
         )
 
-    logger.info(f"Logging initialized at level {level}")
+    logger.info(f"ログを初期化した（レベル {level}）")
 
 
 def get_logger(name: str | None = None) -> Any:
     """
-    Get a logger instance.
+    ロガーを返す。
 
     Args:
-        name: Logger name (typically __name__). If None, returns the root logger.
+        name: ロガーの名前（通常は __name__）。None ならルートのロガーを返す。
 
     Returns:
-        Logger instance (loguru.Logger).
+        ロガー（loguru.Logger）。
     """
     if name is None:
         return logger
     return logger.bind(name=name)
 
 
-# Re-export logger for convenience
+# 使いやすいように logger を再エクスポートする
 __all__ = ["logger", "setup_logging", "get_logger"]

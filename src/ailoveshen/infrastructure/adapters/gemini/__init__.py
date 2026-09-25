@@ -1,4 +1,4 @@
-"""Gemini adapter implementations."""
+"""Gemini のアダプター実装。"""
 
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str):
-    """Lazy load modules with heavy dependencies."""
+    """重い依存を持つモジュールを遅延読み込みする。"""
     if name == "GeminiTextGenerator":
         from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import (
             GeminiTextGenerator,
         )
+
         return GeminiTextGenerator
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

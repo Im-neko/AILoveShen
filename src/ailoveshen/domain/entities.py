@@ -1,4 +1,4 @@
-"""Entity base classes for Domain layer."""
+"""ドメイン層のエンティティの基底クラス。"""
 
 from __future__ import annotations
 
@@ -34,22 +34,22 @@ if TYPE_CHECKING:
 
 
 def generate_id() -> str:
-    """Generate a unique identifier."""
+    """一意な識別子を作る。"""
     return str(uuid.uuid4())
 
 
 def _utc_now() -> datetime:
-    """Return current UTC datetime."""
+    """今の UTC の日時を返す。"""
     return datetime.now(timezone.utc)
 
 
 @dataclass
 class Entity(ABC):
     """
-    Base class for all domain entities.
+    すべてのドメインエンティティの基底クラス。
 
-    Entities are objects that have a distinct identity that runs through time
-    and different states. Two entities are equal if they have the same id.
+    エンティティは、時間や状態が変わっても続く固有の同一性を持つオブジェクト。
+    2 つのエンティティは、id が同じなら等しい。
     """
 
     id: str = field(default_factory=generate_id)
@@ -57,13 +57,13 @@ class Entity(ABC):
     updated_at: datetime = field(default_factory=_utc_now)
 
     def __eq__(self, other: Any) -> bool:
-        """Entities are equal if they have the same id."""
+        """id が同じなら等しい。"""
         if not isinstance(other, Entity):
             return False
         return self.id == other.id
 
     def __hash__(self) -> int:
-        """Hash based on id for use in sets and dicts."""
+        """set や dict で使うための、id に基づくハッシュ。"""
         return hash(self.id)
 
     def __repr__(self) -> str:
@@ -73,20 +73,20 @@ class Entity(ABC):
 @dataclass
 class AggregateRoot(Entity):
     """
-    Base class for aggregate roots.
+    集約ルートの基底クラス。
 
-    An aggregate root is an entity that acts as a gateway to a cluster
-    of related objects. All external references should be to the aggregate root.
+    集約ルートは、関連するオブジェクトのまとまりへの入り口になるエンティティ。
+    外からの参照は、すべて集約ルートに向ける。
     """
 
     _domain_events: list["DomainEvent"] = field(default_factory=list, repr=False)
 
     def add_domain_event(self, event: "DomainEvent") -> None:
-        """Add a domain event to be dispatched."""
+        """配信するドメインイベントを加える。"""
         self._domain_events.append(event)
 
     def clear_domain_events(self) -> list["DomainEvent"]:
-        """Clear and return all domain events."""
+        """ドメインイベントをすべて返し、空にする。"""
         events = self._domain_events.copy()
         self._domain_events.clear()
         return events
@@ -95,20 +95,19 @@ class AggregateRoot(Entity):
 @dataclass(eq=False)
 class Conversation(Entity):
     """
-    The stream's short-term conversation history.
+    配信の短期の会話履歴。
 
-    Holds viewer chats and the streamer's utterances in order, keeping only
-    the latest max_history messages.
+    視聴者のチャットと配信者の発言を順に持つ。最新の max_history 件だけを残す。
 
     Raises:
-        ValueError: If max_history is not positive.
+        ValueError: max_history が正でないとき。
     """
 
     max_history: int = 20
     _messages: deque[ConversationMessage] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate max_history and create the bounded history."""
+        """max_history を検証し、上限つきの履歴を作る。"""
         if self.max_history <= 0:
             raise ValueError(f"max_history must be positive, got {self.max_history}")
         self._messages = deque(maxlen=self.max_history)
@@ -119,7 +118,7 @@ class Conversation(Entity):
         user_name: str,
         user_id: Optional[str] = None,
     ) -> ConversationMessage:
-        """Record a chat message from a viewer."""
+        """視聴者のチャットのメッセージを記録する。"""
         return self._append(ConversationMessage.from_viewer(content, user_name, user_id))
 
     def add_streamer_message(
@@ -127,24 +126,24 @@ class Conversation(Entity):
         content: str,
         message_type: MessageType,
     ) -> ConversationMessage:
-        """Record something the streamer said."""
+        """配信者が言ったことを記録する。"""
         return self._append(ConversationMessage.from_streamer(content, message_type))
 
     def recent_messages(self, limit: int = 10) -> tuple[ConversationMessage, ...]:
-        """Return the latest messages, oldest first."""
+        """最新のメッセージを、古い順に返す。"""
         if limit <= 0:
             return ()
         return tuple(self._messages)[-limit:]
 
     def recent_viewer_messages(self, limit: int = 5) -> tuple[ConversationMessage, ...]:
-        """Return the latest viewer chat messages, oldest first."""
+        """視聴者の最新のチャットのメッセージを、古い順に返す。"""
         if limit <= 0:
             return ()
         viewer = [m for m in self._messages if m.role == MessageRole.VIEWER]
         return tuple(viewer[-limit:])
 
     def clear(self) -> None:
-        """Forget the whole history."""
+        """履歴をすべて忘れる。"""
         self._messages.clear()
         self.updated_at = _utc_now()
 
@@ -163,23 +162,20 @@ class Conversation(Entity):
 @dataclass(eq=False)
 class MidGoalPlan(Entity):
     """
-    The mission and its mid goals in priority order (the first pending one is
-    worked on now), and the town the mission builds: its definition and how
-    many of its stages are done. What can be done of the stage worked on is a
-    mid goal of the streamer's own; it is done like any other (from the world)
-    and may be moved down the list but not dropped. The stage is done, and the
-    town moves on, when all of its conditions have been met and no part is
-    left for an ability not there yet.
+    大目標と、優先度順の中目標（未完了の最初のものに今取り組む）。それと、大目標が
+    作る街: その定義と、済んだ段階の数。取り組んでいる段階のうち今できることは、
+    配信者自身の中目標になる。ほかの中目標と同じように（世界から）完了し、リストの
+    下に移すことはできるが、断念はできない。段階は、条件をすべて満たし、まだない
+    能力のために残した部分がなくなったときに済み、街は次に進む。
 
-    The limits keep viewers from taking the stream over: a viewer's mid goal
-    goes behind the one being worked on, at most one per viewer and
-    `max_viewer_goals` in all, and is dropped once it has used
-    `viewer_budget` steps. Mid goals are completed from the world (the bridge
-    judges their conditions), never by a model saying so.
+    上限は、視聴者が配信を乗っ取らないためにある: 視聴者の中目標は取り組んでいる
+    ものの後ろに入り、1 人 1 つ、全部で `max_viewer_goals` までで、`viewer_budget`
+    ステップを使ったら断念する。中目標は世界から完了にする（ブリッジが条件を判定
+    する）。モデルが済んだと言っても完了にはしない。
 
     Raises:
-        ValueError: If a limit is not positive (on creation), or an operation
-            breaks a limit (the message says which, for the model to retry).
+        ValueError: 上限が正でないとき（作るとき）、または操作が上限を破るとき
+            （どの上限かをメッセージで言い、モデルにやり直させる）。
     """
 
     mission: Mission = field(kw_only=True)
@@ -195,7 +191,7 @@ class MidGoalPlan(Entity):
     _stage_met: tuple[GoalSpec, ...] = field(default=(), init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate limits."""
+        """上限を検証する。"""
         for label in ("max_goals", "max_viewer_goals", "viewer_budget", "finished_shown"):
             if getattr(self, label) <= 0:
                 raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
@@ -203,56 +199,56 @@ class MidGoalPlan(Entity):
 
     @property
     def pending(self) -> tuple[MidGoal, ...]:
-        """Mid goals still to do, in priority order."""
+        """まだやる中目標（優先度順）。"""
         return tuple(self._goals)
 
     @property
     def finished(self) -> tuple[MidGoal, ...]:
-        """Recently completed or dropped mid goals, oldest first."""
+        """最近完了した、または断念した中目標（古い順）。"""
         return tuple(self._finished)
 
     @property
     def current(self) -> Optional[MidGoal]:
-        """The mid goal worked on now (the first pending one)."""
+        """今取り組んでいる中目標（未完了の最初のもの）。"""
         return self._goals[0] if self._goals else None
 
     @property
     def town(self) -> Optional[TownDefinition]:
-        """What the town is and its stages (None until defined)."""
+        """街がどんなものかと、その段階（定めるまでは None）。"""
         return self._town
 
     @property
     def town_stage(self) -> int:
-        """How many of the town's stages are done."""
+        """街の段階のうち、済んだものの数。"""
         return self._town_stage
 
     @property
     def current_stage(self) -> Optional[TownStage]:
-        """The town's stage worked on (None: no town yet, or it is complete)."""
+        """取り組んでいる街の段階（None: 街がまだないか、完成した）。"""
         if self._town is None or self._town_stage >= len(self._town.stages):
             return None
         return self._town.stages[self._town_stage]
 
     @property
     def town_complete(self) -> bool:
-        """Whether every stage of the town is done."""
+        """街のすべての段階が済んだか。"""
         return self._town is not None and self._town_stage >= len(self._town.stages)
 
     @property
     def stage_met(self) -> tuple[GoalSpec, ...]:
-        """The current stage's conditions met so far (by its mid goals)."""
+        """今の段階の条件のうち、（その中目標で）これまでに満たしたもの。"""
         return self._stage_met
 
     @property
     def stage_remaining(self) -> tuple[GoalSpec, ...]:
-        """The current stage's conditions not met yet (what its next mid goal asks for)."""
+        """今の段階の条件のうち、まだ満たしていないもの（次の中目標が求めるもの）。"""
         stage = self.current_stage
         if stage is None:
             return ()
         return tuple(c for c in stage.conditions if c not in self._stage_met)
 
     def settle_stage(self) -> bool:
-        """Move the town on past the stages that are done; whether it moved."""
+        """済んだ段階の先へ街を進める。進んだかを返す。"""
         moved = False
         while (
             (stage := self.current_stage) is not None and stage.ready and not self.stage_remaining
@@ -263,16 +259,16 @@ class MidGoalPlan(Entity):
         return moved
 
     def define_town(self, town: TownDefinition) -> None:
-        """Set what the town is (its unresolved stages may be written again as abilities come)."""
+        """街がどんなものかを設定する（未解決の段階は、能力が増えたら書き直すことがある）。"""
         self._town = town
         self.updated_at = _utc_now()
 
     def stage_goal(self) -> Optional[MidGoal]:
-        """The pending mid goal standing for the town's current stage."""
+        """街の今の段階を表す、未完了の中目標。"""
         return next((g for g in self._goals if g.stage == self._town_stage), None)
 
     def get(self, mid_goal_id: str) -> Optional[MidGoal]:
-        """A pending mid goal by id."""
+        """id で指した未完了の中目標。"""
         return next((g for g in self._goals if g.id == mid_goal_id), None)
 
     def add(
@@ -285,9 +281,9 @@ class MidGoalPlan(Entity):
         stage: Optional[int] = None,
     ) -> MidGoal:
         """
-        Add a mid goal at `position` (0-based among the pending; None: last).
+        `position`（未完了のものの中で 0 始まり。None: 最後）に中目標を足す。
 
-        A viewer's goes behind the one being worked on, whatever the position.
+        視聴者の中目標は、position が何でも、取り組んでいるものの後ろに入る。
         """
         if len(self._goals) >= self.max_goals:
             raise ValueError(f"the mid goal list is full ({self.max_goals})")
@@ -315,7 +311,7 @@ class MidGoalPlan(Entity):
         return goal
 
     def move(self, mid_goal_id: str, position: int) -> MidGoal:
-        """Reprioritise a pending mid goal (0-based position); a viewer's never goes first."""
+        """未完了の中目標の優先度を変える（position は 0 始まり）。視聴者のものは先頭にしない。"""
         goal = self._require(mid_goal_id)
         self._goals.remove(goal)
         earliest = 1 if goal.requested_by is not None and self._goals else 0
@@ -324,7 +320,7 @@ class MidGoalPlan(Entity):
         return goal
 
     def drop(self, mid_goal_id: str, reason: str) -> MidGoal:
-        """Give a mid goal up; the reason is required (it is said on stream)."""
+        """中目標を断念する。理由は必須（配信で言う）。"""
         if not reason:
             raise ValueError(f"dropping {mid_goal_id} needs a reason")
         if self._require(mid_goal_id).stage is not None:
@@ -334,7 +330,7 @@ class MidGoalPlan(Entity):
         return self._finish(mid_goal_id, MidGoalState.DROPPED, reason)
 
     def complete(self, mid_goal_id: str) -> MidGoal:
-        """Mark a mid goal done (its conditions hold); a stage's may move the town on."""
+        """中目標を完了にする（条件が満たされている）。段階の中目標なら、街が進むことがある。"""
         done = self._finish(mid_goal_id, MidGoalState.DONE, "its conditions hold")
         if done.stage is not None and done.stage == self._town_stage:
             self._stage_met += tuple(c for c in done.conditions if c not in self._stage_met)
@@ -342,12 +338,12 @@ class MidGoalPlan(Entity):
         return done
 
     def judged(self, mid_goal_id: str, progress: tuple[str, ...]) -> None:
-        """Keep how a mid goal's conditions stand."""
+        """中目標の条件の進み具合を保つ。"""
         goal = self._require(mid_goal_id)
         self._replace(goal, replace(goal, progress=progress))
 
     def charge(self, mid_goal_id: Optional[str]) -> Optional[MidGoal]:
-        """Count a step for a mid goal; a viewer's over budget is dropped and returned."""
+        """中目標のステップを 1 つ数える。予算を超えた視聴者のものは断念して返す。"""
         goal = self.get(mid_goal_id) if mid_goal_id else None
         if goal is None:
             return None
@@ -365,7 +361,7 @@ class MidGoalPlan(Entity):
         town_stage: int = 0,
         stage_met: tuple[GoalSpec, ...] = (),
     ) -> None:
-        """Put back a saved plan (ids stay as they were)."""
+        """保存したプランを戻す（id はそのまま）。"""
         self._goals = list(pending)
         self._finished.clear()
         self._finished.extend(finished)
@@ -376,7 +372,7 @@ class MidGoalPlan(Entity):
 
     @property
     def next_id(self) -> int:
-        """The number the next mid goal's id gets (kept when saved)."""
+        """次の中目標の id につく番号（保存するときに残す）。"""
         return self._next_id
 
     def _require(self, mid_goal_id: str) -> MidGoal:
@@ -403,24 +399,23 @@ class MidGoalPlan(Entity):
 @dataclass(eq=False)
 class PlaySession(Entity):
     """
-    A play session: the house to build, the mission with its mid goals, and
-    the lifecycle of the current (small) goal.
+    プレイセッション: 建てる家、大目標とその中目標、今の（小）目標のライフサイクル。
 
-    Whether a goal is met is judged by the bridge from the world; the session
-    decides when a new goal is due: none yet, met, the mid goal it served is
-    done or dropped, stuck (actions keep failing), stalled (the remaining
-    work stopped going down), over budget, or the time of day changed.
+    目標を達成したかは、ブリッジが世界から判定する。新しい目標が要る時はセッションが
+    決める: まだ目標がない、達成した、役立っていた中目標が完了または断念した、行き
+    詰まった（行動が失敗し続ける）、進まない（残りの作業が減らなくなった）、予算を
+    超えた、時間帯が変わった。
 
-    It is the one owner of what the streamer is doing (`activity()`): the goal
-    decision, the commentary and the chat replies all read it. Only the step
-    loop changes the small goal; a chat reply may add a mid goal (within the
-    plan's limits), never interrupting the small goal.
+    配信者が今していること（`activity()`）を持つのはセッションだけ: 目標の決定、
+    実況、チャットの返答はすべてこれを読む。小目標を変えるのはステップのループだけ。
+    チャットの返答は（プランの上限の中で）中目標を足すことはあるが、小目標に割り
+    込むことはない。
 
     Raises:
-        ValueError: If a limit is not positive.
+        ValueError: 上限が正でないとき。
     """
 
-    blueprint: Optional[HouseBlueprint] = field(kw_only=True)  # None: the home was built before
+    blueprint: Optional[HouseBlueprint] = field(kw_only=True)  # None: 家は前に建った
     plan: MidGoalPlan = field(kw_only=True)
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
@@ -437,7 +432,7 @@ class PlaySession(Entity):
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate limits and create the bounded goal history."""
+        """上限を検証し、上限つきの目標の履歴を作る。"""
         for label in (
             "max_steps_per_goal",
             "max_consecutive_failures",
@@ -449,11 +444,11 @@ class PlaySession(Entity):
         self._recent_goals = deque(maxlen=self.goal_history)
 
     def observe(self, obs: GameObservation) -> None:
-        """Keep the latest observation (what the chat replies see of the game)."""
+        """最新の観測を保つ（チャットの返答が見るゲームの様子）。"""
         self.last_observation = obs
 
     def activity(self) -> Activity:
-        """What the streamer is doing and why (seen by goal decisions, commentary and replies)."""
+        """配信者が今していることとその理由（目標の決定、実況、返答が見る）。"""
         return Activity(
             mission=self.plan.mission,
             town=self.plan.town,
@@ -467,11 +462,11 @@ class PlaySession(Entity):
 
     @property
     def recent_goals(self) -> tuple[GoalOutcome, ...]:
-        """Recent goals and how each ended, oldest first."""
+        """最近の目標と、それぞれの終わり方（古い順）。"""
         return tuple(self._recent_goals)
 
     def end_goal(self, ended_because: str, met: bool) -> Optional[GoalOutcome]:
-        """Record how the current goal ended (nothing when there is none)."""
+        """今の目標の終わり方を記録する（目標がなければ何もしない）。"""
         if self.goal is None:
             return None
         outcome = GoalOutcome(goal=self.goal, ended_because=ended_because, met=met)
@@ -479,7 +474,7 @@ class PlaySession(Entity):
         return outcome
 
     def track_progress(self, obs: GameObservation) -> None:
-        """Note the remaining work of the current goal; not going down counts as stalling."""
+        """今の目標の残りの作業を記録する。減らなければ、進んでいないと数える。"""
         if self.goal is None or obs.goal is None:
             return
         remaining = obs.goal.remaining
@@ -490,15 +485,18 @@ class PlaySession(Entity):
             self.stalled_steps += 1
 
     def phase_changed(self, obs: GameObservation) -> bool:
-        """The time of day moved on (e.g. dusk began) since the goal was set."""
+        """目標を設定してから時間帯が進んだ（例: 夕暮れが始まった）。"""
         return self.goal is not None and obs.time_phase != self.goal_phase
 
     def needs_new_goal(self, obs: GameObservation) -> bool:
-        """A new goal is due: none yet, met, its mid goal ended, stuck, stalled, too long, dusk."""
+        """
+        新しい目標が要る: まだない、達成した、その中目標が終わった、行き詰まった、進まない、
+        長すぎる、夕暮れ。
+        """
         return bool(self.goal_end_reason(obs))
 
     def goal_end_reason(self, obs: GameObservation) -> str:
-        """Why a new goal is due, for the LLM prompt and logs ("" while the goal goes on)."""
+        """新しい目標が要る理由。LLM のプロンプトとログに使う（目標が続く間は ""）。"""
         if self.goal is None or obs.goal is None:
             return "no goal yet"
         name = self.goal.spec.describe()
@@ -511,7 +509,7 @@ class PlaySession(Entity):
             return f"goal {name} is stuck (actions keep failing)"
         if self.stalled_steps >= self.max_stalled_steps:
             return f"goal {name} stalled (no progress in {self.stalled_steps} steps)"
-        # Getting through the night spans dusk, night and dawn and ends itself in the morning
+        # 夜を越す目標は夕暮れ、夜、明け方にまたがり、朝になると自ら終わる
         spans_the_night = self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
         if self.steps_in_goal >= self.max_steps_per_goal and not spans_the_night:
             return f"goal {name} ran for {self.steps_in_goal} steps"
@@ -520,7 +518,7 @@ class PlaySession(Entity):
         return ""
 
     def set_goal(self, goal: Goal, time_phase: str) -> None:
-        """Start pursuing a new goal at the given time of day."""
+        """与えられた時間帯に、新しい目標を追い始める。"""
         self.goal = goal
         self.goal_phase = time_phase
         self.steps_in_goal = 0
@@ -530,8 +528,8 @@ class PlaySession(Entity):
         self.updated_at = _utc_now()
 
     def record(self, result: ActionResult) -> Optional[MidGoal]:
-        """Count a step toward the current goal and its mid goal; returns a mid goal dropped
-        for going over its budget (a viewer's request)."""
+        """今の目標とその中目標の分としてステップを 1 つ数える。予算を超えて断念した中目標
+        （視聴者の頼み）があれば返す。"""
         self.steps_in_goal += 1
         self.consecutive_failures = 0 if result.ok else self.consecutive_failures + 1
         self.updated_at = _utc_now()

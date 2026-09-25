@@ -1,4 +1,4 @@
-"""Infrastructure layer - External services and implementations."""
+"""インフラ層: 外部サービスと実装。"""
 
 from ailoveshen.infrastructure.config import Settings, load_settings
 from ailoveshen.infrastructure.events import AsyncEventBus

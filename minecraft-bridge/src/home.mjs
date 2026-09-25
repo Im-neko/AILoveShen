@@ -1,11 +1,10 @@
-// The home (a finished house) and persistence of the build plan, the home and the goal.
+// 家（完成した建物）と、建築計画・家・目標の永続化。
 //
-// They live in memory otherwise, and the bridge restarts often: data/state.json keeps them so a
-// restart forgets neither the house, the build in progress nor what the bot is doing.
+// これらはふだんメモリにしかなく、ブリッジはよく再起動する: data/state.json に保存し、再起動しても
+// 家、建築の途中経過、ボットがしていることを忘れないようにする。
 //
-// Mineflayer-pathfinder does not handle doors (canOpenDoors is off: it misbehaves), so entering
-// and leaving are done explicitly: walk to the cell in front of the door, open it, walk through,
-// close it behind.
+// Mineflayer-pathfinder はドアを扱えない（canOpenDoors はおかしな動きをするので切っている）ので、
+// 出入りは明示的に行う: ドアの前のセルまで歩き、開け、通り抜け、後ろで閉める。
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,8 +19,8 @@ const { goals } = pathfinderPkg
 const DATA_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'state.json')
 const DOOR_TOGGLE_TIMEOUT_MS = 2000
 const WALK_THROUGH_TIMEOUT_MS = 3000
-// A hostile this close to the door keeps the bot inside: a creeper followed it home, waited at the
-// door and blew up the doorway (and the house corner) as the bot stepped out in the morning.
+// ドアにここまで近い敵対モブがいたらボットは中にとどまる: クリーパーが家までついて来てドアの前で
+// 待ち、朝ボットが外に出たところで入口（と家の角）を吹き飛ばした。
 const DOOR_DANGER_RADIUS = 8
 
 const toVec = (p) => new Vec3(p.x, p.y, p.z)
@@ -60,8 +59,7 @@ export function loadState (state) {
   if (data.memory) state.memory = { ...state.memory, ...data.memory }
 }
 
-// The finished plan becomes the home: the door's lower half, the cells just inside and outside it,
-// and the interior (the footprint without its walls).
+// 完成した計画が家になる: ドアの下半分、そのすぐ内側と外側のセル、内部（敷地から壁を除いた部分）。
 export function homeFromPlan (plan) {
   const doors = plan.blocks.filter((b) => b.block === 'door').sort((a, b) => a.y - b.y)
   if (!doors.length) return null
@@ -78,7 +76,7 @@ export function homeFromPlan (plan) {
     min: plan.origin.offset(1, 0, 1),
     max: plan.origin.offset(width - 2, 0, depth - 2),
     bed: null,
-    breach: [] // wall blocks dug for an exit and not yet put back: { x, y, z, block }
+    breach: [] // 出口のために掘ってまだ戻していない壁のブロック: { x, y, z, block }
   }
 }
 
@@ -89,7 +87,7 @@ export function isInside (bot, home) {
     p.y >= home.min.y && p.y <= home.min.y + 1
 }
 
-// A mob outside the walls cannot reach a bot inside with the door closed (and no hole in the wall).
+// ドアが閉まっていれば（壁に穴もなければ）、壁の外のモブは中のボットに届かない。
 export function shelteredFrom (bot, home, entity) {
   if (!isInside(bot, home) || isDoorOpen(bot, home) || home.breach.length) return false
   const p = entity.position.floored()
@@ -116,7 +114,7 @@ async function setDoor (bot, home, open) {
   }
 }
 
-// Walk straight to the center of `cell` (one block away, through the open door).
+// `cell`（1ブロック先、開いたドアの向こう）の中心までまっすぐ歩く。
 async function walkInto (bot, cell) {
   const target = cell.offset(0.5, 0, 0.5)
   await bot.lookAt(target.offset(0, bot.entity.eyeHeight, 0), true)
@@ -147,7 +145,7 @@ export async function enterHome (bot, home) {
   await setDoor(bot, home, false)
 }
 
-// Hostile mobs waiting outside near the door
+// 外のドアの近くで待っている敵対モブ
 export function dangerOutside (bot, home) {
   if (!home) return []
   return nearbyEntities(bot).filter(({ e }) => isHostile(bot, e) && e.position.distanceTo(home.outside) <= DOOR_DANGER_RADIUS &&
@@ -156,9 +154,9 @@ export function dangerOutside (bot, home) {
 
 const inHome = (home, p) => p.x >= home.min.x && p.x <= home.max.x && p.z >= home.min.z && p.z <= home.max.z
 
-// Part of the home, or of the planned house (grown by `margin`): never dug, nothing placed there.
-// Both are checked: a new plan must not leave the finished home unprotected.
-const HOME_HEIGHT = 5 // walls up to 4 and the roof
+// 家、または計画中の家（`margin` だけ広げる）の一部: 掘らないし、何も置かない。
+// 両方を確かめる: 新しい計画のせいで完成した家が守られなくなってはいけない。
+const HOME_HEIGHT = 5 // 壁は高さ 4 まで、その上に屋根
 export function inHouse (state, p, margin = 0) {
   const h = state.home
   if (h && p.x >= h.min.x - 1 - margin && p.x <= h.max.x + 1 + margin && p.z >= h.min.z - 1 - margin &&
@@ -170,7 +168,7 @@ export function inHouse (state, p, margin = 0) {
     p.y >= o.y - 1 && p.y <= o.y + height
 }
 
-// A bed goes straight in from the door: foot one cell past the inside cell, head one further
+// ベッドはドアからまっすぐ奥に置く: 足側は内側のセルの1つ先、頭側はさらに1つ先
 export function bedSpot (bot, home) {
   const inward = home.inside.minus(home.door)
   const foot = home.inside.plus(inward)
@@ -179,8 +177,8 @@ export function bedSpot (bot, home) {
   return free(foot) && free(head) ? { foot, inward } : null
 }
 
-// Where a chest goes: an interior cell off the line from the door to the bed (kept free to walk and
-// sleep), farthest from the door first
+// チェストを置く場所: ドアからベッドまでの列（歩いて寝られるよう空けておく）から外れた内部のセル。
+// ドアから遠い順
 export function chestSpot (bot, home) {
   const inward = home.inside.minus(home.door)
   const line = [0, 1, 2].map((i) => home.inside.plus(inward.scaled(i)))
@@ -197,8 +195,8 @@ const isWallBlock = (block) => !!block && (isPlanks(block.name) || isLog(block.n
 const standable = (bot, p) => bot.blockAt(p)?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' &&
   bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
 
-// Where an exit can be dug through the wall, the best cell of each side: both wall blocks there,
-// room to stand inside and outside, not the door. Farthest from the given hostiles first.
+// 壁を掘って出口にできる場所。各辺で一番よいセル: 壁のブロックが2つともあり、内側と外側に立つ
+// 場所があり、ドアではない。与えられた敵対モブから遠い順。
 export function exitSpots (bot, home, hostiles) {
   const y = home.min.y
   const span = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
@@ -226,8 +224,8 @@ export function exitSpots (bot, home, hostiles) {
   return out.sort((a, b) => b.distance - a.distance)
 }
 
-// Digs an exit through the wall at `spot` (from exitSpots), from inside. The dug blocks are recorded
-// first, so a hole left by an interruption is known and gets repaired (repairWall).
+// `spot`（exitSpots から）の壁を内側から掘って出口にする。掘るブロックは先に記録するので、中断で
+// 残った穴もわかり、直される（repairWall）。
 export async function digExit (bot, home, spot, signal) {
   const inside = spot.wall.plus(spot.wall.minus(spot.step))
   if (bot.entity.position.floored().xzDistanceTo(inside) > 0) {
@@ -246,13 +244,13 @@ export async function digExit (bot, home, spot, signal) {
   }
 }
 
-// Walks out through the dug exit
+// 掘った出口から歩いて出る
 export async function stepOut (bot, spot) {
   await walkInto(bot, spot.wall)
   await walkInto(bot, spot.step)
 }
 
-// Puts back the wall blocks dug for an exit (lowest first: the upper one rests on it)
+// 出口のために掘った壁のブロックを戻す（下から: 上のブロックはその上に載る）
 export async function repairWall (bot, home) {
   for (const b of [...home.breach].sort((a, c) => a.y - c.y)) {
     const pos = new Vec3(b.x, b.y, b.z)
@@ -267,13 +265,13 @@ export async function repairWall (bot, home) {
 
 export const hasBed = (bot, home) => !!home?.bed && !!bot.blockAt(home.bed)?.name.endsWith('_bed')
 
-// `confront`: going out to fight what waits at the door (the cleared goal), so they do not stop it
+// `confront`: ドアの前で待つものと戦いに出る（cleared の目標）ので、それらがいても止めない
 export async function leaveHome (bot, home, { confront = false } = {}) {
   if (!isInside(bot, home)) return
   const danger = dangerOutside(bot, home)
   if (danger.length && !confront) throw new Error(`staying inside: ${danger.map(({ e }) => e.name).join(', ')} waiting outside the door`)
   if (bot.entity.position.floored().xzDistanceTo(home.inside) > 0) {
-    // Pathing inside the closed house is fine: the interior is free of obstacles
+    // 閉じた家の中の経路移動は問題ない: 内部に障害物はない
     try {
       await bot.pathfinder.goto(new goals.GoalBlock(home.inside.x, home.inside.y, home.inside.z))
     } finally {

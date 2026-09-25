@@ -1,4 +1,4 @@
-"""Prompt builder adapter implementations."""
+"""プロンプトビルダーのアダプター実装。"""
 
 from __future__ import annotations
 

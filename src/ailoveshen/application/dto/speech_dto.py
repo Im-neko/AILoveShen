@@ -1,4 +1,4 @@
-"""Speech-related DTOs (Data Transfer Objects)."""
+"""発話の DTO（Data Transfer Object）。"""
 
 from __future__ import annotations
 
@@ -11,16 +11,16 @@ from ailoveshen.domain.value_objects import EmotionState, SpeechPriority
 @dataclass
 class SpeakTextRequest:
     """
-    Input DTO for speak text use case.
+    発話のユースケースの入力 DTO。
 
-    DTOs are simple data containers for transferring data across layer boundaries.
-    They don't contain business logic.
+    DTO は層の境界をまたいでデータを渡すための、ただの入れ物だ。
+    業務のロジックは持たない。
     """
 
     text: str
     priority: SpeechPriority = SpeechPriority.NORMAL
-    emotion: Optional[EmotionState] = None  # None = use current emotion
-    source: str = "unknown"  # Identifier for the source (e.g., "commentary", "chat")
+    emotion: Optional[EmotionState] = None  # None なら今の感情を使う
+    source: str = "unknown"  # 出どころの識別子（例: "commentary"、"chat"）
     language: str = "JP"
     speaker_id: int = 0
 
@@ -28,15 +28,15 @@ class SpeakTextRequest:
 @dataclass
 class SpeakTextResponse:
     """
-    Output DTO for speak text use case.
+    発話のユースケースの出力 DTO。
 
-    Contains the result of the speech synthesis and playback operation.
+    音声合成と再生の結果を持つ。
     """
 
     success: bool
-    queued: bool = False  # True if added to queue instead of immediate playback
+    queued: bool = False  # すぐに再生せず、キューに入れたら True
     message: str = ""
-    duration_ms: Optional[int] = None  # Audio duration if available
+    duration_ms: Optional[int] = None  # 分かれば音声の長さ
     error: Optional[str] = None
 
     @classmethod
@@ -45,7 +45,7 @@ class SpeakTextResponse:
         message: str = "Speech completed",
         duration_ms: Optional[int] = None,
     ) -> SpeakTextResponse:
-        """Create a successful response."""
+        """成功のレスポンスを作る。"""
         return cls(
             success=True,
             message=message,
@@ -54,7 +54,7 @@ class SpeakTextResponse:
 
     @classmethod
     def interrupted(cls) -> SpeakTextResponse:
-        """Create an interrupted response."""
+        """割り込まれたときのレスポンスを作る。"""
         return cls(
             success=True,
             message="Speech interrupted",
@@ -62,7 +62,7 @@ class SpeakTextResponse:
 
     @classmethod
     def queued_response(cls) -> SpeakTextResponse:
-        """Create a queued response."""
+        """キューに入れたときのレスポンスを作る。"""
         return cls(
             success=True,
             queued=True,
@@ -71,7 +71,7 @@ class SpeakTextResponse:
 
     @classmethod
     def error_response(cls, error: str) -> SpeakTextResponse:
-        """Create an error response."""
+        """エラーのレスポンスを作る。"""
         return cls(
             success=False,
             error=error,

@@ -1,15 +1,15 @@
-// Game knowledge for the solver: item groups, how items are obtained, and corrections to the data.
+// ソルバーのためのゲームの知識: アイテムのグループ、アイテムの入手方法、データの補正。
 //
-// Recipes, block drops and mob drops come from minecraft-data. The drop data needs care:
-// - entries flagged silkTouch need an enchanted tool, so they are not sources (glass has none)
-// - leaves list sticks and apples with dropChance 1 although they are rare, so only natural
-//   blocks on NATURAL_BLOCKS count as sources (leaves are not on it)
-// - sheep have no wool in entityLoot (the color is entity metadata): EXTRA_MOB_DROPS adds it
-// - only the animals on HUNTABLE are hunted (zombies drop rotten_flesh, which counts as food;
-//   rabbits outrun the bot)
-// Smelting is not in minecraft-data: SMELTING lists what the furnace makes (one input per item).
+// レシピ、ブロックのドロップ、モブのドロップは minecraft-data から取る。ドロップのデータには注意がいる:
+// - silkTouch の印がついた項目はエンチャントした道具が要るので、入手元にしない（ガラスは入手元がない）
+// - 葉は棒とリンゴをまれにしか落とさないのに dropChance 1 になっているので、NATURAL_BLOCKS にある
+//   自然のブロックだけを入手元に数える（葉は入っていない）
+// - 羊は entityLoot に羊毛がない（色はエンティティのメタデータ）: EXTRA_MOB_DROPS で足す
+// - 狩るのは HUNTABLE の動物だけ（ゾンビは食料に数えられる rotten_flesh を落とす。ウサギは
+//   ボットより速く逃げる）
+// 精錬は minecraft-data にない: SMELTING にかまどで作るものを並べる（アイテムごとに材料は1つ）。
 
-// Groups: any member satisfies a need for the group (e.g. a house wall takes any planks)
+// グループ: グループの必要はどのメンバーでも満たせる（例: 家の壁はどの板材でもよい）
 const GROUP_PATTERNS = {
   planks: /_planks$/,
   log: /^(?!stripped_).*_log$/,
@@ -21,12 +21,12 @@ const GROUP_PATTERNS = {
 const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'suspicious_stew',
   'chorus_fruit', 'ominous_bottle'])
 
-// Blocks found in nature that may be dug for their drops (never a player's builds: a house wall is
-// made of planks, so planks are not listed; logs are, and the dig candidates exclude the house)
+// ドロップのために掘ってよい、自然にあるブロック（プレイヤーの建てたものは含めない: 家の壁は
+// 板材なので板材は入れない。原木は入れ、掘る候補からは家を除く）
 const NATURAL_BLOCKS = [/^(?!stripped_).*_log$/, /^(stone|granite|diorite|andesite|deepslate|tuff)$/,
   /^(dirt|grass_block|coarse_dirt|podzol|sand|red_sand|gravel|clay)$/, /_ore$/, /^(sugar_cane|pumpkin|melon)$/]
 
-// What a furnace makes from what (an item or a group), one input per output, 10s each
+// かまどが何（アイテムかグループ）から何を作るか。出力1つに材料1つ、それぞれ 10 秒
 const SMELTING = {
   iron_ingot: 'raw_iron',
   charcoal: 'log',
@@ -35,7 +35,7 @@ const SMELTING = {
   cooked_mutton: 'mutton',
   cooked_chicken: 'chicken'
 }
-// What a furnace makes from an input item (an item name), or null
+// かまどが材料のアイテム（アイテム名）から作るもの。なければ null
 export function smeltingProduct (input) {
   return Object.keys(SMELTING).find((out) => {
     const from = SMELTING[out]
@@ -43,19 +43,19 @@ export function smeltingProduct (input) {
   }) ?? null
 }
 
-// Items burnt per item smelted: coal and charcoal burn 8 items, planks and logs 1.5
+// 燃料1個で精錬できる数: 石炭と木炭は 8 個、板材と原木は 1.5 個
 export const FUELS = [{ spec: 'coal', per: 8 }, { spec: 'charcoal', per: 8 }, { spec: 'planks', per: 1.5 }, { spec: 'log', per: 1.5 }]
 
 export const HUNTABLE = new Set(['cow', 'pig', 'sheep', 'chicken', 'mooshroom'])
 const EXTRA_MOB_DROPS = { sheep: ['white_wool'] }
 
-// Recipes that turn a member of a group into another member (dyeing wool or beds) never help
+// グループのメンバーを別のメンバーに変えるレシピ（羊毛やベッドの染色）は役に立たない
 const sameGroup = (a, b) => Object.values(GROUP_PATTERNS).some((re) => re.test(a) && re.test(b))
 
 export class Knowledge {
   constructor (md) {
     this.md = md
-    this.blockSources = new Map() // item -> [block names]
+    this.blockSources = new Map() // アイテム -> [ブロック名]
     for (const loot of md.blockLootArray) {
       if (!NATURAL_BLOCKS.some((re) => re.test(loot.block))) continue
       for (const d of loot.drops) {
@@ -63,7 +63,7 @@ export class Knowledge {
         push(this.blockSources, d.item, loot.block)
       }
     }
-    this.mobSources = new Map() // item -> [entity names]
+    this.mobSources = new Map() // アイテム -> [エンティティ名]
     for (const loot of md.entityLootArray) {
       if (!HUNTABLE.has(loot.entity)) continue
       for (const d of loot.drops) push(this.mobSources, d.item, loot.entity)
@@ -71,7 +71,7 @@ export class Knowledge {
     for (const [mob, items] of Object.entries(EXTRA_MOB_DROPS)) for (const item of items) push(this.mobSources, item, mob)
   }
 
-  // A need's item: a group name or an item name -> { label, members: [item names] }
+  // 必要なもののアイテム: グループ名かアイテム名 -> { label, members: [アイテム名] }
   resolve (spec) {
     if (spec === 'food') {
       return { label: 'food', members: this.md.foodsArray.map((f) => f.name).filter((n) => !FOOD_EXCLUDED.has(n)) }
@@ -86,7 +86,7 @@ export class Knowledge {
     return this.resolve(spec).members.includes(name)
   }
 
-  // Crafting recipes for item: [{ result count, ingredients {name: count}, needsTable }]
+  // item のクラフトのレシピ: [{ 結果の個数, 材料 {name: count}, needsTable }]
   recipes (item) {
     const id = this.md.itemsByName[item]?.id
     const out = []
@@ -106,12 +106,12 @@ export class Knowledge {
     return out
   }
 
-  // The furnace input for item (an item or a group), or null
+  // item（アイテムかグループ）のかまどの材料。なければ null
   smeltingInput (item) {
     return SMELTING[item] ?? null
   }
 
-  // Tools that can harvest the block, or null when a bare hand does
+  // そのブロックを回収できる道具。素手でよければ null
   harvestTools (block) {
     const tools = this.md.blocksByName[block]?.harvestTools
     return tools ? Object.keys(tools).map((id) => this.md.items[id].name) : null

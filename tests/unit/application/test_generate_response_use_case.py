@@ -1,4 +1,4 @@
-"""Tests for GenerateResponseUseCase."""
+"""GenerateResponseUseCase のテスト。"""
 
 from unittest.mock import AsyncMock, Mock
 
@@ -39,7 +39,7 @@ BED_REQUEST = {
 
 
 def _playing(time_phase: str = "day") -> PlaySession:
-    """A session with a home, working on the sword (m1), then food (m2)."""
+    """家があり、剣（m1）、次に食料（m2）に取り組んでいるセッション。"""
     plan = MidGoalPlan(mission=Mission("生き延びながら街にしていく"))
     plan.add("剣を持つ", (SWORD,))
     plan.add("食料を蓄える", (GoalSpec(GoalPredicate.HAVE, item="food", count=8),))
@@ -66,7 +66,7 @@ def _playing(time_phase: str = "day") -> PlaySession:
 
 @pytest.fixture
 def mock_text_generator():
-    """Create mock text generator."""
+    """テキスト生成のモック。"""
     generator = AsyncMock()
     generator.generate.return_value = "nekoさん、ありがとう！"
     return generator
@@ -74,7 +74,7 @@ def mock_text_generator():
 
 @pytest.fixture
 def mock_prompt_builder():
-    """Create mock prompt builder (sync methods)."""
+    """プロンプトビルダーのモック（同期メソッド）。"""
     builder = Mock()
     builder.build_system_prompt.return_value = "System prompt"
     builder.build_chat_response_prompt.return_value = "Response prompt"
@@ -83,19 +83,19 @@ def mock_prompt_builder():
 
 @pytest.fixture
 def mock_event_publisher():
-    """Create mock event publisher."""
+    """イベント発行のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def conversation():
-    """Create conversation history."""
+    """会話履歴。"""
     return Conversation()
 
 
 @pytest.fixture
 def bridge():
-    """Mock bridge: every condition can be judged (none met)."""
+    """ブリッジのモック。どの条件も判定できる（どれも満たしていない）。"""
     b = AsyncMock()
 
     async def check(specs):
@@ -107,7 +107,7 @@ def bridge():
 
 @pytest.fixture
 def store():
-    """Mock mission store."""
+    """ミッションストアのモック。"""
     return Mock()
 
 
@@ -115,7 +115,7 @@ def store():
 def use_case(
     mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
 ):
-    """Create GenerateResponseUseCase with mocked dependencies."""
+    """依存をモックにした GenerateResponseUseCase。"""
     return GenerateResponseUseCase(
         text_generator=mock_text_generator,
         prompt_builder=mock_prompt_builder,
@@ -137,11 +137,11 @@ def _request(message: str = "がんばれ") -> GenerateResponseRequest:
 
 
 class TestGenerateResponseUseCase:
-    """Tests for GenerateResponseUseCase."""
+    """GenerateResponseUseCase のテスト。"""
 
     @pytest.mark.asyncio
     async def test_execute_success(self, use_case, mock_text_generator):
-        """Test successful chat response generation."""
+        """コメントへの返答が生成される。"""
         response = await use_case.execute(_request())
 
         assert response.success is True
@@ -155,7 +155,7 @@ class TestGenerateResponseUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_records_chat_and_reply(self, use_case, conversation):
-        """Test both the viewer chat and the reply are recorded in order."""
+        """視聴者のコメントと返答が、この順で記録される。"""
         await use_case.execute(_request())
 
         chat, reply = conversation.recent_messages()
@@ -167,7 +167,7 @@ class TestGenerateResponseUseCase:
 
     @pytest.mark.asyncio
     async def test_history_excludes_current_chat(self, use_case, mock_prompt_builder, conversation):
-        """Test the chat being answered is not duplicated in the history."""
+        """返答するコメントが履歴に重複して入らない。"""
         conversation.add_streamer_message("洞窟だ！", MessageType.COMMENTARY)
 
         await use_case.execute(_request())
@@ -179,7 +179,7 @@ class TestGenerateResponseUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_publishes_event(self, use_case, mock_event_publisher):
-        """Test ChatResponseGeneratedEvent is published."""
+        """ChatResponseGeneratedEvent が発行される。"""
         await use_case.execute(_request())
 
         event = mock_event_publisher.publish.call_args.args[0]
@@ -192,18 +192,18 @@ class TestGenerateResponseUseCase:
     async def test_execute_empty_text(
         self, use_case, mock_text_generator, mock_event_publisher, conversation
     ):
-        """Test empty generation keeps the chat but records no reply."""
+        """生成が空なら、コメントは残し、返答は記録しない。"""
         mock_text_generator.generate.return_value = ""
 
         response = await use_case.execute(_request())
 
         assert response.success is False
-        assert len(conversation) == 1  # only the viewer chat
+        assert len(conversation) == 1  # 視聴者のコメントだけ
         mock_event_publisher.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_generation_error(self, use_case, mock_text_generator):
-        """Test generation failure returns an error response with empty text."""
+        """生成に失敗したら、空のテキストでエラーの応答を返す。"""
         mock_text_generator.generate.side_effect = TextGenerationError("API down")
 
         response = await use_case.execute(_request())
@@ -215,7 +215,7 @@ class TestGenerateResponseUseCase:
 
 
 class TestReplyWhilePlaying:
-    """A reply while playing sees the activity and may accept the request as a mid goal."""
+    """プレイ中の返答は「今していること」を見て、頼みを中目標として受けられる。"""
 
     def _request(self, session, message="ベッド作って！", user_name="neko"):
         return GenerateResponseRequest(user_name=user_name, message=message, session=session)
@@ -224,7 +224,7 @@ class TestReplyWhilePlaying:
     async def test_reply_sees_the_activity(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):
-        """Test the reply is built from the session's activity, able to take requests."""
+        """返答はセッションの「今していること」から作り、頼みを受けられる。"""
         mock_text_generator.generate_json.return_value = {
             "reply": "剣のために木を集めてるよ",
             "request": "none",
@@ -244,7 +244,7 @@ class TestReplyWhilePlaying:
     async def test_accepted_request_joins_the_mid_goals_behind_the_current(
         self, use_case, mock_text_generator, mock_event_publisher, store
     ):
-        """Test an accepted request is a mid goal (after the current one); the goal goes on."""
+        """受けた頼みは（今の中目標の後ろに）中目標になり、小目標は続く。"""
         mock_text_generator.generate_json.return_value = BED_REQUEST
         session = _playing()
 
@@ -256,14 +256,14 @@ class TestReplyWhilePlaying:
             ("ベッドで寝る", "neko"),
             ("食料を蓄える", None),
         ]
-        assert session.goal.spec.describe() == "have(log, 3)"  # not interrupted
+        assert session.goal.spec.describe() == "have(log, 3)"  # 中断しない
         added = _added(mock_event_publisher)[0]
         assert (added.title, added.requested_by, added.position) == ("ベッドで寝る", "neko", 2)
         store.save.assert_called_with(session.plan)
 
     @pytest.mark.asyncio
     async def test_request_never_cuts_in(self, use_case, mock_text_generator):
-        """Test a request asked to go first still goes behind the current mid goal."""
+        """先にしてと頼まれても、今の中目標の後ろに入る。"""
         mock_text_generator.generate_json.return_value = {**BED_REQUEST, "position": 1}
         session = _playing()
 
@@ -275,7 +275,7 @@ class TestReplyWhilePlaying:
     async def test_second_request_from_the_same_viewer_is_declined(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):
-        """Test a limit hit goes back to the model, whose declining reply is used."""
+        """上限にかかったらモデルに返し、断る返答が使われる。"""
         explore = {
             **BED_REQUEST,
             "title": "板を集める",
@@ -297,7 +297,7 @@ class TestReplyWhilePlaying:
     async def test_condition_the_bridge_cannot_judge_is_never_promised(
         self, use_case, mock_text_generator, mock_prompt_builder, bridge
     ):
-        """Test an accepted request the world cannot judge is sent back, not added."""
+        """受けた頼みを世界から判定できなければ、足さずに差し戻す。"""
         bridge.check.side_effect = GoalRejectedError("conditions rejected: unknown item diamond")
         mock_text_generator.generate_json.side_effect = [
             {**BED_REQUEST, "conditions": [{"predicate": "have", "item": "diamond", "count": 1}]},
@@ -314,7 +314,7 @@ class TestReplyWhilePlaying:
 
     @pytest.mark.asyncio
     async def test_no_reply_after_repeated_unusable_requests(self, use_case, mock_text_generator):
-        """Test nothing is said when every generation accepts something unusable."""
+        """どの生成も使えない頼みを受けたら、何も言わない。"""
         mock_text_generator.generate_json.return_value = {
             "reply": "やるね！",
             "request": "accept",
@@ -332,7 +332,7 @@ class TestReplyWhilePlaying:
     async def test_without_the_mid_goals_replies_only_talk(
         self, mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation
     ):
-        """Test a use case given no mid goals replies with text only."""
+        """中目標を渡されないユースケースは、テキストだけで返答する。"""
         use_case = GenerateResponseUseCase(
             text_generator=mock_text_generator,
             prompt_builder=mock_prompt_builder,

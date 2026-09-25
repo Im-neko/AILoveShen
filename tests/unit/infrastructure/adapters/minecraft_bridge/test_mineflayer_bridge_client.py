@@ -1,4 +1,4 @@
-"""Tests for MineflayerBridgeClient adapter."""
+"""MineflayerBridgeClient アダプタのテスト。"""
 
 import json
 
@@ -11,7 +11,7 @@ from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_clien
     MineflayerBridgeClient,
 )
 
-# The shape of GET /observe (minecraft-bridge/src/index.mjs)
+# GET /observe の形（minecraft-bridge/src/index.mjs）
 OBSERVE = {
     "busy": True,
     "observation": {
@@ -44,11 +44,11 @@ def _client(handler) -> MineflayerBridgeClient:
 
 
 class TestMineflayerBridgeClient:
-    """Tests for the HTTP contract with the Node bridge."""
+    """Node のブリッジとの HTTP の取り決めのテスト。"""
 
     @pytest.mark.asyncio
     async def test_observe_parses_observation(self):
-        """Test the observation JSON becomes a GameObservation."""
+        """観測の JSON が GameObservation になる。"""
         client = _client(lambda req: httpx.Response(200, json=OBSERVE))
 
         obs = await client.observe()
@@ -71,7 +71,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_observe_without_plan_home_or_goal(self):
-        """Test missing sections mean no plan, no home and no goal yet."""
+        """項目がなければ、設計も拠点も小目標もまだない。"""
         data = {**OBSERVE, "goal": None, "observation": {**OBSERVE["observation"], "home": None}}
         del data["observation"]["build"]
         client = _client(lambda req: httpx.Response(200, json=data))
@@ -84,7 +84,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_set_goal_puts_the_spec(self):
-        """Test set_goal() sends the spec with what the chests keep, and returns its status."""
+        """set_goal() は指定をチェストに残す物と一緒に送り、状態を返す。"""
         seen = {}
 
         def handler(req):
@@ -112,7 +112,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_rejected_goal_raises_with_the_reason(self):
-        """Test a 400 becomes GoalRejectedError carrying the bridge's reason."""
+        """400 は、ブリッジの理由を持つ GoalRejectedError になる。"""
         client = _client(
             lambda req: httpx.Response(400, json={"error": "unknown item or group: x"})
         )
@@ -122,7 +122,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_check_judges_conditions_without_setting_a_goal(self):
-        """Test check() posts the specs and returns each one's status in order."""
+        """check() は指定を送り、それぞれの状態を順に返す。"""
         seen = {}
 
         def handler(req):
@@ -156,7 +156,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_check_rejected_condition_raises_with_the_reason(self):
-        """Test a condition the bridge cannot judge becomes GoalRejectedError."""
+        """ブリッジが判定できない条件は GoalRejectedError になる。"""
         client = _client(
             lambda req: httpx.Response(400, json={"error": "unknown item or group: diamondz"})
         )
@@ -166,12 +166,12 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_check_nothing_asks_nothing(self):
-        """Test no conditions make no request."""
+        """条件がなければリクエストしない。"""
         assert await _client(lambda req: httpx.Response(500)).check([]) == []
 
     @pytest.mark.asyncio
     async def test_act_posts_candidate_id(self):
-        """Test act() posts the id and returns the result."""
+        """act() は id を送り、結果を返す。"""
         seen = {}
 
         def handler(req):
@@ -186,7 +186,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_set_build_plan_sends_blocks_in_order_with_the_design(self):
-        """Test the plan is sent with block kinds as strings, in order, and the design."""
+        """建てる計画は、ブロックの種類を文字列にして順番どおりに、設計と一緒に送る。"""
         seen = {}
 
         def handler(req):
@@ -219,7 +219,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_error_status_raises(self):
-        """Test a non-200 response raises GameBridgeError."""
+        """200 以外の応答は GameBridgeError。"""
         client = _client(lambda req: httpx.Response(409, json={"error": "busy"}))
 
         with pytest.raises(GameBridgeError, match="409"):
@@ -227,7 +227,7 @@ class TestMineflayerBridgeClient:
 
     @pytest.mark.asyncio
     async def test_unreachable_raises(self):
-        """Test a connection error raises GameBridgeError."""
+        """接続エラーは GameBridgeError。"""
 
         def handler(req):
             raise httpx.ConnectError("refused")

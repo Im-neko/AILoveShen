@@ -1,4 +1,4 @@
-"""Sounddevice-based audio player adapter."""
+"""sounddevice で音声を再生するアダプター。"""
 
 from __future__ import annotations
 
@@ -17,23 +17,23 @@ from ailoveshen.domain.exceptions import AudioPlaybackError
 
 def _parse_wav_header(data: bytes) -> Tuple[int, int, int]:
     """
-    Parse WAV header to extract audio parameters.
+    WAV のヘッダーを解析して音声のパラメーターを取り出す。
 
     Args:
-        data: WAV file data
+        data: WAV ファイルのデータ
 
     Returns:
-        Tuple of (sample_rate, num_channels, bits_per_sample)
+        (sample_rate, num_channels, bits_per_sample) のタプル
 
     Raises:
-        AudioPlaybackError: If WAV header is invalid
+        AudioPlaybackError: WAV のヘッダーが不正なとき
     """
     try:
-        # Check RIFF header
+        # RIFF のヘッダーを確かめる
         if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
             raise AudioPlaybackError("Invalid WAV format: missing RIFF/WAVE header")
 
-        # Find fmt chunk
+        # fmt チャンクを探す
         pos = 12
         while pos < len(data) - 8:
             chunk_id = data[pos : pos + 4]
@@ -66,28 +66,28 @@ def _parse_wav_header(data: bytes) -> Tuple[int, int, int]:
 
 def _wav_to_numpy(data: bytes) -> Tuple[np.ndarray, int]:
     """
-    Convert WAV bytes to numpy array.
+    WAV のバイト列を numpy の配列に変換する。
 
     Args:
-        data: WAV file data
+        data: WAV ファイルのデータ
 
     Returns:
-        Tuple of (audio_array as float32, sample_rate)
+        (float32 の audio_array, sample_rate) のタプル
 
     Raises:
-        AudioPlaybackError: If conversion fails
+        AudioPlaybackError: 変換に失敗したとき
     """
     try:
-        # Use scipy.io.wavfile if available, fall back to manual parsing
+        # scipy.io.wavfile があれば使い、なければ自前で解析する
         try:
             from scipy.io import wavfile
 
             sample_rate, audio_array = wavfile.read(io.BytesIO(data))
         except ImportError:
-            # Manual parsing fallback
+            # 自前の解析（代わり）
             sample_rate, num_channels, bits_per_sample = _parse_wav_header(data)
 
-            # Find data chunk
+            # data チャンクを探す
             pos = 12
             while pos < len(data) - 8:
                 chunk_id = data[pos : pos + 4]
@@ -101,7 +101,7 @@ def _wav_to_numpy(data: bytes) -> Tuple[np.ndarray, int]:
             else:
                 raise AudioPlaybackError("data chunk not found in WAV data")
 
-            # Convert to numpy array
+            # numpy の配列に変換する
             if bits_per_sample == 16:
                 audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
             elif bits_per_sample == 32:
@@ -109,14 +109,12 @@ def _wav_to_numpy(data: bytes) -> Tuple[np.ndarray, int]:
             elif bits_per_sample == 8:
                 audio_array = np.frombuffer(audio_bytes, dtype=np.uint8)
             else:
-                raise AudioPlaybackError(
-                    f"Unsupported bits per sample: {bits_per_sample}"
-                )
+                raise AudioPlaybackError(f"Unsupported bits per sample: {bits_per_sample}")
 
             if num_channels > 1:
                 audio_array = audio_array.reshape(-1, num_channels)
 
-        # Normalize to float32 [-1, 1]
+        # float32 の [-1, 1] に正規化する
         if audio_array.dtype == np.int16:
             audio_array = audio_array.astype(np.float32) / 32768.0
         elif audio_array.dtype == np.int32:
@@ -136,10 +134,10 @@ def _wav_to_numpy(data: bytes) -> Tuple[np.ndarray, int]:
 
 class SounddevicePlayer(IAudioPlayer):
     """
-    Infrastructure adapter for audio playback using sounddevice.
+    sounddevice で音声を再生するインフラ側アダプター。
 
-    Implements IAudioPlayer output port.
-    Uses sounddevice library for cross-platform audio output.
+    出力ポート IAudioPlayer を実装する。
+    クロスプラットフォームで音声を出すため、sounddevice ライブラリを使う。
     """
 
     def __init__(
@@ -148,11 +146,11 @@ class SounddevicePlayer(IAudioPlayer):
         blocksize: int = 1024,
     ) -> None:
         """
-        Initialize the audio player.
+        音声プレイヤーを初期化する。
 
         Args:
-            device: Audio output device ID (None = default device)
-            blocksize: Block size for audio streaming
+            device: 音声の出力デバイスの ID（None なら既定のデバイス）
+            blocksize: 音声のストリーミングのブロックサイズ
         """
         self._device = device
         self._blocksize = blocksize
@@ -165,49 +163,49 @@ class SounddevicePlayer(IAudioPlayer):
         interrupt_event: Optional[asyncio.Event] = None,
     ) -> bool:
         """
-        Play audio data with interrupt support.
+        割り込みに対応して音声データを再生する。
 
         Args:
-            audio_data: Audio data to play (WAV format)
-            interrupt_event: Event to monitor for interruption
+            audio_data: 再生する音声データ（WAV 形式）
+            interrupt_event: 割り込みを見張るイベント
 
         Returns:
-            True if playback completed, False if interrupted
+            再生し終えたら True、割り込まれたら False
         """
         try:
-            # Convert WAV to numpy array
+            # WAV を numpy の配列に変換する
             audio_array, sample_rate = _wav_to_numpy(audio_data)
 
             self._playing = True
             self._stop_requested = False
 
-            # Calculate duration
+            # 長さを計算する
             duration = len(audio_array) / sample_rate
 
-            # Start playback
+            # 再生を始める
             sd.play(audio_array, sample_rate, device=self._device)
 
-            # Wait for playback with interrupt checking
+            # 割り込みを確かめながら再生を待つ
             elapsed = 0.0
-            check_interval = 0.05  # 50ms intervals for responsive interrupts
+            check_interval = 0.05  # 割り込みにすぐ応じられるよう 50ms ごと
 
             while elapsed < duration:
-                # Check for external interrupt
+                # 外からの割り込みを確かめる
                 if interrupt_event and interrupt_event.is_set():
                     sd.stop()
-                    logger.debug("Audio playback interrupted by event")
+                    logger.debug("イベントで音声の再生を中断した")
                     return False
 
-                # Check for internal stop request
+                # 内部からの停止の要求を確かめる
                 if self._stop_requested:
                     sd.stop()
-                    logger.debug("Audio playback stopped by request")
+                    logger.debug("要求で音声の再生を止めた")
                     return False
 
                 await asyncio.sleep(check_interval)
                 elapsed += check_interval
 
-            # Wait for any remaining audio
+            # 残りの音声を待つ
             sd.wait()
             return True
 
@@ -217,36 +215,36 @@ class SounddevicePlayer(IAudioPlayer):
         except AudioPlaybackError:
             raise
         except Exception as e:
-            logger.error(f"Audio playback error: {e}")
+            logger.error(f"音声の再生でエラー: {e}")
             raise AudioPlaybackError(f"Playback failed: {e}") from e
         finally:
             self._playing = False
             self._stop_requested = False
 
     def stop(self) -> None:
-        """Stop current playback immediately."""
+        """今の再生をすぐに止める。"""
         self._stop_requested = True
         try:
             sd.stop()
         except Exception as e:
-            logger.warning(f"Error stopping audio: {e}")
+            logger.warning(f"音声を止めるときにエラー: {e}")
 
     def is_playing(self) -> bool:
-        """Check if currently playing."""
+        """今再生中かを返す。"""
         return self._playing
 
     def get_duration_ms(self, audio_data: bytes) -> int:
         """
-        Get duration of audio data in milliseconds.
+        音声データの長さをミリ秒で返す。
 
         Args:
-            audio_data: Audio data (WAV format)
+            audio_data: 音声データ（WAV 形式）
 
         Returns:
-            Duration in milliseconds
+            長さ（ミリ秒）
 
         Raises:
-            AudioPlaybackError: If audio data is invalid
+            AudioPlaybackError: 音声データが不正なとき
         """
         try:
             audio_array, sample_rate = _wav_to_numpy(audio_data)

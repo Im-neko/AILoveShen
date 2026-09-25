@@ -1,4 +1,4 @@
-"""Tests for TTSService."""
+"""TTSService のテスト。"""
 
 import asyncio
 from unittest.mock import AsyncMock
@@ -11,7 +11,7 @@ from ailoveshen.presentation.services.tts_service import TTSService
 
 
 def _slow_use_case(delay: float, played: list[str]) -> AsyncMock:
-    """Use case whose execute() takes `delay` seconds and records the text."""
+    """execute() に `delay` 秒かかり、テキストを記録するユースケース。"""
 
     async def execute(request):
         await asyncio.sleep(delay)
@@ -24,18 +24,18 @@ def _slow_use_case(delay: float, played: list[str]) -> AsyncMock:
 
 
 class TestTTSServiceWaitUntilIdle:
-    """Tests for wait_until_idle()."""
+    """wait_until_idle() のテスト。"""
 
     @pytest.mark.asyncio
     async def test_waits_for_item_being_played(self):
-        """Test it waits for the request already taken off the queue."""
+        """キューから取り出し済みのリクエストを待つ。"""
         played: list[str] = []
         service = TTSService(_slow_use_case(0.2, played))
         await service.start()
 
         await service.speak("one")
         await service.speak("two")
-        await asyncio.sleep(0.05)  # "one" is playing, queue size is 1
+        await asyncio.sleep(0.05)  # "one" を再生中で、キューの長さは 1
 
         await asyncio.wait_for(service.wait_until_idle(), timeout=2.0)
 
@@ -44,7 +44,7 @@ class TestTTSServiceWaitUntilIdle:
 
     @pytest.mark.asyncio
     async def test_returns_immediately_when_nothing_queued(self):
-        """Test it returns right away when there is nothing to play."""
+        """再生するものがなければすぐに戻る。"""
         service = TTSService(_slow_use_case(0.0, []))
         await service.start()
 
@@ -53,7 +53,7 @@ class TestTTSServiceWaitUntilIdle:
 
     @pytest.mark.asyncio
     async def test_does_not_hang_after_use_case_error(self):
-        """Test a failing request is still marked done."""
+        """失敗したリクエストも済みにする。"""
         use_case = AsyncMock()
         use_case.execute.side_effect = RuntimeError("boom")
         service = TTSService(use_case)
@@ -66,13 +66,13 @@ class TestTTSServiceWaitUntilIdle:
 
     @pytest.mark.asyncio
     async def test_does_not_hang_after_stop_during_playback(self):
-        """Test stop() mid-playback marks the playing and discarded requests done."""
+        """再生の途中の stop() は、再生中のリクエストと捨てたリクエストを済みにする。"""
         service = TTSService(_slow_use_case(10.0, []))
         await service.start()
 
         await service.speak("long")
         await service.speak("queued", priority=SpeechPriority.HIGH)
-        await asyncio.sleep(0.05)  # "long" is playing, "queued" is waiting
+        await asyncio.sleep(0.05)  # "long" を再生中で、"queued" が待っている
 
         await service.stop()
 

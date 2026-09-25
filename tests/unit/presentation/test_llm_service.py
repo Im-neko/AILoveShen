@@ -1,4 +1,4 @@
-"""Tests for LLMService."""
+"""LLMService のテスト。"""
 
 from unittest.mock import AsyncMock
 
@@ -23,7 +23,7 @@ ACTIVITY = Activity(goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="家を建�
 
 @pytest.fixture
 def commentary_use_case():
-    """Create mock commentary use case."""
+    """実況のユースケースのモック。"""
     use_case = AsyncMock()
     use_case.execute.return_value = GenerateCommentaryResponse.ok("洞窟だ！")
     return use_case
@@ -31,7 +31,7 @@ def commentary_use_case():
 
 @pytest.fixture
 def response_use_case():
-    """Create mock chat response use case."""
+    """コメントへの返答のユースケースのモック。"""
     use_case = AsyncMock()
     use_case.execute.return_value = GenerateResponseResponse.ok("やっほー", "hi", "neko")
     return use_case
@@ -39,13 +39,13 @@ def response_use_case():
 
 @pytest.fixture
 def text_generator():
-    """Create mock text generator."""
+    """テキスト生成のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def service(commentary_use_case, response_use_case, text_generator):
-    """Create LLMService with mocked use cases."""
+    """ユースケースをモックにした LLMService。"""
     return LLMService(
         generate_commentary_use_case=commentary_use_case,
         generate_response_use_case=response_use_case,
@@ -54,11 +54,11 @@ def service(commentary_use_case, response_use_case, text_generator):
 
 
 class TestLLMService:
-    """Tests for LLMService."""
+    """LLMService のテスト。"""
 
     @pytest.mark.asyncio
     async def test_generate_commentary(self, service, commentary_use_case):
-        """Test commentary request is built from arguments and current emotion."""
+        """実況のリクエストは、引数と今の感情から作る。"""
         happy = EmotionState(EmotionType.HAPPY, 0.8)
         service.update_emotion(happy)
 
@@ -75,13 +75,13 @@ class TestLLMService:
 
     @pytest.mark.asyncio
     async def test_generate_commentary_failure_returns_empty(self, service, commentary_use_case):
-        """Test failed commentary returns an empty string."""
+        """実況に失敗したら空文字列を返す。"""
         commentary_use_case.execute.return_value = GenerateCommentaryResponse.error_response("x")
         assert await service.generate_commentary() == ""
 
     @pytest.mark.asyncio
     async def test_generate_response(self, service, response_use_case):
-        """Test chat response request is built from arguments."""
+        """返答のリクエストは引数から作る。"""
         text = await service.generate_response("neko", "hi", user_id="42")
 
         assert text == "やっほー"
@@ -93,20 +93,20 @@ class TestLLMService:
 
     @pytest.mark.asyncio
     async def test_generate_response_failure_returns_empty(self, service, response_use_case):
-        """Test failed chat response returns an empty string."""
+        """返答に失敗したら空文字列を返す。"""
         response_use_case.execute.return_value = GenerateResponseResponse.error_response(
             "x", "hi", "neko"
         )
         assert await service.generate_response("neko", "hi") == ""
 
     def test_update_emotion(self, service):
-        """Test emotion can be updated and read back."""
+        """感情を変えて読み出せる。"""
         sad = EmotionState(EmotionType.SAD, 0.6)
         service.update_emotion(sad)
         assert service.get_current_emotion() == sad
 
     @pytest.mark.asyncio
     async def test_close(self, service, text_generator):
-        """Test close() closes the text generator."""
+        """close() はテキスト生成を閉じる。"""
         await service.close()
         text_generator.close.assert_awaited_once()

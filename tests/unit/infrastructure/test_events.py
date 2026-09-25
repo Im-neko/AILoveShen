@@ -1,4 +1,4 @@
-"""Unit tests for event bus."""
+"""イベントバスの単体テスト。"""
 
 from dataclasses import dataclass
 
@@ -10,29 +10,29 @@ from ailoveshen.infrastructure.events import AsyncEventBus, event_handler
 
 @dataclass(frozen=True)
 class TestEvent(DomainEvent):
-    """Test event for unit tests."""
+    """単体テスト用のイベント。"""
 
     message: str = ""
 
 
 @dataclass(frozen=True)
 class OtherEvent(DomainEvent):
-    """Another test event."""
+    """もう 1 つのテスト用のイベント。"""
 
     value: int = 0
 
 
 class TestAsyncEventBus:
-    """Tests for AsyncEventBus."""
+    """AsyncEventBus のテスト。"""
 
     @pytest.fixture
     def event_bus(self):
-        """Create fresh event bus for each test."""
+        """テストごとに新しいイベントバスを作る。"""
         return AsyncEventBus()
 
     @pytest.mark.asyncio
     async def test_publish_to_subscriber(self, event_bus):
-        """Test event is delivered to subscriber."""
+        """イベントが購読者に届く。"""
         received_events = []
 
         async def handler(event: TestEvent):
@@ -47,7 +47,7 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_publish_to_multiple_subscribers(self, event_bus):
-        """Test event is delivered to all subscribers."""
+        """イベントがすべての購読者に届く。"""
         received_1 = []
         received_2 = []
 
@@ -68,7 +68,7 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_subscribers_receive_correct_type_only(self, event_bus):
-        """Test subscribers only receive their event type."""
+        """購読者には自分のイベントの種類だけが届く。"""
         test_events = []
         other_events = []
 
@@ -91,14 +91,14 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_publish_with_no_subscribers(self, event_bus):
-        """Test publishing with no subscribers doesn't error."""
+        """購読者がいなくても発行はエラーにならない。"""
         event = TestEvent(message="Nobody listening")
-        # Should not raise
+        # 例外にならない
         await event_bus.publish(event)
 
     @pytest.mark.asyncio
     async def test_unsubscribe(self, event_bus):
-        """Test unsubscribing handler."""
+        """ハンドラの購読をやめる。"""
         received = []
 
         async def handler(event: TestEvent):
@@ -116,7 +116,7 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_unsubscribe_returns_false_if_not_found(self, event_bus):
-        """Test unsubscribe returns False if handler not found."""
+        """ハンドラがなければ unsubscribe は False を返す。"""
 
         async def handler(event: TestEvent):
             pass
@@ -126,7 +126,7 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_subscribe_returns_unsubscribe_function(self, event_bus):
-        """Test subscribe returns working unsubscribe function."""
+        """subscribe は使える購読解除の関数を返す。"""
         received = []
 
         async def handler(event: TestEvent):
@@ -142,7 +142,7 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_clear_removes_all_subscriptions(self, event_bus):
-        """Test clear removes all subscriptions."""
+        """clear は購読を全部消す。"""
 
         async def handler1(event: TestEvent):
             pass
@@ -160,7 +160,7 @@ class TestAsyncEventBus:
         assert event_bus.handler_count() == 0
 
     def test_handler_count(self, event_bus):
-        """Test handler_count returns correct counts."""
+        """handler_count は正しい数を返す。"""
 
         async def handler1(event: TestEvent):
             pass
@@ -183,7 +183,7 @@ class TestAsyncEventBus:
 
     @pytest.mark.asyncio
     async def test_handler_error_isolation(self, event_bus):
-        """Test one handler error doesn't affect others."""
+        """1 つのハンドラのエラーはほかに影響しない。"""
         successful_calls = []
 
         async def failing_handler(event: TestEvent):
@@ -195,14 +195,14 @@ class TestAsyncEventBus:
         event_bus.subscribe(TestEvent, failing_handler)
         event_bus.subscribe(TestEvent, success_handler)
 
-        # Should not raise, error should be isolated
+        # 例外にならず、エラーはそこで閉じる
         await event_bus.publish(TestEvent(message="Test"))
 
         assert len(successful_calls) == 1
 
     @pytest.mark.asyncio
     async def test_publish_all(self, event_bus):
-        """Test publishing multiple events."""
+        """複数のイベントを発行する。"""
         received = []
 
         async def handler(event: TestEvent):
@@ -221,10 +221,10 @@ class TestAsyncEventBus:
 
 
 class TestEventHandlerDecorator:
-    """Tests for event_handler decorator."""
+    """event_handler デコレータのテスト。"""
 
     def test_decorator_sets_event_type(self):
-        """Test decorator sets _event_type attribute."""
+        """デコレータは _event_type 属性を設定する。"""
 
         @event_handler(TestEvent)
         async def handler(event: TestEvent):
@@ -233,13 +233,13 @@ class TestEventHandlerDecorator:
         assert handler._event_type == TestEvent
 
     def test_decorator_preserves_function(self):
-        """Test decorator preserves function behavior."""
+        """デコレータは関数の振る舞いを変えない。"""
 
         @event_handler(TestEvent)
         async def handler(event: TestEvent):
             return "result"
 
-        # Function should still be callable
+        # 関数はそのまま呼べる
         import asyncio
 
         result = asyncio.run(handler(TestEvent()))

@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
-"""Integration test: Gemini designs a house and sets goals, Jev picks actions, the bridge plays.
+"""結合テスト: Gemini が家を設計して目標を決め、Jev が行動を選び、ブリッジがプレイする。
 
-Nothing is given to the bot: it gathers wood, crafts, builds and gets through
-the night on its own. Goals are judged by the bridge from the world.
+ボットには何も与えない。木を集め、クラフトし、家を建て、夜を越すまでを自分で行う。
+目標の達成はブリッジが世界から判定する。
 
-The streamer talks too: goal changes are narrated, and viewers' comments from
-a script (--comments) are answered while playing; a reply that accepts a
-request adds it to the mid goals (behind the one worked on now). What is said
-is printed ([say], [reply]). The mission and the mid goals come from
-config (minecraft.mission) and carry on across runs (data/mission.json).
+配信者も話す: 目標が変わると実況し、台本（--comments）の視聴者コメントにはプレイしながら
+返事をする。頼みを引き受けた返事は、その頼みを中目標に足す（今進めている中目標の後ろ）。
+話したことは表示する（[say]、[reply]）。ミッションと中目標は設定（minecraft.mission）から
+読み、実行をまたいで引き継ぐ（data/mission.json）。
 
-With --board-port the goals are served for the stream overlay:
-http://127.0.0.1:<port>/overlay (needs ailoveshen[stream]).
+--board-port を付けると、配信のオーバーレイ用に目標を HTTP で出す:
+http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。
 
-Prerequisites:
-1. Minecraft server running (docker/docker-compose.minecraft.yml)
-2. Bridge running: cd minecraft-bridge && npm install && npm start
-   (watch the bot's view: connect a 1.21.4 client to 127.0.0.1:25578)
-3. GEMINI_API_KEY and TYPESAFE_API_KEY environment variables set
-4. Dependencies installed: pip install "ailoveshen[llm,game]"
+前提:
+1. Minecraft サーバーが動いている（docker/docker-compose.minecraft.yml）
+2. ブリッジが動いている: cd minecraft-bridge && npm install && npm start
+   （ボットの視点を見るには、1.21.4 のクライアントで 127.0.0.1:25578 に接続する）
+3. 環境変数 GEMINI_API_KEY と TYPESAFE_API_KEY を設定してある
+4. 依存をインストールしてある: pip install "ailoveshen[llm,game]"
 
-Usage:
+使い方:
     python examples/integration_test_minecraft.py [--max-steps 300] [--comments comments.json]
         [--board-port 8765]
 
 comments.json: [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}, ...]
-(seconds from the start of play)
+（after_seconds はプレイ開始からの秒数）
 """
 
 import argparse
@@ -35,7 +34,7 @@ import sys
 import time
 from pathlib import Path
 
-# Add project root to path
+# プロジェクトの src をパスに足す
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ailoveshen.domain.entities import Conversation
@@ -57,20 +56,20 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 
 async def feed_comments(comments: list[dict], game: GameService, llm: LLMService) -> None:
-    """Send the scripted comments at their times and print the replies."""
+    """台本のコメントを決まった時刻に送り、返事を表示する。"""
     started = time.monotonic()
     for c in sorted(comments, key=lambda c: c["after_seconds"]):
         await asyncio.sleep(max(0.0, c["after_seconds"] - (time.monotonic() - started)))
         session = game.session
         goal_before = session.goal.spec.describe() if session and session.goal else "-"
-        print(f"[chat] {c['user']}: {c['message']} (goal now: {goal_before})", flush=True)
+        print(f"[chat] {c['user']}: {c['message']} (今の目標: {goal_before})", flush=True)
         t = time.monotonic()
         reply = await llm.generate_response(c["user"], c["message"], session=session)
         print(f"[reply] ({time.monotonic() - t:.1f}s) {reply}", flush=True)
 
 
 async def run(max_steps: int, comments: list[dict], board_port: int | None) -> bool:
-    """Play, and report whether the house is complete."""
+    """プレイして、家が完成したかを返す。"""
     settings = load_settings(config_dir=CONFIG_DIR)
     event_bus = AsyncEventBus()
     conversation = Conversation()
@@ -79,11 +78,11 @@ async def run(max_steps: int, comments: list[dict], board_port: int | None) -> b
         print(f"[design] {event.name}: {event.concept}", flush=True)
 
     async def on_goal(event: GoalSetEvent) -> None:
-        serves = f" [for {event.mid_goal}]" if event.mid_goal else " [survival]"
+        serves = f" [{event.mid_goal} のため]" if event.mid_goal else " [生存]"
         print(f"[goal] {event.goal}{serves}: {event.reason}", flush=True)
 
     async def on_mid_added(event: MidGoalAddedEvent) -> None:
-        who = f" [requested by {event.requested_by}]" if event.requested_by else ""
+        who = f" [{event.requested_by} の頼み]" if event.requested_by else ""
         print(f"[mid+] #{event.position} {event.title}{who}: {event.reason}", flush=True)
 
     async def on_mid_done(event: MidGoalCompletedEvent) -> None:
@@ -93,7 +92,7 @@ async def run(max_steps: int, comments: list[dict], board_port: int | None) -> b
         print(f"[mid×] {event.title}: {event.reason}", flush=True)
 
     async def on_completed(event: HouseCompletedEvent) -> None:
-        print(f"[done] {event.name} is complete", flush=True)
+        print(f"[done] {event.name} が完成", flush=True)
 
     async def say(text: str) -> None:
         print(f"[say] {text}", flush=True)
@@ -147,18 +146,18 @@ async def run(max_steps: int, comments: list[dict], board_port: int | None) -> b
     b = outcome.session.blueprint
     print("=" * 60)
     if b is None:
-        print("House: the home built in an earlier run")
+        print("家: 前の実行で建てた拠点")
     else:
-        print(f"House: {b.name} {b.width}x{b.depth}x{b.wall_height} ({len(b.blocks())} blocks)")
-    print(f"Complete: {outcome.house_complete} after {outcome.steps} steps")
+        print(f"家: {b.name} {b.width}x{b.depth}x{b.wall_height}（{len(b.blocks())} ブロック）")
+    print(f"完成: {outcome.house_complete}（{outcome.steps} ステップ）")
     return outcome.house_complete
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--max-steps", type=int, default=300)
-    parser.add_argument("--comments", type=Path, help="scripted viewer comments (JSON)")
-    parser.add_argument("--board-port", type=int, help="serve the goal board (overlay) here")
+    parser.add_argument("--comments", type=Path, help="台本の視聴者コメント（JSON）")
+    parser.add_argument("--board-port", type=int, help="目標ボード（オーバーレイ）を出すポート")
     args = parser.parse_args()
     comments = json.loads(args.comments.read_text()) if args.comments else []
     sys.exit(0 if asyncio.run(run(args.max_steps, comments, args.board_port)) else 1)

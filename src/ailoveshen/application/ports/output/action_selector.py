@@ -1,4 +1,4 @@
-"""Action selector output port."""
+"""行動選択の出力ポート。"""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from ailoveshen.domain.value_objects import ActionDecision, Candidate
 
 class IActionSelector(ABC):
     """
-    Output port for the fast typed decision model (Jev) picking the next action.
+    次の行動を選ぶ、高速で型のある判断モデル（Jev）の出力ポート。
 
-    This interface is defined in the Application layer.
+    このインターフェースはアプリケーション層で定義する。
     """
 
     @abstractmethod
@@ -24,19 +24,19 @@ class IActionSelector(ABC):
         instructions: str,
     ) -> ActionDecision:
         """
-        Pick exactly one of the given actions for the given state.
+        与えられた状態について、与えられた行動からちょうど 1 つ選ぶ。
 
         Args:
-            state: JSON-serializable game state
-            actions: Candidate actions (at least two)
-            instructions: What the choice should optimize for
+            state: JSON にできるゲームの状態
+            actions: 候補の行動（2 つ以上）
+            instructions: 何を重視して選ぶか
 
         Raises:
-            ActionSelectionError: If the model call fails
+            ActionSelectionError: モデルの呼び出しに失敗したとき
         """
         ...
 
     @abstractmethod
     async def close(self) -> None:
-        """Release resources held by the selector."""
+        """選択器が持つリソースを解放する。"""
         ...

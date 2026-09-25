@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Goal Overlay</title>
 <style>
-  /* An OBS browser source: transparent, readable over the game */
+  /* OBS のブラウザソース: 背景は透明で、ゲーム画面の上でも読める */
   :root { --text: #fff; --muted: #d8d8e0; --accent: #ffd166; --done: #8ce99a; --dropped: #adb5bd; --panel: rgba(20, 20, 32, 0.62); }
   html, body { margin: 0; background: transparent; }
   body { font-family: "Hiragino Maru Gothic ProN", "M PLUS Rounded 1c", sans-serif; color: var(--text); padding: 16px; text-shadow: 0 1px 3px #000; }
@@ -76,7 +76,7 @@
     el('progress').textContent = goal ? goal.progress.join(' / ') : '';
   }
 
-  // Reconnects on its own (EventSource retries); the first message is the goals now
+  // 切れても自分でつなぎ直す（EventSource が再試行する）。最初のメッセージは今の目標
   const source = new EventSource('/api/goals/stream');
   source.onmessage = (e) => render(JSON.parse(e.data));
 </script>

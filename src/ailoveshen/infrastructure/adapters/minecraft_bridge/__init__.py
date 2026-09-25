@@ -1,4 +1,4 @@
-"""Minecraft bridge adapter implementations."""
+"""Minecraft ブリッジのアダプター実装。"""
 
 from __future__ import annotations
 

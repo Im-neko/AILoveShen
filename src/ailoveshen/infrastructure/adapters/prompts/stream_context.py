@@ -1,7 +1,7 @@
-"""What the streamer is doing and what was said, written the same way for every prompt.
+"""配信者がしていることと話したことを、どのプロンプトにも同じ書き方で出す。
 
-The goal decision, the commentary and the chat replies all describe the streamer's activity with
-`format_activity`, so none of them works from a different picture of what is going on.
+目標の決定、実況、チャットへの返答は、どれも配信者の活動を `format_activity` で書く。
+そのため、どれかだけが違う状況の認識で動くことはない。
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from ailoveshen.domain.value_objects import (
 
 NO_INFORMATION = "特になし"
 
-# What the Minecraft bridge's primitives and reflexes do (minecraft-bridge/src/primitives.mjs,
-# candidates.mjs): keep in step with them, so replies never promise what the streamer cannot do
+# Minecraft ブリッジのプリミティブと反射ができること（minecraft-bridge/src/primitives.mjs、
+# candidates.mjs）。返答で配信者ができないことを約束しないよう、それらと揃えておくこと
 ABILITIES = """\
 - 木を切る、石・石炭・鉄を掘る、動物を狩る、道具・ベッド・チェストなどをクラフトする
 - かまどで焼く（鉄の延べ棒、木炭、焼いた肉）。鉄の道具や剣、石炭がなくても木炭で松明が作れる
@@ -82,20 +82,20 @@ EQUIPMENT_NAMES = {"head": "頭", "chest": "胴", "legs": "脚", "feet": "足", 
 
 
 def format_predicates(predicates: list[GoalPredicate]) -> str:
-    """The goals that can be set now, one per line."""
+    """今設定できる目標。1行に 1つ。"""
     return "\n".join(f"- {PREDICATE_DESCRIPTIONS[p]}" for p in predicates)
 
 
 def format_conditions() -> str:
-    """What a mid goal's completion conditions can be, one per line."""
+    """中目標の完了条件に使えるもの。1行に 1つ。"""
     return format_predicates([p for p in GoalPredicate if p in CONDITION_PREDICATES])
 
 
 def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     """
-    What the streamer is doing and why, from the mission down, the game situation, and the
-    recent small goals. `with_ids` shows the mid goals' ids (for the goal decision's edits;
-    not where they could be read out on stream).
+    配信者が何をしていて、なぜか（大目標から下へ）、ゲームの状況、最近の小目標。
+    `with_ids` なら中目標の ID を出す（目標の決定での編集用。配信で読み上げられうる所
+    では出さない）。
     """
     if activity is None:
         return "ゲームはしていない"
@@ -125,7 +125,7 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
 
 
 def format_messages(messages: tuple[ConversationMessage, ...] | list[ConversationMessage]) -> str:
-    """Conversation history, one message per line."""
+    """会話の履歴。1行に 1メッセージ。"""
     if not messages:
         return NO_INFORMATION
     lines = []
@@ -136,7 +136,7 @@ def format_messages(messages: tuple[ConversationMessage, ...] | list[Conversatio
 
 
 def format_time(time: dict) -> str:
-    """Time of day in Japanese, with the minutes until dusk or morning."""
+    """日本語の時間帯。日暮れか朝までの分数を付ける。"""
     phase = time.get("phase", "")
     name = PHASE_NAMES.get(phase, "不明")
     tick = time.get("time_of_day")
@@ -148,7 +148,7 @@ def format_time(time: dict) -> str:
 
 
 def format_time_en(time: dict) -> str:
-    """Time of day in English (the action selector's language)."""
+    """英語の時間帯（行動の選択器の言語）。"""
     phase = time.get("phase", "")
     tick = time.get("time_of_day")
     if tick is None:

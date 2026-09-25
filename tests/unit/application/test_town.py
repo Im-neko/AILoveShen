@@ -1,4 +1,4 @@
-"""Tests for TownPlanner and the town stages moved on by MidGoalKeeper."""
+"""TownPlanner と、MidGoalKeeper が進める街の段階のテスト。"""
 
 from unittest.mock import AsyncMock, Mock
 
@@ -45,7 +45,7 @@ def _published(events, event_type):
 
 
 def _check(met=frozenset(), impossible=frozenset(), rejected=frozenset()):
-    """bridge.check: `met` hold, `impossible` cannot be got, `rejected` cannot be judged."""
+    """bridge.check: `met` は満たし、`impossible` は手に入らず、`rejected` は判定できない。"""
 
     async def check(specs):
         for s in specs:
@@ -66,7 +66,7 @@ def _check(met=frozenset(), impossible=frozenset(), rejected=frozenset()):
 
 @pytest.fixture
 def bridge():
-    """Mock bridge: nothing holds yet, everything can be got."""
+    """ブリッジのモック。まだ何も満たしておらず、何でも手に入る。"""
     b = AsyncMock()
     b.check.side_effect = _check()
     return b
@@ -74,25 +74,25 @@ def bridge():
 
 @pytest.fixture
 def events():
-    """Mock event publisher."""
+    """イベント発行のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def store():
-    """Mock mission store."""
+    """ミッションストアのモック。"""
     return Mock()
 
 
 @pytest.fixture
 def text_generator():
-    """Mock LLM with structured output."""
+    """構造化出力つきの LLM のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def prompt_builder():
-    """Mock game prompt builder."""
+    """ゲームのプロンプトビルダーのモック。"""
     builder = Mock()
     builder.build_town_prompt.return_value = "town prompt"
     builder.build_stage_prompt.return_value = "stage prompt"
@@ -101,7 +101,7 @@ def prompt_builder():
 
 @pytest.fixture
 def planner(text_generator, prompt_builder, bridge, events, store):
-    """The planner over the mocks."""
+    """モックの上で動く TownPlanner。"""
     return TownPlanner(
         text_generator=text_generator,
         prompt_builder=prompt_builder,
@@ -117,11 +117,11 @@ def _town(*stages: TownStage) -> TownDefinition:
 
 
 class TestTownPlanner:
-    """Tests for TownPlanner."""
+    """TownPlanner のテスト。"""
 
     @pytest.mark.asyncio
     async def test_defined_once_saved_and_told(self, planner, text_generator, events, store):
-        """Test a plan without a town gets one, saved and published."""
+        """街のない計画には街ができ、保存して発行する。"""
         text_generator.generate_json.return_value = TOWN
         plan = MidGoalPlan(mission=MISSION)
 
@@ -139,7 +139,7 @@ class TestTownPlanner:
     async def test_what_cannot_be_got_is_sent_back(
         self, planner, text_generator, prompt_builder, bridge
     ):
-        """Test the iron sword before smelting goes back with the bridge's reason."""
+        """精錬の前の鉄の剣は、ブリッジの理由をつけて差し戻す。"""
         bridge.check.side_effect = _check(impossible={SWORD})
         with_sword = {**STOCK, "conditions": [FOOD.to_dict(), SWORD.to_dict()]}
         text_generator.generate_json.side_effect = [{**TOWN, "stages": [with_sword]}, TOWN]
@@ -155,7 +155,7 @@ class TestTownPlanner:
     async def test_still_wrong_after_the_last_attempt_is_left_unresolved(
         self, planner, text_generator, bridge
     ):
-        """Test nothing impossible becomes a condition: it waits in the unresolved parts."""
+        """手に入らないものは条件にしない。未解決の部分で待つ。"""
         bridge.check.side_effect = _check(impossible={SWORD})
         with_sword = {**STOCK, "conditions": [FOOD.to_dict(), SWORD.to_dict()]}
         text_generator.generate_json.return_value = {**TOWN, "stages": [with_sword]}
@@ -170,7 +170,7 @@ class TestTownPlanner:
 
     @pytest.mark.asyncio
     async def test_malformed_every_time_raises(self, planner, text_generator):
-        """Test a definition never parsed stops the start."""
+        """定義が一度も解釈できなければ、開始を止める。"""
         text_generator.generate_json.return_value = {"text": "", "stages": []}
 
         with pytest.raises(TextGenerationError, match="no valid town definition"):
@@ -180,7 +180,7 @@ class TestTownPlanner:
     async def test_a_defined_town_only_has_its_unresolved_stages_written_again(
         self, planner, text_generator, prompt_builder, events
     ):
-        """Test the definition is kept; unresolved stages from the current one are rewritten."""
+        """定義は残し、今の段階から後の未解決の段階を書き直させる。"""
         text_generator.generate_json.return_value = {
             "conditions": [LIT.to_dict()],
             "unresolved": [],
@@ -201,7 +201,7 @@ class TestTownPlanner:
     async def test_a_rewrite_already_done_is_refused_and_the_stage_kept(
         self, planner, text_generator, prompt_builder, bridge
     ):
-        """Test the warehouse reworded as the first house (built() holds) does not finish it."""
+        """倉庫を最初の家と言い換えても（built() は満たす）、段階は終わらない。"""
         built = GoalSpec(GoalPredicate.BUILT)
         bridge.check.side_effect = _check(met={built})
         text_generator.generate_json.return_value = {
@@ -221,11 +221,11 @@ class TestTownPlanner:
 
 
 class TestTownStages:
-    """Tests for the town stages as mid goals (MidGoalKeeper.judge)."""
+    """中目標としての街の段階のテスト（MidGoalKeeper.judge）。"""
 
     @pytest.fixture
     def keeper(self, bridge, events, store):
-        """The real keeper over the mocks."""
+        """モックの上で動く本物の MidGoalKeeper。"""
         return MidGoalKeeper(bridge=bridge, event_publisher=events, store=store)
 
     def _plan(self, *stages: TownStage) -> MidGoalPlan:
@@ -236,7 +236,7 @@ class TestTownStages:
 
     @pytest.mark.asyncio
     async def test_the_ready_stage_goes_on_top(self, keeper, events):
-        """Test the stage worked on becomes the first mid goal, told like the streamer's own."""
+        """取り組む段階が一番上の中目標になり、配信者自身の中目標と同じように言う。"""
         plan = self._plan(TownStage("備蓄", "冬に備える", conditions=(FOOD,)))
 
         await keeper.judge(plan)
@@ -256,7 +256,7 @@ class TestTownStages:
 
     @pytest.mark.asyncio
     async def test_a_stage_with_unresolved_parts_waits(self, keeper):
-        """Test a stage that cannot be done yet is not made a mid goal."""
+        """まだできない段階は中目標にしない。"""
         plan = self._plan(TownStage("複数の建物", "街らしく", unresolved=("倉庫",)))
 
         await keeper.judge(plan)
@@ -267,7 +267,7 @@ class TestTownStages:
     async def test_a_done_stage_moves_the_town_on_and_the_last_completes_it(
         self, keeper, bridge, events
     ):
-        """Test the next stage comes in when one is done, and the town's completion is told."""
+        """段階が終わると次の段階が入り、街の完成を言う。"""
         plan = self._plan(
             TownStage("備蓄", "冬に備える", conditions=(FOOD,)),
             TownStage("敷地の安全", "夜に備える", conditions=(LIT,)),
@@ -295,7 +295,7 @@ class TestTownStages:
     async def test_what_can_be_done_goes_first_the_rest_waits_for_the_ability(
         self, keeper, bridge, events
     ):
-        """Test town1: every stage had an unresolved part; its doable part is still worked on."""
+        """town1: どの段階にも未解決の部分があった。できる部分は進める。"""
         fence = TownStage("安全", "夜に備える", conditions=(LIT, FOOD), unresolved=("柵",))
         plan = self._plan(fence, TownStage("備蓄", "冬", conditions=(SWORD,)))
 
@@ -305,10 +305,10 @@ class TestTownStages:
         bridge.check.side_effect = _check(met={LIT, FOOD})
         await keeper.judge(plan)
         assert plan.town_stage == 0 and plan.stage_met == (LIT, FOOD)
-        assert plan.stage_goal() is None  # nothing left to do until the fence can be done
+        assert plan.stage_goal() is None  # 柵ができるまで、することはない
         assert [g.title for g in plan.pending] == ["羊毛を集める"]
 
-        # The fence written again once the ability is there: only it is asked for
+        # 能力ができて柵を書き直したら、柵だけを求める
         fenced = GoalSpec(GoalPredicate.HAVE, item="oak_fence", count=16)
         plan.define_town(
             _town(TownStage("安全", "夜に備える", (LIT, FOOD, fenced)), plan.town.stages[1])
@@ -324,7 +324,7 @@ class TestTownStages:
 
     @pytest.mark.asyncio
     async def test_a_stage_is_not_dropped_when_its_conditions_are_rejected(self, keeper, bridge):
-        """Test a stage the bridge cannot judge stays (it is never dropped)."""
+        """ブリッジが判定できない段階も残る（落とさない）。"""
         plan = self._plan(TownStage("備蓄", "冬に備える", conditions=(FOOD,)))
         await keeper.judge(plan)
 
@@ -335,7 +335,7 @@ class TestTownStages:
 
     @pytest.mark.asyncio
     async def test_a_full_list_keeps_the_stage_waiting(self, keeper):
-        """Test the stage waits for room in the list instead of breaking its limit."""
+        """段階は上限を破らず、リストが空くまで待つ。"""
         plan = self._plan(TownStage("備蓄", "冬に備える", conditions=(FOOD,)))
         for i in range(plan.max_goals - 1):
             plan.add(f"g{i}", (GoalSpec(GoalPredicate.HAVE, item="log", count=i + 1),))

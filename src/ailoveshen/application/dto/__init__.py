@@ -1,4 +1,4 @@
-"""Application DTOs."""
+"""アプリケーションの DTO。"""
 
 from __future__ import annotations
 

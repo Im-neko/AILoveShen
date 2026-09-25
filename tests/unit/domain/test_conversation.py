@@ -1,4 +1,4 @@
-"""Tests for the Conversation entity."""
+"""Conversation エンティティのテスト。"""
 
 import pytest
 
@@ -7,10 +7,10 @@ from ailoveshen.domain.value_objects import MessageRole, MessageType
 
 
 class TestConversation:
-    """Tests for Conversation entity."""
+    """Conversation エンティティのテスト。"""
 
     def test_add_viewer_message(self):
-        """Test adding a viewer chat message."""
+        """視聴者のコメントを足す。"""
         conversation = Conversation()
         message = conversation.add_viewer_message("こんにちは", "neko", "123")
 
@@ -21,7 +21,7 @@ class TestConversation:
         assert len(conversation) == 1
 
     def test_add_streamer_message(self):
-        """Test adding a streamer utterance."""
+        """配信者の発話を足す。"""
         conversation = Conversation()
         message = conversation.add_streamer_message("洞窟だ！", MessageType.COMMENTARY)
 
@@ -30,7 +30,7 @@ class TestConversation:
         assert len(conversation) == 1
 
     def test_respects_max_history(self):
-        """Test that only the latest max_history messages are kept."""
+        """最新の max_history 件だけを残す。"""
         conversation = Conversation(max_history=5)
         for i in range(10):
             conversation.add_viewer_message(f"Message {i}", "user")
@@ -39,12 +39,12 @@ class TestConversation:
         assert conversation.recent_messages()[0].content == "Message 5"
 
     def test_invalid_max_history_raises(self):
-        """Test that non-positive max_history raises ValueError."""
+        """max_history が正でなければ ValueError。"""
         with pytest.raises(ValueError, match="max_history must be positive"):
             Conversation(max_history=0)
 
     def test_recent_messages_limit(self):
-        """Test recent_messages returns the latest messages oldest first."""
+        """recent_messages は最新のメッセージを古い順に返す。"""
         conversation = Conversation()
         for i in range(5):
             conversation.add_viewer_message(f"m{i}", "user")
@@ -54,7 +54,7 @@ class TestConversation:
         assert conversation.recent_messages(limit=0) == ()
 
     def test_recent_viewer_messages(self):
-        """Test recent_viewer_messages excludes streamer utterances."""
+        """recent_viewer_messages は配信者の発話を含まない。"""
         conversation = Conversation()
         conversation.add_viewer_message("chat1", "a")
         conversation.add_streamer_message("commentary", MessageType.COMMENTARY)
@@ -64,21 +64,21 @@ class TestConversation:
         assert [m.content for m in viewer] == ["chat1", "chat2"]
 
     def test_clear(self):
-        """Test clear forgets all messages."""
+        """clear はメッセージを全部忘れる。"""
         conversation = Conversation()
         conversation.add_viewer_message("hello", "user")
         conversation.clear()
         assert len(conversation) == 0
 
     def test_updated_at_changes_on_add(self):
-        """Test that adding a message updates updated_at."""
+        """メッセージを足すと updated_at が変わる。"""
         conversation = Conversation()
         before = conversation.updated_at
         conversation.add_viewer_message("hello", "user")
         assert conversation.updated_at >= before
 
     def test_equality_by_id(self):
-        """Test that conversations are equal only by id."""
+        """会話が等しいのは id が同じときだけ。"""
         a = Conversation()
         b = Conversation(id=a.id)
         a.add_viewer_message("hello", "user")

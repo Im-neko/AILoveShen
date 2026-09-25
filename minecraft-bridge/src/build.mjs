@@ -1,8 +1,8 @@
-// Build plan: pick a flat site, place its blocks one at a time in order, verify them in the world.
+// 建築計画: 平らな敷地を選び、ブロックを順に1つずつ置き、ワールドで確かめる。
 //
-// The plan is a list of blocks relative to the site origin (min corner of the footprint at
-// ground level, i.e. the first air layer). Geometry (walls, roof, door) is decided on the
-// Python side; this module only places what it is given, in the given order.
+// 計画は敷地の原点（地面の高さ、つまり最初の空気の層での、敷地の最小の角）からの相対位置の
+// ブロックの一覧。形（壁、屋根、ドア）は Python 側で決める。このモジュールは渡されたものを
+// 渡された順に置くだけ。
 
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
@@ -13,23 +13,23 @@ const { Vec3 } = vec3Pkg
 
 const SITE_SEARCH_RADIUS = 24
 const SITE_SEARCH_DY = 4
-const SITE_RETRY_DISTANCE = 16 // after a failed search, search again only this far from there
+const SITE_RETRY_DISTANCE = 16 // 探索に失敗したら、そこからこの距離だけ離れてから探し直す
 const PLACE_RANGE = 4
 const PLACE_INTERVAL_MS = 200
 const UNSUITABLE_GROUND = /(_leaves|_log|_planks|_door|water|lava|ice|snow$|sand$|gravel$)/
 
-// A block kind in the plan -> predicate over inventory item / world block names
+// 計画のブロックの種類 -> インベントリのアイテム名・ワールドのブロック名に対する判定
 const KINDS = {
   planks: isPlanks,
   log: isLog,
   door: (name) => name.endsWith('_door')
 }
 
-// Blocks the site may contain: air, plants, and leaves (dug before placing)
+// 敷地にあってよいブロック: 空気、植物、葉（置く前に掘る）
 const isClearable = (block) => (block.boundingBox === 'empty' && !['water', 'lava'].includes(block.name)) || block.name.endsWith('_leaves')
 
 export class BuildPlan {
-  // design: what the model designed (name, concept, sizes, door), kept for the home it becomes
+  // design: モデルが設計したもの（名前、コンセプト、寸法、ドア）。できた家のために取っておく
   constructor ({ blocks, width, depth, height, design = null }) {
     for (const b of blocks) {
       if (!KINDS[b.block]) throw new Error(`unknown block kind: ${b.block}`)
@@ -41,7 +41,7 @@ export class BuildPlan {
     this.siteSearchFailedAt = null
   }
 
-  // False while the bot is still near where a site search already failed
+  // 敷地の探索に失敗した場所の近くにまだいる間は false
   canSearchSite (bot) {
     return !this.siteSearchFailedAt || this.siteSearchFailedAt.distanceTo(bot.entity.position) >= SITE_RETRY_DISTANCE
   }
@@ -102,7 +102,7 @@ function siteFits (bot, origin, size) {
   return true
 }
 
-// Nearest flat, clear footprint around the bot.
+// ボットのまわりで一番近い、平らで空いている敷地。
 export function findSite (bot, size) {
   const me = bot.entity.position.floored()
   for (let r = 2; r <= SITE_SEARCH_RADIUS; r++) {
@@ -136,26 +136,26 @@ export async function placeOne (bot, plan, b) {
     if (!isClearable(current)) throw new Error(`site blocked by ${current.name} at ${pos}`)
     await bot.dig(current, true)
   }
-  // The server validates reach and the cursor, not line of sight, so e.g. the first roof block
-  // can be put on a wall top from inside the house.
+  // サーバーが確かめるのは届く距離とカーソルで、視線は確かめない。なので、例えば屋根の最初の
+  // ブロックを家の中から壁の上に置ける。
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
   if (!goal.isEnd(bot.entity.position.floored())) {
     const t = Date.now()
     await bot.pathfinder.goto(goal)
-    if (Date.now() - t > 3000) console.log(`[build] slow path to place ${pos}: ${Date.now() - t}ms, from ${bot.entity.position}`)
+    if (Date.now() - t > 3000) console.log(`[build] ${pos} に置くための移動が遅い: ${Date.now() - t}ms、出発点 ${bot.entity.position}`)
   }
   const eye = bot.entity.position.floored().offset(0.5, 1.6, 0.5)
   const fr = goal.getFaceAndRef(eye)
   if (!fr) throw new Error(`no reference face for ${b.block} at ${pos}`)
   const item = findItem(bot, b.block)
   await bot.equip(item, 'hand')
-  // Paper drops use-item packets beyond 8 per 300ms without any reply; pace like the vanilla
-  // client's right-click repeat (4 ticks) instead.
+  // Paper は 300ms に 8 個を超えるアイテム使用のパケットを、何も返さずに捨てる。代わりに、
+  // バニラのクライアントの右クリックの連打（4ティック）と同じ間隔で置く。
   const wait = PLACE_INTERVAL_MS - (Date.now() - lastPlaceAt)
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
   await bot.lookAt(fr.to, true)
-  // The server, not Mineflayer, decrements the held stack. Wait for that slot update so the next
-  // placement does not pick a stack that is already used up.
+  // 持っているスタックを減らすのは Mineflayer ではなくサーバー。次に置くときに使い切ったスタックを
+  // 選ばないよう、そのスロットの更新を待つ。
   const slot = bot.quickBarSlot + bot.inventory.hotbarStart
   const slotUpdated = new Promise((resolve) => {
     const timer = setTimeout(resolve, 1000)
@@ -165,7 +165,7 @@ export async function placeOne (bot, plan, b) {
     await bot.placeBlock(bot.blockAt(fr.ref), fr.face.scaled(-1))
     await slotUpdated
   } catch (e) {
-    console.log(`[build] place failed at ${pos} from ${bot.entity.position}: ${e.message}`)
+    console.log(`[build] ${pos} に置けなかった（位置 ${bot.entity.position}）: ${e.message}`)
     throw e
   } finally {
     lastPlaceAt = Date.now()

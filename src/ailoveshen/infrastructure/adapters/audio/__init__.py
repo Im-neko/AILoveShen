@@ -1,4 +1,4 @@
-"""Audio adapter implementations."""
+"""音声再生のアダプター実装。"""
 
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str):
-    """Lazy load modules with heavy dependencies."""
+    """重い依存を持つモジュールを遅延読み込みする。"""
     if name == "SounddevicePlayer":
         from ailoveshen.infrastructure.adapters.audio.sounddevice_player import (
             SounddevicePlayer,
         )
+
         return SounddevicePlayer
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

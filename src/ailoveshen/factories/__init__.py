@@ -1,1 +1,1 @@
-"""Composition Roots wiring each feature's dependencies."""
+"""機能ごとの依存を組み立てる Composition Root。"""

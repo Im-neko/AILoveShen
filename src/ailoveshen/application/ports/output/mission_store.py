@@ -1,4 +1,4 @@
-"""Mission store output port."""
+"""大目標の保存の出力ポート。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ailoveshen.domain.value_objects import GoalSpec, MidGoal, Mission, TownDefi
 
 @dataclass(frozen=True)
 class SavedPlan:
-    """What is kept of a plan: the mission, the mid goals, the next id's number, the town."""
+    """プランのうち保存するもの: 大目標、中目標、次の id の番号、街。"""
 
     mission: Mission
     pending: tuple[MidGoal, ...]
@@ -20,23 +20,23 @@ class SavedPlan:
     next_id: int
     town: Optional[TownDefinition] = None
     town_stage: int = 0
-    stage_met: tuple[GoalSpec, ...] = ()  # the current stage's conditions met so far
+    stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
 
 
 class IMissionStore(ABC):
     """
-    Output port keeping the mission and its mid goals across restarts.
+    大目標とその中目標を、再起動をまたいで保つ出力ポート。
 
-    This interface is defined in the Application layer.
-    Infrastructure adapters implement this interface.
+    このインターフェースはアプリケーション層で定義する。
+    インフラ層のアダプターがこれを実装する。
     """
 
     @abstractmethod
     def load(self) -> Optional[SavedPlan]:
-        """The saved plan, or None when nothing was saved."""
+        """保存したプラン。何も保存していなければ None。"""
         ...
 
     @abstractmethod
     def save(self, plan: MidGoalPlan) -> None:
-        """Save the plan (after every change)."""
+        """プランを保存する（変更のたびに）。"""
         ...

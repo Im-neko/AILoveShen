@@ -1,4 +1,4 @@
-"""Tests for GamePromptTemplateBuilder adapter."""
+"""GamePromptTemplateBuilder アダプタのテスト。"""
 
 from dataclasses import replace
 
@@ -107,10 +107,10 @@ def _goal_prompt(obs=None, recent_goals=(), mid_goals=(HOUSE,), activity=None, *
 
 
 class TestGamePromptTemplateBuilder:
-    """Tests for GamePromptTemplateBuilder."""
+    """GamePromptTemplateBuilder のテスト。"""
 
     def test_design_prompt_has_bounds_and_character(self):
-        """Test the design prompt states the size bounds and the character."""
+        """設計のプロンプトは大きさの範囲とキャラクターを示す。"""
         prompt = GamePromptTemplateBuilder().build_house_design_prompt(
             CharacterProfile(name="シェン", personality_traits=("元気",))
         )
@@ -120,7 +120,7 @@ class TestGamePromptTemplateBuilder:
         assert "前回の設計" not in prompt
 
     def test_design_prompt_includes_previous_error(self):
-        """Test a rejected design's error is shown for the retry."""
+        """通らなかった設計のエラーを、やり直しのために示す。"""
         prompt = GamePromptTemplateBuilder().build_house_design_prompt(
             CharacterProfile(), previous_error="width must be 5-7"
         )
@@ -128,7 +128,7 @@ class TestGamePromptTemplateBuilder:
         assert "width must be 5-7" in prompt
 
     def test_goal_prompt_lists_only_the_given_predicates(self):
-        """Test only the predicates passed in are offered."""
+        """渡された述語だけを出す。"""
         prompt = _goal_prompt(predicates=[GoalPredicate.HAVE, GoalPredicate.EXPLORED])
         offered = prompt.split("## 使える目標（小目標）\n")[1].split("\n\n")[0]
 
@@ -136,7 +136,7 @@ class TestGamePromptTemplateBuilder:
         assert "through_night" not in offered and "built:" not in offered
 
     def test_goal_prompt_shows_the_current_goal_status(self):
-        """Test the subgoal progress and what blocks it reach the LLM."""
+        """小目標の進み具合と、何が妨げているかが LLM に届く。"""
         prompt = _goal_prompt()
 
         assert "have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
@@ -145,7 +145,7 @@ class TestGamePromptTemplateBuilder:
         assert "goal have(planks, 12) is met" in prompt
 
     def test_goal_prompt_describes_state(self):
-        """Test health, inventory, needs, time and failures are in the prompt."""
+        """体力、持ち物、必要なもの、時刻、失敗がプロンプトに入る。"""
         prompt = _goal_prompt()
 
         assert "体力 12.0/20" in prompt and "spruce_log" in prompt
@@ -160,7 +160,7 @@ class TestGamePromptTemplateBuilder:
         ) in prompt
 
     def test_goal_prompt_at_night_counts_to_morning(self):
-        """Test at night the time until morning is shown, and the home."""
+        """夜は朝までの時間と拠点を示す。"""
         obs = replace(_obs(), has_home=True, inside_home=True, bed_in_home=True)
         obs.state["time"] = {"phase": "night", "time_of_day": 18000}
 
@@ -171,7 +171,7 @@ class TestGamePromptTemplateBuilder:
         assert "チェストの中身: なし" in prompt
 
     def test_goal_prompt_home_name_and_chests(self):
-        """Test the home's name and what its chests held when last opened."""
+        """拠点の名前と、チェストを最後に開けたときの中身。"""
         obs = replace(_obs(), has_home=True, inside_home=False, bed_in_home=False)
         obs.state["home"] = {"name": "ぽかぽかログハウス"}
         obs.state["memory"]["chests"] = [
@@ -193,7 +193,7 @@ class TestGamePromptTemplateBuilder:
         ) in prompt
 
     def test_goal_prompt_recent_goals_and_previous_error(self):
-        """Test past goals show how they ended, and a rejected goal's reason is shown."""
+        """過去の小目標はどう終わったかを示し、断られた小目標は理由を示す。"""
         recent = (GoalOutcome(PLANKS, "goal have(planks, 12) stalled (no progress in 8 steps)"),)
 
         prompt = _goal_prompt(recent_goals=recent, previous_error="unknown item or group: x")
@@ -205,7 +205,7 @@ class TestGamePromptTemplateBuilder:
         assert "unknown item or group: x" in prompt
 
     def test_goal_prompt_shows_the_hierarchy_and_what_was_said(self):
-        """Test the goal decision sees the mission, the mid goals with ids, and the conversation."""
+        """小目標の決定は、大目標、id つきの中目標、会話を見る。"""
         bed = MidGoal(
             "m3",
             "ベッドで寝る",
@@ -232,7 +232,7 @@ class TestGamePromptTemplateBuilder:
 
         assert "- 大目標: 生き延びながら家を建て、街にしていく" in prompt
         assert "1. [m1] 自分の家を作る [取り組み中] 完了条件: built()（30/70）" in prompt
-        assert "sub-step" not in prompt  # the solver's sub-steps are left out of the list
+        assert "sub-step" not in prompt  # ソルバーの細かい手順はリストに出さない
         assert "2. [m3] ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
         assert "- 剣を持つ（断念: it took 80 steps）" in prompt
         assert "今の小目標: have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
@@ -242,7 +242,7 @@ class TestGamePromptTemplateBuilder:
         assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt
 
     def test_goal_prompt_shows_the_town_and_its_stage(self):
-        """Test the town's stages are marked, and the stage goal cannot be dropped."""
+        """街の段階に印がつき、段階の小目標はやめられない。"""
         stage = MidGoal("m4", "備蓄", (FOOD,), stage=0)
         activity = Activity(mission=MISSION, town=TOWN, town_stage=0, mid_goals=(stage,))
 
@@ -254,7 +254,7 @@ class TestGamePromptTemplateBuilder:
         assert "街の段階の中目標はやめられない" in prompt
 
     def test_goal_prompt_shows_what_the_town_waits_for(self):
-        """Test the stage worked on shows its unresolved parts; a complete town says so."""
+        """取り組む段階は未解決の部分を示す。街が完成したらそう言う。"""
         waiting = _goal_prompt(activity=Activity(mission=MISSION, town=TOWN, town_stage=2))
         assert "3. [今] 複数の建物: 街らしく\n     まだできないこと" in waiting
         half = replace(TOWN, stages=(replace(TOWN.stages[0], unresolved=("柵",)),))
@@ -268,7 +268,7 @@ class TestGamePromptTemplateBuilder:
         assert "街は完成した（全 3 段階）" in done
 
     def test_town_prompt(self):
-        """Test the town prompt has the mission, the abilities, the conditions and the error."""
+        """街のプロンプトには大目標、能力、条件、エラーが入る。"""
         prompt = GamePromptTemplateBuilder().build_town_prompt(
             CharacterProfile(), MISSION, previous_error="no way to get iron_sword"
         )
@@ -279,7 +279,7 @@ class TestGamePromptTemplateBuilder:
         assert "no way to get iron_sword\n定義し直してください" in prompt
 
     def test_stage_prompt(self):
-        """Test the stage prompt keeps the stage and lists what is not resolved."""
+        """段階のプロンプトは段階を変えず、解決していないものを並べる。"""
         prompt = GamePromptTemplateBuilder().build_stage_prompt(TOWN, TOWN.stages[2])
 
         assert "その段階「複数の建物」（街らしく）" in prompt
@@ -288,17 +288,17 @@ class TestGamePromptTemplateBuilder:
         assert "前回の答え" not in prompt
 
     def test_goal_prompt_with_the_home_built_before(self):
-        """Test no house to build is shown when the home was built in an earlier run."""
+        """前の実行で拠点を建てたなら、建てる家は示さない。"""
         prompt = _goal_prompt(blueprint=None)
 
         assert "## 建てる家\nなし（前に建てた家が完成していて、拠点になっている）" in prompt
 
     def test_goal_prompt_without_needs(self):
-        """Test the bridge's "none" is shown as nothing to watch for."""
+        """ブリッジの "none" は、気をつけるものなしと示す。"""
         assert "気をつけること: なし" in _goal_prompt(_obs(needs=("none",)))
 
     def test_action_context(self):
-        """Test the selector sees the goal, progress and needs; no priority order is given."""
+        """行動選択は小目標、進み具合、必要なものを見る。優先順位は渡さない。"""
         state, instructions = GamePromptTemplateBuilder().build_action_context(PLANKS, _obs())
 
         assert state["goal"] == "have(planks, 12)"

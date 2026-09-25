@@ -1,4 +1,4 @@
-// Headless check: connect to the mirror like a real client and report what arrives.
+// 画面なしの確認: 本物のクライアントのようにミラーにつなぎ、届いたものを報告する。
 import mc from 'minecraft-protocol'
 
 const port = Number(process.env.MIRROR_PORT ?? 25578)
@@ -18,8 +18,8 @@ client.on('packet', (data, meta) => {
   if (meta.name === 'position') { lastPos = data; positions.push([Date.now(), data.x, data.z, data.yaw]); client.write('teleport_confirm', { teleportId: data.teleportId }) }
   if (meta.name === 'update_health') health = data
 })
-client.on('error', (e) => console.log('ERROR', e.message))
-client.on('end', (r) => console.log('END', r))
+client.on('error', (e) => console.log('エラー', e.message))
+client.on('end', (r) => console.log('終了', r))
 setTimeout(() => {
   const moved = positions.length > 1 && positions.some(p => p[1] !== positions[0][1] || p[2] !== positions[0][2] || p[3] !== positions[0][3])
   console.log(JSON.stringify({

@@ -1,4 +1,4 @@
-"""Play input ports."""
+"""プレイの入力ポート。"""
 
 from __future__ import annotations
 
@@ -9,24 +9,24 @@ from ailoveshen.domain.entities import PlaySession
 
 
 class IStartPlay(ABC):
-    """Input port: design a house with the LLM, hand its plan to the bridge, start a session."""
+    """入力ポート: LLM で家を設計し、そのプランをブリッジに渡して、セッションを始める。"""
 
     @abstractmethod
     async def execute(self) -> PlaySession:
         """
-        Design the house and send the build plan.
+        家を設計し、建築プランを送る。
 
         Raises:
-            TextGenerationError: If the LLM cannot produce a valid blueprint
-            GameBridgeError: If the bridge rejects the plan
+            TextGenerationError: LLM が正しい設計図を作れないとき
+            GameBridgeError: ブリッジがプランを拒否したとき
         """
         ...
 
 
 class IAdvancePlay(ABC):
-    """Input port: take one step (a new goal if one is due, then one action)."""
+    """入力ポート: 1 ステップ進める（決める時なら新しい目標、次に行動を 1 つ）。"""
 
     @abstractmethod
     async def execute(self, session: PlaySession) -> PlayStepReport:
-        """Observe, set a new goal if due, pick and run one candidate."""
+        """観測し、決める時なら新しい目標を設定し、候補を 1 つ選んで実行する。"""
         ...

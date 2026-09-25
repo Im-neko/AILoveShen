@@ -1,4 +1,4 @@
-"""LLM-related DTOs (Data Transfer Objects)."""
+"""LLM の DTO（Data Transfer Object）。"""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from ailoveshen.domain.value_objects import Activity, EmotionState, MidGoal
 @dataclass
 class GenerateCommentaryRequest:
     """
-    Input DTO for the generate commentary use case.
+    実況生成のユースケースの入力 DTO。
 
-    `recent_events` are what just happened (the newest is what to talk about),
-    `activity` what the streamer is doing and why (None while not playing).
+    `recent_events` は直前に起きたこと（最新のものが話す題材）、
+    `activity` は配信者が今していることとその理由（プレイしていない間は None）。
     """
 
     emotion_state: EmotionState = field(default_factory=EmotionState)
@@ -25,7 +25,7 @@ class GenerateCommentaryRequest:
 
 @dataclass
 class GenerateCommentaryResponse:
-    """Output DTO for the generate commentary use case."""
+    """実況生成のユースケースの出力 DTO。"""
 
     success: bool
     text: str = ""
@@ -33,22 +33,22 @@ class GenerateCommentaryResponse:
 
     @classmethod
     def ok(cls, text: str) -> GenerateCommentaryResponse:
-        """Create a response; empty text means the model produced nothing usable."""
+        """レスポンスを作る。テキストが空なら、モデルが使えるものを出さなかったということ。"""
         return cls(success=bool(text), text=text)
 
     @classmethod
     def error_response(cls, error: str) -> GenerateCommentaryResponse:
-        """Create an error response."""
+        """エラーのレスポンスを作る。"""
         return cls(success=False, error=error)
 
 
 @dataclass
 class GenerateResponseRequest:
     """
-    Input DTO for the generate chat response use case.
+    チャット返答生成のユースケースの入力 DTO。
 
-    With a play `session`, the reply sees what the streamer is doing and may
-    accept the viewer's request as a mid goal.
+    プレイの `session` があると、返答は配信者が今していることを見て、
+    視聴者の頼みを中目標として受けることがある。
     """
 
     user_name: str
@@ -60,7 +60,7 @@ class GenerateResponseRequest:
 
 @dataclass
 class GenerateResponseResponse:
-    """Output DTO for the generate chat response use case (`mid_goal`: the request accepted)."""
+    """チャット返答生成のユースケースの出力 DTO（`mid_goal`: 受けた頼み）。"""
 
     success: bool
     original_message: str
@@ -77,7 +77,7 @@ class GenerateResponseResponse:
         user_name: str,
         mid_goal: Optional[MidGoal] = None,
     ) -> GenerateResponseResponse:
-        """Create a response; empty text means the model produced nothing usable."""
+        """レスポンスを作る。テキストが空なら、モデルが使えるものを出さなかったということ。"""
         return cls(
             success=bool(text),
             text=text,
@@ -93,7 +93,7 @@ class GenerateResponseResponse:
         original_message: str,
         user_name: str,
     ) -> GenerateResponseResponse:
-        """Create an error response."""
+        """エラーのレスポンスを作る。"""
         return cls(
             success=False,
             error=error,

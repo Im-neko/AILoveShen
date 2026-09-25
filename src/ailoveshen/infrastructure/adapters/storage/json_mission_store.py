@@ -1,4 +1,4 @@
-"""JSON file mission store adapter."""
+"""大目標を JSON ファイルに保存するアダプター。"""
 
 from __future__ import annotations
 
@@ -23,23 +23,23 @@ from ailoveshen.domain.value_objects import (
 
 class JsonMissionStore(IMissionStore):
     """
-    Keeps the mission, its mid goals and the town in one JSON file.
+    大目標、その中目標、街を 1つの JSON ファイルに保存する。
 
-    Written to a temporary file and renamed, so a crash mid-write leaves the
-    last complete save.
+    一時ファイルに書いてから名前を変えるので、書き込み中に落ちても
+    最後に完全に保存した内容が残る。
     """
 
     def __init__(self, path: Path | str) -> None:
         """
-        Initialize the store.
+        ストアを初期化する。
 
         Args:
-            path: The JSON file (its directory is created on the first save)
+            path: JSON ファイル（ディレクトリは最初の保存のときに作る）
         """
         self._path = Path(path)
 
     def load(self) -> Optional[SavedPlan]:
-        """The saved plan, or None when there is no file yet."""
+        """保存した計画。ファイルがまだなければ None。"""
         if not self._path.exists():
             return None
         data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -52,11 +52,11 @@ class JsonMissionStore(IMissionStore):
             town_stage=int(data.get("town_stage", 0)),
             stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
         )
-        logger.info(f"Mid goals loaded from {self._path}")
+        logger.info(f"中目標を {self._path} から読み込んだ")
         return saved
 
     def save(self, plan: MidGoalPlan) -> None:
-        """Save the plan."""
+        """計画を保存する。"""
         data = {
             "mission": plan.mission.text,
             "pending": [_to_dict(g) for g in plan.pending],

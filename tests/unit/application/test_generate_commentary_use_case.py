@@ -1,4 +1,4 @@
-"""Tests for GenerateCommentaryUseCase."""
+"""GenerateCommentaryUseCase のテスト。"""
 
 from unittest.mock import AsyncMock, Mock
 
@@ -25,7 +25,7 @@ ACTIVITY = Activity(goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="家を建�
 
 @pytest.fixture
 def mock_text_generator():
-    """Create mock text generator."""
+    """テキスト生成のモック。"""
     generator = AsyncMock()
     generator.generate.return_value = "わー、洞窟を見つけたよ！"
     return generator
@@ -33,7 +33,7 @@ def mock_text_generator():
 
 @pytest.fixture
 def mock_prompt_builder():
-    """Create mock prompt builder (sync methods)."""
+    """プロンプトビルダーのモック（同期メソッド）。"""
     builder = Mock()
     builder.build_system_prompt.return_value = "System prompt"
     builder.build_commentary_prompt.return_value = "Commentary prompt"
@@ -42,19 +42,19 @@ def mock_prompt_builder():
 
 @pytest.fixture
 def mock_event_publisher():
-    """Create mock event publisher."""
+    """イベント発行のモック。"""
     return AsyncMock()
 
 
 @pytest.fixture
 def conversation():
-    """Create conversation history."""
+    """会話履歴。"""
     return Conversation()
 
 
 @pytest.fixture
 def use_case(mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation):
-    """Create GenerateCommentaryUseCase with mocked dependencies."""
+    """依存をモックにした GenerateCommentaryUseCase。"""
     return GenerateCommentaryUseCase(
         text_generator=mock_text_generator,
         prompt_builder=mock_prompt_builder,
@@ -65,11 +65,11 @@ def use_case(mock_text_generator, mock_prompt_builder, mock_event_publisher, con
 
 
 class TestGenerateCommentaryUseCase:
-    """Tests for GenerateCommentaryUseCase."""
+    """GenerateCommentaryUseCase のテスト。"""
 
     @pytest.mark.asyncio
     async def test_execute_success(self, use_case, mock_text_generator):
-        """Test successful commentary generation."""
+        """実況が生成される。"""
         response = await use_case.execute(GenerateCommentaryRequest())
 
         assert response.success is True
@@ -81,7 +81,7 @@ class TestGenerateCommentaryUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_builds_context(self, use_case, mock_prompt_builder, conversation):
-        """Test the context passed to the prompt builder."""
+        """プロンプトビルダーに渡すコンテキスト。"""
         conversation.add_viewer_message("がんばれ", "neko")
         happy = EmotionState(EmotionType.HAPPY, 0.8)
         request = GenerateCommentaryRequest(
@@ -95,12 +95,12 @@ class TestGenerateCommentaryUseCase:
         context = mock_prompt_builder.build_commentary_prompt.call_args.args[0]
         assert context.emotion_state == happy
         assert context.activity is ACTIVITY
-        assert context.recent_events == ("e2", "e3", "e4")  # latest 3
+        assert context.recent_events == ("e2", "e3", "e4")  # 最新の 3 件
         assert [m.content for m in context.recent_messages] == ["がんばれ"]
 
     @pytest.mark.asyncio
     async def test_execute_records_commentary(self, use_case, conversation):
-        """Test generated commentary is added to the conversation."""
+        """生成した実況が会話に加わる。"""
         await use_case.execute(GenerateCommentaryRequest())
 
         last = conversation.recent_messages(1)[0]
@@ -109,7 +109,7 @@ class TestGenerateCommentaryUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_publishes_event(self, use_case, mock_event_publisher):
-        """Test CommentaryGeneratedEvent is published."""
+        """CommentaryGeneratedEvent が発行される。"""
         await use_case.execute(GenerateCommentaryRequest())
 
         event = mock_event_publisher.publish.call_args.args[0]
@@ -120,7 +120,7 @@ class TestGenerateCommentaryUseCase:
     async def test_execute_empty_text(
         self, use_case, mock_text_generator, mock_event_publisher, conversation
     ):
-        """Test empty generation is not recorded or published."""
+        """生成が空なら記録も発行もしない。"""
         mock_text_generator.generate.return_value = ""
 
         response = await use_case.execute(GenerateCommentaryRequest())
@@ -133,7 +133,7 @@ class TestGenerateCommentaryUseCase:
 
     @pytest.mark.asyncio
     async def test_execute_generation_error(self, use_case, mock_text_generator, conversation):
-        """Test generation failure returns an error response with empty text."""
+        """生成に失敗したら、空のテキストでエラーの応答を返す。"""
         mock_text_generator.generate.side_effect = TextGenerationError("API down")
 
         response = await use_case.execute(GenerateCommentaryRequest())

@@ -1,4 +1,4 @@
-"""Style-Bert-VITS2 voice configuration."""
+"""Style-Bert-VITS2 の声の設定。"""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class VoiceConfig:
     """
-    Voice configuration value object.
+    声の設定の値オブジェクト。
 
-    Contains all settings needed for TTS synthesis.
+    TTS の合成に必要な設定をすべて持つ。
 
     Raises:
-        ValueError: If speaker_id is negative.
+        ValueError: speaker_id が負のとき。
     """
 
     model_name: str = "default"
@@ -25,6 +25,6 @@ class VoiceConfig:
     length: float = 1.0
 
     def __post_init__(self) -> None:
-        """Validate configuration."""
+        """設定を検証する。"""
         if self.speaker_id < 0:
             raise ValueError(f"speaker_id must be non-negative, got {self.speaker_id}")

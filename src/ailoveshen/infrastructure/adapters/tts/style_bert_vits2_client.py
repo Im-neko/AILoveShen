@@ -1,4 +1,4 @@
-"""Style-Bert-VITS2 HTTP client adapter."""
+"""Style-Bert-VITS2 への HTTP クライアントのアダプター。"""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ from ailoveshen.infrastructure.adapters.tts.emotion_style_service import Emotion
 
 class StyleBertVits2Client(ISpeechSynthesizer):
     """
-    Infrastructure adapter for Style-Bert-VITS2 TTS server.
+    Style-Bert-VITS2 の TTS サーバーのインフラ側アダプター。
 
-    Implements ISpeechSynthesizer output port.
-    Communicates with the Style-Bert-VITS2 FastAPI server and maps
-    domain emotions to Style-Bert-VITS2 style names.
+    出力ポート ISpeechSynthesizer を実装する。
+    Style-Bert-VITS2 の FastAPI サーバーと通信し、ドメインの感情を
+    Style-Bert-VITS2 のスタイル名に対応させる。
     """
 
     def __init__(
@@ -35,18 +35,18 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         emotion_style_service: Optional[EmotionStyleService] = None,
     ) -> None:
         """
-        Initialize the TTS client.
+        TTS クライアントを初期化する。
 
         Args:
-            host: TTS server hostname
-            port: TTS server port
-            timeout_seconds: Request timeout in seconds
-            model_name: Default model to use for synthesis
-            sdp_ratio: SDP ratio parameter for synthesis
-            noise: Noise parameter for synthesis
-            noisew: Noise weight parameter for synthesis
-            length: Length scale parameter for synthesis
-            emotion_style_service: Emotion to style mapping (defaults to built-in map)
+            host: TTS サーバーのホスト名
+            port: TTS サーバーのポート
+            timeout_seconds: リクエストのタイムアウト（秒）
+            model_name: 合成に使う既定のモデル
+            sdp_ratio: 合成の SDP 比率のパラメーター
+            noise: 合成のノイズのパラメーター
+            noisew: 合成のノイズの重みのパラメーター
+            length: 合成の長さの倍率のパラメーター
+            emotion_style_service: 感情からスタイルへの対応（既定は組み込みの対応）
         """
         self._base_url = f"http://{host}:{port}"
         self._timeout = timeout_seconds
@@ -59,31 +59,31 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         self._client: Optional[httpx.AsyncClient] = None
 
     async def connect(self) -> None:
-        """Initialize HTTP client and verify connection."""
+        """HTTP クライアントを初期化し、接続を確かめる。"""
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._timeout,
         )
 
-        # Verify connection with a health check
+        # ヘルスチェックで接続を確かめる
         try:
             response = await self._client.get("/models/info")
             response.raise_for_status()
-            logger.info(f"TTS client connected to {self._base_url}")
+            logger.info(f"TTS クライアントが {self._base_url} に接続した")
         except httpx.RequestError as e:
             await self._client.aclose()
             self._client = None
             raise ConnectionError(f"Failed to connect to TTS server: {e}") from e
 
     async def disconnect(self) -> None:
-        """Close HTTP client."""
+        """HTTP クライアントを閉じる。"""
         if self._client:
             await self._client.aclose()
             self._client = None
-            logger.info("TTS client disconnected")
+            logger.info("TTS クライアントを切断した")
 
     def is_connected(self) -> bool:
-        """Check if client is connected."""
+        """クライアントが接続しているかを返す。"""
         return self._client is not None
 
     async def synthesize(
@@ -94,19 +94,19 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         language: str = "JP",
     ) -> bytes:
         """
-        Synthesize speech using Style-Bert-VITS2 server.
+        Style-Bert-VITS2 のサーバーで音声を合成する。
 
         Args:
-            text: Text to synthesize
-            emotion: Emotion to express (mapped to a style name)
-            speaker_id: Speaker ID for multi-speaker models
-            language: Language code (JP, EN, ZH)
+            text: 合成するテキスト
+            emotion: 表現する感情（スタイル名に対応させる）
+            speaker_id: 複数話者のモデルでの話者 ID
+            language: 言語コード（JP、EN、ZH）
 
         Returns:
-            Audio data as bytes (WAV format)
+            音声データのバイト列（WAV 形式）
 
         Raises:
-            SynthesisError: If synthesis fails
+            SynthesisError: 合成に失敗したとき
         """
         if not self._client:
             raise SynthesisError("TTS client not connected. Call connect() first.")
@@ -132,10 +132,9 @@ class StyleBertVits2Client(ISpeechSynthesizer):
 
             content_type = response.headers.get("content-type", "")
             if "audio" not in content_type and "octet-stream" not in content_type:
-                # Unexpected response, might be an error message
+                # 想定外の応答。エラーメッセージかもしれない
                 raise SynthesisError(
-                    f"Unexpected response type: {content_type}. "
-                    f"Response: {response.text[:200]}"
+                    f"Unexpected response type: {content_type}. Response: {response.text[:200]}"
                 )
 
             return response.content
@@ -154,10 +153,10 @@ class StyleBertVits2Client(ISpeechSynthesizer):
 
     async def get_available_styles(self) -> List[str]:
         """
-        Get available styles from the TTS server.
+        TTS サーバーから使えるスタイルを取得する。
 
         Returns:
-            List of available style names for the current model.
+            今のモデルで使えるスタイル名の一覧。
         """
         if not self._client:
             return ["Neutral"]
@@ -167,7 +166,7 @@ class StyleBertVits2Client(ISpeechSynthesizer):
             response.raise_for_status()
             data = response.json()
 
-            # Style-Bert-VITS2 returns model info with style2id mapping
+            # Style-Bert-VITS2 は style2id の対応を含むモデルの情報を返す
             if self._model_name in data:
                 model_info = data[self._model_name]
                 style2id = model_info.get("style2id", {})
@@ -176,5 +175,5 @@ class StyleBertVits2Client(ISpeechSynthesizer):
             return ["Neutral"]
 
         except Exception as e:
-            logger.warning(f"Failed to get styles from TTS server: {e}")
+            logger.warning(f"TTS サーバーからスタイルを取得できなかった: {e}")
             return ["Neutral"]

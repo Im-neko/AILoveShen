@@ -1,4 +1,4 @@
-"""Generate chat response input port (use case interface)."""
+"""チャット返答生成の入力ポート（ユースケースのインターフェース）。"""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ from ailoveshen.application.dto.llm_dto import (
 
 
 class IGenerateResponse(ABC):
-    """Input port for the chat response use case (sub loop / interrupt)."""
+    """チャット返答のユースケースの入力ポート（サブループ / 割り込み）。"""
 
     @abstractmethod
     async def execute(self, request: GenerateResponseRequest) -> GenerateResponseResponse:
         """
-        Execute chat response generation.
+        チャットへの返答を生成する。
 
         Args:
-            request: Chat response request parameters
+            request: チャット返答のリクエストのパラメータ
 
         Returns:
-            Response containing the generated text, or an error.
+            生成したテキスト、またはエラーを含むレスポンス。
         """
         ...

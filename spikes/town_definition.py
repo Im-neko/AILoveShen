@@ -1,9 +1,8 @@
-"""Let Gemini define the town the mission asks for (docs/design/09 M3/M4, the next design doc).
+"""ミッションが求める街を Gemini に定義させる（docs/design/09 の M3/M4、次の設計書）。
 
-The mission says "make it a town" but nothing says what a town is or when it is done. Gemini is
-given the mission, what the streamer can do now and the goal vocabulary, and asked for a
-definition whose parts can be judged from the world, with the abilities each part still needs.
-Run several times to see how much the definition varies.
+ミッションは「街にする」と言うが、街とは何か、いつ完成なのかはどこにも書いていない。Gemini に
+ミッション、配信者が今できること、目標の語彙を渡し、世界から判定できる部分からなる定義と、
+部分ごとにまだ要る能力を出させる。何回か実行して、定義がどれくらい揺れるかを見る。
 
     GEMINI_API_KEY=... python spikes/town_definition.py [--runs 3]
 """
@@ -101,7 +100,7 @@ async def main(runs: int) -> None:
     )
     for i in range(runs):
         data = await generator.generate_json(prompt, SCHEMA)
-        print(f"=== run {i + 1} ===")
+        print(f"=== {i + 1} 回目 ===")
         print(json.dumps(data, ensure_ascii=False, indent=1))
     await generator.close()
 

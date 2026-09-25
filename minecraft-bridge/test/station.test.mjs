@@ -13,7 +13,7 @@ const k = new Knowledge(md)
 const AIR = { name: 'air', boundingBox: 'empty' }
 const STONE = { name: 'stone', boundingBox: 'block' }
 
-// The bot at 0,70,0; solid below `floor(x, z)`, air from it up
+// ボットは 0,70,0。`floor(x, z)` より下は固体、そこから上は空気
 const bot = (floor) => ({
   entity: { position: v(0.5, 70, 0.5) },
   entities: {},
@@ -28,14 +28,14 @@ const bot = (floor) => ({
 const state = { home: null, plan: null, unreachableDrops: new Set(), memory: { chests: [], furnaces: [], places: [] } }
 const placeLeaf = { leaves: [{ kind: 'place', item: 'crafting_table' }], blocked: [] }
 
-test('a station goes 2 blocks away on flat ground, and a block up or down on a slope', () => {
+test('作業台などは、平地なら 2 ブロック先、坂なら 1 ブロック上か下に置く', () => {
   assert.deepEqual(stationSpot(bot(() => 70), state), v(-2, 70, 0))
-  // A step up everywhere around: the fixed ring at its own height found nothing (iron run)
+  // 周り一面が 1 段高い: 同じ高さの決まった輪だけを見て何も見つからなかった（iron run）
   assert.deepEqual(stationSpot(bot((x, z) => (Math.abs(x) + Math.abs(z) > 1 ? 71 : 70)), state), v(-2, 71, 0))
 })
 
-test('no room: not offered, and the reason is given instead', () => {
-  const walled = bot((x, z) => (Math.abs(x) + Math.abs(z) > 1 ? 75 : 70)) // in a pit
+test('置く場所がなければ候補に出さず、代わりに理由を示す', () => {
+  const walled = bot((x, z) => (Math.abs(x) + Math.abs(z) > 1 ? 75 : 70)) // 穴の中
   assert.equal(stationSpot(walled, state), null)
   const { candidates, withheld } = ground(walled, state, k, {}, placeLeaf)
   assert.ok(!candidates.some((c) => c.verb === 'place_station'), candidates.map((c) => c.id).join())

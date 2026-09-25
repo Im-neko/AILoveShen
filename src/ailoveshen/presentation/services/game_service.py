@@ -1,4 +1,4 @@
-"""Game service for presentation layer."""
+"""プレゼンテーション層のゲームサービス。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ailoveshen.domain.entities import PlaySession
 
 @dataclass(frozen=True)
 class PlayOutcome:
-    """Result of a play session."""
+    """プレイセッションの結果。"""
 
     session: PlaySession
     steps: int
@@ -26,15 +26,14 @@ class PlayOutcome:
 
 class GameService:
     """
-    Presentation layer service running the game agent.
+    ゲームのエージェントを動かすプレゼンテーション層のサービス。
 
-    The LLM designs the house and sets goals, the bridge judges them and
-    grounds the candidates, the action selector picks each one. The session
-    goes on after the house is complete (the night, food, ...) until the step
-    budget is spent.
+    LLM が家を設計して目標を決め、ブリッジが目標を判定して候補を具体化し、
+    行動の選択器が候補を 1つずつ選ぶ。家が完成した後も（夜、食料など）、
+    ステップの予算を使い切るまでセッションは続く。
     """
 
-    WAIT_SECONDS = 1.0  # pause while the bridge's reflex is busy
+    WAIT_SECONDS = 1.0  # ブリッジの反射が動いている間は待つ
 
     def __init__(
         self,
@@ -46,15 +45,15 @@ class GameService:
         mid_goals: MidGoalKeeper,
     ) -> None:
         """
-        Initialize game service.
+        ゲームサービスを初期化する。
 
         Args:
-            start_play: Use case designing the house and starting the session
-            advance_play: Use case taking one step
-            bridge: Minecraft bridge, closed together with the service
-            text_generator: LLM, closed together with the service
-            action_selector: Action selector, closed together with the service
-            mid_goals: Keeps the mid goals (chat replies add viewers' requests through it)
+            start_play: 家を設計してセッションを始めるユースケース
+            advance_play: 1ステップ進めるユースケース
+            bridge: Minecraft ブリッジ。サービスと一緒に閉じる
+            text_generator: LLM。サービスと一緒に閉じる
+            action_selector: 行動の選択器。サービスと一緒に閉じる
+            mid_goals: 中目標を持つ（チャットへの返答は、これを通して視聴者の頼みを加える）
         """
         self._start = start_play
         self._advance = advance_play
@@ -66,24 +65,23 @@ class GameService:
 
     @property
     def session(self) -> PlaySession | None:
-        """The session being played (what commentary and chat replies see), None before play()."""
+        """プレイ中のセッション（実況とチャットへの返答が見るもの）。play() の前は None。"""
         return self._session
 
     @property
     def mid_goals(self) -> MidGoalKeeper:
-        """Keeps the mid goals; chat replies accept viewers' requests through it."""
+        """中目標を持つ。チャットへの返答は、これを通して視聴者の頼みを受ける。"""
         return self._mid_goals
 
     async def play(self, max_steps: int = 200) -> PlayOutcome:
         """
-        Design a house, then play until max_steps actions have been taken.
+        家を設計し、max_steps 回行動するまでプレイする。
 
         Args:
-            max_steps: Number of actions to take (steps spent waiting for the
-                bridge's reflex do not count)
+            max_steps: 行う行動の数（ブリッジの反射を待ったステップは数えない）
 
         Returns:
-            The session, actions taken and whether the house is complete
+            セッション、行った行動の数、家が完成したか
         """
         session = await self._start.execute()
         self._session = session
@@ -100,21 +98,17 @@ class GameService:
                 goal = report.goal.spec.describe() if report.goal else "-"
                 remaining = report.status.remaining if report.status else "-"
                 logger.info(
-                    f"[{steps}] {goal} (remaining {remaining}) -> {report.decision.action_id} "
-                    f"(conf {report.decision.confidence:.2f}): "
-                    f"{'ok' if report.result.ok else 'FAILED'} {report.result.result} "
-                    f"({report.result.seconds}s)"
+                    f"[{steps}] {goal}（残り {remaining}）-> {report.decision.action_id} "
+                    f"（確信度 {report.decision.confidence:.2f}）: "
+                    f"{'成功' if report.result.ok else '失敗'} {report.result.result} "
+                    f"（{report.result.seconds}秒）"
                 )
-        house = (
-            f"house '{session.blueprint.name}'" if session.blueprint else "the home built before"
-        )
-        logger.info(
-            f"Played {steps} steps; {house} {'complete' if house_complete else 'not complete'}"
-        )
+        house = f"家「{session.blueprint.name}」" if session.blueprint else "前に建てた家"
+        logger.info(f"{steps} ステップ遊んだ。{house}は{'完成' if house_complete else '未完成'}")
         return PlayOutcome(session=session, steps=steps, house_complete=house_complete)
 
     async def close(self) -> None:
-        """Close the bridge client and the model clients."""
+        """ブリッジのクライアントとモデルのクライアントを閉じる。"""
         await self._bridge.close()
         await self._text_generator.close()
         await self._action_selector.close()

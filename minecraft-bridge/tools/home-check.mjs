@@ -1,4 +1,4 @@
-// Enter and leave a house with a separate bot. Args: door x y z and the inward direction (e.g. 0 -1).
+// 別のボットで家に出入りする。引数: ドアの x y z と内向きの方向（例: 0 -1）。
 import { execFileSync } from 'node:child_process'
 import mineflayer from 'mineflayer'
 import pathfinderPkg from 'mineflayer-pathfinder'
@@ -10,7 +10,7 @@ const { Vec3 } = vec3Pkg
 const [x, y, z, dx, dz] = process.argv.slice(2).map(Number)
 const door = new Vec3(x, y, z)
 const home = { door, inside: door.offset(dx, 0, dz), outside: door.offset(-dx, 0, -dz) }
-// interior of a 5x5 house: 3x3 behind the door wall
+// 5x5 の家の内部: ドアの壁の奥の 3x3
 const c = door.offset(dx * 2, 0, dz * 2)
 home.min = c.offset(-1, 0, -1)
 home.max = c.offset(1, 0, 1)
@@ -25,8 +25,8 @@ bot.once('spawn', async () => {
   rcon(`tp ${name} ${x + 0.5 - dx * 6} ${y} ${z + 0.5 - dz * 6}`)
   await bot.waitForTicks(60)
   const report = (label) => console.log(`${label}: pos=${bot.entity.position.floored()} inside=${isInside(bot, home)} doorOpen=${isDoorOpen(bot, home)} rcon=${rcon(`execute if block ${x} ${y} ${z} #minecraft:wooden_doors[open=false]`)}`)
-  report('start')
-  try { await enterHome(bot, home); report('entered') } catch (e) { console.log('enter failed:', e.message); report('after enter failure') }
-  try { await leaveHome(bot, home); report('left') } catch (e) { console.log('leave failed:', e.message); report('after leave failure') }
+  report('開始')
+  try { await enterHome(bot, home); report('入った') } catch (e) { console.log('入れなかった:', e.message); report('入れなかったあと') }
+  try { await leaveHome(bot, home); report('出た') } catch (e) { console.log('出られなかった:', e.message); report('出られなかったあと') }
   bot.quit()
 })

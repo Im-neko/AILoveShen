@@ -1,1 +1,1 @@
-"""Application layer - Use cases and ports."""
+"""アプリケーション層。ユースケースとポート。"""

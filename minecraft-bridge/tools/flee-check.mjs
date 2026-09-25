@@ -1,5 +1,5 @@
-// Reproduce fleeing with a separate bot: summon a zombie next to it and trace distance and
-// pathfinder status. Uses RCON through docker (the dev server container).
+// 別のボットで逃走を再現する: すぐ隣にゾンビを召喚し、距離と pathfinder の状態を追う。
+// docker 経由で RCON を使う（開発用サーバーのコンテナ）。
 import { execFileSync } from 'node:child_process'
 import mineflayer from 'mineflayer'
 import pathfinderPkg from 'mineflayer-pathfinder'
@@ -14,7 +14,7 @@ const state = { plan: null }
 bot.once('spawn', async () => {
   configureMovements(bot, state)
   rcon(`gamemode survival ${name}`)
-  rcon(`effect give ${name} minecraft:resistance 60 4`) // survive the test
+  rcon(`effect give ${name} minecraft:resistance 60 4`) // テスト中に死なないように
   await bot.waitForTicks(40)
   rcon(`execute at ${name} run summon minecraft:zombie ^ ^ ^2 {Tags:["probe"],ArmorItems:[{},{},{},{id:"minecraft:leather_helmet",count:1}]}`)
   await bot.waitForTicks(20)
@@ -27,8 +27,8 @@ bot.once('spawn', async () => {
   }, 500)
   const signal = new AbortController().signal
   try {
-    console.log('flee:', await flee(bot, z, signal))
-  } catch (e) { console.log('flee failed:', e.message) }
+    console.log('逃走:', await flee(bot, z, signal))
+  } catch (e) { console.log('逃走に失敗:', e.message) }
   clearInterval(trace)
   rcon('kill @e[type=minecraft:zombie,tag=probe]')
   bot.quit()

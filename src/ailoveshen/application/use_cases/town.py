@@ -1,4 +1,4 @@
-"""The town of the mission: defined once by the LLM, checked by the bridge, filled in later."""
+"""大目標の街: LLM が一度だけ定め、ブリッジが確かめ、あとで埋める。"""
 
 from __future__ import annotations
 
@@ -30,18 +30,17 @@ from ailoveshen.domain.value_objects import (
 
 class TownPlanner:
     """
-    Makes the town of the mission once and keeps it doable (docs/design/15_town.md §3).
+    大目標の街を一度だけ作り、実現できる形に保つ（docs/design/15_town.md §3）。
 
-    The LLM writes what the town is and its stages. Each stage's conditions
-    are checked by the bridge before the definition is kept: a condition it
-    cannot judge, or an item nothing the streamer can do gets (the iron sword
-    before smelting), is sent back with the reason. What is still wrong after
-    the last attempt goes to the stage's unresolved parts with the reason, so
-    nothing impossible becomes a mid goal.
+    街がどんなものかと、その段階は LLM が書く。定義を保存する前に、各段階の条件を
+    ブリッジが確かめる: 判定できない条件や、配信者にできることでは手に入らない
+    アイテム（製錬できる前の鉄の剣）は、理由をつけて差し戻す。最後の試行のあとも
+    直らないものは、理由をつけて段階の未解決の部分に回す。こうして、できないことが
+    中目標になることはない。
 
-    The definition is fixed: comments and runs do not change it. Only the
-    unresolved parts are written again, at the start of a run, since abilities
-    added since may now express them (the stage keeps its title and meaning).
+    定義は固定する: コメントでも実行でも変わらない。未解決の部分だけは、実行の
+    始めに書き直す。その後に足された能力で表せるようになっているかもしれないから
+    だ（段階の題名と意味は変えない）。
     """
 
     def __init__(
@@ -55,16 +54,16 @@ class TownPlanner:
         max_attempts: int = 3,
     ) -> None:
         """
-        Initialize with dependencies (Dependency Injection).
+        依存を受け取って初期化する（依存性の注入）。
 
         Args:
-            text_generator: LLM adapter (structured output)
-            prompt_builder: Game prompt builder adapter
-            bridge: Minecraft bridge adapter (checks the conditions)
-            event_publisher: Event publisher for domain events
-            character: The streamer's character profile
-            store: Keeps the plan across restarts
-            max_attempts: Generations before what is still wrong is left unresolved
+            text_generator: LLM のアダプター（構造化出力）
+            prompt_builder: ゲームのプロンプト組み立てのアダプター
+            bridge: Minecraft ブリッジのアダプター（条件を確かめる）
+            event_publisher: ドメインイベントの発行器
+            character: 配信者のキャラクターのプロフィール
+            store: 再起動をまたいでプランを保つ
+            max_attempts: まだ直らないものを未解決に残すまでに生成する回数
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -75,14 +74,14 @@ class TownPlanner:
         self._max_attempts = max_attempts
 
     async def prepare(self, plan: MidGoalPlan) -> None:
-        """Define the town if it is not yet, else write its unresolved stages again; save."""
+        """街がまだなければ定め、あれば未解決の段階を書き直す。そして保存する。"""
         if plan.town is None:
             town = await self._define(plan)
             plan.define_town(town)
             self._store.save(plan)
-            logger.info(f"Town defined: {town.text} / {' → '.join(s.title for s in town.stages)}")
+            logger.info(f"街を定めた: {town.text} / {' → '.join(s.title for s in town.stages)}")
             for i, s in enumerate(town.stages):
-                logger.info(f"  stage {i + 1} {_describe(s)}")
+                logger.info(f"  段階 {i + 1} {_describe(s)}")
             await self._event_publisher.publish(
                 TownDefinedEvent(text=town.text, stages=tuple(s.title for s in town.stages))
             )
@@ -93,7 +92,7 @@ class TownPlanner:
             if stages[i].ready:
                 continue
             stages[i] = await self._resolve(town, stages[i])
-            logger.info(f"Town stage {i + 1} written again: {_describe(stages[i])}")
+            logger.info(f"街の段階 {i + 1} を書き直した: {_describe(stages[i])}")
         if tuple(stages) != town.stages:
             plan.define_town(replace(town, stages=tuple(stages)))
             self._store.save(plan)
@@ -110,7 +109,7 @@ class TownPlanner:
                 town = parse_town(data)
             except ValueError as e:
                 error = str(e)
-                logger.warning(f"Town definition attempt {attempt} rejected: {error}")
+                logger.warning(f"街の定義の試行 {attempt} を差し戻した: {error}")
                 continue
             errors = [
                 f"段階「{s.title}」: {e}" for s in town.stages for e in await self._problems(s)
@@ -118,7 +117,7 @@ class TownPlanner:
             if not errors:
                 return town
             error = "\n".join(errors)
-            logger.warning(f"Town definition attempt {attempt} rejected: {error}")
+            logger.warning(f"街の定義の試行 {attempt} を差し戻した: {error}")
         if town is None:
             raise TextGenerationError(
                 f"no valid town definition after {self._max_attempts} attempts: {error}"
@@ -127,12 +126,12 @@ class TownPlanner:
 
     async def _resolve(self, town: TownDefinition, stage: TownStage) -> TownStage:
         """
-        The stage written again, or as it was when no answer can be kept.
+        書き直した段階。保存できる答えがなければ、元のままの段階。
 
-        A part left for an ability not there yet cannot already be done: new
-        conditions that all hold now mean the part was reworded into something
-        else (the warehouse as built(), the first house), which would finish
-        the stage, and the town, without building anything.
+        まだない能力のために残した部分が、もう済んでいることはありえない: 新しい
+        条件が今すべて満たされているなら、その部分は別のもの（built() としての倉庫、
+        つまり最初の家）に言い換えられている。そうなると、何も建てずに段階と街が
+        終わってしまう。
         """
         error = ""
         for attempt in range(1, self._max_attempts + 1):
@@ -142,7 +141,7 @@ class TownPlanner:
                 written = parse_stage(data, stage.title, stage.why)
             except ValueError as e:
                 error = str(e)
-                logger.warning(f"Town stage attempt {attempt} rejected: {error}")
+                logger.warning(f"街の段階の試行 {attempt} を差し戻した: {error}")
                 continue
             problems = await self._problems(written)
             if not problems:
@@ -150,7 +149,7 @@ class TownPlanner:
             if not problems:
                 return written
             error = "\n".join(problems)
-            logger.warning(f"Town stage attempt {attempt} rejected: {error}")
+            logger.warning(f"街の段階の試行 {attempt} を差し戻した: {error}")
         return stage
 
     async def _already_done(self, stage: TownStage, written: TownStage) -> list[str]:
@@ -164,7 +163,7 @@ class TownPlanner:
         ]
 
     async def _problems(self, stage: TownStage) -> list[str]:
-        """Why the stage's conditions cannot be kept, one line per condition (none: all good)."""
+        """段階の条件を保存できない理由。条件ごとに 1 行（なし: すべて問題ない）。"""
         return [p for c in stage.conditions if (p := await self._problem(c))]
 
     async def _problem(self, condition: GoalSpec) -> str:
@@ -178,7 +177,7 @@ class TownPlanner:
         return ""
 
     async def _settle(self, stage: TownStage) -> TownStage:
-        """The stage with the conditions that cannot be kept moved to its unresolved parts."""
+        """保存できない条件を未解決の部分に移した段階。"""
         kept: list[GoalSpec] = []
         unresolved = list(stage.unresolved)
         for c in stage.conditions:

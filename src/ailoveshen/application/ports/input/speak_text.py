@@ -1,4 +1,4 @@
-"""Speak text input port (use case interface)."""
+"""発話の入力ポート（ユースケースのインターフェース）。"""
 
 from __future__ import annotations
 
@@ -12,28 +12,27 @@ from ailoveshen.application.dto.speech_dto import (
 
 class ISpeakText(ABC):
     """
-    Input port for text-to-speech use case.
+    音声合成のユースケースの入力ポート。
 
-    Presentation layer uses this interface to request speech synthesis.
-    This follows the Dependency Inversion Principle - high-level modules
-    depend on abstractions, not concrete implementations.
+    プレゼンテーション層はこのインターフェースで音声合成を頼む。
+    依存性逆転の原則に従い、上位のモジュールは具体的な実装ではなく抽象に依存する。
     """
 
     @abstractmethod
     async def execute(self, request: SpeakTextRequest) -> SpeakTextResponse:
         """
-        Execute speak text use case.
+        発話のユースケースを実行する。
 
-        This method:
-        1. Determines the emotion to speak with (current emotion or override)
-        2. Synthesizes speech using the configured TTS service
-        3. Plays the audio through the configured audio player
-        4. Publishes domain events for speech started/completed
+        このメソッドは次のことをする:
+        1. 話すときの感情を決める（今の感情か、指定された感情）
+        2. 設定された TTS サービスで音声を合成する
+        3. 設定された音声プレイヤーで再生する
+        4. 発話の開始と完了のドメインイベントを発行する
 
         Args:
-            request: Speech request parameters
+            request: 発話のリクエストのパラメータ
 
         Returns:
-            Speech result containing success status and any error information.
+            成否とエラーの情報を含む発話の結果。
         """
         ...

@@ -1,4 +1,4 @@
-"""Narrator: says aloud why the streamer's actions change."""
+"""Narrator: 配信者の行動が変わる理由を声に出して言う。"""
 
 from __future__ import annotations
 
@@ -24,19 +24,16 @@ from ailoveshen.presentation.services.llm_service import LLMService
 
 class Narrator:
     """
-    Turns goal changes into commentary, so viewers hear why the streamer does
-    something else now.
+    目標の変化を実況にして、配信者がなぜ別のことを始めたのかを視聴者に伝える。
 
-    What happens at a small-goal boundary is told together with the next goal
-    (one utterance): the small goal's end, mid goals completed or dropped
-    (a viewer's request dropped is never silent), mid goals the streamer added,
-    the house's completion, and the town (what it is when decided, and its
-    completion). A viewer's request accepted is not told again
-    (the reply already said when it will be done).
+    小目標の切れ目で起きたことは、次の目標と一緒に（1回の発話で）話す:
+    小目標の終わり、完了した中目標とやめた中目標（視聴者の頼みをやめたときは
+    必ず話す）、配信者が自分で加えた中目標、家の完成、街（決めたときの中身と、
+    完成）。受けた視聴者の頼みは改めて話さない（いつやるかは返答で言っている）。
 
-    The activity is taken when the event happens, so the commentary talks
-    about the goal the bot is on then, not one set while it was generated.
-    Commentary runs in the background so the play loop does not wait for it.
+    activity はイベントが起きたときに取る。そのため実況は、生成中に決まった
+    目標ではなく、そのときボットが取り組んでいた目標について話す。
+    実況はバックグラウンドで生成し、プレイのループはそれを待たない。
     """
 
     def __init__(
@@ -46,21 +43,21 @@ class Narrator:
         say: Callable[[str], Awaitable[None]],
     ) -> None:
         """
-        Initialize the narrator.
+        Narrator を初期化する。
 
         Args:
-            llm: Generates the commentary
-            activity: What the streamer is doing now (e.g. the game session's activity)
-            say: Where the commentary goes (TTS, or a log)
+            llm: 実況を生成する
+            activity: 配信者が今していること（例: ゲームのセッションの activity）
+            say: 実況の出し先（TTS かログ）
         """
         self._llm = llm
         self._activity = activity
         self._say = say
-        self._pending: list[str] = []  # what happened, told with the next goal
+        self._pending: list[str] = []  # 起きたこと。次の目標と一緒に話す
         self._tasks: set[asyncio.Task[None]] = set()
 
     def subscribe(self, bus: IEventSubscriber) -> None:
-        """Listen to the goal events."""
+        """目標のイベントを購読する。"""
         bus.subscribe(GoalEndedEvent, self.on_goal_ended)
         bus.subscribe(GoalSetEvent, self.on_goal_set)
         bus.subscribe(MidGoalAddedEvent, self.on_mid_goal_added)
@@ -71,19 +68,19 @@ class Narrator:
         bus.subscribe(TownCompletedEvent, self.on_town_completed)
 
     async def on_goal_ended(self, event: GoalEndedEvent) -> None:
-        """Keep the end to tell it with the next goal."""
+        """小目標の終わりを取っておき、次の目標と一緒に話す。"""
         result = "達成" if event.met else "未達成でやめた"
         self._pending.append(f"小目標 {event.goal} が{result}（{event.ended_because}）")
 
     async def on_goal_set(self, event: GoalSetEvent) -> None:
-        """Tell what happened and the next goal in one utterance."""
+        """起きたことと次の目標を 1回の発話で話す。"""
         events, self._pending = self._pending, []
         serves = f"「{event.mid_goal}」のため" if event.mid_goal else "身を守るため"
         events.append(f"新しい小目標: {event.goal}（{serves}。{event.reason}）")
         self._comment(events)
 
     async def on_mid_goal_added(self, event: MidGoalAddedEvent) -> None:
-        """The streamer's own new mid goal is told with the next goal; a viewer's was replied."""
+        """配信者が自分で加えた中目標は次の目標と一緒に話す。視聴者のものは返答で話している。"""
         if event.requested_by:
             return
         self._pending.append(
@@ -91,31 +88,31 @@ class Narrator:
         )
 
     async def on_mid_goal_completed(self, event: MidGoalCompletedEvent) -> None:
-        """Keep a completed mid goal to tell it with the next goal."""
+        """完了した中目標を取っておき、次の目標と一緒に話す。"""
         self._pending.append(f"中目標「{event.title}」{_requested(event.requested_by)}が完了した")
 
     async def on_mid_goal_dropped(self, event: MidGoalDroppedEvent) -> None:
-        """Keep a dropped mid goal to tell it with the next goal (never silent)."""
+        """やめた中目標を取っておき、次の目標と一緒に話す（黙ってやめない）。"""
         self._pending.append(
             f"中目標「{event.title}」{_requested(event.requested_by)}をやめた（{event.reason}）"
         )
 
     async def on_house_completed(self, event: HouseCompletedEvent) -> None:
-        """The house is done: told with the next goal (the build goal ends with it)."""
+        """家の完成。次の目標と一緒に話す（建築の小目標も同時に終わる）。"""
         self._pending.append(f"家「{event.name}」が完成した")
 
     async def on_town_defined(self, event: TownDefinedEvent) -> None:
-        """The town the streamer decided on is told with the next goal."""
+        """配信者が決めた街は、次の目標と一緒に話す。"""
         self._pending.append(
             f"大目標の街をこう決めた: {event.text}（段階: {' → '.join(event.stages)}）"
         )
 
     async def on_town_completed(self, event: TownCompletedEvent) -> None:
-        """The town is done: told with the next goal."""
+        """街の完成。次の目標と一緒に話す。"""
         self._pending.append(f"街が完成した（{event.text}）")
 
     async def drain(self) -> None:
-        """Wait for the commentary still being generated."""
+        """生成中の実況を待つ。"""
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
@@ -130,7 +127,7 @@ class Narrator:
             if text:
                 await self._say(text)
         except Exception as e:
-            logger.error(f"Narration failed: {e}")
+            logger.error(f"目標の変化の実況に失敗した: {e}")
 
 
 def _requested(user_name: str) -> str:

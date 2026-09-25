@@ -1,10 +1,10 @@
-"""The goal vocabulary as the LLM sees it: which predicates make sense now, the schemas, parsing.
+"""LLM から見た目標の語彙: 今意味のある述語、スキーマ、パース。
 
-Shared by the goal decision and the chat replies, so both speak of goals the same way:
-- the small goal (one predicate) and whether it serves the mid goal at the top of the list or
-  survival, with the changes to the mid-goal list decided with it
-- a mid goal's completion conditions (predicates judged from the world alone), used both by the
-  goal decision's changes and by a reply that accepts a viewer's request
+目標の決定とチャットの返答が共有する。こうして両方が同じ言い方で目標を語る:
+- 小目標（述語 1 つ）と、それがリストの一番上の中目標のためか生存のためか。一緒に決めた
+  中目標リストへの変更も含む
+- 中目標の完了条件（世界だけから判定する述語）。目標の決定での変更と、視聴者の頼みを受ける
+  返答の両方で使う
 """
 
 from __future__ import annotations
@@ -31,19 +31,19 @@ ITEM_DESCRIPTION = (
     "have / stored / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
     "wooden_sword, wooden_pickaxe"
 )
-# The order the conditions are offered in (a frozenset has none)
+# 条件を示す順番（frozenset には順番がない）
 _CONDITION_ORDER = [p for p in GoalPredicate if p in CONDITION_PREDICATES]
 
 
 class Serves(str, Enum):
-    """What a small goal is for."""
+    """小目標が何のためか。"""
 
-    CURRENT = "current"  # the mid goal at the top of the list (after the changes)
-    SURVIVAL = "survival"  # staying alive: the night, home, the door, food
+    CURRENT = "current"  # リストの一番上の中目標（変更のあと）
+    SURVIVAL = "survival"  # 生き延びること: 夜、家、扉、食料
 
 
 class PlanOp(str, Enum):
-    """An edit of the mid-goal list."""
+    """中目標リストの編集。"""
 
     ADD = "add"
     MOVE = "move"
@@ -51,16 +51,16 @@ class PlanOp(str, Enum):
 
 
 class RequestHandling(str, Enum):
-    """What a reply does with the viewer's comment."""
+    """返答が視聴者のコメントをどう扱うか。"""
 
-    NONE = "none"  # chat or a question
-    ACCEPT = "accept"  # added to the mid goals
-    DECLINE = "decline"  # the reply says why not
+    NONE = "none"  # 雑談か質問
+    ACCEPT = "accept"  # 中目標に足した
+    DECLINE = "decline"  # 受けない理由を返答で言う
 
 
 @dataclass(frozen=True)
 class MidGoalProposal:
-    """A mid goal to add: `position` 0-based among the pending ones (None: last)."""
+    """足す中目標: `position` は未完了のものの中での 0 始まりの位置（None: 最後）。"""
 
     title: str
     conditions: tuple[GoalSpec, ...]
@@ -70,18 +70,18 @@ class MidGoalProposal:
 
 @dataclass(frozen=True)
 class PlanChange:
-    """One edit of the mid-goal list (`proposal` for add, `mid_goal_id` for move and drop)."""
+    """中目標リストの 1 つの編集（add は `proposal`、move と drop は `mid_goal_id`）。"""
 
     op: PlanOp
     reason: str
     mid_goal_id: str = ""
-    position: Optional[int] = None  # 0-based
+    position: Optional[int] = None  # 0 始まり
     proposal: Optional[MidGoalProposal] = None
 
 
 @dataclass(frozen=True)
 class GoalDecision:
-    """The next small goal, what it serves, and the mid-goal list edits made with it."""
+    """次の小目標、それが何のためか、一緒に行う中目標リストの編集。"""
 
     spec: GoalSpec
     reason: str
@@ -118,7 +118,7 @@ def _conditions_schema() -> dict[str, Any]:
 
 
 def goal_schema(predicates: list[GoalPredicate], mid_goal_ids: list[str]) -> dict[str, Any]:
-    """JSON schema of a goal decision: the small goal and the mid-goal list edits."""
+    """目標の決定の JSON スキーマ: 小目標と、中目標リストの編集。"""
     change: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -164,10 +164,9 @@ def goal_schema(predicates: list[GoalPredicate], mid_goal_ids: list[str]) -> dic
 
 def reply_schema() -> dict[str, Any]:
     """
-    JSON schema of a chat reply and what it does with the comment.
+    チャットの返答と、それがコメントをどう扱うかの JSON スキーマ。
 
-    The reply and its handling come from one generation, so a reply that
-    accepts a request always adds it to the mid goals.
+    返答と扱いは 1 回の生成から出るので、頼みを受けた返答は必ずそれを中目標に足す。
     """
     return {
         "type": "object",
@@ -195,10 +194,10 @@ def reply_schema() -> dict[str, Any]:
 
 def parse_spec(data: dict[str, Any]) -> GoalSpec:
     """
-    Parse one predicate with its arguments.
+    述語 1 つを引数と一緒にパースする。
 
     Raises:
-        ValueError: If an argument is missing or malformed.
+        ValueError: 引数がないか、形が正しくないとき。
     """
     try:
         predicate = GoalPredicate(data["predicate"])
@@ -221,10 +220,10 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
 
 def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
     """
-    Parse a mid goal to add (title, conditions, 1-based position, reason).
+    足す中目標をパースする（題名、条件、1 始まりの位置、理由）。
 
     Raises:
-        ValueError: If the title or conditions are missing or malformed.
+        ValueError: 題名か条件がないか、形が正しくないとき。
     """
     title = str(data.get("title", "")).strip()
     if not title:
@@ -247,10 +246,10 @@ def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
 
 def parse_decision(data: dict[str, Any]) -> GoalDecision:
     """
-    Parse a goal decision.
+    目標の決定をパースする。
 
     Raises:
-        ValueError: If the goal or an edit is missing or malformed.
+        ValueError: 目標か編集がないか、形が正しくないとき。
     """
     try:
         serves = Serves(data["serves"])
@@ -289,7 +288,7 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
 
 
 def predicates_now(obs: GameObservation) -> list[GoalPredicate]:
-    """The predicates that make sense now (e.g. none about the home before it exists)."""
+    """今意味のある述語（例: 家ができる前は、家についての述語は出さない）。"""
     out = []
     if obs.has_plan and not obs.house_complete:
         out.append(GoalPredicate.BUILT)
@@ -326,7 +325,7 @@ def _stage_properties() -> dict[str, Any]:
 
 
 def town_schema() -> dict[str, Any]:
-    """JSON schema of a town definition: the text and its stages, in order."""
+    """街の定義の JSON スキーマ: 文と、順に並べた段階。"""
     return {
         "type": "object",
         "properties": {
@@ -351,7 +350,7 @@ def town_schema() -> dict[str, Any]:
 
 
 def stage_schema() -> dict[str, Any]:
-    """JSON schema of a stage written again with the conditions available now."""
+    """今使える条件で書き直した段階の JSON スキーマ。"""
     return {
         "type": "object",
         "properties": _stage_properties(),
@@ -361,10 +360,10 @@ def stage_schema() -> dict[str, Any]:
 
 def parse_stage(data: dict[str, Any], title: str, why: str) -> TownStage:
     """
-    Parse a stage's conditions and the parts not resolved yet.
+    段階の条件と、まだ解決していない部分をパースする。
 
     Raises:
-        ValueError: If a condition is malformed or cannot be judged from the world
+        ValueError: 条件の形が正しくないか、世界から判定できないとき
     """
     conditions = tuple(parse_spec(c) for c in data.get("conditions") or [])
     for c in conditions:
@@ -376,10 +375,10 @@ def parse_stage(data: dict[str, Any], title: str, why: str) -> TownStage:
 
 def parse_town(data: dict[str, Any]) -> TownDefinition:
     """
-    Parse a town definition.
+    街の定義をパースする。
 
     Raises:
-        ValueError: If the text or a stage is missing or malformed
+        ValueError: 文か段階がないか、形が正しくないとき
     """
     stages = []
     for raw in data.get("stages") or []:

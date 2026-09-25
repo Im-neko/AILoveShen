@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { relayCloses } from '../src/mirror.mjs'
 
-test('a window the bot closes is closed on the viewers too (it stayed open on the stream)', () => {
+test('ボットが閉じた画面は視聴側でも閉じる（配信で開いたままになっていた）', () => {
   const sent = []
   const client = { write: (name, params) => sent.push(['server', name, params]) }
   const viewer = { write: (name, params) => sent.push(['viewer', name, params]) }

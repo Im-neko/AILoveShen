@@ -1,1 +1,1 @@
-"""Presentation layer - Services exposed to the rest of the system."""
+"""プレゼンテーション層: システムの他の部分に公開するサービス。"""

@@ -1,5 +1,5 @@
-// What is around the bot for the solver and the candidates: blocks it may dig, animals it may hunt,
-// a crafting table. One snapshot per observation; lookups are cached in it.
+// ソルバーと候補のための、ボットのまわりにあるもの: 掘れるブロック、狩れる動物、作業台。
+// 観測ごとにスナップショットを1つ作り、検索結果はその中にキャッシュする。
 
 import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
@@ -8,12 +8,12 @@ import { HUNTABLE } from './knowledge.mjs'
 import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
 const DIG_RADIUS = 32
-const DIG_DY = 4 // blocks above or below the feet the bot digs without climbing or tunnelling
-const MAX_LOG_HEIGHT = 4 // a log this far above the ground under its trunk is chopped from the ground
+const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
+const MAX_LOG_HEIGHT = 4 // 幹の下の地面からこの高さまでの原木は地面から切る
 const HUNT_RADIUS = 32
 const TARGETS_PER_KIND = 3
 
-// A log is reachable if the ground under its trunk is within MAX_LOG_HEIGHT blocks.
+// 幹の下の地面が MAX_LOG_HEIGHT ブロック以内なら、その原木には届く。
 function logReachable (bot, block) {
   for (let dy = 1; dy <= MAX_LOG_HEIGHT; dy++) {
     const below = bot.blockAt(block.position.offset(0, -dy, 0))
@@ -25,11 +25,11 @@ function logReachable (bot, block) {
 }
 
 const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-// Touching air (water has no collision box either: town2 drowned digging coal under the sea)
+// 空気に接している（水にも当たり判定がない: town2 は海の下の石炭を掘って溺れた）
 const AIR = new Set(['air', 'cave_air'])
 const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => AIR.has(bot.blockAt(p.offset(x, y, z))?.name))
 
-// Blocks of this kind the bot can dig: nearest first, never part of the house
+// この種類のうちボットが掘れるブロック: 近い順。家の一部は含めない
 export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
   const id = bot.registry.blocksByName[name]?.id
   if (id == null) return []
@@ -48,9 +48,9 @@ export function huntTargets (bot, names, limit = TARGETS_PER_KIND) {
     .slice(0, limit)
 }
 
-// What is around now that is worth remembering (memory.mjs): [{ kind, pos }]. Blocks only where the
-// bot can dig them, touching air: buried ore counted too sent it off exploring (town2: 64 coal ore
-// "around the home", none it could reach)
+// いまのまわりにある、覚えておく価値のあるもの（memory.mjs）: [{ kind, pos }]。ブロックはボットが
+// 掘れる、空気に接しているものだけ: 埋まった鉱石も数えると探索に出てしまった（town2: 「家のまわり」に
+// 石炭鉱石が 64 個あったが、どれにも届かなかった）
 export function sightings (bot) {
   const ids = Object.values(bot.registry.blocksByName).filter((b) => REMEMBERED_BLOCK.test(b.name)).map((b) => b.id)
   const blocks = bot.findBlocks({ matching: ids, maxDistance: DIG_RADIUS, count: 512 })
@@ -63,8 +63,8 @@ export function sightings (bot) {
   return [...blocks, ...animals]
 }
 
-// What may be taken out of the chests: all but what the mid goals keep there (food kept for a stock
-// is still eaten when starving)
+// チェストから取り出してよいもの: 中目標がそこに取っておくもの以外すべて（備蓄として取っておく
+// 食料も、飢えているときは食べる）
 export function takeable (stored, keep, starving) {
   const out = { ...stored }
   for (const k of keep) {
@@ -80,7 +80,7 @@ export function takeable (stored, keep, starving) {
   return out
 }
 
-// The solver's view of the world; dig/hunt lookups are cached for the candidates
+// ソルバーから見たワールド。掘る・狩る対象の検索結果は候補のためにキャッシュする
 export function snapshot (bot, state) {
   const digCache = new Map()
   const dig = (name) => {

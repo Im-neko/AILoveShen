@@ -1,4 +1,4 @@
-"""Architecture tests enforcing Clean Architecture dependency rules."""
+"""クリーンアーキテクチャの依存の規則を守らせるテスト。"""
 
 import ast
 from pathlib import Path
@@ -7,7 +7,7 @@ import pytest
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / "src" / "ailoveshen"
 
-# Layers each layer must NOT import from (dependencies point inward only)
+# 各層が import してはいけない層（依存は内側にだけ向く）
 FORBIDDEN_DEPENDENCIES = {
     "domain": {"application", "infrastructure", "presentation", "factories"},
     "application": {"infrastructure", "presentation", "factories"},
@@ -17,7 +17,7 @@ FORBIDDEN_DEPENDENCIES = {
 
 
 def _imported_layers(path: Path) -> set[str]:
-    """Return the top-level ailoveshen subpackages imported by a module."""
+    """モジュールが import している ailoveshen の最上位のサブパッケージを返す。"""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     layers = set()
     for node in ast.walk(tree):
@@ -36,7 +36,7 @@ def _imported_layers(path: Path) -> set[str]:
 
 @pytest.mark.parametrize("layer", sorted(FORBIDDEN_DEPENDENCIES))
 def test_layer_dependencies_point_inward(layer):
-    """Test that no module imports from a layer outside its allowed direction."""
+    """どのモジュールも、許された向きの外の層から import しない。"""
     violations = []
     for path in sorted((PACKAGE_ROOT / layer).rglob("*.py")):
         forbidden = _imported_layers(path) & FORBIDDEN_DEPENDENCIES[layer]

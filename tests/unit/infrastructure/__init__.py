@@ -1,1 +1,1 @@
-"""Infrastructure layer unit tests."""
+"""infrastructure 層の単体テスト。"""

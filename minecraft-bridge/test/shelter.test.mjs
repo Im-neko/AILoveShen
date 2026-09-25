@@ -9,7 +9,7 @@ const v = (x, y, z) => new Vec3(x, y, z)
 const DAY = 1000
 const NIGHT = 18000
 
-// A 5x5 house on stone at y 70: walls x 0..4, z 0..4 (planks, 2 high), interior 1..3, door at (2, 70, 4)
+// y 70 の石の上の 5x5 の家: 壁は x 0..4、z 0..4（板材、高さ 2）、室内は 1..3、ドアは (2, 70, 4)
 function world ({ blocked = [], sky } = {}) {
   const home = { door: v(2, 70, 4), inside: v(2, 70, 3), outside: v(2, 70, 5), min: v(1, 70, 1), max: v(3, 70, 3), bed: null, breach: [] }
   const blockAt = (p) => {
@@ -36,7 +36,7 @@ function fakeBot ({ time, at, mobs = [], blockAt, health = 20 }) {
     food: 20,
     heldItem: null,
     blockAt,
-    world: { raycast: () => ({ name: 'oak_planks' }) }, // the walls hide everything outside
+    world: { raycast: () => ({ name: 'oak_planks' }) }, // 壁で外は何も見えない
     inventory: { items: () => [] }
   }
 }
@@ -52,24 +52,24 @@ function run ({ time = DAY, mobs = [skeletonAtDoor], status = digOutside, blocke
   return ground(bot, state, null, snap, status)
 }
 
-test('exits are offered on each free side, farthest from the hostiles first', () => {
+test('出口は空いている各面に出し、敵対モブから遠い順に並べる', () => {
   const { home, blockAt } = world()
   const spots = exitSpots({ blockAt }, home, [skeletonAtDoor])
   assert.deepEqual(spots.map((s) => s.side), ['north', 'west', 'east', 'south'])
-  assert.deepEqual(spots[0].wall, v(1, 70, 0)) // the corner-side cell is a little farther
+  assert.deepEqual(spots[0].wall, v(1, 70, 0)) // 角に寄ったマスのほうが少し遠い
   assert.deepEqual(spots[0].step, v(1, 70, -1))
-  // Never the door itself
+  // ドアそのものは出口にしない
   assert.ok(spots.every((s) => !(s.wall.x === 2 && s.wall.z === 4)))
 })
 
-test('no exit where there is no room to stand outside', () => {
+test('外に立つ場所がない面には出口を出さない', () => {
   const blocked = [1, 2, 3].map((x) => `${x},70,-1`)
   const { home, blockAt } = world({ blocked })
   const spots = exitSpots({ blockAt }, home, [skeletonAtDoor])
   assert.ok(!spots.some((s) => s.side === 'north'))
 })
 
-test('by day with a hostile at the door, outside work is held back and exits are offered', () => {
+test('昼にドアの前に敵対モブがいれば、外での作業を控え、出口を候補に出す', () => {
   const { candidates, withheld } = run()
   const verbs = candidates.map((c) => c.verb)
   assert.ok(!verbs.includes('dig'))
@@ -77,7 +77,7 @@ test('by day with a hostile at the door, outside work is held back and exits are
   assert.match(withheld, /skeleton wait near the door: 1 actions outside are held back/)
 })
 
-test('the cleared goal may go out to fight what waits at the door, unarmed too', () => {
+test('cleared の目標なら、ドアの前で待つものと戦いに出てよい（素手でも）', () => {
   const mob = { ...skeletonAtDoor, id: 1 }
   const { candidates } = run({ status: { leaves: [{ kind: 'clear', mobs: [mob] }] } })
   const attack = candidates.find((c) => c.verb === 'attack')
@@ -85,23 +85,23 @@ test('the cleared goal may go out to fight what waits at the door, unarmed too',
   assert.equal(attack.weapon, 'none (fist)')
 })
 
-test('waiting is offered only for what the time changes', () => {
+test('待つのは、時間がたてば変わることがあるときだけ候補に出す', () => {
   const husk = { name: 'husk', position: v(2.5, 70, 6.5) }
   const ids = (opts) => run(opts).candidates.filter((c) => c.verb === 'wait').map((c) => c.id)
-  // Full health, a husk in the shade or the sun: waiting changes nothing
+  // 体力が満タンで、ハスクが日陰にいても日なたにいても、待っても何も変わらない
   assert.deepEqual(ids({ mobs: [husk], sky: 15 }), [])
   assert.deepEqual(ids({ mobs: [husk], health: 12 }), ['wait inside to heal'])
   assert.deepEqual(ids({ mobs: [skeletonAtDoor], sky: 15 }), ['wait inside while they burn'])
   assert.deepEqual(ids({ mobs: [skeletonAtDoor], sky: 7 }), [])
 })
 
-test('at night nothing outside and no exit, only waiting for the morning', () => {
+test('夜は外での作業も出口も出さず、朝を待つことだけを出す', () => {
   const { candidates, withheld } = run({ time: NIGHT, mobs: [] })
   assert.deepEqual(candidates.map((c) => c.id), ['wait inside until morning'])
   assert.match(withheld, /staying inside for the night/)
 })
 
-test('nothing is held back when nothing outside is wanted', () => {
+test('外でしたいことがなければ、何も控えない', () => {
   const { withheld } = run({ status: { leaves: [] } })
   assert.equal(withheld, null)
 })

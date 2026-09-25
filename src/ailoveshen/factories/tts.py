@@ -1,4 +1,4 @@
-"""TTS module factory (Composition Root)."""
+"""TTS モジュールのファクトリー（Composition Root）。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from ailoveshen.presentation.services.tts_service import TTSService
 
 
 def _default_emotion_provider() -> EmotionState:
-    """Default emotion provider returning neutral state."""
+    """既定の感情の提供元。中立の状態を返す。"""
     return EmotionState(primary=EmotionType.NEUTRAL, intensity=0.5)
 
 
@@ -26,13 +26,13 @@ def _parse_emotion_style_map(
     config_map: Optional[Dict[str, str]],
 ) -> Optional[Dict[EmotionType, str]]:
     """
-    Parse emotion style map from config format to EmotionType keys.
+    設定の形式の感情とスタイルの対応を、EmotionType をキーにした対応に変換する。
 
     Args:
-        config_map: Map from string emotion names to style names
+        config_map: 感情の名前（文字列）からスタイル名への対応
 
     Returns:
-        Map from EmotionType to style names, or None if config_map is None
+        EmotionType からスタイル名への対応。config_map が None なら None
     """
     if not config_map:
         return None
@@ -43,7 +43,7 @@ def _parse_emotion_style_map(
             emotion_type = EmotionType(emotion_str.lower())
             result[emotion_type] = style
         except ValueError:
-            # Skip unknown emotion types
+            # 知らない感情の種類は飛ばす
             pass
 
     return result
@@ -55,19 +55,19 @@ def create_tts_service(
     get_current_emotion: Optional[Callable[[], EmotionState]] = None,
 ) -> TTSService:
     """
-    Create TTS service with all dependencies wired up.
+    依存をすべてつないだ TTS サービスを作る。
 
-    This is the Composition Root for the TTS module.
-    It creates and wires all components according to Clean Architecture.
+    TTS モジュールの Composition Root。
+    クリーンアーキテクチャに沿って、すべてのコンポーネントを作ってつなぐ。
 
     Args:
-        config: TTS configuration dict (from YAML config["tts"])
-        event_publisher: Event publisher for domain events
-        get_current_emotion: Callable to get current emotion state.
-                            If None, uses default neutral emotion.
+        config: TTS の設定の辞書（YAML の config["tts"]）
+        event_publisher: ドメインイベントの発行先
+        get_current_emotion: 今の感情状態を返す呼び出し可能オブジェクト。
+                            None なら既定の中立の感情を使う。
 
     Returns:
-        Configured TTSService ready to use
+        設定済みで、すぐ使える TTSService
 
     Example:
         ```python
@@ -88,7 +88,7 @@ def create_tts_service(
         await tts_service.stop()
         ```
     """
-    # Extract config sections with defaults
+    # 設定の各セクションを既定値付きで取り出す
     server_config = config.get("server", {})
     voice_config = config.get("voice", {})
     synthesis_config = config.get("synthesis", {})
@@ -96,14 +96,14 @@ def create_tts_service(
     audio_config = config.get("audio", {})
     emotion_style_map_config = config.get("emotion_style_map")
 
-    # Create emotion to style mapping (Style-Bert-VITS2 specific)
+    # 感情からスタイルへの対応を作る（Style-Bert-VITS2 固有）
     emotion_style_map = _parse_emotion_style_map(emotion_style_map_config)
     emotion_style_service = EmotionStyleService(
         style_map=emotion_style_map,
         default_style=voice_config.get("default_style", "Neutral"),
     )
 
-    # Create infrastructure adapters
+    # インフラのアダプターを作る
     synthesizer = StyleBertVits2Client(
         host=server_config.get("host", "localhost"),
         port=server_config.get("port", 5000),
@@ -121,10 +121,10 @@ def create_tts_service(
         blocksize=audio_config.get("blocksize", 1024),
     )
 
-    # Use provided emotion provider or default
+    # 渡された感情の提供元を使う。なければ既定のもの
     emotion_provider = get_current_emotion or _default_emotion_provider
 
-    # Create use case
+    # ユースケースを作る
     speak_text_use_case = SpeakTextUseCase(
         synthesizer=synthesizer,
         audio_player=audio_player,
@@ -132,7 +132,7 @@ def create_tts_service(
         get_current_emotion=emotion_provider,
     )
 
-    # Create presentation service
+    # プレゼンテーション層のサービスを作る
     return TTSService(
         speak_text_use_case=speak_text_use_case,
         max_queue_size=queue_config.get("max_size", 10),
@@ -145,36 +145,35 @@ async def create_and_connect_tts_service(
     get_current_emotion: Optional[Callable[[], EmotionState]] = None,
 ) -> TTSService:
     """
-    Create TTS service and connect to the TTS server.
+    TTS サービスを作り、TTS サーバーにつなぐ。
 
-    Convenience function that creates the service and establishes
-    the connection to the TTS server.
+    サービスを作って TTS サーバーとの接続まで済ませる、便利な関数。
 
     Args:
-        config: TTS configuration dict
-        event_publisher: Event publisher for domain events
-        get_current_emotion: Callable to get current emotion state
+        config: TTS の設定の辞書
+        event_publisher: ドメインイベントの発行先
+        get_current_emotion: 今の感情状態を返す呼び出し可能オブジェクト
 
     Returns:
-        Connected and started TTSService
+        接続して開始した TTSService
 
     Raises:
-        ConnectionError: If connection to TTS server fails
+        ConnectionError: TTS サーバーへの接続に失敗したとき
     """
-    # Create service
+    # サービスを作る
     tts_service = create_tts_service(
         config=config,
         event_publisher=event_publisher,
         get_current_emotion=get_current_emotion,
     )
 
-    # Access internal synthesizer to connect
-    # This is a slight violation of encapsulation, but necessary for setup
+    # 接続のため、内部の合成器に触る
+    # カプセル化を少し破るが、セットアップには必要
     use_case = tts_service._use_case  # type: ignore[attr-defined]
     if hasattr(use_case, "_synthesizer"):
         await use_case._synthesizer.connect()  # type: ignore[attr-defined]
 
-    # Start the service
+    # サービスを開始する
     await tts_service.start()
 
     return tts_service

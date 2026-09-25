@@ -1,4 +1,4 @@
-"""Domain events."""
+"""ドメインイベント。"""
 
 from __future__ import annotations
 
@@ -9,27 +9,27 @@ from datetime import datetime, timezone
 from ailoveshen.domain.value_objects import EmotionState
 
 # =============================================================================
-# Base Event
+# 基底のイベント
 # =============================================================================
 
 
 def _generate_event_id() -> str:
-    """Generate a unique event ID."""
+    """一意なイベント ID を作る。"""
     return uuid.uuid4().hex
 
 
 def _utc_now() -> datetime:
-    """Return current UTC datetime."""
+    """今の UTC の日時を返す。"""
     return datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True)
 class DomainEvent:
     """
-    Base class for domain events.
+    ドメインイベントの基底クラス。
 
-    Domain events represent something meaningful that happened in the domain.
-    They are immutable (frozen=True) and carry all necessary information.
+    ドメインイベントは、ドメインで起きた意味のあることを表す。
+    不変（frozen=True）で、必要な情報をすべて持つ。
     """
 
     event_id: str = field(default_factory=_generate_event_id)
@@ -37,48 +37,48 @@ class DomainEvent:
 
     @property
     def event_type(self) -> str:
-        """Return the event type name."""
+        """イベントの型の名前を返す。"""
         return self.__class__.__name__
 
 
 # =============================================================================
-# Speech Events
+# 発話のイベント
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class SpeechStartedEvent(DomainEvent):
     """
-    Domain event raised when speech synthesis/playback begins.
+    音声の合成・再生が始まったときのドメインイベント。
 
-    Used to notify other components that the AI is speaking.
+    AI が話していることを、他のコンポーネントに知らせるのに使う。
     """
 
     text: str = field(default="")
-    source: str = field(default="unknown")  # e.g., "commentary", "chat_response"
+    source: str = field(default="unknown")  # 例: "commentary"、"chat_response"
     emotion: EmotionState = field(default_factory=EmotionState)
 
 
 @dataclass(frozen=True)
 class SpeechCompletedEvent(DomainEvent):
     """
-    Domain event raised when speech playback ends.
+    音声の再生が終わったときのドメインイベント。
 
-    Indicates whether the speech completed normally or was interrupted.
+    最後まで話したか、割り込まれたかを示す。
     """
 
     text: str = field(default="")
     source: str = field(default="unknown")
-    completed: bool = field(default=True)  # False if interrupted
+    completed: bool = field(default=True)  # 割り込まれたら False
     duration_ms: int = field(default=0)
 
 
 @dataclass(frozen=True)
 class SpeechQueuedEvent(DomainEvent):
     """
-    Domain event raised when a speech request is added to the queue.
+    発話のリクエストをキューに入れたときのドメインイベント。
 
-    Useful for tracking pending speech requests.
+    待っている発話のリクエストを追うのに使える。
     """
 
     text: str = field(default="")
@@ -87,20 +87,20 @@ class SpeechQueuedEvent(DomainEvent):
 
 
 # =============================================================================
-# Conversation Events
+# 会話のイベント
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class CommentaryGeneratedEvent(DomainEvent):
-    """Domain event raised when the streamer's commentary has been generated."""
+    """配信者の実況を生成したときのドメインイベント。"""
 
     text: str = field(default="")
 
 
 @dataclass(frozen=True)
 class ChatResponseGeneratedEvent(DomainEvent):
-    """Domain event raised when a reply to a viewer's chat has been generated."""
+    """視聴者のチャットへの返答を生成したときのドメインイベント。"""
 
     text: str = field(default="")
     original_message: str = field(default="")
@@ -108,13 +108,13 @@ class ChatResponseGeneratedEvent(DomainEvent):
 
 
 # =============================================================================
-# Game Events
+# ゲームのイベント
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class HouseDesignedEvent(DomainEvent):
-    """Event raised when the LLM has designed a house to build."""
+    """LLM が建てる家を設計したときのイベント。"""
 
     name: str = ""
     concept: str = ""
@@ -123,9 +123,9 @@ class HouseDesignedEvent(DomainEvent):
 @dataclass(frozen=True)
 class GoalSetEvent(DomainEvent):
     """
-    Event raised when a new small goal is set (e.g. goal="have(planks, 12)").
+    新しい小目標を設定したときのイベント（例: goal="have(planks, 12)"）。
 
-    `mid_goal` is the title of the mid goal it serves ("" for survival).
+    `mid_goal` は、その小目標が役立つ中目標の題名（生存のためなら ""）。
     """
 
     goal: str = ""
@@ -135,7 +135,7 @@ class GoalSetEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class GoalEndedEvent(DomainEvent):
-    """Event raised when a small goal ends: met, or given up (stalled, stuck, ...)."""
+    """小目標が終わったときのイベント: 達成したか、あきらめた（進まない、行き詰まった、など）。"""
 
     goal: str = ""
     reason: str = ""
@@ -146,9 +146,9 @@ class GoalEndedEvent(DomainEvent):
 @dataclass(frozen=True)
 class MidGoalAddedEvent(DomainEvent):
     """
-    Event raised when a mid goal joins the list (`position` 1-based).
+    中目標がリストに加わったときのイベント（`position` は 1 始まり）。
 
-    A viewer's (`requested_by`) was already told in the reply.
+    視聴者の中目標（`requested_by`）は、返答でもう伝えてある。
     """
 
     title: str = ""
@@ -159,7 +159,7 @@ class MidGoalAddedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class MidGoalCompletedEvent(DomainEvent):
-    """Event raised when a mid goal's conditions hold in the world."""
+    """中目標の条件が世界で満たされたときのイベント。"""
 
     title: str = ""
     requested_by: str = ""
@@ -167,7 +167,7 @@ class MidGoalCompletedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class MidGoalDroppedEvent(DomainEvent):
-    """Event raised when a mid goal is given up (always said on stream)."""
+    """中目標を断念したときのイベント（必ず配信で言う）。"""
 
     title: str = ""
     reason: str = ""
@@ -176,7 +176,7 @@ class MidGoalDroppedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class GameActionExecutedEvent(DomainEvent):
-    """Event raised after the agent executed one action in the game."""
+    """エージェントがゲームで行動を 1 つ実行したあとのイベント。"""
 
     action_id: str = ""
     ok: bool = True
@@ -186,21 +186,21 @@ class GameActionExecutedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class HouseCompletedEvent(DomainEvent):
-    """Event raised when every block of the house is in place."""
+    """家のブロックがすべて置かれたときのイベント。"""
 
     name: str = ""
 
 
 @dataclass(frozen=True)
 class TownDefinedEvent(DomainEvent):
-    """Event raised when the streamer has decided what the town of the mission is."""
+    """大目標の街がどんなものかを、配信者が決めたときのイベント。"""
 
     text: str = ""
-    stages: tuple[str, ...] = ()  # their titles, in order
+    stages: tuple[str, ...] = ()  # 段階の題名（順番どおり）
 
 
 @dataclass(frozen=True)
 class TownCompletedEvent(DomainEvent):
-    """Event raised when every stage of the town is done."""
+    """街のすべての段階が済んだときのイベント。"""
 
     text: str = ""

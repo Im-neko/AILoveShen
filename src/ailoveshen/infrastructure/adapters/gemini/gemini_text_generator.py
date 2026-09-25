@@ -1,4 +1,4 @@
-"""Gemini text generator adapter (google-genai SDK)."""
+"""Gemini でテキストを生成するアダプター（google-genai SDK）。"""
 
 from __future__ import annotations
 
@@ -14,20 +14,20 @@ from loguru import logger
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.exceptions import TextGenerationError
 
-# Gemini 3.8 Flash accepts only these levels ("minimal" is rejected by the API)
+# Gemini 3.8 Flash が受け付けるのはこのレベルだけ（"minimal" は API が拒否する）
 SUPPORTED_THINKING_LEVELS = ("low", "medium", "high")
 
 
 class GeminiTextGenerator(ITextGenerator):
     """
-    Infrastructure adapter for the Gemini API.
+    Gemini API のインフラ側アダプター。
 
-    Implements ITextGenerator output port using the google-genai SDK.
-    One instance serves one model slot (e.g., main or filter).
+    出力ポート ITextGenerator を google-genai SDK で実装する。
+    1つのインスタンスが 1つのモデルの枠（例: main、filter）を受け持つ。
 
-    - Retries 408/429/5xx with exponential backoff (SDK retry options)
-    - Keeps a minimum interval between requests (simple rate limit)
-    - Logs token usage and latency per request
+    - 408/429/5xx は指数バックオフで再試行する（SDK の再試行の設定）
+    - リクエストの間に最小の間隔を空ける（簡単なレート制限）
+    - リクエストごとにトークンの使用量と所要時間をログに出す
     """
 
     def __init__(
@@ -43,21 +43,21 @@ class GeminiTextGenerator(ITextGenerator):
         min_request_interval_seconds: float = 1.0,
     ) -> None:
         """
-        Initialize the Gemini client.
+        Gemini のクライアントを初期化する。
 
         Args:
-            api_key: Gemini API key
-            model: Model ID
-            thinking_level: "low", "medium" or "high"
-            max_output_tokens: Output token cap, including thinking tokens
-            retry_attempts: Max attempts including the original request
-            retry_initial_delay_seconds: Initial backoff delay
-            retry_max_delay_seconds: Maximum backoff delay
-            retry_exponential_base: Backoff multiplier
-            min_request_interval_seconds: Minimum interval between requests
+            api_key: Gemini の API キー
+            model: モデル ID
+            thinking_level: "low"、"medium"、"high" のどれか
+            max_output_tokens: 出力トークンの上限（思考のトークンを含む）
+            retry_attempts: 最初のリクエストを含めた最大の試行回数
+            retry_initial_delay_seconds: バックオフの最初の待ち時間
+            retry_max_delay_seconds: バックオフの最大の待ち時間
+            retry_exponential_base: バックオフの倍率
+            min_request_interval_seconds: リクエストの間の最小の間隔
 
         Raises:
-            ValueError: If api_key is empty or thinking_level is unsupported.
+            ValueError: api_key が空か、thinking_level に対応していないとき。
         """
         if not api_key:
             raise ValueError("Gemini API key is required (set GEMINI_API_KEY)")
@@ -71,7 +71,7 @@ class GeminiTextGenerator(ITextGenerator):
         self._config = types.GenerateContentConfig(
             max_output_tokens=max_output_tokens,
             thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
-            # No tools are used; disable automatic function calling explicitly
+            # ツールは使わないので、自動の関数呼び出しを明示的に無効にする
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         self._client = genai.Client(
@@ -94,18 +94,18 @@ class GeminiTextGenerator(ITextGenerator):
         system_instruction: Optional[str] = None,
     ) -> str:
         """
-        Generate text using Gemini.
+        Gemini でテキストを生成する。
 
         Args:
-            prompt: User prompt
-            system_instruction: System instruction (character context)
+            prompt: ユーザーのプロンプト
+            system_instruction: システム指示（キャラクターの設定）
 
         Returns:
-            Generated text, or empty string if the model returned no text
-            (blocked content, output cap reached while thinking, etc.)
+            生成したテキスト。モデルがテキストを返さなかったとき（ブロックされた、
+            思考中に出力の上限に達した、など）は空文字列
 
         Raises:
-            TextGenerationError: If the API call fails after retries
+            TextGenerationError: 再試行しても API の呼び出しが失敗したとき
         """
         config = self._config.model_copy(update={"system_instruction": system_instruction})
         return await self._generate_text(prompt, config)
@@ -117,10 +117,10 @@ class GeminiTextGenerator(ITextGenerator):
         system_instruction: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Generate a JSON object constrained by a JSON Schema (Gemini structured output).
+        JSON Schema に沿った JSON オブジェクトを生成する（Gemini の構造化出力）。
 
         Raises:
-            TextGenerationError: If the API call fails or the output is not a JSON object
+            TextGenerationError: API の呼び出しが失敗したか、出力が JSON オブジェクトでないとき
         """
         config = self._config.model_copy(
             update={
@@ -139,11 +139,11 @@ class GeminiTextGenerator(ITextGenerator):
         return data
 
     async def close(self) -> None:
-        """Close the underlying HTTP client."""
+        """内部の HTTP クライアントを閉じる。"""
         await self._client.aio.aclose()
 
     async def _generate_text(self, prompt: str, config: types.GenerateContentConfig) -> str:
-        """Call the API with rate limiting, usage logging and diagnostics for empty output."""
+        """レート制限、使用量のログ、空の出力の診断を付けて API を呼ぶ。"""
         await self._wait_for_rate_limit()
 
         started = time.monotonic()
@@ -166,22 +166,22 @@ class GeminiTextGenerator(ITextGenerator):
 
         if finish_reason == types.FinishReason.MAX_TOKENS:
             logger.warning(
-                f"Gemini hit max_output_tokens (thinking included); "
-                f"output is {'truncated' if text else 'empty'}. "
-                f"Consider raising max_output_tokens or lowering thinking_level."
+                f"Gemini が max_output_tokens（思考を含む）に達した。"
+                f"出力は{'途中で切れている' if text else '空'}。"
+                f"max_output_tokens を上げるか、thinking_level を下げることを検討する。"
             )
 
         if not text:
             feedback = response.prompt_feedback
             if feedback and feedback.block_reason:
-                logger.warning(f"Gemini blocked the prompt: {feedback.block_reason}")
+                logger.warning(f"Gemini がプロンプトをブロックした: {feedback.block_reason}")
             else:
-                logger.warning(f"Gemini returned no text (finish_reason={finish_reason})")
+                logger.warning(f"Gemini がテキストを返さなかった（finish_reason={finish_reason}）")
 
         return text
 
     async def _wait_for_rate_limit(self) -> None:
-        """Sleep until min_request_interval has passed since the last request."""
+        """前のリクエストから min_request_interval が経つまで待つ。"""
         async with self._rate_lock:
             if self._last_request_at is not None:
                 wait = self._min_interval - (time.monotonic() - self._last_request_at)
@@ -191,16 +191,16 @@ class GeminiTextGenerator(ITextGenerator):
 
     @staticmethod
     def _finish_reason(response: types.GenerateContentResponse) -> Optional[types.FinishReason]:
-        """Return the first candidate's finish reason, if any."""
+        """最初の候補の finish reason を返す（なければ None）。"""
         if not response.candidates:
             return None
         return response.candidates[0].finish_reason
 
     def _log_usage(self, response: types.GenerateContentResponse, elapsed_ms: int) -> None:
-        """Log token usage and latency (token monitoring is log-only)."""
+        """トークンの使用量と所要時間をログに出す（トークンの監視はログだけ）。"""
         usage = response.usage_metadata
         if usage is None:
-            logger.info(f"Gemini {self._model}: {elapsed_ms}ms (no usage metadata)")
+            logger.info(f"Gemini {self._model}: {elapsed_ms}ms（使用量の情報なし）")
             return
         logger.info(
             f"Gemini {self._model}: {elapsed_ms}ms, "

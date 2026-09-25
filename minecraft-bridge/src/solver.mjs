@@ -1,28 +1,27 @@
-// Dependency solver: what is still missing for a list of item needs, and what can be done now.
+// 依存関係のソルバー: 必要なアイテムの一覧に対して、まだ足りないものと、いまできること。
 //
-// Pure (no bot): it reads a snapshot of the world. Items already held are allocated to the needs
-// in order from a shared ledger, so e.g. the logs for a house's corner pillars are set aside
-// before the rest become planks. A missing item is obtained the cheapest way among crafting (each
-// recipe), smelting, digging a natural block and hunting an animal. What the chests hold (as last
-// seen) and what the furnaces are making are taken before anything is gathered or crafted: they are
-// near and certain. The result is a tree of subgoals with
-// progress, the leaves that can be acted on now, the reasons some cannot, and the remaining work.
+// 純粋（ボットに触れない）: ワールドのスナップショットを読む。すでに持っているアイテムは、共有の
+// 台帳から必要なものへ順に割り当てる。例えば家の角の柱にする原木は、残りを板材にする前に取っておく。
+// 足りないアイテムは、クラフト（レシピごと）、精錬、自然のブロックを掘る、動物を狩る、のうち一番安い
+// 方法で手に入れる。チェストの中身（最後に見たもの）とかまどが作っているものは、集めたり
+// クラフトしたりする前に取る: 近くにあり、確実だから。結果は、進み具合つきの小目標の木、いま
+// 行動できる末端、行動できない理由、残りの作業量。
 //
-// world: { inventory: {name: count}, stored: {name: count} (in chests), blocks: {name: count}, mobs: {name: count},
+// world: { inventory: {name: count}, stored: {name: count}（チェストの中）, blocks: {name: count}, mobs: {name: count},
 //          remembered: Set(name), table: 'reach' | 'near' | null, furnace: 'near' | null,
-//          smelting: {product: count} (in the furnaces, made or still to be made), unlocked: (item) => bool }
-//   blocks and mobs are the sources nearby (natural, reachable blocks outside the house; animals);
-//   remembered: sources out of sight seen before (memory.mjs), cheaper to go back to than to search for
+//          smelting: {product: count}（かまどの中。できたものとこれからできるもの）, unlocked: (item) => bool }
+//   blocks と mobs は近くの入手元（家の外の、届く自然のブロック。動物）。
+//   remembered: 前に見た、いまは見えていない入手元（memory.mjs）。探すより戻るほうが安い
 
 import { FUELS } from './knowledge.mjs'
 
-const MAX_DEPTH = 10 // from nothing to an iron sword: ingot, raw iron, stone pickaxe, cobblestone, wooden pickaxe, planks, log
-const EXPLORE_COST = 100 // a source not in sight has to be searched for first
-const RECALL_COST = 50 // one seen before: a trip back to where it was
+const MAX_DEPTH = 10 // 何もない状態から鉄の剣まで: インゴット、鉄の原石、石のツルハシ、丸石、木のツルハシ、板材、原木
+const EXPLORE_COST = 100 // 見えていない入手元はまず探さないといけない
+const RECALL_COST = 50 // 前に見たもの: あった場所まで戻る
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
 const WITHDRAW_COST = 0.5
-const SMELT_COST = 1 // per item, like crafting (the furnace works while the bot does other things)
+const SMELT_COST = 1 // クラフトと同じく1個あたり（ボットがほかのことをしている間もかまどは動く）
 
 export function solve (knowledge, world, needs) {
   const ledger = { items: { ...world.inventory }, stored: { ...(world.stored ?? {}) }, smelting: { ...(world.smelting ?? {}) }, table: !!world.table, furnace: !!world.furnace }
@@ -36,13 +35,13 @@ export function solve (knowledge, world, needs) {
     nodes,
     leaves,
     blocked,
-    impossible, // what nothing the bot can do gets (blocked too)
+    impossible, // ボットに何をしても手に入らないもの（blocked にも入る）
     remaining: nodes.reduce((s, n) => s + n.units, 0),
     lines: nodes.flatMap((n) => lines(n, 0))
   }
 }
 
-// Take what the ledger holds of the group, then acquire the deficit the cheapest way.
+// 台帳にあるグループのぶんを取り、足りないぶんを一番安い方法で手に入れる。
 function need (k, world, spec, count, ledger, path, depth) {
   const { label, members } = k.resolve(spec)
   let have = 0
@@ -55,7 +54,7 @@ function need (k, world, spec, count, ledger, path, depth) {
   const node = { label: `have ${count} ${label}`, have, need: count, units: 0, children: [], leaf: null }
   if (have >= count) return { node, cost: 0 }
 
-  // Taken out of the chests: one child per item, and only the rest is acquired
+  // チェストから取り出す: アイテムごとに子を1つ作り、残りだけを手に入れる
   const fromChests = []
   let taken = 0
   for (const m of members) {
@@ -65,7 +64,7 @@ function need (k, world, spec, count, ledger, path, depth) {
     taken += take
     fromChests.push({ label: `take ${take} ${m} from a chest`, have: 0, need: take, units: take, children: [], leaf: { kind: 'withdraw', item: m, count: take } })
   }
-  // Made (or being made) in a furnace: taken out when done
+  // かまどでできた（またはできている途中の）もの: できたら取り出す
   for (const m of members) {
     const take = Math.min(ledger.smelting[m] ?? 0, count - have - taken)
     if (take <= 0) continue
@@ -152,7 +151,7 @@ function craftOption (k, world, item, n, recipe, ledger, path, depth) {
   }
 }
 
-// A crafting table or furnace within walking distance; planned once per solve (the ledger remembers it)
+// 歩いて行ける範囲の作業台かかまど。solve 1回につき一度だけ計画する（台帳が覚えている）
 function station (k, world, ledger, path, depth, item = 'crafting_table', flag = 'table') {
   if (ledger[flag]) return null
   ledger[flag] = true
@@ -162,7 +161,7 @@ function station (k, world, ledger, path, depth, item = 'crafting_table', flag =
   return { node, cost: r.cost + 1 }
 }
 
-// n items from a furnace: the input, fuel for n (what is held first), and a furnace nearby
+// かまどで n 個作る: 材料、n 個ぶんの燃料（持っているものを優先）、近くのかまど
 function smeltOption (k, world, item, n, input, ledger, path, depth) {
   const children = []
   let cost = n * SMELT_COST
@@ -202,7 +201,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   const children = []
   let cost = n * unitCost
   if (kind === 'dig') {
-    // The cheapest block to dig: one needing no tool, else one whose tool is at hand or makeable
+    // 一番安く掘れるブロック: 道具が要らないもの。なければ道具が手元にあるか作れるもの
     const handy = (inSight.length ? inSight : sources).map((b) => ({ b, tools: k.harvestTools(b) }))
     const bare = handy.filter((h) => !h.tools)
     if (!bare.length && handy.length) {
@@ -222,7 +221,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   return { cost, units, children, leaf: children.every((c) => c.have >= c.need) ? leaf : null, method: kind }
 }
 
-// One of several items (e.g. any pickaxe that can mine stone); tools are not used up
+// いくつかのアイテムのどれか1つ（例: 石を掘れるどれかのツルハシ）。道具は使っても減らない
 function needAny (k, world, items, ledger, path, depth) {
   const held = items.find((i) => (ledger.items[i] ?? 0) > 0)
   if (held) return { node: { label: `have ${held}`, have: 1, need: 1, units: 0, children: [], leaf: null }, cost: 0 }

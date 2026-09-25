@@ -10,8 +10,8 @@ const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
 const k = new Knowledge(md)
 
-// The bot stands at 0,70,0 on stone; `roof` is the height of the block over it (null: open sky);
-// `torchNear` a light source within reach of its light
+// ボットは石の上の 0,70,0 に立つ。`roof` は頭上のブロックの高さ（null: 空が開けている）、
+// `torchNear` は光が届く範囲に光源があるか
 function botIn ({ roof = 73, torchNear = false } = {}, items = ['torch'], timeOfDay = 1000) {
   return {
     entity: { position: new Vec3(0.5, 70, 0.5) },
@@ -34,14 +34,14 @@ const offered = (bot) => {
   return ground(bot, state, k, { dig: () => [], hunt: () => [] }, { leaves: [] }).candidates.some((c) => c.verb === 'place_torch')
 }
 
-test('in the dark (a cave) a torch is offered, and the danger is stated as a need', () => {
+test('暗い所（洞窟）では松明を候補に出し、危険を体の必要として示す', () => {
   const bot = botIn()
   assert.ok(offered(bot))
   assert.ok(needs(bot, { home: null }).some((n) => n.startsWith('dark here')))
 })
 
-test('no torch where it is lit, under the open sky, or with none held', () => {
-  assert.ok(!offered(botIn({ torchNear: true })), 'lit by a torch placed before')
-  assert.ok(!offered(botIn({ roof: null }, ['torch'], 18000)), 'open sky at night: the surface is not lit up')
-  assert.ok(!offered(botIn({}, [])), 'no torch held')
+test('明るい所、空の下、持っていないときは松明を出さない', () => {
+  assert.ok(!offered(botIn({ torchNear: true })), '前に置いた松明で明るい')
+  assert.ok(!offered(botIn({ roof: null }, ['torch'], 18000)), '夜の空の下: 地上は照らさない')
+  assert.ok(!offered(botIn({}, [])), '松明を持っていない')
 })

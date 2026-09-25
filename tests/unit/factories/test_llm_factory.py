@@ -1,4 +1,4 @@
-"""Tests for the LLM Composition Root."""
+"""LLM の Composition Root のテスト。"""
 
 from unittest.mock import AsyncMock
 
@@ -16,11 +16,11 @@ from ailoveshen.presentation.services.llm_service import LLMService  # noqa: E40
 
 
 class TestCreateLLMService:
-    """Tests for create_llm_service."""
+    """create_llm_service のテスト。"""
 
     @pytest.mark.asyncio
     async def test_creates_service(self):
-        """Test the service is wired with a valid configuration."""
+        """正しい設定ならサービスが組み立てられる。"""
         service = create_llm_service(
             gemini=GeminiSettings(api_key="test-key"),
             character=CharacterSettings(),
@@ -32,7 +32,7 @@ class TestCreateLLMService:
         await service.close()
 
     def test_missing_api_key_raises(self):
-        """Test a missing API key fails fast."""
+        """API キーがなければすぐ失敗する。"""
         with pytest.raises(ValueError, match="API key is required"):
             create_llm_service(
                 gemini=GeminiSettings(api_key=""),
@@ -42,7 +42,7 @@ class TestCreateLLMService:
             )
 
     def test_invalid_thinking_level_raises(self):
-        """Test an unsupported thinking level fails fast."""
+        """対応していない thinking level ならすぐ失敗する。"""
         with pytest.raises(ValueError, match="thinking_level"):
             create_llm_service(
                 gemini=GeminiSettings(api_key="test-key", main_thinking_level="minimal"),
@@ -53,10 +53,10 @@ class TestCreateLLMService:
 
 
 class TestCreateCharacterProfile:
-    """Tests for create_character_profile."""
+    """create_character_profile のテスト。"""
 
     def test_converts_settings(self):
-        """Test settings lists become value object tuples."""
+        """設定のリストは値オブジェクトのタプルになる。"""
         profile = create_character_profile(
             CharacterSettings(name="シェン", sentence_endings=["のだ"], personality_traits=["元気"])
         )

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { equipment } from '../src/observe.mjs'
 
-test('worn armour and the off hand are reported, empty slots as null', () => {
+test('着ている防具とオフハンドを報告し、空いている枠は null にする', () => {
   const slots = []
   slots[5] = { name: 'leather_helmet' }
   slots[45] = { name: 'shield' }

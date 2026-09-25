@@ -1,4 +1,4 @@
-"""Prompt builder output port."""
+"""プロンプト組み立ての出力ポート。"""
 
 from __future__ import annotations
 
@@ -9,20 +9,20 @@ from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext
 
 class IPromptBuilder(ABC):
     """
-    Output port for building LLM prompts.
+    LLM のプロンプトを組み立てる出力ポート。
 
-    This interface is defined in the Application layer.
-    Infrastructure adapters implement this interface.
+    このインターフェースはアプリケーション層で定義する。
+    インフラ層のアダプターがこれを実装する。
     """
 
     @abstractmethod
     def build_system_prompt(self, character: CharacterProfile) -> str:
-        """Build the system instruction describing the character."""
+        """キャラクターを説明するシステム指示を組み立てる。"""
         ...
 
     @abstractmethod
     def build_commentary_prompt(self, context: GenerationContext) -> str:
-        """Build the prompt for game commentary."""
+        """ゲーム実況のプロンプトを組み立てる。"""
         ...
 
     @abstractmethod
@@ -35,13 +35,13 @@ class IPromptBuilder(ABC):
         previous_error: str = "",
     ) -> str:
         """
-        Build the prompt for replying to a viewer's chat.
+        視聴者のチャットへの返答のプロンプトを組み立てる。
 
         Args:
-            user_name: The viewer
-            message: Their chat message
-            context: What the streamer is doing and the recent conversation
-            takes_requests: Whether the reply may accept the request as a mid goal (JSON output)
-            previous_error: Why the previous reply's accepted request could not be used
+            user_name: 視聴者
+            message: 視聴者のチャットのメッセージ
+            context: 配信者が今していることと、最近の会話
+            takes_requests: 返答で頼みを中目標として受けてよいか（JSON で出力する）
+            previous_error: 前回の返答で受けた頼みが使えなかった理由
         """
         ...

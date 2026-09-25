@@ -1,4 +1,4 @@
-"""Tests for SounddevicePlayer adapter."""
+"""SounddevicePlayer アダプタのテスト。"""
 
 import asyncio
 import io
@@ -10,7 +10,7 @@ import pytest
 
 from ailoveshen.domain.exceptions import AudioPlaybackError
 
-# Skip all tests in this module if sounddevice is not installed
+# sounddevice がなければ、このモジュールのテストは全部飛ばす
 sounddevice = pytest.importorskip("sounddevice", reason="sounddevice not installed")
 
 from ailoveshen.infrastructure.adapters.audio.sounddevice_player import (
@@ -26,17 +26,17 @@ def create_wav_data(
     channels: int = 1,
     bits_per_sample: int = 16,
 ) -> bytes:
-    """Create test WAV data."""
+    """テスト用の WAV データを作る。"""
     num_samples = int(sample_rate * duration_seconds)
 
-    # Generate sine wave
+    # 正弦波を作る
     t = np.linspace(0, duration_seconds, num_samples, dtype=np.float32)
     samples = (np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16)
 
     if channels == 2:
         samples = np.column_stack([samples, samples]).flatten()
 
-    # Build WAV header
+    # WAV ヘッダを組み立てる
     byte_rate = sample_rate * channels * (bits_per_sample // 8)
     block_align = channels * (bits_per_sample // 8)
     data_size = len(samples) * (bits_per_sample // 8)
@@ -48,8 +48,8 @@ def create_wav_data(
         chunk_size,
         b"WAVE",
         b"fmt ",
-        16,  # fmt chunk size
-        1,  # audio format (PCM)
+        16,  # fmt チャンクの大きさ
+        1,  # 音声の形式（PCM）
         channels,
         sample_rate,
         byte_rate,
@@ -63,10 +63,10 @@ def create_wav_data(
 
 
 class TestParseWavHeader:
-    """Tests for _parse_wav_header function."""
+    """_parse_wav_header 関数のテスト。"""
 
     def test_parse_valid_wav(self):
-        """Test parsing valid WAV header."""
+        """正しい WAV ヘッダを読む。"""
         wav_data = create_wav_data(sample_rate=22050, channels=1, bits_per_sample=16)
         sample_rate, channels, bits = _parse_wav_header(wav_data)
 
@@ -75,7 +75,7 @@ class TestParseWavHeader:
         assert bits == 16
 
     def test_parse_stereo_wav(self):
-        """Test parsing stereo WAV header."""
+        """ステレオの WAV ヘッダを読む。"""
         wav_data = create_wav_data(sample_rate=44100, channels=2, bits_per_sample=16)
         sample_rate, channels, bits = _parse_wav_header(wav_data)
 
@@ -84,117 +84,113 @@ class TestParseWavHeader:
         assert bits == 16
 
     def test_invalid_riff_header_raises(self):
-        """Test invalid RIFF header raises error."""
+        """RIFF ヘッダが不正ならエラー。"""
         invalid_data = b"INVALID_HEADER"
         with pytest.raises(AudioPlaybackError, match="missing RIFF/WAVE"):
             _parse_wav_header(invalid_data)
 
     def test_missing_wave_identifier_raises(self):
-        """Test missing WAVE identifier raises error."""
+        """WAVE の識別子がなければエラー。"""
         invalid_data = b"RIFF\x00\x00\x00\x00NOTW"
         with pytest.raises(AudioPlaybackError, match="missing RIFF/WAVE"):
             _parse_wav_header(invalid_data)
 
 
 class TestWavToNumpy:
-    """Tests for _wav_to_numpy function."""
+    """_wav_to_numpy 関数のテスト。"""
 
     def test_convert_16bit_mono(self):
-        """Test converting 16-bit mono WAV."""
+        """16 ビットのモノラル WAV を変換する。"""
         wav_data = create_wav_data(sample_rate=44100, channels=1, bits_per_sample=16)
         audio_array, sample_rate = _wav_to_numpy(wav_data)
 
         assert sample_rate == 44100
         assert audio_array.dtype == np.float32
         assert audio_array.ndim == 1
-        # Values should be normalized to [-1, 1]
+        # 値は [-1, 1] に正規化される
         assert audio_array.min() >= -1.0
         assert audio_array.max() <= 1.0
 
     def test_convert_stereo(self):
-        """Test converting stereo WAV."""
+        """ステレオの WAV を変換する。"""
         wav_data = create_wav_data(sample_rate=44100, channels=2, bits_per_sample=16)
         audio_array, sample_rate = _wav_to_numpy(wav_data)
 
         assert sample_rate == 44100
-        # Stereo should have 2D shape or be interleaved
+        # ステレオは 2 次元の形か、交互に並ぶ
         assert audio_array.size > 0
 
 
 class TestSounddevicePlayer:
-    """Tests for SounddevicePlayer adapter."""
+    """SounddevicePlayer アダプタのテスト。"""
 
     @pytest.fixture
     def player(self):
-        """Create a SounddevicePlayer."""
+        """SounddevicePlayer を作る。"""
         return SounddevicePlayer()
 
     def test_init_defaults(self, player):
-        """Test initialization with defaults."""
+        """既定値で初期化する。"""
         assert player._device is None
         assert player._blocksize == 1024
         assert player._playing is False
 
     def test_init_custom_values(self):
-        """Test initialization with custom values."""
+        """値を指定して初期化する。"""
         player = SounddevicePlayer(device=1, blocksize=2048)
         assert player._device == 1
         assert player._blocksize == 2048
 
     def test_is_playing_initially_false(self, player):
-        """Test is_playing returns False initially."""
+        """is_playing は最初 False を返す。"""
         assert player.is_playing() is False
 
     def test_stop_is_safe_when_not_playing(self, player):
-        """Test stop() is safe to call when not playing."""
-        # Should not raise
+        """再生していないときに stop() を呼んでも問題ない。"""
+        # 例外にならない
         player.stop()
 
     def test_get_duration_ms(self, player):
-        """Test get_duration_ms calculates correctly."""
-        # 0.1 seconds at 44100 Hz
+        """get_duration_ms を正しく計算する。"""
+        # 44100 Hz で 0.1 秒
         wav_data = create_wav_data(sample_rate=44100, duration_seconds=0.1)
         duration = player.get_duration_ms(wav_data)
 
-        # Should be approximately 100ms
+        # ほぼ 100ms になる
         assert 90 <= duration <= 110
 
     def test_get_duration_ms_invalid_data_raises(self, player):
-        """Test get_duration_ms raises for invalid data."""
+        """get_duration_ms はデータが不正なら例外を出す。"""
         with pytest.raises(AudioPlaybackError):
             player.get_duration_ms(b"invalid data")
 
     @pytest.mark.asyncio
     async def test_play_with_interrupt_event(self, player):
-        """Test play respects interrupt event."""
+        """play は中断のイベントに従う。"""
         wav_data = create_wav_data(duration_seconds=0.5)
         interrupt_event = asyncio.Event()
 
-        with patch("sounddevice.play"), patch("sounddevice.stop"), patch(
-            "sounddevice.wait"
-        ):
-            # Set interrupt immediately
+        with patch("sounddevice.play"), patch("sounddevice.stop"), patch("sounddevice.wait"):
+            # すぐに中断を立てる
             interrupt_event.set()
 
             result = await player.play(wav_data, interrupt_event=interrupt_event)
 
-            # Should return False (interrupted)
+            # False（中断）を返す
             assert result is False
 
     @pytest.mark.asyncio
     async def test_play_sets_playing_flag(self, player):
-        """Test play sets and clears playing flag."""
+        """play は再生中のフラグを立てて下ろす。"""
         wav_data = create_wav_data(duration_seconds=0.05)
 
-        with patch("sounddevice.play"), patch("sounddevice.stop"), patch(
-            "sounddevice.wait"
-        ):
-            # Run play and check flag
+        with patch("sounddevice.play"), patch("sounddevice.stop"), patch("sounddevice.wait"):
+            # play を動かしてフラグを確かめる
             task = asyncio.create_task(player.play(wav_data))
-            await asyncio.sleep(0.01)  # Let play start
+            await asyncio.sleep(0.01)  # play が始まるのを待つ
 
-            # Note: Due to async nature, this may vary
+            # 注: 非同期なので、ここは変わりうる
             await task
 
-            # After completion, should be False
+            # 終わったら False になる
             assert player.is_playing() is False

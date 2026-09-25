@@ -1,4 +1,4 @@
-"""Tests for the goal board (stream overlay API)."""
+"""ゴールボード（配信のオーバーレイの API）のテスト。"""
 
 import asyncio
 import json
@@ -54,10 +54,10 @@ def _session() -> PlaySession:
 
 
 class TestGoalsSnapshot:
-    """Tests for the JSON the overlay reads."""
+    """オーバーレイが読む JSON のテスト。"""
 
     def test_town(self):
-        """Test the town's stages are shown done, current or later, with what they wait for."""
+        """街の段階を、済み・今・これからに分けて、何を待っているかとともに示す。"""
         session = _session()
         session.plan.define_town(
             TownDefinition(
@@ -81,7 +81,7 @@ class TestGoalsSnapshot:
         assert goals_snapshot(session.activity())["mid_goals"][-1]["stage"] == 0
 
     def test_not_playing(self):
-        """Test before play starts nothing is shown."""
+        """プレイが始まる前は何も示さない。"""
         assert goals_snapshot(None) == {
             "playing": False,
             "mission": None,
@@ -92,7 +92,7 @@ class TestGoalsSnapshot:
         }
 
     def test_the_goals_from_the_mission_down(self):
-        """Test the mission, the mid goals with their states, and the small goal."""
+        """大目標、状態つきの中目標、小目標。"""
         data = goals_snapshot(_session().activity())
 
         assert data["mission"] == "街にしていく"
@@ -111,10 +111,10 @@ class TestGoalsSnapshot:
             "progress": ["have 3 log (1/3)"],
         }
 
-        assert data["home"] is None  # not built yet
+        assert data["home"] is None  # まだ建てていない
 
     def test_home_with_its_chests(self):
-        """Test the home's name and what its chests held when last opened."""
+        """拠点の名前と、チェストを最後に開けたときの中身。"""
         session = _session()
         memory = {
             "chests": [
@@ -140,10 +140,10 @@ class TestGoalsSnapshot:
 
 
 class TestGoalBoard:
-    """Tests for the web endpoints."""
+    """Web のエンドポイントのテスト。"""
 
     def test_api_goals_and_overlay(self):
-        """Test the JSON and the overlay page are served."""
+        """JSON とオーバーレイのページを返す。"""
         session = _session()
         client = TestClient(GoalBoard(session.activity).app)
 
@@ -154,7 +154,7 @@ class TestGoalBoard:
 
     @pytest.mark.asyncio
     async def test_changes_are_pushed_to_the_stream(self):
-        """Test a goal event sends the goals as they are then to every listener."""
+        """目標のイベントで、その時点の目標をすべての購読者に送る。"""
         session = _session()
         board = GoalBoard(session.activity)
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
@@ -168,7 +168,7 @@ class TestGoalBoard:
 
     @pytest.mark.asyncio
     async def test_slow_listener_keeps_only_the_latest(self):
-        """Test a full queue drops the oldest snapshot instead of blocking the game."""
+        """キューが満杯なら、ゲームを止めずに一番古いスナップショットを捨てる。"""
         board = GoalBoard(lambda: None)
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
         board._listeners.add(queue)

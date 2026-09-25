@@ -1,4 +1,4 @@
-"""Tests for the play domain: house blueprint, goal specs, mid goals and the PlaySession."""
+"""プレイの domain のテスト: 家の設計、小目標の指定、中目標、PlaySession。"""
 
 import pytest
 
@@ -55,7 +55,7 @@ MISSION = Mission("生き延びながら家を建て、街にしていく")
 
 
 def _plan(**kwargs) -> MidGoalPlan:
-    """A plan with the house (m1) and the bed (m2)."""
+    """家（m1）とベッド（m2）の計画。"""
     plan = MidGoalPlan(mission=MISSION, **kwargs)
     plan.add("自分の家を作る", (BUILT,))
     plan.add("夜に寝られるようにする", (BED,))
@@ -67,51 +67,51 @@ FAILED = ActionResult("dig oak_log at 1,2,3", False, "failed", 1.0)
 
 
 class TestHouseBlueprintValidation:
-    """Tests for blueprint bounds."""
+    """設計の範囲のテスト。"""
 
     @pytest.mark.parametrize(
         "field,value", [("width", 4), ("width", 8), ("depth", 4), ("depth", 8)]
     )
     def test_side_out_of_bounds_raises(self, field, value):
-        """Test width/depth outside 5-7 are rejected."""
+        """幅・奥行きが 5〜7 の外なら通さない。"""
         with pytest.raises(ValueError, match=field):
             _blueprint(**{field: value})
 
     @pytest.mark.parametrize("height", [2, 5])
     def test_wall_height_out_of_bounds_raises(self, height):
-        """Test wall heights outside 3-4 are rejected."""
+        """壁の高さが 3〜4 の外なら通さない。"""
         with pytest.raises(ValueError, match="wall_height"):
             _blueprint(wall_height=height)
 
     @pytest.mark.parametrize("offset", [0, 4])
     def test_door_on_corner_raises(self, offset):
-        """Test a door on a corner (or past it) is rejected."""
+        """角（またはその先）のドアは通さない。"""
         with pytest.raises(ValueError, match="door offset"):
             _blueprint(door_offset=offset)
 
     def test_door_offset_uses_that_walls_length(self):
-        """Test east/west offsets are checked against the depth."""
+        """東西の面のオフセットは奥行きで確かめる。"""
         _blueprint(width=5, depth=7, door_side=Side.EAST, door_offset=5)
         with pytest.raises(ValueError, match="east"):
             _blueprint(width=7, depth=5, door_side=Side.EAST, door_offset=5)
 
 
 class TestHouseBlueprintBlocks:
-    """Tests for expansion into placeable blocks."""
+    """置けるブロックへの展開のテスト。"""
 
     def test_5x5x3_block_count(self):
-        """Test walls (16 x 3 minus a 2-high door gap) + roof (25) + door."""
+        """壁（16 x 3 から高さ 2 のドアの穴を除く）+ 屋根（25）+ ドア。"""
         blocks = _blueprint().blocks()
 
         assert len(blocks) == 16 * 3 - 2 + 25 + 1
         assert _blueprint().material_counts() == {BlockKind.PLANKS: 71, BlockKind.DOOR: 1}
 
     def test_7x7x4_block_count(self):
-        """Test the largest house matches the bridge-measured 144 blocks."""
+        """一番大きい家は、ブリッジで測った 144 ブロックと一致する。"""
         assert len(_blueprint(width=7, depth=7, wall_height=4, door_offset=3).blocks()) == 144
 
     def test_order_walls_then_roof_then_door(self):
-        """Test walls come layer by layer, then the roof, then the door last."""
+        """壁が 1 段ずつ、次に屋根、最後にドア。"""
         blocks = _blueprint().blocks()
         ys = [b.y for b in blocks[:-1]]
 
@@ -119,7 +119,7 @@ class TestHouseBlueprintBlocks:
         assert blocks[-1] == blocks[-1].__class__(2, 0, 0, BlockKind.DOOR)
 
     def test_roof_is_laid_from_edges_inward(self):
-        """Test each roof block touches a wall top or an earlier roof block."""
+        """屋根のブロックはどれも、壁の上端か先に置いた屋根に接する。"""
         bp = _blueprint(width=7, depth=6)
         placed = set()
         for b in bp.blocks():
@@ -134,7 +134,7 @@ class TestHouseBlueprintBlocks:
         assert len(placed) == bp.width * bp.depth
 
     def test_door_gap_is_two_high(self):
-        """Test no wall block is planned in the door's two lower cells."""
+        """ドアの下の 2 マスには壁のブロックを置かない。"""
         blocks = {(b.x, b.y, b.z) for b in _blueprint(door_side=Side.SOUTH).blocks()[:-1]}
 
         assert (2, 0, 4) not in blocks
@@ -142,7 +142,7 @@ class TestHouseBlueprintBlocks:
         assert (2, 2, 4) in blocks
 
     def test_walls_have_no_openings_but_the_door(self):
-        """Test every wall cell is planned except the door's two lower cells."""
+        """壁のマスは、ドアの下の 2 マスを除いて全部置く。"""
         bp = _blueprint()
         blocks = {(b.x, b.y, b.z) for b in bp.blocks()[:-1]}
         wall = {
@@ -156,7 +156,7 @@ class TestHouseBlueprintBlocks:
         assert wall - blocks == {(2, 0, 0), (2, 1, 0)}
 
     def test_corner_pillars_use_logs(self):
-        """Test corner pillars turn the four corner columns into logs."""
+        """角の柱は、四隅の列を原木にする。"""
         counts = _blueprint(corner_pillars=True).material_counts()
 
         assert counts[BlockKind.LOG] == 4 * 3
@@ -164,7 +164,7 @@ class TestHouseBlueprintBlocks:
 
 
 class TestGoalSpec:
-    """Tests for the goal vocabulary's shape checks."""
+    """小目標の語彙の形の確認のテスト。"""
 
     def test_to_dict_and_describe(self):
         assert PLANKS.to_dict() == {"predicate": "have", "item": "planks", "count": 12}
@@ -192,7 +192,7 @@ class TestGoalSpec:
 
 
 class TestPlaySession:
-    """Tests for the goal lifecycle."""
+    """小目標のライフサイクルのテスト。"""
 
     def _session(self, **kwargs) -> PlaySession:
         session = PlaySession(blueprint=_blueprint(), plan=_plan(), **kwargs)
@@ -317,7 +317,7 @@ class TestPlaySession:
 
 
 class TestMidGoal:
-    """Tests for mid goals' conditions."""
+    """中目標の条件のテスト。"""
 
     def test_conditions_must_be_judged_from_the_world(self):
         with pytest.raises(ValueError, match="explored cannot be a condition"):
@@ -341,7 +341,7 @@ class TestMidGoal:
 
 
 class TestMidGoalPlan:
-    """Tests for the mid-goal list and the limits kept by code."""
+    """中目標のリストと、コードが守る上限のテスト。"""
 
     def test_the_first_pending_is_worked_on(self):
         plan = _plan()

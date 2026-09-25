@@ -1,13 +1,13 @@
-// Protocol mirror: render the Mineflayer bot's POV on a real Minecraft client.
+// プロトコルのミラー: Mineflayer のボットの視点を本物の Minecraft クライアントに映す。
 //
-// The bot joins the real server. Every packet it receives is recorded (for late
-// joiners) and relayed as raw bytes to viewers connected to a local fake server.
-// A viewer "is" the bot: same entity id, locked to the bot's position/rotation.
-// Viewer input is ignored (read-only spectator of the bot).
+// ボットは本物のサーバーに参加する。受け取ったパケットはすべて記録し（後から参加する視聴者の
+// ため）、ローカルの偽サーバーにつないだ視聴者にそのままのバイト列で中継する。
+// 視聴者はボット「そのもの」: 同じエンティティ id で、ボットの位置と向きに固定される。
+// 視聴者の入力は無視する（ボットを見るだけの読み取り専用の観戦者）。
 //
-// startMirror(bot) is used by index.mjs. Standalone (viewer check without the bridge):
+// startMirror(bot) は index.mjs が使う。単体で動かす（ブリッジなしで視聴者を確かめる）:
 //   node src/mirror.mjs [--walk]
-//   env: MC_HOST (localhost) MC_PORT (25565) MIRROR_PORT (25578) BOT_NAME (AILoveShen)
+//   環境変数: MC_HOST (localhost) MC_PORT (25565) MIRROR_PORT (25578) BOT_NAME (AILoveShen)
 
 import { createRequire } from 'node:module'
 import mineflayer from 'mineflayer'
@@ -21,31 +21,30 @@ const MC_HOST = process.env.MC_HOST ?? 'localhost'
 const MC_PORT = Number(process.env.MC_PORT ?? 25565)
 const MIRROR_PORT = Number(process.env.MIRROR_PORT ?? 25578)
 const BOT_NAME = process.env.BOT_NAME ?? 'AILoveShen'
-// Camera: the viewer is moved by absolute position packets. Send them at ~60Hz, interpolate the
-// bot's 20Hz physics positions, and turn the view at a capped rate so bot.lookAt() snaps are not
-// shown as instant jumps.
+// カメラ: 視聴者は絶対位置のパケットで動かす。約 60Hz で送り、ボットの 20Hz の物理の位置を補間し、
+// 視点の回転速度に上限を設けて、bot.lookAt() の瞬時の向き変えが一瞬で飛ぶように見えないようにする。
 const CAMERA_INTERVAL_MS = 16
 const TICK_MS = 50
 const MAX_TURN_DEG_PER_S = 150
-// Mineflayer starts digging right after an instant lookAt(); a leaf breaks in ~0.35s. Turn faster
-// while a dig is in progress so the view reaches the block before it breaks.
+// Mineflayer は瞬時の lookAt() の直後に掘り始め、葉は約 0.35 秒で壊れる。掘っている間は速く回し、
+// 壊れる前に視点がブロックに届くようにする。
 const DIG_TURN_DEG_PER_S = 600
-const TURN_EASE = 0.2 // fraction of the remaining angle covered per frame, before the speed cap
+const TURN_EASE = 0.2 // 1フレームで進む残りの角度の割合（速度の上限をかける前）
 
-// Packets that are connection-scoped, not world state: never relayed.
+// ワールドの状態ではなく接続ごとのパケット: 中継しない。
 const NOT_RELAYED = new Set([
   'keep_alive', 'ping', 'ping_response', 'login', 'position', 'start_configuration',
   'kick_disconnect', 'cookie_request', 'store_cookie', 'transfer', 'custom_report_details',
   'server_links', 'select_advancement_tab'
 ])
-// Latest-wins state packets replayed to late joiners.
+// 最新のものだけが意味を持つ状態のパケット。後から参加する視聴者に再生する。
 const SINGLETONS = new Set([
   'difficulty', 'abilities', 'held_item_slot', 'spawn_position', 'update_time', 'update_health',
   'experience', 'update_view_position', 'update_view_distance', 'simulation_distance',
   'initialize_world_border', 'playerlist_header', 'server_data', 'set_ticking_state', 'step_tick',
   'declare_commands', 'tags', 'declare_recipes', 'recipe_book_settings', 'set_cursor_item'
 ])
-// Order-dependent packets replayed as a log to late joiners.
+// 順序が意味を持つパケット。後から参加する視聴者にログとして再生する。
 const LOGGED = new Set(['player_info', 'player_remove', 'teams', 'game_state_change', 'set_slot', 'window_items',
   'entity_effect', 'remove_entity_effect', 'boss_bar', 'advancements'])
 const ENTITY_SPAWNS = new Set(['spawn_entity', 'spawn_entity_experience_orb'])
@@ -60,8 +59,8 @@ class WorldRecorder {
     this.login = null
     this.singletons = new Map()
     this.log = []
-    this.chunks = new Map() // key -> { chunk, light, changes: [] }
-    this.entities = new Map() // id -> { spawn, attached: Map(name -> buffer) }
+    this.chunks = new Map() // キー -> { chunk, light, changes: [] }
+    this.entities = new Map() // id -> { spawn, attached: Map(名前 -> バッファ) }
   }
 
   record (data, meta, buffer) {
@@ -173,7 +172,7 @@ class Camera {
 function replayWorld (viewer, rec, bot) {
   for (const buf of rec.singletons.values()) viewer.writeRaw(buf)
   for (const buf of rec.log) viewer.writeRaw(buf)
-  // 13 = "start waiting for level chunks": leaves the loading-terrain screen once chunks arrive
+  // 13 = 「レベルのチャンクを待ち始める」: チャンクが届いたら地形の読み込み画面を抜ける
   viewer.write('game_state_change', { reason: 'level_chunks_load_start', gameMode: 0 })
   viewer.write('chunk_batch_start', {})
   for (const c of rec.chunks.values()) {
@@ -199,8 +198,8 @@ function replayWorld (viewer, rec, bot) {
   viewer.write('position', positionPacket(bot, 1))
 }
 
-// The bot closing a window (a chest, a furnace, a crafting table) is a packet to the server, which
-// sends nothing back: without this the viewers kept every window they were shown open on screen
+// ボットがウィンドウ（チェスト、かまど、作業台）を閉じるのはサーバーへのパケットで、サーバーは
+// 何も返さない: これがないと、視聴者の画面には一度表示されたウィンドウがすべて開いたまま残った
 export function relayCloses (client, viewers) {
   const write = client.write.bind(client)
   client.write = (name, params) => {
@@ -221,15 +220,15 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
 
   relayCloses(bot._client, viewers)
 
-  // registryCodec: {} -> nmp writes no registry_data of its own; the bot's recorded
-  // configuration packets (known packs, registry data, tags, feature flags) are replayed instead.
+  // registryCodec: {} -> nmp は自前の registry_data を書かない。代わりに、記録したボットの
+  // 設定のパケット（known packs、registry data、tags、feature flags）を再生する。
   const server = mc.createServer({
     'online-mode': false, port, host: '127.0.0.1', version: VERSION,
     registryCodec: {}, enforceSecureProfile: false, motd: `${BOT_NAME} POV mirror`, maxPlayers: 4
   })
 
   server.on('login', (viewer) => {
-    // Runs before nmp's own handler, which writes finish_configuration right away.
+    // nmp 自身のハンドラより先に動く。nmp のハンドラはすぐに finish_configuration を書いてしまう。
     viewer.prependOnceListener('login_acknowledged', () => {
       viewer.state = mc.states.CONFIGURATION
       for (const buf of rec.configPackets) viewer.writeRaw(buf)
@@ -238,12 +237,12 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
 
   server.on('playerJoin', (viewer) => {
     if (!rec.login) { viewer.end('bot is not in the world yet'); return }
-    log(`[mirror] viewer ${viewer.username} joined`)
+    log(`[mirror] 視聴者 ${viewer.username} が参加した`)
     viewer.write('login', { ...rec.login.data, maxPlayers: 4 })
     replayWorld(viewer, rec, bot)
     viewers.add(viewer)
-    viewer.on('end', () => { viewers.delete(viewer); log(`[mirror] viewer ${viewer.username} left`) })
-    viewer.on('error', (e) => log(`[mirror] viewer error: ${e.message}`))
+    viewer.on('end', () => { viewers.delete(viewer); log(`[mirror] 視聴者 ${viewer.username} が退出した`) })
+    viewer.on('error', (e) => log(`[mirror] 視聴者のエラー: ${e.message}`))
   })
 
   let teleportId = 2
@@ -255,8 +254,8 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
     for (const v of viewers) v.write('position', pkt)
   }, CAMERA_INTERVAL_MS)
 
-  // Server never echoes a player's own swing/dig progress: synthesize them for the viewer.
-  // Mineflayer has no dig-start event, so watch bot.targetDigBlock every tick.
+  // サーバーはプレイヤー自身の腕振りや採掘の進み具合を送り返さない: 視聴者のために合成する。
+  // Mineflayer には採掘開始のイベントがないので、毎ティック bot.targetDigBlock を見る。
   const DIG_BREAKER_ID = 0x7ffffff0
   let dig = null // { pos, start, total, lastStage }
   bot.on('physicsTick', () => {
@@ -275,7 +274,7 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
     }
   })
 
-  server.on('listening', () => log(`[mirror] listening on 127.0.0.1:${port}`))
+  server.on('listening', () => log(`[mirror] 127.0.0.1:${port} で待ち受け中`))
   return { server, viewers, recorder: rec, close: () => { clearInterval(timer); server.close() } }
 }
 
@@ -283,9 +282,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const bot = mineflayer.createBot({ host: MC_HOST, port: MC_PORT, username: BOT_NAME, version: VERSION, auth: 'offline' })
   startMirror(bot)
   bot.once('spawn', () => {
-    console.log(`[bot] spawned at ${bot.entity.position}`)
+    console.log(`[bot] ${bot.entity.position} にスポーンした`)
     if (!process.argv.includes('--walk')) return
-    // Demo motion so the viewer shows movement and camera turns.
+    // 視聴者に移動とカメラの回転が映るようにするデモの動き。
     let t = 0
     setInterval(() => {
       t += 1
@@ -294,6 +293,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       bot.setControlState('jump', t % 40 === 5)
     }, 100)
   })
-  bot.on('kicked', (r) => console.log('[bot] kicked', JSON.stringify(r)))
-  bot.on('error', (e) => console.log('[bot] error', e.message))
+  bot.on('kicked', (r) => console.log('[bot] キックされた', JSON.stringify(r)))
+  bot.on('error', (e) => console.log('[bot] エラー', e.message))
 }

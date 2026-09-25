@@ -8,7 +8,7 @@ const { Vec3 } = vec3Pkg
 const design = { name: 'ぽかぽか', concept: '木の家', width: 3, depth: 3, wall_height: 1, door_side: 'south', door_offset: 1, corner_pillars: false }
 const blocks = [{ x: 1, y: 0, z: 2, block: 'door' }, { x: 0, y: 0, z: 0, block: 'planks' }]
 
-test('the design goes with the plan through a save and into the home', () => {
+test('設計はプランと一緒に保存と読み込みを通り、拠点に渡る', () => {
   const plan = BuildPlan.fromJSON(JSON.parse(JSON.stringify(new BuildPlan({ blocks, width: 3, depth: 3, height: 2, design }).toJSON())))
   assert.deepEqual(plan.design, design)
 
@@ -18,6 +18,6 @@ test('the design goes with the plan through a save and into the home', () => {
   assert.deepEqual(home.design, design)
 })
 
-test('a plan sent without a design has none', () => {
+test('設計なしで送ったプランは設計を持たない', () => {
   assert.equal(new BuildPlan({ blocks, width: 3, depth: 3, height: 2 }).design, null)
 })

@@ -1,9 +1,9 @@
-// Primitive actions and the movement rules they share.
+// プリミティブの行動と、それらが共有する移動の規則。
 //
-// Each primitive runs one bounded step against a concrete target (a block, an entity, an item) and
-// reports the outcome checked against the world; failures are thrown, never reported as success.
-// Executors take an AbortSignal (timeout, or damage taken) and stop promptly once it fires: loops
-// check it, and the caller cancels pathing and digging.
+// 各プリミティブは具体的な対象（ブロック、エンティティ、アイテム）に対して有界な1ステップを実行し、
+// ワールドで確かめた結果を返す。失敗は投げ、成功として返すことはない。
+// 実行関数は AbortSignal（タイムアウト、またはダメージを受けた）を受け取り、発火したらすぐ止まる:
+// ループがそれを確かめ、呼び出し側が経路移動と採掘を取り消す。
 
 import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
@@ -15,10 +15,10 @@ import { rememberChest, forgetChest, rememberFurnace, forgetFurnace } from './me
 import { smeltingProduct } from './knowledge.mjs'
 
 const { Movements, goals } = pathfinderPkg
-export const REACH = 4.5 // survival block reach from the eyes
-// Health this low is critical: stated as a need, and a fight or flight stops here
+export const REACH = 4.5 // サバイバルで目からブロックに届く距離
+// 体力がここまで下がったら危険: 欲求として示し、戦いや逃走はここで止める
 export const HEALTH_CRITICAL = 8
-// Sprinting stops below 7; starving from here on, what harms a little is still worth eating
+// 7 未満でダッシュできなくなる。ここから先は飢えているので、少し害のあるものでも食べる価値がある
 export const HUNGER_URGENT = 6
 export const TABLE_SEARCH_RADIUS = 32
 const HOSTILE_AVOID_RADIUS = 5
@@ -36,24 +36,24 @@ const GLANCE_ANGLE = Math.PI / 3
 export const EXPLORE_DISTANCE = 24
 const EXPLORE_MIN_PROGRESS = 5
 const RECIPE_UNLOCK_TICKS = 40
-// Sleeping is possible from this time of day (Mineflayer's own check: 12541..23458)
+// この時刻から眠れる（Mineflayer 自身の判定: 12541..23458）
 export const SLEEP_FROM = 12541
 export const SLEEP_UNTIL = 23458
-const TIME_UPDATE_TIMEOUT_MS = 3000 // the server sends the time every second
+const TIME_UPDATE_TIMEOUT_MS = 3000 // サーバーは毎秒時刻を送る
 
 const WEAPONS = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword',
   'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe']
 export const isLeaves = (name) => !!name?.endsWith('_leaves')
 
-// Note: to cancel pathing use setGoal(null). pathfinder.stop() only raises a flag that is cleared
-// by the next movement tick; called while idle it makes the next goto() fail immediately.
+// 注意: 経路移動の取り消しには setGoal(null) を使う。pathfinder.stop() は次の移動ティックで
+// 消えるフラグを立てるだけで、止まっているときに呼ぶと次の goto() がすぐ失敗する。
 export function configureMovements (bot, state) {
   const m = new Movements(bot)
-  // In chunks not loaded yet the pathfinder passes a stand-in block with no position (it is never
-  // walkable); a cost function reading its position would throw inside the physics tick.
+  // まだ読み込まれていないチャンクでは、pathfinder は位置のない代わりのブロックを渡す（歩けることは
+  // ない）。その位置を読むコスト関数は物理ティックの中で例外を投げてしまう。
   const step = (cost) => m.exclusionAreasStep.push((block) => block.position ? cost(block) : 0)
-  // Never walk on top of the structure under construction: partial walls form steps the bot
-  // would climb, and it then places the roof from the wall tops or gets stuck up there.
+  // 建築中の建物の上は歩かない: 途中の壁が段差になってボットが登り、壁の上から屋根を置いたり、
+  // 上で動けなくなったりする。
   step((block) => {
     const o = state.plan?.origin
     if (!o) return 0
@@ -61,8 +61,8 @@ export function configureMovements (bot, state) {
     const inside = p.x >= o.x && p.x < o.x + state.plan.size.width && p.z >= o.z && p.z < o.z + state.plan.size.depth
     return inside && p.y > o.y + 1 ? 101 : 0
   })
-  // Keep away from hostile mobs: paths through their surroundings cost more, so walking home
-  // detours around a creeper instead of running into it again right after fleeing.
+  // 敵対モブから離れる: そのまわりを通る経路のコストを上げ、家に歩いて帰るときに、逃げた直後の
+  // クリーパーにまた突っ込まずに迂回するようにする。
   let hostiles = []
   let hostilesAt = 0
   step((block) => {
@@ -72,19 +72,18 @@ export function configureMovements (bot, state) {
     }
     return hostiles.some((h) => h.distanceTo(block.position) <= HOSTILE_AVOID_RADIUS) ? HOSTILE_STEP_COST : 0
   })
-  // Stay out of tree tops: walking on leaves leads onto canopies that are hard to leave.
+  // 木の上に行かない: 葉の上を歩くと、降りにくい樹冠に出てしまう。
   step((block) => isLeaves(bot.blockAt(block.position.offset(0, -1, 0))?.name) ? LEAVES_STEP_COST : 0)
-  // Leaves are the only blocks the bot may break while walking (like a player pushing through a
-  // canopy); never the house or terrain.
+  // 歩きながら壊してよいのは葉だけ（プレイヤーが樹冠をかき分けるように）。家や地形は壊さない。
   m.exclusionAreasBreak.push((block) => isLeaves(block.name) ? 0 : 100)
-  m.scafoldingBlocks = [] // never spend building material on pillaring
+  m.scafoldingBlocks = [] // 足場を積むのに建材を使わない
   m.allow1by1towers = false
   bot.pathfinder.setMovements(m)
 }
 
-// Reach any spot at least `distance` from the entity, re-planning whenever it has moved a couple of
-// blocks. GoalInvert(GoalFollow(e, d)) looks equivalent but only re-plans after the entity moved d
-// blocks: the bot ran to a spot far from where the mob *was*, then stood still while it closed in.
+// エンティティから `distance` 以上離れたどこかに行く。エンティティが2ブロックほど動くたびに経路を
+// 立て直す。GoalInvert(GoalFollow(e, d)) は同じに見えるが、エンティティが d ブロック動いてからしか
+// 立て直さない: ボットはモブが「いた」場所から遠いところまで走り、モブが近づく間立ち止まっていた。
 const REPLAN_MOVE = 2
 class GoalAwayFrom extends goals.Goal {
   constructor (entity, distance) {
@@ -123,9 +122,9 @@ async function goto (bot, goal) {
 
 const goNear = (bot, pos, range) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range))
 
-// Where a crafting table or furnace goes: air on a full block, 2-3 blocks from the bot (not where
-// it stands) and up to one block up or down (a fixed ring at its own height found nothing on slopes
-// and in caves), never inside the house or on its planned footprint; the nearest first
+// 作業台やかまどを置く場所: 完全なブロックの上の空気で、ボットから 2〜3 ブロック（立っている場所では
+// ない）、上下1ブロックまで（自分の高さの決まった輪だけでは、坂や洞窟で何も見つからなかった）。
+// 家の中や計画中の敷地には置かない。近い順
 export function stationSpot (bot, state) {
   const me = bot.entity.position.floored()
   const spots = []
@@ -145,7 +144,7 @@ export function stationSpot (bot, state) {
   return spots.sort((a, b) => a.d - b.d)[0]?.pos ?? null
 }
 
-// A torch stands where the bot stands: an empty cell (no liquid) on a full block
+// たいまつはボットが立っている場所に置く: 完全なブロックの上の空いたセル（液体でない）
 export function torchSpot (bot) {
   const feet = bot.entity.position.floored()
   const cell = bot.blockAt(feet)
@@ -153,10 +152,10 @@ export function torchSpot (bot) {
   return cell?.boundingBox === 'empty' && !/water|lava/.test(cell.name) && floor?.boundingBox === 'block' ? feet : null
 }
 
-// A long trip is walked one leg per step, like exploring: each action stays short, so it ends well
-// within its timeout and the next step sees the world again (270m home took longer than 45s)
+// 長い道のりは、探索と同じく1ステップに1区間ずつ歩く: 各行動を短くして、タイムアウトに十分
+// 収まるように終え、次のステップでワールドを見直す（270m 先の家まで 45 秒以上かかった）
 export const LEG = 48
-const SMELT_WAIT_MS = 20000 // an item takes 10s: waiting for all of a stack would pass the timeout
+const SMELT_WAIT_MS = 20000 // 1個 10 秒かかる: スタック全部を待つとタイムアウトを過ぎる
 async function legToward (bot, target, what) {
   const me = bot.entity.position
   const far = Math.hypot(target.x - me.x, target.z - me.z)
@@ -167,7 +166,7 @@ async function legToward (bot, target, what) {
   return `walked ${round(far - left)}m toward ${what} (${round(left)}m left)`
 }
 
-// Threats that can reach the bot: none from outside while it is in the closed house
+// ボットに届く脅威: 閉じた家の中にいる間は外からのものはない
 export function reachableThreats (bot, state) {
   return threats(bot).filter(({ e }) => !shelteredFrom(bot, state.home, e))
 }
@@ -209,7 +208,7 @@ export async function flee (bot, h, signal) {
   return `now ${round(h.position.distanceTo(bot.entity.position))}m from ${h.name}`
 }
 
-// Resolves when the bot picks something up, or after ms
+// ボットが何かを拾ったか、ms たったら解決する
 function waitForCollect (bot, ms) {
   return new Promise((resolve) => {
     const onCollect = (collector) => {
@@ -228,9 +227,9 @@ export function nearbyDrops (bot, state, radius) {
     Math.abs(e.position.y - bot.entity.position.y) < 4 && !state.unreachableDrops.has(e.id))
 }
 
-// Drops can be picked up only after a short delay; standing on them already, the walk ends at
-// once. Collect the drops that fell nearby and wait for each pickup.
-// Picks up the drops around; returns why the last one was not reached, if any
+// ドロップは少し待たないと拾えない。すでにその上に立っていると、歩くのはすぐ終わる。
+// 近くに落ちたドロップを集め、それぞれ拾うのを待つ。
+// まわりのドロップを拾う。最後のドロップに届かなかったら、その理由を返す
 async function collectNearbyDrops (bot, state) {
   let why = ''
   for (let i = 0; i < 3; i++) {
@@ -244,7 +243,7 @@ async function collectNearbyDrops (bot, state) {
   return why
 }
 
-// Where the items around are, relative to the bot (a drop not picked up is explained by it)
+// まわりのアイテムがボットから見てどこにあるか（拾えなかったドロップの説明になる）
 function dropsAround (bot) {
   const me = bot.entity.position
   const items = nearbyEntities(bot).filter(({ e, dist }) => e.name === 'item' && dist <= DROP_COLLECT_RADIUS)
@@ -263,25 +262,25 @@ export function findFurnace (bot) {
   return bot.findBlock({ matching: bot.registry.blocksByName.furnace.id, maxDistance: TABLE_SEARCH_RADIUS })
 }
 
-// A block no path reached is not offered again this session (town2: chosen again and again)
+// 経路が届かなかったブロックは、このセッションでは再び出さない（town2: 何度も選ばれた）
 const blockKey = (p) => `${p.x},${p.y},${p.z}`
 const markUnreachable = (state, pos) => state.unreachableBlocks?.add(blockKey(pos))
 export const isUnreachable = (state, pos) => !!state.unreachableBlocks?.has(blockKey(pos))
 
-// Equip the fastest tool for the block, if any is held
+// そのブロックに一番速い道具を持っていれば装備する
 async function equipToolFor (bot, block) {
   const tool = bot.pathfinder.bestHarvestTool(block)
   if (tool) await bot.equip(tool, 'hand')
 }
 
-// Executors: (bot, state, candidate, signal) -> result string; the candidate holds the target
+// 実行関数: (bot, state, candidate, signal) -> 結果の文字列。対象は候補が持っている
 export const PRIMITIVES = {
   async dig (bot, state, c, signal) {
     const block = bot.blockAt(c.pos)
     if (!block || block.name !== c.block) throw new Error(`${c.block} is gone from ${c.pos}`)
     const before = totalItems(bot)
-    // Stand where the block is in reach, not merely near it: a log above head height is otherwise
-    // "near" only from the leaves of the tree.
+    // 近くではなく、ブロックに届く場所に立つ: そうしないと、頭より高い原木には木の葉の上からしか
+    // 「近く」にならない。
     try {
       await goto(bot, new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH }))
     } catch (e) {
@@ -289,7 +288,7 @@ export const PRIMITIVES = {
       throw e
     }
     signal.throwIfAborted()
-    // Digging while airborne is 5x slower (e.g. right after chopping the block we stood on)
+    // 空中で掘ると5倍遅い（例えば、立っていたブロックを切った直後）
     for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
     await equipToolFor(bot, block)
     await bot.dig(bot.blockAt(c.pos), true)
@@ -354,7 +353,7 @@ export const PRIMITIVES = {
     return `holding ${c.item}`
   },
   async craft (bot, state, c, signal) {
-    // Holding a new ingredient unlocks recipes; the server sends them right after
+    // 新しい材料を持つとレシピが解放される。サーバーはその直後にレシピを送る
     for (let i = 0; i < RECIPE_UNLOCK_TICKS && !state.recipeBook.recipesFor(c.item).length; i++) await bot.waitForTicks(1)
     let table = null
     if (c.needsTable) {
@@ -369,7 +368,7 @@ export const PRIMITIVES = {
     }
     return `crafted ${itemCount(bot, c.item) - before} ${c.item}`
   },
-  // A crafting table or furnace next to the bot
+  // ボットのそばに作業台かかまどを置く
   async place_station (bot, state, c) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
@@ -401,15 +400,15 @@ export const PRIMITIVES = {
     if (!spot) throw new Error('no free spot for the bed in the house')
     const { inside } = state.home
     await goto(bot, new goals.GoalBlock(inside.x, inside.y, inside.z))
-    // The bed's head goes one block further in the direction the player faces. The rotation reaches
-    // the server only with the next movement packet: placed right away, the server used the yaw
-    // from closing the door and the bed's head blocked the cell inside the door.
+    // ベッドの頭側は、プレイヤーが向いている方向に1ブロック先になる。向きは次の移動パケットで
+    // やっとサーバーに届く: すぐに置くと、サーバーはドアを閉めたときの向きを使い、ベッドの頭側が
+    // ドアの内側のセルをふさいだ。
     const bed = bot.inventory.items().find((i) => i.name.endsWith('_bed'))
     await bot.equip(bed, 'hand')
     await bot.lookAt(spot.foot.offset(0.5, 0, 0.5), true)
     await bot.waitForTicks(2)
     await bot.placeBlock(bot.blockAt(spot.foot.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
-    // placeBlock waits for the clicked cell only; the head's update comes separately
+    // placeBlock が待つのはクリックしたセルだけ。頭側の更新は別に届く
     const head = spot.foot.plus(spot.inward)
     for (let i = 0; i < 20 && !bot.blockAt(head)?.name.endsWith('_bed'); i++) await bot.waitForTicks(1)
     if (!bot.blockAt(spot.foot)?.name.endsWith('_bed')) throw new Error('the bed was not placed')
@@ -420,11 +419,11 @@ export const PRIMITIVES = {
   async sleep (bot, state, c, signal) {
     await enterHome(bot, state.home)
     await bot.sleep(bot.blockAt(state.home.bed))
-    // The night is skipped once every player sleeps; the server then wakes the bot
+    // 全プレイヤーが眠ると夜が飛ばされ、サーバーがボットを起こす
     while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
     if (bot.isSleeping) await bot.wake()
-    // The server wakes the bot before it sends the new time: wait for the next update, then check
-    // the night really passed (being woken by a monster also ends the sleep)
+    // サーバーは新しい時刻を送る前にボットを起こす: 次の更新を待ってから、本当に夜が明けたかを
+    // 確かめる（モンスターに起こされても眠りは終わる）
     await once(bot, 'time', { signal: AbortSignal.timeout(TIME_UPDATE_TIMEOUT_MS) })
     const tod = bot.time.timeOfDay
     if (tod >= SLEEP_FROM && tod <= SLEEP_UNTIL) throw new Error(`woke up but the night was not skipped (time ${tod})`)
@@ -432,8 +431,8 @@ export const PRIMITIVES = {
   },
   async exit_wall (bot, state, c, signal) {
     await digExit(bot, state.home, c.spot, signal)
-    // Pick up the dug blocks (to close the wall with) before going out: they also fall inside,
-    // and collected after stepping out, the bot walked back in for them and closed itself in.
+    // 出る前に掘ったブロック（壁を閉じるのに使う）を拾う: ブロックは内側にも落ちるので、出てから
+    // 拾おうとすると、ボットは取りに中へ戻り、自分を閉じ込めた。
     await collectNearbyDrops(bot, state)
     signal.throwIfAborted()
     await stepOut(bot, c.spot)
@@ -453,9 +452,9 @@ export const PRIMITIVES = {
   },
   async wait (bot, state, c, signal) {
     if (c.inside) {
-      await enterHome(bot, state.home) // closes the door if it was left open
-      // Face the door and keep still, glancing aside now and then (turning every second made the
-      // stream view spin the whole night)
+      await enterHome(bot, state.home) // 開いたままならドアを閉める
+      // ドアのほうを向いてじっとし、ときどき横を見る（毎秒向きを変えると、配信の画面が一晩中
+      // 回り続けた）
       await bot.lookAt(state.home.door.offset(0.5, 1.2, 0.5))
     }
     const facing = bot.entity.yaw
@@ -496,12 +495,12 @@ export const PRIMITIVES = {
       return `took ${n} ${c.item} from the chest`
     })
   },
-  // Takes out what is done, puts in the input and fuel, and waits a while taking what gets done;
-  // the rest is taken out at a later step (the furnace works on meanwhile)
+  // できたものを取り出し、材料と燃料を入れ、しばらく待ってできたものを取る。
+  // 残りは後のステップで取り出す（その間もかまどは動く）
   async smelt (bot, state, c) {
     const leg = await legToward(bot, c.pos, 'the furnace')
     if (leg) return leg
-    await goNear(bot, c.pos, 2) // a far block reads null: judged only once there
+    await goNear(bot, c.pos, 2) // 遠いブロックは null になる: 着いてから判定する
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
       forgetFurnace(state.memory, c.pos)
@@ -544,7 +543,7 @@ export const PRIMITIVES = {
     const left = furnace.inputItem()?.count ?? 0
     return `${took ? `took ${took}` : 'nothing done yet'}${left ? `; ${left} still smelting` : ''}`
   },
-  // On the ground at c.pos (an empty cell on a full block)
+  // c.pos の地面に置く（完全なブロックの上の空いたセル）
   async place_torch_at (bot, state, c) {
     const torch = bot.inventory.items().find((i) => i.name === 'torch')
     if (!torch) throw new Error('no torch')
@@ -587,7 +586,7 @@ export const PRIMITIVES = {
   }
 }
 
-// Opens the chest at c.pos, runs `use` on its window, and records what it holds after
+// c.pos のチェストを開けてそのウィンドウで `use` を実行し、そのあとの中身を記録する
 async function useChest (bot, state, c, use) {
   const leg = await legToward(bot, c.pos, 'the chest')
   if (leg) return leg
@@ -609,10 +608,10 @@ async function useChest (bot, state, c, use) {
   }
 }
 
-// Which primitive answers damage itself: taking damage does not interrupt it
+// 自分でダメージに対処するプリミティブ: ダメージを受けても中断しない
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
-// The longest is 45s: the Python client's request timeout (minecraft.bridge.timeout_seconds) must exceed it
+// 最長は 45 秒: Python クライアントの要求のタイムアウト（minecraft.bridge.timeout_seconds）はこれより長くする
 export const TIMEOUTS_MS = { smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 
