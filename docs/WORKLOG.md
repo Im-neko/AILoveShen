@@ -2,10 +2,17 @@
 
 **Active Phase**: 設計書 21（Gemini が道具で操作し、Jev が見張る。`--control tools`）と 23（OBS のスクリーンショットを Gemini に見せる）を実装した。どちらも実機では未確認（クラウドの環境に API キー・Minecraft・OBS がない）。次はユーザーの環境で `examples/integration_test_minecraft.py --control tools --board-port 8765` を OBS つきで動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 492 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Test Status**: `pytest tests/` 494 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### 配信用の目標のオーバーレイ（/overlay/vtuber） (2026-09-25)
+
+- ユーザーの依頼「大目標・中目標・小目標を配信画面に Vtuber っぽく表示する HTML が欲しい（OBS 用）」→ OBS のブラウザソースに HTML が一番よい（テキストソースを WebSocket で書き換える方法は飾りとアニメーションが弱い）
+- `presentation/web/overlay_vtuber.html`（目標ボードの `/overlay/vtuber`）: 1920x1080、背景は透明。大目標と街の段階、中目標（今のものに進み具合のバー、次の 2 つ、最後に終わったもの、視聴者の頼みの印）、小目標の吹き出し（日本語の `label`、今やろうとしていること、理由、身を守るための印）。目標が変わると吹き出しが弾んで NEW、中目標が終わると「中目標クリア！」、頼みを受けると知らせ。`?demo=1`（サーバーなしの見本）、`pos`、`theme`（pink / mint / sky / lemon）、`scale`、`compact`、`toast=0`
+- `/api/goals` に `goal.label`（述語を視聴者向けの日本語に。アイテム名は小さな表、ないものは英語の ID）と `intent`
+- ヘッドレスの Chromium で見本を撮って見た目を確かめた（左上・ピンク、右上・ミントとクリアのお知らせ）
 
 ### 配信の画面を Gemini に見せる（OBS、設計書 23） (2026-09-25)
 

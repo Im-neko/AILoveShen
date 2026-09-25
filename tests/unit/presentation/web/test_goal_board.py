@@ -128,6 +128,7 @@ class TestGoalsSnapshot:
         assert data["mid_goals"][0]["summary"] == ["house blocks placed 3/72"]
         assert data["goal"] == {
             "goal": "have(log, 3)",
+            "label": "原木を 3 個そろえる",
             "reason": "壁の材料",
             "mid_goal": "自分の家を作る",
             "survival": False,
@@ -235,3 +236,36 @@ def test_debug_screen_images_by_id():
         "image/jpeg",
     )
     assert client.get("/api/debug/screen/img999").status_code == 404
+
+
+def test_goal_labels_for_viewers():
+    """小目標は、述語ではなく視聴者向けの日本語でも出す。"""
+    from ailoveshen.presentation.web.goal_board import goal_label
+
+    assert goal_label(GoalSpec(GoalPredicate.HAVE, item="planks", count=4)) == "板材を 4 個そろえる"
+    assert (
+        goal_label(GoalSpec(GoalPredicate.HAVE, item="iron_sword", count=1)) == "鉄の剣を手に入れる"
+    )
+    assert (
+        goal_label(GoalSpec(GoalPredicate.HAVE, item="mud_bricks", count=2))
+        == "mud bricksを 2 個そろえる"
+    )
+    assert (
+        goal_label(GoalSpec(GoalPredicate.PLACED, item="bed", where="home")) == "家にベッドを置く"
+    )
+    assert goal_label(GoalSpec(GoalPredicate.THROUGH_NIGHT)) == "夜を越す"
+
+
+def test_the_vtuber_overlay_reads_the_label_and_the_intent():
+    session = PlaySession(blueprint=None, plan=MidGoalPlan(mission=Mission("街にしていく")))
+    session.set_goal(
+        Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), reason="壁の材料"), "day"
+    )
+    session.set_intent("近くの木を切りにいく")
+    client = TestClient(GoalBoard(session.activity).app)
+
+    goals = client.get("/api/goals").json()
+    assert goals["goal"]["label"] == "原木を 3 個そろえる"
+    assert goals["intent"] == "近くの木を切りにいく"
+    page = client.get("/overlay/vtuber").text
+    assert "/api/goals/stream" in page and "goal.label" in page

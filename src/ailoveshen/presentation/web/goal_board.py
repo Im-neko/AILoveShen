@@ -3,6 +3,8 @@
 - GET /api/goals         今の目標（JSON）
 - GET /api/goals/stream  目標が変わるたび、ステップのたびに同じ JSON（Server-Sent Events）
 - GET /overlay           OBS のブラウザソース用のページ（背景は透明）
+- GET /overlay/vtuber    配信向けに飾ったページ（背景は透明。?demo=1 でサーバーなしの見本、
+                         ?pos=right、?theme=mint|sky|lemon、?scale=0.8、?compact=1、?toast=0）
 - GET /api/debug/gemini  デバッグ: Gemini の直近の呼び出し（用途、考える深さ、思考の要約、出力、
                          道具の呼び出し、トークン、プロンプト）。新しい順、?limit=N（既定 20）
 - GET /debug/gemini      上を 2 秒ごとに読んで表示するページ（ブラウザや OBS のブラウザソース）
@@ -37,9 +39,17 @@ from ailoveshen.domain.events import (
     MidGoalDroppedEvent,
     TownSiteChosenEvent,
 )
-from ailoveshen.domain.value_objects import Activity, GameObservation, MidGoal, MidGoalState
+from ailoveshen.domain.value_objects import (
+    Activity,
+    GameObservation,
+    GoalPredicate,
+    GoalSpec,
+    MidGoal,
+    MidGoalState,
+)
 
 OVERLAY_HTML = Path(__file__).with_name("overlay.html")
+VTUBER_HTML = Path(__file__).with_name("overlay_vtuber.html")
 DEBUG_HTML = Path(__file__).with_name("debug_gemini.html")
 KEEPALIVE_SECONDS = 15.0
 QUEUE_SIZE = 16
@@ -89,13 +99,90 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         if goal is None
         else {
             "goal": goal.spec.describe(),
+            "label": goal_label(goal.spec),  # 視聴者向けの日本語
             "reason": goal.reason,
             "mid_goal": titles.get(goal.mid_goal_id) if goal.mid_goal_id else None,
             "survival": goal.mid_goal_id is None,
             "progress": list(status.lines) if status else [],
         },
         "home": _home(obs),
+        # 道具で操作しているとき、今やろうとしていること（配信者が書いた 1 文）
+        "intent": activity.intent or None,
     }
+
+
+# 視聴者向けの名前（Minecraft の日本語版に合わせる）。ないものは英語の ID のまま
+ITEM_NAMES = {
+    "log": "原木",
+    "planks": "板材",
+    "food": "食べ物",
+    "bed": "ベッド",
+    "white_bed": "白いベッド",
+    "wool": "羊毛",
+    "white_wool": "白い羊毛",
+    "door": "ドア",
+    "stick": "棒",
+    "crafting_table": "作業台",
+    "furnace": "かまど",
+    "chest": "チェスト",
+    "torch": "松明",
+    "coal": "石炭",
+    "charcoal": "木炭",
+    "cobblestone": "丸石",
+    "stone": "石",
+    "iron_ore": "鉄鉱石",
+    "raw_iron": "鉄の原石",
+    "iron_ingot": "鉄インゴット",
+    "wooden_sword": "木の剣",
+    "stone_sword": "石の剣",
+    "iron_sword": "鉄の剣",
+    "wooden_pickaxe": "木のツルハシ",
+    "stone_pickaxe": "石のツルハシ",
+    "iron_pickaxe": "鉄のツルハシ",
+    "wooden_axe": "木の斧",
+    "stone_axe": "石の斧",
+    "shield": "盾",
+    "bread": "パン",
+    "cooked_beef": "ステーキ",
+    "cooked_porkchop": "焼き豚",
+    "cooked_mutton": "焼き羊肉",
+    "cooked_chicken": "焼き鳥",
+    "wheat": "小麦",
+    "wheat_seeds": "小麦の種",
+}
+
+
+def _item(name: str | None) -> str:
+    if not name:
+        return ""
+    return ITEM_NAMES.get(name, name.replace("_", " "))
+
+
+def goal_label(spec: GoalSpec) -> str:
+    """小目標を視聴者向けの日本語にする（例: have(planks, 4) → 板材を 4 個集める）。"""
+    p = spec.predicate
+    item, n = _item(spec.item), spec.count
+    if p == GoalPredicate.HAVE:
+        return f"{item}を {n} 個そろえる" if n and n > 1 else f"{item}を手に入れる"
+    if p == GoalPredicate.STORED:
+        return f"チェストに{item}を {n} 個ためる"
+    if p == GoalPredicate.BUILT:
+        return "家を建てる"
+    if p == GoalPredicate.PLACED:
+        return f"家に{item}を置く"
+    if p == GoalPredicate.AT_HOME:
+        return "家に帰る"
+    if p == GoalPredicate.THROUGH_NIGHT:
+        return "夜を越す"
+    if p == GoalPredicate.EXPLORED:
+        return f"{spec.distance}m 先まで探検する"
+    if p == GoalPredicate.CLEARED:
+        return "ドアの前の敵をやっつける"
+    if p == GoalPredicate.LIT:
+        return f"家のまわり {spec.distance}m を明るくする"
+    if p == GoalPredicate.SURVEYED:
+        return f"街の候補地を {n} か所しらべる"
+    return spec.describe()
 
 
 def _town(activity: Activity) -> dict[str, Any] | None:
@@ -233,6 +320,10 @@ class GoalBoard:
         @app.get("/overlay", response_class=HTMLResponse)
         async def overlay() -> str:
             return OVERLAY_HTML.read_text(encoding="utf-8")
+
+        @app.get("/overlay/vtuber", response_class=HTMLResponse)
+        async def overlay_vtuber() -> str:
+            return VTUBER_HTML.read_text(encoding="utf-8")
 
         @app.get("/api/debug/gemini")
         async def gemini_calls(limit: int = 20) -> list[dict[str, Any]]:
