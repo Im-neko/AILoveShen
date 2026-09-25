@@ -143,3 +143,25 @@ def test_the_real_library_is_quiet_and_never_shows_the_password():
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert "pw-test-secret" not in r.stdout + r.stderr
     assert "Traceback" not in r.stderr
+
+
+@pytest.mark.asyncio
+async def test_a_missing_library_says_how_to_install_it_and_stops_trying():
+    messages = []
+    sink = logger.add(lambda m: messages.append(str(m)), level="WARNING")
+    made = []
+
+    def factory(host, port, password, timeout):
+        made.append(1)
+        raise ModuleNotFoundError("No module named 'obsws_python'", name="obsws_python")
+
+    capture = ObsScreenCapture(
+        host="127.0.0.1", port=4455, password=PASSWORD, source="Minecraft", client_factory=factory
+    )
+    try:
+        assert await capture.capture() is None
+        assert await capture.capture() is None
+    finally:
+        logger.remove(sink)
+    assert made == [1]  # 入れ直すまで撮らない
+    assert any("obsws_python" in m and "pip install" in m for m in messages)

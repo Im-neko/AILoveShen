@@ -43,6 +43,7 @@
 
 ## 6. OBS の準備（ユーザーの環境）
 
+0. Python 側に `obsws-python` を入れる（`pip install -r requirements.txt`）。ないと「モジュール obsws_python がない」と 1 回出して、画面なしで続ける
 1. OBS の「ツール」→「WebSocket サーバー設定」で「WebSocket サーバーを有効にする」。ポート 4455、「認証を有効にする」をオンにし、「接続情報を表示」でパスワードを確認する
 2. `.env` に `OBS_PASSWORD=...`（ホストとポートを変えたなら `config` の `obs.host` / `obs.port`）
 3. ボットの視点のクライアント（Minecraft 1.21.4 で `127.0.0.1:25578` に接続）を「ウィンドウキャプチャ」か「ゲームキャプチャ」のソースで映し、そのソース名を `obs.game_source`（既定 `Minecraft`）と同じにする

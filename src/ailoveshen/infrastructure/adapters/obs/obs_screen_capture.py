@@ -132,6 +132,14 @@ class ObsScreenCapture(IScreenCapture):
 
     def _fail(self, error: Exception) -> None:
         self._drop()
+        if isinstance(error, ImportError):
+            # 入れ直すまで直らないので、以降は撮らない
+            self._disabled = f"missing module {error.name!r}"
+            logger.warning(
+                f"OBS と話すためのモジュール {error.name} がない。画面を見ずに続ける"
+                "（pip install -r requirements.txt か pip install obsws-python）"
+            )
+            return
         code = getattr(error, "code", None)
         if code == RESOURCE_NOT_FOUND:
             self._disabled = f"OBS has no source named {self._source!r}"

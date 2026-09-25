@@ -7,6 +7,10 @@
 
 ## Completed Work
 
+### OBS: obsws-python がないときのログ (2026-09-25)
+
+- ユーザーの環境で「OBS から画面を撮れない（ModuleNotFoundError）。60 秒は画面なしで続ける」→ requirements.txt を足す前の環境で obsws-python が入っていなかった。ログから分からなかったので、ImportError なら入れ方を 1 回出して以降は撮らないようにした（テストあり）。23 §6 に手順 0
+
 ### アバターの表情・しぐさを Jev が選ぶ（設計書 24 §8） (2026-09-25)
 
 **Commit**: `32bbc7e`
