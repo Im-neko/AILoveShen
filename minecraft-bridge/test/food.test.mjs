@@ -31,3 +31,24 @@ test('rotten flesh is eaten only when starving and nothing better is held', () =
   assert.deepEqual(eats(10, ['rotten_flesh']), [])
   assert.deepEqual(eats(3, ['rotten_flesh', 'bread']), ['bread'])
 })
+
+test('at critical health going home is offered only with danger around (healing needs food)', () => {
+  const home = { door: new Vec3(2, 70, 4), inside: new Vec3(2, 70, 3), outside: new Vec3(2, 70, 5), min: new Vec3(1, 70, 1), max: new Vec3(3, 70, 3), bed: null, breach: [] }
+  const offered = (timeOfDay) => {
+    const bot = {
+      entity: { position: new Vec3(40, 70, 40) },
+      entities: {},
+      time: { timeOfDay },
+      health: 4,
+      food: 5,
+      heldItem: null,
+      blockAt: () => null, // no light data: never dark
+      registry: md,
+      inventory: { items: () => [] }
+    }
+    const state = { home, plan: null, unreachableDrops: new Set() }
+    return ground(bot, state, k, { dig: () => [], hunt: () => [] }, { leaves: [] }).candidates.some((c) => c.verb === 'go_home')
+  }
+  assert.equal(offered(1000), false, 'by day with no threat the search for food goes on')
+  assert.equal(offered(18000), true, 'at night it goes home')
+})

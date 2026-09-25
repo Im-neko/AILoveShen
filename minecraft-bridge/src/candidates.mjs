@@ -182,8 +182,11 @@ function forNeeds (bot, state, knowledge) {
   out.push(...storeSpare(bot, state, knowledge))
   const weapon = bestWeapon(bot)
   if (weapon && bot.heldItem?.name !== weapon.name) out.push({ id: `equip ${weapon.name}`, verb: 'equip', target: weapon.name, item: weapon.name, inPlace: true })
-  // A fight given up at critical health (e.g. for cleared) needs a way back whatever the goal
-  if (state.home && bot.health <= HEALTH_CRITICAL && !isInside(bot, state.home)) {
+  // A fight given up at critical health (e.g. for cleared) needs a way back whatever the goal. Only
+  // with danger around: healing needs food, not the house, so by day with no threat the search for
+  // food goes on (going home each step kept the bot from ever finding any, frun3 and after)
+  const danger = reachableThreats(bot, state).length > 0 || dayPhase(bot.time.timeOfDay) !== 'day'
+  if (state.home && bot.health <= HEALTH_CRITICAL && danger && !isInside(bot, state.home)) {
     out.push({ id: 'go home', verb: 'go_home', target: 'home', inPlace: true, distance: dist(bot, state.home.inside) })
   }
   // Lighting the dark keeps mobs from spawning; once lit, it is offered again only farther on
