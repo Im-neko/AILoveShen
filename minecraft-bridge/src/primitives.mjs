@@ -665,6 +665,28 @@ export const PRIMITIVES = {
     const depth = surfaceY - Math.floor(bot.entity.position.y)
     return `dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${stop ? `; stopped: ${stop}` : ''}`
   },
+  // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
+  async goto_pos (bot, state, c, signal) {
+    const leg = await legToward(bot, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
+    if (leg) return leg
+    await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, c.range ?? 1), signal)
+    const p = bot.entity.position
+    return `arrived near ${c.pos.x},${c.pos.y},${c.pos.z} (now at ${round(p.x)},${round(p.y)},${round(p.z)})`
+  },
+  // 道具 place（設計書 21）: c.pos の空いたセルに c.item を置く。c.against は面を借りる隣のブロック
+  async place_at (bot, state, c, signal) {
+    const item = bot.inventory.items().find((i) => i.name === c.item)
+    if (!item) throw new Error(`no ${c.item}`)
+    await goto(bot, new goals.GoalPlaceBlock(c.pos, bot.world, { range: REACH }), signal)
+    signal.throwIfAborted()
+    const against = bot.blockAt(c.against)
+    if (against?.boundingBox !== 'block') throw new Error(`nothing to place against at ${c.against.x},${c.against.y},${c.against.z} any more`)
+    await bot.equip(item, 'hand')
+    await bot.placeBlock(against, c.pos.minus(c.against))
+    const placed = bot.blockAt(c.pos)
+    if (!placed || placed.boundingBox === 'empty') throw new Error(`the ${c.item} was not placed`)
+    return `placed ${placed.name} at ${c.pos.x},${c.pos.y},${c.pos.z}`
+  },
   async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
     const target = start.offset(c.dx * EXPLORE_DISTANCE, 0, c.dz * EXPLORE_DISTANCE)

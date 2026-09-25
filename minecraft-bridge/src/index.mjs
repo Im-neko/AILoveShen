@@ -13,6 +13,10 @@
 //                             （design: モデルの設計図。できた家とともに取っておく。site: 建てる場所 {x, z}。
 //                             建ち終わると家になり、前の家は formerHomes に残る）
 //   GET  /build-plan       -> 建築の状態（placed/total、原点、場所、まだないブロックの先頭）
+//   POST /tool {name, args} -> 道具を 1 つ呼ぶ（設計書 21）: { ok, result, seconds, refused? }。行動の道具は /act と同じ経路で
+//                             実行する。断るとき（安全の制約、引数が世界と合わない）は refused: true と理由
+//   GET  /state            -> 共通の状態（実行中の行動の進み具合、まわりの形、モブ、欲求）。見張りの質問と道具の選択が見る
+//   POST /abort {reason}   -> 実行中の行動を理由をつけて止める: { aborted, action? | why }。終わった行動には何もしない
 //
 // 設計: docs/design/11_primitive_actions.md
 // 環境変数: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
@@ -24,7 +28,9 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { summarize, bearing } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
-import { createRunner } from './runner.mjs'
+import { createRunner, abortCurrent } from './runner.mjs'
+import { createTools } from './tools.mjs'
+import { sharedState } from './state.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
 import { Knowledge } from './knowledge.mjs'
@@ -107,6 +113,15 @@ const run = createRunner(bot, state, {
   }
 })
 
+const callTool = createTools({
+  bot,
+  state,
+  knowledge,
+  run,
+  candidates: () => decisionView().candidates,
+  check: (specs) => checkConditions(specs, bot, state, knowledge, snapshot(bot, state))
+})
+
 async function act (id) {
   if (state.reflex) return { ok: false, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
   const c = decisionView().candidates.find((x) => x.id === id)
@@ -160,6 +175,19 @@ async function handle (req, res) {
     const { id } = await readJson(req)
     if (state.busy) return send(res, 409, { error: 'busy' })
     return send(res, 200, await act(id))
+  }
+  if (req.method === 'POST' && req.url === '/tool') {
+    const { name, args } = await readJson(req)
+    const r = await callTool(name, args ?? {})
+    console.log(`[tool] ${name} ${JSON.stringify(args ?? {})}: ${r.refused ? '断った' : r.ok ? '成功' : '失敗'} ${typeof r.result === 'string' ? r.result : '(調べた)'}`)
+    return send(res, 200, r)
+  }
+  if (req.method === 'GET' && req.url === '/state') {
+    return send(res, 200, sharedState(bot, state, needs))
+  }
+  if (req.method === 'POST' && req.url === '/abort') {
+    const { reason } = await readJson(req)
+    return send(res, 200, await abortCurrent(state, String(reason ?? 'aborted')))
   }
   if (req.method === 'PUT' && req.url === '/build-plan') {
     state.plan = new BuildPlan(await readJson(req))

@@ -189,6 +189,18 @@ export function inHouse (state, p, margin = 0) {
     p.y >= o.y - 1 && p.y <= o.y + height
 }
 
+// 道具（設計書 21）で名指しされても壊さない・置かない所: 今の家と、建てている家。前の家は
+// 名指しされれば掘ってよい（town4d: 置いてきたベッドを取りに戻れなかった）。理由か null を返す
+export function protectedReason (state, p, margin = 0) {
+  if (state.home && inBuilt(state.home, p, margin)) return 'it is part of the current home'
+  const o = state.plan?.origin
+  if (!o) return null
+  const { width, depth, height } = state.plan.size
+  const inPlan = p.x >= o.x - margin && p.x < o.x + width + margin && p.z >= o.z - margin && p.z < o.z + depth + margin &&
+    p.y >= o.y - 1 && p.y <= o.y + height
+  return inPlan ? 'it is part of the house being built' : null
+}
+
 function inBuilt (h, p, margin) {
   return p.x >= h.min.x - 1 - margin && p.x <= h.max.x + 1 + margin && p.z >= h.min.z - 1 - margin &&
       p.z <= h.max.z + 1 + margin && p.y >= h.min.y - 1 && p.y <= h.min.y + HOME_HEIGHT

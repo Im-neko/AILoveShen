@@ -36,10 +36,7 @@ export function ground (bot, state, knowledge, world, status) {
   for (const leaf of status?.leaves ?? []) out.push(...fromLeaf(bot, state, world, leaf))
   out.push(...forNeeds(bot, state, knowledge))
   const home = state.home
-  const inside = isInside(bot, home)
-  const day = dayPhase(bot.time.timeOfDay) === 'day'
-  const danger = dangerOutside(bot, home)
-  const sheltering = inside && (!day || danger.length > 0)
+  const { inside, day, danger, sheltering } = shelterOf(bot, home)
   // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている
   const unique = [...out.reduce((m, c) => m.has(c.id) ? m : m.set(c.id, c), new Map()).values()]
   const safe = sheltering ? unique.filter((c) => c.confront || !needsOutside(c, home)) : unique
@@ -68,6 +65,15 @@ export function ground (bot, state, knowledge, world, status) {
     safe.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10, purpose: 'nothing else can be done now' })
   }
   return { candidates: safe, withheld }
+}
+
+// 家に避難しているか: 家の中にいて、夜か、ドアの前に敵対モブがいる。避難中は外での行動を出さない
+// （候補）・断る（道具、設計書 21）
+export function shelterOf (bot, home) {
+  const inside = isInside(bot, home)
+  const day = dayPhase(bot.time.timeOfDay) === 'day'
+  const danger = dangerOutside(bot, home)
+  return { inside, day, danger, sheltering: inside && (!day || danger.length > 0) }
 }
 
 // 自然回復には満腹度がほぼ満タンである必要がある
