@@ -7,6 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from ailoveshen.domain.value_objects import Screenshot
+
 
 @dataclass(frozen=True)
 class ToolSpec:
@@ -65,6 +67,7 @@ class ITextGenerator(ABC):
         schema: dict[str, Any],
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
+        images: Sequence[Screenshot] = (),
     ) -> dict[str, Any]:
         """
         スキーマに従う JSON オブジェクトを生成する。
@@ -74,6 +77,7 @@ class ITextGenerator(ABC):
             schema: 期待するオブジェクトの JSON Schema（ただの dict。モデルに依存しない）
             system_instruction: システム指示（キャラクターの前提）
             purpose: 用途の名前（generate と同じ）
+            images: プロンプトに添える画像（配信の画面。docs/design/23）
 
         Returns:
             パースした JSON オブジェクト。
@@ -90,6 +94,7 @@ class ITextGenerator(ABC):
         tools: Sequence[ToolSpec],
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
+        images: Sequence[Screenshot] = (),
     ) -> ToolChoice:
         """
         道具を必ず 1 つ選ばせる（設計書 21）。呼び出しごとに独立で、会話の履歴は持ち越さない。
@@ -99,6 +104,7 @@ class ITextGenerator(ABC):
             tools: 選べる道具
             system_instruction: システム指示（キャラクターの前提）
             purpose: 用途の名前（generate と同じ）
+            images: プロンプトに添える画像（配信の画面）
 
         Returns:
             モデルが呼んだ道具と引数（検証する前のもの）

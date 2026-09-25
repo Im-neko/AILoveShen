@@ -65,10 +65,11 @@ class FakeTextGenerator(ITextGenerator):
         schema: dict[str, Any],
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
+        images=(),
     ) -> dict[str, Any]:
         raise NotImplementedError("会話のデモはプレーンテキストしか使わない")
 
-    async def choose_tool(self, prompt, tools, system_instruction=None, purpose=None):
+    async def choose_tool(self, prompt, tools, system_instruction=None, purpose=None, images=()):
         raise NotImplementedError("会話のデモは道具を使わない")
 
     async def close(self) -> None:

@@ -392,3 +392,37 @@ class TestGenerationLog:
             await _generator(generation_log=log).generate("p", purpose="reply")
         assert "down" in log.recent()[0]["error"]
         assert log.recent()[0]["purpose"] == "reply"
+
+
+class TestImages:
+    """画面の画像（docs/design/23）: テキストの後に画像の部分を並べ、解像度を下げる。"""
+
+    @pytest.mark.asyncio
+    async def test_images_follow_the_prompt_and_only_their_metadata_is_logged(self, mock_client):
+        from ailoveshen.domain.value_objects import Screenshot
+        from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+
+        mock_client.return_value.aio.models.generate_content.return_value = _response("{}")
+        log = InMemoryGenerationLog()
+        shot = Screenshot(data=b"\xff\xd8jpeg", mime_type="image/jpeg")
+
+        await _generator(generation_log=log).generate_json(
+            "見比べて", {"type": "object"}, purpose="screen_review", images=[shot]
+        )
+
+        kwargs = mock_client.return_value.aio.models.generate_content.call_args.kwargs
+        text, image = kwargs["contents"]
+        assert text.text == "見比べて"
+        assert (image.inline_data.data, image.inline_data.mime_type) == (shot.data, "image/jpeg")
+        assert kwargs["config"].media_resolution == types.MediaResolution.MEDIA_RESOLUTION_LOW
+        [entry] = log.recent()
+        [meta] = entry["images"]
+        assert meta["bytes"] == len(shot.data) and "data" not in meta
+        assert log.image(meta["id"]) == (shot.data, "image/jpeg")
+
+    @pytest.mark.asyncio
+    async def test_without_images_the_prompt_is_sent_as_before(self, mock_client):
+        await _generator().generate("p")
+        kwargs = mock_client.return_value.aio.models.generate_content.call_args.kwargs
+        assert kwargs["contents"] == "p"
+        assert kwargs["config"].media_resolution is None

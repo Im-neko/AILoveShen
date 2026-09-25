@@ -10,6 +10,7 @@ from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.town import TownPlanner
+from ailoveshen.application.use_cases.vision import ScreenReviewer, VisionPolicy
 from ailoveshen.application.use_cases.watcher import ToolWatcher, WatchPolicy
 from ailoveshen.domain.entities import Conversation, MidGoalPlan
 from ailoveshen.domain.value_objects import Mission
@@ -32,6 +33,7 @@ from ailoveshen.infrastructure.config import (
     JevSettings,
     MinecraftSettings,
     MissionSettings,
+    OBSSettings,
 )
 from ailoveshen.presentation.services.game_service import GameService
 
@@ -66,6 +68,7 @@ def create_game_service(
     event_publisher: IEventPublisher,
     conversation: Conversation,
     generation_log: IGenerationLog | None = None,
+    obs: OBSSettings | None = None,
 ) -> GameService:
     """
     依存をすべてつないだゲームのエージェントのサービスを作る。
@@ -84,6 +87,8 @@ def create_game_service(
         conversation: 配信で話したこと（create_llm_service と共有する）。目標の決定が
             これを読み、話したことと食い違う目標を立てないようにする
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_llm_service と共有する）
+        obs: OBS の設定（settings.obs）。minecraft.vision.enabled で obs.game_source があれば、
+            配信の画面を Gemini に見せる（docs/design/23）。None なら見せない
 
     Returns:
         設定済みの GameService
@@ -115,6 +120,7 @@ def create_game_service(
         thinking_levels=gemini.thinking_levels,
         include_thoughts=gemini.include_thoughts,
         generation_log=generation_log,
+        media_resolution=gemini.media_resolution,
     )
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
@@ -125,6 +131,31 @@ def create_game_service(
         timeout_seconds=minecraft.request_timeout_seconds,
     )
     prompt_builder = GamePromptTemplateBuilder()
+    # 配信の画面を撮る（docs/design/23）。OBS が動いていなくても、画像なしで続く
+    screen = None
+    capture = None
+    if minecraft.vision.enabled and obs is not None and obs.game_source:
+        from ailoveshen.infrastructure.adapters.obs.obs_screen_capture import ObsScreenCapture
+
+        capture = ObsScreenCapture(
+            host=obs.host,
+            port=obs.port,
+            password=obs.password,
+            source=obs.game_source,
+            width=obs.screenshot_width,
+            quality=obs.screenshot_quality,
+            timeout_seconds=obs.timeout_seconds,
+            retry_seconds=obs.retry_seconds,
+        )
+        screen = ScreenReviewer(
+            capture=capture,
+            text_generator=text_generator,
+            prompt_builder=prompt_builder,
+            policy=VisionPolicy(
+                review_interval_seconds=minecraft.vision.review_interval_seconds,
+                failure_interval_seconds=minecraft.vision.failure_interval_seconds,
+            ),
+        )
     # control: tools（設計書 21）: Gemini が道具を呼び、Jev が実行中に質問に答える
     fast_judge = None
     tool_watcher = None
@@ -188,6 +219,7 @@ def create_game_service(
         notes=notes,
         control=minecraft.control,
         tool_watcher=tool_watcher,
+        screen=screen,
     )
     return GameService(
         start_play=start,
@@ -197,4 +229,5 @@ def create_game_service(
         action_selector=action_selector,
         mid_goals=mid_goals,
         fast_judge=fast_judge,
+        screen_capture=capture,
     )

@@ -44,6 +44,7 @@ game = [
 stream = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    "obsws-python>=1.7",
 ]
 all = [
     "ailoveshen[dev,tts,llm,game,stream]",

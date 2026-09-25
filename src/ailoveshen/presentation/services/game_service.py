@@ -11,6 +11,7 @@ from ailoveshen.application.ports.input.play import IAdvancePlay, IStartPlay
 from ailoveshen.application.ports.output.action_selector import IActionSelector
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
+from ailoveshen.application.ports.output.screen_capture import IScreenCapture
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.domain.entities import PlaySession
@@ -45,6 +46,7 @@ class GameService:
         action_selector: IActionSelector,
         mid_goals: MidGoalKeeper,
         fast_judge: IFastJudge | None = None,
+        screen_capture: IScreenCapture | None = None,
     ) -> None:
         """
         ゲームサービスを初期化する。
@@ -57,6 +59,7 @@ class GameService:
             action_selector: 行動の選択器。サービスと一緒に閉じる
             mid_goals: 中目標を持つ（チャットへの返答は、これを通して視聴者の頼みを加える）
             fast_judge: 道具の見張りの判断モデル（control: tools のとき）。サービスと一緒に閉じる
+            screen_capture: 配信の画面を撮るもの（OBS）。サービスと一緒に閉じる
         """
         self._start = start_play
         self._advance = advance_play
@@ -65,6 +68,7 @@ class GameService:
         self._action_selector = action_selector
         self._mid_goals = mid_goals
         self._fast_judge = fast_judge
+        self._screen_capture = screen_capture
         self._session: PlaySession | None = None
 
     @property
@@ -118,3 +122,5 @@ class GameService:
         await self._action_selector.close()
         if self._fast_judge is not None:
             await self._fast_judge.close()
+        if self._screen_capture is not None:
+            await self._screen_capture.close()

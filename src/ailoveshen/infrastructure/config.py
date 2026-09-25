@@ -64,6 +64,7 @@ DEFAULT_THINKING_LEVELS = {
     "tool_after_failure": "medium",
     "commentary": "low",
     "reply": "low",
+    "screen_review": "medium",
 }
 
 
@@ -84,6 +85,8 @@ class GeminiSettings:
     # デバッグ: 思考の要約も返させ、直近の呼び出しを目標ボードの /api/debug/gemini に出す
     include_thoughts: bool = True
     debug_log_size: int = 50
+    # 画像を添えるときの解像度（low / medium / high。低いほど画像のトークンが少ない）
+    media_resolution: str = "low"
     retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
     rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
 
@@ -153,6 +156,15 @@ class WatchSettings:
 
 
 @dataclass
+class VisionSettings:
+    """配信の画面を Gemini に見せる（docs/design/23 §2）。撮り方は obs の設定。"""
+
+    enabled: bool = True
+    review_interval_seconds: float = 240.0  # 定期の見直し
+    failure_interval_seconds: float = 60.0  # 失敗の後に画像を添える最短の間隔
+
+
+@dataclass
 class MinecraftSettings:
     """Minecraft ブリッジへの接続、エージェント、大目標の設定。"""
 
@@ -170,6 +182,7 @@ class MinecraftSettings:
     # tools（Gemini が道具を呼ぶ）
     control: str = "candidates"
     watch: WatchSettings = field(default_factory=lambda: WatchSettings())
+    vision: VisionSettings = field(default_factory=lambda: VisionSettings())
 
 
 @dataclass
@@ -231,6 +244,13 @@ class OBSSettings:
     host: str = "localhost"
     port: int = 4455
     password: str = ""
+    # 配信の画面を Gemini に見せる（docs/design/23）: ゲームを映しているソースの名前。
+    # シーン全体は撮らない（目標ボードなどが映り込む）。空なら撮らない
+    game_source: str = "Minecraft"
+    screenshot_width: int = 768
+    screenshot_quality: int = 70
+    timeout_seconds: float = 3.0
+    retry_seconds: float = 60.0
 
 
 @dataclass
@@ -385,6 +405,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             },
             include_thoughts=gemini_data.get("include_thoughts", True),
             debug_log_size=gemini_data.get("debug_log_size", 50),
+            media_resolution=gemini_data.get("media_resolution", "low"),
             retry=GeminiRetrySettings(
                 max_attempts=retry_data.get("max_attempts", 3),
                 base_delay_seconds=retry_data.get("base_delay_seconds", 1.0),
@@ -427,6 +448,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         agent_data = mc_data.get("agent", {})
         mission_data = mc_data.get("mission", {})
         watch_data = mc_data.get("watch", {})
+        vision_data = mc_data.get("vision", {})
         defaults = MinecraftSettings()
         watch_defaults = defaults.watch
         mission_defaults = defaults.mission
@@ -468,6 +490,15 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 ),
                 record_dir=watch_data.get("record_dir", watch_defaults.record_dir),
             ),
+            vision=VisionSettings(
+                enabled=vision_data.get("enabled", defaults.vision.enabled),
+                review_interval_seconds=vision_data.get(
+                    "review_interval_seconds", defaults.vision.review_interval_seconds
+                ),
+                failure_interval_seconds=vision_data.get(
+                    "failure_interval_seconds", defaults.vision.failure_interval_seconds
+                ),
+            ),
         )
 
     if "tts" in data:
@@ -495,10 +526,16 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
 
     if "obs" in data:
         obs_data = data["obs"]
+        obs_defaults = OBSSettings()
         settings.obs = OBSSettings(
             host=obs_data.get("host", "localhost"),
-            port=obs_data.get("port", 4455),
+            port=int(obs_data.get("port", 4455)),
             password=obs_data.get("password", ""),
+            game_source=obs_data.get("game_source", obs_defaults.game_source) or "",
+            screenshot_width=obs_data.get("screenshot_width", obs_defaults.screenshot_width),
+            screenshot_quality=obs_data.get("screenshot_quality", obs_defaults.screenshot_quality),
+            timeout_seconds=obs_data.get("timeout_seconds", obs_defaults.timeout_seconds),
+            retry_seconds=obs_data.get("retry_seconds", obs_defaults.retry_seconds),
         )
 
     if "logging" in data:

@@ -899,6 +899,7 @@ class Activity:
     recent_goals: tuple[GoalOutcome, ...] = ()
     notes: tuple[Note, ...] = ()  # 自分のメモ（確かめていない）
     intent: str = ""  # 道具で操作しているとき、今やろうとしていること（配信者が道具に添えた 1 文）
+    screen_note: Optional["ScreenNote"] = None  # 画面で見たこと（確かめていない）
 
 
 @dataclass(frozen=True)
@@ -1047,3 +1048,43 @@ class ToolOutcome:
         return ActionResult(
             action_id=self.call.describe(), ok=self.ok, result=self.result, seconds=self.seconds
         )
+
+
+# =============================================================================
+# 配信の画面（docs/design/23_screen_vision.md）
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Screenshot:
+    """
+    配信の画面（ゲームのソース）の 1 枚。
+
+    Raises:
+        ValueError: データが空か、画像の形式でないとき。
+    """
+
+    data: bytes = field(repr=False)
+    mime_type: str
+    taken_at: datetime = field(default_factory=_utc_now)
+    width: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        """画像を検証する。"""
+        if not self.data:
+            raise ValueError("screenshot data must not be empty")
+        if not self.mime_type.startswith("image/"):
+            raise ValueError(f"not an image type: {self.mime_type}")
+
+
+@dataclass(frozen=True)
+class ScreenNote:
+    """
+    定期の見直しで配信者（Gemini）が画面について書いたこと。画像の解釈で、確かめていない
+    （世界の状態とは別に扱う。完了の判定には使わない）。
+    """
+
+    seen: str
+    concern: str = ""
+    matches_goal: bool = True
+    taken_at: datetime = field(default_factory=_utc_now)

@@ -66,10 +66,13 @@ gemini:
     tool_after_failure: "medium"
     commentary: "low"
     reply: "low"               # a viewer is waiting
+    screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
   # Debugging: ask for thought summaries and keep the last calls (purpose, level, thoughts,
   # output, tokens) for GET /api/debug/gemini and /debug/gemini on the goal board (--board-port)
   include_thoughts: true
   debug_log_size: 50
+  # Resolution of attached screenshots (low / medium / high): lower costs fewer image tokens
+  media_resolution: "low"
 
   # Retry settings (max_attempts includes the original request;
   # retried on 408/429/5xx only)
@@ -206,6 +209,14 @@ obs:
   host: "localhost"
   port: 4455
   password: "${OBS_PASSWORD:-}"
+  # Gemini sees the stream screen (docs/design/23): the name of the OBS source that shows the
+  # game (the POV client on 127.0.0.1:25578). Never the whole scene (the goal board would show).
+  # Empty: no screenshots. Without OBS the play goes on text only.
+  game_source: "${OBS_GAME_SOURCE:-Minecraft}"
+  screenshot_width: 768
+  screenshot_quality: 70
+  timeout_seconds: 3
+  retry_seconds: 60        # after a failed capture, no capture for this long
 
   # Scene name mapping (configure actual names in OBS)
   scenes:
@@ -278,6 +289,12 @@ minecraft:
     act_on_progress: false   # the code's "is it progressing?" only records until it beats a rule
     act_on_questions: true   # Gemini's own watch questions stop / wake / report maybe-done
     record_dir: "logs/watch" # one JSONL per run: state, questions, answers, tokens (empty: none)
+
+  # Showing Gemini the stream screen (docs/design/23; captured from OBS, see obs.game_source)
+  vision:
+    enabled: true
+    review_interval_seconds: 240   # periodic check: does the screen match the goal?
+    failure_interval_seconds: 60   # a screenshot goes with a rethink after failure at most this often
 
   # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
   # mid goals are worked on from the top, completed when their conditions hold in the world.

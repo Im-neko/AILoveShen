@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from ailoveshen.domain.value_objects import (
     HERE_SITE,
@@ -22,6 +23,7 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Note,
     NoteKind,
+    ScreenNote,
     TownSite,
 )
 
@@ -151,6 +153,8 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     lines.append(f"- 今の小目標{now}: {_format_goal(activity.goal, activity.observation, titles)}")
     if activity.intent:
         lines.append(f"- 今やろうとしていること: {activity.intent}")
+    if activity.screen_note is not None:
+        lines.append(_format_screen_note(activity.screen_note))
     if activity.observation is not None:
         lines.append(_format_situation(activity.observation))
     lines.append("- これまでの小目標（古い順）:")
@@ -338,6 +342,16 @@ def _format_note(note: Note, with_ids: bool) -> str:
     note_id = f"{note.id} " if with_ids else ""
     days = f"（{note.written_day} 日目に書いた、{note.expires_day} 日目まで）"
     return f"{note_id}[{NOTE_KINDS[note.kind]}] {note.text}{about.get(note.kind, '')}{days}"
+
+
+def _format_screen_note(note: ScreenNote) -> str:
+    """画面の見直しで書いたこと: 画像の解釈で、確かめていない（ゲームの状況とは別の行）。"""
+    minutes = max(0, int((datetime.now(timezone.utc) - note.taken_at).total_seconds() // 60))
+    concern = f"。気になったこと: {note.concern}" if note.concern else ""
+    fit = "" if note.matches_goal else "。目標と合っていないように見えた"
+    return (
+        f"- 画面で見たこと（{minutes} 分前、画像の解釈で確かめていない）: {note.seen}{concern}{fit}"
+    )
 
 
 def _format_home(obs: GameObservation) -> str:

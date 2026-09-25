@@ -56,6 +56,13 @@
       if (c.finish_reason) head.append(el('span', null, c.finish_reason))
       box.append(head)
       if (c.error) box.append(section('エラー', c.error, 'error'))
+      for (const img of c.images || []) {
+        const pic = el('img')
+        pic.src = `/api/debug/screen/${img.id}`
+        pic.alt = '添えた画面（もう消えていれば表示されない）'
+        pic.style.cssText = 'max-width: 480px; width: 100%; margin-top: 6px; border-radius: 4px'
+        box.append(el('h4', null, '添えた画面'), pic)
+      }
       if (c.thoughts) box.append(section('思考（要約）', c.thoughts, 'thoughts'))
       for (const t of c.tool_calls || []) box.append(section('道具', `${t.name} ${JSON.stringify(t.args, null, 1)}`, 'tool'))
       if (c.output) {

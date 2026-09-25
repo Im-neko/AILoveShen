@@ -244,6 +244,27 @@ $recent
 - 同じ失敗を繰り返さない。断られた・失敗した理由を読んで、別の手を選ぶ
 - 夜に家の中にいるときは、外に出る道具は断られる
 - 座標は整数。y は足元の高さ
+- look_screen（使えるときだけ出ている）は配信の画面を撮り、次の選択に画像として添える。
+  文字の状態で分からないとき（地形、何が起きているか）に使う。画像で完了は決めない
+- 画像が添えてあれば、それはいま配信に映っている自分の視点
+""")
+
+SCREEN_REVIEW_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者です。添えた画像は、いま配信に映っている
+自分の視点の画面です。下の「配信者が今していること」と見比べてください。
+
+## 配信者が今していること
+$activity
+
+## 答えること
+- seen: 画面に見えること（1〜2 文。見えたものだけ。見えないことは推測しない）
+- matches_goal: 画面の様子が、今の小目標と今やろうとしていることに合っているか
+- concern: 気になること（穴に落ちている、同じ所で止まっている、夜なのに外、敵が近い、
+  など。なければ空）
+- rethink: 今の小目標をやめて考え直すべきか。はっきり食い違うか、危ないときだけ true
+
+注意: 目標を達成したかは画像では決めない（ゲームの状態で確かめている）。画像が暗い・
+よく見えないときは、見えないと書いて rethink は false にする。
 """)
 
 ACTION_INSTRUCTIONS = (
@@ -399,6 +420,10 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             or "- なし",
             recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
         )
+
+    def build_screen_review_prompt(self, activity: Activity) -> str:
+        """配信の画面と、配信者が今していることを見比べさせるプロンプト。"""
+        return SCREEN_REVIEW_TEMPLATE.substitute(activity=format_activity(activity))
 
     def build_action_context(
         self, goal: Goal, observation: GameObservation

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 
 class IGenerationLog(ABC):
@@ -20,4 +20,14 @@ class IGenerationLog(ABC):
     @abstractmethod
     def recent(self, limit: int = 20) -> list[dict[str, Any]]:
         """新しい順に最大 limit 件。"""
+        ...
+
+    @abstractmethod
+    def record_image(self, data: bytes, mime_type: str) -> str:
+        """呼び出しに添えた画像を残し、id を返す（直近の数枚だけ持つ）。"""
+        ...
+
+    @abstractmethod
+    def image(self, image_id: str) -> Optional[tuple[bytes, str]]:
+        """残した画像（データと形式）。もう消えていれば None。"""
         ...

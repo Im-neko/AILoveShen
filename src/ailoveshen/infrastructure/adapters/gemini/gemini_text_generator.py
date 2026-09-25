@@ -20,6 +20,7 @@ from ailoveshen.application.ports.output.text_generator import (
     ToolSpec,
 )
 from ailoveshen.domain.exceptions import TextGenerationError
+from ailoveshen.domain.value_objects import Screenshot
 
 # Gemini 3.8 Flash が受け付けるのはこのレベルだけ（"minimal" は API が拒否する）
 SUPPORTED_THINKING_LEVELS = ("low", "medium", "high")
@@ -51,6 +52,7 @@ class GeminiTextGenerator(ITextGenerator):
         thinking_levels: Optional[Mapping[str, str]] = None,
         include_thoughts: bool = False,
         generation_log: Optional[IGenerationLog] = None,
+        media_resolution: str = "low",
     ) -> None:
         """
         Gemini のクライアントを初期化する。
@@ -69,6 +71,8 @@ class GeminiTextGenerator(ITextGenerator):
                 "default" があれば thinking_level より優先する
             include_thoughts: 思考の要約も返させる（デバッグ用。generation_log に残す）
             generation_log: 呼び出しごとの記録（用途、深さ、思考の要約、出力、トークン）の残し先
+            media_resolution: 画像を添えるときの解像度（"low"、"medium"、"high"）。低いほど
+                画像のトークンが少ない（docs/design/23）
 
         Raises:
             ValueError: api_key が空か、thinking_level に対応していないとき。
@@ -84,6 +88,14 @@ class GeminiTextGenerator(ITextGenerator):
                 )
         self._levels = levels
         self._include_thoughts = include_thoughts
+        resolutions = {
+            "low": types.MediaResolution.MEDIA_RESOLUTION_LOW,
+            "medium": types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+            "high": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+        }
+        if media_resolution not in resolutions:
+            raise ValueError(f"media_resolution must be one of {list(resolutions)}")
+        self._media_resolution = resolutions[media_resolution]
         self._generation_log = generation_log
 
         self._model = model
@@ -140,6 +152,7 @@ class GeminiTextGenerator(ITextGenerator):
         schema: dict[str, Any],
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
+        images: Sequence[Screenshot] = (),
     ) -> dict[str, Any]:
         """
         JSON Schema に沿った JSON オブジェクトを生成する（Gemini の構造化出力）。
@@ -154,7 +167,7 @@ class GeminiTextGenerator(ITextGenerator):
                 "response_json_schema": schema,
             }
         )
-        text = await self._generate_text(prompt, config, purpose)
+        text = await self._generate_text(prompt, config, purpose, images)
         try:
             data = json.loads(text)
         except json.JSONDecodeError as e:
@@ -169,6 +182,7 @@ class GeminiTextGenerator(ITextGenerator):
         tools: Sequence[ToolSpec],
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
+        images: Sequence[Screenshot] = (),
     ) -> ToolChoice:
         """
         function calling で道具を必ず 1 つ呼ばせる（mode ANY）。呼び出しごとに独立。
@@ -193,7 +207,7 @@ class GeminiTextGenerator(ITextGenerator):
                 ),
             }
         )
-        response = await self._request(prompt, config, purpose)
+        response = await self._request(prompt, config, purpose, images)
         calls = response.function_calls
         if not calls:
             raise TextGenerationError(
@@ -224,10 +238,14 @@ class GeminiTextGenerator(ITextGenerator):
         await self._client.aio.aclose()
 
     async def _generate_text(
-        self, prompt: str, config: types.GenerateContentConfig, purpose: Optional[str]
+        self,
+        prompt: str,
+        config: types.GenerateContentConfig,
+        purpose: Optional[str],
+        images: Sequence[Screenshot] = (),
     ) -> str:
         """API を呼び、空の出力を診断してテキストを返す。"""
-        response = await self._request(prompt, config, purpose)
+        response = await self._request(prompt, config, purpose, images)
         text = (response.text or "").strip()
         finish_reason = self._finish_reason(response)
 
@@ -248,30 +266,41 @@ class GeminiTextGenerator(ITextGenerator):
         return text
 
     async def _request(
-        self, prompt: str, config: types.GenerateContentConfig, purpose: Optional[str]
+        self,
+        prompt: str,
+        config: types.GenerateContentConfig,
+        purpose: Optional[str],
+        images: Sequence[Screenshot] = (),
     ) -> types.GenerateContentResponse:
-        """レート制限と使用量のログ、呼び出しの記録を付けて API を呼ぶ。"""
+        """レート制限、使用量のログ、呼び出しの記録つきで API を呼ぶ。画像はテキストの後。"""
         await self._wait_for_rate_limit()
 
+        contents: Any = prompt
+        if images:
+            contents = [
+                types.Part.from_text(text=prompt),
+                *[types.Part.from_bytes(data=i.data, mime_type=i.mime_type) for i in images],
+            ]
+            config = config.model_copy(update={"media_resolution": self._media_resolution})
         started = time.monotonic()
         try:
             response = await self._client.aio.models.generate_content(
                 model=self._model,
-                contents=prompt,
+                contents=contents,
                 config=config,
             )
         except errors.APIError as e:
             error = TextGenerationError(f"Gemini API error {e.code}: {e.message}")
-            self._record(prompt, config, purpose, started, error=str(error))
+            self._record(prompt, config, purpose, started, images, error=str(error))
             raise error from e
         except Exception as e:
             error = TextGenerationError(f"Gemini request failed: {e}")
-            self._record(prompt, config, purpose, started, error=str(error))
+            self._record(prompt, config, purpose, started, images, error=str(error))
             raise error from e
 
         elapsed_ms = int((time.monotonic() - started) * 1000)
         self._log_usage(response, elapsed_ms, config)
-        self._record(prompt, config, purpose, started, response=response)
+        self._record(prompt, config, purpose, started, images, response=response)
         return response
 
     def _record(
@@ -280,6 +309,7 @@ class GeminiTextGenerator(ITextGenerator):
         config: types.GenerateContentConfig,
         purpose: Optional[str],
         started: float,
+        images: Sequence[Screenshot] = (),
         response: Optional[types.GenerateContentResponse] = None,
         error: Optional[str] = None,
     ) -> None:
@@ -293,6 +323,15 @@ class GeminiTextGenerator(ITextGenerator):
             "thinking_level": str(getattr(level, "value", level) or "").lower() or None,
             "elapsed_ms": int((time.monotonic() - started) * 1000),
             "prompt": prompt,
+            # 画像そのものは入れない（記録は 2 秒ごとに読まれる）。id で別に取れる
+            "images": [
+                {
+                    "id": self._generation_log.record_image(i.data, i.mime_type),
+                    "mime_type": i.mime_type,
+                    "bytes": len(i.data),
+                }
+                for i in images
+            ],
         }
         if error is not None:
             entry["error"] = error

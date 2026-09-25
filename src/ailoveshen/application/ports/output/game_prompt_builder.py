@@ -149,6 +149,14 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_screen_review_prompt(self, activity: Activity) -> str:
+        """
+        配信の画面（添えた画像）と、配信者が今していることを見比べさせるプロンプト
+        （docs/design/23 §2 の定期の見直し）。
+        """
+        ...
+
+    @abstractmethod
     def build_action_context(
         self, goal: Goal, observation: GameObservation
     ) -> tuple[dict[str, Any], str]:

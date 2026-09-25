@@ -21,9 +21,10 @@ google-genai>=2.25
 httpx>=0.25
 typesafe-sdk>=0.7.1
 
-# stream: 目標ボード、デバッグのエンドポイント
+# stream: 目標ボード、デバッグのエンドポイント、OBS（配信の画面を Gemini に見せる）
 fastapi>=0.110
 uvicorn>=0.29
+obsws-python>=1.7
 
 # tts: TTS サーバーのクライアントと音声の再生
 sounddevice>=0.4

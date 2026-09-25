@@ -6,6 +6,7 @@
 - GET /api/debug/gemini  デバッグ: Gemini の直近の呼び出し（用途、考える深さ、思考の要約、出力、
                          道具の呼び出し、トークン、プロンプト）。新しい順、?limit=N（既定 20）
 - GET /debug/gemini      上を 2 秒ごとに読んで表示するページ（ブラウザや OBS のブラウザソース）
+- GET /api/debug/screen/{id}  呼び出しに添えた画面の画像（直近の数枚だけ）
 
 読み取り専用: プレイセッションが持つものを出すだけで、変えることはない。プレイのループと
 同じプロセスで動く（`GoalBoard.serve`）。設計: docs/design/13_goal_hierarchy.md §7。
@@ -22,7 +23,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from loguru import logger
 
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
@@ -159,6 +160,7 @@ class GoalBoard:
         self,
         activity: Callable[[], Activity | None],
         gemini_calls: Callable[[int], list[dict[str, Any]]] | None = None,
+        gemini_image: Callable[[str], tuple[bytes, str] | None] | None = None,
     ) -> None:
         """
         ボードを初期化する。
@@ -168,9 +170,11 @@ class GoalBoard:
                 始める前は None）
             gemini_calls: Gemini の直近の呼び出し（新しい順に最大 N 件）を返すもの。
                 None なら /api/debug/gemini は空のリストを返す
+            gemini_image: 呼び出しに添えた画像（データと形式）を id で返すもの
         """
         self._activity = activity
         self._gemini_calls = gemini_calls
+        self._gemini_image = gemini_image
         self._listeners: set[asyncio.Queue[str]] = set()
         self.app = self._create_app()
 
@@ -235,6 +239,14 @@ class GoalBoard:
             if self._gemini_calls is None:
                 return []
             return self._gemini_calls(max(1, min(limit, 200)))
+
+        @app.get("/api/debug/screen/{image_id}")
+        async def gemini_screen(image_id: str) -> Response:
+            found = self._gemini_image(image_id) if self._gemini_image else None
+            if found is None:
+                return Response(status_code=404)
+            data, mime_type = found
+            return Response(content=data, media_type=mime_type)
 
         @app.get("/debug/gemini", response_class=HTMLResponse)
         async def gemini_page() -> str:

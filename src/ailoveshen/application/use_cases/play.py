@@ -29,12 +29,14 @@ from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.tool_catalog import (
     ACTION_TOOLS,
+    LOOK_SCREEN,
     ToolCallError,
     is_query,
     parse_tool_call,
     tool_specs,
 )
 from ailoveshen.application.use_cases.town import TownPlanner
+from ailoveshen.application.use_cases.vision import ScreenReviewer
 from ailoveshen.application.use_cases.watcher import ToolWatcher
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, Notebook, PlaySession
 from ailoveshen.domain.events import (
@@ -57,6 +59,7 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     MessageRole,
+    Screenshot,
     ToolCall,
     ToolOutcome,
     is_survival,
@@ -226,6 +229,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         max_goal_attempts: int = 3,
         control: str = "candidates",
         tool_watcher: Optional[ToolWatcher] = None,
+        screen: Optional[ScreenReviewer] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -246,6 +250,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                 相手として残す）。"tools" は LLM が道具を呼び、見張り（Jev）が実行中に質問に
                 答える（設計書 21）
             tool_watcher: "tools" のとき、道具を実行して見張るもの
+            screen: 配信の画面を見せるもの（docs/design/23）。定期の見直し、失敗の後の考え直しに
+                画像を添える、道具モードの look_screen。None なら画面は見せない
 
         Raises:
             ValueError: control が不明か、"tools" なのに tool_watcher がないとき
@@ -267,6 +273,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._max_goal_attempts = max_goal_attempts
         self._control = control
         self._watcher = tool_watcher
+        self._screen = screen
         self._recent_tools: deque[ToolOutcome] = deque(maxlen=RECENT_TOOLS)
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
@@ -289,6 +296,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             )
 
         session.track_progress(obs)
+        if self._screen is not None:
+            # 定期の見直し。「考え直す」なら、下の判定で今の小目標が終わる
+            await self._screen.review_if_due(session)
         goal_changed = False
         if session.needs_new_goal(obs):
             await self._change_goal(session, obs)
@@ -343,8 +353,13 @@ class AdvancePlayUseCase(IAdvancePlay):
         選び直す（MAX_QUERIES_PER_STEP 回まで。その後は行動の道具だけを出す）。行動の道具は
         見張りつきで実行し、1 ステップはそれで終わる。
         """
-        specs = tool_specs()
+        specs = tool_specs(can_look=self._screen is not None)
         action_specs = [t for t in specs if t.name in ACTION_TOOLS]
+        images: list[Screenshot] = []  # 次の選択にだけ添える画面（ステップをまたがない）
+        last = self._recent_tools[-1] if self._recent_tools else None
+        if self._screen is not None and last is not None and not last.ok:
+            shot = await self._screen.after_failure()
+            images = [shot] if shot else []
         for attempt in range(MAX_QUERIES_PER_STEP + 1):
             state = await self._bridge.state()
             prompt = self._prompt_builder.build_tool_prompt(
@@ -356,7 +371,10 @@ class AdvancePlayUseCase(IAdvancePlay):
             last = self._recent_tools[-1] if self._recent_tools else None
             purpose = "tool_after_failure" if last is not None and not last.ok else "tool"
             offered = specs if attempt < MAX_QUERIES_PER_STEP else action_specs
-            choice = await self._text_generator.choose_tool(prompt, offered, purpose=purpose)
+            choice = await self._text_generator.choose_tool(
+                prompt, offered, purpose=purpose, images=images
+            )
+            images = []
             try:
                 call = parse_tool_call(choice)
             except ToolCallError as e:
@@ -379,6 +397,14 @@ class AdvancePlayUseCase(IAdvancePlay):
                 )
                 self._recent_tools.append(outcome)
                 break
+            if call.name == LOOK_SCREEN:
+                shot = await self._screen.look() if self._screen is not None else None
+                images = [shot] if shot else []
+                result = "the screen is attached to this prompt" if shot else "could not capture"
+                self._recent_tools.append(
+                    ToolOutcome(call=call, ok=shot is not None, result=result, seconds=0.0)
+                )
+                continue
             if is_query(call.name):
                 ok, result, seconds, refused = await self._bridge.run_tool(call.name, call.args)
                 self._recent_tools.append(
@@ -433,9 +459,14 @@ class AdvancePlayUseCase(IAdvancePlay):
         messages = self._conversation.recent_messages(self._history_limit)
         goals = _shown_goals(activity, reason)
         viewers = _viewers(messages)
-        # 行き詰まった・進まなかった後は深く考え直す（設計書 19 §7）
-        failed = " is stuck " in reason or " stalled " in reason
+        # 行き詰まった・進まなかった・画面で考え直すことになった後は、深く考え直す（19 §7）。
+        # 画面も添える（23 §2）
+        failed = any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: "))
         purpose = "goal_after_failure" if failed else "goal"
+        images: list[Screenshot] = []
+        if failed and self._screen is not None:
+            shot = await self._screen.after_failure()
+            images = [shot] if shot else []
         error = ""
         for attempt in range(1, self._max_goal_attempts + 1):
             prompt = self._prompt_builder.build_goal_prompt(
@@ -453,7 +484,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                 len(goals),
                 viewers,
             )
-            data = await self._text_generator.generate_json(prompt, schema, purpose=purpose)
+            data = await self._text_generator.generate_json(
+                prompt, schema, purpose=purpose, images=images
+            )
             try:
                 decision = parse_decision(data)
                 if decision.spec.predicate not in predicates:

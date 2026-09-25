@@ -28,6 +28,7 @@ from ailoveshen.domain.value_objects import (
     Mission,
     Note,
     NoteKind,
+    ScreenNote,
     TownDefinition,
     TownSite,
     TownStage,
@@ -561,6 +562,10 @@ class PlaySession(Entity):
     last_observation: Optional[GameObservation] = field(default=None, init=False)
     # 道具で操作しているとき、今やろうとしていること（実況と返答も見る。12 の一致）
     intent: str = field(default="", init=False)
+    # 定期の見直しで画面について書いたこと（確かめていない。docs/design/23）
+    screen_note: Optional[ScreenNote] = field(default=None, init=False)
+    # 次の切れ目で今の小目標を終わらせる理由（画面の見直しで「考え直す」になった）
+    rethink_reason: str = field(default="", init=False)
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -593,6 +598,7 @@ class PlaySession(Entity):
             recent_goals=self.recent_goals,
             notes=self.notebook.notes,
             intent=self.intent,
+            screen_note=self.screen_note,
         )
 
     @property
@@ -635,6 +641,8 @@ class PlaySession(Entity):
         if self.goal is None or obs.goal is None:
             return "no goal yet"
         name = self.goal.spec.describe()
+        if self.rethink_reason:
+            return f"goal {name} is reconsidered: {self.rethink_reason}"
         if obs.goal.met:
             return f"goal {name} is met"
         mid = self.goal.mid_goal_id
@@ -661,6 +669,17 @@ class PlaySession(Entity):
         self.stalled_steps = 0
         self.least_remaining = None
         self.intent = ""
+        self.rethink_reason = ""
+        self.updated_at = _utc_now()
+
+    def request_rethink(self, reason: str) -> None:
+        """次の切れ目で今の小目標を終わらせ、この理由で次の小目標を決めさせる。"""
+        self.rethink_reason = reason.strip()
+        self.updated_at = _utc_now()
+
+    def note_screen(self, note: ScreenNote) -> None:
+        """画面の見直しで書いたことを持つ（1 件だけ。新しいもので置き換える）。"""
+        self.screen_note = note
         self.updated_at = _utc_now()
 
     def set_intent(self, intent: str) -> None:

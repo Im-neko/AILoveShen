@@ -217,3 +217,21 @@ def test_debug_gemini_calls_as_json_and_a_page():
     assert "/api/debug/gemini" in client.get("/debug/gemini").text
     # 記録を渡していなければ空
     assert TestClient(GoalBoard(lambda: None).app).get("/api/debug/gemini").json() == []
+
+
+def test_debug_screen_images_by_id():
+    """呼び出しに添えた画面を id で返す（記録の JSON には画像そのものを入れない）。"""
+    from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+
+    log = InMemoryGenerationLog()
+    image_id = log.record_image(b"\xff\xd8jpeg", "image/jpeg")
+    client = TestClient(
+        GoalBoard(lambda: None, gemini_calls=log.recent, gemini_image=log.image).app
+    )
+    r = client.get(f"/api/debug/screen/{image_id}")
+    assert (r.status_code, r.content, r.headers["content-type"]) == (
+        200,
+        b"\xff\xd8jpeg",
+        "image/jpeg",
+    )
+    assert client.get("/api/debug/screen/img999").status_code == 404

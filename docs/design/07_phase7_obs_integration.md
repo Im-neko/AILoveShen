@@ -1,5 +1,7 @@
 # Phase 7: OBS Integration 詳細設計書 (Issue #6)
 
+> 2026-09-25: このうちスクリーンショット（`GetSourceScreenshot`、`obsws-python`）だけを先に作った。配信の画面を Gemini に見せるため: `docs/design/23_screen_vision.md`（`infrastructure/adapters/obs/obs_screen_capture.py`）。場面の切り替えと字幕はこの設計書のまま未実装。
+
 ## 1. 概要
 
 OBS Studioとの連携を実装し、配信の制御や画面切り替えなどを自動化します。

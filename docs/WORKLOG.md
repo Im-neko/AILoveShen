@@ -2,10 +2,21 @@
 
 **Active Phase**: 設計書 21（A の最初の版: Gemini が道具を呼んで操作し、Jev が実行中に Gemini の質問に答える）を実装した（`minecraft.agent.control: tools`、既定は今までの `candidates`）。実機ではまだ動かしていない（クラウドの環境に API キーと Minecraft サーバーがない）。次はユーザーの環境で `--control tools` を動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`（`feat/notes` と `feat/town-m1-m2` を取り込んだもの）
 **Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 475 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Test Status**: `pytest tests/` 491 passed, 1 skipped。ブリッジ `npm test` 117 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに今回のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### 配信の画面を Gemini に見せる（OBS、設計書 23） (2026-09-25)
+
+- ユーザーの問い「行き詰まったときや定期的に、画面のスクショを Gemini がチェックして軌道修正するようになっているか」→ なっていなかった。決定「OBS で良い。OBS 前提で進めて」
+- `ObsScreenCapture`（`infrastructure/adapters/obs/`）: `GetSourceScreenshot` で `obs.game_source`（既定 `Minecraft`、`.env` の `OBS_GAME_SOURCE`）だけを JPEG・幅 768 で撮る。シーン全体は撮らない（目標ボードが映る）。3 秒の上限、失敗したら 60 秒撮らない、ソースがなければ撮るのをやめる、例外は出さずに None（画像なしで続く）。`obsws-python` のロガーを WARNING にしてパスワードを出さない（テストあり）。`image/jpg` → `image/jpeg`
+- `ScreenReviewer`（`application/use_cases/vision.py`、ステップのループからだけ呼ぶ）: 定期の見直し（既定 240 秒、`screen_review` は medium）で画面と activity を見比べ、`rethink` なら `PlaySession.request_rethink` で次の切れ目に小目標を終わらせる（理由 `... is reconsidered: on screen: ...` → `goal_after_failure`）。失敗の後の小目標の決定と道具の選択に画像を添える（最短 60 秒）。道具モードの `look_screen`（Python が扱う調べもの。画像は同じステップの次の選択にだけ）
+- 画像から分かったことは `ScreenNote` として 1 件だけ、`stream_context` に「画面で見たこと（N 分前、画像の解釈で確かめていない）」として出す。完了の判定に使わない、Jev に渡さない
+- `ITextGenerator.generate_json` / `choose_tool` に `images`。Gemini はテキストの後に `Part.from_bytes`、`media_resolution`（既定 low）。模擬サーバーでリクエスト本文に `inlineData` と `mediaResolution: MEDIA_RESOLUTION_LOW` を確認（`inlineData` の中は `mime_type` と snake_case。実 API が受け付けるかは未確認）
+- デバッグ: 記録には画像の id・形式・大きさだけ、画像は直近 10 枚を `/api/debug/screen/<id>`、`/debug/gemini` に表示
+- 依存: `obsws-python`（extra `stream`、`requirements.txt`）。設定: `obs.game_source` ほか、`minecraft.vision`、`gemini.media_resolution`
+- 未確認（実機）: OBS への接続、実際の画像（縦横比）、3.8 Flash が Minecraft の画面をどれだけ読めるか、1 枚あたりのトークンと時間
 
 ### .env で環境変数、requirements.txt (2026-09-25)
 

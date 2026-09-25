@@ -415,3 +415,22 @@ class TestToolPrompt:
         assert "goto(x=1, y=70, z=2)「外に出る」: 断られた refused: staying inside" in prompt
         assert "失敗（見張り: woke up: q）" in prompt
         assert "- 今やろうとしていること: 外に出る" in prompt
+
+    def test_a_screen_note_is_marked_unverified_with_its_age(self):
+        from datetime import datetime, timedelta, timezone
+
+        from ailoveshen.domain.value_objects import ScreenNote
+
+        note = ScreenNote(
+            seen="暗い穴の底にいる",
+            concern="出られていない",
+            matches_goal=False,
+            taken_at=datetime.now(timezone.utc) - timedelta(minutes=3),
+        )
+        activity = Activity(mission=MISSION, goal=PLANKS, observation=_obs(), screen_note=note)
+        prompt = GamePromptTemplateBuilder().build_screen_review_prompt(activity)
+        assert (
+            "- 画面で見たこと（3 分前、画像の解釈で確かめていない）: 暗い穴の底にいる。"
+            "気になったこと: 出られていない。目標と合っていないように見えた"
+        ) in prompt
+        assert "目標を達成したかは画像では決めない" in prompt

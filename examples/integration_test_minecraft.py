@@ -125,6 +125,7 @@ async def run(
         event_publisher=event_bus,
         conversation=conversation,
         generation_log=gemini_calls,
+        obs=settings.obs,
     )
     llm = create_llm_service(
         gemini=settings.gemini,
@@ -144,7 +145,9 @@ async def run(
     if board_port is not None:
         from ailoveshen.presentation.web.goal_board import GoalBoard
 
-        goal_board = GoalBoard(activity, gemini_calls=gemini_calls.recent)
+        goal_board = GoalBoard(
+            activity, gemini_calls=gemini_calls.recent, gemini_image=gemini_calls.image
+        )
         goal_board.subscribe(event_bus)
         board = asyncio.create_task(goal_board.serve(port=board_port))
         print(f"[debug] Gemini の思考: http://127.0.0.1:{board_port}/debug/gemini", flush=True)

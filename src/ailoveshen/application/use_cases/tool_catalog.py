@@ -21,6 +21,8 @@ from ailoveshen.domain.value_objects import (
     WatchQuestion,
 )
 
+LOOK_SCREEN = "look_screen"
+
 
 class ToolCallError(ValueError):
     """道具の呼び出しが使えない（知らない道具、intent がない）。理由を配信者に返す。"""
@@ -126,11 +128,18 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"item": _str("アイテムかグループ（log、planks、food など）"), "count": _int("個数")},
         ["item"],
     ),
+    # Python が扱う（ブリッジには送らない）。画面を撮れるときだけ出す（docs/design/23）
+    LOOK_SCREEN: (
+        "配信の画面（自分の視点）を撮り、次の選択に画像として添える（すぐ返る）。"
+        "文字の状態では分からないとき（地形、何が起きているか）に使う",
+        {},
+        [],
+    ),
 }
 
 
-def tool_specs() -> list[ToolSpec]:
-    """配信者に渡す道具の一覧。"""
+def tool_specs(can_look: bool = False) -> list[ToolSpec]:
+    """配信者に渡す道具の一覧。`can_look` が偽なら look_screen を出さない。"""
     specs = []
     for name, (description, props, required) in ACTION_TOOLS.items():
         specs.append(
@@ -149,6 +158,8 @@ def tool_specs() -> list[ToolSpec]:
             )
         )
     for name, (description, props, required) in QUERY_TOOLS.items():
+        if name == LOOK_SCREEN and not can_look:
+            continue
         specs.append(
             ToolSpec(
                 name=name,
