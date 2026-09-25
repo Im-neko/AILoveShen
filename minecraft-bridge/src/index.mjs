@@ -22,15 +22,16 @@ import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
-import { summarize, round, threats, bearing } from './observe.mjs'
-import { configureMovements, PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CRITICAL } from './primitives.mjs'
+import { summarize, bearing } from './observe.mjs'
+import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
+import { createRunner } from './runner.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
 import { Knowledge } from './knowledge.mjs'
 import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
-import { ground, describe, needsOutside } from './candidates.mjs'
+import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
-import { loadState, saveState, settleHome, isInside, isDoorOpen, leaveHome, hasBed, houseAround } from './home.mjs'
+import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed } from './home.mjs'
 import { startReflex } from './reflex.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
@@ -97,64 +98,20 @@ function decisionView () {
 
 const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)] }
 
-// 候補を1つ実行する。タイムアウトか、ボットがダメージを受けたら中断する（反射: 判断する側は
-// そのあと攻撃してきた相手を見て、戦うか逃げるかを選べる）。中断すると経路移動と採掘を取り消し、
-// 実行関数が本当に止まるまで待つので、行動が重なることはない。
-async function act (id) {
-  if (state.reflex) return { ok: false, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
-  const c = decisionView().candidates.find((x) => x.id === id)
-  if (!c) return { ok: false, result: `${id} is not available now`, seconds: 0 }
-  state.busy = true
-  const t = Date.now()
-  const controller = new AbortController()
-  const abort = (reason) => {
-    if (controller.signal.aborted) return
-    controller.abort(new Error(reason))
-    if (bot.targetDigBlock) bot.stopDigging()
-    bot.pathfinder.setGoal(null)
-    bot.clearControlStates()
-  }
-  const timer = setTimeout(() => abort('timeout'), TIMEOUTS_MS[c.verb] ?? DEFAULT_TIMEOUT_MS)
-  const onHurt = (entity) => {
-    if (entity !== bot.entity) return
-    if (DAMAGE_TOLERANT.has(c.verb)) {
-      // 逃走は体力にかかわらず続ける。戦いはやめる
-      if (c.verb === 'attack' && bot.health <= HEALTH_CRITICAL) abort(`stopped: health critical (${round(bot.health)}/20)`)
-      return
-    }
-    const attacker = threats(bot)[0]?.e.name
-    abort(`interrupted: took damage${attacker ? ` (${attacker} nearby)` : ''}`)
-  }
-  bot.on('entityHurt', onHurt)
-  let ok = true
-  let result
-  let finished
-  state.current = { id, verb: c.verb, abort, done: new Promise((resolve) => { finished = resolve }) }
-  try {
-    const house = houseAround(bot, state)
-    if (house && needsOutside(c, house)) await leaveHome(bot, house, controller.signal, { confront: !!c.confront })
-    controller.signal.throwIfAborted()
-    result = await PRIMITIVES[c.verb](bot, state, c, controller.signal)
-    if (controller.signal.aborted) throw controller.signal.reason
-  } catch (e) {
-    ok = false
-    const reason = controller.signal.aborted ? controller.signal.reason : e
-    result = `failed: ${reason.message}`
-    abort(reason.message)
-  } finally {
-    clearTimeout(timer)
-    bot.off('entityHurt', onHurt)
-    state.busy = false
-    state.current = null
-    finished()
+// 候補を1つ実行する（実行の経路は runner.mjs。道具と同じ）
+const run = createRunner(bot, state, {
+  afterRun () {
     // 途中で見えたもの（変わるのは移動したあと）
     remember(state.memory, sightings(bot), bot.entity.position, worldAge())
     persist()
   }
-  const seconds = round((Date.now() - t) / 1000)
-  state.history.push({ action: id, ok, result, seconds })
-  console.log(`[act] ${id}: ${ok ? '成功' : '失敗'} ${result}（${seconds}秒）`)
-  return { ok, result, seconds }
+})
+
+async function act (id) {
+  if (state.reflex) return { ok: false, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
+  const c = decisionView().candidates.find((x) => x.id === id)
+  if (!c) return { ok: false, result: `${id} is not available now`, seconds: 0 }
+  return run(c, id)
 }
 
 const send = (res, code, body) => {
