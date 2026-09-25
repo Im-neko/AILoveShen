@@ -7,7 +7,7 @@ import pytest
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
 from ailoveshen.domain.entities import Conversation, PlaySession
-from ailoveshen.domain.events import ChatResponseGeneratedEvent
+from ailoveshen.domain.events import ChatResponseGeneratedEvent, ViewerRequestReplacedEvent
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import (
     Candidate,
@@ -248,3 +248,39 @@ class TestReplyWhilePlaying:
 
         assert not response.success
         assert session.request is None
+
+    @pytest.mark.asyncio
+    async def test_newer_request_replaces_a_pending_one_and_says_so(
+        self, use_case, mock_text_generator, mock_event_publisher
+    ):
+        """Test a pending request that gives way is published (never dropped silently)."""
+        bed = {
+            "reply": "ベッド作るね",
+            "change_goal": True,
+            "predicate": "placed",
+            "item": "bed",
+            "reason": "",
+        }
+        explore = {
+            "reply": "探検するね",
+            "change_goal": True,
+            "predicate": "explored",
+            "distance": 30,
+        }
+        mock_text_generator.generate_json.side_effect = [bed, explore]
+        session = _playing()
+
+        await use_case.execute(self._request(session))
+        await use_case.execute(
+            GenerateResponseRequest(user_name="tori", message="探検して", session=session)
+        )
+
+        replaced = [
+            c.args[0]
+            for c in mock_event_publisher.publish.call_args_list
+            if isinstance(c.args[0], ViewerRequestReplacedEvent)
+        ]
+        assert [(e.goal, e.user_name, e.replaced_by) for e in replaced] == [
+            ("placed(bed, home)", "neko", "tori")
+        ]
+        assert session.request.user_name == "tori"

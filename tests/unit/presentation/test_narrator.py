@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ailoveshen.domain.events import GoalEndedEvent, GoalSetEvent, ViewerRequestRejectedEvent
+from ailoveshen.domain.events import (
+    GoalEndedEvent,
+    GoalSetEvent,
+    HouseCompletedEvent,
+    ViewerRequestRejectedEvent,
+    ViewerRequestReplacedEvent,
+)
 from ailoveshen.domain.value_objects import Activity
 from ailoveshen.presentation.services.narrator import Narrator
 
@@ -30,7 +36,10 @@ def narrator(llm, said):
     async def say(text: str) -> None:
         said.append(text)
 
-    return Narrator(llm, activity=lambda: ACTIVITY, say=say)
+    return Narrator(llm, activity=lambda: current[0], say=say)
+
+
+current = [ACTIVITY]  # what activity() returns now
 
 
 def _events(llm) -> list[list[str]]:
@@ -111,3 +120,45 @@ class TestNarrator:
         await narrator.drain()
 
         assert said == []
+
+    @pytest.mark.asyncio
+    async def test_activity_is_taken_when_the_event_happens(self, narrator, llm):
+        """Test a goal set while the commentary is generated does not leak into it."""
+        await narrator.on_goal_set(GoalSetEvent(goal="built()", reason=""))
+        current[0] = Activity(request=None, recent_goals=())  # the session moves on
+        try:
+            await narrator.drain()
+        finally:
+            current[0] = ACTIVITY
+
+        assert llm.generate_commentary.call_args.kwargs["activity"] is ACTIVITY
+
+    @pytest.mark.asyncio
+    async def test_house_completion_is_told_with_the_next_goal(self, narrator, llm):
+        """Test the completion and what comes next make one utterance."""
+        await narrator.on_house_completed(HouseCompletedEvent(name="ぽかぽか"))
+        await narrator.on_goal_ended(GoalEndedEvent(goal="built()", ended_because="met", met=True))
+        await narrator.on_goal_set(GoalSetEvent(goal="have(wooden_sword, 1)", reason="身を守る"))
+        await narrator.drain()
+
+        assert _events(llm) == [
+            [
+                "家「ぽかぽか」が完成した",
+                "目標 built() が達成（met）",
+                "新しい目標: have(wooden_sword, 1)（身を守る）",
+            ]
+        ]
+
+    @pytest.mark.asyncio
+    async def test_replaced_request_is_told(self, narrator, llm):
+        """Test a promised request that gave way to a newer one is told."""
+        await narrator.on_request_replaced(
+            ViewerRequestReplacedEvent(
+                goal="placed(bed, home)", user_name="neko", replaced_by="tori"
+            )
+        )
+        await narrator.drain()
+
+        assert _events(llm) == [
+            ["nekoさんに引き受けた placed(bed, home) は、toriさんの頼みに替えたのでやらない"]
+        ]

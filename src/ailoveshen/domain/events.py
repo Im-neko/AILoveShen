@@ -146,6 +146,15 @@ class GoalEndedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class ViewerRequestReplacedEvent(DomainEvent):
+    """Event raised when a request taken but not started yet gives way to a newer one."""
+
+    goal: str = ""
+    user_name: str = ""
+    replaced_by: str = ""
+
+
+@dataclass(frozen=True)
 class ViewerRequestRejectedEvent(DomainEvent):
     """Event raised when a goal promised to a viewer cannot be set after all."""
 

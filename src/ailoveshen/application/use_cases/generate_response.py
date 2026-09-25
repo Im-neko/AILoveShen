@@ -17,8 +17,8 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     predicates_now,
     reply_schema,
 )
-from ailoveshen.domain.entities import Conversation
-from ailoveshen.domain.events import ChatResponseGeneratedEvent
+from ailoveshen.domain.entities import Conversation, PlaySession
+from ailoveshen.domain.events import ChatResponseGeneratedEvent, ViewerRequestReplacedEvent
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
@@ -114,6 +114,7 @@ class GenerateResponseUseCase(IGenerateResponse):
 
             if text:
                 if goal is not None and session is not None:
+                    await self._replace_pending(session, request.user_name)
                     session.request_goal(
                         ViewerRequest(
                             goal=goal, user_name=request.user_name, message=request.message
@@ -145,6 +146,19 @@ class GenerateResponseUseCase(IGenerateResponse):
                 original_message=request.message,
                 user_name=request.user_name,
             )
+
+    async def _replace_pending(self, session: PlaySession, user_name: str) -> None:
+        # The earlier request was promised too: its giving way is told, never silent
+        pending = session.request
+        if pending is None:
+            return
+        await self._event_publisher.publish(
+            ViewerRequestReplacedEvent(
+                goal=pending.goal.spec.describe(),
+                user_name=pending.user_name,
+                replaced_by=user_name,
+            )
+        )
 
     async def _generate(
         self,

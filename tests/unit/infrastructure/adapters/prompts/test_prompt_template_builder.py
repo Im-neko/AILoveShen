@@ -119,6 +119,7 @@ class TestPromptTemplateBuilder:
         assert "placed(item=bed)" in prompt and "have(item, count)" in prompt
         assert "cleared" not in prompt
         assert "「やるね」と言うなら必ず目標を出す" in prompt
-        assert "後でやる約束はしない" in prompt
+        assert "先の予定を約束しない" in prompt
+        assert "やめることを返答で言う" in prompt
         assert "前回の返答の目標は使えなかった: have needs an item" in prompt
         assert "change_goal" in prompt
