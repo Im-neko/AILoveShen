@@ -3,7 +3,7 @@
 
 import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
-import { findTable, findFurnace, isLeaves, HUNGER_URGENT } from './primitives.mjs'
+import { findTable, findFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { REMEMBERED_BLOCK, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
@@ -33,7 +33,7 @@ export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
   if (id == null) return []
   const me = bot.entity.position
   return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
-    .filter((p) => !inHouse(state, p) && exposed(bot, p) &&
+    .filter((p) => !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) &&
       (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY))
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
     .slice(0, limit)
@@ -46,10 +46,13 @@ export function huntTargets (bot, names, limit = TARGETS_PER_KIND) {
     .slice(0, limit)
 }
 
-// What is around now that is worth remembering (memory.mjs): [{ kind, pos }]
+// What is around now that is worth remembering (memory.mjs): [{ kind, pos }]. Blocks only where the
+// bot can dig them, touching air: buried ore counted too sent it off exploring (town2: 64 coal ore
+// "around the home", none it could reach)
 export function sightings (bot) {
   const ids = Object.values(bot.registry.blocksByName).filter((b) => REMEMBERED_BLOCK.test(b.name)).map((b) => b.id)
   const blocks = bot.findBlocks({ matching: ids, maxDistance: DIG_RADIUS, count: 512 })
+    .filter((p) => exposed(bot, p))
     .map((p) => ({ kind: bot.blockAt(p)?.name, pos: p }))
     .filter((s) => s.kind)
   const animals = nearbyEntities(bot)

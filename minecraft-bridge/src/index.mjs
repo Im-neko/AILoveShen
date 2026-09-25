@@ -56,6 +56,7 @@ const state = {
   current: null, // { id, verb, abort(reason), done } of the running action
   recipeBook: new RecipeBook(bot),
   unreachableDrops: new Set(),
+  unreachableBlocks: new Set(),
   memory: newMemory() // places seen before (memory.mjs), kept in state.json
 }
 loadState(state)

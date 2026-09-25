@@ -263,6 +263,11 @@ export function findFurnace (bot) {
   return bot.findBlock({ matching: bot.registry.blocksByName.furnace.id, maxDistance: TABLE_SEARCH_RADIUS })
 }
 
+// A block no path reached is not offered again this session (town2: chosen again and again)
+const blockKey = (p) => `${p.x},${p.y},${p.z}`
+const markUnreachable = (state, pos) => state.unreachableBlocks?.add(blockKey(pos))
+export const isUnreachable = (state, pos) => !!state.unreachableBlocks?.has(blockKey(pos))
+
 // Equip the fastest tool for the block, if any is held
 async function equipToolFor (bot, block) {
   const tool = bot.pathfinder.bestHarvestTool(block)
@@ -277,7 +282,12 @@ export const PRIMITIVES = {
     const before = totalItems(bot)
     // Stand where the block is in reach, not merely near it: a log above head height is otherwise
     // "near" only from the leaves of the tree.
-    await goto(bot, new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH }))
+    try {
+      await goto(bot, new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH }))
+    } catch (e) {
+      if (!signal.aborted) markUnreachable(state, c.pos)
+      throw e
+    }
     signal.throwIfAborted()
     // Digging while airborne is 5x slower (e.g. right after chopping the block we stood on)
     for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
