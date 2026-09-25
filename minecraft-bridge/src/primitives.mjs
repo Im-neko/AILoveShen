@@ -230,15 +230,26 @@ export function nearbyDrops (bot, state, radius) {
 
 // Drops can be picked up only after a short delay; standing on them already, the walk ends at
 // once. Collect the drops that fell nearby and wait for each pickup.
+// Picks up the drops around; returns why the last one was not reached, if any
 async function collectNearbyDrops (bot, state) {
+  let why = ''
   for (let i = 0; i < 3; i++) {
     await bot.waitForTicks(10)
     const drop = nearbyDrops(bot, state, DROP_COLLECT_RADIUS)[0]
-    if (!drop) return
+    if (!drop) return why
     const collected = waitForCollect(bot, PICKUP_WAIT_MS)
-    await goNear(bot, drop.e.position, 0.5).catch(() => {})
+    why = await goNear(bot, drop.e.position, 0.5).then(() => '', (e) => e.message)
     await collected
   }
+  return why
+}
+
+// Where the items around are, relative to the bot (a drop not picked up is explained by it)
+function dropsAround (bot) {
+  const me = bot.entity.position
+  const items = nearbyEntities(bot).filter(({ e, dist }) => e.name === 'item' && dist <= DROP_COLLECT_RADIUS)
+  if (!items.length) return 'no item on the ground within 8m'
+  return items.slice(0, 3).map(({ e, dist }) => `item ${round(dist)}m away, ${round(e.position.y - me.y)} up`).join(', ')
 }
 
 const itemCount = (bot, name) => bot.inventory.items().filter((i) => i.name === name).reduce((n, i) => n + i.count, 0)
@@ -273,9 +284,12 @@ export const PRIMITIVES = {
     await equipToolFor(bot, block)
     await bot.dig(bot.blockAt(c.pos), true)
     signal.throwIfAborted()
-    await collectNearbyDrops(bot, state)
+    const why = await collectNearbyDrops(bot, state)
     const gained = totalItems(bot) - before
-    if (gained <= 0) throw new Error(`dug ${c.block} but picked nothing up`)
+    if (gained <= 0) {
+      const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
+      throw new Error(`dug ${c.block} but picked nothing up (${dropsAround(bot)}${why ? `; path: ${why}` : ''}${full})`)
+    }
     return `dug ${c.block}, picked up ${gained} items`
   },
   async pickup (bot, state, c) {
@@ -293,7 +307,8 @@ export const PRIMITIVES = {
     const gained = totalItems(bot) - before
     if (gained <= 0) {
       state.unreachableDrops.add(c.entityId)
-      throw new Error('reached the item but picked nothing up')
+      const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
+      throw new Error(`reached the item but picked nothing up (${dropsAround(bot)}${full})`)
     }
     return `picked up ${gained} items`
   },
