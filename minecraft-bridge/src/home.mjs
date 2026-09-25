@@ -207,12 +207,34 @@ function inBuilt (h, p, margin) {
 }
 
 // ベッドはドアからまっすぐ奥に置く: 足側は内側のセルの1つ先、頭側はさらに1つ先
+// ベッドを置く場所: 室内の空いた 2 マス（足側 foot と頭側 foot + dir）と、その手前でボットが立つ
+// マス（stand、足側の反対）。ベッドの頭はボットの向いた方に伸びるので、stand から foot を向いて置く。
+// ドアの内側のセル（inside）はふさがない。前はドアからまっすぐ奥の 1 か所だけを見ていて、
+// 最小の家（室内 3x3）ではその列にたいまつが 1 本あるだけで「置く場所がない」になり、ベッドを置く
+// 小目標で詰まった。ドアからまっすぐ奥を先に、次にドアから遠い順
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 export function bedSpot (bot, home) {
+  const free = (p) => inHome(home, p) && !p.equals(home.inside) && bot.blockAt(p)?.name === 'air' &&
+    bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
+  const standable = (p) => inHome(home, p) && bot.blockAt(p)?.boundingBox === 'empty' &&
+    bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
   const inward = home.inside.minus(home.door)
-  const foot = home.inside.plus(inward)
-  const head = foot.plus(inward)
-  const free = (p) => inHome(home, p) && bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
-  return free(foot) && free(head) ? { foot, inward } : null
+  const spots = []
+  for (let x = home.min.x; x <= home.max.x; x++) {
+    for (let z = home.min.z; z <= home.max.z; z++) {
+      const foot = home.min.offset(x - home.min.x, 0, z - home.min.z)
+      for (const [dx, dz] of DIRS) {
+        const dir = new Vec3(dx, 0, dz)
+        const head = foot.plus(dir)
+        const stand = foot.minus(dir)
+        if (!free(foot) || !free(head) || !(stand.equals(home.inside) || standable(stand))) continue
+        const straight = dir.equals(inward) && stand.equals(home.inside)
+        spots.push({ foot, inward: dir, stand, rank: straight ? -Infinity : -foot.distanceTo(home.door) })
+      }
+    }
+  }
+  const best = spots.sort((a, b) => a.rank - b.rank)[0]
+  return best ? { foot: best.foot, inward: best.inward, stand: best.stand } : null
 }
 
 // チェストを置く場所: ドアからベッドまでの列（歩いて寝られるよう空けておく）から外れた内部のセル。

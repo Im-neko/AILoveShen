@@ -442,8 +442,8 @@ export const PRIMITIVES = {
     await enterHome(bot, state.home, signal)
     const spot = bedSpot(bot, state.home)
     if (!spot) throw new Error('no free spot for the bed in the house')
-    const { inside } = state.home
-    await goto(bot, new goals.GoalBlock(inside.x, inside.y, inside.z), signal)
+    const { stand } = spot
+    await goto(bot, new goals.GoalBlock(stand.x, stand.y, stand.z), signal)
     // ベッドの頭側は、プレイヤーが向いている方向に1ブロック先になる。向きは次の移動パケットで
     // やっとサーバーに届く: すぐに置くと、サーバーはドアを閉めたときの向きを使い、ベッドの頭側が
     // ドアの内側のセルをふさいだ。
