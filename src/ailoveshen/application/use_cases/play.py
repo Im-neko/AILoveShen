@@ -109,6 +109,9 @@ class StartPlayUseCase(IStartPlay):
     The design is validated by HouseBlueprint; an invalid design is sent back
     to the LLM with the validation error, up to max_attempts times.
 
+    When the bridge already has a finished home (an earlier run built it), no
+    house is designed: the home is used as it is and the mid goals move on.
+
     The mission and its mid goals carry on from the saved plan when it is for
     the same mission; otherwise the plan made from the configuration starts.
     """
@@ -156,7 +159,13 @@ class StartPlayUseCase(IStartPlay):
         self._max_stalled_steps = max_stalled_steps
 
     async def execute(self) -> PlaySession:
-        """Design the house, send its plan, and return the new session."""
+        """Design the house (unless one is built), send its plan, and return the new session."""
+        obs = await self._bridge.observe()
+        if obs.has_home:
+            logger.info("A home is already built: no new house is designed")
+            session = self._session(blueprint=None)
+            session.completion_announced = True
+            return session
         blueprint = await self._design()
         logger.info(
             f"House designed: {blueprint.name} "
@@ -170,6 +179,9 @@ class StartPlayUseCase(IStartPlay):
         await self._bridge.set_build_plan(
             blueprint.blocks(), blueprint.width, blueprint.depth, blueprint.height
         )
+        return self._session(blueprint)
+
+    def _session(self, blueprint: HouseBlueprint | None) -> PlaySession:
         return PlaySession(
             blueprint=blueprint,
             plan=self._load_plan(),
@@ -275,7 +287,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         session.observe(obs)
         if obs.house_complete and not session.completion_announced:
             session.completion_announced = True
-            await self._event_publisher.publish(HouseCompletedEvent(name=session.blueprint.name))
+            name = session.blueprint.name if session.blueprint else ""
+            await self._event_publisher.publish(HouseCompletedEvent(name=name))
         if obs.busy:
             return PlayStepReport(
                 goal=session.goal,

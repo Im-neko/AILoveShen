@@ -333,7 +333,7 @@ class PlaySession(Entity):
         ValueError: If a limit is not positive.
     """
 
-    blueprint: HouseBlueprint = field(kw_only=True)
+    blueprint: Optional[HouseBlueprint] = field(kw_only=True)  # None: the home was built before
     plan: MidGoalPlan = field(kw_only=True)
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3

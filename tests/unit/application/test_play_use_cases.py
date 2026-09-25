@@ -233,6 +233,21 @@ class TestStartPlay:
         bridge.set_build_plan.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_built_home_is_used_without_designing(
+        self, text_generator, prompt_builder, bridge, events
+    ):
+        """Test a home built in an earlier run is kept: nothing designed, no plan sent."""
+        bridge.observe.return_value = _obs(has_plan=True, house_complete=True, has_home=True)
+
+        session = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
+
+        assert session.blueprint is None
+        assert session.completion_announced
+        text_generator.generate_json.assert_not_called()
+        bridge.set_build_plan.assert_not_called()
+        assert _published(events, HouseDesignedEvent) == []
+
+    @pytest.mark.asyncio
     async def test_new_plan_comes_from_the_configuration_and_is_saved(
         self, text_generator, prompt_builder, bridge, events, store
     ):

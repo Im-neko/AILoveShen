@@ -146,7 +146,10 @@ async def run(max_steps: int, comments: list[dict], board_port: int | None) -> b
 
     b = outcome.session.blueprint
     print("=" * 60)
-    print(f"House: {b.name} {b.width}x{b.depth}x{b.wall_height} ({len(b.blocks())} blocks)")
+    if b is None:
+        print("House: the home built in an earlier run")
+    else:
+        print(f"House: {b.name} {b.width}x{b.depth}x{b.wall_height} ({len(b.blocks())} blocks)")
     print(f"Complete: {outcome.house_complete} after {outcome.steps} steps")
     return outcome.house_complete
 

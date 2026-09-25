@@ -184,6 +184,12 @@ class TestGamePromptTemplateBuilder:
         assert "完了条件に使えるのは次だけ" in prompt
         assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt
 
+    def test_goal_prompt_with_the_home_built_before(self):
+        """Test no house to build is shown when the home was built in an earlier run."""
+        prompt = _goal_prompt(blueprint=None)
+
+        assert "## 建てる家\nなし（前に建てた家が完成していて、拠点になっている）" in prompt
+
     def test_goal_prompt_without_needs(self):
         """Test the bridge's "none" is shown as nothing to watch for."""
         assert "気をつけること: なし" in _goal_prompt(_obs(needs=("none",)))

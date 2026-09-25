@@ -105,9 +105,11 @@ class GameService:
                     f"{'ok' if report.result.ok else 'FAILED'} {report.result.result} "
                     f"({report.result.seconds}s)"
                 )
+        house = (
+            f"house '{session.blueprint.name}'" if session.blueprint else "the home built before"
+        )
         logger.info(
-            f"Played {steps} steps; house '{session.blueprint.name}' "
-            f"{'complete' if house_complete else 'not complete'}"
+            f"Played {steps} steps; {house} {'complete' if house_complete else 'not complete'}"
         )
         return PlayOutcome(session=session, steps=steps, house_complete=house_complete)
 

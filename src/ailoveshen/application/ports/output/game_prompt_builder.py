@@ -41,7 +41,7 @@ class IGamePromptBuilder(ABC):
     @abstractmethod
     def build_goal_prompt(
         self,
-        blueprint: HouseBlueprint,
+        blueprint: HouseBlueprint | None,
         activity: Activity,
         goal_ended_because: str,
         recent_messages: Sequence[ConversationMessage],
@@ -52,7 +52,7 @@ class IGamePromptBuilder(ABC):
         Build the prompt asking the LLM to set the next goal.
 
         Args:
-            blueprint: The house being built
+            blueprint: The house being built (None: the home was built in an earlier run)
             activity: What the streamer is doing (the mission and mid goals, the ending
                 goal with its status, recent goals), the same view the commentary and
                 replies get

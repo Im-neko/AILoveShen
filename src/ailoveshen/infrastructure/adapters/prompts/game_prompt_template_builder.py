@@ -136,7 +136,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
 
     def build_goal_prompt(
         self,
-        blueprint: HouseBlueprint,
+        blueprint: HouseBlueprint | None,
         activity: Activity,
         goal_ended_because: str,
         recent_messages: Sequence[ConversationMessage],
@@ -189,7 +189,9 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         return state, ACTION_INSTRUCTIONS
 
 
-def _format_blueprint(b: HouseBlueprint, obs: GameObservation | None) -> str:
+def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> str:
+    if b is None:
+        return "なし（前に建てた家が完成していて、拠点になっている）"
     counts = ", ".join(f"{k.value} {v}" for k, v in b.material_counts().items())
     size = f"{b.width}x{b.depth}、壁の高さ {b.wall_height}"
     build = obs.state.get("build") if obs else None
