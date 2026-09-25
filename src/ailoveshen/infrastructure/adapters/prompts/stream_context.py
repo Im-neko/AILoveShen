@@ -47,6 +47,7 @@ TICKS_PER_MINUTE = 20 * 60
 DUSK_TICK = 12000
 MORNING_TICK = 24000
 PHASE_NAMES = {"day": "昼", "dusk": "夕方", "night": "夜", "dawn": "明け方"}
+EQUIPMENT_NAMES = {"head": "頭", "chest": "胴", "legs": "脚", "feet": "足", "off_hand": "左手"}
 
 
 def format_predicates(predicates: list[GoalPredicate]) -> str:
@@ -128,9 +129,20 @@ def _requested(goal: MidGoal) -> str:
     return f"（{goal.requested_by}さんの頼み）" if goal.requested_by else ""
 
 
+def _format_equipment(me: dict) -> str:
+    worn = [
+        f"{EQUIPMENT_NAMES[part]} {item}"
+        for part, item in (me.get("equipment") or {}).items()
+        if item and part in EQUIPMENT_NAMES
+    ]
+    held = [f"手に {me['held_item']}"] if me.get("held_item") else []
+    return "、".join(held + worn) or "なし"
+
+
 def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
     conditions = ", ".join(c.describe() for c in goal.conditions)
-    progress = f"（{'; '.join(goal.progress)}）" if goal.progress else ""
+    summary = goal.summary()
+    progress = f"（{'; '.join(summary)}）" if summary else ""
     return (
         f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}"
         f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}"
@@ -182,6 +194,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 時間帯: {format_time(s.get('time', {}))}",
         f"- 家: {_format_home(obs)}",
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
+        f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {json.dumps(s.get('inventory', {}), ensure_ascii=False)}",
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
     ]

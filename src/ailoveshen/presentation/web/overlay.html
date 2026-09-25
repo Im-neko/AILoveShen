@@ -17,6 +17,7 @@
   li.done { color: var(--done); list-style: none; margin-left: -1.4em; }
   li.dropped { color: var(--dropped); list-style: none; margin-left: -1.4em; text-decoration: line-through; }
   .by { font-size: 14px; color: var(--muted); font-weight: normal; }
+  .summary { display: block; font-size: 13px; color: var(--muted); font-weight: normal; }
   .goal { margin-top: 10px; font-size: 16px; }
   .goal .label { color: var(--muted); }
   .progress { font-size: 13px; color: var(--muted); }
@@ -49,6 +50,12 @@
         by.className = 'by';
         by.textContent = `（${g.requested_by}さんの頼み）`;
         li.append(by);
+      }
+      if (g.state === 'current' && g.summary.length) {
+        const summary = document.createElement('span');
+        summary.className = 'summary';
+        summary.textContent = g.summary.join(' / ');
+        li.append(summary);
       }
       mid.append(li);
     }

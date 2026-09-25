@@ -178,6 +178,11 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
                 "time": format_time_en(s.get("time", {})),
                 "in_home": observation.inside_home,
                 "held_item": s.get("self", {}).get("held_item"),
+                "equipment": {
+                    part: item
+                    for part, item in (s.get("self", {}).get("equipment") or {}).items()
+                    if item
+                },
             },
             "inventory": s.get("inventory", {}),
             "nearby_mobs": [

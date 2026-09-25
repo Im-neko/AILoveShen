@@ -83,6 +83,7 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
         "requested_by": goal.requested_by,
         "conditions": [c.describe() for c in goal.conditions],
         "progress": list(goal.progress),
+        "summary": list(goal.summary()),  # without the solver's sub-steps
         "ended_because": goal.ended_because,
     }
 

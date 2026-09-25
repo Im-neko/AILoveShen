@@ -110,6 +110,7 @@ export function summarize (bot, history, extra = {}) {
       food: bot.food,
       position: { x: round(me.x), y: round(me.y), z: round(me.z) },
       held_item: bot.heldItem ? bot.heldItem.name : null,
+      equipment: equipment(bot),
       in_water: !!bot.entity.isInWater
     },
     inventory: inventoryCounts(bot),
@@ -118,4 +119,11 @@ export function summarize (bot, history, extra = {}) {
     recent_actions: history.slice(-HISTORY),
     ...extra
   }
+}
+
+// Worn armour and the off hand (inventory window slots), null where empty
+const EQUIPMENT_SLOTS = { head: 5, chest: 6, legs: 7, feet: 8, off_hand: 45 }
+
+export function equipment (bot) {
+  return Object.fromEntries(Object.entries(EQUIPMENT_SLOTS).map(([part, slot]) => [part, bot.inventory.slots[slot]?.name ?? null]))
 }

@@ -33,6 +33,7 @@ def _session() -> PlaySession:
     plan.add("ベッドで寝る", (BED,), requested_by="neko")
     plan.add("剣を持つ", (GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1),))
     plan.drop("m3", "今は要らない")
+    plan.judged("m1", ("house blocks placed 3/72", "  have 12 log (0/12)"))
     session = PlaySession(blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2), plan=plan)
     session.set_goal(
         Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "壁の材料", mid_goal_id="m1"),
@@ -73,6 +74,7 @@ class TestGoalsSnapshot:
             ("剣を持つ", "dropped", None),
         ]
         assert data["mid_goals"][2]["ended_because"] == "今は要らない"
+        assert data["mid_goals"][0]["summary"] == ["house blocks placed 3/72"]
         assert data["goal"] == {
             "goal": "have(log, 3)",
             "reason": "壁の材料",

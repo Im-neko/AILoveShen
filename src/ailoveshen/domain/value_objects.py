@@ -512,6 +512,10 @@ class MidGoal:
                     f"{c.predicate.value} cannot be a condition of a mid goal; use {allowed}"
                 )
 
+    def summary(self) -> tuple[str, ...]:
+        """How the conditions stand without the sub-steps (the indented progress lines)."""
+        return tuple(line for line in self.progress if not line.startswith(" "))
+
     def describe(self) -> str:
         """Short form, e.g. 自分の家を作る (built())."""
         return f"{self.title} ({', '.join(c.describe() for c in self.conditions)})"
