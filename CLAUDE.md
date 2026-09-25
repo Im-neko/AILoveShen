@@ -18,8 +18,10 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
   - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and sets goals in a predicate vocabulary (`have(item, n)`, `built`, `placed(bed, home)`, `at_home`, `through_night`, `explored(distance)`, `cleared` (by day: fight what waits at the door)); a goal the bridge rejects goes back with the reason
   - Minecraft Bridge: judges the goal from the world (never from the models), decomposes it with a dependency solver over minecraft-data (recipes, drops, with corrections), grounds concrete candidates (dig this block, craft that item, ...) plus what the body needs, removes unsafe ones (nothing outside while sheltering; what is held back goes to the goal's `blocked`, and by day a wall exit is offered), and runs one bounded primitive (aborted on damage). A reflex handles nearby hostiles and keeps the bot afloat
   - Jev: picks one candidate per step (`Choice`), seeing the goal's progress and the body's needs (no priority order: measured in `spikes/primitive_choice_eval.py`)
-  - `PlaySession` ends a goal when a viewer's request is waiting, it is met, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
-- **Coherent decisions** (`docs/design/12_coherent_decisions.md`): `PlaySession` alone owns the goal; its `activity()` (goal, reason, status, recent goals, pending request) is rendered by one formatter (`prompts/stream_context.py`) for the goal decision, the commentary and the chat replies, and the goal decision also sees the conversation. A chat reply and the goal it promises come from one generation and are left as a request the step loop applies; `Narrator` says why goals change and never drops a promise silently
+  - `PlaySession` ends a goal when it is met, the mid goal it served ended, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
+- **Goal hierarchy** (`docs/design/13_goal_hierarchy.md`): mission (config `minecraft.mission`, never changed on stream) → mid goals (`MidGoalPlan`: prioritised list, done when their conditions `built`/`placed`/`have` hold, judged by the bridge's `POST /check` at small-goal boundaries; limits kept by code: 6 in the list, 2 viewers' at a time, one per viewer, a viewer's never ahead of the current one, 80-step budget) → the small goal (serves the top mid goal, or survival). Gemini edits the list with the small goal (add/move/drop with a reason); `MidGoalKeeper` applies edits atomically, saves (`data/mission.json`) and publishes MidGoal events
+- **Coherent decisions** (`docs/design/12_coherent_decisions.md`, request flow replaced by 13): `PlaySession` alone owns the goals; its `activity()` (mission, mid goals, small goal and status, recent goals) is rendered by one formatter (`prompts/stream_context.py`) for the goal decision, the commentary and the chat replies, and the goal decision also sees the conversation. A chat reply and its handling of a request (none/accept/decline) come from one generation; an accepted request becomes a viewer's mid goal behind the current one (the small goal is not interrupted). `Narrator` says why goals change and never drops a promise silently
+- **Goal board** (`presentation/web/goal_board.py`, extra `ailoveshen[stream]`): `GET /api/goals`, `/api/goals/stream` (SSE), `/overlay` (OBS browser source), read-only in the play process (`examples/integration_test_minecraft.py --board-port 8765`)
 
 ## Common Commands
 
@@ -27,7 +29,7 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 ```bash
 pip install -r requirements.txt
 python initialize.py  # Downloads BERT models and pretrained weights
-pip install -e ".[all]"  # AILoveShen core + extras (dev, tts, llm=google-genai)
+pip install -e ".[all]"  # AILoveShen core + extras (dev, tts, llm=google-genai, game, stream=fastapi)
 export GEMINI_API_KEY=...  # Required for the LLM (Phase 3)
 ```
 
@@ -68,7 +70,7 @@ GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gem
 # Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
 docker compose -f docker/docker-compose.minecraft.yml up -d
 cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)
-GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300]
+GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300] [--comments c.json] [--board-port 8765]
 
 # Style-Bert-VITS2 tests (legacy)
 hatch run test:test          # PyTorch CPU tests
@@ -92,18 +94,19 @@ Clean Architecture with the four layers at the top level. Features (TTS, LLM, Tw
 ```
 src/ailoveshen/
 ├── domain/                    # No external dependencies
-│   ├── entities.py            # Entity, AggregateRoot, Conversation, PlaySession
+│   ├── entities.py            # Entity, AggregateRoot, Conversation, MidGoalPlan, PlaySession
 │   ├── value_objects.py       # EmotionState, SpeechRequest, SpeechResult, Position, FilterResult,
 │   │                          # ConversationMessage, CharacterProfile, GenerationContext,
-│   │                          # Minecraft: GoalPredicate, GoalSpec, GoalStatus, Candidate, HouseBlueprint, GameObservation, ...
+│   │                          # Minecraft: GoalPredicate, GoalSpec, GoalStatus, Candidate, HouseBlueprint, GameObservation,
+│   │                          # Mission, MidGoal, ConditionStatus, Activity, ...
 │   ├── events.py              # DomainEvent, Speech*Event, CommentaryGeneratedEvent, ChatResponseGeneratedEvent
 │   └── exceptions.py          # AILoveShenError hierarchy
 ├── application/
 │   ├── ports/input/           # ISpeakText, IGenerateCommentary, IGenerateResponse, IStartPlay, IAdvancePlay
 │   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder,
-│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder
+│   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder, IMissionStore
 │   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase,
-│   │                          # StartPlayUseCase, AdvancePlayUseCase, goal_vocabulary (shared goal schema)
+│   │                          # StartPlayUseCase, AdvancePlayUseCase, MidGoalKeeper, goal_vocabulary (schemas)
 │   └── dto/                   # speech_dto, llm_dto, game_dto
 ├── infrastructure/
 │   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings, JevSettings, MinecraftSettings
@@ -115,13 +118,15 @@ src/ailoveshen/
 │       ├── gemini/            # GeminiTextGenerator (google-genai; text + JSON structured output)
 │       ├── jev/               # JevActionSelector (typesafe-sdk)
 │       ├── minecraft_bridge/  # MineflayerBridgeClient (HTTP to minecraft-bridge/)
+│       ├── storage/           # JsonMissionStore (mid goals across restarts)
 │       └── prompts/           # PromptTemplateBuilder, GamePromptTemplateBuilder, stream_context
 ├── presentation/
-│   └── services/              # TTSService (priority queue), LLMService, GameService, Narrator
+│   ├── services/              # TTSService (priority queue), LLMService, GameService, Narrator
+│   └── web/                   # GoalBoard (FastAPI: /api/goals, SSE, /overlay)
 └── factories/                 # Composition Roots (tts.py, llm.py, game.py)
 
 minecraft-bridge/              # Node sidecar: goals, solver, candidates, primitives, reflex, POV mirror,
-                               # HTTP API (goal/observe/act/build-plan); tests: npm test
+                               # HTTP API (goal/check/observe/act/build-plan); tests: npm test
 ```
 
 **Dependency rule** (enforced by `tests/unit/test_architecture.py`): dependencies point inward only. domain imports no other layer; application must not import infrastructure/presentation; only `factories/` wires everything together.
