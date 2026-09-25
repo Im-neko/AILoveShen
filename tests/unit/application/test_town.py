@@ -197,6 +197,28 @@ class TestTownPlanner:
         assert prompt_builder.build_stage_prompt.call_args.args[1] == waiting
         assert not _published(events, TownDefinedEvent)
 
+    @pytest.mark.asyncio
+    async def test_a_rewrite_already_done_is_refused_and_the_stage_kept(
+        self, planner, text_generator, prompt_builder, bridge
+    ):
+        """Test the warehouse reworded as the first house (built() holds) does not finish it."""
+        built = GoalSpec(GoalPredicate.BUILT)
+        bridge.check.side_effect = _check(met={built})
+        text_generator.generate_json.return_value = {
+            "conditions": [built.to_dict()],
+            "unresolved": [],
+        }
+        waiting = TownStage("複数の建物", "街らしく", unresolved=("倉庫",))
+        plan = MidGoalPlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(waiting), town_stage=0)
+
+        await planner.prepare(plan)
+
+        assert plan.town.stages[0] == waiting
+        error = prompt_builder.build_stage_prompt.call_args.kwargs["previous_error"]
+        assert "built() はもう全部そろっている" in error
+        assert text_generator.generate_json.await_count == 3
+
 
 class TestTownStages:
     """Tests for the town stages as mid goals (MidGoalKeeper.judge)."""

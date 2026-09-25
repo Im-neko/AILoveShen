@@ -126,8 +126,15 @@ class TownPlanner:
         return replace(town, stages=tuple([await self._settle(s) for s in town.stages]))
 
     async def _resolve(self, town: TownDefinition, stage: TownStage) -> TownStage:
+        """
+        The stage written again, or as it was when no answer can be kept.
+
+        A part left for an ability not there yet cannot already be done: new
+        conditions that all hold now mean the part was reworded into something
+        else (the warehouse as built(), the first house), which would finish
+        the stage, and the town, without building anything.
+        """
         error = ""
-        written = stage
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_stage_prompt(town, stage, previous_error=error)
             data = await self._text_generator.generate_json(prompt, stage_schema())
@@ -139,10 +146,22 @@ class TownPlanner:
                 continue
             problems = await self._problems(written)
             if not problems:
+                problems = await self._already_done(stage, written)
+            if not problems:
                 return written
             error = "\n".join(problems)
             logger.warning(f"Town stage attempt {attempt} rejected: {error}")
-        return await self._settle(written)
+        return stage
+
+    async def _already_done(self, stage: TownStage, written: TownStage) -> list[str]:
+        new = [c for c in written.conditions if c not in stage.conditions]
+        if not new or not all(s.met for s in await self._bridge.check(new)):
+            return []
+        conditions = ", ".join(c.describe() for c in new)
+        return [
+            f"{conditions} はもう全部そろっている。まだできないことを、"
+            "今そろっている別のことに言い換えている。書けないなら unresolved に残す"
+        ]
 
     async def _problems(self, stage: TownStage) -> list[str]:
         """Why the stage's conditions cannot be kept, one line per condition (none: all good)."""
