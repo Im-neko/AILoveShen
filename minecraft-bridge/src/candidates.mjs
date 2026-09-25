@@ -13,12 +13,15 @@
 
 import { round, bearing, dayPhase, burningInDaylight } from './observe.mjs'
 import { isInside, dangerOutside, exitSpots } from './home.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL } from './primitives.mjs'
+import { reachableThreats, bestWeapon, nearbyDrops, findTable, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const DROP_RADIUS = 16
 const DROPS_OFFERED = 3
 const THREATS_OFFERED = 2
 const EXPLORE_DIRECTIONS = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] }
+// Eaten only when starving and nothing better is held: 4 hunger points against a likely short
+// Hunger effect (frun2: it held rotten flesh and starved)
+const LAST_RESORT_FOOD = ['rotten_flesh']
 
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 const dist = (bot, p) => round(bot.entity.position.distanceTo(p))
@@ -146,7 +149,9 @@ function forNeeds (bot, state, knowledge) {
     const edible = new Set(knowledge.resolve('food').members)
     const foods = bot.inventory.items().filter((i) => edible.has(i.name))
     const best = foods.sort((a, b) => bot.registry.foodsByName[b.name].foodPoints - bot.registry.foodsByName[a.name].foodPoints)[0]
-    if (best) out.push({ id: `eat ${best.name}`, verb: 'eat', target: best.name, item: best.name, inPlace: true })
+    const lastResort = bot.food <= HUNGER_URGENT && bot.inventory.items().find((i) => LAST_RESORT_FOOD.includes(i.name))
+    const eat = best ?? lastResort
+    if (eat) out.push({ id: `eat ${eat.name}`, verb: 'eat', target: eat.name, item: eat.name, inPlace: true })
   }
   const weapon = bestWeapon(bot)
   if (weapon && bot.heldItem?.name !== weapon.name) out.push({ id: `equip ${weapon.name}`, verb: 'equip', target: weapon.name, item: weapon.name, inPlace: true })

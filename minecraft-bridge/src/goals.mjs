@@ -15,7 +15,7 @@ import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
 import { dayPhase, inventoryCounts, EXPLODES } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
-import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL } from './primitives.mjs'
+import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
@@ -35,7 +35,13 @@ export const CONDITION_PREDICATES = ['have', 'built', 'placed']
 // A goal that is valid but cannot be pursued until something exists (the home, the plan)
 export class NotYetError extends Error {}
 
+// Every goal remembers where it was set: its searches go away from there, never back and forth
 export function makeGoal (spec, bot, state, knowledge) {
+  const p = bot.entity.position
+  return { ...validGoal(spec, bot, state, knowledge), exploreFrom: { x: p.x, y: p.y, z: p.z } }
+}
+
+function validGoal (spec, bot, state, knowledge) {
   const { predicate } = spec
   const needHome = () => { if (!state.home) throw new NotYetError('there is no home yet (build the house first)') }
   switch (predicate) {
@@ -86,7 +92,9 @@ export function evaluate (bot, state, knowledge, world) {
     const r = solve(knowledge, world, needs)
     out.lines.push(...r.lines)
     out.blocked.push(...r.blocked)
-    out.leaves.push(...r.leaves)
+    // Searching for what is not nearby: away from where the goal was set (it walked back and
+    // forth around the start before, never finding food 20m further)
+    out.leaves.push(...r.leaves.map((l) => l.kind === 'explore' && !l.away && goal.exploreFrom ? { ...l, away: goal.exploreFrom } : l))
     out.remaining += r.remaining
     return r
   }
@@ -200,7 +208,7 @@ export function checkConditions (specs, bot, state, knowledge, world) {
 export function needs (bot, state) {
   const out = []
   if (bot.health <= HEALTH_CRITICAL) out.push(`health critical (${Math.round(bot.health)}/20)`)
-  if (bot.food <= 6) out.push(`hunger urgent (${bot.food}/20): healing stops below 18 and sprinting below 7`)
+  if (bot.food <= HUNGER_URGENT) out.push(`hunger urgent (${bot.food}/20): healing stops below 18 and sprinting below 7`)
   const phase = dayPhase(bot.time.timeOfDay)
   if (phase === 'dusk') out.push('night is coming: hostile mobs spawn outside in the dark')
   if (phase === 'night' && !isInside(bot, state.home)) out.push('it is night and you are outside')

@@ -16,6 +16,8 @@ const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // survival block reach from the eyes
 // Health this low is critical: stated as a need, and a fight or flight stops here
 export const HEALTH_CRITICAL = 8
+// Sprinting stops below 7; starving from here on, what harms a little is still worth eating
+export const HUNGER_URGENT = 6
 export const TABLE_SEARCH_RADIUS = 32
 const HOSTILE_AVOID_RADIUS = 5
 const HOSTILE_STEP_COST = 20
