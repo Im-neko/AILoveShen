@@ -7,6 +7,10 @@
 
 ## Completed Work
 
+### ワールドを作り直す手順 (2026-09-25)
+
+- ユーザー「ワールドをリセットしたい。シードがちょっと難しそう」→ `docker-compose.minecraft.yml` に `LEVEL: ${MC_LEVEL:-world}` と `SEED: ${MC_SEED:-}`（`.env.example` にも）。名前を変えると新しいワールドになり、前のワールドはボリュームに残る。手順は `docs/streaming.md`「ワールドを作り直す」（state.json と mission.json を取っておいて別名に、`up -d --force-recreate`、シードの選び方）
+
 ### 大きな建築（設計書 25、3 段目） (2026-09-25)
 
 **Commit**: `39043e8`

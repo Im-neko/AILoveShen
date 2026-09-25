@@ -222,6 +222,42 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 
 最初からやり直したいときは、ブリッジとプレイの処理を止めてから、この 2 つを別の名前に移す（消さずに取っておく）。
 
+## ワールドを作り直す
+
+ワールドと、ボットが覚えていること（家、記憶、中目標、建物）は別々に保存されている。ワールドだけ変えると、ボットは前のワールドの家を探しに行ってしまうので、両方をそろえて作り直す。
+
+1. 配信とブリッジを止める（Ctrl-C）
+2. ボットが覚えていることを取っておく（消さずに名前を変える）:
+
+   ```bash
+   mv minecraft-bridge/data/state.json minecraft-bridge/data/state-$(date +%Y%m%d).json
+   mv data/mission.json data/mission-$(date +%Y%m%d).json
+   ```
+
+3. `.env` のワールドの名前を変え、シードを決める（空ならランダム）:
+
+   ```
+   MC_LEVEL=world2
+   MC_SEED=
+   ```
+
+   前のワールドは同じボリュームの中に `world` のまま残るので、`MC_LEVEL=world` に戻せばまた遊べる（そのときは 2 で取っておいたファイルも元の名前に戻す）
+4. Minecraft サーバーを作り直して起動する:
+
+   ```bash
+   docker compose --env-file .env -f docker/docker-compose.minecraft.yml up -d --force-recreate
+   docker compose -f docker/docker-compose.minecraft.yml logs -f   # "Done" が出るまで待つ（新しいワールドは生成に 1〜2 分）
+   ```
+
+5. ブリッジ、視点のクライアント、配信を、いつもの順に起動する。ボットは何も持たずに新しいワールドの初期地点に出て、家の設計から始める
+
+シードの選び方:
+- 空（ランダム）にして、ボットの視点のクライアントで初期地点のまわりを見て、平らな草原と木があるか確かめる。だめなら 3 と 4 をやり直す（`MC_LEVEL` を world3 などにする）
+- 決めたシードを使うなら、シードの地図のサイト（Chunkbase など）で Java 版 1.21.4 の初期地点のまわりを見て選ぶ。平原（Plains）か森の端、近くに村・水・石の出た斜面があると、家、食料、石の道具まで進みやすい
+- 砂漠、雪原、海の近く、山岳は、ボットに難しい（木が少ない、食料が少ない、足場が悪い）
+
+ワールドを全部消したいときは `docker compose -f docker/docker-compose.minecraft.yml down -v`（ボリュームごと消える。元に戻せない）。
+
 ## 見るところ・記録
 
 | もの | 場所 |

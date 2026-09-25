@@ -25,6 +25,10 @@ services:
       DIFFICULTY: "easy"
       MODE: "survival"
       MOTD: "AILoveShen dev server"
+      # A new world: a new LEVEL name (the old world stays in the volume) and an optional SEED
+      # (empty: random). docs/streaming.md「ワールドを作り直す」
+      LEVEL: "${MC_LEVEL:-world}"
+      SEED: "${MC_SEED:-}"
       VIEW_DISTANCE: "8"
       SIMULATION_DISTANCE: "6"
       SPAWN_PROTECTION: "0"
