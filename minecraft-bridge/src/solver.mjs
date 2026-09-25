@@ -8,11 +8,13 @@
 // progress, the leaves that can be acted on now, the reasons some cannot, and the remaining work.
 //
 // world: { inventory: {name: count}, stored: {name: count} (in chests), blocks: {name: count}, mobs: {name: count},
-//          table: 'reach' | 'near' | null, unlocked: (item) => bool }
-//   blocks and mobs are the sources nearby (natural, reachable blocks outside the house; animals)
+//          remembered: Set(name), table: 'reach' | 'near' | null, unlocked: (item) => bool }
+//   blocks and mobs are the sources nearby (natural, reachable blocks outside the house; animals);
+//   remembered: sources out of sight seen before (memory.mjs), cheaper to go back to than to search for
 
 const MAX_DEPTH = 6
 const EXPLORE_COST = 100 // a source not in sight has to be searched for first
+const RECALL_COST = 50 // one seen before: a trip back to where it was
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
 const WITHDRAW_COST = 0.5
@@ -158,10 +160,12 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
       cost += r.cost
     }
   }
+  const known = sources.filter((s) => world.remembered?.has(s))
+  const sought = known.length ? known : sources
   const leaf = inSight.length
     ? { kind, item, count: n, sources: inSight }
-    : { kind: 'explore', item, sources, reason: `no ${sources.join('/')} nearby for ${item}` }
-  if (!inSight.length) cost += EXPLORE_COST
+    : { kind: 'explore', item, sources: sought, reason: `no ${sought.join('/')} nearby for ${item}${known.length ? ' (seen before)' : ''}` }
+  if (!inSight.length) cost += known.length ? RECALL_COST : EXPLORE_COST
   const units = n + children.reduce((s, c) => s + c.units, 0)
   return { cost, units, children, leaf: children.every((c) => c.have >= c.need) ? leaf : null, method: kind }
 }

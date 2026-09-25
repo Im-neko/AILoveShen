@@ -95,6 +95,14 @@ test('loot: silk-touch drops, leaves and hostile mobs are no sources', () => {
   assert.ok(!k.resolve('food').members.includes('rotten_flesh'))
 })
 
+test('food out of sight: an animal seen before is gone back to rather than searched for', () => {
+  const w = { ...world(), remembered: new Set(['cow']) }
+  const r = solve(k, w, [{ spec: 'food', count: 4 }])
+  const explore = r.leaves.find((l) => l.kind === 'explore')
+  assert.deepEqual(explore.sources, ['cow'])
+  assert.match(explore.reason, /seen before/)
+})
+
 test('food: hunt an animal in sight', () => {
   const r = solve(k, world({ mobs: { cow: 1 } }), [{ spec: 'food', count: 4 }])
   assert.deepEqual(kinds(r), ['kill:beef'])

@@ -63,13 +63,22 @@ export function rememberDeath (memory, pos, now) {
 
 const stale = (kind, place, now) => REMEMBERED_ANIMALS.has(kind) && now - place.seen > ANIMAL_STALE_TICKS
 
+const worthATrip = (kind, p, me, now) => !stale(kind, p, now) && flatDistance(p, me) > RECALL_BEYOND
+
 // Places of these kinds out of view and still worth a trip, nearest first
 export function recall (memory, kinds, me, now) {
   return kinds.flatMap((kind) => (memory.places[kind] ?? [])
-    .filter((p) => !stale(kind, p, now) && flatDistance(p, me) > RECALL_BEYOND)
+    .filter((p) => worthATrip(kind, p, me, now))
     .map((p) => ({ kind, ...p, distance: Math.round(flatDistance(p, me)), minutesAgo: Math.round((now - p.seen) / TICKS_PER_MINUTE) })))
     .sort((a, b) => a.distance - b.distance)
     .slice(0, RECALLED_OFFERED)
+}
+
+// The kinds with a place worth a trip (the solver prefers them to searching blindly)
+export function recallableKinds (memory, me, now) {
+  return new Set(Object.entries(memory.places ?? {})
+    .filter(([kind, list]) => list.some((p) => worthATrip(kind, p, me, now)))
+    .map(([kind]) => kind))
 }
 
 const chestKey = (p) => `${p.x},${p.y},${p.z}`
