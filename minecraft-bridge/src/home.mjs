@@ -108,6 +108,12 @@ export function isInside (bot, home) {
     p.y >= home.min.y && p.y <= home.min.y + 1
 }
 
+// ボットが中にいる家（今の家か前の家）。前の家のベッドで寝たことがあると、死んだ後はそこで
+// 生き返る（town4d: 閉じた前の家から出られず、どこへも経路がなかった）
+export function houseAround (bot, state) {
+  return [state.home, ...(state.formerHomes ?? [])].find((h) => isInside(bot, h)) ?? null
+}
+
 // ドアが閉まっていれば（壁に穴もなければ）、壁の外のモブは中のボットに届かない。
 export function shelteredFrom (bot, home, entity) {
   if (!isInside(bot, home) || isDoorOpen(bot, home) || home.breach.length) return false

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
-import { inHouse } from '../src/home.mjs'
+import { inHouse, houseAround } from '../src/home.mjs'
 
 const { Vec3 } = vec3Pkg
 const v = (x, y, z) => new Vec3(x, y, z)
@@ -22,4 +22,13 @@ test('新しいプランが別の場所にあっても拠点は守る', () => {
   assert.equal(inHouse(state, v(100, 71, 0)), true)
   assert.equal(inHouse(state, v(104, 73, 4)), true)
   assert.equal(inHouse(state, v(106, 71, 2)), false)
+})
+
+test('前の家の中にいれば、その家から出る（town4d: 前の家のベッドで生き返り、閉じたドアから出られなかった）', () => {
+  const former = { min: v(-15, 66, 7), max: v(-13, 66, 9) }
+  const state = { home, formerHomes: [former] }
+  const at = (x, y, z) => ({ entity: { position: v(x + 0.5, y, z + 0.5) } })
+  assert.equal(houseAround(at(-14, 66, 8), state), former)
+  assert.equal(houseAround(at(102, 70, 2), state), home)
+  assert.equal(houseAround(at(0, 70, 0), state), null)
 })

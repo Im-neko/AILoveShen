@@ -30,7 +30,7 @@ import { Knowledge } from './knowledge.mjs'
 import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe, needsOutside } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
-import { loadState, saveState, settleHome, isInside, isDoorOpen, leaveHome, hasBed } from './home.mjs'
+import { loadState, saveState, settleHome, isInside, isDoorOpen, leaveHome, hasBed, houseAround } from './home.mjs'
 import { startReflex } from './reflex.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
@@ -131,7 +131,8 @@ async function act (id) {
   let finished
   state.current = { id, verb: c.verb, abort, done: new Promise((resolve) => { finished = resolve }) }
   try {
-    if (isInside(bot, state.home) && needsOutside(c, state.home)) await leaveHome(bot, state.home, controller.signal, { confront: !!c.confront })
+    const house = houseAround(bot, state)
+    if (house && needsOutside(c, house)) await leaveHome(bot, house, controller.signal, { confront: !!c.confront })
     controller.signal.throwIfAborted()
     result = await PRIMITIVES[c.verb](bot, state, c, controller.signal)
     if (controller.signal.aborted) throw controller.signal.reason
