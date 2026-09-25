@@ -1,0 +1,1230 @@
+2026-09-25 16:17:59.932 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseDesignedEvent を購読した
+2026-09-25 16:17:59.932 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 16:17:59.932 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseCompletedEvent を購読した
+2026-09-25 16:17:59.932 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 16:17:59.932 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 16:17:59.932 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalEndedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseCompletedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownSiteChosenEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownDefinedEvent を購読した
+2026-09-25 16:17:59.990 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownCompletedEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalEndedEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownSiteChosenEvent を購読した
+2026-09-25 16:18:00.078 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GameActionExecutedEvent を購読した
+2026-09-25 16:18:00.078 | INFO     | ailoveshen.infrastructure.adapters.storage.json_mission_store:load:58 - 中目標を data/mission.json から読み込んだ
+2026-09-25 16:18:00.078 | INFO     | ailoveshen.application.use_cases.play:_load_plan:154 - 中目標を引き継いだ: 夜に寝られるようにする (placed(bed, home)), 街の場所を探す (surveyed(9))
+2026-09-25 16:18:00.080 | INFO     | ailoveshen.presentation.web.goal_board:serve:174 - 目標ボード: http://127.0.0.1:8765/overlay
+2026-09-25 16:18:00.110 | INFO     | ailoveshen.application.use_cases.play:execute:121 - 家はもう建てている途中 (シェンのぽかぽかログベース): 新しい家は設計しない
+2026-09-25 16:18:01.863 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1707ms, prompt=2047 thoughts=None output=61 total=2108
+2026-09-25 16:18:01.893 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（no goal yet） - 既にベッドを持っているので、夜を安全にスキップするために家の中にベッドを設置します。; 残り 1
+2026-09-25 16:18:01.893 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 既にベッドを持っているので、夜を安全にスキップするために家の中にベッドを設置します。
+2026-09-25 16:18:01.894 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:01.915 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat porkchop
+2026-09-25 16:18:02.422 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 507ms, input=982 -> place door at -14,66,10（確信度 0.33）
+2026-09-25 16:18:03.196 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1302ms, prompt=1079 thoughts=None output=37 total=1116
+2026-09-25 16:18:03.197 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] もう夜だし外は危ないから、早くお家にベッドを置きたいんだけど、ドアの向きが変で入れないよ！まずはドアを付け直さなきゃ！
+2026-09-25 16:18:07.119 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:07.119 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [1] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.33）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （4.7秒）
+2026-09-25 16:18:07.162 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat porkchop | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:07.355 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 192ms, input=1214 -> place door at -14,66,10（確信度 0.14）
+2026-09-25 16:18:07.484 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:07.484 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [2] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.14）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:07.502 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat porkchop | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:07.707 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 204ms, input=1288 -> eat porkchop（確信度 0.12）
+2026-09-25 16:18:09.394 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:09.395 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [3] placed(bed, home)（残り 1）-> eat porkchop （確信度 0.12）: 成功 ate porkchop, hunger 12 -> 15 （1.7秒）
+2026-09-25 16:18:09.414 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place door at -14,66,10 | eat porkchop | equip wooden_sword
+2026-09-25 16:18:09.649 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 235ms, input=1159 -> equip wooden_sword（確信度 0.78）
+2026-09-25 16:18:09.720 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:09.720 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [4] placed(bed, home)（残り 1）-> equip wooden_sword （確信度 0.78）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:18:09.738 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat porkchop
+2026-09-25 16:18:09.975 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 236ms, input=1089 -> place door at -14,66,10（確信度 0.66）
+2026-09-25 16:18:10.119 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:10.119 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [5] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.66）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:10.137 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat porkchop | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:10.349 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 212ms, input=1255 -> place door at -14,66,10（確信度 0.25）
+2026-09-25 16:18:10.488 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:10.489 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [6] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.25）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:10.508 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat porkchop | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:10.694 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 186ms, input=1282 -> eat porkchop（確信度 0.19）
+2026-09-25 16:18:12.349 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:12.350 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [7] placed(bed, home)（残り 1）-> eat porkchop （確信度 0.19）: 成功 ate porkchop, hunger 15 -> 18 （1.6秒）
+2026-09-25 16:18:12.370 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place door at -14,66,10 | eat porkchop | equip wooden_sword
+2026-09-25 16:18:12.569 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 199ms, input=1161 -> equip wooden_sword（確信度 0.75）
+2026-09-25 16:18:12.629 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:12.630 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [8] placed(bed, home)（残り 1）-> equip wooden_sword （確信度 0.75）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:18:12.647 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat porkchop
+2026-09-25 16:18:12.847 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 200ms, input=1093 -> place door at -14,66,10（確信度 0.72）
+2026-09-25 16:18:12.971 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:12.971 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [9] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.72）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:13.013 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:14.475 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1462ms, prompt=2319 thoughts=None output=54 total=2373
+2026-09-25 16:18:14.476 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きがおかしくて家に入れないため、ドアを直して家に入れるようにします。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:16.032 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1554ms, prompt=2384 thoughts=None output=46 total=2430
+2026-09-25 16:18:16.051 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) stalled (no progress in 8 steps)） - 夜で外は危険なため、まずは家の中に入って安全を確保します。; 残り 1
+2026-09-25 16:18:16.051 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 夜で外は危険なため、まずは家の中に入って安全を確保します。
+2026-09-25 16:18:16.051 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:16.069 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat porkchop
+2026-09-25 16:18:16.360 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 291ms, input=1077 -> place door at -14,66,10（確信度 0.65）
+2026-09-25 16:18:16.481 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:16.481 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [10] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.65）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:16.499 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat porkchop | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:16.708 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1264 -> eat porkchop（確信度 0.34）
+2026-09-25 16:18:17.611 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1559ms, prompt=1351 thoughts=None output=46 total=1397
+2026-09-25 16:18:17.611 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ベッドを置くのは一旦諦めて、まずはモンスターに襲われる前になんとかしてお家の中に入らないとだね！ドアの前に立てないみたいだから、立ち位置を調整しながら付け直してみるよ！
+2026-09-25 16:18:18.403 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:18.403 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [11] at_home()（残り 1）-> eat porkchop （確信度 0.34）: 成功 ate porkchop, hunger 18 -> 20 （1.7秒）
+2026-09-25 16:18:18.423 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | equip wooden_sword
+2026-09-25 16:18:18.602 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 179ms, input=1099 -> equip wooden_sword（確信度 0.86）
+2026-09-25 16:18:18.666 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:18.666 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [12] at_home()（残り 1）-> equip wooden_sword （確信度 0.86）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:18:18.806 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:18.806 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [13] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:18.823 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:19.003 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 179ms, input=1196 -> place door at -14,66,10（確信度 0.45）
+2026-09-25 16:18:19.122 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:19.122 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [14] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.45）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:19.140 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:19.322 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 181ms, input=1223 -> place door at -14,66,10（確信度 0.49）
+2026-09-25 16:18:19.442 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:19.442 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [15] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.49）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:19.485 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:20.998 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1513ms, prompt=2405 thoughts=None output=61 total=2466
+2026-09-25 16:18:20.998 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きがおかしくて中に入れないため、家を建て直す判定でドアを正しく設置し直します。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:22.345 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1346ms, prompt=2470 thoughts=None output=57 total=2527
+2026-09-25 16:18:22.385 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal at_home() is stuck (actions keep failing)） - ドアを修正し家に入ってベッドを設置するため、中目標のベッド設置を再試行します。; 残り 1
+2026-09-25 16:18:22.385 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: ドアを修正し家に入ってベッドを設置するため、中目標のベッド設置を再試行します。
+2026-09-25 16:18:22.385 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:22.549 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:22.550 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [16] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:22.567 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:22.766 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 199ms, input=1270 -> place door at -14,66,10（確信度 0.27）
+2026-09-25 16:18:22.882 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:22.883 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [17] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.27）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:22.900 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:23.112 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=1276 -> place door at -14,66,10（確信度 0.30）
+2026-09-25 16:18:23.246 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:23.246 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [18] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.30）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:23.288 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:23.996 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1610ms, prompt=1461 thoughts=None output=43 total=1504
+2026-09-25 16:18:23.996 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うーん、ドアの設置場所がうまく定まらなくて入れないよ！もう一度ベッド設置の目標に戻って、なんとかドアを直してお家に入り込む方法を試してみるね！
+2026-09-25 16:18:24.936 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1648ms, prompt=2551 thoughts=None output=57 total=2608
+2026-09-25 16:18:24.936 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きがおかしくて入れずスタックしているので、家の建設処理を通じてドアを正しく直します。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:26.810 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1873ms, prompt=2662 thoughts=None output=60 total=2722
+2026-09-25 16:18:26.848 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 夜で外は敵が湧いて危険なため、家に入って夜を越すことを最優先にします。; 残り 1
+2026-09-25 16:18:26.848 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: 夜で外は敵が湧いて危険なため、家に入って夜を越すことを最優先にします。
+2026-09-25 16:18:26.848 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:26.992 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:26.992 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [19] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:27.013 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:27.221 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 207ms, input=1263 -> place door at -14,66,10（確信度 0.40）
+2026-09-25 16:18:27.366 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:27.366 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [20] through_night()（残り 1）-> place door at -14,66,10 （確信度 0.40）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:27.385 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:27.574 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 189ms, input=1267 -> place door at -14,66,10（確信度 0.42）
+2026-09-25 16:18:27.717 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:27.717 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [21] through_night()（残り 1）-> place door at -14,66,10 （確信度 0.42）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:27.764 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:28.596 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1747ms, prompt=1644 thoughts=None output=56 total=1700
+2026-09-25 16:18:28.596 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアがどうしても置けなくてベッドの設置が進まないから、とにかく今は朝まで生き延びるのを最優先にするね！外は真っ暗でモンスターが湧いちゃうから、なんとか隙間からでも家の中に滑り込まないとまずいよ！
+2026-09-25 16:18:29.635 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1870ms, prompt=2653 thoughts=None output=57 total=2710
+2026-09-25 16:18:29.770 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal through_night() is stuck (actions keep failing)） - ドアの向きの問題で家に入れないため、まずは安全に家の中に入ることを目指します。; 残り 1
+2026-09-25 16:18:29.770 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: ドアの向きの問題で家に入れないため、まずは安全に家の中に入ることを目指します。
+2026-09-25 16:18:29.771 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:29.797 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat mutton
+2026-09-25 16:18:29.997 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 200ms, input=1134 -> eat mutton（確信度 0.24）
+2026-09-25 16:18:31.671 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:31.671 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [22] at_home()（残り 1）-> eat mutton （確信度 0.24）: 成功 ate mutton, hunger 19 -> 20 （1.6秒）
+2026-09-25 16:18:31.695 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | equip wooden_sword
+2026-09-25 16:18:31.786 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2015ms, prompt=1751 thoughts=82 output=57 total=1890
+2026-09-25 16:18:31.786 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 足場が狭いのかドアの付け直しが全然うまくいかないから、朝までやり過ごす作戦も詰まっちゃったよ！でも外にいたら本当に危ないから、とにかく強引にでも家の中に滑り込めるように頑張ってみるね！
+2026-09-25 16:18:31.926 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 230ms, input=1107 -> equip wooden_sword（確信度 0.87）
+2026-09-25 16:18:32.004 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:32.004 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [23] at_home()（残り 1）-> equip wooden_sword （確信度 0.87）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:18:32.148 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:32.148 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [24] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:32.167 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:32.394 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 226ms, input=1209 -> place door at -14,66,10（確信度 0.28）
+2026-09-25 16:18:32.525 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:32.525 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [25] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.28）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:32.546 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:32.787 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 241ms, input=1236 -> place door at -14,66,10（確信度 0.28）
+2026-09-25 16:18:32.929 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:32.930 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [26] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.28）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:32.980 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:34.736 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1754ms, prompt=2746 thoughts=None output=61 total=2807
+2026-09-25 16:18:34.736 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きがおかしくて入れずスタックしているため、家の建築・修正を小目標にしてドア周りを整えます。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:36.490 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1753ms, prompt=2811 thoughts=None output=115 total=2926
+2026-09-25 16:18:36.530 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(9)（街の場所を探す (surveyed(9)) のため）（goal at_home() is stuck (actions keep failing)） - 家に入れないため街の候補地調査を進めつつ朝を待ちます; 残り 91
+2026-09-25 16:18:36.530 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(9) [街の場所を探す のため]: 家に入れないため街の候補地調査を進めつつ朝を待ちます
+2026-09-25 16:18:36.530 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:37.813 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:37.813 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [27] surveyed(9)（残り 91）-> survey the here site at -14,9 （確信度 1.00）: 成功 surveyed the here site: 1 flat plots, water 1%, steep 2%, stone 0, coal 3, iron 0, logs 206, animals 1 （1.2秒）
+2026-09-25 16:18:37.897 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:37.897 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [28] surveyed(9)（残り 82）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:18:37.997 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:37.997 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [29] surveyed(9)（残り 82）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:18:38.099 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:38.099 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [30] surveyed(9)（残り 82）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:18:38.142 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:38.282 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1751ms, prompt=1782 thoughts=None output=54 total=1836
+2026-09-25 16:18:38.282 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] どうしてもお家に入れないから、家の中で朝を待つのは一旦諦めて、街の候補地を探しに行っちゃうね！夜の外はすっごく危ないけど、モンスターに気をつけながら朝になるまで調査を進めてみるよ！
+2026-09-25 16:18:39.954 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1810ms, prompt=2915 thoughts=None output=53 total=2968
+2026-09-25 16:18:39.954 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': '家に入れない原因のドアなど建物の不備を修正して中に入れるようにします'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:41.566 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1612ms, prompt=3038 thoughts=None output=68 total=3106
+2026-09-25 16:18:41.596 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: explored(32)（街の場所を探す (surveyed(9)) のため）（goal surveyed(9) is stuck (actions keep failing)） - 調査地への経路が見つからないため、周囲を少し探索して安全なルートを探しつつ朝を待ちます。; 残り 2
+2026-09-25 16:18:41.596 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] explored(32) [街の場所を探す のため]: 調査地への経路が見つからないため、周囲を少し探索して安全なルートを探しつつ朝を待ちます。
+2026-09-25 16:18:41.596 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:41.619 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:18:42.177 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 557ms, input=1162 -> explore north（確信度 0.19）
+2026-09-25 16:18:42.252 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:42.252 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [31] explored(32)（残り 2）-> explore north （確信度 0.19）: 失敗 failed: could not walk north from 12.5,20.6: No path to the goal! （0.0秒）
+2026-09-25 16:18:42.269 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: explore north | explore east | explore south | explore west | eat mutton
+2026-09-25 16:18:42.517 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 247ms, input=1199 -> explore east（確信度 0.25）
+2026-09-25 16:18:42.586 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:42.587 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [32] explored(32)（残り 2）-> explore east （確信度 0.25）: 失敗 failed: could not walk east from 12.5,20.6: No path to the goal! （0.0秒）
+2026-09-25 16:18:42.603 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（8）: explore north | explore east | explore south | explore west | eat mutton | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:42.853 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 250ms, input=1367 -> explore south（確信度 0.67）
+2026-09-25 16:18:42.920 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:42.920 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [33] explored(32)（残り 2）-> explore south （確信度 0.67）: 失敗 failed: could not walk south from 12.5,20.6: No path to the goal! （0.0秒）
+2026-09-25 16:18:42.960 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:43.191 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1594ms, prompt=1948 thoughts=None output=44 total=1992
+2026-09-25 16:18:43.191 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、次の候補地に行こうとしたのに道が塞がってて進めないみたい！周りを少し探索して通れそうなルートを探しながら、モンスターに気をつけて朝を待つね！
+2026-09-25 16:18:44.723 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1762ms, prompt=2966 thoughts=None output=69 total=3035
+2026-09-25 16:18:44.756 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（街の場所を探す (surveyed(9)) のため）（goal explored(32) is stuck (actions keep failing)） - 移動経路が見つからず外での探索が詰まっているため、手持ちのベッドを設置して寝られるか試みます。; 残り 1
+2026-09-25 16:18:44.756 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [街の場所を探す のため]: 移動経路が見つからず外での探索が詰まっているため、手持ちのベッドを設置して寝られるか試みます。
+2026-09-25 16:18:44.757 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:44.778 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat mutton
+2026-09-25 16:18:45.021 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 243ms, input=1097 -> eat mutton（確信度 0.01）
+2026-09-25 16:18:46.252 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1495ms, prompt=2044 thoughts=None output=58 total=2102
+2026-09-25 16:18:46.252 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] どっちへ進もうとしても道が見つからなくて、外の探索も完全に詰まっちゃったよ！やっぱりこのまま外にいるのは危険すぎるから、もう一度お家に戻ってドアを直して、ベッドを置いて寝る作戦に挑んでみるね！
+2026-09-25 16:18:46.690 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:46.690 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [34] placed(bed, home)（残り 1）-> eat mutton （確信度 0.01）: 成功 ate mutton, hunger 19 -> 19 （1.6秒）
+2026-09-25 16:18:46.710 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place door at -14,66,10 | eat mutton | equip wooden_sword
+2026-09-25 16:18:46.926 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 216ms, input=1119 -> equip wooden_sword（確信度 0.76）
+2026-09-25 16:18:46.991 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:46.991 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [35] placed(bed, home)（残り 1）-> equip wooden_sword （確信度 0.76）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:18:47.008 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | eat mutton
+2026-09-25 16:18:47.202 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 193ms, input=1070 -> place door at -14,66,10（確信度 0.66）
+2026-09-25 16:18:47.339 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:47.339 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [36] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.66）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:47.356 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat mutton | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:47.610 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 254ms, input=1255 -> place door at -14,66,10（確信度 0.16）
+2026-09-25 16:18:47.753 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:47.753 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [37] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.16）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:47.771 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat mutton | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:47.979 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1280 -> eat mutton（確信度 0.59）
+2026-09-25 16:18:49.653 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:49.653 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [38] placed(bed, home)（残り 1）-> eat mutton （確信度 0.59）: 成功 ate mutton, hunger 19 -> 20 （1.6秒）
+2026-09-25 16:18:49.673 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | equip wooden_sword
+2026-09-25 16:18:49.895 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 222ms, input=1124 -> equip wooden_sword（確信度 0.91）
+2026-09-25 16:18:49.955 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:49.955 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [39] placed(bed, home)（残り 1）-> equip wooden_sword （確信度 0.91）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:18:50.100 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:50.100 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [40] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:50.118 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:50.327 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1224 -> place door at -14,66,10（確信度 0.25）
+2026-09-25 16:18:50.461 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:50.462 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [41] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.25）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:50.479 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:50.717 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 238ms, input=1249 -> place door at -14,66,10（確信度 0.16）
+2026-09-25 16:18:50.846 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:50.846 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [42] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 0.16）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:50.886 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:52.640 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1752ms, prompt=3122 thoughts=None output=58 total=3180
+2026-09-25 16:18:52.640 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きや設置場所の問題を設計図の再建修復機能で直して家に入れるようにします。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:54.202 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1561ms, prompt=3187 thoughts=None output=56 total=3243
+2026-09-25 16:18:54.238 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 夜の外は危険なため、まずは家の中に入って身を守ることを最優先にします。; 残り 1
+2026-09-25 16:18:54.238 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 夜の外は危険なため、まずは家の中に入って身を守ることを最優先にします。
+2026-09-25 16:18:54.239 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:54.408 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:54.408 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [43] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:54.425 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:54.635 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 210ms, input=1272 -> place door at -14,66,10（確信度 0.39）
+2026-09-25 16:18:54.773 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:54.774 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [44] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.39）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:54.792 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:55.018 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 225ms, input=1270 -> place door at -14,66,10（確信度 0.35）
+2026-09-25 16:18:55.141 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:55.142 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [45] at_home()（残り 1）-> place door at -14,66,10 （確信度 0.35）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:55.183 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:18:56.922 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2683ms, prompt=2096 thoughts=None output=57 total=2153
+2026-09-25 16:18:56.922 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ベッドを置くどころかやっぱりお家の中に入れないから、まずはベッドのことは忘れてドアを直してお家に避難するよ！夜の外は本当に真っ暗で危ないから、なんとか立っている場所を整えてドアを付け直してみるね！
+2026-09-25 16:18:57.195 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2011ms, prompt=3190 thoughts=None output=59 total=3249
+2026-09-25 16:18:57.196 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きがおかしくて入れないため、家の構造を再認識・修復させて正常に出入りできるようにします。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:18:59.039 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1842ms, prompt=3315 thoughts=None output=59 total=3374
+2026-09-25 16:18:59.071 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal at_home() is stuck (actions keep failing)） - ドアの問題で入れず小目標が詰まったため、家周辺の安全を確保しつつ朝まで生き延びることを目指します。; 残り 1
+2026-09-25 16:18:59.071 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: ドアの問題で入れず小目標が詰まったため、家周辺の安全を確保しつつ朝まで生き延びることを目指します。
+2026-09-25 16:18:59.072 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:18:59.239 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:18:59.240 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [46] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:18:59.257 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place door at -14,66,10 | eat mutton | pick up dirt #12381 | pick up brown_mushroom #12378 | pick up cobblestone #12380
+2026-09-25 16:18:59.468 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=1313 -> pick up cobblestone #12380（確信度 0.24）
+2026-09-25 16:19:00.451 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1379ms, prompt=2252 thoughts=None output=52 total=2304
+2026-09-25 16:19:00.452 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] やっぱりドアの前にうまく立てなくてお家に入れないから、家の中でやり過ごすのは一旦諦めるね！朝まであと四分くらいあるし、家の周りでモンスターを警戒しながらなんとか外で生き延びてみせるよ！
+2026-09-25 16:19:02.012 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:02.012 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [47] through_night()（残り 1）-> pick up cobblestone #12380 （確信度 0.24）: 成功 picked up 5 items （2.5秒）
+2026-09-25 16:19:02.031 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | eat mutton | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:02.247 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1247 -> place door at -14,66,10（確信度 0.13）
+2026-09-25 16:19:02.378 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:02.378 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [48] through_night()（残り 1）-> place door at -14,66,10 （確信度 0.13）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:02.398 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | eat mutton | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:02.684 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 286ms, input=1251 -> eat mutton（確信度 0.16）
+2026-09-25 16:19:04.336 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:04.337 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [49] through_night()（残り 1）-> eat mutton （確信度 0.16）: 成功 ate mutton, hunger 19 -> 20 （1.6秒）
+2026-09-25 16:19:04.355 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: place door at -14,66,10 | equip wooden_sword | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:04.563 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1223 -> equip wooden_sword（確信度 0.92）
+2026-09-25 16:19:04.624 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:04.624 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [50] through_night()（残り 1）-> equip wooden_sword （確信度 0.92）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:19:04.641 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place door at -14,66,10 | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:04.862 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1180 -> place door at -14,66,10（確信度 0.14）
+2026-09-25 16:19:04.978 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:04.978 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [51] through_night()（残り 1）-> place door at -14,66,10 （確信度 0.14）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:04.995 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place door at -14,66,10 | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:05.211 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1182 -> place door at -14,66,10（確信度 0.16）
+2026-09-25 16:19:05.336 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:05.336 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [52] through_night()（残り 1）-> place door at -14,66,10 （確信度 0.16）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:05.353 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place door at -14,66,10 | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:05.580 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 226ms, input=1211 -> place door at -14,66,10（確信度 0.09）
+2026-09-25 16:19:05.697 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:05.697 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [53] through_night()（残り 1）-> place door at -14,66,10 （確信度 0.09）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:05.737 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:07.326 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1588ms, prompt=3249 thoughts=None output=58 total=3307
+2026-09-25 16:19:07.326 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きが原因で家に入れないため、家の建設状態を正しく直してドア問題を解消します。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:19:08.855 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1528ms, prompt=3314 thoughts=None output=73 total=3387
+2026-09-25 16:19:09.175 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal through_night() is stuck (actions keep failing)） - 家に入れない夜の間、危険を避けながら食料を調達して朝まで生き延びます。; 残り 2
+2026-09-25 16:19:09.175 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 家に入れない夜の間、危険を避けながら食料を調達して朝まで生き延びます。
+2026-09-25 16:19:09.175 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:09.453 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: attack pig #9 | pick up snowball #12382 | pick up dirt #12381
+2026-09-25 16:19:09.701 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 248ms, input=1201 -> attack pig #9（確信度 0.97）
+2026-09-25 16:19:10.701 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1525ms, prompt=2228 thoughts=None output=55 total=2283
+2026-09-25 16:19:10.701 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] じっとして朝を待つのも難しそうだから、近くにいるブタさんを狩って食料を集めながら朝を待つことにするね！外は真っ暗でモンスターが出そうだから、周りをしっかり見張りながら動くよ！
+2026-09-25 16:19:15.344 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:15.344 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [54] have(food, 4)（残り 2）-> attack pig #9 （確信度 0.97）: 成功 pig gone (killed or despawned); picked up 18 items （5.3秒）
+2026-09-25 16:19:15.383 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:17.238 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1854ms, prompt=3267 thoughts=None output=75 total=3342
+2026-09-25 16:19:17.522 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 8)（生存のため）（goal have(food, 4) is met） - 家に入れない夜の間、モンスターを警戒しながら周囲の動物から食料をさらに集めて朝を待ちます。; 残り 4
+2026-09-25 16:19:17.522 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 8) [生存]: 家に入れない夜の間、モンスターを警戒しながら周囲の動物から食料をさらに集めて朝を待ちます。
+2026-09-25 16:19:17.522 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:17.787 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore east | explore north | explore south | explore west
+2026-09-25 16:19:18.288 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 500ms, input=1388 -> go to chicken seen at -5,54（確信度 0.32）
+2026-09-25 16:19:18.594 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:18.594 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [55] have(food, 8)（残り 4）-> go to chicken seen at -5,54 （確信度 0.32）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:19:18.858 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore north | explore east | explore south | explore west
+2026-09-25 16:19:18.983 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1460ms, prompt=2278 thoughts=None output=54 total=2332
+2026-09-25 16:19:18.983 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ブタさんからお肉をゲットできたよ、これで食料は４つ集まったね！朝までまだ時間があるから、次はニワトリさんを探して食料を８個まで増やしながら、モンスターに気をつけてサバイバルしていくよ！
+2026-09-25 16:19:19.088 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 229ms, input=1364 -> explore north（確信度 0.23）
+2026-09-25 16:19:19.414 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:19.414 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [56] have(food, 8)（残り 4）-> explore north （確信度 0.23）: 失敗 failed: could not walk north from 15.7,20.5: No path to the goal! （0.0秒）
+2026-09-25 16:19:19.677 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore north | explore west
+2026-09-25 16:19:19.913 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 235ms, input=1233 -> explore west（確信度 0.51）
+2026-09-25 16:19:20.228 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:20.228 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [57] have(food, 8)（残り 4）-> explore west （確信度 0.51）: 失敗 failed: could not walk west from 15.6,17.9: No path to the goal! （0.0秒）
+2026-09-25 16:19:20.515 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:22.398 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1882ms, prompt=3282 thoughts=None output=68 total=3350
+2026-09-25 16:19:22.442 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal have(food, 8) is stuck (actions keep failing)） - ニワトリへの道が塞がり食料集めが詰まったため、夜のモンスターの危険を避けて家に入り身を守ります。; 残り 1
+2026-09-25 16:19:22.442 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: ニワトリへの道が塞がり食料集めが詰まったため、夜のモンスターの危険を避けて家に入り身を守ります。
+2026-09-25 16:19:22.442 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:22.581 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:22.581 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [58] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:22.737 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:22.737 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [59] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:22.898 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:22.898 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [60] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:22.942 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:24.103 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1660ms, prompt=2281 thoughts=None output=51 total=2332
+2026-09-25 16:19:24.103 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ニワトリさんのところへ行こうとしたら道が塞がってて進めなくなっちゃったよ！外は真っ暗でモンスターが本当に怖いから、食料集めは諦めてなんとかお家の中に避難するね！
+2026-09-25 16:19:24.486 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1544ms, prompt=3345 thoughts=None output=51 total=3396
+2026-09-25 16:19:24.507 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal at_home() is stuck (actions keep failing)） - 家に入れないため周囲を警戒しながら朝まで生き延びます; 残り 1
+2026-09-25 16:19:24.507 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: 家に入れないため周囲を警戒しながら朝まで生き延びます
+2026-09-25 16:19:24.507 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:24.668 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:24.668 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [61] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:24.824 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:24.824 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [62] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:24.983 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:24.984 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [63] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:19:25.029 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:25.970 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1462ms, prompt=2310 thoughts=None output=55 total=2365
+2026-09-25 16:19:25.970 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] やっぱりドアの向きがおかしくてお家に入れないから、避難するのは諦めて外で朝まで生き延びる作戦に切り替えるね！朝まであと三分、剣を構えてモンスターを警戒しながら全力でサバイバルするよ！
+2026-09-25 16:19:26.791 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1761ms, prompt=3364 thoughts=None output=50 total=3414
+2026-09-25 16:19:26.791 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'predicate': 'built', 'serves': 'survival', 'reason': 'ドアの向きや設置場所の問題で家に入れないため、家の建設状態を修復して入れるようにします。'}: built() is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:19:29.124 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2332ms, prompt=3427 thoughts=None output=74 total=3501
+2026-09-25 16:19:29.437 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 6)（生存のため）（goal through_night() is stuck (actions keep failing)） - 家に入れないため周囲のモンスターを警戒しつつ食料を調達して朝まで生き延びます; 残り 2
+2026-09-25 16:19:29.437 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 6) [生存]: 家に入れないため周囲のモンスターを警戒しつつ食料を調達して朝まで生き延びます
+2026-09-25 16:19:29.437 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:29.710 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore north | explore east | explore south | explore west
+2026-09-25 16:19:30.229 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 518ms, input=1405 -> go to chicken seen at -5,54（確信度 0.36）
+2026-09-25 16:19:30.643 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:30.644 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [64] have(food, 6)（残り 2）-> go to chicken seen at -5,54 （確信度 0.36）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:19:31.083 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1646ms, prompt=2361 thoughts=None output=52 total=2413
+2026-09-25 16:19:31.083 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ただ立って朝を待つのも危ないから、動き回りながらあと二つ食料を集めてみることにしたよ！ニワトリさんを探したいんだけど近くに見当たらないから、周りを警戒しながら慎重に探してみるね！
+2026-09-25 16:19:31.162 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore south | explore west
+2026-09-25 16:19:31.389 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 226ms, input=1289 -> explore south（確信度 0.66）
+2026-09-25 16:19:31.700 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:31.700 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [65] have(food, 6)（残り 2）-> explore south （確信度 0.66）: 失敗 failed: could not walk south from 14.5,19.7: No path to the goal! （0.0秒）
+2026-09-25 16:19:31.974 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore south | explore west
+2026-09-25 16:19:32.208 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 233ms, input=1254 -> explore west（確信度 0.26）
+2026-09-25 16:19:32.550 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:32.550 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [66] have(food, 6)（残り 2）-> explore west （確信度 0.26）: 失敗 failed: could not walk west from 14.5,20.6: No path to the goal! （0.0秒）
+2026-09-25 16:19:33.044 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:34.794 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1749ms, prompt=3298 thoughts=None output=83 total=3381
+2026-09-25 16:19:34.839 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 6) is stuck (actions keep failing)） - 食料探しが詰まり夜も残りわずかなので、既に持っている食料4つを維持しつつモンスターを警戒して朝を待ちます; 残り 0
+2026-09-25 16:19:34.839 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 食料探しが詰まり夜も残りわずかなので、既に持っている食料4つを維持しつつモンスターを警戒して朝を待ちます
+2026-09-25 16:19:34.839 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:36.445 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1606ms, prompt=2290 thoughts=None output=57 total=2347
+2026-09-25 16:19:36.446 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] あちこち歩き回ってみたけど道が険しくて、これ以上の食料探しは厳しそうだなあ。今あるお肉４つを大事にキープしながら、朝が来るまであと三分、剣を構えてモンスターを警戒するよ！
+2026-09-25 16:19:45.702 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:45.702 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [67] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 20278, door closed) （10.8秒）
+2026-09-25 16:19:45.752 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:19:47.324 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1571ms, prompt=3242 thoughts=None output=76 total=3318
+2026-09-25 16:19:47.324 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'have', 'item': 'wooden_sword', 'count': 1, 'serves': 'survival', 'reason': '家に入れず外での探索も困難な夜のため、剣を手にしてモンスターを警戒しながら朝を待ちます。'}: have(wooden_sword, 1) is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:19:49.031 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1706ms, prompt=3314 thoughts=None output=79 total=3393
+2026-09-25 16:19:49.056 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 夜が明けるまでの残り数分、手持ちの食料4個を維持しつつモンスターを警戒して安全に過ごします; 残り 0
+2026-09-25 16:19:49.056 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 夜が明けるまでの残り数分、手持ちの食料4個を維持しつつモンスターを警戒して安全に過ごします
+2026-09-25 16:19:49.057 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:19:51.070 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2013ms, prompt=2242 thoughts=None output=49 total=2291
+2026-09-25 16:19:51.070 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] よし、手持ちのお肉4つはしっかり確保できてるね！体力も満タンだし、朝が来るまでの残り三分はこの食料を守りつつ、モンスターに奇襲されないよう全集中で周囲を見張るよ！
+2026-09-25 16:19:59.644 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:19:59.644 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [68] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 20558, door closed) （10.5秒）
+2026-09-25 16:19:59.692 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:20:01.280 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1588ms, prompt=3211 thoughts=None output=84 total=3295
+2026-09-25 16:20:01.331 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 朝まで残り約3分の夜間、外でモンスターの奇襲を警戒しつつ手持ちの食料4個を維持して生き延びます; 残り 0
+2026-09-25 16:20:01.332 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 朝まで残り約3分の夜間、外でモンスターの奇襲を警戒しつつ手持ちの食料4個を維持して生き延びます
+2026-09-25 16:20:01.332 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:20:02.861 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1528ms, prompt=2213 thoughts=None output=46 total=2259
+2026-09-25 16:20:02.861 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 今のところ敵の気配はなさそうだけど、油断は禁物だよね。朝の光が見えてくるまで、木剣をぎゅっと握りしめてその場でじっと警戒を続けるよ！
+2026-09-25 16:20:12.125 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:12.125 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [69] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 20818, door closed) （10.7秒）
+2026-09-25 16:20:12.182 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:20:14.036 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1853ms, prompt=3183 thoughts=None output=81 total=3264
+2026-09-25 16:20:14.075 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 夜が明けるまでの残り数分、手持ちの食料4個を維持しつつモンスターを警戒して安全に朝を待ちます。; 残り 0
+2026-09-25 16:20:14.075 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 夜が明けるまでの残り数分、手持ちの食料4個を維持しつつモンスターを警戒して安全に朝を待ちます。
+2026-09-25 16:20:14.075 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:20:15.674 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1599ms, prompt=2179 thoughts=None output=54 total=2233
+2026-09-25 16:20:15.674 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 手持ちのお肉四つも無事だし、体力もお腹もばっちりキープできてるよ！夜明けまであと少しだから、変に動かずこの場所で耳を澄ませて、モンスターが来ないか見守っていくね！
+2026-09-25 16:20:24.678 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:24.678 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [70] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 21058, door closed) （10.6秒）
+2026-09-25 16:20:24.733 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:20:26.466 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1732ms, prompt=3153 thoughts=None output=81 total=3234
+2026-09-25 16:20:26.504 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 夜明けまで残り約2分なので、手持ちの食料4個を維持しつつモンスターを警戒して安全に朝を待ちます。; 残り 0
+2026-09-25 16:20:26.504 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 夜明けまで残り約2分なので、手持ちの食料4個を維持しつつモンスターを警戒して安全に朝を待ちます。
+2026-09-25 16:20:26.504 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:20:27.840 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1335ms, prompt=2165 thoughts=None output=39 total=2204
+2026-09-25 16:20:27.840 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 夜明けまであと二分くらい、いよいよ長かった夜もクライマックスだね！みんな応援ありがとう、最後まで油断しないでモンスターが来ないかしっかり見張っておくよ！
+2026-09-25 16:20:37.063 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:37.063 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [71] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 21318, door closed) （10.5秒）
+2026-09-25 16:20:37.108 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:20:38.737 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1628ms, prompt=3129 thoughts=None output=74 total=3203
+2026-09-25 16:20:38.779 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 夜明けまで残り約2分の外なので、手持ちの食料4個を維持しつつモンスターを警戒して安全に朝を待ちます。; 残り 0
+2026-09-25 16:20:38.779 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 夜明けまで残り約2分の外なので、手持ちの食料4個を維持しつつモンスターを警戒して安全に朝を待ちます。
+2026-09-25 16:20:38.779 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:20:40.103 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1323ms, prompt=2128 thoughts=None output=43 total=2171
+2026-09-25 16:20:40.103 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 食料も体力もしっかり維持できてるから、このまま安全第一で朝日を待つよ。空が明るくなるまであと少し、周りをよーく見てモンスターをやり過ごそうね！
+2026-09-25 16:20:49.352 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:49.352 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [72] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 21558, door closed) （10.5秒）
+2026-09-25 16:20:49.398 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:20:51.363 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1964ms, prompt=3118 thoughts=None output=60 total=3178
+2026-09-25 16:20:51.411 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal have(food, 4) is met） - 持ち物にベッドがあり夜明けまで残り約2分なので、家に入って寝て夜を明かします。; 残り 1
+2026-09-25 16:20:51.411 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: 持ち物にベッドがあり夜明けまで残り約2分なので、家に入って寝て夜を明かします。
+2026-09-25 16:20:51.411 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:20:51.550 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:51.550 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [73] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:20:51.711 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:51.711 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [74] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:20:51.869 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:20:51.870 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [75] through_night()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:20:51.912 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:20:52.838 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1426ms, prompt=2108 thoughts=None output=46 total=2154
+2026-09-25 16:20:52.839 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] あ、そういえば手持ちにベッドがあるんだった！お家に入って寝ちゃいたいところなんだけど、ドアの向きが引っかかって入れないから、まずはドアを付け直してお部屋に入ろうかな！
+2026-09-25 16:20:53.634 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1721ms, prompt=3252 thoughts=None output=85 total=3337
+2026-09-25 16:20:53.677 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal through_night() is stuck (actions keep failing)） - ドアの不具合で家に入れないため、朝までの残り2分間を手持ちの食料4個を保ちつつ外で警戒して凌ぎます。; 残り 0
+2026-09-25 16:20:53.677 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: ドアの不具合で家に入れないため、朝までの残り2分間を手持ちの食料4個を保ちつつ外で警戒して凌ぎます。
+2026-09-25 16:20:53.677 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:20:55.090 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1412ms, prompt=2240 thoughts=None output=42 total=2282
+2026-09-25 16:20:55.090 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うーん、立ち位置が狭いみたいでドアがうまく置けないよ！お家で寝るのは諦めて、朝までの残り二分、外でモンスターを警戒しながら凌ぎきるね！
+2026-09-25 16:21:03.972 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:21:03.973 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [76] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 21858, door closed) （10.2秒）
+2026-09-25 16:21:04.017 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:21:05.891 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1873ms, prompt=3229 thoughts=None output=87 total=3316
+2026-09-25 16:21:05.941 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - ドアの不具合で家に入れないため、朝までの残り2分間を手持ちの食料4個を保ちつつ外で警戒して夜を明かします。; 残り 0
+2026-09-25 16:21:05.941 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: ドアの不具合で家に入れないため、朝までの残り2分間を手持ちの食料4個を保ちつつ外で警戒して夜を明かします。
+2026-09-25 16:21:05.942 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:21:08.233 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2291ms, prompt=2235 thoughts=201 output=51 total=2487
+2026-09-25 16:21:08.233 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアはどうしても置けそうにないから、もうこのまま青空の下で踏ん張ることにするよ。お肉も４つあるし体力も満タンだから、あと２分全力で耐え抜いてみせるね！
+2026-09-25 16:21:16.507 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:21:16.507 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [77] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 22098, door closed) （10.5秒）
+2026-09-25 16:21:16.554 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:21:18.173 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1619ms, prompt=3230 thoughts=None output=87 total=3317
+2026-09-25 16:21:18.195 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - ドアの問題で屋内に入れず夜が明けるまで残り約2分なので、手持ちの食料4個を保ちつつ周囲を警戒して耐え抜きます。; 残り 0
+2026-09-25 16:21:18.195 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: ドアの問題で屋内に入れず夜が明けるまで残り約2分なので、手持ちの食料4個を保ちつつ周囲を警戒して耐え抜きます。
+2026-09-25 16:21:18.196 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:21:20.000 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1804ms, prompt=2239 thoughts=None output=53 total=2292
+2026-09-25 16:21:20.001 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 木剣を構えたままじっと待ってるけど、今のところモンスターは寄ってきてないみたいでホッとしてるよ。あと少しで朝日が昇るはずだから、このままお肉を大事に抱えて耐えきるからね！
+2026-09-25 16:21:28.759 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:21:28.759 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [78] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 22338, door closed) （10.5秒）
+2026-09-25 16:21:28.804 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:21:30.372 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1567ms, prompt=3195 thoughts=None output=78 total=3273
+2026-09-25 16:21:30.411 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 朝まで残り約1分なので、手持ちの食料4個を保ちつつ周囲を警戒して耐え抜きます。; 残り 0
+2026-09-25 16:21:30.411 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 朝まで残り約1分なので、手持ちの食料4個を保ちつつ周囲を警戒して耐え抜きます。
+2026-09-25 16:21:30.411 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:21:32.583 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2172ms, prompt=2185 thoughts=None output=39 total=2224
+2026-09-25 16:21:32.584 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 空が少しずつ白んできて、朝まであと一分くらいになったよ！手持ちのお肉を守りながら、最後まで気を抜かずに周囲を見張って朝日を迎えるね！
+2026-09-25 16:21:41.185 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:21:41.185 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [79] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 22598, door closed) （10.7秒）
+2026-09-25 16:21:41.232 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:21:42.642 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1409ms, prompt=3131 thoughts=None output=81 total=3212
+2026-09-25 16:21:42.695 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 朝まで残り約1分なので、手持ちの食料4個を維持しつつ外でモンスターを警戒して夜明けを待ちます。; 残り 0
+2026-09-25 16:21:42.695 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 朝まで残り約1分なので、手持ちの食料4個を維持しつつ外でモンスターを警戒して夜明けを待ちます。
+2026-09-25 16:21:42.696 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:21:45.167 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2471ms, prompt=2126 thoughts=55 output=48 total=2229
+2026-09-25 16:21:45.167 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] お肉四つもしっかり手元にあるし、あとは本当に朝日を待つだけだね！あと一分でモンスターたちともバイバイできるはずだから、木剣を構えてラストスパート耐え抜くよ！
+2026-09-25 16:21:53.340 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:21:53.341 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [80] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 22838, door closed) （10.6秒）
+2026-09-25 16:21:53.386 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:21:55.057 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1670ms, prompt=3085 thoughts=None output=71 total=3156
+2026-09-25 16:21:55.105 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 朝まで残り約1分なので、手持ちの食料4個を保ちつつ周囲を警戒して夜明けを待ちます。; 残り 0
+2026-09-25 16:21:55.105 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 朝まで残り約1分なので、手持ちの食料4個を保ちつつ周囲を警戒して夜明けを待ちます。
+2026-09-25 16:21:55.105 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:21:57.376 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2270ms, prompt=2083 thoughts=None output=51 total=2134
+2026-09-25 16:21:57.376 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 静まり返った夜もあと少し、東の空がうっすら明るくなってきた気がするよ！このまま木剣をしっかり握りしめて、朝日が完全に昇る瞬間まで絶対に気を緩めないで待つね！
+2026-09-25 16:22:05.571 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:05.571 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [81] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 23078, door closed) （10.4秒）
+2026-09-25 16:22:05.617 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:07.363 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1745ms, prompt=3090 thoughts=None output=80 total=3170
+2026-09-25 16:22:07.415 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 朝まで残り1分を切ったので、手持ちの食料4個を保ちつつ周囲を警戒して夜明けを待ちます。; 残り 0
+2026-09-25 16:22:07.415 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 朝まで残り1分を切ったので、手持ちの食料4個を保ちつつ周囲を警戒して夜明けを待ちます。
+2026-09-25 16:22:07.415 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:09.094 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1678ms, prompt=2079 thoughts=None output=46 total=2125
+2026-09-25 16:22:09.094 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 朝まであと一分を切って、いよいよ夜明けの瞬間が近づいてきたよ！手持ちのお肉四つもしっかり無事だし、このまま木剣を構えて最後までしっかり見張っていくね！
+2026-09-25 16:22:17.954 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:17.954 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [82] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 23338, door closed) （10.5秒）
+2026-09-25 16:22:18.001 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:19.652 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1650ms, prompt=3076 thoughts=None output=75 total=3151
+2026-09-25 16:22:19.704 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 4)（生存のため）（goal have(food, 4) is met） - 夜明けまで残りわずかなので、食料4個を維持しつつ周囲を警戒して朝日を待ちます。; 残り 0
+2026-09-25 16:22:19.704 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 4) [生存]: 夜明けまで残りわずかなので、食料4個を維持しつつ周囲を警戒して朝日を待ちます。
+2026-09-25 16:22:19.704 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:21.055 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1350ms, prompt=2053 thoughts=None output=51 total=2104
+2026-09-25 16:22:21.055 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] よしよし、お肉も体力もバッチリ保ったまま、いよいよ朝日の光が差し込んできたよ！完全に明るくなったら、今度こそ街の候補地探しの旅に出発するから楽しみにしててね！
+2026-09-25 16:22:30.194 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:30.195 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [83] have(food, 4)（残り 0）-> wait （確信度 1.00）: 成功 waited (time 23578, door closed) （10.4秒）
+2026-09-25 16:22:30.241 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:31.650 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1409ms, prompt=3076 thoughts=None output=69 total=3145
+2026-09-25 16:22:31.705 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal have(food, 4) is met） - 夜が明けたので、中目標の街の候補地探しを進めるために次の候補地を調査しに行きます。; 残り 12
+2026-09-25 16:22:31.705 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 夜が明けたので、中目標の街の候補地探しを進めるために次の候補地を調査しに行きます。
+2026-09-25 16:22:31.705 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:31.790 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:31.790 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [84] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:22:31.895 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:31.895 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [85] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:31.999 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:31.999 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [86] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:32.042 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:33.395 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1690ms, prompt=2073 thoughts=None output=43 total=2116
+2026-09-25 16:22:33.396 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] やったー、無事に朝を迎えることができたよ！それじゃあ気持ちを切り替えて、さっそく南東にある二つ目の街の候補地を調査しに出発するね！
+2026-09-25 16:22:34.173 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2130ms, prompt=3143 thoughts=None output=127 total=3270
+2026-09-25 16:22:34.223 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 候補地への経路が見つからず進めないため、先に手元にあるベッドを家に設置します。; 残り 1
+2026-09-25 16:22:34.223 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 候補地への経路が見つからず進めないため、先に手元にあるベッドを家に設置します。
+2026-09-25 16:22:34.224 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:34.357 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:34.357 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [87] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:34.518 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:34.518 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [88] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:34.678 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:34.678 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [89] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:34.720 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:35.665 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1441ms, prompt=2139 thoughts=None output=46 total=2185
+2026-09-25 16:22:35.666 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] あれれ、南東の候補地へ行こうとしたんだけど道が見つからなくて進めないみたい！それなら先に、手元にあるベッドをお家に置いて夜に寝られる準備を整えちゃおうかな！
+2026-09-25 16:22:36.459 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1737ms, prompt=3256 thoughts=None output=124 total=3380
+2026-09-25 16:22:36.512 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: explored(68)（街の場所を探す (surveyed(9)) のため）（goal placed(bed, home) is stuck (actions keep failing)） - 候補地への直行ルートが見つからないため、周囲を少し探索して迂回路を見つけます。; 残り 4
+2026-09-25 16:22:36.512 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] explored(68) [街の場所を探す のため]: 候補地への直行ルートが見つからないため、周囲を少し探索して迂回路を見つけます。
+2026-09-25 16:22:36.512 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:36.539 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:22:37.151 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 611ms, input=1250 -> explore north（確信度 0.12）
+2026-09-25 16:22:37.251 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:37.251 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [90] explored(68)（残り 4）-> explore north （確信度 0.12）: 失敗 failed: could not walk north from 13.7,20.5: No path to the goal! （0.0秒）
+2026-09-25 16:22:37.269 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:22:37.496 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 226ms, input=1233 -> explore east（確信度 0.41）
+2026-09-25 16:22:37.586 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:37.586 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [91] explored(68)（残り 4）-> explore east （確信度 0.41）: 失敗 failed: could not walk east from 13.6,20.3: No path to the goal! （0.0秒）
+2026-09-25 16:22:37.604 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:22:37.864 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 259ms, input=1216 -> explore south（確信度 0.84）
+2026-09-25 16:22:37.954 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:37.955 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [92] explored(68)（残り 4）-> explore south （確信度 0.84）: 失敗 failed: could not walk south from 13.6,20.3: No path to the goal! （0.0秒）
+2026-09-25 16:22:37.987 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1474ms, prompt=2229 thoughts=None output=55 total=2284
+2026-09-25 16:22:37.987 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアに続いてベッドもお家に置く場所がなくて設置できなかったよ、もうおっちょこちょいなんだから！南東の候補地へ真っ直ぐ行けないみたいだから、まずはぐるっと周りを探索して通れそうな道を探してみるね！
+2026-09-25 16:22:37.998 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:40.085 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2086ms, prompt=3248 thoughts=None output=68 total=3316
+2026-09-25 16:22:40.137 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal explored(68) is stuck (actions keep failing)） - 探索に失敗したため、改めて候補地へのルートを探りながら2か所目の候補地調査を試みます。; 残り 12
+2026-09-25 16:22:40.137 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 探索に失敗したため、改めて候補地へのルートを探りながら2か所目の候補地調査を試みます。
+2026-09-25 16:22:40.138 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:40.220 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:40.220 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [93] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:22:40.323 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:40.323 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [94] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:40.428 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:40.428 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [95] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:40.470 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:42.184 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2046ms, prompt=2262 thoughts=None output=55 total=2317
+2026-09-25 16:22:42.184 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うーん、どの方角に進もうとしても道がふさがれてて探索に失敗しちゃったよ。でも諦めないで、周りの地形をよく見極めながら、なんとか二つ目の候補地へ行けるルートを探してみるね！
+2026-09-25 16:22:42.268 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1798ms, prompt=3215 thoughts=None output=76 total=3291
+2026-09-25 16:22:42.321 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: explored(16)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 南東や遠くへの移動がブロックされて進めないため、まずは身近な周囲16ブロックを小さく探索して抜け道を探します。; 残り 1
+2026-09-25 16:22:42.322 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] explored(16) [街の場所を探す のため]: 南東や遠くへの移動がブロックされて進めないため、まずは身近な周囲16ブロックを小さく探索して抜け道を探します。
+2026-09-25 16:22:42.322 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:42.349 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:22:42.557 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1192 -> explore north（確信度 0.46）
+2026-09-25 16:22:42.656 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:42.656 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [96] explored(16)（残り 1）-> explore north （確信度 0.46）: 失敗 failed: could not walk north from 13.6,20.3: No path to the goal! （0.0秒）
+2026-09-25 16:22:42.674 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:22:42.974 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 299ms, input=1198 -> explore east（確信度 0.45）
+2026-09-25 16:22:43.072 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:43.072 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [97] explored(16)（残り 1）-> explore east （確信度 0.45）: 失敗 failed: could not walk east from 13.6,20.3: No path to the goal! （0.1秒）
+2026-09-25 16:22:43.091 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:22:43.278 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 187ms, input=1210 -> explore south（確信度 0.83）
+2026-09-25 16:22:43.357 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:43.357 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [98] explored(16)（残り 1）-> explore south （確信度 0.83）: 失敗 failed: could not walk south from 13.6,20.3: No path to the goal! （0.0秒）
+2026-09-25 16:22:43.400 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:44.280 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1958ms, prompt=2208 thoughts=None output=58 total=2266
+2026-09-25 16:22:44.280 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 候補地へ直行しようとしてもどうしても引っかかっちゃうから、いったん足元をよく見て、すぐ近くの16ブロックくらいから抜け道を探してみるね！どこかに通り抜けられる隙間があるはずだから、慎重に足場を見つけていくよ！
+2026-09-25 16:22:45.086 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1685ms, prompt=3215 thoughts=None output=65 total=3280
+2026-09-25 16:22:45.133 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal explored(16) is stuck (actions keep failing)） - 周囲の移動経路が塞がれて身動きが取れなくなっているため、まずは一度安全な拠点家屋の中へ戻ります。; 残り 1
+2026-09-25 16:22:45.133 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 周囲の移動経路が塞がれて身動きが取れなくなっているため、まずは一度安全な拠点家屋の中へ戻ります。
+2026-09-25 16:22:45.133 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:45.271 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:45.272 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [99] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:45.434 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:45.434 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [100] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:45.594 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:45.594 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [101] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:45.636 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:46.634 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1500ms, prompt=2238 thoughts=None output=51 total=2289
+2026-09-25 16:22:46.635 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、近くの抜け道すら見つからなくて完全に八方塞がりになっちゃった！身動きが取れなくて危ないから、無理に外を進むのはやめて、まずは安全なお家の中へ戻るね！
+2026-09-25 16:22:47.149 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1513ms, prompt=3306 thoughts=None output=60 total=3366
+2026-09-25 16:22:47.201 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal at_home() is stuck (actions keep failing)） - 朝になったので、中目標である街の候補地調査を改めて進めます。; 残り 12
+2026-09-25 16:22:47.201 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 朝になったので、中目標である街の候補地調査を改めて進めます。
+2026-09-25 16:22:47.201 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:47.286 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:47.286 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [102] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:22:47.392 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:47.392 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [103] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:47.497 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:47.498 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [104] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:47.540 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:48.668 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1466ms, prompt=2294 thoughts=None output=50 total=2344
+2026-09-25 16:22:48.668 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] お家に戻る道すら引っかかっちゃって戻れなかったよ、どこに足を取られてるんだろう！でもすっかり朝になったことだし、気持ちを切り替えて南東の候補地調査に再チャレンジしてみるね！
+2026-09-25 16:22:49.527 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1986ms, prompt=3273 thoughts=None output=67 total=3340
+2026-09-25 16:22:49.583 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - ドアの設置場所がなく移動も塞がれているため、未完成の家（71/72）を完成させて出入り口を整えます。; 残り 1
+2026-09-25 16:22:49.583 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [街の場所を探す のため]: ドアの設置場所がなく移動も塞がれているため、未完成の家（71/72）を完成させて出入り口を整えます。
+2026-09-25 16:22:49.584 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:49.726 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:49.726 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [105] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:49.889 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:49.890 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [106] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:50.051 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:50.051 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [107] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:50.103 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:51.133 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1549ms, prompt=2271 thoughts=None output=53 total=2324
+2026-09-25 16:22:51.134 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] やっぱり南東へ進む道が見つからなくて引っかかっちゃうよ、どうやらお家の出入り口あたりが塞がれてるみたい！まずは最後のブロックを置いてお家を完全に完成させて、出入りしやすいように整えてみるね！
+2026-09-25 16:22:51.648 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1544ms, prompt=3294 thoughts=None output=69 total=3363
+2026-09-25 16:22:51.703 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal built() is stuck (actions keep failing)） - ドア設置で詰まってしまったため、朝の明るい時間を利用して2か所目の候補地調査を試みます。; 残り 12
+2026-09-25 16:22:51.703 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: ドア設置で詰まってしまったため、朝の明るい時間を利用して2か所目の候補地調査を試みます。
+2026-09-25 16:22:51.703 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:51.787 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:51.787 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [108] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:22:51.896 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:51.896 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [109] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:22:51.940 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:53.192 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1488ms, prompt=2292 thoughts=None output=46 total=2338
+2026-09-25 16:22:53.192 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアを置こうとしたけど足場がなくて設置できなくなっちゃったよ！それならもう明るいことだし、気持ちを切り替えて南東の二か所目の候補地調査に出発してみるね！
+2026-09-25 16:22:53.507 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1566ms, prompt=3341 thoughts=None output=72 total=3413
+2026-09-25 16:22:53.558 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（街の場所を探す (surveyed(9)) のため）（the time of day changed from dawn to day） - 移動やドア設置が阻まれているため、手持ちのベッドを設置して中目標を進めつつ周囲の状況打開を試みます。; 残り 1
+2026-09-25 16:22:53.558 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [街の場所を探す のため]: 移動やドア設置が阻まれているため、手持ちのベッドを設置して中目標を進めつつ周囲の状況打開を試みます。
+2026-09-25 16:22:53.558 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:53.699 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:53.699 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [110] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:53.859 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:53.860 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [111] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:54.021 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:22:54.021 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [112] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:22:54.062 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:22:55.019 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1460ms, prompt=2304 thoughts=None output=50 total=2354
+2026-09-25 16:22:55.019 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアの向きがおかしくて出入り口を塞いじゃってるみたい、これじゃ進めないわけだよね！まずは手持ちのベッドをうまくお家に置いて、足元を整えながら状況を立て直してみるよ！
+2026-09-25 16:22:55.677 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1614ms, prompt=3349 thoughts=None output=78 total=3427
+2026-09-25 16:22:55.736 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(dirt, 20)（街の場所を探す (surveyed(9)) のため）（goal placed(bed, home) is stuck (actions keep failing)） - ドアや移動の邪魔になっている周囲の地形を整えるため、手近な土を掘って足場を確保します。; 残り 5
+2026-09-25 16:22:55.736 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(dirt, 20) [街の場所を探す のため]: ドアや移動の邪魔になっている周囲の地形を整えるため、手近な土を掘って足場を確保します。
+2026-09-25 16:22:55.737 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:22:55.768 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig dirt at 13,59,22 | dig dirt at 12,59,22 | dig dirt at 11,59,20
+2026-09-25 16:22:56.397 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 628ms, input=1210 -> dig dirt at 13,59,22（確信度 0.66）
+2026-09-25 16:22:57.387 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1650ms, prompt=2297 thoughts=None output=46 total=2343
+2026-09-25 16:22:57.387 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ベッドも置けなくなっちゃったから、まずは邪魔な周りの地形を整えるために手近な土を掘るよ！足場をしっかり確保して、どこへでもスムーズに動けるようにしようね！
+2026-09-25 16:23:03.166 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:03.166 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [113] have(dirt, 20)（残り 5）-> dig dirt at 13,59,22 （確信度 0.66）: 失敗 failed: dug dirt but picked nothing up (item 3.1m away, 2 up; path: No path to the goal!) （6.7秒）
+2026-09-25 16:23:03.207 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: dig dirt at 12,59,22 | dig dirt at 13,59,23 | dig dirt at 11,59,20 | equip wooden_sword | pick up dirt #12816
+2026-09-25 16:23:03.712 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 504ms, input=1292 -> pick up dirt #12816（確信度 0.79）
+2026-09-25 16:23:03.816 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:03.817 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [114] have(dirt, 20)（残り 5）-> pick up dirt #12816 （確信度 0.79）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:23:03.842 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig dirt at 12,59,22 | dig dirt at 13,59,23 | dig dirt at 14,60,22 | equip wooden_sword
+2026-09-25 16:23:04.048 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 205ms, input=1212 -> dig dirt at 12,59,22（確信度 0.24）
+2026-09-25 16:23:06.500 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:06.500 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [115] have(dirt, 20)（残り 5）-> dig dirt at 12,59,22 （確信度 0.24）: 成功 dug dirt, picked up 1 items （2.4秒）
+2026-09-25 16:23:06.531 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig dirt at 13,59,23 | dig dirt at 11,59,20 | dig dirt at 15,60,21 | equip wooden_sword
+2026-09-25 16:23:06.727 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 195ms, input=1190 -> equip wooden_sword（確信度 0.19）
+2026-09-25 16:23:06.816 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:06.816 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [116] have(dirt, 20)（残り 4）-> equip wooden_sword （確信度 0.19）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:23:06.842 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig dirt at 13,59,23 | dig dirt at 11,59,20 | dig dirt at 15,60,21
+2026-09-25 16:23:07.042 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 199ms, input=1124 -> dig dirt at 11,59,20（確信度 0.30）
+2026-09-25 16:23:09.383 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:09.384 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [117] have(dirt, 20)（残り 4）-> dig dirt at 11,59,20 （確信度 0.30）: 成功 dug dirt, picked up 1 items （2.3秒）
+2026-09-25 16:23:09.413 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 11,59,19 | dig dirt at 13,60,22 | dig dirt at 11,61,19 | dig grass_block at 11,62,19 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | equip wooden_sword
+2026-09-25 16:23:09.620 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 207ms, input=1319 -> dig dirt at 11,59,19（確信度 0.80）
+2026-09-25 16:23:12.370 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:12.370 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [118] have(dirt, 20)（残り 3）-> dig dirt at 11,59,19 （確信度 0.80）: 成功 dug dirt, picked up 1 items （2.7秒）
+2026-09-25 16:23:12.402 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 10,59,19 | dig dirt at 11,61,19 | dig dirt at 10,60,18 | dig grass_block at 11,62,19 | dig grass_block at 13,62,21 | dig grass_block at 12,63,20 | equip wooden_sword
+2026-09-25 16:23:12.617 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 214ms, input=1318 -> dig dirt at 10,59,19（確信度 0.70）
+2026-09-25 16:23:15.067 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:15.067 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [119] have(dirt, 20)（残り 2）-> dig dirt at 10,59,19 （確信度 0.70）: 成功 dug dirt, picked up 1 items （2.4秒）
+2026-09-25 16:23:15.095 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 13,60,22 | dig dirt at 13,61,21 | dig dirt at 12,61,21 | dig grass_block at 13,62,21 | dig grass_block at 11,62,19 | dig grass_block at 13,62,22 | equip wooden_sword
+2026-09-25 16:23:15.344 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 248ms, input=1332 -> equip wooden_sword（確信度 0.59）
+2026-09-25 16:23:15.424 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:15.424 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [120] have(dirt, 20)（残り 1）-> equip wooden_sword （確信度 0.59）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:23:15.449 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 13,60,22 | dig dirt at 13,61,21 | dig dirt at 12,61,21 | dig grass_block at 13,62,21 | dig grass_block at 11,62,19 | dig grass_block at 13,62,22
+2026-09-25 16:23:15.758 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 308ms, input=1282 -> dig dirt at 13,60,22（確信度 0.74）
+2026-09-25 16:23:23.019 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:23.019 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [121] have(dirt, 20)（残り 1）-> dig dirt at 13,60,22 （確信度 0.74）: 失敗 failed: dug dirt but picked nothing up (item 3.7m away, 0 up; path: No path to the goal!) （7.2秒）
+2026-09-25 16:23:23.047 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（8）: dig dirt at 15,60,21 | dig dirt at 14,61,21 | dig dirt at 15,61,21 | dig grass_block at 13,62,21 | dig grass_block at 15,63,20 | dig grass_block at 13,62,22 | equip wooden_sword | pick up dirt #12869
+2026-09-25 16:23:23.598 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 550ms, input=1377 -> pick up dirt #12869（確信度 0.79）
+2026-09-25 16:23:23.709 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:23.710 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [122] have(dirt, 20)（残り 1）-> pick up dirt #12869 （確信度 0.79）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:23:23.737 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 15,60,21 | dig dirt at 14,61,21 | dig dirt at 15,61,21 | dig grass_block at 13,62,21 | dig grass_block at 15,63,20 | dig grass_block at 13,62,22 | equip wooden_sword
+2026-09-25 16:23:23.952 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 214ms, input=1318 -> dig dirt at 15,60,21（確信度 0.53）
+2026-09-25 16:23:26.264 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:26.264 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [123] have(dirt, 20)（残り 1）-> dig dirt at 15,60,21 （確信度 0.53）: 成功 dug dirt, picked up 1 items （2.3秒）
+2026-09-25 16:23:26.316 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:27.980 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1664ms, prompt=3249 thoughts=None output=65 total=3314
+2026-09-25 16:23:28.028 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal have(dirt, 20) is met） - 土を集めて足場も確保できたので、改めて2か所目の候補地調査に向かいます。; 残り 12
+2026-09-25 16:23:28.028 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 土を集めて足場も確保できたので、改めて2か所目の候補地調査に向かいます。
+2026-09-25 16:23:28.028 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:28.145 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:28.146 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [124] surveyed(2)（残り 12）-> survey the E site at 82,9 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:23:28.263 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:28.263 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [125] surveyed(2)（残り 12）-> survey the E site at 82,9 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:23:28.380 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:28.380 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [126] surveyed(2)（残り 12）-> survey the E site at 82,9 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:23:28.424 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:29.500 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1471ms, prompt=2205 thoughts=None output=41 total=2246
+2026-09-25 16:23:29.500 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 土が２０個集まって足場もバッチリ確保できたよ！それじゃあ気を取り直して、東にある２か所目の街の候補地を目指して出発するね！
+2026-09-25 16:23:30.093 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1668ms, prompt=3257 thoughts=None output=68 total=3325
+2026-09-25 16:23:30.137 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: explored(16)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 東の候補地へ直接向かう経路が見つからないため、まずは近距離の探索で抜け道を探します。; 残り 1
+2026-09-25 16:23:30.137 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] explored(16) [街の場所を探す のため]: 東の候補地へ直接向かう経路が見つからないため、まずは近距離の探索で抜け道を探します。
+2026-09-25 16:23:30.138 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:30.165 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:23:30.797 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 631ms, input=1175 -> explore east（確信度 0.40）
+2026-09-25 16:23:30.894 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:30.895 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [127] explored(16)（残り 1）-> explore east （確信度 0.40）: 失敗 failed: could not walk east from 14.5,19.5: No path to the goal! （0.0秒）
+2026-09-25 16:23:30.912 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:23:31.103 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 190ms, input=1180 -> explore north（確信度 0.44）
+2026-09-25 16:23:31.171 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:31.171 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [128] explored(16)（残り 1）-> explore north （確信度 0.44）: 失敗 failed: could not walk north from 14.5,19.5: No path to the goal! （0.0秒）
+2026-09-25 16:23:31.189 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore north | explore east | explore south | explore west
+2026-09-25 16:23:31.597 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 408ms, input=1187 -> explore south（確信度 0.83）
+2026-09-25 16:23:31.664 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1526ms, prompt=2197 thoughts=None output=43 total=2240
+2026-09-25 16:23:31.664 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うーん、東の候補地へ真っ直ぐ行こうとしても道が塞がってて進めないみたい！まずは近くの抜け道を探すために、周りをちょっとずつ探索してみるね！
+2026-09-25 16:23:31.696 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:31.696 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [129] explored(16)（残り 1）-> explore south （確信度 0.83）: 失敗 failed: could not walk south from 14.7,19.3: No path to the goal! （0.1秒）
+2026-09-25 16:23:31.738 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:33.696 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1957ms, prompt=3264 thoughts=None output=55 total=3319
+2026-09-25 16:23:33.749 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（街の場所を探す (surveyed(9)) のため）（goal explored(16) is stuck (actions keep failing)） - 東西南北どこへも進めずスタックしているため、一度家の中に入って体勢と位置を立て直します。; 残り 1
+2026-09-25 16:23:33.749 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [街の場所を探す のため]: 東西南北どこへも進めずスタックしているため、一度家の中に入って体勢と位置を立て直します。
+2026-09-25 16:23:33.749 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:33.886 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:33.886 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [130] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:34.042 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:34.042 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [131] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:34.202 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:34.202 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [132] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:34.243 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:35.793 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1549ms, prompt=3344 thoughts=None output=63 total=3407
+2026-09-25 16:23:35.837 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（街の場所を探す (surveyed(9)) のため）（goal at_home() is stuck (actions keep failing)） - ドアの向きが間違っていて出入り口を塞いでいるため、家の建設を正しくやり直してドアを付け直します。; 残り 1
+2026-09-25 16:23:35.837 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [街の場所を探す のため]: ドアの向きが間違っていて出入り口を塞いでいるため、家の建設を正しくやり直してドアを付け直します。
+2026-09-25 16:23:35.837 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:35.984 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:35.984 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [133] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:36.039 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2290ms, prompt=2237 thoughts=None output=52 total=2289
+2026-09-25 16:23:36.039 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 東も北も南も全然進めなくて完全に詰まっちゃったよ、よく見たらドアが変な向きで道を塞いでるみたい！いったんお家の中に入って、ドアを付け直しながら体勢を整えるね！
+2026-09-25 16:23:36.142 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:36.142 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [134] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:36.302 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:36.303 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [135] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:36.345 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:37.244 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1406ms, prompt=2299 thoughts=None output=48 total=2347
+2026-09-25 16:23:37.244 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] あれれ、お家に戻るどころか完全に引っかかって動けなくなっちゃったよ！どうやらドアの向きがおかしくて出入り口を塞いでるみたいだから、ちゃんと付け直して通れるようにするね！
+2026-09-25 16:23:38.111 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1765ms, prompt=3371 thoughts=None output=56 total=3427
+2026-09-25 16:23:38.161 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal built() is stuck (actions keep failing)） - ドア設置で詰まってしまったため、外側から東の候補地調査へ向かいます。; 残り 12
+2026-09-25 16:23:38.161 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: ドア設置で詰まってしまったため、外側から東の候補地調査へ向かいます。
+2026-09-25 16:23:38.161 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:38.251 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:38.252 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [136] surveyed(2)（残り 12）-> survey the E site at 82,9 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:23:38.363 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:38.363 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [137] surveyed(2)（残り 12）-> survey the E site at 82,9 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:23:38.471 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:38.471 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [138] surveyed(2)（残り 12）-> survey the E site at 82,9 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:23:38.513 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:39.461 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1299ms, prompt=2297 thoughts=None output=42 total=2339
+2026-09-25 16:23:39.461 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアを付け直そうとしたけど、立つ場所がなくて設置できなくなっちゃったよ！もうドアは後回しにして、外側からぐるっと東の候補地調査に向かっちゃうね！
+2026-09-25 16:23:40.178 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1664ms, prompt=3280 thoughts=None output=77 total=3357
+2026-09-25 16:23:40.182 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'placed', 'item': 'white_bed', 'count': 1, 'serves': 'current', 'reason': '移動経路が詰まっているため、手持ちのベッドを設置して周辺の判定と体勢をリセットします。'}: goal placed(white_bed, home) rejected: only placed(bed, home) is supported
+2026-09-25 16:23:41.651 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1468ms, prompt=3321 thoughts=None output=59 total=3380
+2026-09-25 16:23:41.704 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 手持ちのベッドをお家に置いて、安全に夜を越せる環境を整えつつ位置を立て直します。; 残り 1
+2026-09-25 16:23:41.705 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [街の場所を探す のため]: 手持ちのベッドをお家に置いて、安全に夜を越せる環境を整えつつ位置を立て直します。
+2026-09-25 16:23:41.705 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:41.840 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:41.840 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [139] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:41.996 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:41.996 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [140] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:42.154 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:42.154 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [141] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:42.196 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:43.134 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1428ms, prompt=2224 thoughts=None output=52 total=2276
+2026-09-25 16:23:43.134 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 東への道も全然通れなくて進めなくなっちゃったから、やっぱり最初にお家をなんとかするね！
+ドアが開いたまま入り口を塞いじゃってるみたいだから、まずはベッドを置いて体勢を整えてみるよ！
+2026-09-25 16:23:43.856 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1660ms, prompt=3295 thoughts=None output=63 total=3358
+2026-09-25 16:23:43.907 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（街の場所を探す (surveyed(9)) のため）（goal placed(bed, home) is stuck (actions keep failing)） - ドアの向きが間違っていて出入り口を塞ぎ続けているため、ドアを壊して正しく付け直し家を修正します。; 残り 1
+2026-09-25 16:23:43.907 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [街の場所を探す のため]: ドアの向きが間違っていて出入り口を塞ぎ続けているため、ドアを壊して正しく付け直し家を修正します。
+2026-09-25 16:23:43.908 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:44.045 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:44.045 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [142] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:44.206 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:44.206 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [143] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:44.363 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:44.363 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [144] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:23:44.410 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:23:45.386 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1478ms, prompt=2258 thoughts=None output=51 total=2309
+2026-09-25 16:23:45.386 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ベッドも置く場所がなくて失敗しちゃったよ、やっぱりこの引っかかってるドアをなんとかしないとダメみたいだね！一度ドアをしっかり壊して正しく付け直して、スッキリ通れるようにしてみせるよ！
+2026-09-25 16:23:48.344 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 3932ms, prompt=3345 thoughts=None output=75 total=3420
+2026-09-25 16:23:48.406 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(dirt, 25)（街の場所を探す (surveyed(9)) のため）（goal built() is stuck (actions keep failing)） - ドア設置場所の足場がなくて詰まっているため、足元の土を掘って立つスペースを確保します。; 残り 5
+2026-09-25 16:23:48.406 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(dirt, 25) [街の場所を探す のため]: ドア設置場所の足場がなくて詰まっているため、足元の土を掘って立つスペースを確保します。
+2026-09-25 16:23:48.406 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:23:48.439 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 15,61,21 | dig dirt at 14,61,21 | dig dirt at 15,60,22 | dig grass_block at 13,62,21 | dig grass_block at 15,63,20 | dig grass_block at 13,62,22
+2026-09-25 16:23:48.970 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 530ms, input=1350 -> dig dirt at 15,61,21（確信度 0.68）
+2026-09-25 16:23:49.594 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1187ms, prompt=2294 thoughts=None output=37 total=2331
+2026-09-25 16:23:49.594 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ドアを直そうにも足場が狭すぎて全然設置できなかったよ！まずは足元の土を掘って立つスペースを広げて、ちゃんと動ける場所を作っちゃうね！
+2026-09-25 16:23:53.595 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:53.595 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [145] have(dirt, 25)（残り 5）-> dig dirt at 15,61,21 （確信度 0.68）: 成功 dug dirt, picked up 1 items （4.6秒）
+2026-09-25 16:23:53.625 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 15,60,22 | dig dirt at 15,61,22 | dig dirt at 14,60,22 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:23:53.840 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 214ms, input=1378 -> dig dirt at 15,60,22（確信度 0.29）
+2026-09-25 16:23:55.726 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:55.726 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [146] have(dirt, 25)（残り 4）-> dig dirt at 15,60,22 （確信度 0.29）: 成功 dug dirt, picked up 1 items （1.8秒）
+2026-09-25 16:23:55.757 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 15,61,22 | dig dirt at 15,60,23 | dig dirt at 14,60,22 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:23:55.960 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 202ms, input=1357 -> dig dirt at 15,61,22（確信度 0.41）
+2026-09-25 16:23:57.846 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:57.846 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [147] have(dirt, 25)（残り 3）-> dig dirt at 15,61,22 （確信度 0.41）: 成功 dug dirt, picked up 1 items （1.8秒）
+2026-09-25 16:23:57.876 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 15,60,23 | dig dirt at 14,60,22 | dig dirt at 15,61,23 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:23:58.109 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 233ms, input=1334 -> equip wooden_sword（確信度 0.33）
+2026-09-25 16:23:58.204 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:23:58.204 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [148] have(dirt, 25)（残り 2）-> equip wooden_sword （確信度 0.33）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:23:58.236 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 15,60,23 | dig dirt at 14,60,22 | dig dirt at 15,61,23 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | dig grass_block at 15,63,20
+2026-09-25 16:23:58.439 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 202ms, input=1287 -> dig dirt at 15,60,23（確信度 0.57）
+2026-09-25 16:24:05.217 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:05.217 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [149] have(dirt, 25)（残り 2）-> dig dirt at 15,60,23 （確信度 0.57）: 失敗 failed: dug dirt but picked nothing up (item 2.1m away, 0 up, item 3.3m away, -1 up; path: No path to the goal!) （6.7秒）
+2026-09-25 16:24:05.248 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（8）: dig dirt at 14,60,22 | dig dirt at 15,61,23 | dig dirt at 14,61,21 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | dig grass_block at 15,63,20 | equip wooden_sword | pick up dirt #12943
+2026-09-25 16:24:05.832 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 584ms, input=1401 -> pick up dirt #12943（確信度 0.81）
+2026-09-25 16:24:05.942 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:05.942 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [150] have(dirt, 25)（残り 2）-> pick up dirt #12943 （確信度 0.81）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:24:05.973 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 14,60,22 | dig dirt at 15,61,23 | dig dirt at 14,61,21 | dig grass_block at 13,62,21 | dig grass_block at 13,62,22 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:24:06.182 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1346 -> dig dirt at 14,60,22（確信度 0.58）
+2026-09-25 16:24:13.409 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:13.409 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [151] have(dirt, 25)（残り 2）-> dig dirt at 14,60,22 （確信度 0.58）: 失敗 failed: dug dirt but picked nothing up (item 3.4m away, 0 up, item 3.9m away, -1 up, item 4.6m away, -1 up; path: No path to the goal!) （7.2秒）
+2026-09-25 16:24:13.466 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:16.858 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 3392ms, prompt=3287 thoughts=None output=66 total=3353
+2026-09-25 16:24:16.911 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal have(dirt, 25) is stuck (actions keep failing)） - 足元の掘削で詰まってしまったため、障害物を避けて次の候補地調査へ向かいます。; 残り 12
+2026-09-25 16:24:16.911 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 足元の掘削で詰まってしまったため、障害物を避けて次の候補地調査へ向かいます。
+2026-09-25 16:24:16.912 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:16.937 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: survey the SE site at 53,76 | equip wooden_sword | pick up dirt #12954
+2026-09-25 16:24:17.456 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 518ms, input=1219 -> equip wooden_sword（確信度 0.50）
+2026-09-25 16:24:17.555 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:17.555 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [152] surveyed(2)（残り 12）-> equip wooden_sword （確信度 0.50）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:24:17.572 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: survey the SE site at 53,76 | pick up dirt #12954
+2026-09-25 16:24:17.813 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 240ms, input=1145 -> survey the SE site at 53,76（確信度 0.65）
+2026-09-25 16:24:17.905 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:17.905 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [153] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 0.65）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:17.923 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: survey the SE site at 53,76 | pick up dirt #12954
+2026-09-25 16:24:18.129 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 205ms, input=1145 -> pick up dirt #12954（確信度 0.83）
+2026-09-25 16:24:18.223 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:18.224 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [154] surveyed(2)（残り 12）-> pick up dirt #12954 （確信度 0.83）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:18.335 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:18.335 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [155] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:18.375 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:18.443 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1531ms, prompt=2249 thoughts=None output=47 total=2296
+2026-09-25 16:24:18.443 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、足元の土を掘ろうとしたら引っかかって動けなくなっちゃったよ！ここは無理に掘るのをやめて、障害物をうまく避けながら南東の候補地調査へ向かうね！
+2026-09-25 16:24:19.998 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1622ms, prompt=3267 thoughts=None output=62 total=3329
+2026-09-25 16:24:20.046 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: explored(16)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 移動経路が見つからず詰まっているため、少し離れて迂回路を探索します。; 残り 1
+2026-09-25 16:24:20.046 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] explored(16) [街の場所を探す のため]: 移動経路が見つからず詰まっているため、少し離れて迂回路を探索します。
+2026-09-25 16:24:20.047 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:20.072 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore east | explore north | explore south | explore west
+2026-09-25 16:24:20.306 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 234ms, input=1181 -> explore east（確信度 0.76）
+2026-09-25 16:24:20.398 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:20.398 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [156] explored(16)（残り 1）-> explore east （確信度 0.76）: 失敗 failed: could not walk east from 16.5,20.5 （0.0秒）
+2026-09-25 16:24:20.415 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore east | explore north | explore south | explore west
+2026-09-25 16:24:20.621 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1182 -> explore west（確信度 0.14）
+2026-09-25 16:24:20.718 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:20.719 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [157] explored(16)（残り 1）-> explore west （確信度 0.14）: 失敗 failed: could not walk west from 16.5,20.5: No path to the goal! （0.1秒）
+2026-09-25 16:24:20.735 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore east | explore north | explore south | explore west
+2026-09-25 16:24:21.008 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 272ms, input=1192 -> explore north（確信度 0.35）
+2026-09-25 16:24:21.099 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:21.099 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [158] explored(16)（残り 1）-> explore north （確信度 0.35）: 失敗 failed: could not walk north from 16.5,20.5: No path to the goal! （0.0秒）
+2026-09-25 16:24:21.138 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:21.458 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1411ms, prompt=2186 thoughts=None output=44 total=2230
+2026-09-25 16:24:21.459 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 南東へ真っ直ぐ行こうとしても道が全然見つからなくて進めないよ！いったんここから少し離れて、ぐるっと回れる抜け道がないか迂回路を探してみるね！
+2026-09-25 16:24:22.919 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1780ms, prompt=3224 thoughts=None output=65 total=3289
+2026-09-25 16:24:22.972 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal explored(16) is stuck (actions keep failing)） - 身動きが取れず経路探索に失敗し続けているため、一度拠点に入って安全を確保し姿勢を立て直します。; 残り 1
+2026-09-25 16:24:22.972 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 身動きが取れず経路探索に失敗し続けているため、一度拠点に入って安全を確保し姿勢を立て直します。
+2026-09-25 16:24:22.972 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:23.111 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:23.111 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [159] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:23.268 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:23.268 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [160] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:23.430 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:23.431 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [161] at_home()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:23.468 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:24.540 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1567ms, prompt=2198 thoughts=None output=46 total=2244
+2026-09-25 16:24:24.540 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 迂回路を探そうにも全然後ろにも進めなくて完全に挟まっちゃったよ！このままじゃ危ないから、なんとかお家の中に滑り込んでドアを直しながら体勢を立て直すね！
+2026-09-25 16:24:25.422 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1953ms, prompt=3314 thoughts=None output=64 total=3378
+2026-09-25 16:24:25.440 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（街の場所を探す (surveyed(9)) のため）（goal at_home() is stuck (actions keep failing)） - ドアの向きが間違っていて出入り口を塞いでいるため、家の建設状態を正しく直してドアを設置し直します。; 残り 1
+2026-09-25 16:24:25.440 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [街の場所を探す のため]: ドアの向きが間違っていて出入り口を塞いでいるため、家の建設状態を正しく直してドアを設置し直します。
+2026-09-25 16:24:25.440 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:25.597 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:25.597 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [162] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:25.754 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:25.754 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [163] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:25.911 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:25.911 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [164] built()（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:25.954 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:26.841 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1401ms, prompt=2272 thoughts=None output=46 total=2318
+2026-09-25 16:24:26.842 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] お家の中に入ろうとしてもドアに引っかかってどうしても進めないよ！やっぱりこの出入り口を塞いでるドアをしっかり付け直して、お家をちゃんと直すところからやり直すね！
+2026-09-25 16:24:28.211 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2257ms, prompt=3346 thoughts=None output=61 total=3407
+2026-09-25 16:24:28.233 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal built() is stuck (actions keep failing)） - ドアの設置で詰まり続けているため、家の修正を中断して街の候補地調査を優先して進めます。; 残り 12
+2026-09-25 16:24:28.233 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: ドアの設置で詰まり続けているため、家の修正を中断して街の候補地調査を優先して進めます。
+2026-09-25 16:24:28.234 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:28.313 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:28.314 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [165] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:24:28.417 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:28.418 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [166] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:28.522 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:28.522 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [167] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:28.558 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:30.184 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1950ms, prompt=2305 thoughts=None output=51 total=2356
+2026-09-25 16:24:30.184 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、立つ場所がなくてどうしてもドアが付けられないよ！お家の修理でこれ以上時間を取られるのももったいないから、ドアは後回しにして南東の街の候補地を調べに出発しちゃうね！
+2026-09-25 16:24:30.427 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1868ms, prompt=3287 thoughts=None output=58 total=3345
+2026-09-25 16:24:30.473 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 移動もドア設置も詰まっているため、手持ちのベッドを家の中に設置して状況の打破を図ります。; 残り 1
+2026-09-25 16:24:30.474 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [街の場所を探す のため]: 移動もドア設置も詰まっているため、手持ちのベッドを家の中に設置して状況の打破を図ります。
+2026-09-25 16:24:30.474 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:30.626 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:30.626 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [168] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:30.768 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:30.768 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [169] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:30.929 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:30.930 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [170] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:24:30.967 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:32.024 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1550ms, prompt=2232 thoughts=None output=52 total=2284
+2026-09-25 16:24:32.025 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 南東へ向かう道も塞がっちゃってて全然進めないよ、完全に八方塞がりだね！こうなったら手持ちのベッドをお家の中にねじ込んで、なんとかこの詰まり状態を打破してみせるよ！
+2026-09-25 16:24:32.907 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1939ms, prompt=3303 thoughts=None output=72 total=3375
+2026-09-25 16:24:32.949 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: explored(16)（街の場所を探す (surveyed(9)) のため）（goal placed(bed, home) is stuck (actions keep failing)） - ドアや足場に引っかかって身動きが取れなくなっているため、まずは少し離れた開けた場所へ脱出します。; 残り 1
+2026-09-25 16:24:32.949 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] explored(16) [街の場所を探す のため]: ドアや足場に引っかかって身動きが取れなくなっているため、まずは少し離れた開けた場所へ脱出します。
+2026-09-25 16:24:32.949 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:32.972 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore east | explore north | explore south | explore west
+2026-09-25 16:24:33.486 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 513ms, input=1266 -> explore east（確信度 0.79）
+2026-09-25 16:24:33.579 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:33.579 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [171] explored(16)（残り 1）-> explore east （確信度 0.79）: 失敗 failed: could not walk east from 16.3,20.7 （0.1秒）
+2026-09-25 16:24:33.597 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore east | explore north | explore south | explore west
+2026-09-25 16:24:33.813 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1244 -> explore west（確信度 0.18）
+2026-09-25 16:24:33.899 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:33.899 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [172] explored(16)（残り 1）-> explore west （確信度 0.18）: 失敗 failed: could not walk west from 16.3,20.7: No path to the goal! （0.0秒）
+2026-09-25 16:24:33.917 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: explore east | explore north | explore south | explore west
+2026-09-25 16:24:34.116 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 199ms, input=1227 -> explore north（確信度 0.34）
+2026-09-25 16:24:34.220 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:34.220 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [173] explored(16)（残り 1）-> explore north （確信度 0.34）: 失敗 failed: could not walk north from 16.3,20.7: No path to the goal! （0.1秒）
+2026-09-25 16:24:34.259 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:34.410 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1461ms, prompt=2259 thoughts=None output=50 total=2309
+2026-09-25 16:24:34.411 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ベッドを置く隙間すらなくて大ピンチだよ！足場とドアに挟まれて完全に身動きが取れなくなっちゃったから、まずは強引にジャンプしてでも開けた場所へ脱出してみるね！
+2026-09-25 16:24:37.347 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 3086ms, prompt=3289 thoughts=None output=66 total=3355
+2026-09-25 16:24:37.393 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal explored(16) is stuck (actions keep failing)） - 移動障害で足踏みしているため、街の候補地調査を目標に設定して別方向への迂回経路を再検索させます。; 残り 12
+2026-09-25 16:24:37.393 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 移動障害で足踏みしているため、街の候補地調査を目標に設定して別方向への迂回経路を再検索させます。
+2026-09-25 16:24:37.393 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:37.480 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:37.480 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [174] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:24:37.584 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:37.584 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [175] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:37.688 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:37.688 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [176] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:37.726 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:39.061 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1666ms, prompt=2286 thoughts=None output=50 total=2336
+2026-09-25 16:24:39.061 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 脱出する方向すら全部ふさがってて本当に一歩も動けないよ！でも諦めないで、南東の候補地調査を目的地にし直して、別の方角からぐるっと抜けられる道を探してみるね！
+2026-09-25 16:24:39.381 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1655ms, prompt=3278 thoughts=None output=80 total=3358
+2026-09-25 16:24:39.454 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(dirt, 25)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 身動きが取れずどの方向へも進めないため、目の前の土を掘って脱出路を切り開きます。; 残り 2
+2026-09-25 16:24:39.454 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(dirt, 25) [街の場所を探す のため]: 身動きが取れずどの方向へも進めないため、目の前の土を掘って脱出路を切り開きます。
+2026-09-25 16:24:39.454 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:39.488 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 16,60,21 | dig dirt at 17,60,20 | dig dirt at 16,61,21 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | dig grass_block at 16,63,19
+2026-09-25 16:24:40.005 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 517ms, input=1284 -> dig dirt at 16,60,21（確信度 0.65）
+2026-09-25 16:24:41.271 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1816ms, prompt=2237 thoughts=None output=46 total=2283
+2026-09-25 16:24:41.271 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] どの方向にも道が見つからなくて、調査に向かうどころじゃなくなっちゃったよ！こうなったら目の前の土を力技で掘って、強引に脱出ルートを切り開いてみせるね！
+2026-09-25 16:24:46.816 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:46.816 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [177] have(dirt, 25)（残り 2）-> dig dirt at 16,60,21 （確信度 0.65）: 失敗 failed: dug dirt but picked nothing up (item 1.6m away, 0 up, item 3.4m away, 0 up, item 3.8m away, -1 up) （6.7秒）
+2026-09-25 16:24:46.850 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（8）: dig dirt at 17,60,20 | dig dirt at 16,61,21 | dig dirt at 17,61,20 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | dig grass_block at 16,63,19 | equip wooden_sword | pick up dirt #13009
+2026-09-25 16:24:47.376 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 526ms, input=1412 -> pick up dirt #13009（確信度 0.58）
+2026-09-25 16:24:49.002 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:49.002 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [178] have(dirt, 25)（残り 2）-> pick up dirt #13009 （確信度 0.58）: 失敗 failed: reached the item but picked nothing up (item 1.6m away, 0 up, item 3.4m away, 0 up, item 3.8m away, -1 up) （1.6秒）
+2026-09-25 16:24:49.034 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 17,60,20 | dig dirt at 16,61,21 | dig dirt at 17,61,20 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | dig grass_block at 16,63,19 | equip wooden_sword
+2026-09-25 16:24:49.280 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 245ms, input=1395 -> equip wooden_sword（確信度 0.39）
+2026-09-25 16:24:49.391 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:49.391 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [179] have(dirt, 25)（残り 2）-> equip wooden_sword （確信度 0.39）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:24:49.424 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 17,60,20 | dig dirt at 16,61,21 | dig dirt at 17,61,20 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | dig grass_block at 16,63,19
+2026-09-25 16:24:49.633 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1349 -> dig dirt at 17,60,20（確信度 0.82）
+2026-09-25 16:24:51.537 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:51.537 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [180] have(dirt, 25)（残り 2）-> dig dirt at 17,60,20 （確信度 0.82）: 成功 dug dirt, picked up 1 items （1.8秒）
+2026-09-25 16:24:51.571 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 16,61,21 | dig dirt at 17,61,20 | dig dirt at 16,60,22 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | dig grass_block at 16,63,19 | equip wooden_sword
+2026-09-25 16:24:51.781 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1341 -> dig dirt at 16,61,21（確信度 0.35）
+2026-09-25 16:24:55.830 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:55.830 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [181] have(dirt, 25)（残り 1）-> dig dirt at 16,61,21 （確信度 0.35）: 成功 dug dirt, picked up 2 items （4.0秒）
+2026-09-25 16:24:55.872 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:57.740 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1867ms, prompt=3291 thoughts=None output=70 total=3361
+2026-09-25 16:24:57.786 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal have(dirt, 25) is met） - 土を掘って脱出路が開けたので、中目標である南東の街の候補地調査へ向かいます。; 残り 12
+2026-09-25 16:24:57.787 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 土を掘って脱出路が開けたので、中目標である南東の街の候補地調査へ向かいます。
+2026-09-25 16:24:57.787 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:24:57.815 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: survey the SE site at 53,76 | equip wooden_sword
+2026-09-25 16:24:58.380 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 565ms, input=1082 -> survey the SE site at 53,76（確信度 0.56）
+2026-09-25 16:24:58.473 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:58.473 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [182] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 0.56）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:24:58.489 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: survey the SE site at 53,76 | equip wooden_sword
+2026-09-25 16:24:58.707 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 217ms, input=1093 -> equip wooden_sword（確信度 0.87）
+2026-09-25 16:24:58.780 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:58.780 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [183] surveyed(2)（残り 12）-> equip wooden_sword （確信度 0.87）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:24:58.868 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:58.868 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [184] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:58.972 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:58.972 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [185] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:59.077 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:24:59.077 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [186] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:24:59.113 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:24:59.263 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1476ms, prompt=2257 thoughts=None output=41 total=2298
+2026-09-25 16:24:59.264 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 土を掘りまくったら、やっと抜け出せる道が開けたよ、やったー！これでようやく南東にある街の候補地へ向かって、元気に調査に出発できるね！
+2026-09-25 16:25:00.789 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1675ms, prompt=3246 thoughts=None output=76 total=3322
+2026-09-25 16:25:00.864 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(dirt, 30)（街の場所を探す (surveyed(9)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 調査への経路が塞がれて進めないため、周囲の土をさらに掘って完全に通路を確保します。; 残り 4
+2026-09-25 16:25:00.865 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(dirt, 30) [街の場所を探す のため]: 調査への経路が塞がれて進めないため、周囲の土をさらに掘って完全に通路を確保します。
+2026-09-25 16:25:00.866 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:25:00.945 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 16,60,22 | dig dirt at 16,61,22 | dig dirt at 16,60,23 | dig grass_block at 16,63,23 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20
+2026-09-25 16:25:01.166 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 221ms, input=1289 -> dig dirt at 16,60,22（確信度 0.83）
+2026-09-25 16:25:02.228 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1361ms, prompt=2201 thoughts=None output=44 total=2245
+2026-09-25 16:25:02.228 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] せっかく進もうとしたのに、やっぱりまだ道が狭くて引っかかっちゃったみたい！あと少し土を掘って、南東の候補地までしっかり通れる広い道を作っちゃうね！
+2026-09-25 16:25:03.064 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:03.064 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [187] have(dirt, 30)（残り 4）-> dig dirt at 16,60,22 （確信度 0.83）: 成功 dug dirt, picked up 1 items （1.8秒）
+2026-09-25 16:25:03.099 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 16,61,22 | dig dirt at 17,61,21 | dig dirt at 16,60,23 | dig grass_block at 16,63,23 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:25:03.319 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 219ms, input=1324 -> equip wooden_sword（確信度 0.36）
+2026-09-25 16:25:03.415 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:03.415 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [188] have(dirt, 30)（残り 3）-> equip wooden_sword （確信度 0.36）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:25:03.446 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 16,61,22 | dig dirt at 17,61,21 | dig dirt at 16,60,23 | dig grass_block at 16,63,23 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20
+2026-09-25 16:25:03.740 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 293ms, input=1278 -> dig dirt at 16,61,22（確信度 0.63）
+2026-09-25 16:25:05.644 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:05.644 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [189] have(dirt, 30)（残り 3）-> dig dirt at 16,61,22 （確信度 0.63）: 成功 dug dirt, picked up 1 items （1.8秒）
+2026-09-25 16:25:05.677 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 17,61,22 | dig dirt at 17,61,21 | dig dirt at 16,60,23 | dig grass_block at 16,63,23 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:25:05.915 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 237ms, input=1316 -> dig dirt at 17,61,22（確信度 0.57）
+2026-09-25 16:25:07.262 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:07.262 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [190] have(dirt, 30)（残り 2）-> dig dirt at 17,61,22 （確信度 0.57）: 成功 dug dirt, picked up 1 items （1.3秒）
+2026-09-25 16:25:07.295 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: dig dirt at 17,61,21 | dig dirt at 16,60,23 | dig dirt at 16,61,23 | dig grass_block at 16,63,23 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20 | equip wooden_sword
+2026-09-25 16:25:07.498 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 202ms, input=1314 -> dig dirt at 17,61,21（確信度 0.53）
+2026-09-25 16:25:09.392 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:09.393 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [191] have(dirt, 30)（残り 1）-> dig dirt at 17,61,21 （確信度 0.53）: 成功 dug dirt, picked up 1 items （1.8秒）
+2026-09-25 16:25:09.433 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:25:14.869 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 5434ms, prompt=3200 thoughts=None output=61 total=3261
+2026-09-25 16:25:14.919 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: surveyed(2)（街の場所を探す (surveyed(9)) のため）（goal have(dirt, 30) is met） - 土を十分に掘り広げて通路を確保できたので、南東の街の候補地調査を再開します。; 残り 12
+2026-09-25 16:25:14.919 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] surveyed(2) [街の場所を探す のため]: 土を十分に掘り広げて通路を確保できたので、南東の街の候補地調査を再開します。
+2026-09-25 16:25:14.919 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:25:14.944 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: survey the SE site at 53,76 | equip wooden_sword
+2026-09-25 16:25:15.528 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 584ms, input=1101 -> equip wooden_sword（確信度 0.57）
+2026-09-25 16:25:15.622 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:15.623 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [192] surveyed(2)（残り 12）-> equip wooden_sword （確信度 0.57）: 成功 holding wooden_sword （0.0秒）
+2026-09-25 16:25:15.711 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:15.711 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [193] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:25:15.815 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:15.815 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [194] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:25:15.919 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:15.919 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [195] surveyed(2)（残り 12）-> survey the SE site at 53,76 （確信度 1.00）: 失敗 failed: No path to the goal! （0.1秒）
+2026-09-25 16:25:15.956 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:25:16.437 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1517ms, prompt=2163 thoughts=None output=42 total=2205
+2026-09-25 16:25:16.437 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 土を掘り進めて、今度こそバッチリ通れる道が完成したよ！それじゃあ気を取り直して、南東の候補地調査へレッツゴーだね！
+2026-09-25 16:25:17.897 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1940ms, prompt=3237 thoughts=None output=124 total=3361
+2026-09-25 16:25:17.949 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal surveyed(2) is stuck (actions keep failing)） - 候補地へ向かう道が通れないため、まずは手持ちのベッドを家に設置します。; 残り 1
+2026-09-25 16:25:17.949 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 候補地へ向かう道が通れないため、まずは手持ちのベッドを家に設置します。
+2026-09-25 16:25:17.949 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:25:18.088 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:18.089 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [196] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:25:18.246 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:18.246 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [197] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:25:18.405 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:18.405 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [198] placed(bed, home)（残り 1）-> place door at -14,66,10 （確信度 1.00）: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal! （0.1秒）
+2026-09-25 16:25:18.442 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:25:19.338 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1389ms, prompt=2179 thoughts=None output=46 total=2225
+2026-09-25 16:25:19.339 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うそでしょ、まだ南東への道が通れなくて進めないみたい！街探しは一旦お休みして、先にお家のドアを直してベッドを置く作戦に切り替えるね！
+2026-09-25 16:25:20.301 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1858ms, prompt=3324 thoughts=None output=83 total=3407
+2026-09-25 16:25:20.347 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(spruce_planks, 4)（夜に寝られるようにする (placed(bed, home)) のため）（goal placed(bed, home) is stuck (actions keep failing)） - ドアと入り口付近の詰まりを解消するため、木を伐採して板材を調達しつつ周囲を開拓します。; 残り 2
+2026-09-25 16:25:20.347 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(spruce_planks, 4) [夜に寝られるようにする のため]: ドアと入り口付近の詰まりを解消するため、木を伐採して板材を調達しつつ周囲を開拓します。
+2026-09-25 16:25:20.347 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:25:20.375 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at 16,64,26 | dig spruce_log at 14,65,17 | dig spruce_log at 20,66,24
+2026-09-25 16:25:20.574 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 199ms, input=1250 -> dig spruce_log at 16,64,26（確信度 0.32）
+2026-09-25 16:25:20.671 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:20.671 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [199] have(spruce_planks, 4)（残り 2）-> dig spruce_log at 16,64,26 （確信度 0.32）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:25:20.695 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at 20,66,24 | dig spruce_log at 14,65,17 | dig spruce_log at 20,67,24
+2026-09-25 16:25:21.043 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 348ms, input=1230 -> dig spruce_log at 14,65,17（確信度 0.24）
+2026-09-25 16:25:21.146 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:21.146 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [200] have(spruce_planks, 4)（残り 2）-> dig spruce_log at 14,65,17 （確信度 0.24）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:25:21.170 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at 20,66,24 | dig spruce_log at 20,67,24 | dig spruce_log at 20,68,24
+2026-09-25 16:25:21.358 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 187ms, input=1210 -> dig spruce_log at 20,66,24（確信度 0.79）
+2026-09-25 16:25:21.436 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:25:21.436 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [201] have(spruce_planks, 4)（残り 2）-> dig spruce_log at 20,66,24 （確信度 0.79）: 失敗 failed: No path to the goal! （0.0秒）
+2026-09-25 16:25:21.483 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:25:21.818 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1470ms, prompt=2310 thoughts=None output=46 total=2356
+2026-09-25 16:25:21.818 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うーん、入り口が狭すぎてお家にベッドすら置けなくなっちゃったよ！周りの木を伐採して板材を作りつつ、玄関まわりをすっきり開拓して道を通してみせるね！
+2026-09-25 16:25:23.517 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2034ms, prompt=3333 thoughts=None output=80 total=3413
+2026-09-25 16:25:23.587 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(dirt, 35)（夜に寝られるようにする (placed(bed, home)) のため）（goal have(spruce_planks, 4) is stuck (actions keep failing)） - 移動経路や伐採への道が塞がって詰まっているため、周囲の土を掘って完全に移動スペースを広げます。; 残り 5
+2026-09-25 16:25:23.587 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(dirt, 35) [夜に寝られるようにする のため]: 移動経路や伐採への道が塞がって詰まっているため、周囲の土を掘って完全に移動スペースを広げます。
+2026-09-25 16:25:23.588 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:25:23.621 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: dig dirt at 16,60,23 | dig dirt at 16,61,23 | dig dirt at 17,61,23 | dig grass_block at 16,63,23 | dig grass_block at 16,63,20 | dig grass_block at 15,63,20
+2026-09-25 16:25:23.930 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 308ms, input=1300 -> dig dirt at 16,60,23（確信度 0.78）
+2026-09-25 16:25:25.297 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1709ms, prompt=2294 thoughts=None output=46 total=2340
+2026-09-25 16:25:25.297 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 木を切りに行こうにも足元が狭すぎて辿り着けなかったよ！もう邪魔な土を掘りまくって、お家の中も外も広々動けるスペースを確保しちゃうね！

@@ -1,0 +1,968 @@
+2026-09-25 16:03:36.497 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseDesignedEvent を購読した
+2026-09-25 16:03:36.498 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 16:03:36.498 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseCompletedEvent を購読した
+2026-09-25 16:03:36.498 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 16:03:36.498 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 16:03:36.498 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalEndedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseCompletedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownSiteChosenEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownDefinedEvent を購読した
+2026-09-25 16:03:36.561 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownCompletedEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalEndedEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownSiteChosenEvent を購読した
+2026-09-25 16:03:36.645 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GameActionExecutedEvent を購読した
+2026-09-25 16:03:36.645 | INFO     | ailoveshen.infrastructure.adapters.storage.json_mission_store:load:58 - 中目標を data/mission.json から読み込んだ
+2026-09-25 16:03:36.645 | INFO     | ailoveshen.application.use_cases.play:_load_plan:154 - 中目標を引き継いだ: 自分の家を作る (built()), 夜に寝られるようにする (placed(bed, home)), 身を守る道具を持つ (have(wooden_sword, 1)), 食料を蓄える (have(food, 8))
+2026-09-25 16:03:36.647 | INFO     | ailoveshen.presentation.web.goal_board:serve:174 - 目標ボード: http://127.0.0.1:8765/overlay
+2026-09-25 16:03:36.838 | INFO     | ailoveshen.application.use_cases.play:execute:121 - 家はもう建てている途中 (シェンのぽかぽかログベース): 新しい家は設計しない
+2026-09-25 16:03:39.423 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1654ms, prompt=1592 thoughts=None output=50 total=1642
+2026-09-25 16:03:39.601 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（自分の家を作る (built()) のため）（no goal yet） - 夜が来る前に安全な拠点を確保するため、家の建築を進めます。; 残り 123
+2026-09-25 16:03:39.601 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [自分の家を作る のため]: 夜が来る前に安全な拠点を確保するため、家の建築を進めます。
+2026-09-25 16:03:39.601 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:03:39.764 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -13,69,8 | dig spruce_log at -13,68,8 | dig spruce_log at -13,67,8
+2026-09-25 16:03:40.343 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 579ms, input=1029 -> dig spruce_log at -13,69,8（確信度 0.78）
+2026-09-25 16:03:41.049 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1447ms, prompt=1102 thoughts=None output=35 total=1137
+2026-09-25 16:03:41.050 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] みんな見ててね、夜になる前に急いで安全なお家を建てちゃうよ！まずは材料になるトウヒの原木をどんどん集めていこうかな！
+2026-09-25 16:04:00.595 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:00.595 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [1] built()（残り 123）-> dig spruce_log at -13,69,8 （確信度 0.78）: 失敗 failed: timeout （20.1秒）
+2026-09-25 16:04:00.763 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -13,68,8 | dig spruce_log at -13,67,8 | dig spruce_log at -13,66,8 | pick up spruce_log #10501
+2026-09-25 16:04:01.284 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 520ms, input=1134 -> dig spruce_log at -13,68,8（確信度 0.43）
+2026-09-25 16:04:21.554 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:21.554 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [2] built()（残り 123）-> dig spruce_log at -13,68,8 （確信度 0.43）: 失敗 failed: timeout （20.1秒）
+2026-09-25 16:04:21.760 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: dig spruce_log at -13,67,8 | dig spruce_log at -15,67,4 | dig spruce_log at -13,66,8 | pick up spruce_log #10539 | pick up spruce_log #10501
+2026-09-25 16:04:22.254 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 493ms, input=1244 -> dig spruce_log at -13,67,8（確信度 0.33）
+2026-09-25 16:04:27.185 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:27.186 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [3] built()（残り 123）-> dig spruce_log at -13,67,8 （確信度 0.33）: 成功 dug spruce_log, picked up 3 items （4.8秒）
+2026-09-25 16:04:27.359 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -13,66,8 | dig spruce_log at -15,65,4 | dig spruce_log at -15,67,4 | place log (start the house here)
+2026-09-25 16:04:27.853 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 494ms, input=1244 -> dig spruce_log at -13,66,8（確信度 0.66）
+2026-09-25 16:04:31.603 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:31.603 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [4] built()（残り 120）-> dig spruce_log at -13,66,8 （確信度 0.66）: 成功 dug spruce_log, picked up 1 items （3.6秒）
+2026-09-25 16:04:31.767 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -15,65,4 | dig spruce_log at -15,67,4 | dig spruce_log at -15,68,4 | place log (start the house here)
+2026-09-25 16:04:31.976 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1254 -> place log (start the house here)（確信度 0.45）
+2026-09-25 16:04:32.258 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:32.259 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [5] built()（残り 119）-> place log (start the house here) （確信度 0.45）: 成功 placed log (1/72) （0.1秒）
+2026-09-25 16:04:32.420 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -15,65,4 | dig spruce_log at -15,67,4 | dig spruce_log at -15,68,4
+2026-09-25 16:04:32.603 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 182ms, input=1207 -> dig spruce_log at -15,67,4（確信度 0.20）
+2026-09-25 16:04:43.881 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:43.881 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [6] built()（残り 118）-> dig spruce_log at -15,67,4 （確信度 0.20）: 成功 dug spruce_log, picked up 1 items （11.1秒）
+2026-09-25 16:04:44.071 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -15,66,4 | dig spruce_log at -15,65,4 | dig spruce_log at -21,67,8
+2026-09-25 16:04:44.621 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 550ms, input=1206 -> dig spruce_log at -15,66,4（確信度 0.70）
+2026-09-25 16:04:50.639 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:50.639 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [7] built()（残り 117）-> dig spruce_log at -15,66,4 （確信度 0.70）: 成功 dug spruce_log, picked up 1 items （5.8秒）
+2026-09-25 16:04:50.813 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -15,65,4 | dig spruce_log at -21,66,8 | dig spruce_log at -21,67,8
+2026-09-25 16:04:51.319 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 505ms, input=1220 -> dig spruce_log at -15,65,4（確信度 0.92）
+2026-09-25 16:04:55.102 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:04:55.103 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [8] built()（残り 116）-> dig spruce_log at -15,65,4 （確信度 0.92）: 成功 dug spruce_log, picked up 1 items （3.6秒）
+2026-09-25 16:04:55.273 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -21,66,8 | dig spruce_log at -21,67,8 | dig spruce_log at -7,65,8
+2026-09-25 16:04:55.469 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 196ms, input=1228 -> dig spruce_log at -21,66,8（確信度 0.43）
+2026-09-25 16:05:05.634 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:05:05.634 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [9] built()（残り 115）-> dig spruce_log at -21,66,8 （確信度 0.43）: 成功 dug spruce_log, picked up 1 items （10.0秒）
+2026-09-25 16:05:05.802 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -18,67,15 | dig spruce_log at -18,68,15 | dig spruce_log at -23,66,2
+2026-09-25 16:05:06.365 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 563ms, input=1214 -> dig spruce_log at -18,67,15（確信度 0.45）
+2026-09-25 16:05:16.358 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:05:16.358 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [10] built()（残り 114）-> dig spruce_log at -18,67,15 （確信度 0.45）: 成功 dug spruce_log, picked up 1 items （9.8秒）
+2026-09-25 16:05:16.528 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -24,67,18 | dig spruce_log at -24,68,18 | dig spruce_log at -24,69,18
+2026-09-25 16:05:17.140 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 611ms, input=1214 -> dig spruce_log at -24,67,18（確信度 0.85）
+2026-09-25 16:05:27.089 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:05:27.089 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [11] built()（残り 113）-> dig spruce_log at -24,67,18 （確信度 0.85）: 成功 dug spruce_log, picked up 1 items （9.8秒）
+2026-09-25 16:05:27.248 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -29,65,15 | dig spruce_log at -23,67,2 | dig spruce_log at -23,66,2
+2026-09-25 16:05:27.755 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 507ms, input=1219 -> dig spruce_log at -29,65,15（確信度 0.69）
+2026-09-25 16:05:40.744 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:05:40.745 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [12] built()（残り 112）-> dig spruce_log at -29,65,15 （確信度 0.69）: 成功 dug spruce_log, picked up 1 items （12.8秒）
+2026-09-25 16:05:40.917 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -35,65,14 | dig spruce_log at -35,64,14 | dig spruce_log at -35,66,14
+2026-09-25 16:05:41.436 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 519ms, input=1218 -> dig spruce_log at -35,65,14（確信度 0.45）
+2026-09-25 16:05:51.439 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:05:51.439 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [13] built()（残り 111）-> dig spruce_log at -35,65,14 （確信度 0.45）: 成功 dug spruce_log, picked up 1 items （9.8秒）
+2026-09-25 16:05:51.602 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -35,64,14 | dig spruce_log at -35,63,14 | dig spruce_log at -48,63,11
+2026-09-25 16:05:52.151 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 548ms, input=1223 -> dig spruce_log at -35,64,14（確信度 0.62）
+2026-09-25 16:05:56.723 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:05:56.723 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [14] built()（残り 110）-> dig spruce_log at -35,64,14 （確信度 0.62）: 成功 dug spruce_log, picked up 1 items （4.4秒）
+2026-09-25 16:05:56.887 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -35,63,14 | dig spruce_log at -48,63,11 | dig spruce_log at -23,64,2
+2026-09-25 16:05:57.094 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1231 -> dig spruce_log at -35,63,14（確信度 0.77）
+2026-09-25 16:06:01.383 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:01.383 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [15] built()（残り 109）-> dig spruce_log at -35,63,14 （確信度 0.77）: 成功 dug spruce_log, picked up 1 items （4.1秒）
+2026-09-25 16:06:01.444 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: craft spruce_planks x2 | dig spruce_log at -48,63,11 | dig spruce_log at -23,64,2 | dig spruce_log at -48,63,4
+2026-09-25 16:06:01.705 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 260ms, input=1272 -> craft spruce_planks x2（確信度 0.79）
+2026-09-25 16:06:01.944 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:01.944 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [16] built()（残り 108）-> craft spruce_planks x2 （確信度 0.79）: 成功 crafted 8 spruce_planks （0.1秒）
+2026-09-25 16:06:02.004 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -48,63,11 | dig spruce_log at -23,64,2 | dig spruce_log at -48,63,4 | place planks at -16,66,7
+2026-09-25 16:06:02.216 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 212ms, input=1269 -> place planks at -16,66,7（確信度 0.37）
+2026-09-25 16:06:06.897 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:06.897 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [17] built()（残り 106）-> place planks at -16,66,7 （確信度 0.37）: 成功 placed planks (2/72) （4.6秒）
+2026-09-25 16:06:07.063 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -16,66,8
+2026-09-25 16:06:07.418 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 355ms, input=1250 -> place planks at -16,66,8（確信度 0.81）
+2026-09-25 16:06:07.715 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:07.715 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [18] built()（残り 105）-> place planks at -16,66,8 （確信度 0.81）: 成功 placed planks (3/72) （0.1秒）
+2026-09-25 16:06:07.878 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -16,66,9
+2026-09-25 16:06:08.154 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 276ms, input=1246 -> place planks at -16,66,9（確信度 0.81）
+2026-09-25 16:06:08.466 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:08.466 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [19] built()（残り 104）-> place planks at -16,66,9 （確信度 0.81）: 成功 placed planks (4/72) （0.1秒）
+2026-09-25 16:06:08.629 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place log at -16,66,10
+2026-09-25 16:06:08.904 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 274ms, input=1277 -> place log at -16,66,10（確信度 0.53）
+2026-09-25 16:06:09.273 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:09.273 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [20] built()（残り 103）-> place log at -16,66,10 （確信度 0.53）: 成功 placed log (5/72) （0.2秒）
+2026-09-25 16:06:09.436 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -15,66,6
+2026-09-25 16:06:09.669 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 232ms, input=1276 -> place planks at -15,66,6（確信度 0.52）
+2026-09-25 16:06:09.958 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:09.958 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [21] built()（残り 102）-> place planks at -15,66,6 （確信度 0.52）: 成功 placed planks (6/72) （0.1秒）
+2026-09-25 16:06:10.121 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -15,66,10
+2026-09-25 16:06:10.346 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=1276 -> place planks at -15,66,10（確信度 0.64）
+2026-09-25 16:06:10.608 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:10.609 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [22] built()（残り 101）-> place planks at -15,66,10 （確信度 0.64）: 成功 placed planks (7/72) （0.1秒）
+2026-09-25 16:06:10.770 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -14,66,6
+2026-09-25 16:06:11.028 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 257ms, input=1278 -> place planks at -14,66,6（確信度 0.53）
+2026-09-25 16:06:11.365 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:11.365 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [23] built()（残り 100）-> place planks at -14,66,6 （確信度 0.53）: 成功 placed planks (8/72) （0.1秒）
+2026-09-25 16:06:11.528 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -13,66,6
+2026-09-25 16:06:11.749 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 221ms, input=1279 -> place planks at -13,66,6（確信度 0.75）
+2026-09-25 16:06:12.120 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:12.121 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [24] built()（残り 99）-> place planks at -13,66,6 （確信度 0.75）: 成功 placed planks (9/72) （0.2秒）
+2026-09-25 16:06:12.284 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | dig spruce_log at -23,67,2 | place planks at -13,66,10
+2026-09-25 16:06:12.558 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 274ms, input=1278 -> place planks at -13,66,10（確信度 0.55）
+2026-09-25 16:06:13.641 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:13.641 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [25] built()（残り 98）-> place planks at -13,66,10 （確信度 0.55）: 成功 placed planks (10/72) （0.9秒）
+2026-09-25 16:06:13.800 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at -7,65,8 | dig spruce_log at -23,66,2 | dig spruce_log at -23,65,2 | place log at -12,66,6
+2026-09-25 16:06:14.006 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1264 -> place log at -12,66,6（確信度 0.46）
+2026-09-25 16:06:15.348 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:15.349 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [26] built()（残り 97）-> place log at -12,66,6 （確信度 0.46）: 成功 placed log (11/72) （1.2秒）
+2026-09-25 16:06:15.508 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -7,65,8 | dig spruce_log at -3,65,2 | dig spruce_log at -23,66,2
+2026-09-25 16:06:15.737 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 229ms, input=1199 -> dig spruce_log at -7,65,8（確信度 0.63）
+2026-09-25 16:06:28.770 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:28.771 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [27] built()（残り 96）-> dig spruce_log at -7,65,8 （確信度 0.63）: 成功 dug spruce_log, picked up 1 items （12.8秒）
+2026-09-25 16:06:28.939 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -3,65,2 | dig spruce_log at 0,65,5 | dig spruce_log at 0,66,5
+2026-09-25 16:06:29.448 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 508ms, input=1194 -> dig spruce_log at -3,65,2（確信度 0.20）
+2026-09-25 16:06:37.420 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:37.420 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [28] built()（残り 95）-> dig spruce_log at -3,65,2 （確信度 0.20）: 成功 dug spruce_log, picked up 3 items （7.8秒）
+2026-09-25 16:06:37.586 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: craft spruce_planks x2 | dig spruce_log at 0,65,5 | dig spruce_log at 0,66,5 | dig spruce_log at 0,67,5
+2026-09-25 16:06:38.117 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 530ms, input=1236 -> craft spruce_planks x2（確信度 0.62）
+2026-09-25 16:06:38.498 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:38.498 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [29] built()（残り 94）-> craft spruce_planks x2 （確信度 0.62）: 成功 crafted 8 spruce_planks （0.2秒）
+2026-09-25 16:06:38.663 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: dig spruce_log at 0,65,5 | dig spruce_log at 0,66,5 | dig spruce_log at 0,67,5 | place planks at -12,66,7
+2026-09-25 16:06:38.923 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 260ms, input=1240 -> dig spruce_log at 0,65,5（確信度 0.26）
+2026-09-25 16:06:45.064 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:45.064 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [30] built()（残り 92）-> dig spruce_log at 0,65,5 （確信度 0.26）: 成功 dug spruce_log, picked up 1 items （6.0秒）
+2026-09-25 16:06:45.212 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: craft spruce_planks x1 | dig spruce_log at 3,65,6 | dig spruce_log at 3,66,6 | dig spruce_log at 3,67,6 | place planks at -12,66,7
+2026-09-25 16:06:45.720 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 507ms, input=1278 -> craft spruce_planks x1（確信度 0.52）
+2026-09-25 16:06:45.967 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:45.967 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [31] built()（残り 91）-> craft spruce_planks x1 （確信度 0.52）: 成功 crafted 4 spruce_planks （0.1秒）
+2026-09-25 16:06:46.143 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: craft crafting_table x1 | dig spruce_log at 3,65,6 | dig spruce_log at 3,66,6 | dig spruce_log at 3,67,6 | place planks at -12,66,7
+2026-09-25 16:06:46.352 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1242 -> craft crafting_table x1（確信度 0.48）
+2026-09-25 16:06:46.601 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:46.601 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [32] built()（残り 90）-> craft crafting_table x1 （確信度 0.48）: 成功 crafted 1 crafting_table （0.1秒）
+2026-09-25 16:06:46.749 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 3,65,6 | dig spruce_log at 3,66,6 | dig spruce_log at 3,67,6 | place planks at -12,66,7
+2026-09-25 16:06:46.932 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 183ms, input=1222 -> dig spruce_log at 3,65,6（確信度 0.31）
+2026-09-25 16:06:56.128 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:06:56.128 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [33] built()（残り 89）-> dig spruce_log at 3,65,6 （確信度 0.31）: 成功 dug spruce_log, picked up 1 items （9.0秒）
+2026-09-25 16:06:56.276 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 1,65,8 | dig spruce_log at 1,66,8 | dig spruce_log at 1,67,8 | place planks at -12,66,7
+2026-09-25 16:06:56.795 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 518ms, input=1223 -> dig spruce_log at 1,65,8（確信度 0.32）
+2026-09-25 16:07:01.704 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:07:01.705 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [34] built()（残り 88）-> dig spruce_log at 1,65,8 （確信度 0.32）: 成功 dug spruce_log, picked up 1 items （4.7秒）
+2026-09-25 16:07:01.851 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 5,66,3 | dig spruce_log at 5,67,3 | dig spruce_log at 8,65,8 | place planks at -12,66,7
+2026-09-25 16:07:02.408 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 556ms, input=1234 -> dig spruce_log at 5,66,3（確信度 0.18）
+2026-09-25 16:07:09.037 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:07:09.037 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [35] built()（残り 87）-> dig spruce_log at 5,66,3 （確信度 0.18）: 成功 dug spruce_log, picked up 1 items （6.5秒）
+2026-09-25 16:07:09.193 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 3,66,1 | dig spruce_log at 8,66,8 | dig spruce_log at 8,65,8 | place planks at -12,66,7
+2026-09-25 16:07:09.681 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 487ms, input=1247 -> dig spruce_log at 3,66,1（確信度 0.34）
+2026-09-25 16:07:25.881 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:07:25.881 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [36] built()（残り 86）-> dig spruce_log at 3,66,1 （確信度 0.34）: 成功 dug spruce_log, picked up 1 items （16.0秒）
+2026-09-25 16:07:26.034 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 8,65,8 | dig spruce_log at 8,66,8 | dig spruce_log at 8,67,8 | place planks at -12,66,7
+2026-09-25 16:07:26.653 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 618ms, input=1245 -> dig spruce_log at 8,65,8（確信度 0.30）
+2026-09-25 16:07:38.354 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:07:38.354 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [37] built()（残り 85）-> dig spruce_log at 8,65,8 （確信度 0.30）: 成功 dug spruce_log, picked up 1 items （11.5秒）
+2026-09-25 16:07:38.501 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 15,67,7 | dig spruce_log at 4,65,16 | dig spruce_log at 4,66,16 | place planks at -12,66,7
+2026-09-25 16:07:39.035 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 533ms, input=1249 -> dig spruce_log at 15,67,7（確信度 0.23）
+2026-09-25 16:07:50.235 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:07:50.235 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [38] built()（残り 84）-> dig spruce_log at 15,67,7 （確信度 0.23）: 成功 dug spruce_log, picked up 2 items （11.0秒）
+2026-09-25 16:07:50.383 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 20,67,12 | dig spruce_log at 20,68,12 | dig spruce_log at 14,66,2 | place planks at -12,66,7
+2026-09-25 16:07:50.935 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 551ms, input=1248 -> dig spruce_log at 20,67,12（確信度 0.29）
+2026-09-25 16:08:01.717 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:01.717 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [39] built()（残り 83）-> dig spruce_log at 20,67,12 （確信度 0.29）: 成功 dug spruce_log, picked up 1 items （10.6秒）
+2026-09-25 16:08:01.903 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 26,68,10 | dig spruce_log at 26,69,10 | dig spruce_log at 26,70,10 | place planks at -12,66,7
+2026-09-25 16:08:02.557 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 654ms, input=1252 -> dig spruce_log at 26,68,10（確信度 0.57）
+2026-09-25 16:08:14.117 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:14.117 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [40] built()（残り 82）-> dig spruce_log at 26,68,10 （確信度 0.57）: 成功 dug spruce_log, picked up 1 items （11.4秒）
+2026-09-25 16:08:14.872 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:08:17.874 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 3000ms, prompt=1928 thoughts=None output=50 total=1978
+2026-09-25 16:08:18.061 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（自分の家を作る (built()) のため）（goal built() ran for 40 steps） - 夜になる前に拠点を完成させたいので、引き続き家の建築を進めます。; 残り 81
+2026-09-25 16:08:18.061 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [自分の家を作る のため]: 夜になる前に拠点を完成させたいので、引き続き家の建築を進めます。
+2026-09-25 16:08:18.061 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:08:18.212 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 30,68,12 | dig spruce_log at 30,69,12 | dig spruce_log at 30,70,12 | place planks at -12,66,7
+2026-09-25 16:08:18.820 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 607ms, input=1260 -> dig spruce_log at 30,68,12（確信度 0.65）
+2026-09-25 16:08:19.801 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1739ms, prompt=1276 thoughts=None output=38 total=1314
+2026-09-25 16:08:19.801 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] よし、原木もだいぶ集まってきたから作業台を置いてドアと木材を作っちゃおう！日暮れまであと少しだし、ここからスピードアップしていくよ！
+2026-09-25 16:08:28.092 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:28.092 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [41] built()（残り 81）-> dig spruce_log at 30,68,12 （確信度 0.65）: 成功 dug spruce_log, picked up 1 items （9.1秒）
+2026-09-25 16:08:28.286 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 30,68,6 | dig spruce_log at 30,67,6 | dig spruce_log at 30,69,6 | place planks at -12,66,7
+2026-09-25 16:08:28.874 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 588ms, input=1260 -> dig spruce_log at 30,68,6（確信度 0.37）
+2026-09-25 16:08:39.115 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:39.115 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [42] built()（残り 80）-> dig spruce_log at 30,68,6 （確信度 0.37）: 成功 dug spruce_log, picked up 1 items （10.1秒）
+2026-09-25 16:08:39.263 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 30,67,6 | dig spruce_log at 37,68,8 | dig spruce_log at 37,69,8 | place planks at -12,66,7
+2026-09-25 16:08:39.784 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 521ms, input=1258 -> dig spruce_log at 30,67,6（確信度 0.49）
+2026-09-25 16:08:44.211 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:44.211 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [43] built()（残り 79）-> dig spruce_log at 30,67,6 （確信度 0.49）: 成功 dug spruce_log, picked up 1 items （4.2秒）
+2026-09-25 16:08:44.362 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 37,68,8 | dig spruce_log at 37,69,8 | dig spruce_log at 37,70,8 | place planks at -12,66,7
+2026-09-25 16:08:44.601 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 239ms, input=1271 -> dig spruce_log at 37,68,8（確信度 0.44）
+2026-09-25 16:08:50.931 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:50.932 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [44] built()（残り 78）-> dig spruce_log at 37,68,8 （確信度 0.44）: 成功 dug spruce_log, picked up 1 items （6.2秒）
+2026-09-25 16:08:51.054 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: place crafting_table nearby | dig spruce_log at 42,67,6 | dig spruce_log at 38,68,3 | dig spruce_log at 38,67,3 | place planks at -12,66,7
+2026-09-25 16:08:51.590 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 535ms, input=1257 -> dig spruce_log at 42,67,6（確信度 0.39）
+2026-09-25 16:08:59.998 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:08:59.999 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [45] built()（残り 77）-> dig spruce_log at 42,67,6 （確信度 0.39）: 成功 dug spruce_log, picked up 1 items （8.2秒）
+2026-09-25 16:09:00.114 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | craft spruce_planks x13 | place planks at -12,66,7
+2026-09-25 16:09:00.862 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 747ms, input=1149 -> craft spruce_planks x13（確信度 0.89）
+2026-09-25 16:09:02.227 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:02.227 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [46] built()（残り 76）-> craft spruce_planks x13 （確信度 0.89）: 成功 crafted 52 spruce_planks （1.2秒）
+2026-09-25 16:09:02.340 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | place planks at -12,66,7
+2026-09-25 16:09:02.570 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 229ms, input=1075 -> place planks at -12,66,7（確信度 0.48）
+2026-09-25 16:09:14.403 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:14.403 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [47] built()（残り 63）-> place planks at -12,66,7 （確信度 0.48）: 成功 placed planks (12/72) （11.7秒）
+2026-09-25 16:09:14.561 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | place planks at -12,66,8
+2026-09-25 16:09:15.113 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 551ms, input=1075 -> place planks at -12,66,8（確信度 0.86）
+2026-09-25 16:09:15.419 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:15.419 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [48] built()（残り 62）-> place planks at -12,66,8 （確信度 0.86）: 成功 placed planks (13/72) （0.1秒）
+2026-09-25 16:09:15.581 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | place planks at -12,66,9
+2026-09-25 16:09:15.785 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 204ms, input=1073 -> place planks at -12,66,9（確信度 0.94）
+2026-09-25 16:09:16.067 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:16.068 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [49] built()（残り 61）-> place planks at -12,66,9 （確信度 0.94）: 成功 placed planks (14/72) （0.1秒）
+2026-09-25 16:09:16.225 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | place log at -12,66,10
+2026-09-25 16:09:16.446 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1078 -> place log at -12,66,10（確信度 0.89）
+2026-09-25 16:09:16.713 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:16.713 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [50] built()（残り 60）-> place log at -12,66,10 （確信度 0.89）: 成功 placed log (15/72) （0.1秒）
+2026-09-25 16:09:16.870 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | place log at -16,67,6
+2026-09-25 16:09:17.058 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 187ms, input=1072 -> place log at -16,67,6（確信度 0.78）
+2026-09-25 16:09:20.788 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:20.789 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [51] built()（残り 59）-> place log at -16,67,6 （確信度 0.78）: 成功 placed log (15/72) （3.6秒）
+2026-09-25 16:09:20.948 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | place log at -16,67,6
+2026-09-25 16:09:21.155 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1078 -> place log at -16,67,6（確信度 0.54）
+2026-09-25 16:09:21.756 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:21.756 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [52] built()（残り 59）-> place log at -16,67,6 （確信度 0.54）: 成功 placed log (16/72) （0.4秒）
+2026-09-25 16:09:21.913 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,67,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:22.115 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 201ms, input=1134 -> place planks at -16,67,7（確信度 0.92）
+2026-09-25 16:09:22.417 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:22.417 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [53] built()（残り 58）-> place planks at -16,67,7 （確信度 0.92）: 成功 placed planks (17/72) （0.1秒）
+2026-09-25 16:09:22.577 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,67,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:22.783 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 205ms, input=1136 -> place planks at -16,67,8（確信度 0.88）
+2026-09-25 16:09:23.068 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:23.068 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [54] built()（残り 57）-> place planks at -16,67,8 （確信度 0.88）: 成功 placed planks (18/72) （0.1秒）
+2026-09-25 16:09:23.225 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,67,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:23.421 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 195ms, input=1140 -> place planks at -16,67,9（確信度 0.93）
+2026-09-25 16:09:23.662 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:23.662 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [55] built()（残り 56）-> place planks at -16,67,9 （確信度 0.93）: 成功 placed planks (19/72) （0.1秒）
+2026-09-25 16:09:23.819 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -16,67,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:24.051 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 232ms, input=1141 -> place log at -16,67,10（確信度 0.90）
+2026-09-25 16:09:24.312 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:24.312 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [56] built()（残り 55）-> place log at -16,67,10 （確信度 0.90）: 成功 placed log (20/72) （0.1秒）
+2026-09-25 16:09:24.469 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,67,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:24.697 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 228ms, input=1140 -> place planks at -15,67,6（確信度 0.90）
+2026-09-25 16:09:24.964 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:24.965 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [57] built()（残り 54）-> place planks at -15,67,6 （確信度 0.90）: 成功 placed planks (21/72) （0.1秒）
+2026-09-25 16:09:25.121 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,67,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:25.341 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 219ms, input=1142 -> place planks at -15,67,10（確信度 0.92）
+2026-09-25 16:09:25.613 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:25.613 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [58] built()（残り 53）-> place planks at -15,67,10 （確信度 0.92）: 成功 placed planks (22/72) （0.1秒）
+2026-09-25 16:09:25.769 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,67,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:25.978 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1142 -> place planks at -14,67,6（確信度 0.94）
+2026-09-25 16:09:26.532 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:26.532 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [59] built()（残り 52）-> place planks at -14,67,6 （確信度 0.94）: 成功 placed planks (23/72) （0.4秒）
+2026-09-25 16:09:26.687 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,67,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:26.923 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 236ms, input=1143 -> place planks at -13,67,6（確信度 0.93）
+2026-09-25 16:09:27.218 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:27.218 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [60] built()（残り 51）-> place planks at -13,67,6 （確信度 0.93）: 成功 placed planks (24/72) （0.1秒）
+2026-09-25 16:09:27.372 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,67,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:27.595 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 223ms, input=1142 -> place planks at -13,67,10（確信度 0.91）
+2026-09-25 16:09:27.867 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:27.867 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [61] built()（残り 50）-> place planks at -13,67,10 （確信度 0.91）: 成功 placed planks (25/72) （0.1秒）
+2026-09-25 16:09:28.021 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -12,67,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:28.251 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 229ms, input=1139 -> place log at -12,67,6（確信度 0.92）
+2026-09-25 16:09:28.512 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:28.513 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [62] built()（残り 49）-> place log at -12,67,6 （確信度 0.92）: 成功 placed log (26/72) （0.1秒）
+2026-09-25 16:09:28.666 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,67,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:28.852 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 185ms, input=1138 -> place planks at -12,67,7（確信度 0.94）
+2026-09-25 16:09:29.114 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:29.114 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [63] built()（残り 48）-> place planks at -12,67,7 （確信度 0.94）: 成功 placed planks (27/72) （0.1秒）
+2026-09-25 16:09:29.274 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,67,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:29.482 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1139 -> place planks at -12,67,8（確信度 0.94）
+2026-09-25 16:09:29.767 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:29.767 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [64] built()（残り 47）-> place planks at -12,67,8 （確信度 0.94）: 成功 placed planks (28/72) （0.1秒）
+2026-09-25 16:09:29.921 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,67,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:30.172 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 250ms, input=1136 -> place planks at -12,67,9（確信度 0.94）
+2026-09-25 16:09:30.470 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:30.470 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [65] built()（残り 46）-> place planks at -12,67,9 （確信度 0.94）: 成功 placed planks (29/72) （0.1秒）
+2026-09-25 16:09:30.625 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -12,67,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:30.839 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 214ms, input=1139 -> place log at -12,67,10（確信度 0.87）
+2026-09-25 16:09:31.112 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:31.113 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [66] built()（残り 45）-> place log at -12,67,10 （確信度 0.87）: 成功 placed log (30/72) （0.1秒）
+2026-09-25 16:09:31.266 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -16,68,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:31.472 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 205ms, input=1136 -> place log at -16,68,6（確信度 0.78）
+2026-09-25 16:09:31.712 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:31.712 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [67] built()（残り 44）-> place log at -16,68,6 （確信度 0.78）: 成功 placed log (31/72) （0.1秒）
+2026-09-25 16:09:31.866 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,68,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:32.096 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 230ms, input=1136 -> place planks at -16,68,7（確信度 0.86）
+2026-09-25 16:09:32.364 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:32.364 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [68] built()（残り 43）-> place planks at -16,68,7 （確信度 0.86）: 成功 placed planks (32/72) （0.1秒）
+2026-09-25 16:09:32.518 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,68,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:32.753 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 234ms, input=1137 -> place planks at -16,68,8（確信度 0.93）
+2026-09-25 16:09:33.010 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:33.010 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [69] built()（残り 42）-> place planks at -16,68,8 （確信度 0.93）: 成功 placed planks (33/72) （0.1秒）
+2026-09-25 16:09:33.164 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,68,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:33.414 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 250ms, input=1138 -> place planks at -16,68,9（確信度 0.93）
+2026-09-25 16:09:33.714 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:33.714 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [70] built()（残り 41）-> place planks at -16,68,9 （確信度 0.93）: 成功 placed planks (34/72) （0.1秒）
+2026-09-25 16:09:33.868 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -16,68,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:34.073 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 204ms, input=1139 -> place log at -16,68,10（確信度 0.77）
+2026-09-25 16:09:34.365 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:34.365 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [71] built()（残り 40）-> place log at -16,68,10 （確信度 0.77）: 成功 placed log (35/72) （0.1秒）
+2026-09-25 16:09:34.519 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,68,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:34.714 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 194ms, input=1140 -> place planks at -15,68,6（確信度 0.83）
+2026-09-25 16:09:34.963 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:34.963 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [72] built()（残り 39）-> place planks at -15,68,6 （確信度 0.83）: 成功 placed planks (36/72) （0.1秒）
+2026-09-25 16:09:35.118 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,68,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:35.333 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1140 -> place planks at -15,68,10（確信度 0.95）
+2026-09-25 16:09:35.618 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:35.618 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [73] built()（残り 38）-> place planks at -15,68,10 （確信度 0.95）: 成功 placed planks (37/72) （0.1秒）
+2026-09-25 16:09:35.772 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,68,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:35.962 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 189ms, input=1138 -> place planks at -14,68,6（確信度 0.90）
+2026-09-25 16:09:36.212 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:36.213 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [74] built()（残り 37）-> place planks at -14,68,6 （確信度 0.90）: 成功 placed planks (38/72) （0.1秒）
+2026-09-25 16:09:36.367 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,68,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:36.576 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1144 -> place planks at -14,68,10（確信度 0.97）
+2026-09-25 16:09:36.811 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:36.811 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [75] built()（残り 36）-> place planks at -14,68,10 （確信度 0.97）: 成功 placed planks (39/72) （0.1秒）
+2026-09-25 16:09:36.965 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,68,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:37.164 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 198ms, input=1142 -> place planks at -13,68,6（確信度 0.96）
+2026-09-25 16:09:37.412 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:37.412 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [76] built()（残り 35）-> place planks at -13,68,6 （確信度 0.96）: 成功 placed planks (40/72) （0.1秒）
+2026-09-25 16:09:37.566 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,68,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:37.803 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 237ms, input=1144 -> place planks at -13,68,10（確信度 0.94）
+2026-09-25 16:09:38.062 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:38.062 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [77] built()（残り 34）-> place planks at -13,68,10 （確信度 0.94）: 成功 placed planks (41/72) （0.1秒）
+2026-09-25 16:09:38.228 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -12,68,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:38.471 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 243ms, input=1140 -> place log at -12,68,6（確信度 0.89）
+2026-09-25 16:09:38.764 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:38.764 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [78] built()（残り 33）-> place log at -12,68,6 （確信度 0.89）: 成功 placed log (42/72) （0.1秒）
+2026-09-25 16:09:38.918 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,68,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:39.138 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 219ms, input=1140 -> place planks at -12,68,7（確信度 0.75）
+2026-09-25 16:09:39.418 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:39.418 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [79] built()（残り 32）-> place planks at -12,68,7 （確信度 0.75）: 成功 placed planks (43/72) （0.1秒）
+2026-09-25 16:09:39.574 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,68,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:39.780 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1139 -> place planks at -12,68,8（確信度 0.69）
+2026-09-25 16:09:40.066 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:40.066 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [80] built()（残り 31）-> place planks at -12,68,8 （確信度 0.69）: 成功 placed planks (44/72) （0.1秒）
+2026-09-25 16:09:40.904 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:09:42.444 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1540ms, prompt=1988 thoughts=None output=52 total=2040
+2026-09-25 16:09:42.625 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（自分の家を作る (built()) のため）（goal built() ran for 40 steps） - 日暮れまでに家を完成させて安全を確保するため、引き続き建築を進めます。; 残り 30
+2026-09-25 16:09:42.625 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [自分の家を作る のため]: 日暮れまでに家を完成させて安全を確保するため、引き続き建築を進めます。
+2026-09-25 16:09:42.626 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:09:42.782 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,68,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:43.006 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=1140 -> place planks at -12,68,9（確信度 0.89）
+2026-09-25 16:09:43.262 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:43.263 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [81] built()（残り 30）-> place planks at -12,68,9 （確信度 0.89）: 成功 placed planks (45/72) （0.1秒）
+2026-09-25 16:09:43.418 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place log at -12,68,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:43.694 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 275ms, input=1139 -> place log at -12,68,10（確信度 0.88）
+2026-09-25 16:09:43.898 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1272ms, prompt=1345 thoughts=None output=27 total=1372
+2026-09-25 16:09:43.898 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ブロックをどんどん置いて壁ができてきたよ！日暮れまであと三分くらいだから、このまま一気に組み立てちゃおう！
+2026-09-25 16:09:43.965 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:43.966 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [82] built()（残り 29）-> place log at -12,68,10 （確信度 0.88）: 成功 placed log (46/72) （0.1秒）
+2026-09-25 16:09:44.120 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,69,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:44.540 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 420ms, input=1117 -> place planks at -16,69,6（確信度 0.93）
+2026-09-25 16:09:44.813 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:44.814 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [83] built()（残り 28）-> place planks at -16,69,6 （確信度 0.93）: 成功 placed planks (47/72) （0.1秒）
+2026-09-25 16:09:44.968 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,69,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:45.162 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 193ms, input=1122 -> place planks at -16,69,7（確信度 0.93）
+2026-09-25 16:09:45.412 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:45.412 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [84] built()（残り 27）-> place planks at -16,69,7 （確信度 0.93）: 成功 placed planks (48/72) （0.1秒）
+2026-09-25 16:09:45.567 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,69,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:45.781 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 213ms, input=1120 -> place planks at -16,69,8（確信度 0.94）
+2026-09-25 16:09:46.065 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:46.066 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [85] built()（残り 26）-> place planks at -16,69,8 （確信度 0.94）: 成功 placed planks (49/72) （0.1秒）
+2026-09-25 16:09:46.221 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,69,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:46.642 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 421ms, input=1121 -> place planks at -16,69,9（確信度 0.97）
+2026-09-25 16:09:46.913 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:46.913 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [86] built()（残り 25）-> place planks at -16,69,9 （確信度 0.97）: 成功 placed planks (50/72) （0.1秒）
+2026-09-25 16:09:47.069 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -16,69,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:47.394 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 324ms, input=1124 -> place planks at -16,69,10（確信度 0.97）
+2026-09-25 16:09:47.664 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:47.664 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [87] built()（残り 24）-> place planks at -16,69,10 （確信度 0.97）: 成功 placed planks (51/72) （0.1秒）
+2026-09-25 16:09:47.820 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,69,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:48.089 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 268ms, input=1122 -> place planks at -15,69,6（確信度 0.94）
+2026-09-25 16:09:48.362 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:48.362 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [88] built()（残り 23）-> place planks at -15,69,6 （確信度 0.94）: 成功 placed planks (52/72) （0.1秒）
+2026-09-25 16:09:48.516 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,69,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:48.782 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 265ms, input=1125 -> place planks at -15,69,10（確信度 0.94）
+2026-09-25 16:09:49.012 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:49.013 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [89] built()（残り 22）-> place planks at -15,69,10 （確信度 0.94）: 成功 placed planks (53/72) （0.1秒）
+2026-09-25 16:09:49.173 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,69,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:49.468 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 294ms, input=1125 -> place planks at -14,69,6（確信度 0.97）
+2026-09-25 16:09:49.769 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:49.769 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [90] built()（残り 21）-> place planks at -14,69,6 （確信度 0.97）: 成功 placed planks (54/72) （0.1秒）
+2026-09-25 16:09:49.924 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,69,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:50.190 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 265ms, input=1119 -> place planks at -14,69,10（確信度 0.96）
+2026-09-25 16:09:50.466 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:50.467 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [91] built()（残り 20）-> place planks at -14,69,10 （確信度 0.96）: 成功 placed planks (55/72) （0.1秒）
+2026-09-25 16:09:50.620 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,69,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:50.836 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1123 -> place planks at -13,69,6（確信度 0.96）
+2026-09-25 16:09:51.118 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:51.119 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [92] built()（残り 19）-> place planks at -13,69,6 （確信度 0.96）: 成功 placed planks (56/72) （0.1秒）
+2026-09-25 16:09:51.273 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,69,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:51.552 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 278ms, input=1123 -> place planks at -13,69,10（確信度 0.94）
+2026-09-25 16:09:51.865 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:51.865 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [93] built()（残り 18）-> place planks at -13,69,10 （確信度 0.94）: 成功 placed planks (57/72) （0.1秒）
+2026-09-25 16:09:52.019 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,69,6 | pick up spruce_sapling #11130
+2026-09-25 16:09:52.408 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 388ms, input=1123 -> place planks at -12,69,6（確信度 0.91）
+2026-09-25 16:09:52.663 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:52.663 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [94] built()（残り 17）-> place planks at -12,69,6 （確信度 0.91）: 成功 placed planks (58/72) （0.1秒）
+2026-09-25 16:09:52.818 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,69,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:53.021 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 202ms, input=1124 -> place planks at -12,69,7（確信度 0.92）
+2026-09-25 16:09:53.262 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:53.262 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [95] built()（残り 16）-> place planks at -12,69,7 （確信度 0.92）: 成功 placed planks (59/72) （0.1秒）
+2026-09-25 16:09:53.420 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,69,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:53.678 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 257ms, input=1124 -> place planks at -12,69,8（確信度 0.96）
+2026-09-25 16:09:53.966 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:53.966 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [96] built()（残り 15）-> place planks at -12,69,8 （確信度 0.96）: 成功 placed planks (60/72) （0.1秒）
+2026-09-25 16:09:54.121 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,69,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:54.382 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 260ms, input=1123 -> place planks at -12,69,9（確信度 0.96）
+2026-09-25 16:09:54.665 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:54.665 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [97] built()（残り 14）-> place planks at -12,69,9 （確信度 0.96）: 成功 placed planks (61/72) （0.1秒）
+2026-09-25 16:09:54.820 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -12,69,10 | pick up spruce_sapling #11130
+2026-09-25 16:09:55.031 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 210ms, input=1124 -> place planks at -12,69,10（確信度 0.96）
+2026-09-25 16:09:55.318 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:55.318 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [98] built()（残り 13）-> place planks at -12,69,10 （確信度 0.96）: 成功 placed planks (62/72) （0.1秒）
+2026-09-25 16:09:55.472 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,69,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:55.745 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 272ms, input=1121 -> place planks at -15,69,7（確信度 0.95）
+2026-09-25 16:09:56.013 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:56.014 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [99] built()（残り 12）-> place planks at -15,69,7 （確信度 0.95）: 成功 placed planks (63/72) （0.1秒）
+2026-09-25 16:09:56.168 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,69,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:56.385 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 216ms, input=1121 -> place planks at -15,69,8（確信度 0.94）
+2026-09-25 16:09:56.665 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:56.665 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [100] built()（残り 11）-> place planks at -15,69,8 （確信度 0.94）: 成功 placed planks (64/72) （0.1秒）
+2026-09-25 16:09:56.819 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -15,69,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:57.022 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 202ms, input=1119 -> place planks at -15,69,9（確信度 0.98）
+2026-09-25 16:09:57.266 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:57.266 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [101] built()（残り 10）-> place planks at -15,69,9 （確信度 0.98）: 成功 placed planks (65/72) （0.1秒）
+2026-09-25 16:09:57.420 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,69,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:57.649 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 229ms, input=1118 -> place planks at -14,69,7（確信度 0.89）
+2026-09-25 16:09:57.913 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:57.914 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [102] built()（残り 9）-> place planks at -14,69,7 （確信度 0.89）: 成功 placed planks (66/72) （0.1秒）
+2026-09-25 16:09:58.068 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,69,9 | pick up spruce_sapling #11130
+2026-09-25 16:09:58.366 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 298ms, input=1118 -> place planks at -14,69,9（確信度 0.96）
+2026-09-25 16:09:58.666 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:58.666 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [103] built()（残り 8）-> place planks at -14,69,9 （確信度 0.96）: 成功 placed planks (67/72) （0.1秒）
+2026-09-25 16:09:58.823 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,69,7 | pick up spruce_sapling #11130
+2026-09-25 16:09:59.089 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 266ms, input=1132 -> place planks at -13,69,7（確信度 0.91）
+2026-09-25 16:09:59.366 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:09:59.366 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [104] built()（残り 7）-> place planks at -13,69,7 （確信度 0.91）: 成功 placed planks (68/72) （0.1秒）
+2026-09-25 16:09:59.524 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,69,8 | pick up spruce_sapling #11130
+2026-09-25 16:09:59.749 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=1132 -> place planks at -13,69,8（確信度 0.92）
+2026-09-25 16:10:00.016 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:00.016 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [105] built()（残り 6）-> place planks at -13,69,8 （確信度 0.92）: 成功 placed planks (69/72) （0.1秒）
+2026-09-25 16:10:00.173 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -13,69,9 | pick up spruce_sapling #11130
+2026-09-25 16:10:00.463 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 289ms, input=1132 -> place planks at -13,69,9（確信度 0.93）
+2026-09-25 16:10:00.765 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:00.766 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [106] built()（残り 5）-> place planks at -13,69,9 （確信度 0.93）: 成功 placed planks (70/72) （0.1秒）
+2026-09-25 16:10:00.924 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place crafting_table nearby | place planks at -14,69,8 | pick up spruce_sapling #11130
+2026-09-25 16:10:01.174 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 249ms, input=1132 -> place planks at -14,69,8（確信度 0.88）
+2026-09-25 16:10:01.463 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:01.463 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [107] built()（残り 4）-> place planks at -14,69,8 （確信度 0.88）: 成功 placed planks (71/72) （0.1秒）
+2026-09-25 16:10:01.622 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place crafting_table nearby | pick up spruce_sapling #11130
+2026-09-25 16:10:01.843 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 221ms, input=1055 -> place crafting_table nearby（確信度 0.63）
+2026-09-25 16:10:02.726 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:02.726 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [108] built()（残り 3）-> place crafting_table nearby （確信度 0.63）: 成功 placed crafting_table at (-17, 67, 12) （0.7秒）
+2026-09-25 16:10:02.871 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: craft spruce_door x1 | pick up spruce_sapling #11130
+2026-09-25 16:10:03.086 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1024 -> craft spruce_door x1（確信度 0.99）
+2026-09-25 16:10:04.063 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:04.063 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [109] built()（残り 2）-> craft spruce_door x1 （確信度 0.99）: 成功 crafted 3 spruce_door （0.8秒）
+2026-09-25 16:10:04.084 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place door at -14,66,10 | pick up spruce_sapling #11130
+2026-09-25 16:10:04.325 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 241ms, input=1003 -> place door at -14,66,10（確信度 0.99）
+2026-09-25 16:10:04.479 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:04.479 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [110] built()（残り 1）-> place door at -14,66,10 （確信度 0.99）: 成功 placed door (72/72) （0.1秒）
+2026-09-25 16:10:04.503 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - HouseCompletedEvent を 2 個のハンドラーに発行する
+[done] シェンのぽかぽかログベース が完成
+2026-09-25 16:10:04.526 | INFO     | ailoveshen.application.use_cases.mid_goals:judge:93 - 中目標を達成した: 自分の家を作る (built())
+2026-09-25 16:10:05.151 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - MidGoalCompletedEvent を 3 個のハンドラーに発行する
+[mid✓] 自分の家を作る
+2026-09-25 16:10:05.151 | INFO     | ailoveshen.application.use_cases.mid_goals:add_town_goal:150 - 街の準備を中目標 m5 にした: 街の場所を探す (surveyed(9))
+2026-09-25 16:10:05.151 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - MidGoalAddedEvent を 3 個のハンドラーに発行する
+[mid+] #4 街の場所を探す: 街を作る場所を、まわりを見て回って決める
+2026-09-25 16:10:05.151 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:10:06.756 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1604ms, prompt=2153 thoughts=None output=65 total=2218
+2026-09-25 16:10:06.930 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal built() is met） - 家が完成したので、夜を安全にスキップできるように中目標の一番上にあるベッドを設置します。; 残り 5
+2026-09-25 16:10:06.930 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 家が完成したので、夜を安全にスキップできるように中目標の一番上にあるベッドを設置します。
+2026-09-25 16:10:06.930 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:10:07.074 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（8）: go to sheep seen at -27,44 | go to sheep seen at -17,48 | go to sheep seen at 65,24 | explore south | explore north | explore east | explore west | pick up spruce_sapling #11130
+2026-09-25 16:10:07.310 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 235ms, input=1374 -> explore south（確信度 0.25）
+2026-09-25 16:10:08.347 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1416ms, prompt=1425 thoughts=None output=35 total=1460
+2026-09-25 16:10:08.347 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] やったー、シェンのぽかぽかログベースがついに完成したよ！次は夜を無事に越せるように、羊さんを探してベッドを作りたいな！
+2026-09-25 16:10:11.575 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:11.576 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [111] placed(bed, home)（残り 5）-> explore south （確信度 0.25）: 成功 walked 21m south （4.1秒）
+2026-09-25 16:10:11.643 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: attack sheep #20 | attack sheep #19 | attack sheep #17 | dig spruce_log at -10,63,37 | dig spruce_log at -10,64,37 | dig spruce_log at -22,63,35
+2026-09-25 16:10:11.886 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 243ms, input=1287 -> attack sheep #20（確信度 0.44）
+2026-09-25 16:10:22.445 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:22.445 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [112] placed(bed, home)（残り 9）-> attack sheep #20 （確信度 0.44）: 成功 sheep gone (killed or despawned); picked up 3 items （10.5秒）
+2026-09-25 16:10:22.530 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: attack sheep #18 | attack sheep #19 | attack sheep #124 | dig spruce_log at -34,63,49 | dig spruce_log at -34,64,49 | dig spruce_log at -34,65,49 | eat mutton
+2026-09-25 16:10:23.053 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 522ms, input=1338 -> attack sheep #18（確信度 0.39）
+2026-09-25 16:10:33.587 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:33.587 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [113] placed(bed, home)（残り 8）-> attack sheep #18 （確信度 0.39）: 成功 sheep gone (killed or despawned); picked up 3 items （10.4秒）
+2026-09-25 16:10:33.666 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: attack sheep #19 | attack sheep #124 | attack sheep #123 | dig spruce_log at -34,63,49 | dig spruce_log at -34,64,49 | dig spruce_log at -34,65,49 | eat mutton
+2026-09-25 16:10:34.171 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 505ms, input=1352 -> attack sheep #19（確信度 0.51）
+2026-09-25 16:10:43.753 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:43.753 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [114] placed(bed, home)（残り 8）-> attack sheep #19 （確信度 0.51）: 成功 sheep gone (killed or despawned); picked up 2 items （9.5秒）
+2026-09-25 16:10:43.836 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（7）: attack sheep #123 | attack sheep #122 | attack sheep #124 | dig spruce_log at -29,63,60 | dig spruce_log at -25,63,62 | dig spruce_log at -25,64,62 | eat mutton
+2026-09-25 16:10:44.383 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 546ms, input=1366 -> dig spruce_log at -29,63,60（確信度 0.20）
+2026-09-25 16:10:54.083 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:10:54.083 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [115] placed(bed, home)（残り 7）-> dig spruce_log at -29,63,60 （確信度 0.20）: 成功 dug spruce_log, picked up 1 items （9.6秒）
+2026-09-25 16:10:54.154 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: attack sheep #122 | attack sheep #124 | attack sheep #123 | craft spruce_planks x1 | eat mutton
+2026-09-25 16:10:54.709 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 554ms, input=1261 -> attack sheep #122（確信度 0.29）
+2026-09-25 16:11:05.004 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:05.004 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [116] placed(bed, home)（残り 6）-> attack sheep #122 （確信度 0.29）: 失敗 failed: sheep still alive （10.2秒）
+2026-09-25 16:11:05.063 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: attack sheep #122 | attack sheep #17 | craft spruce_planks x1 | eat mutton
+2026-09-25 16:11:05.602 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 538ms, input=1196 -> attack sheep #122（確信度 0.54）
+2026-09-25 16:11:10.914 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:10.914 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [117] placed(bed, home)（残り 6）-> attack sheep #122 （確信度 0.54）: 成功 sheep gone (killed or despawned); picked up 3 items （5.3秒）
+2026-09-25 16:11:10.985 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: craft white_bed x1 | eat mutton
+2026-09-25 16:11:11.504 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 518ms, input=1041 -> craft white_bed x1（確信度 0.68）
+2026-09-25 16:11:19.229 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:19.229 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [118] placed(bed, home)（残り 2）-> craft white_bed x1 （確信度 0.68）: 成功 crafted 1 white_bed （7.6秒）
+2026-09-25 16:11:19.269 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:19.781 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 512ms, input=1019 -> place the bed in the house（確信度 0.33）
+2026-09-25 16:11:23.893 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:23.894 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [119] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.33）: 失敗 failed: could not walk to (-14, 66, 10) （4.1秒）
+2026-09-25 16:11:23.932 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:24.167 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 235ms, input=1031 -> eat mutton（確信度 0.25）
+2026-09-25 16:11:25.877 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:25.878 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [120] placed(bed, home)（残り 1）-> eat mutton （確信度 0.25）: 成功 ate mutton, hunger 13 -> 15 （1.6秒）
+2026-09-25 16:11:25.920 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:26.141 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1025 -> place the bed in the house（確信度 0.66）
+2026-09-25 16:11:29.314 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:29.314 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [121] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.66）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:29.352 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:29.590 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 237ms, input=1037 -> place the bed in the house（確信度 0.62）
+2026-09-25 16:11:32.725 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:32.726 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [122] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.62）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:32.764 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:32.976 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=1037 -> place the bed in the house（確信度 0.64）
+2026-09-25 16:11:36.110 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:36.110 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [123] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.64）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:36.666 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:11:38.595 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1928ms, prompt=2365 thoughts=None output=62 total=2427
+2026-09-25 16:11:38.668 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 日暮れが間近でベッド設置の経路が塞がっている可能性があるため、まずは安全に家の中に入ります。; 残り 1
+2026-09-25 16:11:38.668 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 日暮れが間近でベッド設置の経路が塞がっている可能性があるため、まずは安全に家の中に入ります。
+2026-09-25 16:11:38.668 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:11:38.708 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:39.235 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 526ms, input=1040 -> go home（確信度 0.74）
+2026-09-25 16:11:40.227 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1559ms, prompt=1537 thoughts=None output=32 total=1569
+2026-09-25 16:11:40.227 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] あれ、うまくベッドが置けないみたい！もうすぐ日が暮れちゃうし、モンスターが来る前にまずは急いでお家の中に避難するね！
+2026-09-25 16:11:42.413 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:42.413 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [124] at_home()（残り 1）-> go home （確信度 0.74）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:42.451 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:42.703 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 251ms, input=1036 -> eat mutton（確信度 0.39）
+2026-09-25 16:11:44.372 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:44.372 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [125] at_home()（残り 1）-> eat mutton （確信度 0.39）: 成功 ate mutton, hunger 15 -> 17 （1.6秒）
+2026-09-25 16:11:44.410 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:44.621 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=1027 -> go home（確信度 0.73）
+2026-09-25 16:11:47.766 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:47.767 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [126] at_home()（残り 1）-> go home （確信度 0.73）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:47.804 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:47.995 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 189ms, input=1021 -> go home（確信度 0.55）
+2026-09-25 16:11:51.157 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:51.157 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [127] at_home()（残り 1）-> go home （確信度 0.55）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:51.196 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:51.436 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 240ms, input=1023 -> go home（確信度 0.61）
+2026-09-25 16:11:54.599 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:54.599 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [128] at_home()（残り 1）-> go home （確信度 0.61）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:11:55.170 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:11:56.982 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1812ms, prompt=2444 thoughts=None output=54 total=2498
+2026-09-25 16:11:57.047 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal at_home() is stuck (actions keep failing)） - 手持ちにベッドがあるので、夜になる前に家の中に設置して夜を越せるようにします。; 残り 1
+2026-09-25 16:11:57.048 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 手持ちにベッドがあるので、夜になる前に家の中に設置して夜を越せるようにします。
+2026-09-25 16:11:57.048 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:11:57.088 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:57.613 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 524ms, input=1027 -> eat mutton（確信度 0.72）
+2026-09-25 16:11:58.985 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1937ms, prompt=1610 thoughts=43 output=35 total=1688
+2026-09-25 16:11:58.986 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] あれれ、うまくドアから入れなくて引っかかっちゃった！日暮れまであと一分しかないから、落ち着いて家の中にベッドを設置しちゃうね！
+2026-09-25 16:11:59.352 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:11:59.352 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [129] placed(bed, home)（残り 1）-> eat mutton （確信度 0.72）: 成功 ate mutton, hunger 17 -> 19 （1.7秒）
+2026-09-25 16:11:59.391 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:11:59.678 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 287ms, input=1022 -> place the bed in the house（確信度 0.35）
+2026-09-25 16:12:02.839 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:02.840 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [130] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.35）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:02.878 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:12:03.149 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 270ms, input=1024 -> place the bed in the house（確信度 0.25）
+2026-09-25 16:12:06.293 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:06.293 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [131] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.25）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:06.331 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:12:06.626 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 294ms, input=1028 -> place the bed in the house（確信度 0.51）
+2026-09-25 16:12:09.804 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:09.804 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [132] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.51）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:10.381 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:12:11.872 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1490ms, prompt=2553 thoughts=None output=61 total=2614
+2026-09-25 16:12:11.943 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 日暮れまで残り約1分で家への移動に失敗しているため、まずは安全に家の中に入ります。; 残り 1
+2026-09-25 16:12:11.943 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 日暮れまで残り約1分で家への移動に失敗しているため、まずは安全に家の中に入ります。
+2026-09-25 16:12:11.943 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:12:11.984 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:12:12.529 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 544ms, input=1035 -> go home（確信度 0.68）
+2026-09-25 16:12:13.190 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1246ms, prompt=1678 thoughts=None output=43 total=1721
+2026-09-25 16:12:13.190 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、どうしてもベッドが置けなくて足元も引っかかっちゃうよ！もうすぐ夜になっちゃうから、とにかくベッドは後回しにしてお家の中に滑り込まなくちゃ！
+2026-09-25 16:12:15.711 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:15.712 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [133] at_home()（残り 1）-> go home （確信度 0.68）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:15.751 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | eat mutton | pick up spruce_sapling #11130
+2026-09-25 16:12:15.952 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 201ms, input=1031 -> eat mutton（確信度 0.27）
+2026-09-25 16:12:17.657 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:17.657 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [134] at_home()（残り 1）-> eat mutton （確信度 0.27）: 成功 ate mutton, hunger 19 -> 20 （1.7秒）
+2026-09-25 16:12:17.695 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:17.929 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 233ms, input=993 -> go home（確信度 0.94）
+2026-09-25 16:12:21.093 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:21.094 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [135] at_home()（残り 1）-> go home （確信度 0.94）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:21.132 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:21.318 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 186ms, input=989 -> go home（確信度 0.93）
+2026-09-25 16:12:24.481 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:24.481 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [136] at_home()（残り 1）-> go home （確信度 0.93）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:24.519 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:24.744 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 225ms, input=989 -> go home（確信度 0.93）
+2026-09-25 16:12:27.902 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:27.902 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [137] at_home()（残り 1）-> go home （確信度 0.93）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:28.480 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:12:30.657 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2177ms, prompt=2601 thoughts=None output=64 total=2665
+2026-09-25 16:12:30.728 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal at_home() is stuck (actions keep failing)） - 日暮れを迎え家への移動と設置が引っかかっているため、夜を越す行動で安全を確保します。; 残り 11
+2026-09-25 16:12:30.728 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: 日暮れを迎え家への移動と設置が引っかかっているため、夜を越す行動で安全を確保します。
+2026-09-25 16:12:30.728 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:12:30.770 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:31.256 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 485ms, input=996 -> go home（確信度 0.60）
+2026-09-25 16:12:32.662 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1933ms, prompt=1726 thoughts=None output=47 total=1773
+2026-09-25 16:12:32.662 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うう、どうしてもお家の中に入れなくて引っかかっちゃうよ！もう日が暮れちゃったから、ベッドは諦めてなんとかこの場で安全に朝まで生き延びる作戦に切り替えるね！
+2026-09-25 16:12:34.419 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:34.419 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [138] through_night()（残り 11）-> go home （確信度 0.60）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:34.457 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:34.679 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 221ms, input=996 -> go home（確信度 0.57）
+2026-09-25 16:12:37.856 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:37.856 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [139] through_night()（残り 11）-> go home （確信度 0.57）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:37.893 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:38.121 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 227ms, input=996 -> go home（確信度 0.58）
+2026-09-25 16:12:41.298 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:41.298 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [140] through_night()（残り 11）-> go home （確信度 0.58）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:41.859 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:12:43.790 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1930ms, prompt=2686 thoughts=None output=51 total=2737
+2026-09-25 16:12:43.853 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal through_night() is stuck (actions keep failing)） - 家に入れない移動スタックを解消し、夜を安全に過ごすため再度家の中に入ります。; 残り 1
+2026-09-25 16:12:43.853 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 家に入れない移動スタックを解消し、夜を安全に過ごすため再度家の中に入ります。
+2026-09-25 16:12:43.854 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:12:43.895 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:44.433 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 537ms, input=991 -> go home（確信度 0.79）
+2026-09-25 16:12:45.736 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1882ms, prompt=1804 thoughts=None output=45 total=1849
+2026-09-25 16:12:45.737 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわわ、外でやり過ごすのも足が引っかかってうまくいかないよ！モンスターが出ちゃう前になんとか引っかかりを直して、今度こそお家の中に駆け込むからね！
+2026-09-25 16:12:47.611 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:47.611 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [141] at_home()（残り 1）-> go home （確信度 0.79）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:47.650 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:47.891 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 241ms, input=991 -> go home（確信度 0.75）
+2026-09-25 16:12:51.058 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:51.058 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [142] at_home()（残り 1）-> go home （確信度 0.75）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:51.096 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | pick up spruce_sapling #11130
+2026-09-25 16:12:51.301 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 204ms, input=991 -> go home（確信度 0.77）
+2026-09-25 16:12:54.456 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:54.456 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [143] at_home()（残り 1）-> go home （確信度 0.77）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:12:55.020 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:12:56.601 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1579ms, prompt=2716 thoughts=None output=71 total=2787
+2026-09-25 16:12:56.602 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'predicate': 'have', 'item': 'wooden_sword', 'count': 1, 'serves': 'survival', 'reason': '家への移動スタックが続いているため、夜の敵に対抗できるよう手持ちの材料で木の一撃を作ります。'}: have(wooden_sword, 1) is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:12:58.275 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1672ms, prompt=2788 thoughts=None output=134 total=2922
+2026-09-25 16:12:58.469 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(wooden_sword, 1)（身を守る道具を持つ (have(wooden_sword, 1)) のため）（goal at_home() is stuck (actions keep failing)） - ベッド設置を後回しにして、夜のモンスターに対処できるよう身を守る剣を作ります; 残り 2
+2026-09-25 16:12:58.469 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(wooden_sword, 1) [身を守る道具を持つ のため]: ベッド設置を後回しにして、夜のモンスターに対処できるよう身を守る剣を作ります
+2026-09-25 16:12:58.469 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:12:58.630 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: craft spruce_planks x1 | pick up spruce_sapling #11130
+2026-09-25 16:12:59.169 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 539ms, input=1081 -> craft spruce_planks x1（確信度 0.99）
+2026-09-25 16:12:59.428 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:12:59.428 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [144] have(wooden_sword, 1)（残り 2）-> craft spruce_planks x1 （確信度 0.99）: 成功 crafted 4 spruce_planks （0.1秒）
+2026-09-25 16:12:59.589 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: craft wooden_sword x1 | pick up spruce_sapling #11130
+2026-09-25 16:12:59.796 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1063 -> craft wooden_sword x1（確信度 1.00）
+2026-09-25 16:13:00.582 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:00.582 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [145] have(wooden_sword, 1)（残り 1）-> craft wooden_sword x1 （確信度 1.00）: 成功 crafted 1 wooden_sword （0.6秒）
+2026-09-25 16:13:00.642 | INFO     | ailoveshen.application.use_cases.mid_goals:judge:93 - 中目標を達成した: 身を守る道具を持つ (have(wooden_sword, 1))
+2026-09-25 16:13:00.905 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2436ms, prompt=1923 thoughts=199 output=47 total=2169
+2026-09-25 16:13:00.906 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うう、どうしても家の中に入れないから、ベッドの前にまずモンスターと戦える木の剣を作ることにするね！外にいるままだと危ないから、急いでクラフトして自分の身を守らなきゃ！
+2026-09-25 16:13:01.015 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - MidGoalCompletedEvent を 3 個のハンドラーに発行する
+[mid✓] 身を守る道具を持つ
+2026-09-25 16:13:01.016 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:13:02.696 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1680ms, prompt=2705 thoughts=None output=78 total=2783
+2026-09-25 16:13:03.081 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 8)（食料を蓄える (have(food, 8)) のため）（goal have(wooden_sword, 1) is met） - 木の剣ができたので、中目標の食料集めを進めるため近くのブタを探して食料を確保します。; 残り 5
+2026-09-25 16:13:03.081 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 8) [食料を蓄える のため]: 木の剣ができたので、中目標の食料集めを進めるため近くのブタを探して食料を確保します。
+2026-09-25 16:13:03.082 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:13:03.433 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（9）: go to pig seen at 30,34 | go to pig seen at 32,30 | go to pig seen at 32,37 | explore north | explore east | explore south | explore west | equip wooden_sword | pick up spruce_sapling #11130
+2026-09-25 16:13:03.624 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 191ms, input=1381 -> equip wooden_sword（確信度 0.47）
+2026-09-25 16:13:04.056 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:04.056 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [146] have(food, 8)（残り 5）-> equip wooden_sword （確信度 0.47）: 成功 holding wooden_sword （0.1秒）
+2026-09-25 16:13:04.372 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1290ms, prompt=1906 thoughts=None output=46 total=1952
+2026-09-25 16:13:04.372 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] よし、無事に木の剣が完成して身を守る準備はできたよ！夕方でちょっと薄暗くなってきたけど、今のうちに近くのブタさんを探して食料をしっかり集めておこうかな！
+2026-09-25 16:13:04.408 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（8）: go to pig seen at 30,34 | go to pig seen at 32,30 | go to pig seen at 32,37 | explore north | explore east | explore south | explore west | pick up spruce_sapling #11130
+2026-09-25 16:13:04.617 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1339 -> go to pig seen at 30,34（確信度 0.31）
+2026-09-25 16:13:18.929 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:18.930 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [147] have(food, 8)（残り 5）-> go to pig seen at 30,34 （確信度 0.31）: 成功 walked 46.1m toward where pig was seen (3.8m left) （13.9秒）
+2026-09-25 16:13:24.280 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:24.280 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [148] have(food, 8)（残り 5）-> attack pig #10 （確信度 1.00）: 成功 pig gone (killed or despawned); picked up 2 items （4.8秒）
+2026-09-25 16:13:24.564 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go to pig seen at 35,-24 | explore east | explore south
+2026-09-25 16:13:25.113 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 549ms, input=1104 -> explore east（確信度 0.11）
+2026-09-25 16:13:29.202 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:29.203 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [149] have(food, 8)（残り 3）-> explore east （確信度 0.11）: 成功 walked 21m east （3.8秒）
+2026-09-25 16:13:29.397 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: attack sheep #141 | attack sheep #140 | attack sheep #139
+2026-09-25 16:13:29.600 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 203ms, input=1081 -> attack sheep #141（確信度 0.97）
+2026-09-25 16:13:36.099 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:36.099 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [150] have(food, 8)（残り 3）-> attack sheep #141 （確信度 0.97）: 成功 sheep gone (killed or despawned); picked up 2 items （6.3秒）
+2026-09-25 16:13:36.318 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: attack sheep #140 | attack sheep #139 | attack sheep #138
+2026-09-25 16:13:36.833 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 514ms, input=1087 -> attack sheep #140（確信度 0.82）
+2026-09-25 16:13:43.388 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:13:43.389 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [151] have(food, 8)（残り 2）-> attack sheep #140 （確信度 0.82）: 成功 sheep gone (killed or despawned); picked up 3 items （6.3秒）
+2026-09-25 16:13:43.431 | INFO     | ailoveshen.application.use_cases.mid_goals:judge:93 - 中目標を達成した: 食料を蓄える (have(food, 8))
+2026-09-25 16:13:43.464 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - MidGoalCompletedEvent を 3 個のハンドラーに発行する
+[mid✓] 食料を蓄える
+2026-09-25 16:13:43.464 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:13:45.276 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1811ms, prompt=2675 thoughts=None output=69 total=2744
+2026-09-25 16:13:45.323 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal have(food, 8) is met） - 食料が集まり手元にベッドもあるので、中目標を進めて夜を飛ばすために家の中にベッドを設置します。; 残り 1
+2026-09-25 16:13:45.323 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 食料が集まり手元にベッドもあるので、中目標を進めて夜を飛ばすために家の中にベッドを設置します。
+2026-09-25 16:13:45.323 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:13:47.327 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2003ms, prompt=1850 thoughts=None output=47 total=1897
+2026-09-25 16:13:47.327 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] お肉もたっぷり集まって食料の準備はバッチリ完了したよ！もうすっかり夜になっちゃったから、今度こそお家に入ってベッドを置いて朝までぐっすり寝ちゃおう！
+2026-09-25 16:14:07.278 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:07.278 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [152] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （21.9秒）
+2026-09-25 16:14:07.317 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | eat porkchop | pick up spruce_sapling #11130
+2026-09-25 16:14:07.822 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 504ms, input=1094 -> eat porkchop（確信度 0.47）
+2026-09-25 16:14:09.549 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:09.550 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [153] placed(bed, home)（残り 1）-> eat porkchop （確信度 0.47）: 成功 ate porkchop, hunger 19 -> 20 （1.7秒）
+2026-09-25 16:14:09.588 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: place the bed in the house | equip wooden_sword | pick up spruce_sapling #11130
+2026-09-25 16:14:09.782 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 194ms, input=1089 -> equip wooden_sword（確信度 0.43）
+2026-09-25 16:14:09.891 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:09.891 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [154] placed(bed, home)（残り 1）-> equip wooden_sword （確信度 0.43）: 成功 holding wooden_sword （0.1秒）
+2026-09-25 16:14:09.929 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place the bed in the house | pick up spruce_sapling #11130
+2026-09-25 16:14:10.136 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1043 -> place the bed in the house（確信度 0.91）
+2026-09-25 16:14:13.308 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:13.308 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [155] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.91）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:13.348 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place the bed in the house | pick up spruce_sapling #11130
+2026-09-25 16:14:13.557 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1042 -> place the bed in the house（確信度 0.85）
+2026-09-25 16:14:16.714 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:16.714 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [156] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.85）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:16.752 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place the bed in the house | pick up spruce_sapling #11130
+2026-09-25 16:14:16.961 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 209ms, input=1045 -> place the bed in the house（確信度 0.85）
+2026-09-25 16:14:20.139 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:20.140 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [157] placed(bed, home)（残り 1）-> place the bed in the house （確信度 0.85）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:20.224 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:14:22.116 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1892ms, prompt=2737 thoughts=None output=54 total=2791
+2026-09-25 16:14:22.179 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 家の中への移動やベッド設置が失敗しているため、夜のモンスターから身を守るためにまずは家の中に入ります。; 残り 1
+2026-09-25 16:14:22.179 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 家の中への移動やベッド設置が失敗しているため、夜のモンスターから身を守るためにまずは家の中に入ります。
+2026-09-25 16:14:22.179 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:14:24.115 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1935ms, prompt=1899 thoughts=None output=50 total=1949
+2026-09-25 16:14:24.115 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、どうしてもベッドを置く場所まで歩けなくて引っかかっちゃうよ！もう真っ暗で外にいるのは危ないから、ベッドは後回しにしてとにかくお家の中に飛び込んでドアを閉めるね！
+2026-09-25 16:14:25.376 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:25.376 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [158] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:28.556 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:28.556 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [159] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:31.721 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:31.722 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [160] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:31.800 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:14:33.950 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2149ms, prompt=2795 thoughts=None output=49 total=2844
+2026-09-25 16:14:34.002 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal at_home() is stuck (actions keep failing)） - 家に入ろうとすると引っかかるため、夜を乗り切る行動で安全を確保します。; 残り 9
+2026-09-25 16:14:34.002 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: 家に入ろうとすると引っかかるため、夜を乗り切る行動で安全を確保します。
+2026-09-25 16:14:34.002 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:14:35.373 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1371ms, prompt=1938 thoughts=None output=46 total=1984
+2026-09-25 16:14:35.373 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うう、やっぱり足が引っかかってどうしてもお家に入れないよ！もう外は真っ暗だし、剣を構えてなんとかこの場所でモンスターを警戒しながら朝まで生き延びてみせるね！
+2026-09-25 16:14:37.166 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:37.167 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [161] through_night()（残り 9）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:40.372 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:40.372 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [162] through_night()（残り 9）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:43.559 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:43.559 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [163] through_night()（残り 9）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:43.640 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:14:45.322 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1681ms, prompt=2790 thoughts=None output=70 total=2860
+2026-09-25 16:14:45.391 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal through_night() is stuck (actions keep failing)） - 家への移動や夜越えがスタックしているため、所持しているベッドの設置を試みて夜をスキップします。; 残り 1
+2026-09-25 16:14:45.391 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 家への移動や夜越えがスタックしているため、所持しているベッドの設置を試みて夜をスキップします。
+2026-09-25 16:14:45.392 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:14:46.866 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1474ms, prompt=1964 thoughts=None output=45 total=2009
+2026-09-25 16:14:46.867 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 夜をやり過ごすのも引っかかっちゃってうまくいかないよ！手元にベッドはあるんだから、なんとかお家の中にねじ込んで設置して、一気に夜をスキップしちゃおう！
+2026-09-25 16:14:48.581 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:48.581 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [164] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:51.794 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:51.794 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [165] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:55.018 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:14:55.018 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [166] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:14:55.114 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:14:56.828 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1713ms, prompt=2827 thoughts=None output=64 total=2891
+2026-09-25 16:14:56.901 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 家に入れない移動スタックが続いているため、夜のモンスターから身を守るべく再度家への侵入を試みます。; 残り 1
+2026-09-25 16:14:56.901 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: 家に入れない移動スタックが続いているため、夜のモンスターから身を守るべく再度家への侵入を試みます。
+2026-09-25 16:14:56.901 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:14:58.664 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1763ms, prompt=1989 thoughts=None output=39 total=2028
+2026-09-25 16:14:58.665 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うう、ベッドを置こうとしてもどうしても足が前に進まないよ！モンスターに囲まれたら大変だから、まずはなんとしてもお家の中に身体をねじ込んでみるね！
+2026-09-25 16:15:00.127 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:00.127 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [167] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:03.339 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:03.339 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [168] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:06.553 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:06.553 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [169] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:06.649 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:15:08.380 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1731ms, prompt=2828 thoughts=None output=63 total=2891
+2026-09-25 16:15:08.453 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: through_night()（生存のため）（goal at_home() is stuck (actions keep failing)） - 家への移動や設置でスタックが続いているため、まずは剣を構えて夜をやり過ごし生存を図ります。; 残り 8
+2026-09-25 16:15:08.453 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] through_night() [生存]: 家への移動や設置でスタックが続いているため、まずは剣を構えて夜をやり過ごし生存を図ります。
+2026-09-25 16:15:08.453 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:15:09.752 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1299ms, prompt=1978 thoughts=None output=49 total=2027
+2026-09-25 16:15:09.753 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、どうしてもドアのところで足が引っかかってお家に入れないよ！みんなごめんね、家に入るのは諦めて、木の剣を構えながらここで朝までモンスターを警戒して生き延びるね！
+2026-09-25 16:15:11.670 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:11.670 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [170] through_night()（残り 8）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:14.890 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:14.890 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [171] through_night()（残り 8）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:18.116 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:18.116 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [172] through_night()（残り 8）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:18.219 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:15:19.788 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1568ms, prompt=2820 thoughts=None output=81 total=2901
+2026-09-25 16:15:19.789 | WARNING  | ailoveshen.application.use_cases.play:_decide_goal:340 - 目標の決定 1 を差し戻した: {'plan_changes': [], 'predicate': 'have', 'item': 'wooden_sword', 'count': 1, 'serves': 'survival', 'reason': '家への移動でスタックが続いているため、手元の木の剣をしっかり構えて夜の敵に備え生存を図ります。'}: have(wooden_sword, 1) is not a survival goal (through_night, at_home, cleared, have(food, n)); it must serve the mid goal at the top of the list
+2026-09-25 16:15:21.483 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1693ms, prompt=2892 thoughts=None output=67 total=2959
+2026-09-25 16:15:21.549 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal through_night() is stuck (actions keep failing)） - 家に入れない移動スタックを解消するため、手持ちのベッドを設置して夜を越せる状態を目指します。; 残り 1
+2026-09-25 16:15:21.549 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: 家に入れない移動スタックを解消するため、手持ちのベッドを設置して夜を越せる状態を目指します。
+2026-09-25 16:15:21.549 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:15:23.075 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1525ms, prompt=1975 thoughts=None output=44 total=2019
+2026-09-25 16:15:23.075 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] 外で朝を待つのも引っかかって全然うまくいかないよ！手元に白いベッドはあるんだから、なんとかお家の中に押し込んで設置して、一気に寝て朝にしちゃうね！
+2026-09-25 16:15:24.771 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:24.771 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [173] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:27.982 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:27.982 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [174] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:31.206 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:31.206 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [175] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:15:31.325 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:15:33.127 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1801ms, prompt=2825 thoughts=None output=78 total=2903
+2026-09-25 16:15:33.576 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 8)（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - 家周辺での移動スタックを解消するため、少し動いて近くの食料を確保しつつ体勢を立て直します。; 残り 1
+2026-09-25 16:15:33.576 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 8) [生存]: 家周辺での移動スタックを解消するため、少し動いて近くの食料を確保しつつ体勢を立て直します。
+2026-09-25 16:15:33.576 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:15:33.999 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: go to pig seen at 35,-24 | explore north | explore east | explore south | explore west
+2026-09-25 16:15:34.578 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 579ms, input=1222 -> go to pig seen at 35,-24（確信度 0.37）
+2026-09-25 16:15:35.102 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1525ms, prompt=2015 thoughts=None output=45 total=2060
+2026-09-25 16:15:35.102 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] また足が引っかかってベッドを置きに行けなくなっちゃったよ！ずっとその場で立ち往生してるのも危ないから、少し動いてブタさんを探しながら体勢を立て直してみるね！
+2026-09-25 16:15:44.998 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:44.999 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [176] have(food, 8)（残り 1）-> go to pig seen at 35,-24 （確信度 0.37）: 成功 walked 45.1m toward where pig was seen (14.9m left) （10.0秒）
+2026-09-25 16:15:56.926 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:15:56.927 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [177] have(food, 8)（残り 1）-> attack pig #8 （確信度 1.00）: 成功 pig gone (killed or despawned); picked up 1 items （11.1秒）
+2026-09-25 16:15:57.093 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:15:58.862 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1768ms, prompt=2805 thoughts=None output=70 total=2875
+2026-09-25 16:15:58.943 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal have(food, 8) is met） - ブタさんを狩って移動スタックが解消されたので、手持ちのベッドを家の中に設置して夜を越します。; 残り 1
+2026-09-25 16:15:58.943 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: ブタさんを狩って移動スタックが解消されたので、手持ちのベッドを家の中に設置して夜を越します。
+2026-09-25 16:15:58.944 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:16:00.294 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1350ms, prompt=1976 thoughts=None output=50 total=2026
+2026-09-25 16:16:00.294 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] ブタさんを追いかけて動いたら足の引っかかりも取れたし、お肉もしっかり集まったよ！今度こそお家に入ってベッドを設置して、ぐっすり夜をスキップしちゃおう！
+2026-09-25 16:16:18.808 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:18.808 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [178] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （19.7秒）
+2026-09-25 16:16:18.852 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place the bed in the house | eat porkchop
+2026-09-25 16:16:19.438 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 586ms, input=1045 -> eat porkchop（確信度 0.11）
+2026-09-25 16:16:21.204 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:21.204 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [179] placed(bed, home)（残り 1）-> eat porkchop （確信度 0.11）: 成功 ate porkchop, hunger 18 -> 20 （1.7秒）
+2026-09-25 16:16:21.248 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place the bed in the house | equip wooden_sword
+2026-09-25 16:16:21.499 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 251ms, input=1033 -> equip wooden_sword（確信度 0.45）
+2026-09-25 16:16:21.632 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:21.632 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [180] placed(bed, home)（残り 1）-> equip wooden_sword （確信度 0.45）: 成功 holding wooden_sword （0.1秒）
+2026-09-25 16:16:24.838 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:24.838 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [181] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:16:28.040 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:28.040 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [182] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:16:31.272 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:31.272 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [183] placed(bed, home)（残り 1）-> place the bed in the house （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:16:31.365 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:16:33.253 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1887ms, prompt=2819 thoughts=None output=55 total=2874
+2026-09-25 16:16:33.300 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: at_home()（生存のため）（goal placed(bed, home) is stuck (actions keep failing)） - ベッド設置への移動が失敗したため、外のゾンビ村人を避けてまずは家の中に入り安全を確保します。; 残り 1
+2026-09-25 16:16:33.300 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] at_home() [生存]: ベッド設置への移動が失敗したため、外のゾンビ村人を避けてまずは家の中に入り安全を確保します。
+2026-09-25 16:16:33.300 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:16:33.384 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: go home | attack zombie_villager #12142 | flee from zombie_villager #12142
+2026-09-25 16:16:33.881 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 496ms, input=1146 -> go home（確信度 0.66）
+2026-09-25 16:16:33.894 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:33.895 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [184] at_home()（残り 1）-> go home （確信度 0.66）: 失敗 not started: the reflex is handling a nearby threat （0.0秒）
+2026-09-25 16:16:34.748 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1448ms, prompt=1971 thoughts=None output=49 total=2020
+2026-09-25 16:16:34.749 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うわあ、また足が引っかかってベッドが置けないよ！
+すぐ外にゾンビ村人さんもいて危ないから、ベッドは一旦あきらめて、まずは急いでお家の中に逃げ込むね！
+2026-09-25 16:16:42.854 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:42.854 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [185] at_home()（残り 1）-> go home （確信度 1.00）: 失敗 failed: could not walk to (-14, 66, 10) （3.6秒）
+2026-09-25 16:16:42.897 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: go home | eat porkchop
+2026-09-25 16:16:43.438 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 541ms, input=1031 -> go home（確信度 0.43）
+2026-09-25 16:16:46.603 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:46.603 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [186] at_home()（残り 1）-> go home （確信度 0.43）: 失敗 failed: could not walk to (-14, 66, 10) （3.1秒）
+2026-09-25 16:16:46.693 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:16:48.542 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1848ms, prompt=2827 thoughts=None output=78 total=2905
+2026-09-25 16:16:48.978 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: have(food, 9)（生存のため）（goal at_home() is stuck (actions keep failing)） - 家周辺で再び移動スタックしてしまったため、少し動いて近くの食料を確保し引っかかりを解消します。; 残り 2
+2026-09-25 16:16:48.978 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] have(food, 9) [生存]: 家周辺で再び移動スタックしてしまったため、少し動いて近くの食料を確保し引っかかりを解消します。
+2026-09-25 16:16:48.978 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:16:49.381 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（6）: go to chicken seen at -12,79 | explore north | explore east | explore south | explore west | eat porkchop
+2026-09-25 16:16:49.850 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 468ms, input=1260 -> go to chicken seen at -12,79（確信度 0.32）
+2026-09-25 16:16:50.383 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1404ms, prompt=2008 thoughts=None output=49 total=2057
+2026-09-25 16:16:50.383 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] うう、どうしてもお家のドアのところで足が引っかかって入れないよ！このままだと危ないから、少し歩き回ってニワトリさんを探しつつ、引っかかりをほぐしてみるね！
+2026-09-25 16:16:53.534 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:16:53.534 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [187] have(food, 9)（残り 2）-> go to chicken seen at -12,79 （確信度 0.32）: 失敗 failed: reflex: creeper 6.3m away （3.3秒）
+2026-09-25 16:17:00.852 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: attack pig #7 | attack pig #9 | attack creeper #12141 | flee from creeper #12141 | eat porkchop
+2026-09-25 16:17:01.438 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 586ms, input=1207 -> flee from creeper #12141（確信度 0.61）
+2026-09-25 16:17:06.529 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:17:06.529 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [188] have(food, 9)（残り 2）-> flee from creeper #12141 （確信度 0.61）: 成功 now 16.1m from creeper （4.9秒）
+2026-09-25 16:17:06.882 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore east | explore south | eat porkchop
+2026-09-25 16:17:07.499 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 616ms, input=1225 -> go to chicken seen at -5,54（確信度 0.17）
+2026-09-25 16:17:09.112 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:17:09.112 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [189] have(food, 9)（残り 2）-> go to chicken seen at -5,54 （確信度 0.17）: 失敗 failed: reflex: creeper 6.2m away （1.3秒）
+2026-09-25 16:17:17.645 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（5）: go to chicken seen at -5,54 | go to chicken seen at -12,79 | explore north | explore east | eat porkchop
+2026-09-25 16:17:18.237 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 592ms, input=1223 -> explore north（確信度 0.20）
+2026-09-25 16:17:25.159 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:17:25.159 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [190] have(food, 9)（残り 2）-> explore north （確信度 0.20）: 成功 walked 21m north （6.6秒）
+2026-09-25 16:17:25.548 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（4）: go to pig seen at 14,14 | explore north | explore east | eat porkchop
+2026-09-25 16:17:26.135 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 587ms, input=1154 -> go to pig seen at 14,14（確信度 0.16）
+2026-09-25 16:17:33.479 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:17:33.479 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [191] have(food, 9)（残り 2）-> go to pig seen at 14,14 （確信度 0.16）: 成功 arrived where pig was seen (14,14) （7.0秒）
+2026-09-25 16:17:33.854 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: attack pig #7 | eat porkchop
+2026-09-25 16:17:34.432 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 578ms, input=1031 -> attack pig #7（確信度 0.81）
+2026-09-25 16:17:38.586 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:17:38.586 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [192] have(food, 9)（残り 2）-> attack pig #7 （確信度 0.81）: 成功 pig gone (killed or despawned); picked up 2 items （3.6秒）
+2026-09-25 16:17:38.631 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalEndedEvent を 2 個のハンドラーに発行する
+2026-09-25 16:17:40.473 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1841ms, prompt=2797 thoughts=None output=73 total=2870
+2026-09-25 16:17:40.511 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: placed(bed, home)（夜に寝られるようにする (placed(bed, home)) のため）（goal have(food, 9) is met） - ブタさんを倒して動けるようになったので、手持ちのベッドをお家に置いて夜を越します。; 残り 1
+2026-09-25 16:17:40.511 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] placed(bed, home) [夜に寝られるようにする のため]: ブタさんを倒して動けるようになったので、手持ちのベッドをお家に置いて夜を越します。
+2026-09-25 16:17:40.512 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 16:17:40.535 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（2）: place the bed in the house | eat porkchop
+2026-09-25 16:17:41.007 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 472ms, input=1040 -> eat porkchop（確信度 0.41）
+2026-09-25 16:17:41.009 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GameActionExecutedEvent を 1 個のハンドラーに発行する
+2026-09-25 16:17:41.009 | INFO     | ailoveshen.presentation.services.game_service:play:100 - [193] placed(bed, home)（残り 1）-> eat porkchop （確信度 0.41）: 失敗 not started: the reflex is handling a nearby threat （0.0秒）

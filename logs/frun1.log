@@ -1,0 +1,585 @@
+2026-09-25 01:05:02.906 | DEBUG    | ailoveshen.infrastructure.events:subscribe:98 - Handler subscribed to HouseDesignedEvent
+2026-09-25 01:05:02.906 | DEBUG    | ailoveshen.infrastructure.events:subscribe:98 - Handler subscribed to GoalSetEvent
+2026-09-25 01:05:02.906 | DEBUG    | ailoveshen.infrastructure.events:subscribe:98 - Handler subscribed to HouseCompletedEvent
+2026-09-25 01:05:05.404 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2460ms, prompt=295 thoughts=None output=174 total=469
+2026-09-25 01:05:05.404 | INFO     | ailoveshen.application.use_cases.play:execute:220 - House designed: シェンのぽかぽかログハウス 5x5x3 door=south:2 windows=3 pillars=True - リスナーのみんなと一緒にのんびり景色を楽しめる、木の温もりが詰まったコンパクトな拠点！
+2026-09-25 01:05:05.404 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing HouseDesignedEvent to 1 handler(s)
+[design] シェンのぽかぽかログハウス: リスナーのみんなと一緒にのんびり景色を楽しめる、木の温もりが詰まったコンパクトな拠点！
+2026-09-25 01:05:08.057 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2489ms, prompt=555 thoughts=None output=32 total=587
+2026-09-25 01:05:08.223 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: built() (no goal yet) - 日暮れまでに拠点となる家を完成させて安全を確保するため。; remaining 117
+2026-09-25 01:05:08.223 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] built(): 日暮れまでに拠点となる家を完成させて安全を確保するため。
+2026-09-25 01:05:08.865 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 503ms, input=1315 -> dig oak_log at 405,72,-273 (confidence 0.21)
+2026-09-25 01:05:18.076 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:05:18.076 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [1] built() (remaining 117) -> dig oak_log at 405,72,-273 (conf 0.21): ok dug oak_log, picked up 1 items (9.0s)
+2026-09-25 01:05:18.791 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 539ms, input=1370 -> place log (start the house here) (confidence 0.28)
+2026-09-25 01:05:18.983 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:05:18.983 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [2] built() (remaining 116) -> place log (start the house here) (conf 0.28): ok placed log (1/69) (0.0s)
+2026-09-25 01:05:19.349 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 228ms, input=1368 -> dig oak_log at 405,72,-268 (confidence 0.54)
+2026-09-25 01:05:28.576 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:05:28.576 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [3] built() (remaining 115) -> dig oak_log at 405,72,-268 (conf 0.54): ok dug oak_log, picked up 1 items (9.1s)
+2026-09-25 01:05:29.260 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 506ms, input=1365 -> dig oak_log at 408,72,-261 (confidence 0.34)
+2026-09-25 01:05:37.518 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:05:37.518 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [4] built() (remaining 114) -> dig oak_log at 408,72,-261 (conf 0.34): ok dug oak_log, picked up 1 items (8.1s)
+2026-09-25 01:05:38.217 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 543ms, input=1374 -> dig oak_log at 411,72,-257 (confidence 0.63)
+2026-09-25 01:05:51.881 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:05:51.881 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [5] built() (remaining 113) -> dig oak_log at 411,72,-257 (conf 0.63): ok dug oak_log, picked up 1 items (13.5s)
+2026-09-25 01:05:52.555 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 519ms, input=1390 -> dig oak_log at 417,72,-261 (confidence 0.42)
+2026-09-25 01:05:59.969 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:05:59.969 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [6] built() (remaining 112) -> dig oak_log at 417,72,-261 (conf 0.42): ok dug oak_log, picked up 1 items (7.2s)
+2026-09-25 01:06:00.772 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 609ms, input=1388 -> dig oak_log at 420,72,-262 (confidence 0.52)
+2026-09-25 01:06:04.686 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:06:04.686 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [7] built() (remaining 111) -> dig oak_log at 420,72,-262 (conf 0.52): ok dug oak_log, picked up 1 items (3.7s)
+2026-09-25 01:06:05.122 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 244ms, input=1384 -> dig oak_log at 417,71,-261 (confidence 0.35)
+2026-09-25 01:06:09.538 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:06:09.538 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [8] built() (remaining 110) -> dig oak_log at 417,71,-261 (conf 0.35): ok dug oak_log, picked up 1 items (4.2s)
+2026-09-25 01:06:09.996 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 288ms, input=1383 -> dig oak_log at 415,72,-265 (confidence 0.25)
+2026-09-25 01:06:16.403 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:06:16.403 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [9] built() (remaining 109) -> dig oak_log at 415,72,-265 (conf 0.25): ok dug oak_log, picked up 1 items (6.2s)
+2026-09-25 01:06:17.188 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 605ms, input=1382 -> dig birch_log at 419,72,-265 (confidence 0.37)
+2026-09-25 01:06:27.644 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:06:27.644 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [10] built() (remaining 108) -> dig birch_log at 419,72,-265 (conf 0.37): ok dug birch_log, picked up 1 items (10.3s)
+2026-09-25 01:06:28.405 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 574ms, input=1393 -> dig oak_log at 425,71,-264 (confidence 0.52)
+2026-09-25 01:06:37.464 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:06:37.464 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [11] built() (remaining 107) -> dig oak_log at 425,71,-264 (conf 0.52): ok dug oak_log, picked up 1 items (8.9s)
+2026-09-25 01:06:38.179 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 530ms, input=1400 -> dig oak_log at 428,71,-262 (confidence 0.39)
+2026-09-25 01:06:47.876 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:06:47.876 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [12] built() (remaining 106) -> dig oak_log at 428,71,-262 (conf 0.39): ok dug oak_log, picked up 1 items (9.5s)
+2026-09-25 01:06:48.627 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 565ms, input=1398 -> dig oak_log at 433,69,-258 (confidence 0.63)
+2026-09-25 01:07:01.524 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:01.524 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [13] built() (remaining 105) -> dig oak_log at 433,69,-258 (conf 0.63): ok dug oak_log, picked up 1 items (12.7s)
+2026-09-25 01:07:02.281 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 574ms, input=1272 -> craft birch_planks x1 (confidence 0.53)
+2026-09-25 01:07:02.473 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:02.473 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [14] built() (remaining 104) -> craft birch_planks x1 (conf 0.53): ok crafted 4 birch_planks (0.0s)
+2026-09-25 01:07:02.852 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 237ms, input=1301 -> craft crafting_table x1 (confidence 0.60)
+2026-09-25 01:07:03.000 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:03.000 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [15] built() (remaining 103) -> craft crafting_table x1 (conf 0.60): ok crafted 1 crafting_table (0.0s)
+2026-09-25 01:07:03.352 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 214ms, input=1195 -> place crafting_table nearby (confidence 0.42)
+2026-09-25 01:07:03.875 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:03.875 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [16] built() (remaining 102) -> place crafting_table nearby (conf 0.42): ok placed crafting_table at (431, 69, -257) (0.4s)
+2026-09-25 01:07:04.244 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=1131 -> dig oak_log at 432,65,-251 (confidence 0.10)
+2026-09-25 01:07:16.673 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:16.674 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [17] built() (remaining 101) -> dig oak_log at 432,65,-251 (conf 0.10): ok dug oak_log, picked up 1 items (12.3s)
+2026-09-25 01:07:17.356 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 513ms, input=1137 -> dig oak_log at 428,65,-248 (confidence 0.46)
+2026-09-25 01:07:31.178 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:31.179 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [18] built() (remaining 100) -> dig oak_log at 428,65,-248 (conf 0.46): ok dug oak_log, picked up 1 items (13.7s)
+2026-09-25 01:07:31.880 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 545ms, input=1193 -> craft oak_planks x2 (confidence 0.56)
+2026-09-25 01:07:32.149 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:32.149 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [19] built() (remaining 99) -> craft oak_planks x2 (conf 0.56): ok crafted 8 oak_planks (0.1s)
+2026-09-25 01:07:32.494 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 217ms, input=1245 -> dig oak_log at 428,64,-248 (confidence 0.30)
+2026-09-25 01:07:37.442 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:37.443 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [20] built() (remaining 97) -> dig oak_log at 428,64,-248 (conf 0.30): ok dug oak_log, picked up 1 items (4.8s)
+2026-09-25 01:07:38.152 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 549ms, input=1244 -> craft oak_door x1 (confidence 0.25)
+2026-09-25 01:07:43.284 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:43.284 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [21] built() (remaining 96) -> craft oak_door x1 (conf 0.25): ok crafted 3 oak_door (5.0s)
+2026-09-25 01:07:44.038 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 593ms, input=1161 -> dig oak_log at 423,71,-253 (confidence 0.22)
+2026-09-25 01:07:54.169 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:54.169 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [22] built() (remaining 95) -> dig oak_log at 423,71,-253 (conf 0.22): ok dug oak_log, picked up 1 items (10.0s)
+2026-09-25 01:07:54.814 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 487ms, input=1179 -> place planks at 406,72,-272 (confidence 0.38)
+2026-09-25 01:07:59.686 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:07:59.686 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [23] built() (remaining 94) -> place planks at 406,72,-272 (conf 0.38): ok placed planks (2/69) (4.7s)
+2026-09-25 01:08:00.425 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 571ms, input=1172 -> place planks at 406,72,-271 (confidence 0.74)
+2026-09-25 01:08:00.634 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:00.634 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [24] built() (remaining 93) -> place planks at 406,72,-271 (conf 0.74): ok placed planks (3/69) (0.0s)
+2026-09-25 01:08:00.978 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 221ms, input=1108 -> dig oak_log at 410,72,-276 (confidence 0.64)
+2026-09-25 01:08:10.774 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:10.774 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [25] built() (remaining 92) -> dig oak_log at 410,72,-276 (conf 0.64): ok dug oak_log, picked up 1 items (9.6s)
+2026-09-25 01:08:11.503 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 555ms, input=1114 -> dig oak_log at 416,71,-275 (confidence 0.58)
+2026-09-25 01:08:24.882 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:24.883 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [26] built() (remaining 91) -> dig oak_log at 416,71,-275 (conf 0.58): ok dug oak_log, picked up 2 items (13.2s)
+2026-09-25 01:08:25.596 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 543ms, input=1123 -> dig oak_log at 417,71,-278 (confidence 0.31)
+2026-09-25 01:08:30.647 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:30.647 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [27] built() (remaining 90) -> dig oak_log at 417,71,-278 (conf 0.31): ok dug oak_log, picked up 2 items (4.9s)
+2026-09-25 01:08:31.363 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 547ms, input=1125 -> dig oak_log at 420,71,-279 (confidence 0.22)
+2026-09-25 01:08:42.243 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:42.243 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [28] built() (remaining 89) -> dig oak_log at 420,71,-279 (conf 0.22): ok dug oak_log, picked up 1 items (10.7s)
+2026-09-25 01:08:43.191 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 778ms, input=1128 -> dig oak_log at 421,71,-276 (confidence 0.64)
+2026-09-25 01:08:47.788 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:47.788 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [29] built() (remaining 88) -> dig oak_log at 421,71,-276 (conf 0.64): ok dug oak_log, picked up 1 items (4.4s)
+2026-09-25 01:08:48.161 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1128 -> dig oak_log at 425,71,-275 (confidence 0.49)
+2026-09-25 01:08:58.780 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:08:58.780 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [30] built() (remaining 87) -> dig oak_log at 425,71,-275 (conf 0.49): ok dug oak_log, picked up 1 items (10.5s)
+2026-09-25 01:08:59.447 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 501ms, input=1127 -> dig oak_log at 427,71,-278 (confidence 0.53)
+2026-09-25 01:09:09.832 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:09.832 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [31] built() (remaining 86) -> dig oak_log at 427,71,-278 (conf 0.53): ok dug oak_log, picked up 1 items (10.2s)
+2026-09-25 01:09:10.523 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 519ms, input=1130 -> dig oak_log at 431,71,-277 (confidence 0.64)
+2026-09-25 01:09:21.579 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:21.580 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [32] built() (remaining 85) -> dig oak_log at 431,71,-277 (conf 0.64): ok dug oak_log, picked up 1 items (10.9s)
+2026-09-25 01:09:22.340 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 591ms, input=1129 -> dig oak_log at 437,71,-278 (confidence 0.26)
+2026-09-25 01:09:29.086 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:29.086 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [33] built() (remaining 84) -> dig oak_log at 437,71,-278 (conf 0.26): ok dug oak_log, picked up 1 items (6.6s)
+2026-09-25 01:09:29.777 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 525ms, input=1130 -> dig oak_log at 437,70,-278 (confidence 0.46)
+2026-09-25 01:09:34.885 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:34.885 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [34] built() (remaining 83) -> dig oak_log at 437,70,-278 (conf 0.46): ok dug oak_log, picked up 1 items (4.9s)
+2026-09-25 01:09:35.598 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 560ms, input=1127 -> dig oak_log at 440,70,-274 (confidence 0.22)
+2026-09-25 01:09:40.971 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:40.971 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [35] built() (remaining 82) -> dig oak_log at 440,70,-274 (conf 0.22): ok dug oak_log, picked up 1 items (5.2s)
+2026-09-25 01:09:41.650 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 515ms, input=1126 -> dig oak_log at 444,69,-272 (confidence 0.41)
+2026-09-25 01:09:54.282 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:54.283 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [36] built() (remaining 81) -> dig oak_log at 444,69,-272 (conf 0.41): ok dug oak_log, picked up 1 items (12.5s)
+2026-09-25 01:09:54.989 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 545ms, input=1021 -> craft oak_planks x14 (confidence 0.79)
+2026-09-25 01:09:56.473 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:09:56.473 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [37] built() (remaining 80) -> craft oak_planks x14 (conf 0.79): ok crafted 56 oak_planks (1.3s)
+2026-09-25 01:09:56.726 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 242ms, input=1020 -> place planks at 406,72,-270 (confidence 0.37)
+2026-09-25 01:10:04.737 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:04.738 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [38] built() (remaining 66) -> place planks at 406,72,-270 (conf 0.37): ok placed planks (4/69) (8.0s)
+2026-09-25 01:10:05.299 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 551ms, input=1014 -> place log at 406,72,-269 (confidence 0.86)
+2026-09-25 01:10:05.334 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:05.334 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [39] built() (remaining 65) -> place log at 406,72,-269 (conf 0.86): ok placed log (5/69) (0.0s)
+2026-09-25 01:10:05.635 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 289ms, input=1007 -> place planks at 407,72,-273 (confidence 0.78)
+2026-09-25 01:10:05.940 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:05.941 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [40] built() (remaining 64) -> place planks at 407,72,-273 (conf 0.78): ok placed planks (6/69) (0.3s)
+2026-09-25 01:10:08.748 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2791ms, prompt=744 thoughts=None output=38 total=782
+2026-09-25 01:10:08.767 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: built() (goal built() ran for 40 steps) - 日暮れまでに安全を確保するため、残りの建築作業を継続して家を完成させる。; remaining 63
+2026-09-25 01:10:08.767 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] built(): 日暮れまでに安全を確保するため、残りの建築作業を継続して家を完成させる。
+2026-09-25 01:10:08.977 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 199ms, input=1026 -> place planks at 407,72,-269 (confidence 0.51)
+2026-09-25 01:10:09.041 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:09.041 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [41] built() (remaining 63) -> place planks at 407,72,-269 (conf 0.51): ok placed planks (7/69) (0.0s)
+2026-09-25 01:10:09.302 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 254ms, input=1024 -> place planks at 408,72,-273 (confidence 0.60)
+2026-09-25 01:10:09.335 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:09.335 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [42] built() (remaining 62) -> place planks at 408,72,-273 (conf 0.60): ok placed planks (8/69) (0.0s)
+2026-09-25 01:10:09.602 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 256ms, input=1026 -> place planks at 409,72,-273 (confidence 0.66)
+2026-09-25 01:10:09.632 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:09.632 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [43] built() (remaining 61) -> place planks at 409,72,-273 (conf 0.66): ok placed planks (9/69) (0.0s)
+2026-09-25 01:10:09.852 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 210ms, input=1026 -> place planks at 409,72,-269 (confidence 0.69)
+2026-09-25 01:10:09.882 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:09.882 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [44] built() (remaining 60) -> place planks at 409,72,-269 (conf 0.69): ok placed planks (10/69) (0.0s)
+2026-09-25 01:10:10.126 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 233ms, input=1027 -> place log at 410,72,-273 (confidence 0.52)
+2026-09-25 01:10:10.183 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:10.183 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [45] built() (remaining 59) -> place log at 410,72,-273 (conf 0.52): ok placed log (11/69) (0.0s)
+2026-09-25 01:10:10.413 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1027 -> place planks at 410,72,-272 (confidence 0.59)
+2026-09-25 01:10:10.485 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:10.485 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [46] built() (remaining 58) -> place planks at 410,72,-272 (conf 0.59): ok placed planks (12/69) (0.1s)
+2026-09-25 01:10:10.706 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 207ms, input=1031 -> place planks at 410,72,-271 (confidence 0.66)
+2026-09-25 01:10:10.733 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:10.733 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [47] built() (remaining 57) -> place planks at 410,72,-271 (conf 0.66): ok placed planks (13/69) (0.0s)
+2026-09-25 01:10:10.992 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 248ms, input=1031 -> place planks at 410,72,-270 (confidence 0.69)
+2026-09-25 01:10:11.042 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:11.042 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [48] built() (remaining 56) -> place planks at 410,72,-270 (conf 0.69): ok placed planks (14/69) (0.0s)
+2026-09-25 01:10:11.265 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 213ms, input=1031 -> place log at 410,72,-269 (confidence 0.56)
+2026-09-25 01:10:11.338 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:11.339 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [49] built() (remaining 55) -> place log at 410,72,-269 (conf 0.56): ok placed log (15/69) (0.1s)
+2026-09-25 01:10:11.558 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=1028 -> place log at 406,73,-273 (confidence 0.31)
+2026-09-25 01:10:11.883 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:11.883 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [50] built() (remaining 54) -> place log at 406,73,-273 (conf 0.31): ok placed log (16/69) (0.3s)
+2026-09-25 01:10:12.223 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 331ms, input=1028 -> place planks at 406,73,-272 (confidence 0.50)
+2026-09-25 01:10:12.292 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:12.292 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [51] built() (remaining 53) -> place planks at 406,73,-272 (conf 0.50): ok placed planks (17/69) (0.1s)
+2026-09-25 01:10:12.764 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 459ms, input=1029 -> place planks at 406,73,-270 (confidence 0.49)
+2026-09-25 01:10:12.780 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:12.780 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [52] built() (remaining 52) -> place planks at 406,73,-270 (conf 0.49): ok placed planks (18/69) (0.0s)
+2026-09-25 01:10:13.005 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 219ms, input=1025 -> place log at 406,73,-269 (confidence 0.53)
+2026-09-25 01:10:13.033 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:13.033 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [53] built() (remaining 51) -> place log at 406,73,-269 (conf 0.53): ok placed log (19/69) (0.0s)
+2026-09-25 01:10:13.322 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 283ms, input=1026 -> place planks at 407,73,-273 (confidence 0.51)
+2026-09-25 01:10:13.381 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:13.381 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [54] built() (remaining 50) -> place planks at 407,73,-273 (conf 0.51): ok placed planks (20/69) (0.0s)
+2026-09-25 01:10:13.596 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 207ms, input=1027 -> place planks at 407,73,-269 (confidence 0.32)
+2026-09-25 01:10:13.636 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:13.636 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [55] built() (remaining 49) -> place planks at 407,73,-269 (conf 0.32): ok placed planks (21/69) (0.0s)
+2026-09-25 01:10:13.868 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1027 -> place planks at 409,73,-273 (confidence 0.43)
+2026-09-25 01:10:13.937 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:13.937 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [56] built() (remaining 48) -> place planks at 409,73,-273 (conf 0.43): ok placed planks (22/69) (0.1s)
+2026-09-25 01:10:14.182 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 235ms, input=1032 -> place planks at 409,73,-269 (confidence 0.61)
+2026-09-25 01:10:14.239 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:14.239 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [57] built() (remaining 47) -> place planks at 409,73,-269 (conf 0.61): ok placed planks (23/69) (0.0s)
+2026-09-25 01:10:14.559 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 313ms, input=1030 -> place log at 410,73,-273 (confidence 0.52)
+2026-09-25 01:10:14.582 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:14.582 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [58] built() (remaining 46) -> place log at 410,73,-273 (conf 0.52): ok placed log (24/69) (0.0s)
+2026-09-25 01:10:14.844 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 254ms, input=1029 -> place planks at 410,73,-272 (confidence 0.46)
+2026-09-25 01:10:14.883 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:14.884 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [59] built() (remaining 45) -> place planks at 410,73,-272 (conf 0.46): ok placed planks (25/69) (0.0s)
+2026-09-25 01:10:15.093 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 198ms, input=1028 -> place planks at 410,73,-270 (confidence 0.48)
+2026-09-25 01:10:15.133 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:15.133 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [60] built() (remaining 44) -> place planks at 410,73,-270 (conf 0.48): ok placed planks (26/69) (0.0s)
+2026-09-25 01:10:15.370 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 228ms, input=1026 -> place log at 410,73,-269 (confidence 0.59)
+2026-09-25 01:10:15.432 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:15.432 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [61] built() (remaining 43) -> place log at 410,73,-269 (conf 0.59): ok placed log (27/69) (0.1s)
+2026-09-25 01:10:15.649 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 212ms, input=1025 -> place log at 406,74,-273 (confidence 0.44)
+2026-09-25 01:10:15.683 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:15.683 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [62] built() (remaining 42) -> place log at 406,74,-273 (conf 0.44): ok placed log (28/69) (0.0s)
+2026-09-25 01:10:15.901 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=1027 -> place planks at 406,74,-272 (confidence 0.61)
+2026-09-25 01:10:15.934 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:15.934 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [63] built() (remaining 41) -> place planks at 406,74,-272 (conf 0.61): ok placed planks (29/69) (0.0s)
+2026-09-25 01:10:16.136 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 197ms, input=1026 -> place planks at 406,74,-271 (confidence 0.63)
+2026-09-25 01:10:16.190 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:16.190 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [64] built() (remaining 40) -> place planks at 406,74,-271 (conf 0.63): ok placed planks (30/69) (0.0s)
+2026-09-25 01:10:16.418 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1026 -> place planks at 406,74,-270 (confidence 0.66)
+2026-09-25 01:10:16.791 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:16.791 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [65] built() (remaining 39) -> place planks at 406,74,-270 (conf 0.66): ok placed planks (31/69) (0.4s)
+2026-09-25 01:10:17.026 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 227ms, input=1032 -> place log at 406,74,-269 (confidence 0.50)
+2026-09-25 01:10:17.383 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:17.383 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [66] built() (remaining 38) -> place log at 406,74,-269 (conf 0.50): ok placed log (32/69) (0.3s)
+2026-09-25 01:10:17.657 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 267ms, input=1029 -> place planks at 407,74,-273 (confidence 0.54)
+2026-09-25 01:10:17.682 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:17.682 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [67] built() (remaining 37) -> place planks at 407,74,-273 (conf 0.54): ok placed planks (33/69) (0.0s)
+2026-09-25 01:10:17.990 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 297ms, input=1030 -> place planks at 407,74,-269 (confidence 0.49)
+2026-09-25 01:10:18.333 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:18.333 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [68] built() (remaining 36) -> place planks at 407,74,-269 (conf 0.49): ok placed planks (34/69) (0.3s)
+2026-09-25 01:10:18.560 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 216ms, input=1034 -> place planks at 408,74,-273 (confidence 0.52)
+2026-09-25 01:10:18.581 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:18.581 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [69] built() (remaining 35) -> place planks at 408,74,-273 (conf 0.52): ok placed planks (35/69) (0.0s)
+2026-09-25 01:10:18.795 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 205ms, input=1034 -> place planks at 408,74,-269 (confidence 0.70)
+2026-09-25 01:10:18.834 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:18.834 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [70] built() (remaining 34) -> place planks at 408,74,-269 (conf 0.70): ok placed planks (36/69) (0.0s)
+2026-09-25 01:10:19.044 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 204ms, input=1034 -> place planks at 409,74,-273 (confidence 0.61)
+2026-09-25 01:10:19.082 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:19.082 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [71] built() (remaining 33) -> place planks at 409,74,-273 (conf 0.61): ok placed planks (37/69) (0.0s)
+2026-09-25 01:10:19.309 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 220ms, input=1032 -> place planks at 409,74,-269 (confidence 0.67)
+2026-09-25 01:10:19.332 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:19.332 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [72] built() (remaining 32) -> place planks at 409,74,-269 (conf 0.67): ok placed planks (38/69) (0.0s)
+2026-09-25 01:10:19.585 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 249ms, input=1028 -> place log at 410,74,-273 (confidence 0.45)
+2026-09-25 01:10:19.638 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:19.639 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [73] built() (remaining 31) -> place log at 410,74,-273 (conf 0.45): ok placed log (39/69) (0.0s)
+2026-09-25 01:10:19.868 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 214ms, input=1029 -> place planks at 410,74,-272 (confidence 0.62)
+2026-09-25 01:10:19.937 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:19.937 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [74] built() (remaining 30) -> place planks at 410,74,-272 (conf 0.62): ok placed planks (40/69) (0.1s)
+2026-09-25 01:10:20.156 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 203ms, input=1032 -> place planks at 410,74,-271 (confidence 0.69)
+2026-09-25 01:10:20.180 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:20.180 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [75] built() (remaining 29) -> place planks at 410,74,-271 (conf 0.69): ok placed planks (41/69) (0.0s)
+2026-09-25 01:10:20.391 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 204ms, input=1030 -> place planks at 410,74,-270 (confidence 0.70)
+2026-09-25 01:10:20.435 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:20.435 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [76] built() (remaining 28) -> place planks at 410,74,-270 (conf 0.70): ok placed planks (42/69) (0.0s)
+2026-09-25 01:10:20.676 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=1030 -> place log at 410,74,-269 (confidence 0.57)
+2026-09-25 01:10:20.732 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:20.732 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [77] built() (remaining 27) -> place log at 410,74,-269 (conf 0.57): ok placed log (43/69) (0.0s)
+2026-09-25 01:10:20.973 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=1002 -> place planks at 406,75,-273 (confidence 0.45)
+2026-09-25 01:10:21.340 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:21.340 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [78] built() (remaining 26) -> place planks at 406,75,-273 (conf 0.45): ok placed planks (44/69) (0.4s)
+2026-09-25 01:10:21.663 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 307ms, input=1008 -> place planks at 406,75,-272 (confidence 0.53)
+2026-09-25 01:10:22.033 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:22.033 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [79] built() (remaining 25) -> place planks at 406,75,-272 (conf 0.53): ok placed planks (45/69) (0.4s)
+2026-09-25 01:10:22.288 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 239ms, input=1014 -> place planks at 406,75,-271 (confidence 0.72)
+2026-09-25 01:10:22.636 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:22.637 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [80] built() (remaining 24) -> place planks at 406,75,-271 (conf 0.72): ok placed planks (46/69) (0.3s)
+2026-09-25 01:10:25.539 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2896ms, prompt=770 thoughts=None output=35 total=805
+2026-09-25 01:10:25.556 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: built() (goal built() ran for 40 steps) - 日暮れまで残り3分なので、引き続き家の建築を進めて完成を目指す。; remaining 23
+2026-09-25 01:10:25.556 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] built(): 日暮れまで残り3分なので、引き続き家の建築を進めて完成を目指す。
+2026-09-25 01:10:25.863 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 297ms, input=1011 -> place planks at 406,75,-270 (confidence 0.79)
+2026-09-25 01:10:26.183 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:26.183 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [81] built() (remaining 23) -> place planks at 406,75,-270 (conf 0.79): ok placed planks (47/69) (0.3s)
+2026-09-25 01:10:26.386 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 190ms, input=1011 -> place planks at 406,75,-269 (confidence 0.80)
+2026-09-25 01:10:26.735 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:26.735 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [82] built() (remaining 22) -> place planks at 406,75,-269 (conf 0.80): ok placed planks (48/69) (0.3s)
+2026-09-25 01:10:26.985 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 236ms, input=1013 -> place planks at 407,75,-273 (confidence 0.73)
+2026-09-25 01:10:27.336 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:27.336 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [83] built() (remaining 21) -> place planks at 407,75,-273 (conf 0.73): ok placed planks (49/69) (0.3s)
+2026-09-25 01:10:27.637 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 293ms, input=1005 -> place planks at 407,75,-269 (confidence 0.71)
+2026-09-25 01:10:27.985 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:27.986 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [84] built() (remaining 20) -> place planks at 407,75,-269 (conf 0.71): ok placed planks (50/69) (0.3s)
+2026-09-25 01:10:28.222 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 225ms, input=1009 -> place planks at 408,75,-273 (confidence 0.79)
+2026-09-25 01:10:28.288 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:28.288 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [85] built() (remaining 19) -> place planks at 408,75,-273 (conf 0.79): ok placed planks (51/69) (0.1s)
+2026-09-25 01:10:28.549 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 249ms, input=1009 -> place planks at 408,75,-269 (confidence 0.86)
+2026-09-25 01:10:28.583 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:28.583 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [86] built() (remaining 18) -> place planks at 408,75,-269 (conf 0.86): ok placed planks (52/69) (0.0s)
+2026-09-25 01:10:28.807 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 215ms, input=1005 -> place planks at 409,75,-273 (confidence 0.76)
+2026-09-25 01:10:28.833 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:28.833 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [87] built() (remaining 17) -> place planks at 409,75,-273 (conf 0.76): ok placed planks (53/69) (0.0s)
+2026-09-25 01:10:29.049 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 208ms, input=1005 -> place planks at 409,75,-269 (confidence 0.83)
+2026-09-25 01:10:29.088 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:29.088 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [88] built() (remaining 16) -> place planks at 409,75,-269 (conf 0.83): ok placed planks (54/69) (0.0s)
+2026-09-25 01:10:29.299 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 206ms, input=1003 -> place planks at 410,75,-273 (confidence 0.75)
+2026-09-25 01:10:29.333 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:29.333 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [89] built() (remaining 15) -> place planks at 410,75,-273 (conf 0.75): ok placed planks (55/69) (0.0s)
+2026-09-25 01:10:29.534 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 193ms, input=1002 -> place planks at 410,75,-272 (confidence 0.84)
+2026-09-25 01:10:29.581 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:29.581 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [90] built() (remaining 14) -> place planks at 410,75,-272 (conf 0.84): ok placed planks (56/69) (0.0s)
+2026-09-25 01:10:29.789 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 203ms, input=1000 -> place planks at 410,75,-271 (confidence 0.86)
+2026-09-25 01:10:29.831 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:29.831 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [91] built() (remaining 13) -> place planks at 410,75,-271 (conf 0.86): ok placed planks (57/69) (0.0s)
+2026-09-25 01:10:30.443 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 603ms, input=1002 -> place planks at 410,75,-270 (confidence 0.87)
+2026-09-25 01:10:30.487 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:30.487 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [92] built() (remaining 12) -> place planks at 410,75,-270 (conf 0.87): ok placed planks (58/69) (0.0s)
+2026-09-25 01:10:30.852 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 358ms, input=1002 -> place planks at 410,75,-269 (confidence 0.88)
+2026-09-25 01:10:30.880 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:30.880 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [93] built() (remaining 11) -> place planks at 410,75,-269 (conf 0.88): ok placed planks (59/69) (0.0s)
+2026-09-25 01:10:31.111 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 224ms, input=997 -> place planks at 407,75,-272 (confidence 0.77)
+2026-09-25 01:10:31.432 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:31.432 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [94] built() (remaining 10) -> place planks at 407,75,-272 (conf 0.77): ok placed planks (60/69) (0.3s)
+2026-09-25 01:10:31.632 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 195ms, input=1001 -> place planks at 407,75,-271 (confidence 0.84)
+2026-09-25 01:10:31.991 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:31.992 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [95] built() (remaining 9) -> place planks at 407,75,-271 (conf 0.84): ok placed planks (61/69) (0.4s)
+2026-09-25 01:10:32.216 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 212ms, input=1002 -> place planks at 407,75,-270 (confidence 0.89)
+2026-09-25 01:10:32.292 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:32.292 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [96] built() (remaining 8) -> place planks at 407,75,-270 (conf 0.89): ok placed planks (62/69) (0.1s)
+2026-09-25 01:10:32.531 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 231ms, input=1005 -> place planks at 408,75,-272 (confidence 0.82)
+2026-09-25 01:10:32.581 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:32.581 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [97] built() (remaining 7) -> place planks at 408,75,-272 (conf 0.82): ok placed planks (63/69) (0.0s)
+2026-09-25 01:10:33.001 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 412ms, input=1003 -> place planks at 408,75,-270 (confidence 0.85)
+2026-09-25 01:10:33.032 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:33.032 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [98] built() (remaining 6) -> place planks at 408,75,-270 (conf 0.85): ok placed planks (64/69) (0.0s)
+2026-09-25 01:10:33.289 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 247ms, input=1003 -> place planks at 409,75,-272 (confidence 0.86)
+2026-09-25 01:10:33.336 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:33.336 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [99] built() (remaining 5) -> place planks at 409,75,-272 (conf 0.86): ok placed planks (65/69) (0.0s)
+2026-09-25 01:10:33.552 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 201ms, input=1000 -> place planks at 409,75,-271 (confidence 0.91)
+2026-09-25 01:10:33.582 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:33.582 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [100] built() (remaining 4) -> place planks at 409,75,-271 (conf 0.91): ok placed planks (66/69) (0.0s)
+2026-09-25 01:10:33.803 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 216ms, input=999 -> place planks at 409,75,-270 (confidence 0.88)
+2026-09-25 01:10:33.834 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:33.834 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [101] built() (remaining 3) -> place planks at 409,75,-270 (conf 0.88): ok placed planks (67/69) (0.0s)
+2026-09-25 01:10:34.055 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 210ms, input=1001 -> place planks at 408,75,-271 (confidence 0.84)
+2026-09-25 01:10:34.083 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:34.083 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [102] built() (remaining 2) -> place planks at 408,75,-271 (conf 0.84): ok placed planks (68/69) (0.0s)
+2026-09-25 01:10:34.303 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 211ms, input=985 -> place door at 408,72,-269 (confidence 0.53)
+2026-09-25 01:10:34.333 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:34.334 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [103] built() (remaining 1) -> place door at 408,72,-269 (conf 0.53): ok placed door (69/69) (0.0s)
+2026-09-25 01:10:34.346 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing HouseCompletedEvent to 1 handler(s)
+[done] シェンのぽかぽかログハウス is complete
+2026-09-25 01:10:38.839 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 4493ms, prompt=770 thoughts=None output=42 total=812
+2026-09-25 01:10:38.999 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: placed(bed, home) (goal built() is met) - 家が完成したので、夜を安全にスキップできるようにベッドを設置する。; remaining 7
+2026-09-25 01:10:38.999 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] placed(bed, home): 家が完成したので、夜を安全にスキップできるようにベッドを設置する。
+2026-09-25 01:10:39.319 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 200ms, input=1313 -> wait inside (confidence 0.56)
+2026-09-25 01:10:49.870 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:10:49.870 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [104] placed(bed, home) (remaining 7) -> wait inside (conf 0.56): ok waited (time 8655, door closed) (10.4s)
+2026-09-25 01:10:50.608 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 572ms, input=1306 -> wait inside (confidence 0.54)
+2026-09-25 01:11:01.207 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:11:01.208 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [105] placed(bed, home) (remaining 7) -> wait inside (conf 0.54): ok waited (time 8875, door closed) (10.4s)
+2026-09-25 01:11:01.909 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 538ms, input=1293 -> wait inside (confidence 0.56)
+2026-09-25 01:11:12.645 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:11:12.645 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [106] placed(bed, home) (remaining 7) -> wait inside (conf 0.56): ok waited (time 9095, door closed) (10.6s)
+2026-09-25 01:11:13.269 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 487ms, input=1288 -> wait inside (confidence 0.52)
+2026-09-25 01:11:23.760 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:11:23.760 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [107] placed(bed, home) (remaining 7) -> wait inside (conf 0.52): ok waited (time 9335, door closed) (10.3s)
+2026-09-25 01:11:24.425 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 503ms, input=1286 -> wait inside (confidence 0.41)
+2026-09-25 01:11:34.902 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:11:34.902 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [108] placed(bed, home) (remaining 7) -> wait inside (conf 0.41): ok waited (time 9555, door closed) (10.3s)
+2026-09-25 01:11:35.648 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 583ms, input=1286 -> wait inside (confidence 0.36)
+2026-09-25 01:11:46.099 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:11:46.100 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [109] placed(bed, home) (remaining 7) -> wait inside (conf 0.36): ok waited (time 9775, door closed) (10.3s)
+2026-09-25 01:11:46.819 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 544ms, input=1286 -> wait inside (confidence 0.36)
+2026-09-25 01:11:57.406 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:11:57.406 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [110] placed(bed, home) (remaining 7) -> wait inside (conf 0.36): ok waited (time 9995, door closed) (10.4s)
+2026-09-25 01:11:58.104 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 533ms, input=1286 -> wait inside (confidence 0.38)
+2026-09-25 01:12:08.755 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:12:08.755 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [111] placed(bed, home) (remaining 7) -> wait inside (conf 0.38): ok waited (time 10235, door closed) (10.5s)
+2026-09-25 01:12:09.564 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 644ms, input=1285 -> wait inside (confidence 0.34)
+2026-09-25 01:12:19.987 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:12:19.987 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [112] placed(bed, home) (remaining 7) -> wait inside (conf 0.34): ok waited (time 10455, door closed) (10.3s)
+2026-09-25 01:12:25.136 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 4984ms, prompt=862 thoughts=None output=44 total=906
+2026-09-25 01:12:25.151 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (goal placed(bed, home) stalled (no progress in 8 steps)) - 日暮れまで約1分しかなく羊も近くにいないため、家の中で安全に夜を越す。; remaining 1
+2026-09-25 01:12:25.151 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 日暮れまで約1分しかなく羊も近くにいないため、家の中で安全に夜を越す。
+2026-09-25 01:12:35.797 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:12:35.797 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [113] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 10775, door closed) (10.6s)
+2026-09-25 01:12:46.144 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:12:46.144 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [114] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 10975, door closed) (10.3s)
+2026-09-25 01:12:56.887 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:12:56.887 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [115] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 11195, door closed) (10.7s)
+2026-09-25 01:13:07.417 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:13:07.418 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [116] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 11395, door closed) (10.5s)
+2026-09-25 01:13:17.937 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:13:17.937 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [117] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 11615, door closed) (10.5s)
+2026-09-25 01:13:28.504 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:13:28.504 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [118] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 11815, door closed) (10.6s)
+2026-09-25 01:13:39.327 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:13:39.327 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [119] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 12035, door closed) (10.8s)
+2026-09-25 01:13:43.902 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 4559ms, prompt=829 thoughts=None output=39 total=868
+2026-09-25 01:13:43.912 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (the time of day changed from day to dusk) - 夕方から夜にかけて敵が出現するため、引き続き家の中で安全に朝を待つ。; remaining 1
+2026-09-25 01:13:43.913 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 夕方から夜にかけて敵が出現するため、引き続き家の中で安全に朝を待つ。
+2026-09-25 01:13:54.342 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:13:54.342 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [120] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 12335, door closed) (10.4s)
+2026-09-25 01:14:04.910 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:14:04.910 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [121] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 12555, door closed) (10.5s)
+2026-09-25 01:14:15.432 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:14:15.432 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [122] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 12755, door closed) (10.5s)
+2026-09-25 01:14:25.784 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:14:25.784 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [123] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 12975, door closed) (10.3s)
+2026-09-25 01:14:36.247 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:14:36.247 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [124] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 13175, door closed) (10.4s)
+2026-09-25 01:14:39.463 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 3200ms, prompt=819 thoughts=None output=36 total=855
+2026-09-25 01:14:39.481 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (the time of day changed from dusk to night) - 夜になり外は危険なため、家の中で安全に朝を待つ。; remaining 1
+2026-09-25 01:14:39.481 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 夜になり外は危険なため、家の中で安全に朝を待つ。
+2026-09-25 01:14:50.057 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:14:50.057 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [125] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 13455, door closed) (10.6s)
+2026-09-25 01:15:00.573 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:15:00.573 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [126] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 13655, door closed) (10.5s)
+2026-09-25 01:15:11.026 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:15:11.027 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [127] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 13875, door closed) (10.4s)
+2026-09-25 01:15:21.275 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:15:21.275 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [128] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 14075, door closed) (10.2s)
+2026-09-25 01:15:32.057 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:15:32.057 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [129] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 14295, door closed) (10.8s)
+2026-09-25 01:15:42.370 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:15:42.370 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [130] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 14495, door closed) (10.3s)
+2026-09-25 01:15:52.820 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:15:52.820 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [131] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 14715, door closed) (10.4s)
+2026-09-25 01:16:03.290 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:16:03.290 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [132] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 14915, door closed) (10.5s)
+2026-09-25 01:16:13.964 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:16:13.965 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [133] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 15135, door closed) (10.7s)
+2026-09-25 01:16:17.861 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 3880ms, prompt=824 thoughts=None output=36 total=860
+2026-09-25 01:16:17.877 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (goal through_night() stalled (no progress in 8 steps)) - ベッドがなく夜の途中なので、引き続き家の中で安全に朝を待つ。; remaining 1
+2026-09-25 01:16:17.878 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): ベッドがなく夜の途中なので、引き続き家の中で安全に朝を待つ。
+2026-09-25 01:16:28.373 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:16:28.373 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [134] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 15415, door closed) (10.5s)
+2026-09-25 01:16:38.641 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:16:38.642 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [135] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 15615, door closed) (10.2s)
+2026-09-25 01:16:49.207 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:16:49.208 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [136] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 15835, door closed) (10.5s)
+2026-09-25 01:16:59.744 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:16:59.744 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [137] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 16055, door closed) (10.5s)
+2026-09-25 01:17:10.132 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:17:10.133 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [138] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 16255, door closed) (10.4s)
+2026-09-25 01:17:20.709 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:17:20.709 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [139] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 16475, door closed) (10.6s)
+2026-09-25 01:17:31.039 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:17:31.039 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [140] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 16675, door closed) (10.3s)
+2026-09-25 01:17:41.610 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:17:41.610 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [141] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 16875, door closed) (10.5s)
+2026-09-25 01:17:52.282 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:17:52.282 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [142] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 17095, door closed) (10.6s)
+2026-09-25 01:17:54.344 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2046ms, prompt=837 thoughts=None output=42 total=879
+2026-09-25 01:17:54.360 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (goal through_night() stalled (no progress in 8 steps)) - 外にゾンビがおりベッドもないため、安全のため引き続き家の中で夜が明けるのを待つ。; remaining 1
+2026-09-25 01:17:54.360 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 外にゾンビがおりベッドもないため、安全のため引き続き家の中で夜が明けるのを待つ。
+2026-09-25 01:18:04.968 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:18:04.968 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [143] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 17355, door closed) (10.6s)
+2026-09-25 01:18:15.426 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:18:15.427 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [144] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 17555, door closed) (10.4s)
+2026-09-25 01:18:20.607 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:18:20.608 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [145] through_night() (remaining 1) -> wait inside (conf 1.00): FAILED failed: interrupted: took damage (zombie nearby) (5.2s)
+2026-09-25 01:18:31.068 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:18:31.068 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [146] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 17875, door closed) (10.4s)
+2026-09-25 01:18:41.923 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:18:41.923 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [147] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 18095, door closed) (10.8s)
+2026-09-25 01:18:52.578 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:18:52.578 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [148] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 18295, door closed) (10.6s)
+2026-09-25 01:19:03.053 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:19:03.054 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [149] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 18515, door closed) (10.5s)
+2026-09-25 01:19:13.462 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:19:13.462 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [150] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 18715, door closed) (10.4s)
+2026-09-25 01:19:23.880 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:19:23.880 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [151] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 18935, door closed) (10.4s)
+2026-09-25 01:19:31.764 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 7871ms, prompt=845 thoughts=None output=41 total=886
+2026-09-25 01:19:31.775 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (goal through_night() stalled (no progress in 8 steps)) - 外にゾンビがいて危険な夜が続いているため、家の中で朝を待ち続けます。; remaining 1
+2026-09-25 01:19:31.775 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 外にゾンビがいて危険な夜が続いているため、家の中で朝を待ち続けます。
+2026-09-25 01:19:42.045 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:19:42.045 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [152] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 19295, door closed) (10.3s)
+2026-09-25 01:19:52.480 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:19:52.480 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [153] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 19495, door closed) (10.4s)
+2026-09-25 01:20:02.839 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:20:02.840 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [154] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 19715, door closed) (10.3s)
+2026-09-25 01:20:13.096 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:20:13.097 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [155] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 19915, door closed) (10.3s)
+2026-09-25 01:20:23.625 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:20:23.625 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [156] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 20115, door closed) (10.5s)
+2026-09-25 01:20:34.546 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:20:34.546 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [157] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 20335, door closed) (10.9s)
+2026-09-25 01:20:44.774 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:20:44.774 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [158] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 20555, door closed) (10.2s)
+2026-09-25 01:20:55.340 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:20:55.340 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [159] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 20755, door closed) (10.5s)
+2026-09-25 01:21:05.816 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:21:05.816 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [160] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 20975, door closed) (10.5s)
+2026-09-25 01:21:08.497 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2667ms, prompt=846 thoughts=None output=41 total=887
+2026-09-25 01:21:08.512 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (goal through_night() stalled (no progress in 8 steps)) - 外にゾンビがおりベッドもないため、安全な家の中で朝が来るのを待ち続けます。; remaining 1
+2026-09-25 01:21:08.512 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 外にゾンビがおりベッドもないため、安全な家の中で朝が来るのを待ち続けます。
+2026-09-25 01:21:19.057 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:21:19.057 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [161] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 21235, door closed) (10.5s)
+2026-09-25 01:21:29.575 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:21:29.576 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [162] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 21435, door closed) (10.5s)
+2026-09-25 01:21:40.149 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:21:40.150 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [163] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 21655, door closed) (10.6s)
+2026-09-25 01:21:50.407 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:21:50.407 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [164] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 21855, door closed) (10.2s)
+2026-09-25 01:22:00.630 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:22:00.630 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [165] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 22055, door closed) (10.2s)
+2026-09-25 01:22:11.032 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:22:11.032 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [166] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 22275, door closed) (10.4s)
+2026-09-25 01:22:18.920 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:22:18.921 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [167] through_night() (remaining 1) -> wait inside (conf 1.00): FAILED failed: interrupted: took damage (skeleton nearby) (7.9s)
+2026-09-25 01:22:29.369 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:22:29.370 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [168] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 22635, door closed) (10.4s)
+2026-09-25 01:22:39.828 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:22:39.829 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [169] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 22855, door closed) (10.4s)
+2026-09-25 01:22:41.542 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1698ms, prompt=865 thoughts=None output=45 total=910
+2026-09-25 01:22:41.558 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (goal through_night() stalled (no progress in 8 steps)) - 外にスケルトンがいて朝まで残り約1分なので、引き続き家の中で安全に夜を明かします。; remaining 1
+2026-09-25 01:22:41.558 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): 外にスケルトンがいて朝まで残り約1分なので、引き続き家の中で安全に夜を明かします。
+2026-09-25 01:22:52.073 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:22:52.073 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [170] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 23095, door closed) (10.5s)
+2026-09-25 01:22:54.276 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2189ms, prompt=870 thoughts=None output=40 total=910
+2026-09-25 01:22:54.289 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: through_night() (the time of day changed from night to dawn) - まだ明け方で外にスケルトンがいるため、完全に朝になるまで家の中で待ちます。; remaining 1
+2026-09-25 01:22:54.290 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] through_night(): まだ明け方で外にスケルトンがいるため、完全に朝になるまで家の中で待ちます。
+2026-09-25 01:23:04.535 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:04.535 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [171] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 23335, door closed) (10.2s)
+2026-09-25 01:23:14.992 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:14.992 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [172] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 23555, door closed) (10.4s)
+2026-09-25 01:23:20.183 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:20.184 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [173] through_night() (remaining 1) -> wait inside (conf 1.00): FAILED failed: interrupted: took damage (spider nearby) (5.2s)
+2026-09-25 01:23:30.857 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:30.857 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [174] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 23875, door closed) (10.7s)
+2026-09-25 01:23:41.388 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:41.388 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [175] through_night() (remaining 1) -> wait inside (conf 1.00): ok waited (time 75, door closed) (10.5s)
+2026-09-25 01:23:45.888 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 4485ms, prompt=867 thoughts=None output=56 total=923
+2026-09-25 01:23:46.058 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: have(wooden_sword, 1) (goal through_night() is met) - 昼になったので、外の敵への自衛や今後の探索に備えて木の剣を作ります。; remaining 4
+2026-09-25 01:23:46.058 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] have(wooden_sword, 1): 昼になったので、外の敵への自衛や今後の探索に備えて木の剣を作ります。
+2026-09-25 01:23:46.712 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 514ms, input=1036 -> wait inside (confidence 0.10)
+2026-09-25 01:23:57.546 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:57.546 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [176] have(wooden_sword, 1) (remaining 4) -> wait inside (conf 0.10): ok waited (time 395, door closed) (10.7s)
+2026-09-25 01:23:58.310 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 613ms, input=1038 -> craft stick x1 (confidence 0.01)
+2026-09-25 01:23:58.451 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:23:58.451 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [177] have(wooden_sword, 1) (remaining 4) -> craft stick x1 (conf 0.01): ok crafted 4 stick (0.0s)
+2026-09-25 01:24:06.665 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:24:06.665 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [178] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): FAILED failed: interrupted: took damage (skeleton nearby) (8.0s)
+2026-09-25 01:24:17.630 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:24:17.630 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [179] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 795, door closed) (10.7s)
+2026-09-25 01:24:28.279 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:24:28.279 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [180] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 1015, door closed) (10.4s)
+2026-09-25 01:24:38.871 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:24:38.872 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [181] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 1235, door closed) (10.3s)
+2026-09-25 01:24:49.732 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:24:49.733 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [182] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 1455, door closed) (10.6s)
+2026-09-25 01:25:00.416 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:25:00.416 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [183] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 1655, door closed) (10.4s)
+2026-09-25 01:25:11.102 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:25:11.103 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [184] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 1875, door closed) (10.4s)
+2026-09-25 01:25:21.744 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:25:21.744 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [185] have(wooden_sword, 1) (remaining 3) -> wait inside (conf 1.00): ok waited (time 2095, door closed) (10.4s)
+2026-09-25 01:25:24.164 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2255ms, prompt=942 thoughts=None output=54 total=996
+2026-09-25 01:25:24.328 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: have(log, 3) (goal have(wooden_sword, 1) stalled (no progress in 8 steps)) - 木の剣や作業台を作るための基本的な木材を集めるため、まずは原木を採取します。; remaining 3
+2026-09-25 01:25:24.328 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] have(log, 3): 木の剣や作業台を作るための基本的な木材を集めるため、まずは原木を採取します。
+2026-09-25 01:25:35.087 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:25:35.087 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [186] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 2355, door closed) (10.5s)
+2026-09-25 01:25:45.797 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:25:45.797 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [187] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 2575, door closed) (10.4s)
+2026-09-25 01:25:56.643 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:25:56.643 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [188] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 2775, door closed) (10.6s)
+2026-09-25 01:26:07.463 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:26:07.464 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [189] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 2995, door closed) (10.5s)
+2026-09-25 01:26:18.167 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:26:18.167 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [190] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 3215, door closed) (10.4s)
+2026-09-25 01:26:28.830 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:26:28.830 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [191] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 3435, door closed) (10.4s)
+2026-09-25 01:26:39.797 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:26:39.798 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [192] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 3655, door closed) (10.7s)
+2026-09-25 01:26:50.463 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:26:50.463 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [193] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 3855, door closed) (10.4s)
+2026-09-25 01:27:01.269 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:27:01.269 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [194] have(log, 3) (remaining 3) -> wait inside (conf 1.00): ok waited (time 4075, door closed) (10.5s)
+2026-09-25 01:27:04.370 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 2938ms, prompt=886 thoughts=None output=60 total=946
+2026-09-25 01:27:04.535 | INFO     | ailoveshen.application.use_cases.play:_decide_goal:381 - Goal: have(log, 1) (goal have(log, 3) stalled (no progress in 8 steps)) - ドア前のスケルトンに注意しつつ、まずは最小限の木材を1つ確保して足がかりを作ります。; remaining 1
+2026-09-25 01:27:04.535 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - Publishing GoalSetEvent to 1 handler(s)
+[goal] have(log, 1): ドア前のスケルトンに注意しつつ、まずは最小限の木材を1つ確保して足がかりを作ります。
+2026-09-25 01:27:15.626 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:27:15.626 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [195] have(log, 1) (remaining 1) -> wait inside (conf 1.00): ok waited (time 4355, door closed) (10.9s)
+2026-09-25 01:27:26.175 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:27:26.175 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [196] have(log, 1) (remaining 1) -> wait inside (conf 1.00): ok waited (time 4575, door closed) (10.3s)
+2026-09-25 01:27:37.090 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:27:37.090 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [197] have(log, 1) (remaining 1) -> wait inside (conf 1.00): ok waited (time 4795, door closed) (10.6s)
+2026-09-25 01:27:47.794 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:27:47.794 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [198] have(log, 1) (remaining 1) -> wait inside (conf 1.00): ok waited (time 5015, door closed) (10.4s)
+2026-09-25 01:27:58.598 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - No handlers registered for GameActionExecutedEvent
+2026-09-25 01:27:58.598 | INFO     | ailoveshen.presentation.services.game_service:play:86 - [199] have(log, 1) (remaining 1) -> wait inside (conf 1.00): ok waited (time 5215, door closed) (10.5s)

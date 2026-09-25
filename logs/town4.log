@@ -1,0 +1,237 @@
+2026-09-25 14:23:19.311 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseDesignedEvent を購読した
+2026-09-25 14:23:19.311 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 14:23:19.311 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseCompletedEvent を購読した
+2026-09-25 14:23:19.311 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 14:23:19.311 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 14:23:19.311 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalEndedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが HouseCompletedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownSiteChosenEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownDefinedEvent を購読した
+2026-09-25 14:23:19.358 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownCompletedEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalSetEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GoalEndedEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalAddedEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalCompletedEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが MidGoalDroppedEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが TownSiteChosenEvent を購読した
+2026-09-25 14:23:19.424 | DEBUG    | ailoveshen.infrastructure.events:subscribe:96 - ハンドラーが GameActionExecutedEvent を購読した
+2026-09-25 14:23:19.428 | INFO     | ailoveshen.presentation.web.goal_board:serve:174 - 目標ボード: http://127.0.0.1:8765/overlay
+2026-09-25 14:23:21.364 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1878ms, prompt=263 thoughts=None output=106 total=369
+2026-09-25 14:23:21.364 | INFO     | ailoveshen.application.use_cases.house:design:127 - 家を設計した: シェンのぽかぽかログベース 5x5x3 door=south:2 pillars=True - 配信中にみんなと完成の喜びを分かち合える、温かみあふれる柱がおしゃれなコンパクトハウス！
+2026-09-25 14:23:21.364 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - HouseDesignedEvent を 1 個のハンドラーに発行する
+[design] シェンのぽかぽかログベース: 配信中にみんなと完成の喜びを分かち合える、温かみあふれる柱がおしゃれなコンパクトハウス！
+2026-09-25 14:23:23.911 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1689ms, prompt=1543 thoughts=None output=50 total=1593
+2026-09-25 14:23:24.095 | INFO     | ailoveshen.application.use_cases.play:_start_goal:363 - 目標: built()（自分の家を作る (built()) のため）（no goal yet） - 夜が来る前に拠点を完成させるため、家の建築を始めます。; 残り 123
+2026-09-25 14:23:24.095 | DEBUG    | ailoveshen.infrastructure.events:publish:61 - GoalSetEvent を 3 個のハンドラーに発行する
+[goal] built() [自分の家を作る のため]: 夜が来る前に拠点を完成させるため、家の建築を始めます。
+2026-09-25 14:23:24.095 | DEBUG    | ailoveshen.application.use_cases.generate_commentary:execute:82 - 実況を生成する
+2026-09-25 14:23:24.275 | INFO     | ailoveshen.application.use_cases.play:execute:257 - 候補（3）: dig spruce_log at -2,68,-3 | dig spruce_log at -2,67,-3 | dig spruce_log at -2,66,-3
+2026-09-25 14:23:24.819 | INFO     | ailoveshen.infrastructure.adapters.jev.jev_action_selector:select:71 - Jev jev-1.13.0: 543ms, input=1029 -> dig spruce_log at -2,68,-3（確信度 0.78）
+2026-09-25 14:23:25.525 | INFO     | ailoveshen.infrastructure.adapters.gemini.gemini_text_generator:_log_usage:205 - Gemini gemini-3.8-flash: 1429ms, prompt=1053 thoughts=None output=29 total=1082
+2026-09-25 14:23:25.525 | DEBUG    | ailoveshen.infrastructure.events:publish:58 - CommentaryGeneratedEvent のハンドラーは登録されていない
+[say] さあ、夜が来る前に急いで自分の家を建てちゃうよ！まずは建築に必要な木材をどんどん集めていこうかな！
+ERROR:    Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/connection.py", line 103, in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 136, in handle_async_request
+    raise exc
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 106, in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 177, in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+    data = await self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_backends/anyio.py", line 32, in read
+    with map_exceptions(exc_map):
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/infrastructure/adapters/minecraft_bridge/mineflayer_bridge_client.py", line 129, in _request
+    response = await self._client.request(method, path, json=json)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/examples/integration_test_minecraft.py", line 137, in run
+    outcome = await game.play(max_steps=max_steps)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/presentation/services/game_service.py", line 91, in play
+    report = await self._advance.execute(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/application/use_cases/play.py", line 262, in execute
+    result = await self._bridge.act(decision.action_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/infrastructure/adapters/minecraft_bridge/mineflayer_bridge_client.py", line 93, in act
+    data = await self._request("POST", "/act", json={"id": action_id})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/infrastructure/adapters/minecraft_bridge/mineflayer_bridge_client.py", line 131, in _request
+    raise GameBridgeError(f"Minecraft bridge unreachable ({method} {path}): {e}") from e
+ailoveshen.domain.exceptions.GameBridgeError: Minecraft bridge unreachable (POST /act): 
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/starlette/routing.py", line 645, in lifespan
+    await receive()
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/connection.py", line 103, in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 136, in handle_async_request
+    raise exc
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 106, in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 177, in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+    data = await self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_backends/anyio.py", line 32, in read
+    with map_exceptions(exc_map):
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/infrastructure/adapters/minecraft_bridge/mineflayer_bridge_client.py", line 129, in _request
+    response = await self._client.request(method, path, json=json)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/yui/apps/AILoveShen/examples/integration_test_minecraft.py", line 167, in <module>
+    main()
+  File "/Users/yui/apps/AILoveShen/examples/integration_test_minecraft.py", line 163, in main
+    sys.exit(0 if asyncio.run(run(args.max_steps, comments, args.board_port)) else 1)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/examples/integration_test_minecraft.py", line 137, in run
+    outcome = await game.play(max_steps=max_steps)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/presentation/services/game_service.py", line 91, in play
+    report = await self._advance.execute(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/application/use_cases/play.py", line 262, in execute
+    result = await self._bridge.act(decision.action_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/infrastructure/adapters/minecraft_bridge/mineflayer_bridge_client.py", line 93, in act
+    data = await self._request("POST", "/act", json={"id": action_id})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yui/apps/AILoveShen/src/ailoveshen/infrastructure/adapters/minecraft_bridge/mineflayer_bridge_client.py", line 131, in _request
+    raise GameBridgeError(f"Minecraft bridge unreachable ({method} {path}): {e}") from e
+ailoveshen.domain.exceptions.GameBridgeError: Minecraft bridge unreachable (POST /act): 

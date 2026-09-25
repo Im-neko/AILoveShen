@@ -1,0 +1,310 @@
+[mirror] 127.0.0.1:25578 で待ち受け中
+[bridge] 待ち受け中 http://127.0.0.1:3000
+[bot] (12.699999988079071, 56.96947263108704, 21.235495809556294) にスポーンした
+[reflex] reflex_flee creeper（1m、近くに 1 体）: now 5m from creeper
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[bot] (-14, 66, 10) の spruce_door を掘る
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（4.7秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] eat porkchop: 成功 ate porkchop, hunger 12 -> 15（1.7秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] eat porkchop: 成功 ate porkchop, hunger 15 -> 18（1.6秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"at_home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] eat porkchop: 成功 ate porkchop, hunger 18 -> 20（1.7秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"through_night"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[mirror] 視聴者 Im_nuko が参加した
+[bridge] 目標: {"predicate":"at_home"}
+[act] eat mutton: 成功 ate mutton, hunger 19 -> 20（1.6秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"surveyed","count":9}
+[act] survey the here site at -14,9: 成功 surveyed the here site: 1 flat plots, water 1%, steep 2%, stone 0, coal 3, iron 0, logs 206, animals 1（1.2秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"explored","distance":32}
+[act] explore north: 失敗 failed: could not walk north from 12.5,20.6: No path to the goal!（0秒）
+[act] explore east: 失敗 failed: could not walk east from 12.5,20.6: No path to the goal!（0秒）
+[act] explore south: 失敗 failed: could not walk south from 12.5,20.6: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] eat mutton: 成功 ate mutton, hunger 19 -> 19（1.6秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] eat mutton: 成功 ate mutton, hunger 19 -> 20（1.6秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"at_home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"through_night"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] pick up cobblestone #12380: 成功 picked up 5 items（2.5秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] eat mutton: 成功 ate mutton, hunger 19 -> 20（1.6秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] attack pig #9: 成功 pig gone (killed or despawned); picked up 18 items（5.3秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":8}
+[act] go to chicken seen at -5,54: 失敗 failed: No path to the goal!（0秒）
+[act] explore north: 失敗 failed: could not walk north from 15.7,20.5: No path to the goal!（0秒）
+[act] explore west: 失敗 failed: could not walk west from 15.6,17.9: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"at_home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"through_night"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":6}
+[act] go to chicken seen at -5,54: 失敗 failed: No path to the goal!（0.1秒）
+[act] explore south: 失敗 failed: could not walk south from 14.5,19.7: No path to the goal!（0秒）
+[act] explore west: 失敗 failed: could not walk west from 14.5,20.6: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 20278, door closed)（10.8秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 20558, door closed)（10.5秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+Debugger listening on ws://127.0.0.1:9229/450b8f14-d490-45e0-af56-057b531503aa
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:9229/450b8f14-d490-45e0-af56-057b531503aa
+For help, see: https://nodejs.org/en/docs/inspector
+[act] wait: 成功 waited (time 20818, door closed)（10.7秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+Debugger attached.
+Debugger ending on ws://127.0.0.1:9229/450b8f14-d490-45e0-af56-057b531503aa
+For help, see: https://nodejs.org/en/docs/inspector
+[act] wait: 成功 waited (time 21058, door closed)（10.6秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+Debugger attached.
+Debugger ending on ws://127.0.0.1:9229/450b8f14-d490-45e0-af56-057b531503aa
+For help, see: https://nodejs.org/en/docs/inspector
+[act] wait: 成功 waited (time 21318, door closed)（10.5秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 21558, door closed)（10.5秒）
+[bridge] 目標: {"predicate":"through_night"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 21858, door closed)（10.2秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+Debugger attached.
+Debugger ending on ws://127.0.0.1:9229/450b8f14-d490-45e0-af56-057b531503aa
+For help, see: https://nodejs.org/en/docs/inspector
+[act] wait: 成功 waited (time 22098, door closed)（10.5秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 22338, door closed)（10.5秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 22598, door closed)（10.7秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 22838, door closed)（10.6秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 23078, door closed)（10.4秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 23338, door closed)（10.5秒）
+[bridge] 目標: {"predicate":"have","item":"food","count":4}
+[act] wait: 成功 waited (time 23578, door closed)（10.4秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"explored","distance":68}
+[act] explore north: 失敗 failed: could not walk north from 13.7,20.5: No path to the goal!（0秒）
+[act] explore east: 失敗 failed: could not walk east from 13.6,20.3: No path to the goal!（0秒）
+[act] explore south: 失敗 failed: could not walk south from 13.6,20.3: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"explored","distance":16}
+[act] explore north: 失敗 failed: could not walk north from 13.6,20.3: No path to the goal!（0秒）
+[act] explore east: 失敗 failed: could not walk east from 13.6,20.3: No path to the goal!（0.1秒）
+[act] explore south: 失敗 failed: could not walk south from 13.6,20.3: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"at_home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"built"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"dirt","count":20}
+[bot] (13, 59, 22) の dirt を掘る
+[act] dig dirt at 13,59,22: 失敗 failed: dug dirt but picked nothing up (item 3.1m away, 2 up; path: No path to the goal!)（6.7秒）
+[act] pick up dirt #12816: 失敗 failed: No path to the goal!（0秒）
+[bot] (12, 59, 22) の dirt を掘る
+[act] dig dirt at 12,59,22: 成功 dug dirt, picked up 1 items（2.4秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[bot] (11, 59, 20) の dirt を掘る
+[act] dig dirt at 11,59,20: 成功 dug dirt, picked up 1 items（2.3秒）
+[bot] (11, 59, 19) の dirt を掘る
+[act] dig dirt at 11,59,19: 成功 dug dirt, picked up 1 items（2.7秒）
+[bot] (10, 59, 19) の dirt を掘る
+[act] dig dirt at 10,59,19: 成功 dug dirt, picked up 1 items（2.4秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[bot] (13, 60, 22) の dirt を掘る
+[act] dig dirt at 13,60,22: 失敗 failed: dug dirt but picked nothing up (item 3.7m away, 0 up; path: No path to the goal!)（7.2秒）
+[act] pick up dirt #12869: 失敗 failed: No path to the goal!（0秒）
+[bot] (15, 60, 21) の dirt を掘る
+[act] dig dirt at 15,60,21: 成功 dug dirt, picked up 1 items（2.3秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the E site at 82,9: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the E site at 82,9: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the E site at 82,9: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"explored","distance":16}
+[act] explore east: 失敗 failed: could not walk east from 14.5,19.5: No path to the goal!（0秒）
+[act] explore north: 失敗 failed: could not walk north from 14.5,19.5: No path to the goal!（0秒）
+[act] explore south: 失敗 failed: could not walk south from 14.7,19.3: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"at_home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"built"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the E site at 82,9: 失敗 failed: No path to the goal!（0秒）
+[act] survey the E site at 82,9: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the E site at 82,9: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"built"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"dirt","count":25}
+[bot] (15, 61, 21) の dirt を掘る
+[act] dig dirt at 15,61,21: 成功 dug dirt, picked up 1 items（4.6秒）
+[bot] (15, 60, 22) の dirt を掘る
+[act] dig dirt at 15,60,22: 成功 dug dirt, picked up 1 items（1.8秒）
+[bot] (15, 61, 22) の dirt を掘る
+[act] dig dirt at 15,61,22: 成功 dug dirt, picked up 1 items（1.8秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[bot] (15, 60, 23) の dirt を掘る
+[act] dig dirt at 15,60,23: 失敗 failed: dug dirt but picked nothing up (item 2.1m away, 0 up, item 3.3m away, -1 up; path: No path to the goal!)（6.7秒）
+[act] pick up dirt #12943: 失敗 failed: No path to the goal!（0秒）
+[bot] (14, 60, 22) の dirt を掘る
+[act] dig dirt at 14,60,22: 失敗 failed: dug dirt but picked nothing up (item 3.4m away, 0 up, item 3.9m away, -1 up, item 4.6m away, -1 up; path: No path to the goal!)（7.2秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] pick up dirt #12954: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"explored","distance":16}
+[act] explore east: 失敗 failed: could not walk east from 16.5,20.5（0秒）
+[act] explore west: 失敗 failed: could not walk west from 16.5,20.5: No path to the goal!（0.1秒）
+[act] explore north: 失敗 failed: could not walk north from 16.5,20.5: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"at_home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"built"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"explored","distance":16}
+[act] explore east: 失敗 failed: could not walk east from 16.3,20.7（0.1秒）
+[act] explore west: 失敗 failed: could not walk west from 16.3,20.7: No path to the goal!（0秒）
+[act] explore north: 失敗 failed: could not walk north from 16.3,20.7: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"dirt","count":25}
+[bot] (16, 60, 21) の dirt を掘る
+[act] dig dirt at 16,60,21: 失敗 failed: dug dirt but picked nothing up (item 1.6m away, 0 up, item 3.4m away, 0 up, item 3.8m away, -1 up)（6.7秒）
+[act] pick up dirt #13009: 失敗 failed: reached the item but picked nothing up (item 1.6m away, 0 up, item 3.4m away, 0 up, item 3.8m away, -1 up)（1.6秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[bot] (17, 60, 20) の dirt を掘る
+[act] dig dirt at 17,60,20: 成功 dug dirt, picked up 1 items（1.8秒）
+[bot] (16, 61, 21) の dirt を掘る
+[act] dig dirt at 16,61,21: 成功 dug dirt, picked up 2 items（4秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"dirt","count":30}
+[bot] (16, 60, 22) の dirt を掘る
+[act] dig dirt at 16,60,22: 成功 dug dirt, picked up 1 items（1.8秒）
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[bot] (16, 61, 22) の dirt を掘る
+[act] dig dirt at 16,61,22: 成功 dug dirt, picked up 1 items（1.8秒）
+[bot] (17, 61, 22) の dirt を掘る
+[act] dig dirt at 17,61,22: 成功 dug dirt, picked up 1 items（1.3秒）
+[bot] (17, 61, 21) の dirt を掘る
+[act] dig dirt at 17,61,21: 成功 dug dirt, picked up 1 items（1.8秒）
+[bridge] 目標: {"predicate":"surveyed","count":2}
+[act] equip wooden_sword: 成功 holding wooden_sword（0秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[act] survey the SE site at 53,76: 失敗 failed: No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"placed","item":"bed","where":"home"}
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[act] place door at -14,66,10: 失敗 failed: no place to stand in front of the door at (-14, 66, 10): No path to the goal!（0.1秒）
+[bridge] 目標: {"predicate":"have","item":"spruce_planks","count":4}
+[act] dig spruce_log at 16,64,26: 失敗 failed: No path to the goal!（0秒）
+[act] dig spruce_log at 14,65,17: 失敗 failed: No path to the goal!（0秒）
+[act] dig spruce_log at 20,66,24: 失敗 failed: No path to the goal!（0秒）
+[bridge] 目標: {"predicate":"have","item":"dirt","count":35}
+[bot] (16, 60, 23) の dirt を掘る
+[act] dig dirt at 16,60,23: 失敗 failed: dug dirt but picked nothing up (item 2.4m away, 0 up, item 2.4m away, 0 up, item 3.2m away, -1 up; path: No path to the goal!)（6.7秒）
+Debugger attached.
+Debugger ending on ws://127.0.0.1:9229/450b8f14-d490-45e0-af56-057b531503aa
+For help, see: https://nodejs.org/en/docs/inspector
+[mirror] 視聴者 Im_nuko が退出した
