@@ -10,7 +10,6 @@ import time
 
 import httpx
 
-from ailoveshen.application.use_cases.play import AdvancePlayUseCase
 from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.value_objects import Goal, GoalPredicate, GoalSpec, HouseBlueprint, Side
 from ailoveshen.factories.game import create_game_service
@@ -30,6 +29,14 @@ DAY = [
 NIGHT = [
     ("inu", "外でゾンビ倒してきて！"),
     ("usagi", "今なにしてるの？"),
+    ("kuma", "木を取ってきて！"),
+    ("tori", "ちょっと探検してきて"),
+]
+# A request is pending: replies must not claim the goal about to end comes first
+PENDING = [
+    ("neko", "ベッド作ってほしい！夜寝られるように"),
+    ("tori", "ちょっと探検してきてよ"),
+    ("inu", "今なにしてるの？"),
 ]
 
 
@@ -76,29 +83,36 @@ async def main() -> None:
         goal = f" -> {took.goal.spec.describe()} ({took.goal.reason})" if took else ""
         print(f"[{user}] {message}\n  ({dt:.1f}s){goal}\n  {reply}")
 
-    print("=== day (goal: have(log, 3)) ===")
-    await reset(3000)
-    for user, message in DAY:
-        await ask(user, message)
+    import sys
 
-    print("=== day, second round ===")
-    await reset(3000)
-    for user, message in DAY:
-        await ask(user, message)
-
-    print("\n=== one step with the pending request ===")
-    pending = session.request
-    print(f"pending: {pending.goal.spec.describe() if pending else None} by {pending.user_name if pending else '-'}")
-    advance: AdvancePlayUseCase = game._advance
-    report = await advance.execute(session)
-    print(f"goal now: {session.goal.spec.describe()} requested_by={session.goal.requested_by} "
-          f"changed={report.goal_changed} action={report.decision.action_id if report.decision else None}")
-    await narrator.drain()
-
-    print("\n=== night ===")
-    await reset(14000)
-    for user, message in NIGHT:
-        await ask(user, message)
+    only = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if only in ("all", "day"):
+        print("=== day (goal: have(log, 3)) ===")
+        await reset(3000)
+        for user, message in DAY:
+            await ask(user, message)
+    if only in ("all", "pending"):
+        for round_ in (1, 2):
+            print(f"\n=== a request pending, round {round_} ===")
+            await reset(3000)
+            for user, message in PENDING:
+                await ask(user, message)
+    if only in ("all", "step"):
+        print("\n=== one step with the pending request ===")
+        pending = session.request
+        who = pending.user_name if pending else "-"
+        print(f"pending: {pending.goal.spec.describe() if pending else None} by {who}")
+        report = await game._advance.execute(session)
+        print(
+            f"goal now: {session.goal.spec.describe()} requested_by={session.goal.requested_by} "
+            f"changed={report.goal_changed}"
+        )
+    if only in ("all", "night"):
+        for round_ in (1, 2):
+            print(f"\n=== night, round {round_} (goal: through_night) ===")
+            await reset(14000)
+            for user, message in NIGHT:
+                await ask(user, message)
     await narrator.drain()
     rcon("time set 1000")
     await llm.close()

@@ -55,13 +55,22 @@ def format_activity(activity: Activity | None) -> str:
     """What the streamer is doing and why, the game situation, and the recent goals."""
     if activity is None:
         return "ゲームはしていない"
-    lines = [f"- 今の目標: {_format_goal(activity.goal, activity.observation)}"]
+    lines = []
     if activity.request is not None:
+        # The request taken is what the streamer does now (it starts within seconds). Shown as
+        # "next" beside the old goal's progress, replies still said the old goal came first.
         r = activity.request
         lines.append(
-            f"- 次に取りかかる視聴者の頼み: {r.user_name}さん「{r.message}」→ "
-            f"{r.goal.spec.describe()}"
+            f"- 今の目標（{r.user_name}さんの頼み「{r.message}」で今から始める）: "
+            f"{r.goal.spec.describe()}: {r.goal.reason}"
         )
+        if activity.goal is not None:
+            old = activity.goal
+            lines.append(
+                f"- 頼みのためにやめる目標: {old.spec.describe()}{_requested(old)}: {old.reason}"
+            )
+    else:
+        lines.append(f"- 今の目標: {_format_goal(activity.goal, activity.observation)}")
     if activity.observation is not None:
         lines.append(_format_situation(activity.observation))
     lines.append("- これまでの目標（古い順）:")

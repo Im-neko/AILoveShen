@@ -147,7 +147,12 @@ class TestGamePromptTemplateBuilder:
 
         prompt = _goal_prompt(recent_goals=recent, request=request, recent_messages=messages)
 
-        assert "次に取りかかる視聴者の頼み: nekoさん「ベッド作って」→ placed(bed, home)" in prompt
+        assert (
+            "- 今の目標（nekoさんの頼み「ベッド作って」で今から始める）: "
+            "placed(bed, home): 頼まれた\n"
+            "- 頼みのためにやめる目標: have(planks, 12): 壁の材料\n"
+        ) in prompt
+        assert "5/12" not in prompt  # the old goal's progress no longer matters
         assert "placed(bed, home)（nekoさんの頼み）: 頼まれた（未達成" in prompt
         assert "nekoさん: ベッド作って\nあなた: いいよ、作るね" in prompt
 

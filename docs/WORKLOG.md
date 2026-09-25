@@ -18,7 +18,8 @@
 - `GoalEndedEvent` / `GoalSetEvent.requested_by` / `ViewerRequestRejectedEvent` / `ViewerRequestReplacedEvent`。`Narrator` が目標の終了と次の目標を 1 回で言い、約束した目標の開始は繰り返さず、やめた・断った・置き換えた頼みは必ず言う
 - `GenerateResponseUseCase` を書き換えた（互換層なし）。`create_llm_service` / `create_game_service` は `Conversation` を受け取って共有する。`examples/integration_test_minecraft.py --comments` で台本のコメントを流せる
 - 実機確認（家の中、昼 6 件 × 2 周 + 夜 2 件）: 1 回目は、頼みを黙って置き換えた、目標なしの先の約束 2 件、実況が生成中に変わった目標と食い違った、の失敗 → 修正後は目標なしの約束 0/14、「今なにしてるの？」3/3 一致、ベッドの頼みは次のステップで目標になった。遅延 1.1〜2.2 秒。詳細は設計書 12 §8
-- 残る弱点: 頼みを引き受けたあとの別の頼みに「今は原木集めを優先する」と答え、次のステップで始まる頼みの目標に触れなかった
+- 引き受けた頼みが保留中の「今なにしてるの？」に、やめる目標（剣の原木）を先に答えた（2/2）→ 頼みを今の目標として書くように直し 2/2 で一致。夜の「木を取ってきて」「探検して」は 4/4 で断った
+- 未確認: `Narrator` の実際の発話（2 回目以降は発話の出る場面がなかった。単体テストのみ）、`ViewerRequestReplacedEvent` の実機（置き換えが起きなかった）、`examples/integration_test_minecraft.py --comments`（未実行。frun2 で初めて動く）。ゲーム開始前（家の設計中）のコメントは `session=None` で「ゲームはしていない」と書かれ、作り話になりうる
 - 介入: `time set 3000 / 14000 / 1000`、tp
 
 ### F 修正: ドアの前の敵で閉じ込められない、窓の穴をなくす (2026-09-25)
