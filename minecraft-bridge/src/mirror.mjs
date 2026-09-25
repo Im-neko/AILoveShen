@@ -199,6 +199,16 @@ function replayWorld (viewer, rec, bot) {
   viewer.write('position', positionPacket(bot, 1))
 }
 
+// The bot closing a window (a chest, a furnace, a crafting table) is a packet to the server, which
+// sends nothing back: without this the viewers kept every window they were shown open on screen
+export function relayCloses (client, viewers) {
+  const write = client.write.bind(client)
+  client.write = (name, params) => {
+    write(name, params)
+    if (name === 'close_window') for (const v of viewers) v.write('close_window', { windowId: params.windowId })
+  }
+}
+
 export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}) {
   const rec = new WorldRecorder()
   const viewers = new Set()
@@ -208,6 +218,8 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
     if (meta.state !== 'play' || NOT_RELAYED.has(meta.name)) return
     for (const v of viewers) v.writeRaw(fullBuffer)
   })
+
+  relayCloses(bot._client, viewers)
 
   // registryCodec: {} -> nmp writes no registry_data of its own; the bot's recorded
   // configuration packets (known packs, registry data, tags, feature flags) are replayed instead.
