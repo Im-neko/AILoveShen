@@ -31,6 +31,8 @@ export function saveState (state) {
   const data = {
     plan: state.plan && { ...state.plan.toJSON() },
     home: state.home && {
+      name: state.home.name ?? null,
+      design: state.home.design ?? null,
       door: plain(state.home.door),
       inside: plain(state.home.inside),
       outside: plain(state.home.outside),
@@ -51,7 +53,7 @@ export function loadState (state) {
   if (data.plan) state.plan = BuildPlan.fromJSON(data.plan)
   if (data.home) {
     const h = data.home
-    state.home = { door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] }
+    state.home = { name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [] }
   }
   if (data.goal) state.goal = data.goal
 }
@@ -66,6 +68,8 @@ export function homeFromPlan (plan) {
   const inward = d.x === 0 ? [1, 0] : d.x === width - 1 ? [-1, 0] : d.z === 0 ? [0, 1] : [0, -1]
   const door = plan.worldPos(d)
   return {
+    name: plan.design?.name ?? null,
+    design: plan.design ?? null,
     door,
     inside: door.offset(inward[0], 0, inward[1]),
     outside: door.offset(-inward[0], 0, -inward[1]),

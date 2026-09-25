@@ -29,12 +29,14 @@ const KINDS = {
 const isClearable = (block) => (block.boundingBox === 'empty' && !['water', 'lava'].includes(block.name)) || block.name.endsWith('_leaves')
 
 export class BuildPlan {
-  constructor ({ blocks, width, depth, height }) {
+  // design: what the model designed (name, concept, sizes, door), kept for the home it becomes
+  constructor ({ blocks, width, depth, height, design = null }) {
     for (const b of blocks) {
       if (!KINDS[b.block]) throw new Error(`unknown block kind: ${b.block}`)
     }
     this.blocks = blocks
     this.size = { width, depth, height }
+    this.design = design
     this.origin = null
     this.siteSearchFailedAt = null
   }
@@ -45,7 +47,7 @@ export class BuildPlan {
   }
 
   toJSON () {
-    return { blocks: this.blocks, ...this.size, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
+    return { blocks: this.blocks, ...this.size, design: this.design, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
   }
 
   static fromJSON (data) {

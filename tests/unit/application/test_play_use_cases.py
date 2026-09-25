@@ -203,9 +203,7 @@ class TestStartPlay:
         assert project.max_steps_per_goal == 7
         assert project.max_stalled_steps == 5
         assert text_generator.generate_json.call_args.args[1] is HOUSE_SCHEMA
-        blocks, width, depth, height = bridge.set_build_plan.call_args.args
-        assert blocks == project.blueprint.blocks()
-        assert (width, depth, height) == (5, 6, 4)
+        bridge.set_build_plan.assert_awaited_once_with(project.blueprint)
         assert _published(events, HouseDesignedEvent)[0].name == "ひだまり"
 
     @pytest.mark.asyncio
@@ -241,11 +239,26 @@ class TestStartPlay:
 
         session = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
 
-        assert session.blueprint is None
+        assert session.blueprint is None  # its design was not kept (built before designs were)
         assert session.completion_announced
         text_generator.generate_json.assert_not_called()
         bridge.set_build_plan.assert_not_called()
         assert _published(events, HouseDesignedEvent) == []
+
+    @pytest.mark.asyncio
+    async def test_built_home_keeps_its_design(
+        self, text_generator, prompt_builder, bridge, events
+    ):
+        """Test the home's design kept by the bridge comes back (its name is not lost)."""
+        home = _obs(has_plan=True, house_complete=True, has_home=True)
+        home.state["home"] = {"name": "ひだまり", "design": VALID_DESIGN}
+        bridge.observe.return_value = home
+
+        session = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
+
+        assert session.blueprint.name == "ひだまり"
+        assert session.blueprint.door_side == Side.SOUTH
+        text_generator.generate_json.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_new_plan_comes_from_the_configuration_and_is_saved(

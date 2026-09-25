@@ -8,7 +8,8 @@
 //                             completion; { ok, result, seconds }
 //   POST /check {specs: [...]} -> judges conditions (have, built, placed) without setting a goal:
 //                             [{ spec, met, lines }] (400 with the reason if one is invalid)
-//   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height } sets the plan to build
+//   PUT  /build-plan       -> { blocks: [{x,y,z,block}], width, depth, height, design } sets the plan to build
+//                             (design: the model's blueprint, kept with the home it becomes)
 //   GET  /build-plan       -> build status (placed/total, origin, first missing blocks)
 //
 // Design: docs/design/11_primitive_actions.md
@@ -69,7 +70,7 @@ function persist () {
 function observation () {
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
-  extra.home = state.home ? { inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
+  extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
 

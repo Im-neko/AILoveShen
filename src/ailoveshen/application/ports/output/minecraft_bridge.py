@@ -11,7 +11,7 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalSpec,
     GoalStatus,
-    PlannedBlock,
+    HouseBlueprint,
 )
 
 
@@ -68,15 +68,10 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
-    async def set_build_plan(
-        self,
-        blocks: Sequence[PlannedBlock],
-        width: int,
-        depth: int,
-        height: int,
-    ) -> None:
+    async def set_build_plan(self, blueprint: HouseBlueprint) -> None:
         """
-        Give the bridge the blocks to build, in placement order.
+        Give the bridge the house to build: its blocks in placement order, and the design
+        itself, which the bridge keeps with the home it becomes (the observation's home design).
 
         Raises:
             GameBridgeError: If the bridge rejects the plan

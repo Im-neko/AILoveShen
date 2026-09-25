@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
-from ailoveshen.domain.value_objects import BlockKind, GoalPredicate, GoalSpec, PlannedBlock
+from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, HouseBlueprint, Side
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
     MineflayerBridgeClient,
 )
@@ -178,8 +178,8 @@ class TestMineflayerBridgeClient:
         assert not result.ok and result.result == "failed: x" and result.seconds == 1.5
 
     @pytest.mark.asyncio
-    async def test_set_build_plan_sends_blocks_in_order(self):
-        """Test the plan is sent with block kinds as strings, in order."""
+    async def test_set_build_plan_sends_blocks_in_order_with_the_design(self):
+        """Test the plan is sent with block kinds as strings, in order, and the design."""
         seen = {}
 
         def handler(req):
@@ -187,18 +187,27 @@ class TestMineflayerBridgeClient:
             seen["body"] = json.loads(req.content)
             return httpx.Response(200, json={})
 
-        blocks = (PlannedBlock(0, 0, 0, BlockKind.PLANKS), PlannedBlock(2, 0, 0, BlockKind.DOOR))
-        await _client(handler).set_build_plan(blocks, 5, 5, 4)
+        blueprint = HouseBlueprint(
+            "ぽかぽか", "木の家", 5, 6, 3, Side.SOUTH, 2, corner_pillars=True
+        )
+        await _client(handler).set_build_plan(blueprint)
 
+        body = seen["body"]
         assert seen["method"] == "PUT"
-        assert seen["body"] == {
-            "blocks": [
-                {"x": 0, "y": 0, "z": 0, "block": "planks"},
-                {"x": 2, "y": 0, "z": 0, "block": "door"},
-            ],
+        assert body["blocks"][:2] == [
+            {"x": b.x, "y": b.y, "z": b.z, "block": b.kind.value} for b in blueprint.blocks()[:2]
+        ]
+        assert len(body["blocks"]) == len(blueprint.blocks())
+        assert (body["width"], body["depth"], body["height"]) == (5, 6, 4)
+        assert body["design"] == {
+            "name": "ぽかぽか",
+            "concept": "木の家",
             "width": 5,
-            "depth": 5,
-            "height": 4,
+            "depth": 6,
+            "wall_height": 3,
+            "door_side": "south",
+            "door_offset": 2,
+            "corner_pillars": True,
         }
 
     @pytest.mark.asyncio

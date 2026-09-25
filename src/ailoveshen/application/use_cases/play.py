@@ -102,6 +102,18 @@ def _parse_blueprint(data: dict[str, Any]) -> HouseBlueprint:
         raise ValueError(f"malformed blueprint: {e}") from e
 
 
+def _home_blueprint(obs: GameObservation) -> HouseBlueprint | None:
+    """The design of the home built before, when the bridge kept it."""
+    design = (obs.state.get("home") or {}).get("design")
+    if not design:
+        return None
+    try:
+        return _parse_blueprint(design)
+    except ValueError as e:
+        logger.warning(f"The home's design cannot be read: {e}")
+        return None
+
+
 class StartPlayUseCase(IStartPlay):
     """
     Use case: the LLM designs a house, its block plan is sent to the bridge, a session starts.
@@ -162,8 +174,10 @@ class StartPlayUseCase(IStartPlay):
         """Design the house (unless one is built), send its plan, and return the new session."""
         obs = await self._bridge.observe()
         if obs.has_home:
-            logger.info("A home is already built: no new house is designed")
-            session = self._session(blueprint=None)
+            blueprint = _home_blueprint(obs)
+            name = f" ({blueprint.name})" if blueprint else ""
+            logger.info(f"A home is already built{name}: no new house is designed")
+            session = self._session(blueprint)
             session.completion_announced = True
             return session
         blueprint = await self._design()
@@ -176,9 +190,7 @@ class StartPlayUseCase(IStartPlay):
         await self._event_publisher.publish(
             HouseDesignedEvent(name=blueprint.name, concept=blueprint.concept)
         )
-        await self._bridge.set_build_plan(
-            blueprint.blocks(), blueprint.width, blueprint.depth, blueprint.height
-        )
+        await self._bridge.set_build_plan(blueprint)
         return self._session(blueprint)
 
     def _session(self, blueprint: HouseBlueprint | None) -> PlaySession:

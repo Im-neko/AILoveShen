@@ -16,7 +16,7 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalSpec,
     GoalStatus,
-    PlannedBlock,
+    HouseBlueprint,
 )
 
 
@@ -90,19 +90,24 @@ class MineflayerBridgeClient(IMinecraftBridge):
             seconds=float(data["seconds"]),
         )
 
-    async def set_build_plan(
-        self,
-        blocks: Sequence[PlannedBlock],
-        width: int,
-        depth: int,
-        height: int,
-    ) -> None:
-        """Send the plan's blocks in placement order."""
+    async def set_build_plan(self, blueprint: HouseBlueprint) -> None:
+        """Send the plan's blocks in placement order, with the design."""
+        b = blueprint
         payload = {
-            "blocks": [{"x": b.x, "y": b.y, "z": b.z, "block": b.kind.value} for b in blocks],
-            "width": width,
-            "depth": depth,
-            "height": height,
+            "blocks": [{"x": p.x, "y": p.y, "z": p.z, "block": p.kind.value} for p in b.blocks()],
+            "width": b.width,
+            "depth": b.depth,
+            "height": b.height,
+            "design": {
+                "name": b.name,
+                "concept": b.concept,
+                "width": b.width,
+                "depth": b.depth,
+                "wall_height": b.wall_height,
+                "door_side": b.door_side.value,
+                "door_offset": b.door_offset,
+                "corner_pillars": b.corner_pillars,
+            },
         }
         await self._request("PUT", "/build-plan", json=payload)
 
