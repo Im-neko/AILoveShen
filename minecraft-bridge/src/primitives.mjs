@@ -48,9 +48,12 @@ export const isLeaves = (name) => !!name?.endsWith('_leaves')
 // by the next movement tick; called while idle it makes the next goto() fail immediately.
 export function configureMovements (bot, state) {
   const m = new Movements(bot)
+  // In chunks not loaded yet the pathfinder passes a stand-in block with no position (it is never
+  // walkable); a cost function reading its position would throw inside the physics tick.
+  const step = (cost) => m.exclusionAreasStep.push((block) => block.position ? cost(block) : 0)
   // Never walk on top of the structure under construction: partial walls form steps the bot
   // would climb, and it then places the roof from the wall tops or gets stuck up there.
-  m.exclusionAreasStep.push((block) => {
+  step((block) => {
     const o = state.plan?.origin
     if (!o) return 0
     const p = block.position
@@ -61,7 +64,7 @@ export function configureMovements (bot, state) {
   // detours around a creeper instead of running into it again right after fleeing.
   let hostiles = []
   let hostilesAt = 0
-  m.exclusionAreasStep.push((block) => {
+  step((block) => {
     if (Date.now() - hostilesAt > HOSTILE_CACHE_MS) {
       hostiles = nearbyEntities(bot).filter(({ e, dist }) => dist <= THREAT_RADIUS * 2 && isHostile(bot, e)).map(({ e }) => e.position.clone())
       hostilesAt = Date.now()
@@ -69,7 +72,7 @@ export function configureMovements (bot, state) {
     return hostiles.some((h) => h.distanceTo(block.position) <= HOSTILE_AVOID_RADIUS) ? HOSTILE_STEP_COST : 0
   })
   // Stay out of tree tops: walking on leaves leads onto canopies that are hard to leave.
-  m.exclusionAreasStep.push((block) => isLeaves(bot.blockAt(block.position.offset(0, -1, 0))?.name) ? LEAVES_STEP_COST : 0)
+  step((block) => isLeaves(bot.blockAt(block.position.offset(0, -1, 0))?.name) ? LEAVES_STEP_COST : 0)
   // Leaves are the only blocks the bot may break while walking (like a player pushing through a
   // canopy); never the house or terrain.
   m.exclusionAreasBreak.push((block) => isLeaves(block.name) ? 0 : 100)
