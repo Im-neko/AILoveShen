@@ -122,9 +122,35 @@ class HouseDesignedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class GoalSetEvent(DomainEvent):
-    """Event raised when the LLM sets a new goal (e.g. goal="have(planks, 12)")."""
+    """
+    Event raised when a new goal is set (e.g. goal="have(planks, 12)").
+
+    `requested_by` is the viewer whose request it is: the reply already said
+    it, so it is not announced again.
+    """
 
     goal: str = ""
+    reason: str = ""
+    requested_by: str = ""
+
+
+@dataclass(frozen=True)
+class GoalEndedEvent(DomainEvent):
+    """Event raised when a goal ends: met, or given up (stalled, stuck, ...) with the reason."""
+
+    goal: str = ""
+    reason: str = ""
+    ended_because: str = ""
+    met: bool = False
+    requested_by: str = ""
+
+
+@dataclass(frozen=True)
+class ViewerRequestRejectedEvent(DomainEvent):
+    """Event raised when a goal promised to a viewer cannot be set after all."""
+
+    goal: str = ""
+    user_name: str = ""
     reason: str = ""
 
 

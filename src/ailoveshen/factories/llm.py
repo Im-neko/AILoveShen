@@ -31,20 +31,21 @@ def create_llm_service(
     gemini: GeminiSettings,
     character: CharacterSettings,
     event_publisher: IEventPublisher,
-    max_history: int = 20,
+    conversation: Conversation,
     history_limit: int = 10,
 ) -> LLMService:
     """
     Create LLM service with all dependencies wired up.
 
     This is the Composition Root for the LLM module. Commentary and chat
-    responses use the main model slot and share one conversation history.
+    responses use the main model slot and share one conversation history,
+    which the game's goal decision also reads (create_game_service).
 
     Args:
         gemini: Gemini settings (settings.gemini)
         character: Character settings (settings.character)
         event_publisher: Event publisher for domain events
-        max_history: Number of messages the conversation keeps
+        conversation: What is said on stream, shared with the game's goal decision
         history_limit: Number of recent messages given to the model
 
     Returns:
@@ -63,6 +64,7 @@ def create_llm_service(
             gemini=settings.gemini,
             character=settings.character,
             event_publisher=AsyncEventBus(),
+            conversation=Conversation(),
         )
 
         text = await llm_service.generate_commentary(recent_events=["洞窟を見つけた"])
@@ -84,7 +86,6 @@ def create_llm_service(
     prompt_builder = PromptTemplateBuilder()
 
     # Create domain objects
-    conversation = Conversation(max_history=max_history)
     character_profile = create_character_profile(character)
 
     # Create use cases

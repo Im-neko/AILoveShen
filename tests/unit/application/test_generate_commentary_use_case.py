@@ -10,11 +10,17 @@ from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.events import CommentaryGeneratedEvent
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import (
+    Activity,
     CharacterProfile,
     EmotionState,
     EmotionType,
+    Goal,
+    GoalPredicate,
+    GoalSpec,
     MessageType,
 )
+
+ACTIVITY = Activity(goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="家を建てる"))
 
 
 @pytest.fixture
@@ -81,14 +87,14 @@ class TestGenerateCommentaryUseCase:
         request = GenerateCommentaryRequest(
             emotion_state=happy,
             recent_events=["e1", "e2", "e3", "e4"],
-            game_state_summary="体力: 20/20",
+            activity=ACTIVITY,
         )
 
         await use_case.execute(request)
 
         context = mock_prompt_builder.build_commentary_prompt.call_args.args[0]
         assert context.emotion_state == happy
-        assert context.game_state_summary == "体力: 20/20"
+        assert context.activity is ACTIVITY
         assert context.recent_events == ("e2", "e3", "e4")  # latest 3
         assert [m.content for m in context.recent_messages] == ["がんばれ"]
 

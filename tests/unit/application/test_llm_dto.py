@@ -17,7 +17,7 @@ class TestGenerateCommentaryDTOs:
         request = GenerateCommentaryRequest()
         assert request.emotion_state == EmotionState()
         assert request.recent_events == []
-        assert request.game_state_summary is None
+        assert request.activity is None
 
     def test_request_default_lists_not_shared(self):
         """Test default recent_events lists are independent."""

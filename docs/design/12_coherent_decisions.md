@@ -27,7 +27,7 @@
 ## 3. 視聴者の頼みの流れ
 
 ```
-コメント ─▶ RespondToChat（Gemini 1回）
+コメント ─▶ GenerateResponse（Gemini 1回）
             └─ 出力: { reply, change_goal, predicate, item, count, distance, goal_reason }
                  ├─ change_goal=false: 返答だけ（雑談・「今なにしてるの？」・断る）
                  └─ change_goal=true: PlaySession.request_goal(頼み) ─▶ 返答を話す
@@ -55,9 +55,9 @@ AdvancePlay の次のステップの区切り ◀──────────�
 | 層 | 追加・変更 |
 |---|---|
 | domain | `Goal.requested_by`、`GoalOutcome`（application から移す）、`Activity`、`ViewerRequest`。`PlaySession` に「これまでの目標」「最後の観測」「頼み」と `activity()`。イベント: `GoalSetEvent.requested_by`、`GoalEndedEvent`、`ViewerRequestRejectedEvent` |
-| application | `RespondToChatUseCase`（`GenerateResponseUseCase` を置き換える）、`GenerateCommentaryUseCase` は `Activity` ときっかけを受け取る。`AdvancePlayUseCase` は頼みの反映・目標の終了イベント・会話を目標のプロンプトに渡す。述語のスキーマ・解析は共有モジュールへ |
-| infrastructure | `prompts/activity.py`（`Activity` の書式。3つのプロンプトで共有）、述語の説明を共有モジュールへ。返答のプロンプトに「約束するなら目標を出す」規則 |
-| presentation | `GameService.session`、`LLMService.generate_response(..., session)`、`generate_commentary(trigger, activity)` |
+| application | `GenerateResponseUseCase` を書き換える（返答と目標を1回で出す）、`GenerateCommentaryUseCase` は `Activity` ときっかけを受け取る。`AdvancePlayUseCase` は頼みの反映・目標の終了イベント・会話を目標のプロンプトに渡す。述語のスキーマ・解析は `use_cases/goal_vocabulary.py` で共有 |
+| infrastructure | `prompts/stream_context.py`（`Activity` と会話の書式、述語の説明。3つのプロンプトで共有）。返答のプロンプトに「約束するなら目標を出す」規則 |
+| presentation | `GameService.session`、`LLMService.generate_response(..., session)`、`generate_commentary(recent_events, activity)`、`Narrator`（目標の終了と次の目標を1回の実況にまとめる。頼みの目標の開始は繰り返さない。断った頼み・未達成の頼みは必ず言う） |
 | factories | `Conversation` を実況・返答・目標の決定で共有する |
 
 ## 6. 検証

@@ -2,17 +2,21 @@
 
 from dataclasses import replace
 
-from ailoveshen.application.dto.game_dto import GoalOutcome
 from ailoveshen.domain.value_objects import (
+    Activity,
     Candidate,
     CharacterProfile,
+    ConversationMessage,
     GameObservation,
     Goal,
+    GoalOutcome,
     GoalPredicate,
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    MessageType,
     Side,
+    ViewerRequest,
 )
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
@@ -51,13 +55,14 @@ def _obs(**kwargs) -> GameObservation:
     return GameObservation(**params)
 
 
-def _goal_prompt(obs=None, **kwargs) -> str:
+def _goal_prompt(obs=None, recent_goals=(), request=None, **kwargs) -> str:
     args = {
         "blueprint": BLUEPRINT,
-        "observation": obs or _obs(),
-        "current_goal": PLANKS,
+        "activity": Activity(
+            goal=PLANKS, observation=obs or _obs(), recent_goals=recent_goals, request=request
+        ),
         "goal_ended_because": "goal have(planks, 12) is met",
-        "recent_goals": (),
+        "recent_messages": (),
         "predicates": ALL,
     }
     args.update(kwargs)
@@ -127,8 +132,24 @@ class TestGamePromptTemplateBuilder:
 
         prompt = _goal_prompt(recent_goals=recent, previous_error="unknown item or group: x")
 
-        assert "have(planks, 12): 壁の材料（終了: goal have(planks, 12) stalled" in prompt
+        assert "have(planks, 12): 壁の材料（未達成、終了: goal have(planks, 12) stalled" in prompt
         assert "unknown item or group: x" in prompt
+
+    def test_goal_prompt_shows_viewer_requests_and_what_was_said(self):
+        """Test the goal decision sees requests, whose goals they were, and the conversation."""
+        bed = Goal(GoalSpec(GoalPredicate.PLACED, item="bed", where="home"), "頼まれた", "neko")
+        request = ViewerRequest(bed, "neko", "ベッド作って")
+        recent = (GoalOutcome(bed, "the time of day changed from day to dusk"),)
+        messages = (
+            ConversationMessage.from_viewer("ベッド作って", "neko"),
+            ConversationMessage.from_streamer("いいよ、作るね", MessageType.RESPONSE),
+        )
+
+        prompt = _goal_prompt(recent_goals=recent, request=request, recent_messages=messages)
+
+        assert "次に取りかかる視聴者の頼み: nekoさん「ベッド作って」→ placed(bed, home)" in prompt
+        assert "placed(bed, home)（nekoさんの頼み）: 頼まれた（未達成" in prompt
+        assert "nekoさん: ベッド作って\nあなた: いいよ、作るね" in prompt
 
     def test_goal_prompt_without_needs(self):
         """Test the bridge's "none" is shown as nothing to watch for."""

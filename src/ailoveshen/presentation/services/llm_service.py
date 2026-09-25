@@ -11,7 +11,8 @@ from ailoveshen.application.dto.llm_dto import (
 from ailoveshen.application.ports.input.generate_commentary import IGenerateCommentary
 from ailoveshen.application.ports.input.generate_response import IGenerateResponse
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.value_objects import EmotionState
+from ailoveshen.domain.entities import PlaySession
+from ailoveshen.domain.value_objects import Activity, EmotionState
 
 
 class LLMService:
@@ -45,14 +46,14 @@ class LLMService:
     async def generate_commentary(
         self,
         recent_events: Optional[list[str]] = None,
-        game_state_summary: Optional[str] = None,
+        activity: Optional[Activity] = None,
     ) -> str:
         """
         Generate game commentary.
 
         Args:
-            recent_events: Recent game event descriptions (newest last)
-            game_state_summary: Current game state as text, if available
+            recent_events: Recent game event descriptions (newest last: what to talk about)
+            activity: What the streamer is doing and why (PlaySession.activity())
 
         Returns:
             Generated commentary, or empty string on failure
@@ -61,7 +62,7 @@ class LLMService:
             GenerateCommentaryRequest(
                 emotion_state=self._current_emotion,
                 recent_events=recent_events or [],
-                game_state_summary=game_state_summary,
+                activity=activity,
             )
         )
         return response.text if response.success else ""
@@ -71,6 +72,7 @@ class LLMService:
         user_name: str,
         message: str,
         user_id: Optional[str] = None,
+        session: Optional[PlaySession] = None,
     ) -> str:
         """
         Generate a reply to a viewer's chat message.
@@ -79,6 +81,8 @@ class LLMService:
             user_name: Viewer's display name
             message: Chat message content
             user_id: Viewer's platform ID, if known
+            session: The play session, if playing: the reply sees what the
+                streamer is doing and may take the viewer's request as the next goal
 
         Returns:
             Generated reply, or empty string on failure
@@ -89,6 +93,7 @@ class LLMService:
                 message=message,
                 user_id=user_id,
                 emotion_state=self._current_emotion,
+                session=session,
             )
         )
         return response.text if response.success else ""

@@ -2,33 +2,39 @@
 
 from __future__ import annotations
 
-from collections import deque
 from typing import Any
 
 from loguru import logger
 
-from ailoveshen.application.dto.game_dto import GoalOutcome, PlayStepReport
+from ailoveshen.application.dto.game_dto import PlayStepReport
 from ailoveshen.application.ports.input.play import IAdvancePlay, IStartPlay
 from ailoveshen.application.ports.output.action_selector import IActionSelector
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.entities import PlaySession
+from ailoveshen.application.use_cases.goal_vocabulary import (
+    goal_schema,
+    parse_goal,
+    predicates_now,
+)
+from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
+    GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
+    ViewerRequestRejectedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     ActionDecision,
+    Activity,
     CharacterProfile,
     GameObservation,
     Goal,
-    GoalPredicate,
-    GoalSpec,
+    GoalStatus,
     HouseBlueprint,
     Side,
 )
@@ -73,66 +79,6 @@ HOUSE_SCHEMA: dict[str, Any] = {
         "corner_pillars",
     ],
 }
-
-
-MAX_GOAL_COUNT = 64
-MIN_EXPLORE_DISTANCE = 8
-MAX_EXPLORE_DISTANCE = 128
-
-
-def _goal_schema(predicates: list[GoalPredicate]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": {
-            "predicate": {"type": "string", "enum": [p.value for p in predicates]},
-            "item": {
-                "type": "string",
-                "description": "have / placed: an item or group, e.g. planks, log, bed, food, "
-                "crafting_table, stick, wooden_sword, wooden_pickaxe",
-            },
-            "count": {"type": "integer", "minimum": 1, "maximum": MAX_GOAL_COUNT},
-            "distance": {
-                "type": "integer",
-                "minimum": MIN_EXPLORE_DISTANCE,
-                "maximum": MAX_EXPLORE_DISTANCE,
-            },
-            "reason": {"type": "string", "description": "Why this goal now, in one short sentence"},
-        },
-        "required": ["predicate", "reason"],
-    }
-
-
-def _parse_goal(data: dict[str, Any]) -> Goal:
-    try:
-        predicate = GoalPredicate(data["predicate"])
-        spec = GoalSpec(
-            predicate=predicate,
-            item=str(data["item"])
-            if predicate in (GoalPredicate.HAVE, GoalPredicate.PLACED)
-            else None,
-            count=int(data["count"]) if predicate == GoalPredicate.HAVE else None,
-            where="home" if predicate == GoalPredicate.PLACED else None,
-            distance=int(data["distance"]) if predicate == GoalPredicate.EXPLORED else None,
-        )
-    except (KeyError, TypeError) as e:
-        raise ValueError(f"missing or malformed argument: {e}") from e
-    return Goal(spec=spec, reason=str(data.get("reason", "")))
-
-
-def _predicates(obs: GameObservation) -> list[GoalPredicate]:
-    """The predicates that make sense now (e.g. none about the home before it exists)."""
-    out = []
-    if obs.has_plan and not obs.house_complete:
-        out.append(GoalPredicate.BUILT)
-    out.append(GoalPredicate.HAVE)
-    if obs.has_home:
-        out += [GoalPredicate.AT_HOME, GoalPredicate.THROUGH_NIGHT]
-        if obs.time_phase == "day":
-            out.append(GoalPredicate.CLEARED)
-        if not obs.bed_in_home:
-            out.append(GoalPredicate.PLACED)
-    out.append(GoalPredicate.EXPLORED)
-    return out
 
 
 def _parse_blueprint(data: dict[str, Any]) -> HouseBlueprint:
@@ -240,13 +186,21 @@ class AdvancePlayUseCase(IAdvancePlay):
 
     1. Observe. While the bridge is busy (its reflex is handling a nearby
        threat) the step does nothing. Completing the house is announced once
-    2. If a new goal is due (none, met, stuck, stalled, too long, or the time
-       of day changed), the LLM sets one in the predicate vocabulary; a goal
-       the bridge rejects goes back to the LLM with the reason
+    2. If a new goal is due (a viewer's request, none, met, stuck, stalled,
+       too long, or the time of day changed), the current goal ends
+       (GoalEndedEvent). A viewer's request becomes the goal, as the reply
+       promised; if the bridge rejects it, that is announced
+       (ViewerRequestRejectedEvent) and the LLM decides instead. The LLM sets
+       goals in the predicate vocabulary, seeing what the streamer is doing and
+       the recent conversation; a goal the bridge rejects goes back to it with
+       the reason
     3. The action selector (Jev) picks one of the candidates the bridge
        grounded for the goal and the body's needs; a single candidate is taken
        without a model call
     4. The bridge runs it, and the session records the outcome
+
+    Only this loop changes the goal: chat replies run concurrently and leave
+    a request in the session for the next step.
     """
 
     def __init__(
@@ -256,7 +210,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         prompt_builder: IGamePromptBuilder,
         action_selector: IActionSelector,
         event_publisher: IEventPublisher,
-        goal_history: int = 5,
+        conversation: Conversation,
+        history_limit: int = 10,
         max_goal_attempts: int = 3,
     ) -> None:
         """
@@ -268,7 +223,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             prompt_builder: Game prompt builder adapter
             action_selector: Fast decision model adapter (Jev)
             event_publisher: Event publisher for domain events
-            goal_history: Number of recent goals shown to the LLM
+            conversation: What was said on stream (shared with commentary and replies)
+            history_limit: Number of recent conversation messages given to the goal decision
             max_goal_attempts: Goal decisions before giving up when they are rejected
         """
         self._bridge = bridge
@@ -276,12 +232,14 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._prompt_builder = prompt_builder
         self._action_selector = action_selector
         self._event_publisher = event_publisher
-        self._recent_goals: deque[GoalOutcome] = deque(maxlen=goal_history)
+        self._conversation = conversation
+        self._history_limit = history_limit
         self._max_goal_attempts = max_goal_attempts
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """Take one step of the session."""
         obs = await self._bridge.observe()
+        session.observe(obs)
         if obs.house_complete and not session.completion_announced:
             session.completion_announced = True
             await self._event_publisher.publish(HouseCompletedEvent(name=session.blueprint.name))
@@ -299,9 +257,10 @@ class AdvancePlayUseCase(IAdvancePlay):
         session.track_progress(obs)
         goal_changed = False
         if session.needs_new_goal(obs):
-            await self._decide_goal(session, obs)
+            await self._change_goal(session, obs)
             goal_changed = True
             obs = await self._bridge.observe()
+            session.observe(obs)
 
         goal = session.goal
         assert goal is not None
@@ -334,25 +293,83 @@ class AdvancePlayUseCase(IAdvancePlay):
             house_complete=obs.house_complete,
         )
 
-    async def _decide_goal(self, session: PlaySession, obs: GameObservation) -> None:
+    async def _change_goal(self, session: PlaySession, obs: GameObservation) -> None:
         reason = session.goal_end_reason(obs)
-        if session.goal is not None:
-            self._recent_goals.append(GoalOutcome(goal=session.goal, ended_because=reason))
-        predicates = _predicates(obs)
+        # The view before the goal ends: its status is why it ends
+        activity = session.activity()
+        await self._end_goal(session, obs, reason)
+        request = session.take_request()
+        if request is not None:
+            try:
+                status = await self._bridge.set_goal(request.goal.spec)
+            except GoalRejectedError as e:
+                logger.warning(f"Viewer request {request.goal.spec.describe()} rejected: {e}")
+                await self._event_publisher.publish(
+                    ViewerRequestRejectedEvent(
+                        goal=request.goal.spec.describe(),
+                        user_name=request.user_name,
+                        reason=str(e),
+                    )
+                )
+                reason = f"{reason}; the request could not be taken: {e}"
+            else:
+                await self._start_goal(session, obs, request.goal, reason, status)
+                return
+        await self._decide_goal(session, obs, activity, reason)
+
+    async def _end_goal(self, session: PlaySession, obs: GameObservation, reason: str) -> None:
+        met = obs.goal is not None and obs.goal.met
+        outcome = session.end_goal(reason, met)
+        if outcome is None:
+            return
+        goal = outcome.goal
+        await self._event_publisher.publish(
+            GoalEndedEvent(
+                goal=goal.spec.describe(),
+                reason=goal.reason,
+                ended_because=reason,
+                met=met,
+                requested_by=goal.requested_by or "",
+            )
+        )
+
+    async def _start_goal(
+        self,
+        session: PlaySession,
+        obs: GameObservation,
+        goal: Goal,
+        reason: str,
+        status: GoalStatus,
+    ) -> None:
+        session.set_goal(goal, obs.time_phase)
+        who = f" [requested by {goal.requested_by}]" if goal.requested_by else ""
+        logger.info(
+            f"Goal: {goal.spec.describe()}{who} ({reason}) - {goal.reason}; "
+            f"remaining {status.remaining}"
+        )
+        await self._event_publisher.publish(
+            GoalSetEvent(
+                goal=goal.spec.describe(), reason=goal.reason, requested_by=goal.requested_by or ""
+            )
+        )
+
+    async def _decide_goal(
+        self, session: PlaySession, obs: GameObservation, activity: Activity, reason: str
+    ) -> None:
+        predicates = predicates_now(obs)
         error = ""
         for attempt in range(1, self._max_goal_attempts + 1):
             prompt = self._prompt_builder.build_goal_prompt(
                 blueprint=session.blueprint,
-                observation=obs,
-                current_goal=session.goal,
+                activity=activity,
                 goal_ended_because=reason,
-                recent_goals=tuple(self._recent_goals),
+                recent_messages=self._conversation.recent_messages(self._history_limit),
                 predicates=predicates,
                 previous_error=error,
             )
-            data = await self._text_generator.generate_json(prompt, _goal_schema(predicates))
+            data = await self._text_generator.generate_json(prompt, goal_schema(predicates))
             try:
-                goal = _parse_goal(data)
+                goal = parse_goal(data)
                 if goal.spec.predicate not in predicates:
                     raise ValueError(f"{goal.spec.predicate.value} is not one of the goals offered")
                 status = await self._bridge.set_goal(goal.spec)
@@ -360,14 +377,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 error = str(e)
                 logger.warning(f"Goal decision {attempt} rejected: {data!r}: {error}")
                 continue
-            session.set_goal(goal, obs.time_phase)
-            logger.info(
-                f"Goal: {goal.spec.describe()} ({reason}) - {goal.reason}; "
-                f"remaining {status.remaining}"
-            )
-            await self._event_publisher.publish(
-                GoalSetEvent(goal=goal.spec.describe(), reason=goal.reason)
-            )
+            await self._start_goal(session, obs, goal, reason, status)
             return
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"

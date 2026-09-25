@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ailoveshen.domain.value_objects import EmotionState, EmotionType
+from ailoveshen.domain.entities import Conversation
 from ailoveshen.factories.llm import create_llm_service
 from ailoveshen.infrastructure.config import load_settings, load_yaml_file
 from ailoveshen.infrastructure.events import AsyncEventBus
@@ -41,6 +42,7 @@ async def run(speak: bool) -> bool:
         gemini=settings.gemini,
         character=settings.character,
         event_publisher=event_bus,
+        conversation=Conversation(),
     )
 
     tts = None
@@ -66,7 +68,6 @@ async def run(speak: bool) -> bool:
             )),
             ("Commentary (history)", lambda: llm.generate_commentary(
                 recent_events=["ゾンビに遭遇", "ゾンビを倒した"],
-                game_state_summary="体力: 14/20, 空腹度: 18/20, 手持ち: 石の剣",
             )),
         ]
         for i, (label, step) in enumerate(steps):

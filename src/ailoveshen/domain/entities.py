@@ -12,12 +12,15 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ailoveshen.domain.value_objects import (
     ActionResult,
+    Activity,
     ConversationMessage,
     GameObservation,
     Goal,
+    GoalOutcome,
     HouseBlueprint,
     MessageRole,
     MessageType,
+    ViewerRequest,
 )
 
 if TYPE_CHECKING:
@@ -157,9 +160,13 @@ class PlaySession(Entity):
     A play session: the house to build and the lifecycle of the current goal.
 
     Whether a goal is met is judged by the bridge from the world; the session
-    decides when a new goal is due: met, stuck (actions keep failing), stalled
-    (the remaining work stopped going down), over budget, or the time of day
-    changed.
+    decides when a new goal is due: a viewer's request, met, stuck (actions
+    keep failing), stalled (the remaining work stopped going down), over
+    budget, or the time of day changed.
+
+    It is the one owner of what the streamer is doing (`activity()`): the goal
+    decision, the commentary and the chat replies all read it. Only the step
+    loop changes the goal; a chat reply leaves a request for the next step.
 
     Raises:
         ValueError: If a limit is not positive.
@@ -169,6 +176,7 @@ class PlaySession(Entity):
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
     max_stalled_steps: int = 8
+    goal_history: int = 5
     goal: Optional[Goal] = field(default=None, init=False)
     goal_phase: str = field(default="", init=False)
     steps_in_goal: int = field(default=0, init=False)
@@ -176,12 +184,57 @@ class PlaySession(Entity):
     stalled_steps: int = field(default=0, init=False)
     least_remaining: Optional[int] = field(default=None, init=False)
     completion_announced: bool = field(default=False, init=False)
+    last_observation: Optional[GameObservation] = field(default=None, init=False)
+    request: Optional[ViewerRequest] = field(default=None, init=False)
+    _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate limits."""
-        for label in ("max_steps_per_goal", "max_consecutive_failures", "max_stalled_steps"):
+        """Validate limits and create the bounded goal history."""
+        for label in (
+            "max_steps_per_goal",
+            "max_consecutive_failures",
+            "max_stalled_steps",
+            "goal_history",
+        ):
             if getattr(self, label) <= 0:
                 raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
+        self._recent_goals = deque(maxlen=self.goal_history)
+
+    def observe(self, obs: GameObservation) -> None:
+        """Keep the latest observation (what the chat replies see of the game)."""
+        self.last_observation = obs
+
+    def activity(self) -> Activity:
+        """What the streamer is doing and why (seen by goal decisions, commentary and replies)."""
+        return Activity(
+            goal=self.goal,
+            observation=self.last_observation,
+            recent_goals=self.recent_goals,
+            request=self.request,
+        )
+
+    @property
+    def recent_goals(self) -> tuple[GoalOutcome, ...]:
+        """Recent goals and how each ended, oldest first."""
+        return tuple(self._recent_goals)
+
+    def request_goal(self, request: ViewerRequest) -> None:
+        """Leave a viewer's request for the next step (a later one replaces it)."""
+        self.request = request
+        self.updated_at = _utc_now()
+
+    def take_request(self) -> Optional[ViewerRequest]:
+        """Hand the pending request to the step loop, which applies it."""
+        request, self.request = self.request, None
+        return request
+
+    def end_goal(self, ended_because: str, met: bool) -> Optional[GoalOutcome]:
+        """Record how the current goal ended (nothing when there is none)."""
+        if self.goal is None:
+            return None
+        outcome = GoalOutcome(goal=self.goal, ended_because=ended_because, met=met)
+        self._recent_goals.append(outcome)
+        return outcome
 
     def track_progress(self, obs: GameObservation) -> None:
         """Note the remaining work of the current goal; not going down counts as stalling."""
@@ -199,11 +252,13 @@ class PlaySession(Entity):
         return self.goal is not None and obs.time_phase != self.goal_phase
 
     def needs_new_goal(self, obs: GameObservation) -> bool:
-        """A goal decision is due: none yet, met, stuck, stalled, too long, or dusk/dawn."""
+        """A new goal is due: a request, none yet, met, stuck, stalled, too long, or dusk/dawn."""
         return bool(self.goal_end_reason(obs))
 
     def goal_end_reason(self, obs: GameObservation) -> str:
         """Why a new goal is due, for the LLM prompt and logs ("" while the goal goes on)."""
+        if self.request is not None:
+            return f"viewer {self.request.user_name} asked: {self.request.message}"
         if self.goal is None or obs.goal is None:
             return "no goal yet"
         name = self.goal.spec.describe()

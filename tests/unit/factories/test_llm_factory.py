@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("google.genai", reason="google-genai not installed")
 
+from ailoveshen.domain.entities import Conversation  # noqa: E402
 from ailoveshen.factories.llm import (  # noqa: E402
     create_character_profile,
     create_llm_service,
@@ -24,6 +25,7 @@ class TestCreateLLMService:
             gemini=GeminiSettings(api_key="test-key"),
             character=CharacterSettings(),
             event_publisher=AsyncMock(),
+            conversation=Conversation(),
         )
 
         assert isinstance(service, LLMService)
@@ -36,6 +38,7 @@ class TestCreateLLMService:
                 gemini=GeminiSettings(api_key=""),
                 character=CharacterSettings(),
                 event_publisher=AsyncMock(),
+                conversation=Conversation(),
             )
 
     def test_invalid_thinking_level_raises(self):
@@ -45,6 +48,7 @@ class TestCreateLLMService:
                 gemini=GeminiSettings(api_key="test-key", main_thinking_level="minimal"),
                 character=CharacterSettings(),
                 event_publisher=AsyncMock(),
+                conversation=Conversation(),
             )
 
 

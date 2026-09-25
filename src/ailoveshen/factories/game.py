@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
+from ailoveshen.domain.entities import Conversation
 from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
@@ -28,6 +29,7 @@ def create_game_service(
     minecraft: MinecraftSettings,
     character: CharacterSettings,
     event_publisher: IEventPublisher,
+    conversation: Conversation,
 ) -> GameService:
     """
     Create the game agent service with all dependencies wired up.
@@ -41,6 +43,8 @@ def create_game_service(
         minecraft: Bridge and agent settings (settings.minecraft)
         character: Character settings (settings.character)
         event_publisher: Event publisher for domain events
+        conversation: What is said on stream (shared with create_llm_service): the goal
+            decision reads it so goals do not contradict what was said
 
     Returns:
         Configured GameService
@@ -52,7 +56,8 @@ def create_game_service(
         ```python
         settings = load_settings()
         game = create_game_service(
-            settings.gemini, settings.jev, settings.minecraft, settings.character, AsyncEventBus()
+            settings.gemini, settings.jev, settings.minecraft, settings.character, AsyncEventBus(),
+            Conversation(),
         )
         outcome = await game.play()
         await game.close()
@@ -95,6 +100,7 @@ def create_game_service(
         prompt_builder=prompt_builder,
         action_selector=action_selector,
         event_publisher=event_publisher,
+        conversation=conversation,
     )
     return GameService(
         start_play=start,

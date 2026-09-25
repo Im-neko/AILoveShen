@@ -58,6 +58,12 @@ class GameService:
         self._bridge = bridge
         self._text_generator = text_generator
         self._action_selector = action_selector
+        self._session: PlaySession | None = None
+
+    @property
+    def session(self) -> PlaySession | None:
+        """The session being played (what commentary and chat replies see), None before play()."""
+        return self._session
 
     async def play(self, max_steps: int = 200) -> PlayOutcome:
         """
@@ -71,6 +77,7 @@ class GameService:
             The session, actions taken and whether the house is complete
         """
         session = await self._start.execute()
+        self._session = session
         steps = 0
         house_complete = False
         while steps < max_steps:

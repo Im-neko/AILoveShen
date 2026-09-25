@@ -8,8 +8,17 @@ from ailoveshen.application.dto.llm_dto import (
     GenerateCommentaryResponse,
     GenerateResponseResponse,
 )
-from ailoveshen.domain.value_objects import EmotionState, EmotionType
+from ailoveshen.domain.value_objects import (
+    Activity,
+    EmotionState,
+    EmotionType,
+    Goal,
+    GoalPredicate,
+    GoalSpec,
+)
 from ailoveshen.presentation.services.llm_service import LLMService
+
+ACTIVITY = Activity(goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="家を建てる"))
 
 
 @pytest.fixture
@@ -55,14 +64,14 @@ class TestLLMService:
 
         text = await service.generate_commentary(
             recent_events=["ゾンビを倒した"],
-            game_state_summary="体力: 20/20",
+            activity=ACTIVITY,
         )
 
         assert text == "洞窟だ！"
         request = commentary_use_case.execute.call_args.args[0]
         assert request.emotion_state == happy
         assert request.recent_events == ["ゾンビを倒した"]
-        assert request.game_state_summary == "体力: 20/20"
+        assert request.activity is ACTIVITY
 
     @pytest.mark.asyncio
     async def test_generate_commentary_failure_returns_empty(self, service, commentary_use_case):

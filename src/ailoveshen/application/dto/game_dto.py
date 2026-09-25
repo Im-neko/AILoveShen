@@ -9,14 +9,6 @@ from ailoveshen.domain.value_objects import ActionDecision, ActionResult, Goal, 
 
 
 @dataclass(frozen=True)
-class GoalOutcome:
-    """A past goal and why it ended (shown to the LLM when it sets the next one)."""
-
-    goal: Goal
-    ended_because: str
-
-
-@dataclass(frozen=True)
 class PlayStepReport:
     """What happened in one step of the play session."""
 

@@ -71,7 +71,7 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
         try:
             context = GenerationContext(
                 emotion_state=request.emotion_state,
-                game_state_summary=request.game_state_summary,
+                activity=request.activity,
                 recent_events=tuple(request.recent_events[-self._max_recent_events :]),
                 recent_messages=self._conversation.recent_messages(self._history_limit),
             )

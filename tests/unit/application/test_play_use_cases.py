@@ -10,12 +10,14 @@ from ailoveshen.application.use_cases.play import (
     AdvancePlayUseCase,
     StartPlayUseCase,
 )
-from ailoveshen.domain.entities import PlaySession
+from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
+    GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
+    ViewerRequestRejectedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
@@ -29,7 +31,9 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    MessageType,
     Side,
+    ViewerRequest,
 )
 
 VALID_DESIGN = {
@@ -74,6 +78,15 @@ def _session(goal: GoalSpec | None = None) -> PlaySession:
 
 
 HAVE_PLANKS = GoalSpec(GoalPredicate.HAVE, item="planks", count=4)
+BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
+
+
+def _bed_request() -> ViewerRequest:
+    return ViewerRequest(
+        goal=Goal(BED, reason="neko さんに頼まれた", requested_by="neko"),
+        user_name="neko",
+        message="ベッド作って！",
+    )
 
 
 @pytest.fixture
@@ -180,13 +193,18 @@ class TestAdvancePlay:
     """Tests for AdvancePlayUseCase."""
 
     @pytest.fixture
-    def use_case(self, bridge, text_generator, prompt_builder, selector, events):
+    def conversation(self):
+        return Conversation()
+
+    @pytest.fixture
+    def use_case(self, bridge, text_generator, prompt_builder, selector, events, conversation):
         return AdvancePlayUseCase(
             bridge=bridge,
             text_generator=text_generator,
             prompt_builder=prompt_builder,
             action_selector=selector,
             event_publisher=events,
+            conversation=conversation,
         )
 
     @pytest.mark.asyncio
@@ -312,9 +330,9 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_met_goal_is_replaced_and_remembered(
-        self, use_case, text_generator, bridge, prompt_builder
+        self, use_case, text_generator, bridge, prompt_builder, events
     ):
-        """Test a met goal ends; the LLM sees it in the recent goals with why it ended."""
+        """Test a met goal ends (announced, remembered); the LLM sees it with why it ended."""
         bridge.observe.return_value = _obs(met=True, remaining=0)
         text_generator.generate_json.return_value = {
             "predicate": "explored",
@@ -329,7 +347,11 @@ class TestAdvancePlay:
         assert session.goal.spec.predicate == GoalPredicate.EXPLORED
         kwargs = prompt_builder.build_goal_prompt.call_args.kwargs
         assert kwargs["goal_ended_because"] == "goal have(planks, 4) is met"
-        assert kwargs["recent_goals"][0].goal.spec == HAVE_PLANKS
+        assert kwargs["activity"].goal.spec == HAVE_PLANKS
+        assert session.recent_goals[0].goal.spec == HAVE_PLANKS
+        assert session.recent_goals[0].met
+        ended = _published(events, GoalEndedEvent)[0]
+        assert (ended.goal, ended.met) == ("have(planks, 4)", True)
 
     @pytest.mark.asyncio
     async def test_stalled_goal_is_replaced(self, use_case, text_generator, bridge, prompt_builder):
@@ -368,3 +390,81 @@ class TestAdvancePlay:
         assert report.waiting
         text_generator.generate_json.assert_not_called()
         bridge.act.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_goal_decision_sees_what_was_said(
+        self, use_case, text_generator, prompt_builder, conversation
+    ):
+        """Test the goal decision gets the conversation (what the streamer said and was asked)."""
+        conversation.add_viewer_message("家まだ？", "neko")
+        conversation.add_streamer_message("もうすぐ完成するよ", MessageType.RESPONSE)
+        text_generator.generate_json.return_value = PLANKS
+
+        await use_case.execute(_session())
+
+        messages = prompt_builder.build_goal_prompt.call_args.kwargs["recent_messages"]
+        assert [m.content for m in messages] == ["家まだ？", "もうすぐ完成するよ"]
+
+    @pytest.mark.asyncio
+    async def test_viewer_request_becomes_the_goal_at_the_next_step(
+        self, use_case, text_generator, bridge, events
+    ):
+        """Test a request left by a reply ends the current goal and is set as promised."""
+        session = _session(HAVE_PLANKS)
+        session.request_goal(_bed_request())
+
+        report = await use_case.execute(session)
+
+        assert report.goal_changed
+        text_generator.generate_json.assert_not_called()
+        bridge.set_goal.assert_awaited_once_with(BED)
+        assert session.goal.requested_by == "neko"
+        assert session.request is None
+        ended = _published(events, GoalEndedEvent)[0]
+        assert ended.ended_because == "viewer neko asked: ベッド作って！"
+        assert not ended.met
+        assert _published(events, GoalSetEvent)[0].requested_by == "neko"
+
+    @pytest.mark.asyncio
+    async def test_rejected_request_is_announced_and_the_llm_decides(
+        self, use_case, text_generator, bridge, prompt_builder, events
+    ):
+        """Test a request the bridge rejects is told (never dropped silently)."""
+        bridge.set_goal.side_effect = [GoalRejectedError("it is night"), GoalStatus(False, 3)]
+        text_generator.generate_json.return_value = PLANKS
+        session = _session(HAVE_PLANKS)
+        session.request_goal(_bed_request())
+
+        await use_case.execute(session)
+
+        rejected = _published(events, ViewerRequestRejectedEvent)[0]
+        assert (rejected.user_name, rejected.goal, rejected.reason) == (
+            "neko",
+            "placed(bed, home)",
+            "it is night",
+        )
+        reason = prompt_builder.build_goal_prompt.call_args.kwargs["goal_ended_because"]
+        assert "the request could not be taken: it is night" in reason
+        assert session.goal.spec == HAVE_PLANKS
+        assert session.goal.requested_by is None
+
+    @pytest.mark.asyncio
+    async def test_request_during_a_goal_decision_is_taken_next_step(
+        self, use_case, text_generator, bridge
+    ):
+        """Test a reply taking a request while the LLM decides a goal is not lost."""
+        session = _session()
+
+        async def decide(*args, **kwargs):
+            session.request_goal(_bed_request())  # the chat reply runs meanwhile
+            return PLANKS
+
+        text_generator.generate_json.side_effect = decide
+
+        await use_case.execute(session)
+        assert session.goal.spec == HAVE_PLANKS
+        assert session.request is not None
+
+        await use_case.execute(session)
+        assert session.goal.spec == BED
+        assert session.recent_goals[-1].ended_because == "viewer neko asked: ベッド作って！"

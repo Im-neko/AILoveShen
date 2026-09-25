@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from string import Template
 
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
-    ConversationMessage,
     EmotionState,
     GenerationContext,
-    MessageRole,
+    GoalPredicate,
+)
+from ailoveshen.infrastructure.adapters.prompts.stream_context import (
+    NO_INFORMATION,
+    format_activity,
+    format_messages,
+    format_predicates,
 )
 
 CHARACTER_SYSTEM_TEMPLATE = Template("""\
@@ -40,10 +46,10 @@ $personality_traits
 """)
 
 COMMENTARY_TEMPLATE = Template("""\
-## 現在のゲーム状況
-$game_state
+## 今していること
+$activity
 
-## 最近のイベント
+## 最近のイベント（最後のものが今起きたこと）
 $recent_events
 
 ## 最近の会話
@@ -54,7 +60,9 @@ $emotion
 
 ## タスク
 上記の状況を踏まえて、配信者として自然な実況・独り言・考えを1-2文で述べてください。
-- ゲームの状況に即した内容
+- 今起きたことと、今していることに即した内容（していないことを言わない）
+- 目標を変えたりやめたりしたときは、その理由を言う
+- 視聴者の頼みをやめた・できなかったときは、その人の名前を呼んで理由を言う
 - 直前の自分の発言を繰り返さない
 - キャラクターらしい話し方
 - 視聴者が見ていることを意識した発言
@@ -68,8 +76,12 @@ CHAT_RESPONSE_TEMPLATE = Template("""\
 ユーザー名: $user_name
 コメント: $message
 
+## 今していること
+$activity
+
 ## 最近の会話
 $recent_messages
+$plan
 
 ## あなたの感情状態
 $emotion
@@ -79,12 +91,30 @@ $emotion
 - 視聴者の名前を呼んで親しみを込める
 - 短く簡潔に（1-2文）
 - キャラクターらしい話し方
+- 今していることについて聞かれたら、上の「今していること」のとおりに答える（作り話をしない）
 
 ## 出力
-返答テキストのみを出力してください。
+$output
 """)
 
-NO_INFORMATION = "特になし"
+PLAN_TEMPLATE = Template("""\
+## 行動の頼みについて
+あなたが今すぐ取りかかれる目標は次のとおり:
+$predicates
+
+- コメントが行動の頼みや提案で、引き受けるなら change_goal を true にして、その目標
+  （predicate と引数、reason）を出す。返答で「やるね」と言うなら必ず目標を出す
+- 上の目標で表せない・今は無理（夜で危険など）・後で（朝になったら等）の頼みは引き受けず、
+  返答で理由を言って断る（change_goal は false）。後でやる約束はしない
+- 今の目標を続けるほうが良いと思うなら、そう言って change_goal は false にする
+- 雑談や質問には change_goal を false にして返答だけする
+$previous_error""")
+
+OUTPUT_TEXT = "返答テキストのみを出力してください。"
+OUTPUT_JSON = (
+    "返答（reply）と、目標を変えるか（change_goal）、変えるならその目標を指定の JSON で"
+    "出力してください。"
+)
 
 
 class PromptTemplateBuilder(IPromptBuilder):
@@ -109,9 +139,9 @@ class PromptTemplateBuilder(IPromptBuilder):
     def build_commentary_prompt(self, context: GenerationContext) -> str:
         """Build the prompt for game commentary."""
         return COMMENTARY_TEMPLATE.substitute(
-            game_state=context.game_state_summary or "不明",
+            activity=format_activity(context.activity),
             recent_events=_format_events(context.recent_events),
-            recent_messages=_format_messages(context.recent_messages),
+            recent_messages=format_messages(context.recent_messages),
             emotion=_format_emotion(context.emotion_state),
         )
 
@@ -120,13 +150,26 @@ class PromptTemplateBuilder(IPromptBuilder):
         user_name: str,
         message: str,
         context: GenerationContext,
+        predicates: Sequence[GoalPredicate] = (),
+        previous_error: str = "",
     ) -> str:
-        """Build the prompt for replying to a viewer's chat."""
+        """Build the prompt for replying to a viewer's chat (and maybe taking their request)."""
+        error = f"\n前回の返答の目標は使えなかった: {previous_error}\n" if previous_error else ""
+        plan = (
+            PLAN_TEMPLATE.substitute(
+                predicates=format_predicates(list(predicates)), previous_error=error
+            )
+            if predicates
+            else ""
+        )
         return CHAT_RESPONSE_TEMPLATE.substitute(
             user_name=user_name,
             message=message,
-            recent_messages=_format_messages(context.recent_messages),
+            activity=format_activity(context.activity),
+            recent_messages=format_messages(context.recent_messages),
+            plan=plan,
             emotion=_format_emotion(context.emotion_state),
+            output=OUTPUT_JSON if predicates else OUTPUT_TEXT,
         )
 
 
@@ -135,17 +178,6 @@ def _format_events(events: tuple[str, ...]) -> str:
     if not events:
         return NO_INFORMATION
     return "\n".join(f"- {event}" for event in events)
-
-
-def _format_messages(messages: tuple[ConversationMessage, ...]) -> str:
-    """Format conversation history, one message per line."""
-    if not messages:
-        return NO_INFORMATION
-    lines = []
-    for message in messages:
-        speaker = message.speaker_name if message.role == MessageRole.VIEWER else "あなた"
-        lines.append(f"{speaker}: {message.content}")
-    return "\n".join(lines)
 
 
 def _format_emotion(emotion: EmotionState) -> str:

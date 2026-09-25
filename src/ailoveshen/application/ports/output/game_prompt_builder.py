@@ -6,9 +6,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import Any
 
-from ailoveshen.application.dto.game_dto import GoalOutcome
 from ailoveshen.domain.value_objects import (
+    Activity,
     CharacterProfile,
+    ConversationMessage,
     GameObservation,
     Goal,
     GoalPredicate,
@@ -41,10 +42,9 @@ class IGamePromptBuilder(ABC):
     def build_goal_prompt(
         self,
         blueprint: HouseBlueprint,
-        observation: GameObservation,
-        current_goal: Goal | None,
+        activity: Activity,
         goal_ended_because: str,
-        recent_goals: Sequence[GoalOutcome],
+        recent_messages: Sequence[ConversationMessage],
         predicates: Sequence[GoalPredicate],
         previous_error: str = "",
     ) -> str:
@@ -53,10 +53,10 @@ class IGamePromptBuilder(ABC):
 
         Args:
             blueprint: The house being built
-            observation: The current game snapshot (with the ending goal's status)
-            current_goal: The goal that is ending, if any
+            activity: What the streamer is doing (the ending goal with its status,
+                recent goals), the same view the commentary and replies get
             goal_ended_because: Why a new goal is due
-            recent_goals: Recent goals and how each ended, oldest first
+            recent_messages: What was said on stream (the streamer's words and viewers' chat)
             predicates: The predicates that make sense now
             previous_error: Why the bridge rejected the previous goal, if it did
         """

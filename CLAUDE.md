@@ -18,7 +18,8 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
   - LLM: Gemini designs the house (JSON blueprint validated by `HouseBlueprint`) and sets goals in a predicate vocabulary (`have(item, n)`, `built`, `placed(bed, home)`, `at_home`, `through_night`, `explored(distance)`, `cleared` (by day: fight what waits at the door)); a goal the bridge rejects goes back with the reason
   - Minecraft Bridge: judges the goal from the world (never from the models), decomposes it with a dependency solver over minecraft-data (recipes, drops, with corrections), grounds concrete candidates (dig this block, craft that item, ...) plus what the body needs, removes unsafe ones (nothing outside while sheltering; what is held back goes to the goal's `blocked`, and by day a wall exit is offered), and runs one bounded primitive (aborted on damage). A reflex handles nearby hostiles and keeps the bot afloat
   - Jev: picks one candidate per step (`Choice`), seeing the goal's progress and the body's needs (no priority order: measured in `spikes/primitive_choice_eval.py`)
-  - `PlaySession` ends a goal when it is met, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
+  - `PlaySession` ends a goal when a viewer's request is waiting, it is met, stuck, stalled (the remaining work stops going down), over budget, or the time of day changes
+- **Coherent decisions** (`docs/design/12_coherent_decisions.md`): `PlaySession` alone owns the goal; its `activity()` (goal, reason, status, recent goals, pending request) is rendered by one formatter (`prompts/stream_context.py`) for the goal decision, the commentary and the chat replies, and the goal decision also sees the conversation. A chat reply and the goal it promises come from one generation and are left as a request the step loop applies; `Narrator` says why goals change and never drops a promise silently
 
 ## Common Commands
 
@@ -102,7 +103,7 @@ src/ailoveshen/
 │   ├── ports/output/          # IEventPublisher, ISpeechSynthesizer, IAudioPlayer, ITextGenerator, IPromptBuilder,
 │   │                          # IMinecraftBridge, IActionSelector, IGamePromptBuilder
 │   ├── use_cases/             # SpeakTextUseCase, GenerateCommentaryUseCase, GenerateResponseUseCase,
-│   │                          # StartPlayUseCase, AdvancePlayUseCase
+│   │                          # StartPlayUseCase, AdvancePlayUseCase, goal_vocabulary (shared goal schema)
 │   └── dto/                   # speech_dto, llm_dto, game_dto
 ├── infrastructure/
 │   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings, JevSettings, MinecraftSettings
@@ -114,9 +115,9 @@ src/ailoveshen/
 │       ├── gemini/            # GeminiTextGenerator (google-genai; text + JSON structured output)
 │       ├── jev/               # JevActionSelector (typesafe-sdk)
 │       ├── minecraft_bridge/  # MineflayerBridgeClient (HTTP to minecraft-bridge/)
-│       └── prompts/           # PromptTemplateBuilder, GamePromptTemplateBuilder
+│       └── prompts/           # PromptTemplateBuilder, GamePromptTemplateBuilder, stream_context
 ├── presentation/
-│   └── services/              # TTSService (priority queue), LLMService, GameService
+│   └── services/              # TTSService (priority queue), LLMService, GameService, Narrator
 └── factories/                 # Composition Roots (tts.py, llm.py, game.py)
 
 minecraft-bridge/              # Node sidecar: goals, solver, candidates, primitives, reflex, POV mirror,

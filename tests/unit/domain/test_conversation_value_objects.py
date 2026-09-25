@@ -72,6 +72,6 @@ class TestGenerationContext:
         """Test default generation context."""
         context = GenerationContext()
         assert context.emotion_state == EmotionState()
-        assert context.game_state_summary is None
+        assert context.activity is None
         assert context.recent_events == ()
         assert context.recent_messages == ()

@@ -262,12 +262,12 @@ class GenerationContext:
     """
     Everything the streamer knows when generating an utterance.
 
-    game_state_summary is optional until the game integration (Phase 6)
-    provides a structured game state.
+    `activity` is what the streamer is doing and why (the same view the goal
+    decision gets), None while no game is being played.
     """
 
     emotion_state: EmotionState = field(default_factory=EmotionState)
-    game_state_summary: Optional[str] = None
+    activity: Optional[Activity] = None
     recent_events: tuple[str, ...] = ()
     recent_messages: tuple[ConversationMessage, ...] = ()
 
@@ -426,11 +426,34 @@ class GoalSpec:
 
 @dataclass(frozen=True)
 class Goal:
-    """The current direction set by the LLM; the action selector works within it."""
+    """
+    The current direction set by the LLM; the action selector works within it.
+
+    `requested_by` names the viewer whose request it is (the reply promised it).
+    """
 
     spec: GoalSpec
     reason: str = ""
+    requested_by: Optional[str] = None
     set_at: datetime = field(default_factory=_utc_now)
+
+
+@dataclass(frozen=True)
+class GoalOutcome:
+    """A past goal and why it ended."""
+
+    goal: Goal
+    ended_because: str
+    met: bool = False
+
+
+@dataclass(frozen=True)
+class ViewerRequest:
+    """A goal a viewer asked for, promised in the reply, waiting for the next step."""
+
+    goal: Goal
+    user_name: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -615,6 +638,20 @@ class GameObservation:
     inside_home: bool = False
     bed_in_home: bool = False
     busy: bool = False  # the bridge is running an action or a reflex
+
+
+@dataclass(frozen=True)
+class Activity:
+    """
+    What the streamer is doing and why: the one view that the goal decision,
+    the commentary and the chat replies all see, so what is said matches what
+    is done.
+    """
+
+    goal: Optional[Goal] = None
+    observation: Optional[GameObservation] = None
+    recent_goals: tuple[GoalOutcome, ...] = ()
+    request: Optional[ViewerRequest] = None
 
 
 @dataclass(frozen=True)

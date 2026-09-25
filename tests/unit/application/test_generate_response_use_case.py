@@ -6,14 +6,44 @@ import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
-from ailoveshen.domain.entities import Conversation
+from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import (
+    Candidate,
     CharacterProfile,
+    GameObservation,
+    Goal,
+    GoalPredicate,
+    GoalSpec,
+    GoalStatus,
+    HouseBlueprint,
     MessageRole,
     MessageType,
+    Side,
 )
+
+BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
+
+
+def _playing(time_phase: str = "day") -> PlaySession:
+    """A session with a home, building nothing, at the given time of day."""
+    session = PlaySession(blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2))
+    session.set_goal(Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "剣の材料"), "day")
+    session.observe(
+        GameObservation(
+            state={},
+            candidates=(Candidate("wait", {"verb": "wait"}),),
+            health=20.0,
+            food=20,
+            goal=GoalStatus(met=False, remaining=3),
+            time_phase=time_phase,
+            has_plan=True,
+            house_complete=True,
+            has_home=True,
+        )
+    )
+    return session
 
 
 @pytest.fixture
@@ -91,9 +121,7 @@ class TestGenerateResponseUseCase:
         assert reply.message_type == MessageType.RESPONSE
 
     @pytest.mark.asyncio
-    async def test_history_excludes_current_chat(
-        self, use_case, mock_prompt_builder, conversation
-    ):
+    async def test_history_excludes_current_chat(self, use_case, mock_prompt_builder, conversation):
         """Test the chat being answered is not duplicated in the history."""
         conversation.add_streamer_message("洞窟だ！", MessageType.COMMENTARY)
 
@@ -139,3 +167,84 @@ class TestGenerateResponseUseCase:
         assert response.text == ""
         assert "API down" in response.error
         assert response.user_name == "neko"
+
+
+class TestReplyWhilePlaying:
+    """A reply while playing sees the activity and may take the viewer's request."""
+
+    def _request(self, session, message="ベッド作って！"):
+        return GenerateResponseRequest(user_name="neko", message=message, session=session)
+
+    @pytest.mark.asyncio
+    async def test_reply_sees_the_activity_and_the_goals_on_offer(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        """Test the reply is built from the session's activity with the goals valid now."""
+        mock_text_generator.generate_json.return_value = {
+            "reply": "木を集めてるよ",
+            "change_goal": False,
+        }
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "今なにしてるの？"))
+
+        assert response.text == "木を集めてるよ"
+        assert response.goal is None
+        kwargs = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs
+        assert kwargs["context"].activity.goal.spec.describe() == "have(log, 3)"
+        assert GoalPredicate.PLACED in kwargs["predicates"]
+        assert session.request is None
+
+    @pytest.mark.asyncio
+    async def test_promise_leaves_a_request_for_the_step_loop(self, use_case, mock_text_generator):
+        """Test a reply that takes the request leaves it in the session (the goal is unchanged)."""
+        mock_text_generator.generate_json.return_value = {
+            "reply": "いいよ、ベッド作るね！",
+            "change_goal": True,
+            "predicate": "placed",
+            "item": "bed",
+            "reason": "nekoさんに頼まれた",
+        }
+        session = _playing()
+
+        response = await use_case.execute(self._request(session))
+
+        assert response.goal.spec == BED
+        assert session.request.goal.spec == BED
+        assert session.request.goal.requested_by == "neko"
+        assert session.request.message == "ベッド作って！"
+        assert session.goal.spec.describe() == "have(log, 3)"  # only the step loop changes it
+
+    @pytest.mark.asyncio
+    async def test_unusable_goal_is_regenerated_never_promised(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        """Test a promise with a goal not on offer is sent back; the retry's reply is used."""
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "外で戦うね！", "change_goal": True, "predicate": "cleared", "reason": ""},
+            {"reply": "夜は危ないから朝まで待ってね", "change_goal": False},
+        ]
+        session = _playing("night")
+
+        response = await use_case.execute(self._request(session, "外で戦って"))
+
+        assert response.text == "夜は危ないから朝まで待ってね"
+        assert session.request is None
+        second = mock_prompt_builder.build_chat_response_prompt.call_args_list[1].kwargs
+        assert "not one of the goals offered" in second["previous_error"]
+
+    @pytest.mark.asyncio
+    async def test_no_reply_after_repeated_unusable_goals(self, use_case, mock_text_generator):
+        """Test nothing is said when every generation promises an unusable goal."""
+        mock_text_generator.generate_json.return_value = {
+            "reply": "やるね！",
+            "change_goal": True,
+            "predicate": "have",
+            "reason": "",
+        }
+        session = _playing()
+
+        response = await use_case.execute(self._request(session))
+
+        assert not response.success
+        assert session.request is None

@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("google.genai", reason="google-genai not installed")
 pytest.importorskip("typesafe_sdk", reason="typesafe-sdk not installed")
 
+from ailoveshen.domain.entities import Conversation  # noqa: E402
 from ailoveshen.factories.game import create_game_service  # noqa: E402
 from ailoveshen.infrastructure.config import (  # noqa: E402
     CharacterSettings,
@@ -24,6 +25,7 @@ def _create(gemini_key="g", jev_key="j"):
         minecraft=MinecraftSettings(),
         character=CharacterSettings(),
         event_publisher=AsyncMock(),
+        conversation=Conversation(),
     )
 
 

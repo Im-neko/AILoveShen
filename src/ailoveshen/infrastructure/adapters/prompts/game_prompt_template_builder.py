@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from string import Template
 from typing import Any
 
-from ailoveshen.application.dto.game_dto import GoalOutcome
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.domain.value_objects import (
+    Activity,
     CharacterProfile,
+    ConversationMessage,
     GameObservation,
     Goal,
     GoalPredicate,
     HouseBlueprint,
+)
+from ailoveshen.infrastructure.adapters.prompts.stream_context import (
+    format_activity,
+    format_messages,
+    format_predicates,
+    format_time_en,
 )
 
 HOUSE_DESIGN_TEMPLATE = Template("""\
@@ -50,6 +56,8 @@ GOAL_TEMPLATE = Template("""\
 - 数分で終わる大きさの目標にする
 - 夜は敵が湧いて危険。夕方になったら家に帰り、夜は家で過ごす（ベッドがあれば寝て夜を飛ばせる）
 - 近くの敵への対処（逃げる・戦う）と空腹のときに食べるのは、選ばなくても行われる
+- 配信での自分の発言・視聴者との約束と食い違わないようにする。視聴者の頼みを途中でやめた
+  ときは、その理由が実況で伝えられる
 
 ## 使える目標
 $predicates
@@ -57,14 +65,11 @@ $predicates
 ## 建てる家
 $blueprint
 
-## 今の状況
-$situation
+## 今していること
+$activity
 
-## 今の目標
-$current
-
-## これまでの目標（古い順）
-$recent_goals
+## 最近の会話（配信での自分の発言と視聴者のコメント）
+$recent_messages
 
 ## 目標を選び直す理由
 $reason
@@ -72,26 +77,6 @@ $previous_error
 ## 出力
 次の目標（predicate と必要な引数）と、その理由（短い1文）を指定の JSON で出力してください。
 """)
-
-PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
-    GoalPredicate.BUILT: "built: 設計図の家を完成させる（材料集めとクラフトも含めて進む）",
-    GoalPredicate.HAVE: (
-        "have(item, count): アイテムを count 個持つ。item はアイテム名かグループ"
-        "（planks, log, door, bed, wool, food）。例: have(wooden_sword, 1)、have(food, 4)"
-    ),
-    GoalPredicate.PLACED: (
-        "placed(item=bed): 家の中にベッドを置く（ベッドがなければ作るところから）"
-    ),
-    GoalPredicate.AT_HOME: "at_home: 家に入ってドアを閉める",
-    GoalPredicate.THROUGH_NIGHT: "through_night: 家で夜を越す（ベッドがあれば寝る）",
-    GoalPredicate.EXPLORED: (
-        "explored(distance): 今いる場所から distance ブロック離れるまで探索する"
-    ),
-    GoalPredicate.CLEARED: (
-        "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼だけ。素手でも戦える。"
-        "クリーパーは近くで爆発するので対象外）"
-    ),
-}
 
 # Measured with spikes/primitive_choice_eval.py: stating needs in the state helped; a priority
 # order in the instructions made the selector flee from mobs 20m away.
@@ -136,10 +121,9 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     def build_goal_prompt(
         self,
         blueprint: HouseBlueprint,
-        observation: GameObservation,
-        current_goal: Goal | None,
+        activity: Activity,
         goal_ended_because: str,
-        recent_goals: Sequence[GoalOutcome],
+        recent_messages: Sequence[ConversationMessage],
         predicates: Sequence[GoalPredicate],
         previous_error: str = "",
     ) -> str:
@@ -151,15 +135,10 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             else ""
         )
         return GOAL_TEMPLATE.substitute(
-            predicates="\n".join(f"- {PREDICATE_DESCRIPTIONS[p]}" for p in predicates),
-            blueprint=_format_blueprint(blueprint, observation),
-            situation=_format_situation(observation),
-            current=_format_current(current_goal, observation),
-            recent_goals="\n".join(
-                f"- {o.goal.spec.describe()}: {o.goal.reason}（終了: {o.ended_because}）"
-                for o in recent_goals
-            )
-            or "なし",
+            predicates=format_predicates(list(predicates)),
+            blueprint=_format_blueprint(blueprint, activity.observation),
+            activity=format_activity(activity),
+            recent_messages=format_messages(tuple(recent_messages)),
             reason=goal_ended_because or "なし",
             previous_error=error,
         )
@@ -179,7 +158,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             "self": {
                 "health": observation.health,
                 "food": observation.food,
-                "time": _format_time_en(s.get("time", {})),
+                "time": format_time_en(s.get("time", {})),
                 "in_home": observation.inside_home,
                 "held_item": s.get("self", {}).get("held_item"),
             },
@@ -193,11 +172,11 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         return state, ACTION_INSTRUCTIONS
 
 
-def _format_blueprint(b: HouseBlueprint, obs: GameObservation) -> str:
+def _format_blueprint(b: HouseBlueprint, obs: GameObservation | None) -> str:
     counts = ", ".join(f"{k.value} {v}" for k, v in b.material_counts().items())
     size = f"{b.width}x{b.depth}、壁の高さ {b.wall_height}"
-    build = obs.state.get("build")
-    if obs.house_complete:
+    build = obs.state.get("build") if obs else None
+    if obs is not None and obs.house_complete:
         progress = "完成済み"
     elif build:
         site = "建設地は決定済み" if build.get("origin") else "建設地は未決定"
@@ -205,68 +184,3 @@ def _format_blueprint(b: HouseBlueprint, obs: GameObservation) -> str:
     else:
         progress = "未着手"
     return f"「{b.name}」{size}（必要ブロック: {counts}）- {b.concept}\n進み具合: {progress}"
-
-
-def _format_current(goal: Goal | None, obs: GameObservation) -> str:
-    if goal is None or obs.goal is None:
-        return "なし"
-    lines = [f"{goal.spec.describe()}: {goal.reason}", *obs.goal.lines]
-    if obs.goal.blocked:
-        lines.append("進められない理由: " + "; ".join(obs.goal.blocked))
-    return "\n".join(lines)
-
-
-TICKS_PER_MINUTE = 20 * 60
-DUSK_TICK = 12000
-MORNING_TICK = 24000
-PHASE_NAMES = {"day": "昼", "dusk": "夕方", "night": "夜", "dawn": "明け方"}
-
-
-def _format_time(time: dict) -> str:
-    phase = time.get("phase", "")
-    name = PHASE_NAMES.get(phase, "不明")
-    tick = time.get("time_of_day")
-    if tick is None:
-        return name
-    if phase == "day":
-        return f"{name}（日暮れまで約 {(DUSK_TICK - tick) / TICKS_PER_MINUTE:.0f} 分）"
-    return f"{name}（朝まで約 {(MORNING_TICK - tick) / TICKS_PER_MINUTE:.0f} 分）"
-
-
-def _format_time_en(time: dict) -> str:
-    phase = time.get("phase", "")
-    tick = time.get("time_of_day")
-    if tick is None:
-        return phase
-    if phase == "day":
-        return f"day ({(DUSK_TICK - tick) / TICKS_PER_MINUTE:.0f} minutes until dusk)"
-    return f"{phase} ({(MORNING_TICK - tick) / TICKS_PER_MINUTE:.0f} minutes until morning)"
-
-
-def _format_home(obs: GameObservation) -> str:
-    if not obs.has_home:
-        return "まだない（夜までに建てる必要がある）"
-    where = "家の中にいる" if obs.inside_home else "完成している（外にいる）"
-    bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
-    return f"{where}、{bed}"
-
-
-def _format_situation(obs: GameObservation) -> str:
-    s = obs.state
-    lines = [
-        f"- 時間帯: {_format_time(s.get('time', {}))}",
-        f"- 家: {_format_home(obs)}",
-        f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
-        f"- 持ち物: {json.dumps(s.get('inventory', {}), ensure_ascii=False)}",
-        f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
-    ]
-    recent = s.get("recent_actions", [])
-    if recent:
-        lines.append(
-            "- 直近の行動: "
-            + " / ".join(
-                f"{a['action']}=成功" if a["ok"] else f"{a['action']}=失敗（{a.get('result', '')}）"
-                for a in recent
-            )
-        )
-    return "\n".join(lines)

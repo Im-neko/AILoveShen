@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
-from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext
+from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext, GoalPredicate
 
 
 class IPromptBuilder(ABC):
@@ -31,6 +32,17 @@ class IPromptBuilder(ABC):
         user_name: str,
         message: str,
         context: GenerationContext,
+        predicates: Sequence[GoalPredicate] = (),
+        previous_error: str = "",
     ) -> str:
-        """Build the prompt for replying to a viewer's chat."""
+        """
+        Build the prompt for replying to a viewer's chat.
+
+        Args:
+            user_name: The viewer
+            message: Their chat message
+            context: What the streamer is doing and the recent conversation
+            predicates: Goals the reply may take the request as (none: reply only)
+            previous_error: Why the previous reply's goal could not be used
+        """
         ...
