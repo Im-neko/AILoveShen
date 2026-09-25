@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import Any
 
 from ailoveshen.domain.value_objects import (
     ActionResult,
@@ -69,6 +70,39 @@ class IMinecraftBridge(ABC):
 
         Raises:
             GameBridgeError: ブリッジに届かないか、塞がっているとき
+        """
+        ...
+
+    @abstractmethod
+    async def run_tool(self, name: str, args: dict[str, Any]) -> tuple[bool, str, float, bool]:
+        """
+        道具を 1 つ呼ぶ（設計書 21）。行動の道具は終わる（または失敗する、止められる）まで待つ。
+
+        Returns:
+            (ok, 結果の文（調べものなら JSON）, 秒数, ブリッジが断ったか)
+
+        Raises:
+            GameBridgeError: ブリッジに届かないとき
+        """
+        ...
+
+    @abstractmethod
+    async def state(self) -> dict[str, Any]:
+        """
+        共通の状態（実行中の行動の進み具合、まわりの形、モブ、欲求）。見張りの質問と道具の選択が見る。
+
+        Raises:
+            GameBridgeError: ブリッジに届かないとき
+        """
+        ...
+
+    @abstractmethod
+    async def abort(self, reason: str) -> bool:
+        """
+        実行中の行動を理由をつけて止める。止めたら True、もう終わっていたら False。
+
+        Raises:
+            GameBridgeError: ブリッジに届かないとき
         """
         ...
 

@@ -52,15 +52,24 @@ class FakeTextGenerator(ITextGenerator):
             ]
         )
 
-    async def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    async def generate(
+        self, prompt: str, system_instruction: Optional[str] = None, purpose: Optional[str] = None
+    ) -> str:
         self.last_prompt = prompt
         self.last_system_instruction = system_instruction
         return next(self._replies, "")
 
     async def generate_json(
-        self, prompt: str, schema: dict[str, Any], system_instruction: Optional[str] = None
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        system_instruction: Optional[str] = None,
+        purpose: Optional[str] = None,
     ) -> dict[str, Any]:
         raise NotImplementedError("会話のデモはプレーンテキストしか使わない")
+
+    async def choose_tool(self, prompt, tools, system_instruction=None, purpose=None):
+        raise NotImplementedError("会話のデモは道具を使わない")
 
     async def close(self) -> None:
         pass

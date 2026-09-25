@@ -19,6 +19,8 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Mission,
     Side,
+    ToolCall,
+    ToolOutcome,
     TownDefinition,
     TownSite,
     TownStage,
@@ -369,3 +371,47 @@ class TestGamePromptTemplateBuilder:
         assert len(state["recent_actions"]) == 2
         assert "Stay alive first" in instructions
         assert "Priorities" not in instructions
+
+
+class TestToolPrompt:
+    """道具を選ばせるプロンプト（設計書 21 §6）。"""
+
+    STATE = {
+        "self": {"position": {"x": 10.5, "y": 67, "z": 10.5}},
+        "surroundings": {
+            "legend": "north is up",
+            "grid": ["+3 +3 +3", "+3  @ +3", "+3 +3 +3"],
+            "walls_around": 8,
+            "head_blocked": False,
+            "standing_on": "stone",
+        },
+        "mobs": [{"id": 7, "name": "zombie", "hostile": True, "distance_m": 9.5, "direction": "N"}],
+    }
+
+    def _prompt(self, recent=(), intent=""):
+        activity = Activity(mission=MISSION, goal=PLANKS, observation=_obs(), intent=intent)
+        return GamePromptTemplateBuilder().build_tool_prompt(
+            activity,
+            self.STATE,
+            (Candidate("dig oak_log at 1,70,2", {"verb": "dig", "distance": 3}),),
+            recent,
+        )
+
+    def test_the_prompt_shows_the_shape_around_the_mobs_and_the_suggestions(self):
+        prompt = self._prompt()
+        assert "+3  @ +3" in prompt
+        assert "8 / 8" in prompt
+        assert "#7 zombie（敵）" in prompt
+        assert "- dig oak_log at 1,70,2（3m）" in prompt
+        assert "have 12 planks (5/12)" in prompt  # 小目標の進み具合（ソルバーの木）
+
+    def test_recent_tools_show_refusals_and_watch_stops(self):
+        call = ToolCall("goto", {"x": 1, "y": 70, "z": 2}, intent="外に出る")
+        recent = (
+            ToolOutcome(call, False, "refused: staying inside for the night", 0.0, refused=True),
+            ToolOutcome(call, False, "failed: woke up: q", 3.0, stopped_by="woke up: q"),
+        )
+        prompt = self._prompt(recent=recent, intent="外に出る")
+        assert "goto(x=1, y=70, z=2)「外に出る」: 断られた refused: staying inside" in prompt
+        assert "失敗（見張り: woke up: q）" in prompt
+        assert "- 今やろうとしていること: 外に出る" in prompt

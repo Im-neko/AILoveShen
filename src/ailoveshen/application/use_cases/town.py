@@ -171,7 +171,7 @@ class TownPlanner:
                 self._character, plan.mission, rows, previous_error=error
             )
             data = await self._text_generator.generate_json(
-                prompt, site_schema([str(r["id"]) for r in rows])
+                prompt, site_schema([str(r["id"]) for r in rows]), purpose="site"
             )
             try:
                 site = parse_site(data, rows)
@@ -235,7 +235,7 @@ class TownPlanner:
             prompt = self._prompt_builder.build_town_prompt(
                 self._character, plan.mission, plan.site, facts, previous_error=error
             )
-            data = await self._text_generator.generate_json(prompt, town_schema())
+            data = await self._text_generator.generate_json(prompt, town_schema(), purpose="town")
             try:
                 town = parse_town(data)
             except ValueError as e:
@@ -267,7 +267,7 @@ class TownPlanner:
         error = ""
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_stage_prompt(town, stage, previous_error=error)
-            data = await self._text_generator.generate_json(prompt, stage_schema())
+            data = await self._text_generator.generate_json(prompt, stage_schema(), purpose="town")
             try:
                 written = parse_stage(data, stage.title, stage.why)
             except ValueError as e:

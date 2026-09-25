@@ -383,3 +383,38 @@ class TestLoadJevAndMinecraftSettings:
         assert settings.jev.api_key == "from-env"
         assert settings.minecraft.bridge_port == 3000
         assert settings.minecraft.mission.mid_goals == MissionSettings().mid_goals
+
+
+class TestToolControlSettings:
+    """用途ごとの考える深さ、行動の決め方、見張り（設計書 21）の読み込み。"""
+
+    def test_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "default.yaml").write_text("gemini: {}\nminecraft: {}\n")
+            settings = load_settings(config_dir=Path(tmpdir))
+        assert settings.minecraft.control == "candidates"
+        assert settings.minecraft.watch.act_on_progress is False
+        assert settings.minecraft.watch.act_on_questions is True
+        assert settings.gemini.thinking_levels["town"] == "high"
+        assert settings.gemini.thinking_levels["reply"] == "low"
+
+    def test_overrides_keep_the_unlisted_purposes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "default.yaml").write_text(
+                "gemini:\n"
+                "  thinking_levels:\n"
+                "    town: medium\n"
+                "minecraft:\n"
+                "  agent:\n"
+                "    control: tools\n"
+                "  watch:\n"
+                "    threshold: 0.8\n"
+                "    record_dir: ''\n"
+            )
+            settings = load_settings(config_dir=Path(tmpdir))
+        assert settings.gemini.thinking_levels["town"] == "medium"
+        assert settings.gemini.thinking_levels["site"] == "high"
+        assert settings.minecraft.control == "tools"
+        assert settings.minecraft.watch.threshold == 0.8
+        assert settings.minecraft.watch.consecutive == 2
+        assert settings.minecraft.watch.record_dir == ""

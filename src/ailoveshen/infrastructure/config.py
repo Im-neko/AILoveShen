@@ -53,6 +53,19 @@ class GeminiRateLimitSettings:
     min_interval_seconds: float = 1.0
 
 
+DEFAULT_THINKING_LEVELS = {
+    "town": "high",
+    "site": "high",
+    "house": "medium",
+    "goal": "low",
+    "goal_after_failure": "medium",
+    "tool": "low",
+    "tool_after_failure": "medium",
+    "commentary": "low",
+    "reply": "low",
+}
+
+
 @dataclass
 class GeminiSettings:
     """Gemini API の設定。"""
@@ -64,6 +77,9 @@ class GeminiSettings:
     filter_thinking_level: str = "low"
     # 思考のトークンを含む。小さすぎると出力が空になる
     max_output_tokens: int = 8192
+    # 用途（呼び出しの purpose）ごとの thinking_level（docs/design/19 §7、21 §7）。
+    # ない用途は main_thinking_level
+    thinking_levels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_THINKING_LEVELS))
     retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
     rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
 
@@ -117,6 +133,22 @@ class MissionSettings:
 
 
 @dataclass
+class WatchSettings:
+    """道具の実行の見張り（docs/design/21 §5）。"""
+
+    interval_seconds: float = 1.0
+    grace_seconds: float = 2.0
+    threshold: float = 0.7
+    consecutive: int = 2
+    # コードの 1 問（進んでいるか）で止める。規則に勝つまでは記録だけ（19 §13 の 4）
+    act_on_progress: bool = False
+    # 配信者が道具に添えた質問で止める・起こす
+    act_on_questions: bool = True
+    # ティックごとの記録（19 §6 の評価、費用の比較）。空なら残さない
+    record_dir: str = "logs/watch"
+
+
+@dataclass
 class MinecraftSettings:
     """Minecraft ブリッジへの接続、エージェント、大目標の設定。"""
 
@@ -130,6 +162,10 @@ class MinecraftSettings:
     # 自分のメモ（docs/design/18_notes.md）。再起動をまたいで残す
     notes_path: str = "data/notes.json"
     mission: MissionSettings = field(default_factory=MissionSettings)
+    # 行動の決め方（docs/design/21）: candidates（候補から Jev が選ぶ）か
+    # tools（Gemini が道具を呼ぶ）
+    control: str = "candidates"
+    watch: WatchSettings = field(default_factory=lambda: WatchSettings())
 
 
 @dataclass
@@ -304,6 +340,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             main_thinking_level=gemini_data.get("main_thinking_level", "low"),
             filter_thinking_level=gemini_data.get("filter_thinking_level", "low"),
             max_output_tokens=gemini_data.get("max_output_tokens", 8192),
+            thinking_levels={
+                **DEFAULT_THINKING_LEVELS,
+                **dict(gemini_data.get("thinking_levels") or {}),
+            },
             retry=GeminiRetrySettings(
                 max_attempts=retry_data.get("max_attempts", 3),
                 base_delay_seconds=retry_data.get("base_delay_seconds", 1.0),
@@ -345,7 +385,9 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         bridge_data = mc_data.get("bridge", {})
         agent_data = mc_data.get("agent", {})
         mission_data = mc_data.get("mission", {})
+        watch_data = mc_data.get("watch", {})
         defaults = MinecraftSettings()
+        watch_defaults = defaults.watch
         mission_defaults = defaults.mission
         settings.minecraft = MinecraftSettings(
             bridge_host=bridge_data.get("host", defaults.bridge_host),
@@ -370,6 +412,20 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                     "viewer_budget_steps", mission_defaults.viewer_budget_steps
                 ),
                 store_path=mission_data.get("store_path", mission_defaults.store_path),
+            ),
+            control=agent_data.get("control", defaults.control),
+            watch=WatchSettings(
+                interval_seconds=watch_data.get(
+                    "interval_seconds", watch_defaults.interval_seconds
+                ),
+                grace_seconds=watch_data.get("grace_seconds", watch_defaults.grace_seconds),
+                threshold=watch_data.get("threshold", watch_defaults.threshold),
+                consecutive=watch_data.get("consecutive", watch_defaults.consecutive),
+                act_on_progress=watch_data.get("act_on_progress", watch_defaults.act_on_progress),
+                act_on_questions=watch_data.get(
+                    "act_on_questions", watch_defaults.act_on_questions
+                ),
+                record_dir=watch_data.get("record_dir", watch_defaults.record_dir),
             ),
         )
 

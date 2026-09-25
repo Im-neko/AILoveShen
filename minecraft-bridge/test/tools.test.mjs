@@ -33,7 +33,7 @@ function blockAt (p, extra = {}) {
   return { name: 'air', boundingBox: 'empty', position: p }
 }
 
-function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra = {}, candidates = [] } = {}) {
+function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra = {}, candidates = [], check = null } = {}) {
   const entity = { position: at, eyeHeight: 1.62 }
   const entities = { 0: entity }
   mobs.forEach((m, i) => { entities[i + 1] = { id: i + 1, type: 'hostile', height: 1.99, ...m } })
@@ -59,7 +59,7 @@ function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra
     knowledge,
     run: async (c, label) => { runs.push({ c, label }); return { ok: true, result: 'done', seconds: 0 } },
     candidates: () => candidates,
-    check: (specs) => { checks.push(specs); return specs.map(() => ({ met: false, lines: ['have 1 stick (0/1)'], impossible: [] })) }
+    check: check ?? ((specs) => { checks.push(specs); return specs.map(() => ({ met: false, lines: ['have 1 stick (0/1)'], impossible: [] })) })
   })
   return { callTool, runs, checks, bot, state }
 }
@@ -133,6 +133,13 @@ test('調べものの道具はすぐ返り、行動を実行しない。how_to_g
   assert.deepEqual(how.result.steps, ['have 1 stick (0/1)'])
   assert.deepEqual(checks[0], [{ predicate: 'have', item: 'stick', count: 1 }])
   assert.equal(runs.length, 0)
+})
+
+test('知識と合わない引数（知らないアイテム）は、プレイを止めずに理由を返す', async () => {
+  const { callTool } = setup({ check: () => { throw new Error('unknown item or group: not_an_item') } })
+  assert.equal((await callTool('smelt', { input: 'not_an_item' })).refused, true)
+  const how = await callTool('how_to_get', { item: 'not_an_item' })
+  assert.deepEqual([how.refused, how.result], [true, 'refused: unknown item or group: not_an_item'])
 })
 
 test('実行中と反射の間は、道具を断る', async () => {

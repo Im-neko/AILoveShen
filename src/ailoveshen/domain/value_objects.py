@@ -898,6 +898,7 @@ class Activity:
     observation: Optional[GameObservation] = None
     recent_goals: tuple[GoalOutcome, ...] = ()
     notes: tuple[Note, ...] = ()  # 自分のメモ（確かめていない）
+    intent: str = ""  # 道具で操作しているとき、今やろうとしていること（配信者が道具に添えた 1 文）
 
 
 @dataclass(frozen=True)
@@ -917,3 +918,132 @@ class ActionResult:
     ok: bool
     result: str
     seconds: float
+
+
+# =============================================================================
+# 道具での操作と見張り（docs/design/21_tool_control.md）
+# =============================================================================
+
+MAX_WATCH_QUESTIONS = 3
+MAX_WATCH_QUESTION_CHARS = 120
+
+
+class WatchAction(str, Enum):
+    """見張りの質問の答えが「はい」のときに起きること。止める・起こす・終わったかも、だけ。"""
+
+    STOP = "stop"  # 行動を止める（続けても意味がない、危ない）
+    WAKE = "wake"  # 行動を止めて、配信者に考え直させる（何かが起きた）
+    MAYBE_DONE = (
+        "maybe_done"  # 行動を止める。完了はワールドの述語で確かめる（Jev は完了を判定しない）
+    )
+
+
+@dataclass(frozen=True)
+class WatchQuestion:
+    """
+    道具の実行中に高頻度の判断モデル（Jev）が答える、はい/いいえの質問。配信者（Gemini）が
+    道具を呼ぶときに書く。
+
+    Raises:
+        ValueError: 質問が空か長すぎるとき。
+    """
+
+    question: str
+    on_yes: WatchAction
+
+    def __post_init__(self) -> None:
+        """質問を検証する。"""
+        if not self.question.strip():
+            raise ValueError("watch question must not be empty")
+        if len(self.question) > MAX_WATCH_QUESTION_CHARS:
+            raise ValueError(f"watch question is longer than {MAX_WATCH_QUESTION_CHARS} characters")
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """
+    配信者が選んだ道具の呼び出し: 道具の名前と引数、今やろうとしていること、見張りの質問。
+
+    Raises:
+        ValueError: 名前が空か、見張りの質問が多すぎるとき。
+    """
+
+    name: str
+    args: dict[str, Any] = field(default_factory=dict)
+    intent: str = ""
+    watch: tuple[WatchQuestion, ...] = ()
+
+    def __post_init__(self) -> None:
+        """呼び出しを検証する。"""
+        if not self.name:
+            raise ValueError("tool name must not be empty")
+        if len(self.watch) > MAX_WATCH_QUESTIONS:
+            raise ValueError(f"at most {MAX_WATCH_QUESTIONS} watch questions")
+
+    def describe(self) -> str:
+        """ログと記録のための 1 行（例: dig(x=3, y=70, z=4)）。"""
+        args = ", ".join(f"{k}={v}" for k, v in self.args.items())
+        return f"{self.name}({args})"
+
+
+class FastQuestionKind(str, Enum):
+    """高頻度の判断モデルに聞ける質問の形。"""
+
+    YES_NO = "yes_no"
+    CHOICE = "choice"
+    SCORE = "score"
+
+
+@dataclass(frozen=True)
+class FastQuestion:
+    """
+    高頻度の判断モデルへの質問 1 つ（モデルに依存しない形）。
+
+    - YES_NO: `criteria` は None か {"yes": 説明, "no": 説明}
+    - CHOICE: `criteria` は {選択肢: 説明}
+    - SCORE: `criteria` は 0 から順の段階の説明のリスト
+    """
+
+    name: str
+    kind: FastQuestionKind
+    instructions: str
+    criteria: Any = None
+
+
+@dataclass(frozen=True)
+class FastAnswer:
+    """高頻度の判断モデルの答え 1 つ: はい/いいえ（bool）、選んだもの（str）、段階（float）。"""
+
+    name: str
+    value: Any
+    confidence: float
+
+
+@dataclass(frozen=True)
+class FastVerdict:
+    """1 回の呼び出しの答えと、その費用（ログと記録用）。"""
+
+    answers: dict[str, FastAnswer]
+    elapsed_ms: int
+    input_tokens: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class ToolOutcome:
+    """
+    道具を 1 つ呼んだ結果。`result` は結果の文（調べものなら JSON）。`refused` はブリッジが
+    実行する前に断ったとき（安全の制約、引数が世界と合わない）で、理由は `result` にある。
+    """
+
+    call: ToolCall
+    ok: bool
+    result: str
+    seconds: float
+    refused: bool = False
+    stopped_by: Optional[str] = None  # 見張りが止めたとき、その質問と答え
+
+    def as_action_result(self) -> ActionResult:
+        """ステップの記録（停滞・予算の数え方）に使う形。"""
+        return ActionResult(
+            action_id=self.call.describe(), ok=self.ok, result=self.result, seconds=self.seconds
+        )

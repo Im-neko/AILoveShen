@@ -54,6 +54,18 @@ gemini:
   # Includes thinking tokens. Too small a value yields truncated or empty output.
   # Measured total usage peaks around 1.3k tokens (medium); 8192 is headroom.
   max_output_tokens: 8192
+  # thinking_level per purpose (docs/design/19 §7, 21 §7). Purposes not listed use
+  # main_thinking_level. high is unmeasured (it may hit max_output_tokens): measure before relying on it.
+  thinking_levels:
+    town: "high"               # the town definition
+    site: "high"               # choosing the town site
+    house: "medium"            # designing the house
+    goal: "low"                # the small goal (with mid-goal edits and notes)
+    goal_after_failure: "medium"
+    tool: "low"                # one tool call (control: tools)
+    tool_after_failure: "medium"
+    commentary: "low"
+    reply: "low"               # a viewer is waiting
 
   # Retry settings (max_attempts includes the original request;
   # retried on 408/429/5xx only)
@@ -247,6 +259,20 @@ minecraft:
     max_stalled_steps: 8
     # The streamer's own notes (docs/design/18_notes.md), kept across restarts
     notes_path: "data/notes.json"
+    # How actions are chosen (docs/design/21_tool_control.md):
+    #   candidates: the bridge grounds candidates (solver) and Jev picks one (the baseline)
+    #   tools: Gemini calls tools itself; Jev answers watch questions while a tool runs
+    control: "candidates"
+
+  # Watching a running tool (control: tools). Jev answers all questions in one call per tick.
+  watch:
+    interval_seconds: 1.0
+    grace_seconds: 2.0       # no questions in the first seconds of a tool
+    threshold: 0.7           # confidence needed for a signal
+    consecutive: 2           # signals in a row before acting
+    act_on_progress: false   # the code's "is it progressing?" only records until it beats a rule
+    act_on_questions: true   # Gemini's own watch questions stop / wake / report maybe-done
+    record_dir: "logs/watch" # one JSONL per run: state, questions, answers, tokens (empty: none)
 
   # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
   # mid goals are worked on from the top, completed when their conditions hold in the world.

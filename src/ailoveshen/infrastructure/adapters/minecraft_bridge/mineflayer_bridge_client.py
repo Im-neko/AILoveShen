@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -97,6 +98,22 @@ class MineflayerBridgeClient(IMinecraftBridge):
             result=str(data["result"]),
             seconds=float(data["seconds"]),
         )
+
+    async def run_tool(self, name: str, args: dict[str, Any]) -> tuple[bool, str, float, bool]:
+        """道具を 1 つ呼ぶ。調べものの結果（構造）は JSON の文にして返す。"""
+        data = await self._request("POST", "/tool", json={"name": name, "args": args})
+        result = data["result"]
+        text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        return bool(data["ok"]), text, float(data["seconds"]), bool(data.get("refused", False))
+
+    async def state(self) -> dict[str, Any]:
+        """共通の状態を取得する。"""
+        return await self._request("GET", "/state")
+
+    async def abort(self, reason: str) -> bool:
+        """実行中の行動を止める。もう終わっていれば False。"""
+        data = await self._request("POST", "/abort", json={"reason": reason})
+        return bool(data.get("aborted", False))
 
     async def set_build_plan(self, blueprint: HouseBlueprint, site: TownSite | None = None) -> None:
         """設計図のブロックを置く順に、設計と（あれば）建てる場所と一緒に送る。"""

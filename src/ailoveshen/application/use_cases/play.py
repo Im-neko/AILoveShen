@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import replace
+from typing import Optional
 
 from loguru import logger
 
@@ -25,7 +27,15 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 from ailoveshen.application.use_cases.house import HouseDesigner, parse_blueprint
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
+from ailoveshen.application.use_cases.tool_catalog import (
+    ACTION_TOOLS,
+    ToolCallError,
+    is_query,
+    parse_tool_call,
+    tool_specs,
+)
 from ailoveshen.application.use_cases.town import TownPlanner
+from ailoveshen.application.use_cases.watcher import ToolWatcher
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, Notebook, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
@@ -37,6 +47,7 @@ from ailoveshen.domain.events import (
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     ActionDecision,
+    ActionResult,
     Activity,
     ConversationMessage,
     GameObservation,
@@ -46,8 +57,15 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     MessageRole,
+    ToolCall,
+    ToolOutcome,
     is_survival,
 )
+
+CONTROLS = ("candidates", "tools")
+MAX_QUERIES_PER_STEP = 3  # 1 ステップの中で調べものをしてよい回数
+SUGGESTIONS_SHOWN = 12  # 道具の選択に見せるソルバーの提案の数
+RECENT_TOOLS = 8  # 道具の選択に見せる直近の呼び出しの数
 
 
 def _plan_blueprint(obs: GameObservation) -> HouseBlueprint | None:
@@ -206,6 +224,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         notes: NoteKeeper,
         history_limit: int = 10,
         max_goal_attempts: int = 3,
+        control: str = "candidates",
+        tool_watcher: Optional[ToolWatcher] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -222,7 +242,18 @@ class AdvancePlayUseCase(IAdvancePlay):
             notes: 自分のメモを寿命で消し、目標の決定の編集を反映する
             history_limit: 目標の決定に渡す最近の会話のメッセージの数
             max_goal_attempts: 拒否が続くとき、あきらめるまでに目標を決める回数
+            control: 行動の決め方。"candidates" はブリッジの候補から選択器（Jev）が選ぶ（比べる
+                相手として残す）。"tools" は LLM が道具を呼び、見張り（Jev）が実行中に質問に
+                答える（設計書 21）
+            tool_watcher: "tools" のとき、道具を実行して見張るもの
+
+        Raises:
+            ValueError: control が不明か、"tools" なのに tool_watcher がないとき
         """
+        if control not in CONTROLS:
+            raise ValueError(f"control must be one of {CONTROLS}, got {control!r}")
+        if control == "tools" and tool_watcher is None:
+            raise ValueError('control "tools" needs a tool_watcher')
         self._bridge = bridge
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -234,6 +265,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._notes = notes
         self._history_limit = history_limit
         self._max_goal_attempts = max_goal_attempts
+        self._control = control
+        self._watcher = tool_watcher
+        self._recent_tools: deque[ToolOutcome] = deque(maxlen=RECENT_TOOLS)
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""
@@ -264,17 +298,10 @@ class AdvancePlayUseCase(IAdvancePlay):
 
         goal = session.goal
         assert goal is not None
-        candidates = obs.candidates
-        if len(candidates) == 1:
-            decision = ActionDecision(action_id=candidates[0].action_id, confidence=1.0)
+        if self._control == "tools":
+            decision, result = await self._act_with_tools(session, obs)
         else:
-            state, instructions = self._prompt_builder.build_action_context(goal, obs)
-            logger.info(
-                f"候補（{len(candidates)}）: " + " | ".join(c.action_id for c in candidates)
-            )
-            decision = await self._action_selector.select(state, candidates, instructions)
-
-        result = await self._bridge.act(decision.action_id)
+            decision, result = await self._act_on_candidate(goal, obs)
         await self._mid_goals.step_counted(session.plan, session.record(result))
         await self._event_publisher.publish(
             GameActionExecutedEvent(
@@ -292,6 +319,84 @@ class AdvancePlayUseCase(IAdvancePlay):
             result=result,
             house_complete=obs.house_complete,
         )
+
+    async def _act_on_candidate(
+        self, goal: Goal, obs: GameObservation
+    ) -> tuple[ActionDecision, ActionResult]:
+        """選択器（Jev）がブリッジの候補から 1 つ選び、ブリッジが実行する。"""
+        candidates = obs.candidates
+        if len(candidates) == 1:
+            decision = ActionDecision(action_id=candidates[0].action_id, confidence=1.0)
+        else:
+            state, instructions = self._prompt_builder.build_action_context(goal, obs)
+            logger.info(
+                f"候補（{len(candidates)}）: " + " | ".join(c.action_id for c in candidates)
+            )
+            decision = await self._action_selector.select(state, candidates, instructions)
+        return decision, await self._bridge.act(decision.action_id)
+
+    async def _act_with_tools(
+        self, session: PlaySession, obs: GameObservation
+    ) -> tuple[ActionDecision, ActionResult]:
+        """
+        LLM が道具を呼ぶ（設計書 21 §2）。調べものの道具はすぐ結果を返し、同じステップの中で
+        選び直す（MAX_QUERIES_PER_STEP 回まで。その後は行動の道具だけを出す）。行動の道具は
+        見張りつきで実行し、1 ステップはそれで終わる。
+        """
+        specs = tool_specs()
+        action_specs = [t for t in specs if t.name in ACTION_TOOLS]
+        for attempt in range(MAX_QUERIES_PER_STEP + 1):
+            state = await self._bridge.state()
+            prompt = self._prompt_builder.build_tool_prompt(
+                session.activity(),
+                state,
+                obs.candidates[:SUGGESTIONS_SHOWN],
+                tuple(self._recent_tools),
+            )
+            last = self._recent_tools[-1] if self._recent_tools else None
+            purpose = "tool_after_failure" if last is not None and not last.ok else "tool"
+            offered = specs if attempt < MAX_QUERIES_PER_STEP else action_specs
+            choice = await self._text_generator.choose_tool(prompt, offered, purpose=purpose)
+            try:
+                call = parse_tool_call(choice)
+            except ToolCallError as e:
+                outcome = ToolOutcome(
+                    call=ToolCall(name=choice.name or "?", args=dict(choice.args)),
+                    ok=False,
+                    result=f"invalid call: {e}",
+                    seconds=0.0,
+                    refused=True,
+                )
+                self._recent_tools.append(outcome)
+                break
+            if is_query(call.name) and attempt == MAX_QUERIES_PER_STEP:
+                outcome = ToolOutcome(
+                    call=call,
+                    ok=False,
+                    result="invalid call: no more lookups in this step; call an action tool",
+                    seconds=0.0,
+                    refused=True,
+                )
+                self._recent_tools.append(outcome)
+                break
+            if is_query(call.name):
+                ok, result, seconds, refused = await self._bridge.run_tool(call.name, call.args)
+                self._recent_tools.append(
+                    ToolOutcome(call=call, ok=ok, result=result, seconds=seconds, refused=refused)
+                )
+                logger.info(f"調べた: {call.describe()} -> {result[:200]}")
+                continue
+            session.set_intent(call.intent)
+            logger.info(
+                f"道具: {call.describe()}「{call.intent}」"
+                + (f" 見張り: {[w.question for w in call.watch]}" if call.watch else "")
+            )
+            assert self._watcher is not None
+            outcome = await self._watcher.run(call)
+            self._recent_tools.append(outcome)
+            break
+        decision = ActionDecision(action_id=outcome.call.describe(), confidence=1.0)
+        return decision, outcome.as_action_result()
 
     async def _change_goal(self, session: PlaySession, obs: GameObservation) -> None:
         reason = session.goal_end_reason(obs)
@@ -328,6 +433,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         messages = self._conversation.recent_messages(self._history_limit)
         goals = _shown_goals(activity, reason)
         viewers = _viewers(messages)
+        # 行き詰まった・進まなかった後は深く考え直す（設計書 19 §7）
+        failed = " is stuck " in reason or " stalled " in reason
+        purpose = "goal_after_failure" if failed else "goal"
         error = ""
         for attempt in range(1, self._max_goal_attempts + 1):
             prompt = self._prompt_builder.build_goal_prompt(
@@ -345,7 +453,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 len(goals),
                 viewers,
             )
-            data = await self._text_generator.generate_json(prompt, schema)
+            data = await self._text_generator.generate_json(prompt, schema, purpose=purpose)
             try:
                 decision = parse_decision(data)
                 if decision.spec.predicate not in predicates:

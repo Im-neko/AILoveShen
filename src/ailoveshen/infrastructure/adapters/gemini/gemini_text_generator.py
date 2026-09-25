@@ -5,13 +5,18 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
 from google import genai
 from google.genai import errors, types
 from loguru import logger
 
-from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.ports.output.text_generator import (
+    ITextGenerator,
+    ToolChoice,
+    ToolSpec,
+)
 from ailoveshen.domain.exceptions import TextGenerationError
 
 # Gemini 3.8 Flash が受け付けるのはこのレベルだけ（"minimal" は API が拒否する）
@@ -41,6 +46,7 @@ class GeminiTextGenerator(ITextGenerator):
         retry_max_delay_seconds: float = 10.0,
         retry_exponential_base: float = 2.0,
         min_request_interval_seconds: float = 1.0,
+        thinking_levels: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         Gemini のクライアントを初期化する。
@@ -48,30 +54,36 @@ class GeminiTextGenerator(ITextGenerator):
         Args:
             api_key: Gemini の API キー
             model: モデル ID
-            thinking_level: "low"、"medium"、"high" のどれか
+            thinking_level: "low"、"medium"、"high" のどれか。用途の表にない呼び出しの既定
             max_output_tokens: 出力トークンの上限（思考のトークンを含む）
             retry_attempts: 最初のリクエストを含めた最大の試行回数
             retry_initial_delay_seconds: バックオフの最初の待ち時間
             retry_max_delay_seconds: バックオフの最大の待ち時間
             retry_exponential_base: バックオフの倍率
             min_request_interval_seconds: リクエストの間の最小の間隔
+            thinking_levels: 用途（呼び出しの purpose）ごとの thinking_level（設計書 19 §7）。
+                "default" があれば thinking_level より優先する
 
         Raises:
             ValueError: api_key が空か、thinking_level に対応していないとき。
         """
         if not api_key:
             raise ValueError("Gemini API key is required (set GEMINI_API_KEY)")
-        if thinking_level not in SUPPORTED_THINKING_LEVELS:
-            raise ValueError(
-                f"thinking_level must be one of {SUPPORTED_THINKING_LEVELS}, got {thinking_level!r}"
-            )
+        levels = {"default": thinking_level, **dict(thinking_levels or {})}
+        for purpose, level in levels.items():
+            if level not in SUPPORTED_THINKING_LEVELS:
+                raise ValueError(
+                    f"thinking_level must be one of {SUPPORTED_THINKING_LEVELS}, "
+                    f"got {level!r} for {purpose!r}"
+                )
+        self._levels = levels
 
         self._model = model
         self._min_interval = min_request_interval_seconds
         self._config = types.GenerateContentConfig(
             max_output_tokens=max_output_tokens,
-            thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
-            # ツールは使わないので、自動の関数呼び出しを明示的に無効にする
+            thinking_config=types.ThinkingConfig(thinking_level=levels["default"]),
+            # 道具は choose_tool だけが渡し、呼び出しは自分で扱う。自動の関数呼び出しは無効にする
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         self._client = genai.Client(
@@ -92,6 +104,7 @@ class GeminiTextGenerator(ITextGenerator):
         self,
         prompt: str,
         system_instruction: Optional[str] = None,
+        purpose: Optional[str] = None,
     ) -> str:
         """
         Gemini でテキストを生成する。
@@ -99,6 +112,7 @@ class GeminiTextGenerator(ITextGenerator):
         Args:
             prompt: ユーザーのプロンプト
             system_instruction: システム指示（キャラクターの設定）
+            purpose: 用途の名前（考える深さを決める）
 
         Returns:
             生成したテキスト。モデルがテキストを返さなかったとき（ブロックされた、
@@ -107,7 +121,9 @@ class GeminiTextGenerator(ITextGenerator):
         Raises:
             TextGenerationError: 再試行しても API の呼び出しが失敗したとき
         """
-        config = self._config.model_copy(update={"system_instruction": system_instruction})
+        config = self._config_for(purpose).model_copy(
+            update={"system_instruction": system_instruction}
+        )
         return await self._generate_text(prompt, config)
 
     async def generate_json(
@@ -115,6 +131,7 @@ class GeminiTextGenerator(ITextGenerator):
         prompt: str,
         schema: dict[str, Any],
         system_instruction: Optional[str] = None,
+        purpose: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         JSON Schema に沿った JSON オブジェクトを生成する（Gemini の構造化出力）。
@@ -122,7 +139,7 @@ class GeminiTextGenerator(ITextGenerator):
         Raises:
             TextGenerationError: API の呼び出しが失敗したか、出力が JSON オブジェクトでないとき
         """
-        config = self._config.model_copy(
+        config = self._config_for(purpose).model_copy(
             update={
                 "system_instruction": system_instruction,
                 "response_mime_type": "application/json",
@@ -138,29 +155,66 @@ class GeminiTextGenerator(ITextGenerator):
             raise TextGenerationError(f"Gemini returned JSON that is not an object: {text[:200]!r}")
         return data
 
+    async def choose_tool(
+        self,
+        prompt: str,
+        tools: Sequence[ToolSpec],
+        system_instruction: Optional[str] = None,
+        purpose: Optional[str] = None,
+    ) -> ToolChoice:
+        """
+        function calling で道具を必ず 1 つ呼ばせる（mode ANY）。呼び出しごとに独立。
+
+        Raises:
+            TextGenerationError: API の呼び出しが失敗したか、道具を呼ばなかったとき
+        """
+        declarations = [
+            types.FunctionDeclaration(
+                name=t.name, description=t.description, parameters_json_schema=t.parameters
+            )
+            for t in tools
+        ]
+        config = self._config_for(purpose).model_copy(
+            update={
+                "system_instruction": system_instruction,
+                "tools": [types.Tool(function_declarations=declarations)],
+                "tool_config": types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode=types.FunctionCallingConfigMode.ANY
+                    )
+                ),
+            }
+        )
+        response = await self._request(prompt, config)
+        calls = response.function_calls
+        if not calls:
+            raise TextGenerationError(
+                f"Gemini did not call a tool (finish_reason={self._finish_reason(response)})"
+            )
+        call = calls[0]
+        if not call.name:
+            raise TextGenerationError("Gemini called a tool without a name")
+        return ToolChoice(name=call.name, args=dict(call.args or {}))
+
+    def thinking_level_for(self, purpose: Optional[str]) -> str:
+        """用途の考える深さ（表になければ既定）。"""
+        return self._levels.get(purpose or "default", self._levels["default"])
+
+    def _config_for(self, purpose: Optional[str]) -> types.GenerateContentConfig:
+        level = self.thinking_level_for(purpose)
+        if level == self._levels["default"]:
+            return self._config
+        return self._config.model_copy(
+            update={"thinking_config": types.ThinkingConfig(thinking_level=level)}
+        )
+
     async def close(self) -> None:
         """内部の HTTP クライアントを閉じる。"""
         await self._client.aio.aclose()
 
     async def _generate_text(self, prompt: str, config: types.GenerateContentConfig) -> str:
-        """レート制限、使用量のログ、空の出力の診断を付けて API を呼ぶ。"""
-        await self._wait_for_rate_limit()
-
-        started = time.monotonic()
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config=config,
-            )
-        except errors.APIError as e:
-            raise TextGenerationError(f"Gemini API error {e.code}: {e.message}") from e
-        except Exception as e:
-            raise TextGenerationError(f"Gemini request failed: {e}") from e
-
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        self._log_usage(response, elapsed_ms)
-
+        """API を呼び、空の出力を診断してテキストを返す。"""
+        response = await self._request(prompt, config)
         text = (response.text or "").strip()
         finish_reason = self._finish_reason(response)
 
@@ -180,6 +234,28 @@ class GeminiTextGenerator(ITextGenerator):
 
         return text
 
+    async def _request(
+        self, prompt: str, config: types.GenerateContentConfig
+    ) -> types.GenerateContentResponse:
+        """レート制限と使用量のログを付けて API を呼ぶ。"""
+        await self._wait_for_rate_limit()
+
+        started = time.monotonic()
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config=config,
+            )
+        except errors.APIError as e:
+            raise TextGenerationError(f"Gemini API error {e.code}: {e.message}") from e
+        except Exception as e:
+            raise TextGenerationError(f"Gemini request failed: {e}") from e
+
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        self._log_usage(response, elapsed_ms, config)
+        return response
+
     async def _wait_for_rate_limit(self) -> None:
         """前のリクエストから min_request_interval が経つまで待つ。"""
         async with self._rate_lock:
@@ -196,14 +272,20 @@ class GeminiTextGenerator(ITextGenerator):
             return None
         return response.candidates[0].finish_reason
 
-    def _log_usage(self, response: types.GenerateContentResponse, elapsed_ms: int) -> None:
+    def _log_usage(
+        self,
+        response: types.GenerateContentResponse,
+        elapsed_ms: int,
+        config: types.GenerateContentConfig,
+    ) -> None:
         """トークンの使用量と所要時間をログに出す（トークンの監視はログだけ）。"""
         usage = response.usage_metadata
         if usage is None:
             logger.info(f"Gemini {self._model}: {elapsed_ms}ms（使用量の情報なし）")
             return
         logger.info(
-            f"Gemini {self._model}: {elapsed_ms}ms, "
+            f"Gemini {self._model}（thinking {config.thinking_config.thinking_level}）: "
+            f"{elapsed_ms}ms, "
             f"prompt={usage.prompt_token_count} "
             f"thoughts={usage.thoughts_token_count} "
             f"output={usage.candidates_token_count} "

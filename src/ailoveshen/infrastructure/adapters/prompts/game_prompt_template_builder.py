@@ -10,6 +10,7 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
 from ailoveshen.domain.value_objects import (
     Activity,
+    Candidate,
     CharacterProfile,
     ConversationMessage,
     GameObservation,
@@ -17,6 +18,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     HouseBlueprint,
     Mission,
+    ToolOutcome,
     TownDefinition,
     TownSite,
     TownStage,
@@ -214,6 +216,36 @@ $previous_error
 
 # spikes/primitive_choice_eval.py で測った: 体が必要とするもの（needs）を状態に書くと効いた。
 # 指示に優先順位を書くと、選択器は 20m 先の敵からも逃げるようになった。
+TOOL_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者として、自分の手で操作しています。
+今の小目標に向けて、次に呼ぶ道具を 1 つ選んでください。
+
+## 配信者が今していること
+$activity
+
+## まわり（ブリッジが今測ったもの）
+- 位置: $position
+- まわりの形（$legend）:
+$grid
+- 隣のうち歩いて上がれない（2 段以上の）ところ: $walls / 8、頭の上: $head、足元: $standing_on
+- 近くのモブ（attack / flee の entity にはこの id を使う）: $mobs
+
+## ソルバーの提案（参考。従わなくてよい。do_suggestion の id）
+$suggestions
+
+## 直近の道具（古い順）
+$recent
+
+## 決まり
+- 行動の道具には intent（今やろうとしていること、1 文）を必ず書く。配信で見える
+- 見張りの質問（watch）は、行動の途中で起きうることを確かめたいときだけ添える。英語で、状態から
+  答えられることを中立に書く（急ぎや優先の言葉は書かない）。完了の判定には使われない
+  （完了はワールドで確かめる）
+- 同じ失敗を繰り返さない。断られた・失敗した理由を読んで、別の手を選ぶ
+- 夜に家の中にいるときは、外に出る道具は断られる
+- 座標は整数。y は足元の高さ
+""")
+
 ACTION_INSTRUCTIONS = (
     "You control a Minecraft survival player working toward the goal in the state. "
     "Choose the single best next primitive action. Stay alive first; otherwise make progress on "
@@ -335,6 +367,39 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             previous_error=error,
         )
 
+    def build_tool_prompt(
+        self,
+        activity: Activity,
+        state: dict[str, Any],
+        suggestions: Sequence[Candidate],
+        recent_tools: Sequence[ToolOutcome],
+    ) -> str:
+        """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
+        around = state.get("surroundings") or {}
+        me = (state.get("self") or {}).get("position") or {}
+        mobs = [
+            f"#{m['id']} {m['name']}{'（敵）' if m.get('hostile') else ''} {m['distance_m']}m "
+            f"{m.get('direction', '')}（高さの差 {m.get('height_diff_m', 0)}）"
+            for m in state.get("mobs", [])
+        ]
+        return TOOL_TEMPLATE.substitute(
+            activity=format_activity(activity),
+            position=f"{me.get('x')}, {me.get('y')}, {me.get('z')}" if me else "不明",
+            legend=around.get("legend", ""),
+            grid="\n".join(f"    {row}" for row in around.get("grid", [])) or "    （なし）",
+            walls=around.get("walls_around", "?"),
+            head="ふさがっている" if around.get("head_blocked") else "空いている",
+            standing_on=around.get("standing_on") or "不明",
+            mobs="、".join(mobs) or "なし",
+            suggestions="\n".join(
+                f"- {c.action_id}"
+                + (f"（{c.description.get('distance')}m）" if c.description.get("distance") else "")
+                for c in suggestions
+            )
+            or "- なし",
+            recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
+        )
+
     def build_action_context(
         self, goal: Goal, observation: GameObservation
     ) -> tuple[dict[str, Any], str]:
@@ -387,3 +452,15 @@ def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> 
 
 def _retry(previous_error: str, ask: str) -> str:
     return f"\n## 前回の答えが使えなかった理由\n{previous_error}\n{ask}\n" if previous_error else ""
+
+
+TOOL_RESULT_CHARS = 300
+
+
+def _format_tool(o: ToolOutcome) -> str:
+    """直近の道具 1 つ: 呼び出し、意図、結果（長い調べものの結果は切る）。"""
+    status = "断られた" if o.refused else "成功" if o.ok else "失敗"
+    stopped = f"（見張り: {o.stopped_by}）" if o.stopped_by else ""
+    intent = f"「{o.call.intent}」" if o.call.intent else ""
+    result = o.result if len(o.result) <= TOOL_RESULT_CHARS else o.result[:TOOL_RESULT_CHARS] + "…"
+    return f"- {o.call.describe()}{intent}: {status}{stopped} {result}"

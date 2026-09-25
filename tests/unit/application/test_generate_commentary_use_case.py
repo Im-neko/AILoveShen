@@ -77,6 +77,7 @@ class TestGenerateCommentaryUseCase:
         mock_text_generator.generate.assert_called_once_with(
             prompt="Commentary prompt",
             system_instruction="System prompt",
+            purpose="commentary",
         )
 
     @pytest.mark.asyncio

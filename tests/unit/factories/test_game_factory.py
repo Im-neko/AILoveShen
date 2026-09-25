@@ -49,6 +49,23 @@ class TestCreateGameService:
         with pytest.raises(ValueError, match="Gemini API key"):
             _create(gemini_key="")
 
+    @pytest.mark.asyncio
+    async def test_tools_control_is_wired(self, tmp_path):
+        """control: tools なら、道具のステップと見張りが組み立てられる。"""
+        minecraft = MinecraftSettings(control="tools")
+        minecraft.watch.record_dir = str(tmp_path)
+        service = create_game_service(
+            gemini=GeminiSettings(api_key="g"),
+            jev=JevSettings(api_key="j"),
+            minecraft=minecraft,
+            character=CharacterSettings(),
+            event_publisher=AsyncMock(),
+            conversation=Conversation(),
+        )
+        assert service._advance._control == "tools"
+        assert service._advance._watcher is not None
+        await service.close()
+
     def test_missing_jev_key_raises(self):
         """TypeSafe のキーがなければすぐ失敗する。"""
         with pytest.raises(ValueError, match="TypeSafe API key"):

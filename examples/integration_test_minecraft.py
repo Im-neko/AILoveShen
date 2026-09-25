@@ -9,6 +9,10 @@
 話したことは表示する（[say]、[reply]）。ミッションと中目標は設定（minecraft.mission）から
 読み、実行をまたいで引き継ぐ（data/mission.json）。
 
+--control tools を付けると、候補から Jev が選ぶ代わりに、Gemini が道具を呼んで操作し、Jev は
+道具の実行中に Gemini が添えた質問（見張り）に答える（docs/design/21_tool_control.md）。
+見張りの記録は logs/watch/ に残る。
+
 --board-port を付けると、配信のオーバーレイ用に目標を HTTP で出す:
 http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。
 
@@ -21,7 +25,7 @@ http://127.0.0.1:<port>/overlay（ailoveshen[stream] が要る）。
 
 使い方:
     python examples/integration_test_minecraft.py [--max-steps 300] [--comments comments.json]
-        [--board-port 8765]
+        [--board-port 8765] [--control candidates|tools]
 
 comments.json: [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}, ...]
 （after_seconds はプレイ開始からの秒数）
@@ -68,9 +72,14 @@ async def feed_comments(comments: list[dict], game: GameService, llm: LLMService
         print(f"[reply] ({time.monotonic() - t:.1f}s) {reply}", flush=True)
 
 
-async def run(max_steps: int, comments: list[dict], board_port: int | None) -> bool:
+async def run(
+    max_steps: int, comments: list[dict], board_port: int | None, control: str | None = None
+) -> bool:
     """プレイして、家が完成したかを返す。"""
     settings = load_settings(config_dir=CONFIG_DIR)
+    if control:
+        settings.minecraft.control = control
+    print(f"[control] {settings.minecraft.control}", flush=True)
     event_bus = AsyncEventBus()
     conversation = Conversation()
 
@@ -158,9 +167,14 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=300)
     parser.add_argument("--comments", type=Path, help="台本の視聴者コメント（JSON）")
     parser.add_argument("--board-port", type=int, help="目標ボード（オーバーレイ）を出すポート")
+    parser.add_argument(
+        "--control",
+        choices=["candidates", "tools"],
+        help="行動の決め方（既定は設定の minecraft.agent.control）",
+    )
     args = parser.parse_args()
     comments = json.loads(args.comments.read_text()) if args.comments else []
-    sys.exit(0 if asyncio.run(run(args.max_steps, comments, args.board_port)) else 1)
+    sys.exit(0 if asyncio.run(run(args.max_steps, comments, args.board_port, args.control)) else 1)
 
 
 if __name__ == "__main__":

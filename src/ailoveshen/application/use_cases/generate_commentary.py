@@ -83,6 +83,7 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
             text = await self._text_generator.generate(
                 prompt=prompt,
                 system_instruction=system_prompt,
+                purpose="commentary",
             )
 
             if text:

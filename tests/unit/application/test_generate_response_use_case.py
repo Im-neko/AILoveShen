@@ -151,6 +151,7 @@ class TestGenerateResponseUseCase:
         mock_text_generator.generate.assert_called_once_with(
             prompt="Response prompt",
             system_instruction="System prompt",
+            purpose="reply",
         )
 
     @pytest.mark.asyncio

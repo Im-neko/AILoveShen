@@ -149,7 +149,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 user_name=request.user_name, message=request.message, context=context
             )
             text = await self._text_generator.generate(
-                prompt=prompt, system_instruction=system_prompt
+                prompt=prompt, system_instruction=system_prompt, purpose="reply"
             )
             return text, None
 
@@ -163,7 +163,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 previous_error=error,
             )
             data = await self._text_generator.generate_json(
-                prompt, reply_schema(), system_instruction=system_prompt
+                prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
             )
             text = str(data.get("reply", "")).strip()
             if data.get("request") != RequestHandling.ACCEPT.value:

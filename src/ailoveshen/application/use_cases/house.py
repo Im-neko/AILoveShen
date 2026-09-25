@@ -117,7 +117,7 @@ class HouseDesigner:
             prompt = self._prompt_builder.build_house_design_prompt(
                 self._character, site_note=site_note, previous_error=error
             )
-            data = await self._text_generator.generate_json(prompt, HOUSE_SCHEMA)
+            data = await self._text_generator.generate_json(prompt, HOUSE_SCHEMA, purpose="house")
             try:
                 blueprint = parse_blueprint(data)
             except ValueError as e:

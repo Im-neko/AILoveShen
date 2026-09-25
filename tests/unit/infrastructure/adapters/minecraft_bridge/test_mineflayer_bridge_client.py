@@ -256,3 +256,55 @@ class TestMineflayerBridgeClient:
 
         with pytest.raises(GameBridgeError, match="unreachable"):
             await _client(handler).observe()
+
+
+class TestToolEndpoints:
+    """道具（POST /tool）、共通の状態（GET /state）、中断（POST /abort）（設計書 21）。"""
+
+    @pytest.mark.asyncio
+    async def test_run_tool_posts_the_call_and_turns_lookups_into_json(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append((request.method, request.url.path, json.loads(request.content)))
+            body = json.loads(request.content)
+            if body["name"] == "recipe_of":
+                return httpx.Response(
+                    200, json={"ok": True, "result": {"crafting": []}, "seconds": 0}
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "ok": False,
+                    "refused": True,
+                    "result": "refused: staying inside",
+                    "seconds": 0,
+                },
+            )
+
+        client = _client(handler)
+        assert await client.run_tool("recipe_of", {"item": "stick"}) == (
+            True,
+            '{"crafting": []}',
+            0.0,
+            False,
+        )
+        assert await client.run_tool("goto", {"x": 1, "y": 70, "z": 2}) == (
+            False,
+            "refused: staying inside",
+            0.0,
+            True,
+        )
+        assert seen[1] == ("POST", "/tool", {"name": "goto", "args": {"x": 1, "y": 70, "z": 2}})
+
+    @pytest.mark.asyncio
+    async def test_state_and_abort(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/state":
+                return httpx.Response(200, json={"action": None, "mobs": []})
+            assert json.loads(request.content) == {"reason": "woke up: q"}
+            return httpx.Response(200, json={"aborted": False, "why": "no action is running"})
+
+        client = _client(handler)
+        assert await client.state() == {"action": None, "mobs": []}
+        assert await client.abort("woke up: q") is False

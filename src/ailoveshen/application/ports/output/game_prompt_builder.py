@@ -8,6 +8,7 @@ from typing import Any
 
 from ailoveshen.domain.value_objects import (
     Activity,
+    Candidate,
     CharacterProfile,
     ConversationMessage,
     GameObservation,
@@ -15,6 +16,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     HouseBlueprint,
     Mission,
+    ToolOutcome,
     TownDefinition,
     TownSite,
     TownStage,
@@ -124,6 +126,25 @@ class IGamePromptBuilder(ABC):
             recent_messages: 配信で話されたこと（配信者の言葉と視聴者のチャット）
             predicates: 今意味のある述語
             previous_error: 前回の目標、または中目標の編集が使えなかった理由
+        """
+        ...
+
+    @abstractmethod
+    def build_tool_prompt(
+        self,
+        activity: Activity,
+        state: dict[str, Any],
+        suggestions: Sequence[Candidate],
+        recent_tools: Sequence[ToolOutcome],
+    ) -> str:
+        """
+        配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。
+
+        Args:
+            activity: 配信者が今していること（小目標と進み具合を含む）
+            state: ブリッジの共通の状態（まわりの形、モブと id、欲求）
+            suggestions: ソルバーの提案（参考。従わなくてよい）
+            recent_tools: 直近の道具の呼び出しと結果（古い順）
         """
         ...
 

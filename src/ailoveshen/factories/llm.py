@@ -86,6 +86,7 @@ def create_llm_service(
         retry_max_delay_seconds=gemini.retry.max_delay_seconds,
         retry_exponential_base=gemini.retry.exponential_base,
         min_request_interval_seconds=gemini.rate_limit.min_interval_seconds,
+        thinking_levels=gemini.thinking_levels,
     )
     prompt_builder = PromptTemplateBuilder()
 

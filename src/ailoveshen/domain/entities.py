@@ -559,6 +559,8 @@ class PlaySession(Entity):
     least_remaining: Optional[int] = field(default=None, init=False)
     completion_announced: bool = field(default=False, init=False)
     last_observation: Optional[GameObservation] = field(default=None, init=False)
+    # 道具で操作しているとき、今やろうとしていること（実況と返答も見る。12 の一致）
+    intent: str = field(default="", init=False)
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -590,6 +592,7 @@ class PlaySession(Entity):
             observation=self.last_observation,
             recent_goals=self.recent_goals,
             notes=self.notebook.notes,
+            intent=self.intent,
         )
 
     @property
@@ -657,6 +660,12 @@ class PlaySession(Entity):
         self.consecutive_failures = 0
         self.stalled_steps = 0
         self.least_remaining = None
+        self.intent = ""
+        self.updated_at = _utc_now()
+
+    def set_intent(self, intent: str) -> None:
+        """道具を呼ぶときに配信者が書いた、今やろうとしていることを持つ。"""
+        self.intent = intent.strip()
         self.updated_at = _utc_now()
 
     def record(self, result: ActionResult) -> Optional[MidGoal]:

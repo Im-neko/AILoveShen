@@ -9,11 +9,13 @@ from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.town import TownPlanner
+from ailoveshen.application.use_cases.watcher import ToolWatcher, WatchPolicy
 from ailoveshen.domain.entities import Conversation, MidGoalPlan
 from ailoveshen.domain.value_objects import Mission
 from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
+from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
     MineflayerBridgeClient,
 )
@@ -22,6 +24,7 @@ from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder imp
 )
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
 from ailoveshen.infrastructure.adapters.storage.json_note_store import JsonNoteStore
+from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import JsonlWatchRecorder
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
     GeminiSettings,
@@ -106,6 +109,7 @@ def create_game_service(
         retry_max_delay_seconds=gemini.retry.max_delay_seconds,
         retry_exponential_base=gemini.retry.exponential_base,
         min_request_interval_seconds=gemini.rate_limit.min_interval_seconds,
+        thinking_levels=gemini.thinking_levels,
     )
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
@@ -116,6 +120,27 @@ def create_game_service(
         timeout_seconds=minecraft.request_timeout_seconds,
     )
     prompt_builder = GamePromptTemplateBuilder()
+    # control: tools（設計書 21）: Gemini が道具を呼び、Jev が実行中に質問に答える
+    fast_judge = None
+    tool_watcher = None
+    if minecraft.control == "tools":
+        fast_judge = JevFastJudge(
+            api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+        )
+        w = minecraft.watch
+        tool_watcher = ToolWatcher(
+            bridge=bridge,
+            judge=fast_judge,
+            recorder=JsonlWatchRecorder(w.record_dir) if w.record_dir else None,
+            policy=WatchPolicy(
+                interval_seconds=w.interval_seconds,
+                grace_seconds=w.grace_seconds,
+                threshold=w.threshold,
+                consecutive=w.consecutive,
+                act_on_progress=w.act_on_progress,
+                act_on_questions=w.act_on_questions,
+            ),
+        )
     store = JsonMissionStore(minecraft.mission.store_path)
     notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
     mid_goals = MidGoalKeeper(bridge=bridge, event_publisher=event_publisher, store=store)
@@ -156,6 +181,8 @@ def create_game_service(
         mid_goals=mid_goals,
         town=town,
         notes=notes,
+        control=minecraft.control,
+        tool_watcher=tool_watcher,
     )
     return GameService(
         start_play=start,
@@ -164,4 +191,5 @@ def create_game_service(
         text_generator=text_generator,
         action_selector=action_selector,
         mid_goals=mid_goals,
+        fast_judge=fast_judge,
     )

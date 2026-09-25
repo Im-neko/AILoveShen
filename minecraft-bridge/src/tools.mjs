@@ -229,8 +229,10 @@ export function createTools (deps) {
       }
       return await deps.run(c, label ?? `${name}(${JSON.stringify(args)})`)
     } catch (e) {
-      if (e instanceof Refused) return { ok: false, refused: true, result: `refused: ${e.message}`, seconds: 0 }
-      throw e
+      // 実行の失敗は run() が結果として返す。ここに来るのは、断ったときと、引数が知識と合わない
+      // とき（知らないアイテムなど）: どちらも理由を返し、プレイは止めない
+      if (!(e instanceof Refused)) console.log(`[tool] ${name} の引数を使えなかった: ${e.stack}`)
+      return { ok: false, refused: true, result: `refused: ${e.message}`, seconds: 0 }
     }
   }
 }

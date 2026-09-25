@@ -149,6 +149,8 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     recent = activity.recent_goals
     now = f" [{len(recent) + 1}]" if with_ids and activity.goal is not None else ""
     lines.append(f"- 今の小目標{now}: {_format_goal(activity.goal, activity.observation, titles)}")
+    if activity.intent:
+        lines.append(f"- 今やろうとしていること: {activity.intent}")
     if activity.observation is not None:
         lines.append(_format_situation(activity.observation))
     lines.append("- これまでの小目標（古い順）:")

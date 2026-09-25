@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
+    from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
 
 
 def __getattr__(name: str):
@@ -14,7 +15,11 @@ def __getattr__(name: str):
         from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
 
         return JevActionSelector
+    if name == "JevFastJudge":
+        from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
+
+        return JevFastJudge
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["JevActionSelector"]
+__all__ = ["JevActionSelector", "JevFastJudge"]

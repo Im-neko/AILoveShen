@@ -250,3 +250,89 @@ class TestGeminiTextGeneratorGenerateJson:
 
         with pytest.raises(TextGenerationError, match="JSON"):
             await _generator().generate_json("prompt", self.SCHEMA)
+
+
+def _tool_response(name: str | None, args: dict | None = None) -> types.GenerateContentResponse:
+    """道具を呼んだ（name が None なら呼ばなかった）応答。"""
+    part = (
+        types.Part(function_call=types.FunctionCall(name=name, args=args or {}))
+        if name
+        else types.Part(text="考え中")
+    )
+    return types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(
+                content=types.Content(role="model", parts=[part]),
+                finish_reason=types.FinishReason.STOP,
+            )
+        ],
+        usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=10),
+    )
+
+
+class TestThinkingPerPurpose:
+    """用途ごとの考える深さ（設計書 19 §7）。"""
+
+    def test_each_purpose_gets_its_level_and_unknown_ones_the_default(self, mock_client):
+        g = _generator(thinking_level="low", thinking_levels={"town": "high", "tool": "low"})
+        assert g.thinking_level_for("town") == "high"
+        assert g.thinking_level_for("reply") == "low"
+        assert g.thinking_level_for(None) == "low"
+
+    def test_an_invalid_level_in_the_table_is_rejected_at_startup(self, mock_client):
+        with pytest.raises(ValueError, match="for 'town'"):
+            _generator(thinking_levels={"town": "max"})
+
+    @pytest.mark.asyncio
+    async def test_the_request_carries_the_purposes_level(self, mock_client):
+        mock_client.return_value.aio.models.generate_content.return_value = _response("{}")
+        g = _generator(thinking_levels={"town": "high"})
+        await g.generate_json("p", {"type": "object"}, purpose="town")
+        await g.generate("p", purpose="reply")
+        calls = mock_client.return_value.aio.models.generate_content.call_args_list
+        levels = [c.kwargs["config"].thinking_config.thinking_level for c in calls]
+        assert [getattr(v, "value", v).lower() for v in levels] == ["high", "low"]
+
+
+class TestChooseTool:
+    """choose_tool(): function calling で道具を必ず 1 つ呼ばせる。"""
+
+    def _tools(self):
+        from ailoveshen.application.ports.output.text_generator import ToolSpec
+
+        return [
+            ToolSpec(
+                "dig",
+                "掘る",
+                {
+                    "type": "object",
+                    "properties": {"x": {"type": "integer"}, "intent": {"type": "string"}},
+                    "required": ["intent", "x"],
+                },
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_call_is_forced_and_returned(self, mock_client):
+        client = mock_client.return_value
+        client.aio.models.generate_content.return_value = _tool_response(
+            "dig", {"x": 3, "intent": "掘る"}
+        )
+
+        choice = await _generator().choose_tool("prompt", self._tools(), purpose="tool")
+
+        assert (choice.name, choice.args) == ("dig", {"x": 3, "intent": "掘る"})
+        config = client.aio.models.generate_content.call_args.kwargs["config"]
+        assert config.tool_config.function_calling_config.mode == (
+            types.FunctionCallingConfigMode.ANY
+        )
+        declaration = config.tools[0].function_declarations[0]
+        assert declaration.name == "dig"
+        assert declaration.parameters_json_schema["required"] == ["intent", "x"]
+        assert config.automatic_function_calling.disable is True
+
+    @pytest.mark.asyncio
+    async def test_no_call_is_an_error(self, mock_client):
+        mock_client.return_value.aio.models.generate_content.return_value = _tool_response(None)
+        with pytest.raises(TextGenerationError, match="did not call a tool"):
+            await _generator().choose_tool("prompt", self._tools())
