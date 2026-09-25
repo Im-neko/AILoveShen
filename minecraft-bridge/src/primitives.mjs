@@ -180,10 +180,13 @@ export const bestWeapon = (bot) => {
 
 export async function fight (bot, target, signal) {
   const start = Date.now()
+  // 追う目標は一度だけ置く（動く相手には pathfinder が経路を立て直す）。置き直すたびに、歩く
+  // 途中の掘り（雪など）が止まる（town4d: 同じ雪を 4 回掘りかけたまま、ゾンビに倒された）
+  const follow = new goals.GoalFollow(target, 2)
   try {
     while (bot.entities[target.id] && Date.now() - start < FIGHT_TIMEOUT_MS && !signal.aborted) {
       if (target.position.distanceTo(bot.entity.position) > 3) {
-        bot.pathfinder.setGoal(new goals.GoalFollow(target, 2), true)
+        if (bot.pathfinder.goal !== follow) bot.pathfinder.setGoal(follow, true)
       } else {
         await bot.lookAt(target.position.offset(0, target.height * 0.8, 0), true)
         bot.attack(target)
