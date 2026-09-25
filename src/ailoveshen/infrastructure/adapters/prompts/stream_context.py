@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 
 from ailoveshen.domain.value_objects import (
-    CONDITION_PREDICATES,
+    HERE_SITE,
+    PLANNABLE_CONDITIONS,
     Activity,
     ConversationMessage,
     GameObservation,
@@ -19,6 +20,7 @@ from ailoveshen.domain.value_objects import (
     MessageRole,
     MidGoal,
     MidGoalState,
+    TownSite,
 )
 
 NO_INFORMATION = "特になし"
@@ -33,6 +35,8 @@ ABILITIES = """\
 - 地上を方角を決めて探索する、前に見た場所（資源・動物・チェスト）を覚えていて戻る
 - 暗い場所（洞窟の入口や張り出しの下など、光のない所）では、松明を持っていれば置いて湧き潰しする
 - 家のまわりの地面に松明を並べて、敵が湧かないように明るくする
+- 街の候補地を見て回り、地形（平らな土地、水、崖、地表の石・石炭・鉄、木、動物）を数える
+- 選んだ場所に家を建てて引っ越す（前の家は残り、そのチェストから物を運べる）
 - まだできない: 洞窟の奥へ降りて探検する、2 軒目の建物、畑、釣り、ネザー"""
 
 PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
@@ -57,6 +61,9 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.THROUGH_NIGHT: "through_night: 家で夜を越す（ベッドがあれば寝る）",
     GoalPredicate.EXPLORED: (
         "explored(distance): 今いる場所から distance ブロック離れるまで探索する"
+    ),
+    GoalPredicate.SURVEYED: (
+        "surveyed(count): 街の候補地を count か所見て回る（1 か所ずつ歩いて行き、地形を数える）"
     ),
     GoalPredicate.CLEARED: (
         "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼だけ。素手でも戦える。"
@@ -88,7 +95,28 @@ def format_predicates(predicates: list[GoalPredicate]) -> str:
 
 def format_conditions() -> str:
     """中目標の完了条件に使えるもの。1行に 1つ。"""
-    return format_predicates([p for p in GoalPredicate if p in CONDITION_PREDICATES])
+    return format_predicates([p for p in GoalPredicate if p in PLANNABLE_CONDITIONS])
+
+
+def site_name(site_id: str) -> str:
+    """候補地の id の日本語（here: 最初の家の場所、N: 北、...）。"""
+    return "最初の家の場所" if site_id == HERE_SITE else DIRECTION_NAMES.get(site_id, site_id)
+
+
+def format_site_facts(row: dict) -> str:
+    """ブリッジが測った候補地 1 か所の数字（半径 32 ブロック）。"""
+    return (
+        f"{site_name(str(row['id']))}（{row['x']},{row['z']}、家から {row['distance']}m）: "
+        f"家を建てられる平らな区画 {row['flat_plots']}、水 {row['water_pct']}%、"
+        f"急な段差 {row['steep_pct']}%、地表の石 {row['stone']}・石炭 {row['coal']}・"
+        f"鉄 {row['iron']}、原木 {row['logs']}、溶岩 {row['lava']}、動物 {row['animals']}"
+        f"（読み込めた範囲 {row['loaded_pct']}%）"
+    )
+
+
+def format_site_choice(site: TownSite) -> str:
+    """選んだ街の場所（決めたこと）。"""
+    return f"「{site.name}」を{site_name(site.site_id)}（{site.x},{site.z}）に作る: {site.reason}"
 
 
 def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
@@ -103,6 +131,7 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     lines = []
     if activity.mission is not None:
         lines.append(f"- 大目標: {activity.mission.text}")
+    lines += _format_site(activity)
     if activity.town is not None:
         lines += _format_town(activity)
     pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
@@ -194,6 +223,24 @@ def _format_equipment(me: dict) -> str:
     return "、".join(held + worn) or "なし"
 
 
+def _format_site(activity: Activity) -> list[str]:
+    """街の場所: 決めたこと（配信者）と、調べた事実（ブリッジが測った数字）を分けて出す。"""
+    obs = activity.observation
+    survey = (obs.state.get("survey") if obs else None) or {}
+    rows = survey.get("sites") or []
+    if activity.site is None and not rows:
+        return []
+    if activity.site is not None:
+        lines = [f"- 街の場所（決めたこと）: {format_site_choice(activity.site)}"]
+    else:
+        done = f"{len(rows)}/{survey.get('planned', 0)}"
+        lines = [f"- 街の場所: まだ決めていない（候補地を調べた数 {done}）"]
+    if rows:
+        lines.append("- 調べた候補地（ブリッジが測った数字。候補地のまわり半径 32 ブロック）:")
+        lines += [f"  - {format_site_facts(r)}" for r in rows]
+    return lines
+
+
 def _format_town(activity: Activity) -> list[str]:
     town = activity.town
     assert town is not None
@@ -222,6 +269,8 @@ def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
     summary = goal.summary()
     progress = f"（{'; '.join(summary)}）" if summary else ""
     stage = f" [街の段階 {goal.stage + 1}: やめられない]" if goal.stage is not None else ""
+    if goal.prepares_town:
+        stage = " [街の準備: やめられない]"
     return (
         f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}{stage}"
         f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,13 +18,14 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Mission,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 
 
 class JsonMissionStore(IMissionStore):
     """
-    大目標、その中目標、街を 1つの JSON ファイルに保存する。
+    大目標、その中目標、街とその場所を 1つの JSON ファイルに保存する。
 
     一時ファイルに書いてから名前を変えるので、書き込み中に落ちても
     最後に完全に保存した内容が残る。
@@ -51,6 +53,7 @@ class JsonMissionStore(IMissionStore):
             town=_town(data["town"]) if data.get("town") else None,
             town_stage=int(data.get("town_stage", 0)),
             stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
+            site=TownSite(**data["site"]) if data.get("site") else None,
         )
         logger.info(f"中目標を {self._path} から読み込んだ")
         return saved
@@ -65,6 +68,7 @@ class JsonMissionStore(IMissionStore):
             "town": _town_dict(plan.town) if plan.town else None,
             "town_stage": plan.town_stage,
             "stage_met": [c.to_dict() for c in plan.stage_met],
+            "site": asdict(plan.site) if plan.site else None,
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
@@ -84,6 +88,7 @@ def _to_dict(goal: MidGoal) -> dict[str, Any]:
         "steps": goal.steps,
         "progress": list(goal.progress),
         "stage": goal.stage,
+        "prepares_town": goal.prepares_town,
     }
 
 
@@ -139,4 +144,5 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
         steps=int(data.get("steps", 0)),
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),
+        prepares_town=bool(data.get("prepares_town", False)),
     )

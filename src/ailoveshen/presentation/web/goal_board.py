@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    TownSiteChosenEvent,
 )
 from ailoveshen.domain.value_objects import Activity, GameObservation, MidGoal, MidGoalState
 
@@ -43,6 +45,7 @@ EVENTS: tuple[type[DomainEvent], ...] = (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    TownSiteChosenEvent,
     GameActionExecutedEvent,
 )
 
@@ -54,6 +57,8 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             "playing": False,
             "mission": None,
             "town": None,
+            "site": None,
+            "survey": None,
             "mid_goals": [],
             "goal": None,
             "home": None,
@@ -68,6 +73,9 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         "playing": True,
         "mission": activity.mission.text if activity.mission else None,
         "town": _town(activity),
+        # 決めたこと（配信者）と、調べた事実（ブリッジが測った候補地の数字）
+        "site": asdict(activity.site) if activity.site else None,
+        "survey": (obs.state.get("survey") if obs else None) or None,
         "mid_goals": [
             _mid_goal(g, "current" if i == 0 else "pending") for i, g in enumerate(pending)
         ]
@@ -132,6 +140,7 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
         "state": state,  # current / pending / done / dropped
         "requested_by": goal.requested_by,
         "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None
+        "prepares_town": goal.prepares_town,  # 街の準備（候補地の調査、引っ越し）
         "conditions": [c.describe() for c in goal.conditions],
         "progress": list(goal.progress),
         "summary": list(goal.summary()),  # ソルバーの細かい手順は除く

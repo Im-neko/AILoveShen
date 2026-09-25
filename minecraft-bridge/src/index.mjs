@@ -3,7 +3,7 @@
 //   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}]}
 //                          -> 目標を設定する（不正なら理由を添えて 400）。目標の状態を返す。
 //                             keep: 中目標のためにチェストに取っておくもの（この目標のために取り出さない）
-//   GET  /observe          -> { busy, observation, needs, goal: {spec, met, remaining, lines, blocked} | null,
+//   GET  /observe          -> { busy, observation（survey: 調べた候補地の数字を含む）, needs, goal: {spec, met, remaining, lines, blocked} | null,
 //                               candidates: [{id, verb, target, ...}] }
 //   POST /act {id}         -> 候補をもう一度作り、この id の候補を終わるまで実行する。
 //                             { ok, result, seconds }
@@ -13,7 +13,6 @@
 //                             （design: モデルの設計図。できた家とともに取っておく。site: 建てる場所 {x, z}。
 //                             建ち終わると家になり、前の家は formerHomes に残る）
 //   GET  /build-plan       -> 建築の状態（placed/total、原点、場所、まだないブロックの先頭）
-//   GET  /sites            -> 調べた候補地の数字 { center, planned, sites: [{id, x, z, distance, flat_plots, ...}] }
 //
 // 設計: docs/design/11_primitive_actions.md
 // 環境変数: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
@@ -80,7 +79,8 @@ function observation () {
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
   extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
-  if (state.survey) extra.survey = { planned: state.survey.sites.length, surveyed: surveyedSites(state).length }
+  // 調べた候補地の数字（ブリッジが測ったものだけ。まだ調べていない候補地は入らない）
+  if (state.survey) extra.survey = { planned: state.survey.sites.length, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) }
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
@@ -207,10 +207,6 @@ async function handle (req, res) {
     state.plan = new BuildPlan(await readJson(req))
     persist()
     return send(res, 200, state.plan.status(bot))
-  }
-  if (req.method === 'GET' && req.url === '/sites') {
-    // 調べた候補地の数字（ブリッジが測ったものだけ）。まだ調べていない候補地は入らない
-    return send(res, 200, { center: state.survey?.center ?? null, planned: state.survey?.sites.length ?? 0, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) })
   }
   if (req.method === 'GET' && req.url === '/build-plan') {
     return send(res, state.plan ? 200 : 404, state.plan ? state.plan.status(bot) : { error: 'no plan' })

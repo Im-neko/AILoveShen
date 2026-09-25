@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ailoveshen.domain.entities import MidGoalPlan
-from ailoveshen.domain.value_objects import GoalSpec, MidGoal, Mission, TownDefinition
+from ailoveshen.domain.value_objects import GoalSpec, MidGoal, Mission, TownDefinition, TownSite
 
 
 @dataclass(frozen=True)
 class SavedPlan:
-    """プランのうち保存するもの: 大目標、中目標、次の id の番号、街。"""
+    """プランのうち保存するもの: 大目標、中目標、次の id の番号、街とその場所。"""
 
     mission: Mission
     pending: tuple[MidGoal, ...]
@@ -21,6 +21,7 @@ class SavedPlan:
     town: Optional[TownDefinition] = None
     town_stage: int = 0
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
+    site: Optional[TownSite] = None  # 選んだ街の場所
 
 
 class IMissionStore(ABC):

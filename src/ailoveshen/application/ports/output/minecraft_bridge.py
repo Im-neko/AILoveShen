@@ -12,6 +12,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    TownSite,
 )
 
 
@@ -72,10 +73,12 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
-    async def set_build_plan(self, blueprint: HouseBlueprint) -> None:
+    async def set_build_plan(self, blueprint: HouseBlueprint, site: TownSite | None = None) -> None:
         """
         建てる家をブリッジに渡す: 置く順に並べたブロックと、設計そのもの。設計は、
-        ブリッジが建った家と一緒に持っておく（観測の home design）。
+        ブリッジが建った家と一緒に持っておく（観測の home design）。`site` があれば
+        そこに建てる（引っ越し先。建ち終わると家になり、前の家は残る）。なければ
+        ボットのいる所のまわりに建てる。
 
         Raises:
             GameBridgeError: ブリッジがプランを拒否したとき

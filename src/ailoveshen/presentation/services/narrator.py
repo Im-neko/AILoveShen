@@ -17,6 +17,7 @@ from ailoveshen.domain.events import (
     MidGoalDroppedEvent,
     TownCompletedEvent,
     TownDefinedEvent,
+    TownSiteChosenEvent,
 )
 from ailoveshen.domain.value_objects import Activity
 from ailoveshen.presentation.services.llm_service import LLMService
@@ -28,8 +29,8 @@ class Narrator:
 
     小目標の切れ目で起きたことは、次の目標と一緒に（1回の発話で）話す:
     小目標の終わり、完了した中目標とやめた中目標（視聴者の頼みをやめたときは
-    必ず話す）、配信者が自分で加えた中目標、家の完成、街（決めたときの中身と、
-    完成）。受けた視聴者の頼みは改めて話さない（いつやるかは返答で言っている）。
+    必ず話す）、配信者が自分で加えた中目標、家の完成、街（選んだ場所とその理由、
+    決めたときの中身、完成）。受けた視聴者の頼みは改めて話さない（いつやるかは返答で言っている）。
 
     activity はイベントが起きたときに取る。そのため実況は、生成中に決まった
     目標ではなく、そのときボットが取り組んでいた目標について話す。
@@ -64,6 +65,7 @@ class Narrator:
         bus.subscribe(MidGoalCompletedEvent, self.on_mid_goal_completed)
         bus.subscribe(MidGoalDroppedEvent, self.on_mid_goal_dropped)
         bus.subscribe(HouseCompletedEvent, self.on_house_completed)
+        bus.subscribe(TownSiteChosenEvent, self.on_town_site_chosen)
         bus.subscribe(TownDefinedEvent, self.on_town_defined)
         bus.subscribe(TownCompletedEvent, self.on_town_completed)
 
@@ -100,6 +102,11 @@ class Narrator:
     async def on_house_completed(self, event: HouseCompletedEvent) -> None:
         """家の完成。次の目標と一緒に話す（建築の小目標も同時に終わる）。"""
         self._pending.append(f"家「{event.name}」が完成した")
+
+    async def on_town_site_chosen(self, event: TownSiteChosenEvent) -> None:
+        """候補地から選んだ街の場所と、その理由。次の目標と一緒に話す。"""
+        move = "そこに家を建てて引っ越す" if event.moving else "最初の家の場所のまま"
+        self._pending.append(f"街「{event.name}」の場所を決めた（{move}）: {event.reason}")
 
     async def on_town_defined(self, event: TownDefinedEvent) -> None:
         """配信者が決めた街は、次の目標と一緒に話す。"""

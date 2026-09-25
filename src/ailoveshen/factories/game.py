@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.town import TownPlanner
@@ -116,6 +117,9 @@ def create_game_service(
     store = JsonMissionStore(minecraft.mission.store_path)
     mid_goals = MidGoalKeeper(bridge=bridge, event_publisher=event_publisher, store=store)
     profile = create_character_profile(character)
+    designer = HouseDesigner(
+        text_generator=text_generator, prompt_builder=prompt_builder, character=profile
+    )
     town = TownPlanner(
         text_generator=text_generator,
         prompt_builder=prompt_builder,
@@ -123,14 +127,14 @@ def create_game_service(
         event_publisher=event_publisher,
         character=profile,
         store=store,
+        mid_goals=mid_goals,
+        designer=designer,
     )
 
     start = StartPlayUseCase(
-        text_generator=text_generator,
-        prompt_builder=prompt_builder,
         bridge=bridge,
         event_publisher=event_publisher,
-        character=profile,
+        designer=designer,
         plan=create_mid_goal_plan(minecraft.mission),
         store=store,
         town=town,
@@ -146,6 +150,7 @@ def create_game_service(
         event_publisher=event_publisher,
         conversation=conversation,
         mid_goals=mid_goals,
+        town=town,
     )
     return GameService(
         start_play=start,

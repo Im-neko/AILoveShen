@@ -7,6 +7,7 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Mission,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
@@ -83,3 +84,16 @@ class TestJsonMissionStore:
         saved = store.load()
 
         assert (saved.town_stage, saved.stage_met) == (0, (lit,))
+
+    def test_site_and_town_goals_round_trip(self, tmp_path):
+        """選んだ場所と、街の準備の中目標（やめられない）が戻る。"""
+        plan = MidGoalPlan(mission=Mission("街にしていく"))
+        plan.choose_site(TownSite("E", 96, 0, "石が多い", "いしのまち"))
+        plan.add("引っ越す", (BUILT, BED), prepares_town=True)
+        store = JsonMissionStore(tmp_path / "mission.json")
+
+        store.save(plan)
+        saved = store.load()
+
+        assert saved.site == plan.site
+        assert saved.pending[0].prepares_town

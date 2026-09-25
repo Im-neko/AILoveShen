@@ -77,6 +77,7 @@ export class BuildPlan {
     return {
       origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z },
       site: this.site,
+      design: this.design,
       total: this.blocks.length,
       placed: this.blocks.length - pending.length,
       complete: !!this.origin && pending.length === 0,

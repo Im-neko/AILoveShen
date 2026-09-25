@@ -17,6 +17,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    TownSite,
 )
 
 
@@ -97,8 +98,8 @@ class MineflayerBridgeClient(IMinecraftBridge):
             seconds=float(data["seconds"]),
         )
 
-    async def set_build_plan(self, blueprint: HouseBlueprint) -> None:
-        """設計図のブロックを置く順に、設計と一緒に送る。"""
+    async def set_build_plan(self, blueprint: HouseBlueprint, site: TownSite | None = None) -> None:
+        """設計図のブロックを置く順に、設計と（あれば）建てる場所と一緒に送る。"""
         b = blueprint
         payload = {
             "blocks": [{"x": p.x, "y": p.y, "z": p.z, "block": p.kind.value} for p in b.blocks()],
@@ -115,6 +116,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
                 "door_offset": b.door_offset,
                 "corner_pillars": b.corner_pillars,
             },
+            "site": {"x": site.x, "z": site.z} if site else None,
         }
         await self._request("PUT", "/build-plan", json=payload)
 

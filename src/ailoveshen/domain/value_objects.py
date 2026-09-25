@@ -368,6 +368,7 @@ class GoalPredicate(str, Enum):
     - THROUGH_NIGHT: 夜が明けた（家の中にいたか、寝ていた）
     - EXPLORED: 目標を設定した場所から `distance` ブロック離れた
     - CLEARED: 扉の近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
+    - SURVEYED: 街の候補地を `count` か所調べた（家を中心に、ブリッジが地形を数字にする）
     """
 
     HAVE = "have"
@@ -379,6 +380,7 @@ class GoalPredicate(str, Enum):
     CLEARED = "cleared"
     STORED = "stored"
     LIT = "lit"
+    SURVEYED = "surveyed"
 
 
 @dataclass(frozen=True)
@@ -407,6 +409,8 @@ class GoalSpec:
                 raise ValueError(f"{name} needs an item")
             if self.count is None or self.count < 1:
                 raise ValueError(f"{name} needs a positive count, got {self.count}")
+        if self.predicate == GoalPredicate.SURVEYED and (self.count is None or self.count < 1):
+            raise ValueError(f"surveyed needs a positive count, got {self.count}")
         if self.predicate == GoalPredicate.PLACED and not (self.item and self.where):
             raise ValueError("placed needs an item and where")
         if self.predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT) and (
@@ -464,8 +468,11 @@ CONDITION_PREDICATES = frozenset(
         GoalPredicate.HAVE,
         GoalPredicate.STORED,
         GoalPredicate.LIT,
+        GoalPredicate.SURVEYED,
     }
 )
+# LLM が中目標や街の段階に書ける条件。調査は、街の場所を決める前にコードが足すだけ
+PLANNABLE_CONDITIONS = CONDITION_PREDICATES - {GoalPredicate.SURVEYED}
 _SURVIVAL_PREDICATES = frozenset(
     {GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME, GoalPredicate.CLEARED}
 )
@@ -500,6 +507,8 @@ class MidGoal:
 
     `requested_by` は頼んだ視聴者（None: 配信者自身のもの）。
     `stage` は、それが表す街の段階（None: 段階ではない）。
+    `prepares_town` は、街の段階の前にやる準備（候補地の調査、選んだ場所への引っ越し）。
+    段階と同じく、やめられない。
     `steps` は、そのために小目標が使ったステップの数（視聴者のものには予算がある）。
 
     Raises:
@@ -516,6 +525,7 @@ class MidGoal:
     steps: int = 0
     progress: tuple[str, ...] = ()  # 最後に判定したときの、条件の進み具合
     stage: Optional[int] = None
+    prepares_town: bool = False
 
     def __post_init__(self) -> None:
         """条件を確かめる。"""
@@ -755,7 +765,7 @@ class TownStage:
         if not self.conditions and not self.unresolved:
             raise ValueError(f"town stage {self.title} has nothing to do")
         for c in self.conditions:
-            if c.predicate not in CONDITION_PREDICATES:
+            if c.predicate not in PLANNABLE_CONDITIONS:
                 raise ValueError(f"{c.predicate.value} cannot be a condition of a town stage")
 
     @property
@@ -779,6 +789,38 @@ class TownDefinition:
             raise ValueError("the town needs at least one stage")
 
 
+HERE_SITE = "here"  # 最初の家の場所の候補地（minecraft-bridge/src/survey.mjs）
+
+
+@dataclass(frozen=True)
+class TownSite:
+    """
+    配信者が選んだ街の場所（決めたこと）。候補地の数字（調べた事実）はブリッジが持つ。
+
+    `site_id` は候補地の id（here: 最初の家の場所、N / NE / ...: その方角）。
+
+    Raises:
+        ValueError: 候補地、理由、名前のどれかがないとき。
+    """
+
+    site_id: str
+    x: int
+    z: int
+    reason: str
+    name: str
+
+    def __post_init__(self) -> None:
+        """決めたことを確かめる。"""
+        for label in ("site_id", "reason", "name"):
+            if not getattr(self, label):
+                raise ValueError(f"the town site needs a {label}")
+
+    @property
+    def moving(self) -> bool:
+        """最初の家から引っ越すか。"""
+        return self.site_id != HERE_SITE
+
+
 @dataclass(frozen=True)
 class Activity:
     """
@@ -789,6 +831,7 @@ class Activity:
 
     mission: Optional[Mission] = None
     town: Optional[TownDefinition] = None
+    site: Optional[TownSite] = None  # 選んだ街の場所（決めたこと）
     town_stage: int = 0  # 済んだ段階の数
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
     mid_goals: tuple[MidGoal, ...] = ()

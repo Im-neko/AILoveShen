@@ -13,12 +13,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
+from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.value_objects import (
-    CONDITION_PREDICATES,
+    PLANNABLE_CONDITIONS,
     GameObservation,
     GoalPredicate,
     GoalSpec,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 
@@ -32,7 +34,7 @@ ITEM_DESCRIPTION = (
     "wooden_sword, wooden_pickaxe"
 )
 # 条件を示す順番（frozenset には順番がない）
-_CONDITION_ORDER = [p for p in GoalPredicate if p in CONDITION_PREDICATES]
+_CONDITION_ORDER = [p for p in GoalPredicate if p in PLANNABLE_CONDITIONS]
 
 
 class Serves(str, Enum):
@@ -207,7 +209,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.PLACED)
             else None,
             count=int(data["count"])
-            if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED)
+            if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.SURVEYED)
             else None,
             where="home" if predicate == GoalPredicate.PLACED else None,
             distance=int(data["distance"])
@@ -233,7 +235,7 @@ def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
         raise ValueError(f"mid goal {title} needs conditions")
     conditions = tuple(parse_spec(c) for c in raw)
     for c in conditions:
-        if c.predicate not in CONDITION_PREDICATES:
+        if c.predicate not in PLANNABLE_CONDITIONS:
             raise ValueError(f"{c.predicate.value} cannot be a condition of a mid goal")
     position = data.get("position")
     return MidGoalProposal(
@@ -287,8 +289,11 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
     )
 
 
-def predicates_now(obs: GameObservation) -> list[GoalPredicate]:
-    """今意味のある述語（例: 家ができる前は、家についての述語は出さない）。"""
+def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicate]:
+    """
+    今意味のある述語（例: 家ができる前は、家についての述語は出さない）。調査は、それを
+    求める中目標があるときだけ（中目標を足した直後の観測には、調査の計画がまだない）。
+    """
     out = []
     if obs.has_plan and not obs.house_complete:
         out.append(GoalPredicate.BUILT)
@@ -301,6 +306,10 @@ def predicates_now(obs: GameObservation) -> list[GoalPredicate]:
             out.append(GoalPredicate.PLACED)
         out.append(GoalPredicate.STORED)
         out.append(GoalPredicate.LIT)
+    if obs.has_home and any(
+        c.predicate == GoalPredicate.SURVEYED for g in plan.pending for c in g.conditions
+    ):
+        out.append(GoalPredicate.SURVEYED)
     out.append(GoalPredicate.EXPLORED)
     return out
 
@@ -367,7 +376,7 @@ def parse_stage(data: dict[str, Any], title: str, why: str) -> TownStage:
     """
     conditions = tuple(parse_spec(c) for c in data.get("conditions") or [])
     for c in conditions:
-        if c.predicate not in CONDITION_PREDICATES:
+        if c.predicate not in PLANNABLE_CONDITIONS:
             raise ValueError(f"{c.predicate.value} cannot be a condition of a town stage")
     unresolved = tuple(str(u).strip() for u in data.get("unresolved") or [] if str(u).strip())
     return TownStage(title=title, why=why, conditions=conditions, unresolved=unresolved)
@@ -387,3 +396,40 @@ def parse_town(data: dict[str, Any]) -> TownDefinition:
             raise ValueError("a town stage needs a title")
         stages.append(parse_stage(raw, title, str(raw.get("why", ""))))
     return TownDefinition(text=str(data.get("text", "")).strip(), stages=tuple(stages))
+
+
+def site_schema(site_ids: list[str]) -> dict[str, Any]:
+    """街の場所の選択の JSON スキーマ: 調べた候補地から 1 か所、理由、街の名前。"""
+    return {
+        "type": "object",
+        "properties": {
+            "site_id": {"type": "string", "enum": site_ids},
+            "reason": {
+                "type": "string",
+                "description": "Why this site, from its numbers, in 1-2 sentences (said on stream)",
+            },
+            "town_name": {"type": "string", "description": "A short name for the town"},
+        },
+        "required": ["site_id", "reason", "town_name"],
+    }
+
+
+def parse_site(data: dict[str, Any], rows: list[dict[str, Any]]) -> TownSite:
+    """
+    選んだ街の場所をパースする。
+
+    Raises:
+        ValueError: 調べた候補地にない場所か、理由か名前がないとき
+    """
+    site_id = str(data.get("site_id", ""))
+    row = next((r for r in rows if str(r.get("id")) == site_id), None)
+    if row is None:
+        ids = ", ".join(str(r.get("id")) for r in rows)
+        raise ValueError(f"{site_id or 'no site'} is not one of the surveyed sites ({ids})")
+    return TownSite(
+        site_id=site_id,
+        x=int(row["x"]),
+        z=int(row["z"]),
+        reason=str(data.get("reason", "")).strip(),
+        name=str(data.get("town_name", "")).strip(),
+    )

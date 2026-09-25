@@ -16,6 +16,7 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     Mission,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 
@@ -30,20 +31,50 @@ class IGamePromptBuilder(ABC):
 
     @abstractmethod
     def build_house_design_prompt(
-        self, character: CharacterProfile, previous_error: str = ""
+        self, character: CharacterProfile, site_note: str = "", previous_error: str = ""
     ) -> str:
         """
         LLM に小さな家の設計を頼むプロンプトを組み立てる。
 
         Args:
             character: 配信者。設計にはその性格を反映する
+            site_note: 建てる場所の説明（引っ越し先の家。最初の家では空）
             previous_error: 前回の設計が拒否された理由（あれば）
         """
         ...
 
     @abstractmethod
+    def build_site_prompt(
+        self,
+        character: CharacterProfile,
+        mission: Mission,
+        sites: Sequence[dict[str, Any]],
+        previous_error: str = "",
+    ) -> str:
+        """
+        調べた候補地の表から、街の場所を 1 か所選ばせるプロンプトを組み立てる。
+
+        Args:
+            character: 配信者
+            mission: 街を作る大目標
+            sites: ブリッジが測った候補地の数字（1 行が 1 か所）
+            previous_error: 前回の選択が拒否された理由（あれば）
+        """
+        ...
+
+    @abstractmethod
+    def describe_site(self, site: TownSite, facts: dict[str, Any]) -> str:
+        """選んだ街の場所の説明（決めたことと、そこの数字）。家の設計に添える。"""
+        ...
+
+    @abstractmethod
     def build_town_prompt(
-        self, character: CharacterProfile, mission: Mission, previous_error: str = ""
+        self,
+        character: CharacterProfile,
+        mission: Mission,
+        site: TownSite,
+        facts: dict[str, Any],
+        previous_error: str = "",
     ) -> str:
         """
         大目標の街がどんなものかを、段階に分けて LLM に尋ねるプロンプトを組み立てる。
@@ -51,6 +82,8 @@ class IGamePromptBuilder(ABC):
         Args:
             character: 配信者
             mission: 街を定める大目標
+            site: 選んだ街の場所（街はそこに合わせて定める）
+            facts: その場所の、ブリッジが測った数字
             previous_error: 前回の定義が拒否された理由（あれば）
         """
         ...

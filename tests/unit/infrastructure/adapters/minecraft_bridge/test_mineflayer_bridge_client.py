@@ -6,7 +6,13 @@ import httpx
 import pytest
 
 from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
-from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, HouseBlueprint, Side
+from ailoveshen.domain.value_objects import (
+    GoalPredicate,
+    GoalSpec,
+    HouseBlueprint,
+    Side,
+    TownSite,
+)
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
     MineflayerBridgeClient,
 )
@@ -216,6 +222,21 @@ class TestMineflayerBridgeClient:
             "door_offset": 2,
             "corner_pillars": True,
         }
+        assert body["site"] is None
+
+    @pytest.mark.asyncio
+    async def test_set_build_plan_sends_the_site(self):
+        """引っ越し先の家は、建てる場所と一緒に送る。"""
+        seen = {}
+
+        def handler(req):
+            seen["body"] = json.loads(req.content)
+            return httpx.Response(200, json={})
+
+        blueprint = HouseBlueprint("石の家", "c", 5, 5, 3, Side.SOUTH, 2)
+        await _client(handler).set_build_plan(blueprint, TownSite("E", 96, 0, "r", "n"))
+
+        assert seen["body"]["site"] == {"x": 96, "z": 0}
 
     @pytest.mark.asyncio
     async def test_error_status_raises(self):

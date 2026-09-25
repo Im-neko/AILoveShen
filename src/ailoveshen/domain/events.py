@@ -200,6 +200,16 @@ class TownDefinedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class TownSiteChosenEvent(DomainEvent):
+    """配信者が候補地を見比べて、街の場所を選んだときのイベント。"""
+
+    name: str = ""  # 街の名前
+    site_id: str = ""
+    reason: str = ""
+    moving: bool = False  # 最初の家から引っ越すか
+
+
+@dataclass(frozen=True)
 class TownCompletedEvent(DomainEvent):
     """街のすべての段階が済んだときのイベント。"""
 

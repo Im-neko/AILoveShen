@@ -42,12 +42,23 @@
     if (!data.playing) return;
     el('mission').textContent = data.mission ?? '';
     const town = data.town;
-    el('town').classList.toggle('hidden', !town);
+    const site = data.site;
+    const survey = data.survey;
+    const name = site ? `街「${site.name}」` : '街';
+    let line = null;
     if (town) {
       const current = town.stages.findIndex((s) => s.state === 'current');
-      el('town').replaceChildren();
+      line = town.complete ? `${name}が完成！` : `${name} ${current + 1}/${town.stages.length}: ${town.stages[current].title}`;
+    } else if (site) {
+      line = `${name}の場所を決めた`;
+    } else if (survey) {
+      line = `街の候補地を調べている ${survey.sites.length}/${survey.planned}`;
+    }
+    el('town').classList.toggle('hidden', !line);
+    el('town').replaceChildren();
+    if (line) {
       const b = document.createElement('b');
-      b.textContent = town.complete ? '街が完成！' : `街 ${current + 1}/${town.stages.length}: ${town.stages[current].title}`;
+      b.textContent = line;
       el('town').append(b);
     }
     const mid = el('mid');

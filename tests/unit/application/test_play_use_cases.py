@@ -6,12 +6,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.ports.output.mission_store import SavedPlan
+from ailoveshen.application.use_cases.house import HOUSE_SCHEMA, HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
-from ailoveshen.application.use_cases.play import (
-    HOUSE_SCHEMA,
-    AdvancePlayUseCase,
-    StartPlayUseCase,
-)
+from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
@@ -180,11 +177,9 @@ class TestStartPlay:
             store = Mock()
             store.load.return_value = None
         return StartPlayUseCase(
-            text_generator=text_generator,
-            prompt_builder=prompt_builder,
             bridge=bridge,
             event_publisher=events,
-            character=CharacterProfile(),
+            designer=HouseDesigner(text_generator, prompt_builder, CharacterProfile()),
             plan=plan or _plan(),
             store=store,
             town=AsyncMock(),
@@ -205,6 +200,7 @@ class TestStartPlay:
         assert project.max_stalled_steps == 5
         assert text_generator.generate_json.call_args.args[1] is HOUSE_SCHEMA
         bridge.set_build_plan.assert_awaited_once_with(project.blueprint)
+        assert prompt_builder.build_house_design_prompt.call_args.kwargs["site_note"] == ""
         assert _published(events, HouseDesignedEvent)[0].name == "ひだまり"
 
     @pytest.mark.asyncio
@@ -260,6 +256,22 @@ class TestStartPlay:
         assert session.blueprint.name == "ひだまり"
         assert session.blueprint.door_side == Side.SOUTH
         text_generator.generate_json.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_restart_during_the_move_keeps_the_new_house(
+        self, text_generator, prompt_builder, bridge, events
+    ):
+        """引っ越しの途中の再起動: 建てている引っ越し先の家の設計で続け、完成はまだ言っていない。"""
+        moving = _obs(has_plan=True, house_complete=False, has_home=True)
+        moving.state["home"] = {"name": "小屋", "design": {**VALID_DESIGN, "name": "小屋"}}
+        moving.state["build"] = {"design": {**VALID_DESIGN, "name": "石の家"}, "complete": False}
+        bridge.observe.return_value = moving
+
+        session = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
+
+        assert session.blueprint.name == "石の家"
+        assert not session.completion_announced
+        bridge.set_build_plan.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_new_plan_comes_from_the_configuration_and_is_saved(
@@ -328,8 +340,21 @@ class TestAdvancePlay:
         return Conversation()
 
     @pytest.fixture
+    def town(self):
+        """街の準備のモック（ここでは何もしない）。"""
+        return AsyncMock()
+
+    @pytest.fixture
     def use_case(
-        self, bridge, text_generator, prompt_builder, selector, events, conversation, mid_goals
+        self,
+        bridge,
+        text_generator,
+        prompt_builder,
+        selector,
+        events,
+        conversation,
+        mid_goals,
+        town,
     ):
         return AdvancePlayUseCase(
             bridge=bridge,
@@ -339,6 +364,7 @@ class TestAdvancePlay:
             event_publisher=events,
             conversation=conversation,
             mid_goals=mid_goals,
+            town=town,
         )
 
     @pytest.mark.asyncio
@@ -352,6 +378,28 @@ class TestAdvancePlay:
         await use_case.execute(_session(plan=plan))
 
         bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (stock,))
+
+    @pytest.mark.asyncio
+    async def test_the_town_advances_after_the_judgement_before_the_decision(
+        self, use_case, text_generator, bridge, town
+    ):
+        """済んだ中目標（調査）を判定してから街の準備を進め、そのあとの見え方で決める。"""
+        text_generator.generate_json.return_value = PLANKS
+        session = _session()
+        order = []
+
+        async def check(specs):
+            order.append("judge")
+            return await _judged()(specs)
+
+        bridge.check.side_effect = check
+        town.advance.side_effect = lambda s, obs: order.append("town")
+
+        await use_case.execute(session)
+
+        town.advance.assert_awaited_once()
+        assert town.advance.call_args.args[0] is session
+        assert order.index("town") > order.index("judge")
 
     @pytest.mark.asyncio
     async def test_first_step_sets_goal_then_acts(

@@ -102,6 +102,7 @@ function validGoal (spec, bot, state, knowledge) {
       return { spec: { predicate, distance }, start: { x: p.x, y: p.y, z: p.z } }
     }
     case 'surveyed': {
+      needHome() // 候補地は家（最初の夜を越す小屋）を中心に決める
       const count = Number(spec.count)
       const planned = ensureSurvey(state, bot).sites.length
       if (!Number.isInteger(count) || count < 1 || count > planned) throw new Error(`count must be 1-${planned} (the candidate sites)`)

@@ -26,6 +26,7 @@ from ailoveshen.domain.value_objects import (
     MidGoalState,
     Mission,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 
@@ -168,6 +169,11 @@ class MidGoalPlan(Entity):
     下に移すことはできるが、断念はできない。段階は、条件をすべて満たし、まだない
     能力のために残した部分がなくなったときに済み、街は次に進む。
 
+    街の場所は、段階より先に決める（docs/design/16_town_site.md）: 候補地を調べ、
+    配信者が 1 か所選ぶ（一度だけ）。調査と引っ越しは街の準備の中目標で、段階と
+    同じくやめられない。準備が残っている間は、段階の中目標を足さない（段階の条件は
+    家を基準に判定するので、引っ越す前の家で満たしても意味がない）。
+
     上限は、視聴者が配信を乗っ取らないためにある: 視聴者の中目標は取り組んでいる
     ものの後ろに入り、1 人 1 つ、全部で `max_viewer_goals` までで、`viewer_budget`
     ステップを使ったら断念する。中目標は世界から完了にする（ブリッジが条件を判定
@@ -189,6 +195,7 @@ class MidGoalPlan(Entity):
     _town: Optional[TownDefinition] = field(default=None, init=False, repr=False)
     _town_stage: int = field(default=0, init=False, repr=False)
     _stage_met: tuple[GoalSpec, ...] = field(default=(), init=False, repr=False)
+    _site: Optional[TownSite] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """上限を検証する。"""
@@ -216,6 +223,28 @@ class MidGoalPlan(Entity):
     def town(self) -> Optional[TownDefinition]:
         """街がどんなものかと、その段階（定めるまでは None）。"""
         return self._town
+
+    @property
+    def site(self) -> Optional[TownSite]:
+        """選んだ街の場所（候補地を調べて選ぶまでは None）。"""
+        return self._site
+
+    def choose_site(self, site: TownSite) -> None:
+        """
+        街の場所を決める。一度だけ（決めた後は変えない）。
+
+        Raises:
+            ValueError: もう決めてあるとき
+        """
+        if self._site is not None:
+            raise ValueError(f"the town site is already chosen ({self._site.site_id})")
+        self._site = site
+        self.updated_at = _utc_now()
+
+    @property
+    def preparing_town(self) -> bool:
+        """街の準備（調査、引っ越し）の中目標がまだ残っているか。"""
+        return any(g.prepares_town for g in self._goals)
 
     @property
     def town_stage(self) -> int:
@@ -279,6 +308,7 @@ class MidGoalPlan(Entity):
         requested_by: Optional[str] = None,
         position: Optional[int] = None,
         stage: Optional[int] = None,
+        prepares_town: bool = False,
     ) -> MidGoal:
         """
         `position`（未完了のものの中で 0 始まり。None: 最後）に中目標を足す。
@@ -300,6 +330,7 @@ class MidGoalPlan(Entity):
             reason=reason,
             requested_by=requested_by,
             stage=stage,
+            prepares_town=prepares_town,
         )
         earliest = 1 if requested_by is not None and self._goals else 0
         at = (
@@ -323,9 +354,14 @@ class MidGoalPlan(Entity):
         """中目標を断念する。理由は必須（配信で言う）。"""
         if not reason:
             raise ValueError(f"dropping {mid_goal_id} needs a reason")
-        if self._require(mid_goal_id).stage is not None:
+        goal = self._require(mid_goal_id)
+        if goal.stage is not None:
             raise ValueError(
                 f"{mid_goal_id} is a stage of the town: move it down instead of dropping it"
+            )
+        if goal.prepares_town:
+            raise ValueError(
+                f"{mid_goal_id} prepares the town (its site): move it down instead of dropping it"
             )
         return self._finish(mid_goal_id, MidGoalState.DROPPED, reason)
 
@@ -360,6 +396,7 @@ class MidGoalPlan(Entity):
         town: Optional[TownDefinition] = None,
         town_stage: int = 0,
         stage_met: tuple[GoalSpec, ...] = (),
+        site: Optional[TownSite] = None,
     ) -> None:
         """保存したプランを戻す（id はそのまま）。"""
         self._goals = list(pending)
@@ -369,6 +406,7 @@ class MidGoalPlan(Entity):
         self._town = town
         self._town_stage = town_stage
         self._stage_met = stage_met
+        self._site = site
 
     @property
     def next_id(self) -> int:
@@ -452,6 +490,7 @@ class PlaySession(Entity):
         return Activity(
             mission=self.plan.mission,
             town=self.plan.town,
+            site=self.plan.site,
             town_stage=self.plan.town_stage,
             stage_met=self.plan.stage_met,
             mid_goals=self.plan.pending + self.plan.finished,

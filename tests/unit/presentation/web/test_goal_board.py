@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -22,6 +23,7 @@ from ailoveshen.domain.value_objects import (  # noqa: E402
     Mission,
     Side,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 from ailoveshen.presentation.web.goal_board import GoalBoard, goals_snapshot  # noqa: E402
@@ -86,10 +88,31 @@ class TestGoalsSnapshot:
             "playing": False,
             "mission": None,
             "town": None,
+            "site": None,
+            "survey": None,
             "mid_goals": [],
             "goal": None,
             "home": None,
         }
+
+    def test_site(self):
+        """選んだ場所（決めたこと）と、調べた候補地（ブリッジの数字）を別に出す。"""
+        session = _session()
+        survey = {"planned": 9, "sites": [{"id": "E", "x": 96, "z": 0}]}
+        session.observe(replace(session.last_observation, state={"survey": survey}))
+        assert goals_snapshot(session.activity())["site"] is None
+
+        session.plan.choose_site(TownSite("E", 96, 0, "石が多い", "いしのまち"))
+        data = goals_snapshot(session.activity())
+
+        assert data["site"] == {
+            "site_id": "E",
+            "x": 96,
+            "z": 0,
+            "reason": "石が多い",
+            "name": "いしのまち",
+        }
+        assert data["survey"] == survey
 
     def test_the_goals_from_the_mission_down(self):
         """大目標、状態つきの中目標、小目標。"""

@@ -18,6 +18,7 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     Mission,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 from ailoveshen.infrastructure.adapters.prompts.stream_context import (
@@ -26,13 +27,15 @@ from ailoveshen.infrastructure.adapters.prompts.stream_context import (
     format_conditions,
     format_messages,
     format_predicates,
+    format_site_choice,
+    format_site_facts,
     format_time_en,
 )
 
 HOUSE_DESIGN_TEMPLATE = Template("""\
 あなたは「$name」というAI配信者です。性格: $personality_traits
-これから Minecraft のサバイバルで、自分の最初の家を建てます。建てる家を設計してください。
-
+これから Minecraft のサバイバルで、自分の家を建てます。建てる家を設計してください。
+$site_note
 ## 建てられる家の条件
 - 1部屋の四角い家。壁と平らな屋根は木の板材でできる
 - 幅（x方向）と奥行き（z方向）は $min_side〜$max_side ブロック
@@ -44,11 +47,39 @@ HOUSE_DESIGN_TEMPLATE = Template("""\
 - 材料はすべて自分で木を切って集める。大きい家ほど時間がかかる
 
 ## ヒント
-- 最初の家なので、配信で完成まで見せられる大きさが良い
+- 配信で完成まで見せられる大きさが良い
 - あなたらしさが伝わる名前とコンセプトにする
 $previous_error
 ## 出力
 指定された JSON だけを出力してください。
+""")
+
+SITE_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者「$name」（性格: $personality_traits）です。
+配信の大目標は「$mission」です。街を作る場所を決めるため、最初の家のまわりの候補地を
+見て回り、地形を数えました。この中から街の場所を 1 か所選び、街の名前を付けてください。
+場所は一度決めたら変えません。最初の家の場所以外を選ぶと、そこに家を建てて引っ越します
+（最初の家は残ります）。
+
+## 調べた候補地（数えた数字。候補地のまわり半径 32 ブロック）
+$sites
+
+## 数字の意味
+- 家を建てられる平らな区画: 重ならない 9x9 の区画のうち、乾いた地面で高低差が 1 以内のもの。
+  街には建物を何軒も置くので多いほど良い
+- 水・急な段差: 地面のうちの割合。多いと建てられる所が減る（水は景色や将来の畑には良い）
+- 地表の石・石炭・鉄: 空気に面していて、掘りに行けるもの。今は地面の下は掘り進めないので、
+  石がないと石の道具・かまど・鉄の道具が作れない
+- 原木: 木材（家、道具、松明の木炭）。動物: 食料と羊毛（ベッド）
+- 溶岩: 危ない。家からの距離: 遠いほど引っ越しと行き来に時間がかかる
+- 読み込めた範囲: 数えられた地面の割合（低いと数字が少なめに出ている）
+
+## 選び方
+- 数字で選ぶ。見た目の想像（「きれいそう」など）で選ばない
+- 理由は配信でそのまま話す。どの数字が決め手かを 1〜2 文で言う
+$previous_error
+## 出力
+指定の JSON で出力してください。
 """)
 
 TOWN_TEMPLATE = Template("""\
@@ -56,8 +87,12 @@ TOWN_TEMPLATE = Template("""\
 配信の大目標は「$mission」です。この「街」とは何か、いつ完成したと言えるかを定義してください。
 定義は一度決めたら変えず、配信の最後まで、この段階を順に進めます。
 
+## 街の場所
+$site
+
 ## 今の状況
-- 家（木の家、ベッドとチェストあり）が 1 軒ある。サバイバルで、夜は敵が湧く
+- 家（木の家）が 1 軒ある。街の場所が最初の家の場所でなければ、そこに家を建てて引っ越す
+  （段階はその家から始まる）。サバイバルで、夜は敵が湧く
 - 視聴者はコメントで話しかけてくる。配信で完成まで見せられる規模にする
 
 ## 今できること
@@ -73,6 +108,7 @@ $conditions
   判定・実行できるかを添える。判定できるふりをしない（今の built() は最初の家のこと）
 - 「にぎやか」「きれい」のような判定できない言葉は、数や配置に言い換える
 - 手に入らない物（今できることで作れない物）を条件にしない
+- 場所の数字に合わせる（例: 石が多いなら石を使う、動物が多いなら食料の備蓄から）
 $previous_error
 ## 出力
 指定の JSON で出力してください。
@@ -177,7 +213,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     """
 
     def build_house_design_prompt(
-        self, character: CharacterProfile, previous_error: str = ""
+        self, character: CharacterProfile, site_note: str = "", previous_error: str = ""
     ) -> str:
         """LLM に小さな家を設計させるプロンプトを組み立てる。"""
         error = (
@@ -193,16 +229,46 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             max_side=HouseBlueprint.MAX_SIDE,
             min_height=HouseBlueprint.MIN_WALL_HEIGHT,
             max_height=HouseBlueprint.MAX_WALL_HEIGHT,
+            site_note=f"\n## 建てる場所\n{site_note}\n" if site_note else "",
             previous_error=error,
         )
 
+    def build_site_prompt(
+        self,
+        character: CharacterProfile,
+        mission: Mission,
+        sites: Sequence[dict[str, Any]],
+        previous_error: str = "",
+    ) -> str:
+        """調べた候補地の表から、街の場所を 1 か所選ばせるプロンプトを組み立てる。"""
+        return SITE_TEMPLATE.substitute(
+            name=character.name,
+            personality_traits="、".join(character.personality_traits) or "特になし",
+            mission=mission.text,
+            sites="\n".join(f"- {s['id']}: {format_site_facts(s)}" for s in sites),
+            previous_error=_retry(previous_error, "選び直してください。"),
+        )
+
+    def describe_site(self, site: TownSite, facts: dict[str, Any]) -> str:
+        """選んだ街の場所の説明（決めたことと、そこの数字）。"""
+        lines = [f"街「{site.name}」の場所。{format_site_choice(site)}"]
+        if facts:
+            lines.append(f"そこの地形: {format_site_facts(facts)}")
+        return "\n".join(lines)
+
     def build_town_prompt(
-        self, character: CharacterProfile, mission: Mission, previous_error: str = ""
+        self,
+        character: CharacterProfile,
+        mission: Mission,
+        site: TownSite,
+        facts: dict[str, Any],
+        previous_error: str = "",
     ) -> str:
         """大目標の街とは何かを、段階に分けて答えさせるプロンプトを組み立てる。"""
         return TOWN_TEMPLATE.substitute(
             name=character.name,
             mission=mission.text,
+            site=self.describe_site(site, facts),
             abilities=ABILITIES,
             conditions=format_conditions(),
             max_stages=MAX_TOWN_STAGES,

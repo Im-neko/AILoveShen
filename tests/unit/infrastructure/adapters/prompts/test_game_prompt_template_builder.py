@@ -20,6 +20,7 @@ from ailoveshen.domain.value_objects import (
     Mission,
     Side,
     TownDefinition,
+    TownSite,
     TownStage,
 )
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
@@ -31,6 +32,24 @@ PLANKS = Goal(
     GoalSpec(GoalPredicate.HAVE, item="planks", count=12), reason="壁の材料", mid_goal_id="m1"
 )
 MISSION = Mission("生き延びながら家を建て、街にしていく")
+EAST = TownSite("E", 96, 0, "地表の石が多い", "いしのまち")
+EAST_ROW = {
+    "id": "E",
+    "x": 96,
+    "z": 0,
+    "distance": 96,
+    "flat_plots": 12,
+    "water_pct": 5,
+    "steep_pct": 3,
+    "stone": 40,
+    "coal": 3,
+    "iron": 1,
+    "logs": 55,
+    "lava": 0,
+    "animals": 4,
+    "loaded_pct": 100,
+}
+HERE_ROW = {**EAST_ROW, "id": "here", "x": 0, "distance": 0, "stone": 0}
 HOUSE = MidGoal(
     "m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),), progress=("30/70", "  sub-step")
 )
@@ -270,13 +289,51 @@ class TestGamePromptTemplateBuilder:
     def test_town_prompt(self):
         """街のプロンプトには大目標、能力、条件、エラーが入る。"""
         prompt = GamePromptTemplateBuilder().build_town_prompt(
-            CharacterProfile(), MISSION, previous_error="no way to get iron_sword"
+            CharacterProfile(), MISSION, EAST, EAST_ROW, previous_error="no way to get iron_sword"
         )
 
         assert "「生き延びながら家を建て、街にしていく」" in prompt
+        assert "街「いしのまち」の場所。「いしのまち」を東（96,0）に作る: 地表の石が多い" in prompt
+        assert "地表の石 40・石炭 3・鉄 1" in prompt
         assert "stored(" in prompt and "lit(" in prompt
         assert "5 段階まで" in prompt
         assert "no way to get iron_sword\n定義し直してください" in prompt
+
+    def test_site_prompt(self):
+        """場所の選択のプロンプトは、候補地の id と数字を並べる。"""
+        prompt = GamePromptTemplateBuilder().build_site_prompt(
+            CharacterProfile(name="シェン"), MISSION, [HERE_ROW, EAST_ROW], previous_error="x"
+        )
+
+        assert "「シェン」" in prompt
+        assert "- here: 最初の家の場所（0,0、家から 0m）: 家を建てられる平らな区画 12" in prompt
+        assert "- E: 東（96,0、家から 96m）" in prompt
+        assert "x\n選び直してください" in prompt
+
+    def test_design_prompt_for_the_new_site(self):
+        """引っ越し先の家の設計には、その場所の説明が入る。"""
+        prompt = GamePromptTemplateBuilder().build_house_design_prompt(
+            CharacterProfile(), site_note="街「いしのまち」の場所"
+        )
+
+        assert "## 建てる場所\n街「いしのまち」の場所" in prompt
+
+    def test_the_site_is_in_the_activity(self):
+        """決めたこと（場所と理由）と、調べた事実（数字）を分けて、どのプロンプトにも出す。"""
+        surveying = _obs()
+        surveying = replace(
+            surveying, state={**surveying.state, "survey": {"planned": 9, "sites": [HERE_ROW]}}
+        )
+        prompt = _goal_prompt(obs=surveying)
+        assert "- 街の場所: まだ決めていない（候補地を調べた数 1/9）" in prompt
+        assert "  - 最初の家の場所（0,0、家から 0m）" in prompt
+
+        chosen = Activity(mission=MISSION, site=EAST, goal=PLANKS, observation=surveying)
+        prompt = _goal_prompt(activity=chosen)
+        assert (
+            "- 街の場所（決めたこと）: 「いしのまち」を東（96,0）に作る: 地表の石が多い" in prompt
+        )
+        assert "- 調べた候補地（ブリッジが測った数字" in prompt
 
     def test_stage_prompt(self):
         """段階のプロンプトは段階を変えず、解決していないものを並べる。"""

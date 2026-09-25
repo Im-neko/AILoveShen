@@ -67,6 +67,13 @@ test('候補地は中心と 8 方向の 9 か所で、調査の計画は 1 回�
   assert.equal(state.survey, first)
 })
 
+test('surveyed(n): 家ができるまでは判定を待ち、候補地の中心を決めない', () => {
+  const state = { home: null, plan: null, memory: newMemory() }
+  const [r] = checkConditions([{ predicate: 'surveyed', count: 9 }], bot(v(40, 70, 40)), state, k, world())
+  assert.equal(r.met, false)
+  assert.equal(state.survey, undefined)
+})
+
 test('surveyed(n): 一番近い未調査の候補地を調べる候補を出し、調べた数で判定する', () => {
   const b = bot()
   const state = { home, plan: null, memory: newMemory(), unreachableDrops: new Set() }

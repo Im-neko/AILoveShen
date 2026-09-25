@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
+from typing import Optional
 
 from loguru import logger
 
@@ -24,7 +25,7 @@ from ailoveshen.domain.events import (
     TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError
-from ailoveshen.domain.value_objects import MidGoal
+from ailoveshen.domain.value_objects import GoalSpec, MidGoal
 
 
 class MidGoalKeeper:
@@ -64,11 +65,12 @@ class MidGoalKeeper:
 
         ブリッジが条件を拒否した中目標（そのままでは足せなかったはずだが、世界の
         ルールが変わったのかもしれない）は、プレイを止めずに理由をつけて断念する。
-        街の段階は断念しない: ログに残し、条件が直るのを待つ。
+        街の段階と準備は断念しない: ログに残し、条件が直るのを待つ。
 
         次に街を進める: 取り組んでいる段階のうち今できること（まだ満たしていない
-        条件）を、リストの一番上の中目標にする。まだない能力のために残した部分は
-        待つ。最後の段階が済んだら、街の完成を伝える。
+        条件）を、リストの一番上の中目標にする。場所が決まって準備（調査、引っ越し）が
+        済むまでと、まだない能力のために残した部分は待つ。最後の段階が済んだら、
+        街の完成を伝える。
         """
         was_complete = plan.town_complete
         events: list[DomainEvent] = []
@@ -76,8 +78,8 @@ class MidGoalKeeper:
             try:
                 statuses = await self._bridge.check(goal.conditions)
             except GoalRejectedError as e:
-                if goal.stage is not None:
-                    logger.error(f"街の段階の中目標 {goal.describe()} を判定できない: {e}")
+                if goal.stage is not None or goal.prepares_town:
+                    logger.error(f"街の中目標 {goal.describe()} を判定できない: {e}")
                 elif plan.get(goal.id) is not None:
                     events.append(
                         _dropped(plan.drop(goal.id, f"its conditions cannot be judged: {e}"))
@@ -101,6 +103,9 @@ class MidGoalKeeper:
         await self._publish(events)
 
     def _next_stage(self, plan: MidGoalPlan) -> list[DomainEvent]:
+        # 段階の条件は家を基準に判定する: 引っ越す前の家で満たしても意味がない
+        if plan.site is None or plan.preparing_town:
+            return []
         plan.settle_stage()  # 書き直した段階は、もう済んでいるかもしれない
         stage = plan.current_stage
         if stage is None or not plan.stage_remaining or plan.stage_goal() is not None:
@@ -118,6 +123,34 @@ class MidGoalKeeper:
             return []
         logger.info(f"街の段階 {plan.town_stage + 1} を中目標 {goal.id} にした: {goal.describe()}")
         return [_added(plan, goal)]
+
+    async def add_town_goal(
+        self,
+        plan: MidGoalPlan,
+        title: str,
+        conditions: tuple[GoalSpec, ...],
+        reason: str,
+        position: Optional[int] = None,
+    ) -> Optional[MidGoal]:
+        """
+        街の準備の中目標（候補地の調査、引っ越し）を足す。条件はコードが決めたもの。
+        リストがいっぱいなら足さずに None を返す（次の切れ目でまた試す）。
+        """
+        try:
+            goal = plan.add(
+                title=title,
+                conditions=conditions,
+                reason=reason,
+                position=position,
+                prepares_town=True,
+            )
+        except ValueError as e:
+            logger.warning(f"街の準備「{title}」はリストに空きが出るのを待つ: {e}")
+            return None
+        logger.info(f"街の準備を中目標 {goal.id} にした: {goal.describe()}")
+        self._store.save(plan)
+        await self._publish([_added(plan, goal)])
+        return goal
 
     async def check_new(self, changes: Sequence[PlanChange]) -> None:
         """
