@@ -186,6 +186,10 @@ def goal_label(spec: GoalSpec) -> str:
         return f"家のまわり {spec.distance}m を明るくする"
     if p == GoalPredicate.SURVEYED:
         return f"街の候補地を {n} か所しらべる"
+    if p == GoalPredicate.PLANTED:
+        return f"木を {n} 本植える"
+    if p == GoalPredicate.FARMED:
+        return f"畑に{item}を {n} マス植える"
     return spec.describe()
 
 

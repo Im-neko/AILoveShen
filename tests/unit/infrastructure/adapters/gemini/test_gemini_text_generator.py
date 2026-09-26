@@ -165,7 +165,9 @@ class TestGeminiTextGeneratorGenerate:
         assert data == {"ok": True}
         calls = client.aio.models.generate_content.call_args_list
         assert calls[0].kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.HIGH
-        assert calls[1].kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
+        assert (
+            calls[1].kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
+        )
 
     @pytest.mark.asyncio
     async def test_unexpected_error_raises_text_generation_error(self, mock_client):

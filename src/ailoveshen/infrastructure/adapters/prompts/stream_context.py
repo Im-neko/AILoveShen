@@ -52,7 +52,10 @@ ABILITIES = """\
   家の近くの倉庫・塔・小屋・塀、大きな建物（城、大広間）など。材料は板材・原木・丸石・土。
   1 つの建物は 3000 ブロック・1 辺 48・高さ 16 まで（視聴者の頼みは 600 ブロックまで）
   （中目標の条件に built(新しい名前) を書くと、そのあとで設計する）
-- まだできない: 洞窟の奥へ降りて探検する、畑、釣り、ネザー、ガラスや階段・柵を建物に使う（作ることはできる）"""
+- 家のまわりに苗木を植える（葉を壊して苗木を集める）、畑を作る（クワで耕し、草から取った種や
+  にんじん・じゃがいもを植え、育ったら収穫してまたまく）
+- まだできない: 洞窟の奥へ降りて探検する、動物を増やす、釣り、ネザー、ガラスや階段・柵を建物に使う
+  （作ることはできる）"""
 
 PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.BUILT: (
@@ -85,6 +88,14 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     ),
     GoalPredicate.SURVEYED: (
         "surveyed(count): 街の候補地を count か所見て回る（1 か所ずつ歩いて行き、地形を数える）"
+    ),
+    GoalPredicate.PLANTED: (
+        "planted(item, count): 家から 6〜24 m に苗木を植え、植えた木を count 本にする（育った木も数える）。"
+        "item は sapling か oak_sapling など。苗木は葉を壊すとときどき落ちる。例: planted(sapling, 4)"
+    ),
+    GoalPredicate.FARMED: (
+        "farmed(item, count): 家のまわりの畑に作物を count マス植える（クワで耕す）。item は wheat"
+        "（種は草からときどき）か、持っていれば carrots / potatoes / beetroots。例: farmed(wheat, 9)"
     ),
     GoalPredicate.CLEARED: (
         "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼だけ。素手でも戦える。"

@@ -387,7 +387,9 @@ export default async function (t, args) {
   t.goto({x, y, z, range?}), t.dig({x, y, z}), t.place({item, x, y, z}), t.craft({item, times?}),
   t.pickup(), t.attack({entity}), t.flee({entity}), t.eat({item}), t.equip({item}),
   t.smelt({input, count?}), t.deposit({item, count?}), t.withdraw({item, count?}), t.go_home(),
-  t.sleep(), t.build_next({name?}), t.move_furniture({x, y, z, to_x?, to_y?, to_z?}), t.wait()
+  t.sleep(), t.build_next({name?}), t.move_furniture({x, y, z, to_x?, to_y?, to_z?}),
+  t.plant({item?, x?, y?, z?}), t.till({x?, y?, z?}), t.sow({item?, x?, y?, z?}), t.wait()
+  （plant / till / sow は場所を省くとブリッジが家のまわりから選ぶ）
 - 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed}] か文 },
   t.recipe_of({item}), t.find_recipes({query, limit?}), t.how_to_get({item, count?}),
   t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
@@ -409,7 +411,8 @@ export default async function (t, args) {
 - 1 つの技は 1 つのこと（狩る、木を切って板材にする、家のまわりに松明を置く）。大きな目標は小さな
   技の組み合わせで進める
 - expects: 技が成功したときに世界で成り立つこと。have / stored（item と count。count は数、
-  "+N"（始めより N 多い）、"$引数名"）、built（name）、placed（where: home）、lit（distance）、
+  "+N"（始めより N 多い）、"$引数名"）、planted / farmed（item と count。"+N" も）、built（name）、
+  placed（where: home）、lit（distance）、
   progress（今の小目標の残りの作業が減る）。done() だけでは成功にならない
 - 直すとき: 前のコードと失敗の記録（理由、log、最後の道具）を読み、原因を直す。同じ失敗を
   繰り返さない

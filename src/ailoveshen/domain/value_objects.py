@@ -371,6 +371,8 @@ class GoalPredicate(str, Enum):
     - EXPLORED: 目標を設定した場所から `distance` ブロック離れた
     - CLEARED: 扉の近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
     - SURVEYED: 街の候補地を `count` か所調べた（家を中心に、ブリッジが地形を数字にする）
+    - PLANTED: 自分が植えた苗木（item: sapling か種類）が `count` 本ある（育った木も数える）
+    - FARMED: 家のまわりの耕地に作物（item: wheat など）が `count` マス植わっている
     """
 
     HAVE = "have"
@@ -383,6 +385,8 @@ class GoalPredicate(str, Enum):
     STORED = "stored"
     LIT = "lit"
     SURVEYED = "surveyed"
+    PLANTED = "planted"
+    FARMED = "farmed"
 
 
 @dataclass(frozen=True)
@@ -411,7 +415,12 @@ class GoalSpec:
         """述語に要る引数を確かめる。"""
         if self.dig_depth is not None and self.dig_depth < 0:
             raise ValueError(f"dig_depth must not be negative, got {self.dig_depth}")
-        if self.predicate in (GoalPredicate.HAVE, GoalPredicate.STORED):
+        if self.predicate in (
+            GoalPredicate.HAVE,
+            GoalPredicate.STORED,
+            GoalPredicate.PLANTED,
+            GoalPredicate.FARMED,
+        ):
             name = self.predicate.value
             if not self.item:
                 raise ValueError(f"{name} needs an item")
@@ -498,6 +507,8 @@ CONDITION_PREDICATES = frozenset(
         GoalPredicate.STORED,
         GoalPredicate.LIT,
         GoalPredicate.SURVEYED,
+        GoalPredicate.PLANTED,
+        GoalPredicate.FARMED,
     }
 )
 # LLM が中目標や街の段階に書ける条件。調査は、街の場所を決める前にコードが足すだけ

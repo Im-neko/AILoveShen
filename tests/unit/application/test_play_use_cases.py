@@ -474,6 +474,8 @@ class TestAdvancePlay:
             "placed",
             "stored",
             "lit",
+            "planted",
+            "farmed",
             "explored",
         ]
 

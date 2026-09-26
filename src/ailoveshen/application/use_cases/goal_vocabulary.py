@@ -47,6 +47,20 @@ BUILD_NAME_DESCRIPTION = (
 )
 # 条件を示す順番（frozenset には順番がない）
 _CONDITION_ORDER = [p for p in GoalPredicate if p in PLANNABLE_CONDITIONS]
+_ITEM_PREDICATES = (
+    GoalPredicate.HAVE,
+    GoalPredicate.STORED,
+    GoalPredicate.PLACED,
+    GoalPredicate.PLANTED,
+    GoalPredicate.FARMED,
+)
+_COUNT_PREDICATES = (
+    GoalPredicate.HAVE,
+    GoalPredicate.STORED,
+    GoalPredicate.SURVEYED,
+    GoalPredicate.PLANTED,
+    GoalPredicate.FARMED,
+)
 
 
 class Serves(str, Enum):
@@ -394,12 +408,8 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
         predicate = GoalPredicate(data["predicate"])
         return GoalSpec(
             predicate=predicate,
-            item=str(data["item"])
-            if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.PLACED)
-            else None,
-            count=int(data["count"])
-            if predicate in (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.SURVEYED)
-            else None,
+            item=str(data["item"]) if predicate in _ITEM_PREDICATES else None,
+            count=int(data["count"]) if predicate in _COUNT_PREDICATES else None,
             where="home" if predicate == GoalPredicate.PLACED else None,
             distance=int(data["distance"])
             if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT)
@@ -553,6 +563,8 @@ def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicat
         out.append(GoalPredicate.PLACED)
         out.append(GoalPredicate.STORED)
         out.append(GoalPredicate.LIT)
+        # 植林と畑（設計書 33）: 家のまわり
+        out += [GoalPredicate.PLANTED, GoalPredicate.FARMED]
     if obs.has_home and any(
         c.predicate == GoalPredicate.SURVEYED for g in plan.pending for c in g.conditions
     ):
