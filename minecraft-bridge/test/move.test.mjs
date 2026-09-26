@@ -22,7 +22,7 @@ test('掘り終えて拾う前に中断されたら、落とし物を拾いに�
   const bot = {
     entity: { position: new Vec3(0, 70, 0), onGround: true },
     entities: { 7: { id: 7, name: 'item', position: new Vec3(1.5, 70, 0.5) } },
-    blockAt: (p) => ({ name: 'spruce_log', position: p }),
+    blockAt: (p) => ({ name: 'spruce_log', boundingBox: 'block', position: p }),
     dig: async () => {},
     equip: async () => {},
     waitForTicks: async () => controller.abort(new Error('timeout')), // 落ちた物を待つ間に時間切れ

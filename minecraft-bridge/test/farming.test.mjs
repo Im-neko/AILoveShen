@@ -90,11 +90,15 @@ test('planted と farmed は家があるときの目標・条件になる（数�
 test('草は届く距離まで近づいて掘る（見える位置を探すと決して着かず、種集めが毎回失敗した）', async () => {
   const { PRIMITIVES } = await import('../src/primitives.mjs')
   const goals = []
+  let dug = 0
+  const more = [new Vec3(4, 64, 1), new Vec3(5, 64, 0)] // まわりの草
   const bot = {
+    registry: md,
     entity: { position: new Vec3(0, 64, 0), onGround: true },
     entities: {},
     blockAt: (p) => ({ name: 'short_grass', boundingBox: 'empty', position: p }),
-    dig: async () => {},
+    findBlock: () => { const p = more.shift(); return p ? { position: p } : null },
+    dig: async () => { dug++ },
     equip: async () => {},
     waitForTicks: async () => {},
     inventory: { items: () => [], emptySlotCount: () => 30 },
@@ -102,5 +106,6 @@ test('草は届く距離まで近づいて掘る（見える位置を探すと�
   }
   const r = await PRIMITIVES.dig(bot, { unreachableDrops: new Set() }, { block: 'short_grass', pos: new Vec3(3, 64, 0) }, new AbortController().signal)
   assert.equal(goals[0], 'GoalNear')
+  assert.equal(dug, 3) // 1 回の行動でまわりの草も続けて刈る
   assert.match(r, /nothing dropped this time/) // 種はときどきしか落ちない: 失敗ではない
 })

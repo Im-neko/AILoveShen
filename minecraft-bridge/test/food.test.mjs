@@ -73,3 +73,29 @@ test('剣がなければ狩る前に作る（作るだけでできるなら狩�
   // 剣があれば狩る
   assert.deepEqual(kinds({ stone_sword: 1 }), ['kill'])
 })
+
+test('焼いた物を先に食べ、生肉は焼けるなら焼く（飢えそうなとき・焼く手段がないときだけ生で）', () => {
+  const offer = (food, items, furnace = false) => {
+    const bot = {
+      entity: { position: new Vec3(0, 70, 0) },
+      entities: {},
+      time: { timeOfDay: 1000 },
+      health: 20,
+      food,
+      heldItem: null,
+      blockAt: () => null,
+      registry: md,
+      findBlock: () => (furnace ? { position: new Vec3(3, 70, 0), name: 'furnace' } : null),
+      inventory: { items: () => Object.entries(items).map(([name, count]) => ({ name, count })) }
+    }
+    const state = { home: null, plan: null, unreachableDrops: new Set() }
+    const { candidates } = ground(bot, state, k, { dig: () => [], hunt: () => [] }, { leaves: [] })
+    return candidates.filter((c) => c.verb === 'eat' || c.id.startsWith('cook')).map((c) => c.id)
+  }
+  assert.deepEqual(offer(14, { beef: 3, cooked_beef: 1 }), ['eat cooked_beef'])
+  assert.deepEqual(offer(14, { beef: 3, bread: 1 }), ['eat bread'])
+  assert.deepEqual(offer(14, { beef: 3 }), []) // まだ待てる
+  assert.deepEqual(offer(10, { beef: 3 }), ['eat beef']) // 焼く手段がない
+  assert.deepEqual(offer(10, { beef: 3, coal: 1 }, true), ['cook 3 beef in the furnace at 3,70,0']) // 焼ける
+  assert.deepEqual(offer(5, { beef: 3, coal: 1 }, true), ['eat beef', 'cook 3 beef in the furnace at 3,70,0']) // 飢えそう
+})

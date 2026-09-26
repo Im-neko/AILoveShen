@@ -406,7 +406,8 @@ export const PRIMITIVES = {
       ? new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH })
       : new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 2)
     try {
-      await goto(bot, goal, signal)
+      // 草などは、もう手が届くならその場で刈る（段差の上の草へ回り込む経路探しが時間切れになった）
+      if (block.boundingBox === 'block' || !withinReach(bot, c.pos)) await goto(bot, goal, signal)
     } catch (e) {
       if (!signal.aborted) markUnreachable(state, c.pos)
       throw e
@@ -417,6 +418,9 @@ export const PRIMITIVES = {
     await equipToolFor(bot, block)
     await bot.dig(bot.blockAt(c.pos), true)
     signal.throwIfAborted()
+    // 確率でしか落ちない物（草から種 1/8、葉から苗木 1/20）: 1 回の行動でまわりの同じものを続けて
+    // 刈る（1 本ずつだと、ほとんどの行動が空振りで種集めが行き詰まった）
+    if (CHANCE_DROP_BLOCKS.test(c.block)) await sweepNearby(bot, state, c.block, before, signal)
     const why = await collectNearbyDrops(bot, state, signal)
     const gained = totalItems(bot) - before
     // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
@@ -892,6 +896,33 @@ async function useChest (bot, state, c, signal, use) {
     for (const i of window.containerItems()) contents[i.name] = (contents[i.name] ?? 0) + i.count
     rememberChest(state.memory, c.pos, contents, Number(bot.time.age))
     window.close()
+  }
+}
+
+// 目の高さからブロックの中心までが届く距離か
+const withinReach = (bot, p) => bot.entity.position.offset(0, 1.62, 0).distanceTo(p.offset(0.5, 0.5, 0.5)) <= REACH
+
+const SWEEP_MAX = 12 // 1 回の行動で続けて刈る数
+const SWEEP_RADIUS = 5
+const SWEEP_MS = 10000
+const SWEEP_KINDS = (name) => /grass|fern/.test(name) ? ['short_grass', 'tall_grass', 'fern', 'large_fern'] : [name]
+
+// まわりの同じ種類（草なら草とシダ）を、何か落ちるまで（か SWEEP_MAX まで、10 秒まで）刈る
+async function sweepNearby (bot, state, name, before, signal) {
+  const ids = SWEEP_KINDS(name).map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id != null)
+  const start = Date.now()
+  for (let i = 0; i < SWEEP_MAX && Date.now() - start < SWEEP_MS; i++) {
+    signal.throwIfAborted()
+    if (totalItems(bot) > before || nearbyDrops(bot, state, SWEEP_RADIUS + 2).length) return
+    const next = bot.findBlock({ matching: ids, maxDistance: SWEEP_RADIUS, useExtraInfo: (b) => !inHouse(state, b.position) })
+    if (!next) return
+    try {
+      if (!withinReach(bot, next.position)) await goto(bot, new goals.GoalNear(next.position.x, next.position.y, next.position.z, 2), signal)
+      await bot.dig(bot.blockAt(next.position), true)
+    } catch (e) {
+      signal.throwIfAborted()
+      return
+    }
   }
 }
 

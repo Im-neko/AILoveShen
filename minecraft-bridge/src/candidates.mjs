@@ -16,7 +16,7 @@ import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } 
 import { isInside, exitSpots, shelterOf } from './home.mjs'
 import { recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
 const FRONTIER_SLACK = 8
-import { cooking } from './cooking.mjs'
+import { cooking, isRawMeat } from './cooking.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -27,6 +27,7 @@ const EXPLORE_DIRECTIONS = { north: [0, -1], east: [1, 0], south: [0, 1], west: 
 // 飢えていて、ほかによい食料を持っていないときだけ食べる: 満腹度 4 と引き換えに、たいてい短い
 // 空腹の効果を受ける（frun2: 腐った肉を持ったまま飢えた）
 const LAST_RESORT_FOOD = ['rotten_flesh']
+const RAW_OK = 12 // 焼く手段がないとき、生肉を食べてよい満腹度
 
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 const dist = (bot, p) => round(bot.entity.position.distanceTo(p))
@@ -282,13 +283,22 @@ function forNeeds (bot, state, knowledge) {
     // 食料の目標が食料と数えるものだけ: 腐った肉などは害がある
     const edible = new Set(knowledge.resolve('food').members)
     const foods = bot.inventory.items().filter((i) => edible.has(i.name))
-    const best = foods.sort((a, b) => bot.registry.foodsByName[b.name].foodPoints - bot.registry.foodsByName[a.name].foodPoints)[0]
+    foods.sort((a, b) => bot.registry.foodsByName[b.name].foodPoints - bot.registry.foodsByName[a.name].foodPoints)
+    // 焼いた物を先に。生肉しかないときは、焼ける（かまどと燃料がある）なら焼くまで待つ。食べるのは
+    // 飢えそうなとき（HUNGER_URGENT）か、焼く手段がなくてかなり空腹のとき（RAW_OK）だけ
+    const raw = (i) => isRawMeat(knowledge, i.name)
+    let best = foods.find((i) => !raw(i)) ?? null
+    if (!best && foods.length) {
+      const canCook = !!cooking(bot, knowledge, state)
+      if (bot.food <= HUNGER_URGENT || (!canCook && bot.food <= RAW_OK)) best = foods[0]
+    }
     const lastResort = bot.food <= HUNGER_URGENT && bot.inventory.items().find((i) => LAST_RESORT_FOOD.includes(i.name))
     const eat = best ?? lastResort
     if (eat) out.push({ id: `eat ${eat.name}`, verb: 'eat', target: eat.name, item: eat.name, inPlace: true })
   }
-  // 近くにかまどがあれば、目標に関係なく生肉を焼く（回復する満腹度が 2.7 倍）
-  const cook = cooking(bot, knowledge)
+  // かまどがあれば、目標に関係なく生肉を焼く（回復する満腹度が 2.7 倍）。見えなければ最後に見た
+  // かまど（家など）へ焼きに行く
+  const cook = cooking(bot, knowledge, state)
   if (cook) {
     const pos = cook.furnace.position
     const { input, count, fuel, fuelCount, product } = cook

@@ -9,12 +9,21 @@ import { findFurnace } from './primitives.mjs'
 
 const COOK_AT_ONCE = 8 // 石炭1個ぶん。残りはかまどの中か次の機会を待つ
 
-// 持っている生肉についての { furnace, input, product, count, fuel, fuelCount }。なければ null
-export function cooking (bot, knowledge) {
+const FAR_COOK_MIN = 3 // 見えない所のかまどまで焼きに行くのは、これだけ生肉があるとき
+
+// 持っている生肉についての { furnace, input, product, count, fuel, fuelCount }。なければ null。
+// 見えるかまどを優先し、なければ最後に見たかまど（家のかまどなど）へ焼きに行く（手持ちの肉は
+// なるべく焼く。state を渡したときだけ）
+export function cooking (bot, knowledge, state = null) {
   const inv = inventoryCounts(bot)
   const input = Object.keys(inv).find((name) => inv[name] > 0 && isRawMeat(knowledge, name))
   if (!input) return null
-  const furnace = findFurnace(bot)
+  let furnace = findFurnace(bot)
+  if (furnace && state) state.lastFurnace = { x: furnace.position.x, y: furnace.position.y, z: furnace.position.z }
+  if (!furnace && state?.lastFurnace && inv[input] >= FAR_COOK_MIN) {
+    const p = state.lastFurnace
+    furnace = { position: bot.entity.position.clone().set(p.x, p.y, p.z), far: true }
+  }
   if (!furnace) return null
   const count = Math.min(inv[input], COOK_AT_ONCE)
   for (const { spec, per } of FUELS) {
