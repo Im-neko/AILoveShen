@@ -94,6 +94,7 @@ RECENT_TOOLS = 8  # 道具の選択に見せる直近の呼び出しの数
 GOAL_STEPS_SHOWN = 12  # 失敗の分析に見せる、その小目標の行動の数（docs/design/27）
 OFFERED_SHOWN = 12  # 失敗の分析に見せる、最後に出ていた候補の数
 MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら、やり直しは選べない
+MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
 
 
 def _plan_blueprint(obs: GameObservation) -> HouseBlueprint | None:
@@ -519,9 +520,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             return None
         last = self._recent_tools[-1] if self._recent_tools else None
         state, instructions = self._prompt_builder.build_action_context(session.goal, obs)
-        picked = await self._step_picker.pick(
-            state, instructions, obs.candidates, skills, None if last is None else last.ok
-        )
+        # 断られた提案（観測のあとで候補が消えた）は、失敗として Gemini に回さない
+        last_ok = None if last is None else last.ok or (last.refused and last.call.name == "do_suggestion")
+        picked = await self._step_picker.pick(state, instructions, obs.candidates, skills, last_ok)
         if not isinstance(picked, PickedStep):
             logger.info(f"1 手は Gemini が決める: {picked.why}")
             return None
@@ -536,7 +537,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         else:
             outcome = await self._watcher.run(call)
         self._recent_tools.append(outcome)
-        self._step_picker.note(by_jev=True, ok=outcome.ok)
+        self._step_picker.note(by_jev=True, ok=outcome.ok or outcome.refused)
         decision = ActionDecision(action_id=picked.option_id, confidence=picked.confidence)
         return decision, outcome.as_action_result()
 
@@ -677,6 +678,10 @@ class AdvancePlayUseCase(IAdvancePlay):
             same = _same_failures(session) if session.recent_goals else 0
             if same >= MAX_SAME_FAILURES:
                 return f"the same kind of goal failed {same} times in a row ({reason})"
+            # 種類が交互でも、続けて失敗していれば考え直す（A→B→A→B と行き来しない）
+            failed = _failures_in_a_row(session)
+            if failed >= MAX_FAILURES_BEFORE_GEMINI:
+                return f"{failed} small goals in a row did not work out ({reason})"
         current = session.plan.current
         if current is None:
             return "there is no mid goal"
@@ -961,6 +966,16 @@ def _same_failures(session: PlaySession) -> int:
     n = 0
     for outcome in reversed(recent):
         if not (_no_progress(outcome.ended_because) and outcome.goal.spec.same_kind(last)):
+            break
+        n += 1
+    return n
+
+
+def _failures_in_a_row(session: PlaySession) -> int:
+    """最後から続けて、行き詰まった・進まなかった小目標の数（種類は問わない）。"""
+    n = 0
+    for outcome in reversed(session.recent_goals):
+        if not _no_progress(outcome.ended_because):
             break
         n += 1
     return n

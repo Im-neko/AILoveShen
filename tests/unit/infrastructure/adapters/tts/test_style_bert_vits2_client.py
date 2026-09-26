@@ -184,3 +184,42 @@ class TestStyleBertVits2Client:
             styles = await client.get_available_styles()
 
             assert styles == ["Neutral"]
+
+
+def test_styles_are_read_from_the_model_info_by_index_or_name():
+    from ailoveshen.infrastructure.adapters.tts.style_bert_vits2_client import styles_of
+
+    info = {"0": {"model_path": "model_assets/shen/shen_e100.safetensors", "style2id": {"Neutral": 0, "Happy": 1}}}
+    assert styles_of(info, "shen") == {"Neutral", "Happy"}
+    assert styles_of({"shen": {"style2id": {"Neutral": 0}}}, "shen") == {"Neutral"}
+    assert styles_of(info, "other") is None
+
+
+@pytest.mark.asyncio
+async def test_a_style_the_model_lacks_is_read_as_neutral():
+    """感情のスタイルがまだモデルにないとき、その文を落とさずに Neutral で読む（設計書 34 §4）。"""
+    from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
+
+    client = StyleBertVits2Client(
+        model_name="shen",
+        emotion_style_service=EmotionStyleService(style_map={EmotionType.HAPPY: "Happy"}),
+    )
+    seen = {}
+
+    def handler(request):
+        if request.url.path == "/models/info":
+            return httpx.Response(200, json={"0": {"model_path": "model_assets/shen/a.safetensors", "style2id": {"Neutral": 0}}})
+        seen["style"] = request.url.params["style"]
+        return httpx.Response(200, content=b"RIFF", headers={"content-type": "audio/wav"})
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    def client_factory(**kwargs):
+        return original(transport=transport, **kwargs)
+
+    with patch.object(httpx, "AsyncClient", side_effect=client_factory):
+        await client.connect()
+    await client.synthesize("やった", EmotionState(EmotionType.HAPPY, 0.9))
+    assert seen["style"] == "Neutral"
+    await client.disconnect()

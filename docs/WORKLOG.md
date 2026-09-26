@@ -1,11 +1,22 @@
 ## Current Status
 
-**Active Phase**: B（設計書 22、技）を実装した。道具モード（`--control tools`）で Gemini が JS の技を書いて覚え、失敗したら直す。実機では未確認。次はユーザーの環境で、`cd minecraft-bridge && npm install`（isolated-vm）→ ブリッジと配信を再起動し、技を覚えるか、`tools/gemini_usage.py` で A と比べること。26（Jev の小目標、キャッシュ）と 27（失敗の分析）も実機で測る。ブランチ `claude/peaceful-edison-prr51v`
+**Active Phase**: 設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
-**Test Status**: `pytest tests/` 572 passed, 2 skipped。ブリッジ `npm test` 138 件
-**実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
+**Test Status**: `pytest tests/` 687 passed, 2 skipped。ブリッジ `npm test` 194 件
+**実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 設計書 34 の見直しの直し (2026-09-26)
+
+**Commit**: (this commit)
+
+- 読み上げの感情: モデルにないスタイル（`development.yaml` の `emotion_style_map` が Happy などを指すが、スタイルをまだ足していない）は 422 で文が読まれなかった → 接続のときに `/models/info` からスタイルを読み（`styles_of`: 番号ごとの答えは model_path で探す）、ないものは Neutral で読む（スタイルごとに 1 回警告）
+- コメントの仕分け: 仕分けを待つ間に届いたコメントで KeyError / 空の列で IndexError になりえた → 仕分けていないものがなくなるまで繰り返し、空なら何もしない
+- 実況の間合い: イベントの発行はハンドラーを待つので、Jev に聞くのを待つとプレイのループが止まった → 聞くところからバックグラウンドに
+- 失敗の後の振り分け: 種類が交互の失敗（A→B→A）は Gemini に回らなかった → 種類を問わず 3 回続けば Gemini
+- 1 手: 断られた `do_suggestion`（観測のあとで候補が消えた）を Jev の失敗・道具の失敗に数えない
+- 設計書 34 の設定の名前（`stream.commentary_judge`）と上の決まりを直した。Current Status を今に。pytest 687
 
 ### Jev でできることは Jev に: 5. 失敗の後の振り分け (2026-09-26)
 

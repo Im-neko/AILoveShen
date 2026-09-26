@@ -60,6 +60,9 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         self._style_weight = style_weight
         self._emotion_style_service = emotion_style_service or EmotionStyleService()
         self._client: Optional[httpx.AsyncClient] = None
+        # モデルにあるスタイル（接続のとき /models/info から。分からなければ None: 確かめない）
+        self._styles: Optional[set[str]] = None
+        self._warned: set[str] = set()
 
     async def connect(self) -> None:
         """HTTP クライアントを初期化し、接続を確かめる。"""
@@ -73,6 +76,12 @@ class StyleBertVits2Client(ISpeechSynthesizer):
             response = await self._client.get("/models/info")
             response.raise_for_status()
             logger.info(f"TTS クライアントが {self._base_url} に接続した")
+            try:
+                self._styles = styles_of(response.json(), self._model_name)
+            except Exception:  # noqa: BLE001 - 分からなければ確かめない
+                self._styles = None
+            if self._styles is not None:
+                logger.info(f"モデル {self._model_name} のスタイル: {', '.join(sorted(self._styles))}")
         except httpx.RequestError as e:
             await self._client.aclose()
             self._client = None
@@ -114,7 +123,7 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         if not self._client:
             raise SynthesisError("TTS client not connected. Call connect() first.")
 
-        style = self._emotion_style_service.get_style_for_emotion(emotion)
+        style = self._usable_style(self._emotion_style_service.get_style_for_emotion(emotion))
 
         try:
             response = await self._client.get(
@@ -155,6 +164,22 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         except httpx.RequestError as e:
             raise SynthesisError(f"TTS connection error: {e}") from e
 
+    def _usable_style(self, style: str) -> str:
+        """
+        モデルにないスタイル（感情のスタイルをまだ足していない）は Neutral で読む（サーバーは 422 を
+        返し、その文は読まれなかった）。スタイルごとに 1 回だけ警告する。
+        """
+        if self._styles is None or style in self._styles:
+            return style
+        fallback = "Neutral" if "Neutral" in self._styles else sorted(self._styles)[0]
+        if style not in self._warned:
+            self._warned.add(style)
+            logger.warning(
+                f"モデル {self._model_name} にスタイル {style!r} がないので {fallback!r} で読む"
+                "（tts.emotion_style_map、tools/sbv2_add_styles.py）"
+            )
+        return fallback
+
     async def get_available_styles(self) -> List[str]:
         """
         TTS サーバーから使えるスタイルを取得する。
@@ -181,3 +206,27 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         except Exception as e:
             logger.warning(f"TTS サーバーからスタイルを取得できなかった: {e}")
             return ["Neutral"]
+
+
+def styles_of(info: dict, model_name: str) -> Optional[set[str]]:
+    """
+    /models/info の答えから、そのモデルのスタイル名。答えはモデルの番号ごと（"0": {model_path,
+    style2id, ...}）か名前ごと。見つからなければ None。
+    """
+    entry = info.get(model_name)
+    if entry is None:
+        entry = next(
+            (
+                v
+                for v in info.values()
+                if isinstance(v, dict)
+                and any(
+                    f"/{model_name}/" in str(v.get(k, "")).replace("\\", "/")
+                    for k in ("model_path", "config_path")
+                )
+            ),
+            None,
+        )
+    if not isinstance(entry, dict) or not isinstance(entry.get("style2id"), dict):
+        return None
+    return set(entry["style2id"])

@@ -94,24 +94,36 @@ class Narrator:
         self._pending.append(f"小目標 {event.goal} が{result}（{event.ended_because}）")
 
     async def on_goal_set(self, event: GoalSetEvent) -> None:
-        """起きたことと次の目標を 1回の発話で話す（gate が「今はいい」なら取っておく）。"""
+        """
+        起きたことと次の目標を 1回の発話で話す。gate に聞くときは、聞くところからバックグラウンドで
+        （イベントの発行はハンドラーを待つので、プレイのループを止めない）。「今はいい」なら取っておく。
+        """
         serves = f"「{event.mid_goal}」のため" if event.mid_goal else "身を守るため"
         self._pending.append(f"新しい小目標: {event.goal}（{serves}。{event.reason}）")
-        if not await self._worth_speaking():
+        quiet = (self._clock() - self._last_spoke) if self._last_spoke is not None else None
+        if self._gate is None or self._must_speak or quiet is None or quiet >= self._max_silence:
+            events, self._pending = self._pending, []
+            self._must_speak = False
+            self._comment(events)
+            return
+        self._spawn(self._ask_then_comment(list(self._pending), quiet))
+
+    async def _ask_then_comment(self, events: list[str], quiet: float) -> None:
+        assert self._gate is not None
+        try:
+            speak = await self._gate(events, quiet)
+        except Exception as e:  # noqa: BLE001 - 聞けなければ話す
+            logger.warning(f"実況の間合いを聞けなかった: {e}")
+            speak = True
+        if not speak:
             # 話さなかったことは捨てずに、次に話すとき一緒に（古いものから落とす）
             self._pending = self._pending[-PENDING_KEPT:]
             return
         events, self._pending = self._pending, []
+        if not events:
+            return  # ほかの実況が先に話した
         self._must_speak = False
-        self._comment(events)
-
-    async def _worth_speaking(self) -> bool:
-        if self._gate is None or self._must_speak:
-            return True
-        quiet = (self._clock() - self._last_spoke) if self._last_spoke is not None else None
-        if quiet is None or quiet >= self._max_silence:
-            return True
-        return await self._gate(list(self._pending), quiet)
+        await self._generate(events, self._activity())
 
     async def on_mid_goal_added(self, event: MidGoalAddedEvent) -> None:
         """配信者が自分で加えた中目標は次の目標と一緒に話す。視聴者のものは返答で話している。"""
@@ -175,7 +187,10 @@ class Narrator:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
     def _comment(self, events: list[str]) -> None:
-        task = asyncio.create_task(self._generate(events, self._activity()))
+        self._spawn(self._generate(events, self._activity()))
+
+    def _spawn(self, work) -> None:
+        task = asyncio.create_task(work)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 

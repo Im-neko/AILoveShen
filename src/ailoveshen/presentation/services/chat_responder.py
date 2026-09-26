@@ -207,9 +207,15 @@ class ChatResponder:
         """
         if self._triage is None:
             return self._queue.popleft()
-        for comment in list(self._queue):
-            if id(comment) not in self._triaged:
-                self._triaged[id(comment)] = await self._triage(comment)
+        # 仕分けを待つ間にもコメントは届く（古いものは押し出される）: 仕分けていないものがなくなるまで
+        while True:
+            fresh = next((c for c in self._queue if id(c) not in self._triaged), None)
+            if fresh is None:
+                break
+            self._triaged[id(fresh)] = await self._triage(fresh)
+        if not self._queue:
+            self._triaged.clear()
+            return None
         queued = list(self._queue)
         comment = next((c for c in queued if self._triaged[id(c)].urgent), queued[0])
         self._queue.remove(comment)

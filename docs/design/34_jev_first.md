@@ -45,6 +45,7 @@ Gemini に回すとき:
 - 表情 → 声の感情: happy → happy、sad → sad、angry → angry、surprised → surprised、relaxed / neutral → neutral。強さはそのまま `intensity` にする（Irodori-TTS の感情の声と説明は `caption_min_intensity` 0.6 以上、Style-Bert-VITS2 は `emotion_style_map`）
 - 選んだ反応は、同じ文の読み上げが始まったときにアバターがそのまま使う（同じ文でもう一度 Jev を呼ばない）
 - Jev が答えられなければ、前と同じ（中立の声、アバターは規則）
+- モデルにないスタイル（`emotion_style_map` が指す感情のスタイルをまだ足していない）は Neutral で読む（Style-Bert-VITS2 のサーバーは 422 を返し、その文が読まれなかった）。接続のときに `/models/info` からスタイルを読む
 
 ## 5. コメントの仕分け（`twitch.response.triage`）
 
@@ -55,20 +56,21 @@ Gemini に回すとき:
 - 取り下げと頼みは、待っているコメントの先頭に並べ替える（急ぐ）
 - 返事をしなかったコメントは文ごと `logs/chat/*.jsonl` に残す（取りこぼしを後で確かめる）
 
-## 6. 実況の間合い（`commentary.judge`）
+## 6. 実況の間合い（`stream.commentary_judge`）
 
 目標の切れ目の実況（Narrator）の前に、Jev が「今話す価値があるか」（yes/no）を答える。起きたこと（`events`）と今の様子を見せる。
 
 - 見どころ（中目標の完了、家の完成、技を覚えた、中目標をやめた、視聴者の頼みに関わること）は Jev に聞かずに必ず話す
 - 最後に話してから `max_silence_seconds`（60 秒）たっていれば必ず話す（黙り続けない）
 - 話さなかった出来事は捨てずに取っておき、次に話すときに一緒に話す
+- Jev に聞くのはバックグラウンドで（イベントの発行はハンドラーを待つので、聞くのを待つとプレイのループが止まる）
 
 ## 7. 失敗の後の振り分け（`minecraft.agent.failure_routing`）
 
 小目標が行き詰まった・進まなかった（stuck / stalled）とき、今は必ず Gemini が原因を分析して決める（27）。その前に、Jev に「一番上の中目標のまだ済んでいない別の手順」か「Gemini に考え直させる」（`ask_gemini`）かを選ばせる。
 
 - 同じ種類の小目標をもう一度は Jev の選択肢に入れない（同じやり方を繰り返すには、Gemini の分析と助言が要る: 27 の `_check_remedy`）
-- 次のときは Jev に聞かずに Gemini: 同じ種類の失敗が 2 回続いた、死んだ、中目標が進まない（`mid_goal_stall_steps`）、画面で考え直すことになった、別の手順がない
+- 次のときは Jev に聞かずに Gemini: 同じ種類の失敗が 2 回続いた、種類を問わず 3 回続いた（A→B→A と行き来しない）、死んだ、中目標が進まない（`mid_goal_stall_steps`）、画面で考え直すことになった、別の手順がない
 - Jev が選んだら、失敗の分析は行わない（代わりに、失敗した小目標は記録に残り、次に Gemini が決めるときに見える）
 
 ## 8. 決めなかったこと・あとで

@@ -1117,6 +1117,13 @@ class TestStepsChosenByJev:
         failed = Goal(spec=HAVE_PLANKS, reason="r")
         session._recent_goals.extend([GoalOutcome(failed, stuck), GoalOutcome(failed, stuck)])
         assert "2 times in a row" in use_case._needs_gemini(session, stuck)
+        # 種類が交互でも、3 回続けて失敗したら Gemini
+        session._recent_goals.clear()
+        other = Goal(spec=LOG, reason="r")
+        session._recent_goals.extend(
+            [GoalOutcome(failed, stuck), GoalOutcome(other, stuck), GoalOutcome(failed, stuck)]
+        )
+        assert "3 small goals in a row" in use_case._needs_gemini(session, stuck)
         assert "did not work out" in use_case._needs_gemini(session, "goal x is reconsidered: y")
 
     @pytest.mark.asyncio

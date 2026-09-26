@@ -214,10 +214,31 @@ async def test_triage_skips_what_needs_no_reply_and_answers_urgent_ones_first():
     llm = AsyncMock()
     llm.generate_response.side_effect = lambda user, msg, **kw: f"re:{msg}"
     said = []
-    responder = _responder(llm, said, backlog=5, triage=triage)
+    responder = _responder(llm, said, backlog=5, triage=triage, min_interval_seconds=0)
     for text in ["草", "こんにちは", "やっぱりいいや"]:
         responder.accept(ChatComment("u", text))
     while await responder.answer_next():
         pass
     assert said == ["re:やっぱりいいや", "re:草"]
     assert responder.skipped == 1
+
+
+@pytest.mark.asyncio
+async def test_comments_that_arrive_while_triaging_are_triaged_too():
+    from ailoveshen.application.use_cases.comment_triage import Triage
+
+    responder = None
+
+    async def triage(comment):
+        if comment.message == "1":
+            responder.accept(ChatComment("u", "2"))  # 仕分けを待つ間に届いた
+        return Triage(True, "chat", 0.9, "jev")
+
+    llm = AsyncMock()
+    llm.generate_response.side_effect = lambda user, msg, **kw: msg
+    said = []
+    responder = _responder(llm, said, backlog=5, triage=triage, min_interval_seconds=0)
+    responder.accept(ChatComment("u", "1"))
+    while await responder.answer_next():
+        pass
+    assert said == ["1", "2"]
