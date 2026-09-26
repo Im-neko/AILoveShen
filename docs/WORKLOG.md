@@ -9,7 +9,7 @@
 
 ### 視聴者の名前の読みの辞書（設計書 30） (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `c350cbc`
 
 - ユーザー「リスナーの名前の読み方も覚えておけるようにして、辞書で引けるようにしたい」
 - `data/readings.json`（名前 → かなの読み、viewer / guess）。覚え方: 本人の `!yomi よみ`（`!読み` / `!よみ`、覚えたら一言応える）、返答の `name_reading`（読みがなければ Gemini の推測、本人が読み方を言ったらその読み。推測は本人の読みを上書きしない）。使うのは読み上げに渡すテキストだけ（`SpeakTextUseCase(pronounce=)`、長い名前から、英数字の途中は除く）。引く: `GET /api/readings`（`?name=`）
