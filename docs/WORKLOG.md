@@ -9,7 +9,7 @@
 
 ### Style-Bert-VITS2 の音声から Irodori-TTS の声を作る (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `4640675`
 
 - ユーザー「生の学習データは雑音が多い。Style-Bert-VITS2 の音声はイントネーション以外はよいので、それを元に Irodori-TTS を学習させたい」
 - `tools/irodori_from_sbv2.py`: `generate`（台本 673 文を Style-Bert-VITS2 で読ませ、長さ・音割れ・無音・読みの速さで外れたものを除き、audiofolder の `metadata.csv`）、`reference`（語りとふつうの文から 60 秒を参照音声に: 学習なし、イントネーションは Irodori-TTS のまま。まずこれ）、`base` / `prepare` / `train`（Irodori-TTS の学習用リポジトリの `prepare_manifest.py` と `train.py` を LoRA の設定で。少データ向けに batch 4 × 4、3000 歩、500 歩ごとに保存）
