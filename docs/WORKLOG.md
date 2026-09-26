@@ -2,7 +2,7 @@
 
 **Active Phase**: 設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
-**Test Status**: `pytest tests/` 693 passed, 2 skipped。ブリッジ `npm test` 194 件
+**Test Status**: `pytest tests/` 694 passed, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
@@ -14,7 +14,7 @@
 - ユーザー「行動履歴から行動がスタックしていないかも Jev で定期的にチェックしたい。その場合も Gemini に判断し直してもらいたい」
 - `application/use_cases/stuck_check.py` `StuckCheck`: 小目標の行動 6 回ごとに、行動の記録（最新 12、結果と位置）と進み具合を Jev に見せ、fine / repeating / failing / back_and_forth / no_progress を選ばせる。fine 以外を確信度 0.75 以上なら `session.request_rethink`（理由に「is stuck」: Gemini は行動の記録で原因を分析する）。小目標が変わったら記録を消す
 - `AdvancePlayUseCase(stuck_check=)`（候補モードでも道具モードでも）。設定 `minecraft.agent.stuck_check_steps`（0 で切る）、`stuck_min_confidence`、`stuck_record_dir`（`logs/stuck`）。設計書 34 §9
-- テスト 6 件。pytest 693
+- テスト 7 件。pytest 694
 
 ### 設計書 34 の見直しの直し (2026-09-26)
 
