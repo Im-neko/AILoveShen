@@ -309,7 +309,7 @@ class GeminiTextGenerator(ITextGenerator):
             raise error from e
 
         elapsed_ms = int((time.monotonic() - started) * 1000)
-        self._log_usage(response, elapsed_ms, config)
+        self._log_usage(response, elapsed_ms, config, purpose, len(images))
         self._record(prompt, config, purpose, started, images, response=response)
         return response
 
@@ -388,8 +388,13 @@ class GeminiTextGenerator(ITextGenerator):
         response: types.GenerateContentResponse,
         elapsed_ms: int,
         config: types.GenerateContentConfig,
+        purpose: Optional[str] = None,
+        images: int = 0,
     ) -> None:
-        """トークンの使用量と所要時間をログに出す（トークンの監視はログだけ）。"""
+        """
+        トークンの使用量と所要時間をログに出す（トークンの監視はログだけ）。用途ごとの集計は
+        tools/gemini_usage.py（この行の形に合わせてある）。
+        """
         usage = response.usage_metadata
         if usage is None:
             logger.info(f"Gemini {self._model}: {elapsed_ms}ms（使用量の情報なし）")
@@ -397,7 +402,10 @@ class GeminiTextGenerator(ITextGenerator):
         logger.info(
             f"Gemini {self._model}（thinking {config.thinking_config.thinking_level}）: "
             f"{elapsed_ms}ms, "
+            f"purpose={purpose or 'default'} "
+            f"images={images} "
             f"prompt={usage.prompt_token_count} "
+            f"cached={usage.cached_content_token_count or 0} "
             f"thoughts={usage.thoughts_token_count} "
             f"output={usage.candidates_token_count} "
             f"total={usage.total_token_count}"
