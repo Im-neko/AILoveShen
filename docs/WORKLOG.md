@@ -9,7 +9,7 @@
 
 ### 行動の記録から行き詰まりを Jev が定期的に確かめる (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `a73a8b1`
 
 - ユーザー「行動履歴から行動がスタックしていないかも Jev で定期的にチェックしたい。その場合も Gemini に判断し直してもらいたい」
 - `application/use_cases/stuck_check.py` `StuckCheck`: 小目標の行動 6 回ごとに、行動の記録（最新 12、結果と位置）と進み具合を Jev に見せ、fine / repeating / failing / back_and_forth / no_progress を選ばせる。fine 以外を確信度 0.75 以上なら `session.request_rethink`（理由に「is stuck」: Gemini は行動の記録で原因を分析する）。小目標が変わったら記録を消す
