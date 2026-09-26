@@ -295,6 +295,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 | `プレイを始められない（GameBridgeError: Minecraft bridge unreachable …）。N 秒待ってやり直す` | ブリッジが動いていない → 起動の 2。起動すれば配信はそのまま始まる |
 | `ステップが失敗した（…）。N 秒待ってやり直す` | Gemini・Jev・ブリッジの一時的な失敗。続くなら中身（…）を見る |
 | `TTS サーバー（…）につながらない` で起動しない | TTS サーバーを起動する（起動の 1）。読み上げなしなら `--no-speak` |
+| 視点のクライアントが `… was larger than I expected, found N bytes extra whilst reading packet …` で切れる | ミラーが自分で作ったパケットの形が本物のクライアントとずれている。持ち物（`container_set_content`）は数だけの部品に絞って送るようにした（2026-09-26）。まだ出るならクライアントの `logs/latest.log` のその行（パケットの名前）を控える。ブリッジを再起動すると直る |
 | `Twitch のチャットにつながらない` | ネットワークを確かめる。自動でつなぎ直す |
 | `Twitch から: … NOTICE …` | チャンネル名を確かめる（`TWITCH_CHANNEL`） |
 | `.env に GEMINI_API_KEY … を書く` | `.env` にキーを書く |

@@ -215,13 +215,25 @@ export function relayCloses (client, viewers) {
 
 const INVENTORY_SYNC_MS = 100
 
+// 自分で作り直して送ってよい部品（アイテムのコンポーネント）: 数 1 つだけのもの。ほかの部品（名前、
+// 附呪、NBT など）は minecraft-data の型が本物のクライアントと 1 バイトでもずれると、視聴者が
+// 「… bytes extra whilst reading packet」で切れる。サーバーの生のバイト列を中継するときは関係ない
+const SAFE_COMPONENTS = new Set(['damage', 'max_damage', 'max_stack_size'])
+
+// 視聴者に送るアイテム 1 つ: 安全な部品だけを残す（見た目の附呪の光などは消えるが、切れない）
+export function safeSlot (notch) {
+  if (!notch || !Array.isArray(notch.components)) return notch
+  const components = notch.components.filter((c) => SAFE_COMPONENTS.has(c.type))
+  return { ...notch, addedComponentCount: components.length, components, removedComponentCount: 0, removeComponents: [] }
+}
+
 // プレイヤーの持ち物（ウィンドウ 0）の今の中身（視聴者に送る window_items）
 export function inventoryPacket (bot, Item) {
   return {
     windowId: 0,
     stateId: 0,
-    items: bot.inventory.slots.map((i) => Item.toNotch(i ?? null)),
-    carriedItem: Item.toNotch(null)
+    items: bot.inventory.slots.map((i) => safeSlot(Item.toNotch(i ?? null))),
+    carriedItem: safeSlot(Item.toNotch(null))
   }
 }
 

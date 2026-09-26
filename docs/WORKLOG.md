@@ -7,6 +7,14 @@
 
 ## Completed Work
 
+### 視点のミラーが「72 bytes extra」で切れる、音声モデルの調査メモ（設計書 32） (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「プロキシがちょっと微妙かも。ちょいちょい 72 bytes なんたらで落ちる」→ 本物のクライアントの「Packet … was larger than I expected, found N bytes extra」（パケットが期待より長い）。ミラーは受け取ったパケットを生のバイト列で中継するので、ずれうるのは自分で作り直して送るものだけ。一番疑わしいのは 66cd961 で足した持ち物（`window_items`）: Mineflayer のアイテムの部品（コンポーネント: 名前、附呪、NBT など）を minecraft-data の型で書き直しており、型が本物と少しでも違うと余る。`mirror.mjs` の `safeSlot`: 作り直すアイテムは数だけの部品（damage / max_damage / max_stack_size）に絞る（見た目の附呪の光などは消える）。実機のクライアントでは未確認（切れた行のパケット名で確かめる）
+- 音声モデル: 少量データから作る方法を調べた（`docs/design/32_tts_options.md`: Irodori-TTS、Qwen3-TTS、GPT-SoVITS、AivisSpeech と今の Style-Bert-VITS2 の比較、感情と GPU の見どころ、次の聞き比べ）
+- テスト: npm 170（mirror 1: 絞った window_items が 1.21.4 の形で書けて読み直せる）
+
 ### チャット: 自分とボットには反応しない、`!commands` の一覧 (2026-09-26)
 
 **Commit**: `d8e3cc5`

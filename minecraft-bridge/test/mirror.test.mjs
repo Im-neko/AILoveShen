@@ -53,3 +53,30 @@ test('持ち物の window_items は 46 マスのプレイヤーの持ち物', ()
   assert.equal(pkt.items.length, 46)
   assert.deepEqual(pkt.carriedItem, { itemCount: 0 })
 })
+
+test('作り直して送るアイテムは数だけの部品に絞る（視聴者が「bytes extra」で切れていた）', async () => {
+  const { createRequire } = await import('node:module')
+  const require = createRequire(import.meta.url)
+  const mc = require('minecraft-protocol')
+  const Item = require('prismarine-item')('1.21.4')
+  const reg = require('prismarine-registry')('1.21.4')
+  const sword = new Item(reg.itemsByName.iron_sword.id, 1)
+  sword.components = [
+    { type: 'damage', data: 7 },
+    { type: 'custom_name', data: { type: 'string', value: 'x' } }
+  ]
+  sword.removedComponents = ['food']
+  const slots = new Array(46).fill(null)
+  slots[36] = sword
+  const pkt = inventoryPacket({ inventory: { slots } }, Item)
+
+  assert.deepEqual(pkt.items[36].components, [{ type: 'damage', data: 7 }])
+  assert.equal(pkt.items[36].addedComponentCount, 1)
+  assert.equal(pkt.items[36].removedComponentCount, 0)
+  // 1.21.4 の形で書けて、読み直すと全部読まれる
+  const buf = mc.createSerializer({ state: 'play', isServer: true, version: '1.21.4' })
+    .createPacketBuffer({ name: 'window_items', params: pkt })
+  const back = mc.createDeserializer({ state: 'play', isServer: false, version: '1.21.4' }).parsePacketBuffer(buf)
+  assert.equal(back.metadata.size, buf.length)
+  assert.equal(back.data.params.items[36].components[0].data, 7)
+})
