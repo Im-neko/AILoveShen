@@ -169,7 +169,18 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"block": _str("ブロック名"), "radius": _int("半径（既定 32、最大 64）")},
         ["block"],
     ),
-    "recipe_of": ("レシピを調べる（すぐ返る）", {"item": _str("アイテム")}, ["item"]),
+    "recipe_of": (
+        "そのアイテムの作り方を全部調べる（バニラのレシピ全部: 作業台、かまど、石切台。材料の"
+        "「どれか 1 つ」も。すぐ返る）",
+        {"item": _str("アイテム")},
+        ["item"],
+    ),
+    "find_recipes": (
+        "レシピを名前で探す（結果か材料の名前の一部。例: lantern、blue、wool。すぐ返る）。"
+        "知っている物の正しい名前と作り方を確かめるのに使う",
+        {"query": _str("探す語（英語のアイテム名の一部）"), "limit": _int("件数（既定 8）")},
+        ["query"],
+    ),
     "how_to_get": (
         "ソルバーに、手に入れるまでに何が足りないかを聞く（すぐ返る。参考）",
         {"item": _str("アイテムかグループ（log、planks、food など）"), "count": _int("個数")},

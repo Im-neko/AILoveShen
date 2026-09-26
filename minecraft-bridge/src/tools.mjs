@@ -14,6 +14,7 @@ import { smeltingProduct, FUELS } from './knowledge.mjs'
 import { homeChests, chestWith } from './memory.mjs'
 import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
+import { describeRecipe } from './recipes.mjs'
 
 const FURNITURE = new Set(['crafting_table', 'furnace', 'chest'])
 const { Vec3 } = vec3Pkg
@@ -29,7 +30,7 @@ const REPLACEABLE = new Set(['air', 'cave_air', 'water', 'short_grass', 'tall_gr
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
   'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'wait']
-export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'how_to_get']
+export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get']
 
 class Refused extends Error {}
 const refuse = (why) => { throw new Refused(why) }
@@ -237,9 +238,19 @@ export function createTools (deps) {
       return found.length ? found : `no ${args.block} within ${radius}m`
     },
     recipe_of (args) {
+      // バニラのレシピ全部から（設計書 29）: 作業台・かまど・石切台など、材料は「どれか 1 つ」も含めて
+      if (knowledge.index) {
+        const all = knowledge.index.recipesFor(String(args.item)).map(describeRecipe)
+        return all.length ? all : `${args.item} has no recipe (gather it, or check the name with find_recipes)`
+      }
       const recipes = knowledge.recipes(args.item).map((r) => ({ makes: r.count, ingredients: r.ingredients, needs_crafting_table: r.needsTable }))
       const smeltFrom = knowledge.smeltingInput(args.item)
       return { crafting: recipes, smelted_from: smeltFrom }
+    },
+    find_recipes (args) {
+      if (!knowledge.index) refuse('the recipe list is not loaded')
+      const found = knowledge.index.search(String(args.query ?? ''), Math.max(1, Math.min(20, Number(args.limit ?? 8))))
+      return found.length ? found : `no recipe matches "${args.query}"`
     },
     how_to_get (args) {
       const count = Math.max(1, Math.floor(Number(args.count ?? 1)))

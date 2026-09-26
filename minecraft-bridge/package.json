@@ -8,7 +8,8 @@
     "start": "node --no-node-snapshot src/index.mjs",
     "test": "node --no-node-snapshot --test 'test/*.test.mjs'",
     "postinstall": "patch-package",
-    "skills:clean": "node --no-node-snapshot tools/clean-skills.mjs"
+    "skills:clean": "node --no-node-snapshot tools/clean-skills.mjs",
+    "recipes:fetch": "node tools/fetch-recipes.mjs"
   },
   "dependencies": {
     "isolated-vm": "^6.2.0",

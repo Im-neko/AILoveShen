@@ -43,12 +43,33 @@ const SMELTING = {
   cooked_mutton: 'mutton',
   cooked_chicken: 'chicken'
 }
+// バニラのレシピ全部（recipes.mjs、設計書 29）。index.mjs が読み込んで渡す。なければ minecraft-data だけ
+let INDEX = null
+export function useRecipes (index) { INDEX = index }
+
 // かまどが材料のアイテム（アイテム名）から作るもの。なければ null
 export function smeltingProduct (input) {
+  const fromIndex = () => INDEX?.all.find((r) => r.station === 'furnace' && r.ingredients[0].alts.includes(input))?.result ?? null
   return Object.keys(SMELTING).find((out) => {
     const from = SMELTING[out]
     return from === input || GROUP_PATTERNS[from]?.test(input)
-  }) ?? null
+  }) ?? fromIndex()
+}
+
+// 同じ種類から作るレシピ（ベッド→ベッド、羊毛→羊毛）の材料: 白いものがあれば白だけに絞る（染める）。
+// 白がなければ、そのレシピは使わない（染め直しの遠回りと循環を避ける）
+function sameKindAlts (item, alts) {
+  const group = Object.entries(GROUP_PATTERNS).find(([, re]) => re.test(item))?.[0]
+  const same = alts.filter((a) => a === item || (group && GROUP_PATTERNS[group].test(a)))
+  if (!same.length) return alts
+  const white = alts.find((a) => a.startsWith('white_') && a !== item)
+  return white ? [white] : null
+}
+
+// 材料の候補 → solver の spec（アイテム名、#タグ、any:a|b）
+function specOf (alts, tag) {
+  if (alts.length === 1) return alts[0]
+  return tag ? `#${tag}` : `any:${alts.join('|')}`
 }
 
 // 燃料1個で精錬できる数: 石炭と木炭は 8 個、板材と原木は 1.5 個
@@ -61,8 +82,9 @@ const EXTRA_MOB_DROPS = { sheep: ['white_wool'] }
 const sameGroup = (a, b) => Object.values(GROUP_PATTERNS).some((re) => re.test(a) && re.test(b))
 
 export class Knowledge {
-  constructor (md) {
+  constructor (md, index = INDEX) {
     this.md = md
+    this.index = index
     this.blockSources = new Map() // アイテム -> [ブロック名]
     for (const loot of md.blockLootArray) {
       if (!NATURAL_BLOCKS.some((re) => re.test(loot.block))) continue
@@ -81,6 +103,8 @@ export class Knowledge {
 
   // 必要なもののアイテム: グループ名かアイテム名 -> { label, members: [アイテム名] }
   resolve (spec) {
+    if (spec.startsWith('#') && this.index) return { label: spec.slice(1), members: this.index.tagMembers(spec.slice(1)) }
+    if (spec.startsWith('any:')) return { label: spec.slice(4).split('|').join(' or '), members: spec.slice(4).split('|') }
     if (spec === 'food') {
       return { label: 'food', members: this.md.foodsArray.map((f) => f.name).filter((n) => !FOOD_EXCLUDED.has(n)) }
     }
@@ -96,6 +120,7 @@ export class Knowledge {
 
   // item のクラフトのレシピ: [{ 結果の個数, 材料 {name: count}, needsTable }]
   recipes (item) {
+    if (this.index) return this.recipesFromIndex(item)
     const id = this.md.itemsByName[item]?.id
     const out = []
     for (const r of this.md.recipes[id] ?? []) {
@@ -118,9 +143,29 @@ export class Knowledge {
     return out
   }
 
+  // バニラのレシピ全部から（設計書 29）: 作業台・手持ちのクラフトだけ（石切台・鍛冶台はまだ使えない）
+  recipesFromIndex (item) {
+    const out = []
+    for (const r of this.index.recipesFor(item)) {
+      if (r.station !== 'crafting') continue
+      const ingredients = {}
+      let usable = true
+      for (const ing of r.ingredients) {
+        const alts = sameKindAlts(item, ing.alts)
+        if (!alts) { usable = false; break }
+        const spec = specOf(alts, alts.length === ing.alts.length ? ing.tag : null)
+        ingredients[spec] = (ingredients[spec] ?? 0) + ing.count
+      }
+      if (usable) out.push({ count: r.count, ingredients, needsTable: r.needsTable })
+    }
+    return out
+  }
+
   // item（アイテムかグループ）のかまどの材料。なければ null
   smeltingInput (item) {
-    return SMELTING[item] ?? null
+    if (SMELTING[item]) return SMELTING[item]
+    const r = this.index?.recipesFor(item).find((x) => x.station === 'furnace')
+    return r ? specOf(r.ingredients[0].alts, r.ingredients[0].tag) : null
   }
 
   // そのブロックを回収できる道具。素手でよければ null

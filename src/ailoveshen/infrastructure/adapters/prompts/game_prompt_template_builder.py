@@ -376,7 +376,7 @@ export default async function (t, args) {
   t.smelt({input, count?}), t.deposit({item, count?}), t.withdraw({item, count?}), t.go_home(),
   t.sleep(), t.build_next({name?}), t.move_furniture({x, y, z, to_x?, to_y?, to_z?}), t.wait()
 - 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed}] か文 },
-  t.recipe_of({item}), t.how_to_get({item, count?}),
+  t.recipe_of({item}), t.find_recipes({query, limit?}), t.how_to_get({item, count?}),
   t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
   hostile, distance_m, direction}], surroundings, needs, time, action },
   t.block_at({x, y, z}) → { name }

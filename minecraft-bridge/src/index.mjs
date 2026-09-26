@@ -51,7 +51,8 @@ import { createTools } from './tools.mjs'
 import { sharedState } from './state.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
-import { Knowledge } from './knowledge.mjs'
+import { Knowledge, useRecipes } from './knowledge.mjs'
+import { RecipeIndex } from './recipes.mjs'
 import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
@@ -96,7 +97,10 @@ const state = {
   deaths: 0 // このブリッジが動いてから死んだ回数（増えたら、Python は小目標を選び直す）
 }
 loadState(state)
-const knowledge = new Knowledge(minecraftData(VERSION))
+// バニラのレシピ全部（data-static、設計書 29）: 計画と調べものが使う。クラフトはサーバーのレシピ本
+const recipeIndex = RecipeIndex.load(VERSION)
+useRecipes(recipeIndex)
+const knowledge = new Knowledge(minecraftData(VERSION), recipeIndex)
 
 const worldAge = () => Number(bot.time.age)
 
