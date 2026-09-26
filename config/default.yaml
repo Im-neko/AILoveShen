@@ -316,7 +316,9 @@ minecraft:
   # Showing Gemini the stream screen (docs/design/23; captured from OBS, see obs.game_source)
   vision:
     enabled: true
-    review_interval_seconds: 240   # periodic check: does the screen match the goal?
+    # periodic check: does the screen match the goal? 0: off (costly; the screen still goes with
+    # the goal decision after a failure, and look_screen in tools mode)
+    review_interval_seconds: 0
     failure_interval_seconds: 60   # a screenshot goes with a rethink after failure at most this often
 
   # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;

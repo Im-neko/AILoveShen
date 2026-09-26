@@ -187,3 +187,22 @@ class TestToolStepWithScreen:
         await use_case.execute(_session(HAVE_PLANKS))
         offered = {t.name for t in self.generator.choose_tool.call_args.args[1]}
         assert "look_screen" not in offered
+
+
+@pytest.mark.asyncio
+async def test_no_periodic_review_when_the_interval_is_zero():
+    from unittest.mock import AsyncMock
+
+    from ailoveshen.application.use_cases.vision import ScreenReviewer, VisionPolicy
+
+    screen = AsyncMock()
+    reviewer = ScreenReviewer(
+        capture=screen,
+        text_generator=AsyncMock(),
+        prompt_builder=AsyncMock(),
+        policy=VisionPolicy(review_interval_seconds=0),
+        clock=lambda: 10_000.0,
+    )
+    await reviewer.review_if_due(object())
+    await reviewer.review_if_due(object())
+    screen.capture.assert_not_awaited()

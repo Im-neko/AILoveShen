@@ -87,8 +87,11 @@ class ScreenReviewer:
         """
         前の見直しから間隔が空いていれば、画面を見せて今の目標と合っているかを聞く。
         「考え直す」なら、次の切れ目で今の小目標を終わらせる（理由つき）。目標は決めない。
-        最初の呼び出しは時計を始めるだけ（開始直後は小目標を決めたばかり）。
+        最初の呼び出しは時計を始めるだけ（開始直後は小目標を決めたばかり）。間隔が 0 なら
+        定期の見直しはしない（失敗の後に画像を添えるのは続く）。
         """
+        if self._policy.review_interval_seconds <= 0:
+            return
         now = self._clock()
         if self._last_review is None:
             self._last_review = now
