@@ -1,6 +1,6 @@
 # 声の録音の台本と、録音から声のモデルを作る流れ
 
-作成: 2026-09-26。台本は `recording_script.tsv`（番号、区分、感情、文、メモ）。249 文。
+作成: 2026-09-26。台本は `recording_script.tsv`（番号、区分、感情、文、メモ。書き下ろし 249 文）と `ita_corpus.tsv`（[ITA コーパス](https://github.com/mmorise/ita-corpus) 424 文、パブリックドメイン。ふりがな `ruby` と読み `kana` つき）。
 
 ## 台本の中身
 
@@ -15,8 +15,21 @@
 | 実況 | G001–G040 | 40 | neutral | アイテム名、数字、座標、英字（TNT、YouTube）、数え方 |
 | 相づち | R001–R030 | 30 | neutral | 短い反応、笑い |
 | 語り | L001–L004 | 4 | neutral | 1 つ 15 秒前後。Irodori-TTS の参照音声（学習には使わない） |
+| ITA EMOTION100 | EMOTION100_001–100 | 100 | neutral | 日本語の音を最低限まんべんなく（おすすめ） |
+| ITA RECITATION324 | RECITATION324_001–324 | 324 | neutral | 音の組み合わせを増やす（任意） |
 
-全部で録音はおよそ 30〜40 分（言い直しを含めると 1〜2 時間）。一度に全部でなくてよい: ふつう → 語り → 感情 → 実況・相づち の順に、何回かに分けて。
+書き下ろしの 249 文でおよそ 30〜40 分、ITA EMOTION100 で 10 分ほど（言い直しを含めると合わせて 2 時間ほど）。一度に全部でなくてよい: ふつう → 語り → ITA EMOTION100 → 感情 → 実況・相づち の順に、何回かに分けて。RECITATION324 は時間があれば。
+
+## 録音のページ（行ごとの録音ボタン）
+
+```bash
+python tools/voice_recorder.py            # → http://localhost:8770 をブラウザで開く
+python tools/voice_recorder.py --out <保存先>   # 既定は data/voice_recordings/（git に入らない）
+```
+
+1 文ごとの「録音」ボタン（か Space）で録り、止めるとその行の番号のファイル名（`N001.wav`、`EMOTION100_001.wav`）で保存する。48kHz などマイクのまま、モノラル、16bit の WAV。ブラウザの自動音量・雑音除去・エコー除去は切る（学習データを加工しない）。押す直前の 0.2 秒も入れる（最初の音が切れない）。入力の大きさを上に表示し、音割れしそうな録音には印を付けて次へ進まない。録り直しは上書き（前のものは `_previous/` に 1 つ）。保存済みの行は聞き直し・消去ができる。マイクは localhost で開いたときだけ使える（Python の標準ライブラリだけで動くので、録る人のパソコンでもリポジトリと Python があれば動く）。
+
+読むだけのページ（録音済みの印つき、スマホ向け）: https://claude.ai/artifact/UG76jN4QpA2ukaXvZZ1xX3 （このページからは録音できない: 閲覧側でマイクが使えない）
 
 ## 録り方（読む人へ）
 
@@ -32,7 +45,7 @@
 
 ```bash
 # 足りない録音を確かめる
-python tools/voice_dataset.py <録音のフォルダー> --dry-run
+python tools/voice_dataset.py data/voice_recordings --dry-run
 
 # Style-Bert-VITS2 の学習データにする（Style-Bert-VITS2/Data/shen/raw/<スタイル>/ と esd.list）
 python tools/voice_dataset.py <録音のフォルダー> --model shen

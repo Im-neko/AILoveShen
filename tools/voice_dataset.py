@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-録音した台本（docs/voice/recording_script.tsv）を Style-Bert-VITS2 の学習データにする。文字起こし
+録音した台本（docs/voice/recording_script.tsv と、あれば ITA コーパス docs/voice/ita_corpus.tsv）を Style-Bert-VITS2 の学習データにする。文字起こし
 （Whisper）は要らない: 台本の文をそのまま esd.list に書く（docs/voice/README.md）。
 
     python tools/voice_dataset.py <録音のフォルダー> [--model shen] [--data Style-Bert-VITS2/Data]
         [--with-long] [--dry-run]
 
-- 録音のファイル名は台本の番号（N001.wav、H012.wav …）。フォルダー分けは自由（下の階層も探す）
+- 録音のファイル名は台本の番号（N001.wav、H012.wav、ITA は EMOTION100_001.wav …）。フォルダー分けは
+  自由（下の階層も探す）。ITA コーパス（パブリックドメイン）は Neutral に入る
 - 感情ごとにサブフォルダーに写す: Data/<model>/raw/<スタイル>/<番号>.wav。Style-Bert-VITS2 2.5.0 以降は
   サブフォルダーごとにスタイルができる（Neutral / Happy / Surprised / Sad / Angry / Fear）
 - esd.list: `<スタイル>/<番号>.wav|<model>|JP|<文>`（前のものは esd.list.bak に）
@@ -23,7 +24,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SCRIPT = REPO / "docs" / "voice" / "recording_script.tsv"
+SCRIPTS = [REPO / "docs" / "voice" / "recording_script.tsv", REPO / "docs" / "voice" / "ita_corpus.tsv"]
 STYLES = {
     "neutral": "Neutral",
     "happy": "Happy",
@@ -34,9 +35,13 @@ STYLES = {
 }
 
 
-def read_script(path: Path = SCRIPT) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f, delimiter="\t"))
+def read_script() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for path in SCRIPTS:
+        if path.exists():
+            with path.open(encoding="utf-8", newline="") as f:
+                rows += list(csv.DictReader(f, delimiter="\t"))
+    return rows
 
 
 def main() -> int:
@@ -83,7 +88,15 @@ def main() -> int:
         per_style[style] = per_style.get(style, 0) + 1
     print(f"録音 {len(rows)} / 台本 {len(lines)}（{', '.join(f'{k} {v}' for k, v in per_style.items())}）")
     if missing:
-        print(f"録音がない: {' '.join(missing)}")
+        # 区分ごとに（ITA の 324 文をまだ録っていないだけで画面が埋まらないように）
+        by_section: dict[str, list[str]] = {}
+        section_of = {ln["id"]: ln["section"] for ln in lines}
+        for i in missing:
+            by_section.setdefault(section_of[i], []).append(i)
+        sizes = {sec: sum(1 for ln in lines if ln["section"] == sec) for sec in by_section}
+        for sec, ids in by_section.items():
+            shown = "まだ録っていない（全部）" if len(ids) == sizes[sec] else " ".join(ids)
+            print(f"録音がない {sec} {len(ids)}: {shown}")
     if extra:
         print(f"台本にないファイル（使わない）: {' '.join(extra)}")
     if not args.dry_run and rows:

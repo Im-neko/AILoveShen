@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>シェンの声 録音</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=JetBrains+Mono:wght@500&family=Zen+Maru+Gothic:wght@700&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#F5F6F8; --surface:#FFFFFF; --ink:#1C2230; --muted:#626B80; --line:#DDE1E8;
+  --rec:#D6453D; --rec-bg:#FBE9E7; --done:#2F8F6B; --done-bg:#E6F3EE; --warn:#B7791F; --chip:#EBEEF3; --sel:#3B6FD6;
+  --e-neutral:#7C8596; --e-happy:#D99A12; --e-surprised:#3B82C4; --e-sad:#6C79B8; --e-angry:#C9553D; --e-scared:#7A5BA8; --e-ita:#3F8F8B;
+  --size:20px;
+  --f-display:"Zen Maru Gothic","Hiragino Maru Gothic ProN","BIZ UDPGothic",sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme:dark;
+    --bg:#12151C; --surface:#1A1F29; --ink:#E8EBF1; --muted:#9AA3B6; --line:#2A3140;
+    --rec:#F0655C; --rec-bg:#3A1D1C; --done:#4DBB8F; --done-bg:#16302A; --warn:#E3A948; --chip:#232A36; --sel:#7EA2F0;
+    --e-neutral:#98A1B3; --e-happy:#F0B93A; --e-surprised:#62A6E6; --e-sad:#909CDA; --e-angry:#E7775F; --e-scared:#A487D0; --e-ita:#5FC2BC;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);line-height:1.6;padding-inline:16px}
+.wrap{max-width:820px;margin:0 auto}
+header.top{position:sticky;top:0;z-index:5;background:var(--bg);margin-inline:-16px;padding:10px 16px 8px;border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.progress{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
+.progress b{color:var(--ink);font-weight:500}
+.level{position:relative;flex:1 1 140px;height:10px;background:var(--line);border-radius:5px;overflow:hidden;min-width:100px}
+.level i{position:absolute;inset:0 auto 0 0;width:0;background:var(--done);transition:width 60ms linear}
+.level.hot i{background:var(--rec)}
+.level::after{content:"";position:absolute;left:89%;top:0;bottom:0;width:1px;background:var(--muted);opacity:.6}
+.tools{display:flex;gap:6px;flex-wrap:wrap}
+button,select{font:inherit;color:inherit}
+.tbtn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer}
+.tbtn[aria-pressed="true"]{border-color:var(--ink)}
+.tbtn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+select.tbtn{max-width:220px}
+:is(button,select,a):focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+nav.jump{display:flex;gap:6px;overflow-x:auto;padding-top:8px;scrollbar-width:none}
+nav.jump a{flex:none;display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--ink);background:var(--chip);border-radius:999px;padding:3px 10px;font-size:13px}
+nav.jump a small{font-family:var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--e-neutral);flex:none}
+.status{font-size:13px;color:var(--muted);min-height:1.6em;margin-top:6px}
+.status.error{color:var(--rec)}
+h1{font-family:var(--f-display);font-weight:700;font-size:26px;margin:24px 0 4px}
+.lead{color:var(--muted);margin:0 0 12px;max-width:40em}
+details.tips{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+details.tips summary{cursor:pointer;font-weight:700}
+details.tips ul{margin:10px 0 2px;padding-left:1.2em;display:grid;gap:4px}
+kbd{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--surface)}
+section{scroll-margin-top:130px}
+section h2{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-weight:700;font-size:21px;margin:36px 0 2px}
+section h2 .dot{width:10px;height:10px}
+section h2 small{font-family:var(--f-mono);font-weight:500;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.how{color:var(--muted);margin:0 0 10px;font-size:14px;max-width:40em}
+ol.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.line{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;padding:12px 8px;border-bottom:1px solid var(--line);scroll-margin-top:150px;border-left:3px solid transparent}
+.line.current{border-left-color:var(--sel);background:var(--surface)}
+.line.recording{border-left-color:var(--rec);background:var(--rec-bg)}
+.id{grid-column:1/-1;font-family:var(--f-mono);font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.id .secs{font-variant-numeric:tabular-nums}
+.id .warn{color:var(--warn)}
+.text{grid-column:1/-1;font-size:var(--size);line-height:1.8;overflow-wrap:anywhere}
+.text rt{font-size:.5em;color:var(--muted)}
+.note{display:block;font-size:12px;color:var(--muted)}
+.actions{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rbtn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--rec);color:var(--rec);background:var(--surface);border-radius:999px;padding:4px 14px 4px 10px;cursor:pointer;font-size:14px}
+.rbtn::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--rec)}
+.line.recording .rbtn{background:var(--rec);color:var(--surface)}
+.line.recording .rbtn::before{border-radius:2px;background:var(--surface)}
+.pbtn,.xbtn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;cursor:pointer;font-size:14px}
+.line:not(.done) .pbtn,.line:not(.done) .xbtn{display:none}
+.timer{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--rec)}
+.line:not(.recording) .timer{display:none}
+.badge{font-size:12px;border-radius:999px;padding:0 8px;background:var(--done-bg);color:var(--done)}
+.line:not(.done) .badge{display:none}
+.hide-done .line.done{display:none}
+.gate{margin:16px 0;padding:14px 16px;border:1px dashed var(--line);border-radius:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+footer{margin:40px 0;color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion:reduce){.level i{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="bar">
+      <span class="progress" id="progress">録音済み <b>0</b> / 0</span>
+      <span class="level" id="level" aria-hidden="true" title="入力の大きさ（線より右は音割れの手前）"><i></i></span>
+      <span class="tools">
+        <select class="tbtn" id="device" aria-label="マイク"><option value="">マイク（許可のあとに選べる）</option></select>
+        <button class="tbtn" id="smaller" type="button" aria-label="文字を小さく">A−</button>
+        <button class="tbtn" id="larger" type="button" aria-label="文字を大きく">A＋</button>
+        <button class="tbtn" id="hideDone" type="button" aria-pressed="false">未録音だけ</button>
+        <button class="tbtn" id="autoNext" type="button" aria-pressed="true">録ったら次へ</button>
+      </span>
+    </div>
+    <nav class="jump" id="jump" aria-label="区分へ移動"></nav>
+    <div class="status" id="status" role="status"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>シェンの声 録音</h1>
+  <p class="lead">1 文ずつ録音して、その行の番号のファイル名（例 <kbd>N001.wav</kbd>）でこのパソコンに保存します。録り直すと上書きされます（前のものは <kbd>_previous</kbd> に残ります）。</p>
+  <div class="gate" id="gate">
+    <button class="tbtn primary" id="enable" type="button">マイクを使う</button>
+    <span>最初に押して、ブラウザのマイクの許可を「許可」にしてください。</span>
+  </div>
+  <details class="tips">
+    <summary>録り方とキー操作</summary>
+    <ul>
+      <li><kbd>Space</kbd> 選んでいる行の録音を開始・停止。<kbd>↓</kbd><kbd>↑</kbd> 行を移動。<kbd>P</kbd> 選んでいる行を再生。</li>
+      <li>録音を押したら 0.3 秒ほど待ってから読み、読み終えて 0.3 秒ほどしてから止めてください。</li>
+      <li>上の入力の棒が線より右まで届くと音割れの手前です。赤くなったら声かマイクの音量を下げてください。</li>
+      <li>静かで響かない部屋で、マイクと口の距離は毎回同じに。一度に全部でなくて大丈夫です（録った行は残ります）。</li>
+      <li>読みにくいところは自然な言い方で。そのときは番号をメモしておいてください。</li>
+    </ul>
+  </details>
+  <div id="sections"></div>
+  <footer id="footer"></footer>
+</main>
+
+<script>
+const HOW = {
+  "ふつう": ["neutral", "声の土台です。落ち着いた、ふだんの配信の話し方で。"],
+  "語り": ["neutral", "1 つ 15 秒ほど。途中で止まらず、自然なテンションでひと続きに。"],
+  "楽しい": ["happy", "うれしい・楽しい気持ちで。配信で本当に言うくらいの自然な大きさで。"],
+  "驚き": ["surprised", "びっくりした瞬間の声で。大きな声でも音が割れない音量に。"],
+  "悲しい": ["sad", "しょんぼりした気持ちで。泣き声ではなく、少し沈んだ話し方。"],
+  "むっ": ["angry", "本気の怒りではなく、ゲームで「もう！」となるくらいの軽い怒り。"],
+  "怖い": ["scared", "怖がって、少し声をひそめたり震えたり。"],
+  "実況": ["neutral", "アイテム名・数字・英字の読み。数字はふだんの読み方で（六十四個 → ろくじゅうよんこ）。"],
+  "相づち": ["neutral", "短い反応や笑い。一語だけでも 1 ファイルにしてください。"],
+  "ITA EMOTION100": ["ita", "ITA コーパス（パブリックドメイン）。日本語の音をまんべんなく含む 100 文。ふつうの話し方で、ふりがなのとおりに。"],
+  "ITA RECITATION324": ["ita", "ITA コーパスの残りの 324 文（任意）。音の組み合わせを増やします。時間があるときに。"],
+};
+const ORDER = ["ふつう", "語り", "ITA EMOTION100", "楽しい", "驚き", "悲しい", "むっ", "怖い", "実況", "相づち", "ITA RECITATION324"];
+const PREROLL_S = 0.2;   // 押す直前の音も少し入れる（最初の音が切れない）
+const CLIP = 0.99;
+
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ruby = (t) => esc(t).replace(/([一-龯々〆ヵヶ0-9０-９]+)\(([ぁ-ゖァ-ヺー]+)\)/g, "<ruby>$1<rt>$2</rt></ruby>");
+const prefs = (() => { try { return JSON.parse(localStorage.getItem("voice-recorder") || "{}"); } catch { return {}; } })();
+const state = Object.assign({ size: 20, hideDone: false, autoNext: true, device: "" }, prefs);
+const savePrefs = () => { try { localStorage.setItem("voice-recorder", JSON.stringify({ size: state.size, hideDone: state.hideDone, autoNext: state.autoNext, device: state.device })); } catch {} };
+
+let script = [], recorded = {}, clipped = {}, current = null;
+let ctx = null, stream = null, source = null, node = null;
+let ring = [], ringLen = 0, take = null, peak = 0, startedAt = 0, timerId = 0;
+
+function status(text, error = false) { const el = $("#status"); el.textContent = text; el.classList.toggle("error", error); }
+
+async function load() {
+  script = await (await fetch("/api/script")).json();
+  recorded = await (await fetch("/api/recordings")).json();
+  const groups = ORDER.filter((s) => script.some((r) => r.section === s)).map((s) => ({ name: s, rows: script.filter((r) => r.section === s) }));
+  $("#sections").innerHTML = groups.map((g, gi) => {
+    const [emo, how] = HOW[g.name] || ["neutral", ""];
+    return `<section id="s${gi}">
+      <h2><span class="dot" style="background:var(--e-${emo})"></span>${esc(g.name)} <small><span data-count="${gi}">0</span>/${g.rows.length}</small></h2>
+      <p class="how">${esc(how)}</p>
+      <ol class="lines">${g.rows.map((r) => `
+        <li class="line" data-id="${r.id}" tabindex="-1">
+          <span class="id">${r.id}<span class="secs"></span><span class="warn"></span><span class="badge">保存済み</span></span>
+          <span class="text">${r.ruby ? ruby(r.ruby) : esc(r.text)}${r.note ? `<span class="note">${esc(r.note)}</span>` : ""}</span>
+          <span class="actions">
+            <button class="rbtn" type="button">録音</button><span class="timer">0.0 秒</span>
+            <button class="pbtn" type="button">▶ 聞く</button>
+            <button class="xbtn" type="button">消す</button>
+          </span>
+        </li>`).join("")}</ol>
+    </section>`;
+  }).join("");
+  $("#jump").innerHTML = groups.map((g, gi) => `<a href="#s${gi}"><span class="dot" style="background:var(--e-${(HOW[g.name] || ["neutral"])[0]})"></span>${esc(g.name)} <small data-chip="${gi}"></small></a>`).join("");
+  $("#footer").textContent = `全 ${script.length} 文。保存先はコマンドを起動したときのフォルダー（既定 data/voice_recordings/）。`;
+  select(document.querySelector(".line:not(.done)") || document.querySelector(".line"), false);
+  render();
+}
+
+function render() {
+  document.documentElement.style.setProperty("--size", state.size + "px");
+  document.body.classList.toggle("hide-done", state.hideDone);
+  $("#hideDone").setAttribute("aria-pressed", String(state.hideDone));
+  $("#autoNext").setAttribute("aria-pressed", String(state.autoNext));
+  let done = 0;
+  for (const li of document.querySelectorAll(".line")) {
+    const secs = recorded[li.dataset.id];
+    const on = secs !== undefined;
+    li.classList.toggle("done", on);
+    li.querySelector(".secs").textContent = on && secs != null ? ` · ${secs.toFixed(1)} 秒` : "";
+    li.querySelector(".warn").textContent = clipped[li.dataset.id] ? "音割れのおそれ（録り直し推奨）" : "";
+    if (on) done++;
+  }
+  document.querySelectorAll("section").forEach((sec, gi) => {
+    const lines = sec.querySelectorAll(".line"), n = sec.querySelectorAll(".line.done").length;
+    sec.querySelector(`[data-count="${gi}"]`).textContent = n;
+    const chip = document.querySelector(`[data-chip="${gi}"]`); if (chip) chip.textContent = `${n}/${lines.length}`;
+  });
+  $("#progress").innerHTML = `録音済み <b>${done}</b> / ${script.length}`;
+}
+
+function select(li, scroll = true) {
+  if (!li) return;
+  current?.classList.remove("current");
+  current = li; li.classList.add("current");
+  if (scroll) li.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+
+// ---- マイク ----
+const WORKLET = `class Tap extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor("tap",Tap)`;
+
+async function enable() {
+  try {
+    await stopMic();
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      deviceId: state.device ? { exact: state.device } : undefined,
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  } catch (e) {
+    status(`マイクが使えない: ${e.message}。ブラウザのマイクの許可と、http://localhost で開いているかを確かめてください。`, true);
+    return;
+  }
+  ctx = ctx || new AudioContext();
+  if (ctx.state === "suspended") await ctx.resume();
+  if (!node) {
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
+  }
+  source = ctx.createMediaStreamSource(stream);
+  node = new AudioWorkletNode(ctx, "tap");
+  node.port.onmessage = (e) => onAudio(e.data);
+  source.connect(node);
+  $("#gate").hidden = true;
+  await listDevices();
+  const label = stream.getAudioTracks()[0]?.label || "マイク";
+  status(`${label}（${ctx.sampleRate} Hz、モノラル、自動音量・雑音除去なし）で録ります。`);
+}
+
+async function stopMic() {
+  source?.disconnect(); node?.disconnect();
+  stream?.getTracks().forEach((t) => t.stop());
+  source = null; stream = null;
+}
+
+async function listDevices() {
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+  const now = stream?.getAudioTracks()[0]?.getSettings().deviceId || state.device;
+  $("#device").innerHTML = devices.map((d) => `<option value="${esc(d.deviceId)}" ${d.deviceId === now ? "selected" : ""}>${esc(d.label || "マイク")}</option>`).join("");
+}
+
+let meterPeak = 0, meterAt = 0;
+function onAudio(buf) {
+  let p = 0;
+  for (let i = 0; i < buf.length; i++) { const a = Math.abs(buf[i]); if (a > p) p = a; }
+  meterPeak = Math.max(p, meterPeak * 0.9);
+  const now = performance.now();
+  if (now - meterAt > 50) {
+    meterAt = now;
+    $("#level i").style.width = Math.min(100, meterPeak * 100) + "%";
+    $("#level").classList.toggle("hot", meterPeak >= 0.89);
+  }
+  if (take) { take.push(buf); peak = Math.max(peak, p); return; }
+  ring.push(buf); ringLen += buf.length;
+  const keep = PREROLL_S * (ctx?.sampleRate || 48000);
+  while (ring.length && ringLen - ring[0].length >= keep) ringLen -= ring.shift().length;
+}
+
+function startTake(li) {
+  if (!stream) { status("先に「マイクを使う」を押してください。", true); return; }
+  if (take) stopTake();
+  select(li, false);
+  take = ring.slice(); ring = []; ringLen = 0; peak = 0;
+  li.classList.add("recording");
+  startedAt = performance.now();
+  timerId = setInterval(() => { li.querySelector(".timer").textContent = ((performance.now() - startedAt) / 1000).toFixed(1) + " 秒"; }, 100);
+  status(`${li.dataset.id} を録音中… もう一度押すか Space で止めて保存。`);
+}
+
+async function stopTake() {
+  const li = current, chunks = take, clip = peak >= CLIP;
+  take = null; clearInterval(timerId);
+  li.classList.remove("recording");
+  const wav = encodeWav(chunks, ctx.sampleRate);
+  status(`${li.dataset.id} を保存中…`);
+  try {
+    const res = await fetch(`/api/recordings/${li.dataset.id}`, { method: "PUT", body: wav, headers: { "Content-Type": "audio/wav" } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    recorded[li.dataset.id] = data.seconds;
+    if (clip) clipped[li.dataset.id] = true; else delete clipped[li.dataset.id];
+    status(`${li.dataset.id}.wav を保存しました（${data.seconds} 秒）${clip ? "。音割れのおそれがあります" : ""}。`, clip);
+    render();
+    if (state.autoNext && !clip) {
+      const lines = [...document.querySelectorAll(".line")].filter((l) => !state.hideDone || !l.classList.contains("done") || l === li);
+      const next = lines[lines.indexOf(li) + 1];
+      if (next) select(next);
+    }
+  } catch (e) {
+    status(`${li.dataset.id} を保存できませんでした: ${e.message}。録音のコマンドが動いているか確かめてください。`, true);
+  }
+}
+
+function encodeWav(chunks, rate) {
+  const n = chunks.reduce((s, c) => s + c.length, 0);
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, n * 2, true);
+  let o = 44;
+  for (const c of chunks) for (let i = 0; i < c.length; i++, o += 2) {
+    const s = Math.max(-1, Math.min(1, c[i])); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+let player = null;
+function play(li) {
+  player?.pause();
+  player = new Audio(`/audio/${li.dataset.id}.wav?t=${Date.now()}`);
+  player.play().catch((e) => status(`再生できない: ${e.message}`, true));
+}
+
+async function remove(li) {
+  const id = li.dataset.id;
+  const btn = li.querySelector(".xbtn");
+  if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "本当に消す"; setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "消す"; }, 3000); return; }
+  const res = await fetch(`/api/recordings/${id}`, { method: "DELETE" });
+  if (res.ok) { delete recorded[id]; delete clipped[id]; status(`${id}.wav を消しました（_previous に移しました）。`); render(); }
+}
+
+// ---- 操作 ----
+$("#enable").addEventListener("click", enable);
+$("#device").addEventListener("change", (e) => { state.device = e.target.value; savePrefs(); enable(); });
+$("#larger").addEventListener("click", () => { state.size = Math.min(34, state.size + 2); savePrefs(); render(); });
+$("#smaller").addEventListener("click", () => { state.size = Math.max(14, state.size - 2); savePrefs(); render(); });
+$("#hideDone").addEventListener("click", () => { state.hideDone = !state.hideDone; savePrefs(); render(); });
+$("#autoNext").addEventListener("click", () => { state.autoNext = !state.autoNext; savePrefs(); render(); });
+$("#sections").addEventListener("click", (e) => {
+  const li = e.target.closest(".line"); if (!li) return;
+  if (e.target.closest(".rbtn")) { if (take && current === li) stopTake(); else startTake(li); }
+  else if (e.target.closest(".pbtn")) play(li);
+  else if (e.target.closest(".xbtn")) remove(li);
+  else if (!take) select(li, false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("select, input, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.code === "Space") { e.preventDefault(); if (take) stopTake(); else if (current) startTake(current); }
+  else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !take) {
+    e.preventDefault();
+    const lines = [...document.querySelectorAll(".line")].filter((l) => l.offsetParent);
+    const i = lines.indexOf(current) + (e.key === "ArrowDown" ? 1 : -1);
+    if (lines[i]) select(lines[i]);
+  } else if (e.key === "p" || e.key === "P") { if (current?.classList.contains("done")) play(current); }
+});
+window.addEventListener("beforeunload", (e) => { if (take) { e.preventDefault(); e.returnValue = ""; } });
+if (!window.isSecureContext) status("このページは http://localhost:8770 で開いてください（それ以外のアドレスではマイクが使えません）。", true);
+load().catch((e) => status(`台本を読めない: ${e.message}`, true));
+</script>
+</body>
+</html>
