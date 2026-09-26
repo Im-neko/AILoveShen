@@ -180,6 +180,19 @@ class IMinecraftBridge(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def danger(self) -> dict[str, Any] | None:
+        """
+        反射が動いていれば、その危険（danger: id, trigger, target, options, rule, choice）と判断に
+        渡す状態（まわり、目印、家までの距離、最近のダメージ）。なければ None（docs/design/28）。
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def steer_reflex(self, danger_id: int, choice: str, confidence: float) -> bool:
+        """反射を選んだものに切り替える。受け付けられたか（終わっていれば False）。"""
+        raise NotImplementedError
+
+    @abstractmethod
     async def close(self) -> None:
         """クライアントが持つリソースを解放する。"""
         ...

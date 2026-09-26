@@ -1152,6 +1152,20 @@ class ActionResult:
     ok: bool
     result: str
     seconds: float
+    # 襲われて止まった（ダメージ、反射）: 小目標の失敗に数えない（docs/design/28 §3）
+    interrupted: bool = False
+
+    @property
+    def cut_by_attack(self) -> bool:
+        """襲われて止まったか（印か、ブリッジの結果の文から。道具モードの結果は文だけ）。"""
+        return self.interrupted or self.result.startswith(INTERRUPTED_PREFIXES)
+
+
+INTERRUPTED_PREFIXES = (
+    "failed: interrupted: took damage",
+    "failed: reflex: ",
+    "not started: the reflex",
+)
 
 
 # =============================================================================

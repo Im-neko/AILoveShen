@@ -281,6 +281,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 | 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
 | 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |
+| 襲われたときの反射（規則と Jev の選択、確信度） | `logs/reflex/*.jsonl`（ブリッジのターミナルにも `[reflex] …` と出る） |
 | Gemini の費用（用途ごとの回数とトークン） | `python tools/gemini_usage.py data/logs/ailoveshen-dev.log`（価格を渡すと円の目安） |
 | 配信のログ | ターミナルと `data/logs/ailoveshen-dev.log`（`APP_ENV=development` のとき。設定の `logging.file`） |
 | ボットの様子 | ブリッジのターミナルの出力 |

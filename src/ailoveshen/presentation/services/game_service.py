@@ -13,6 +13,7 @@ from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.screen_capture import IScreenCapture
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.use_cases.danger import DangerWatcher
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.domain.entities import PlaySession
 
@@ -49,6 +50,7 @@ class GameService:
         mid_goals: MidGoalKeeper,
         fast_judge: IFastJudge | None = None,
         screen_capture: IScreenCapture | None = None,
+        danger_watcher: DangerWatcher | None = None,
     ) -> None:
         """
         ゲームサービスを初期化する。
@@ -62,6 +64,8 @@ class GameService:
             mid_goals: 中目標を持つ（チャットへの返答は、これを通して視聴者の頼みを加える）
             fast_judge: 道具の見張りの判断モデル（control: tools のとき）。サービスと一緒に閉じる
             screen_capture: 配信の画面を撮るもの（OBS）。サービスと一緒に閉じる
+            danger_watcher: 襲われたときの反射を Jev に選ばせる見張り（docs/design/28）。プレイの
+                間だけ動かす
         """
         self._start = start_play
         self._advance = advance_play
@@ -71,6 +75,7 @@ class GameService:
         self._mid_goals = mid_goals
         self._fast_judge = fast_judge
         self._screen_capture = screen_capture
+        self._danger = danger_watcher
         self._session: PlaySession | None = None
 
     @property
@@ -108,6 +113,18 @@ class GameService:
                 failures += 1
                 await self._back_off("プレイを始められない", e, failures)
         self._session = session
+        # 襲われたときの反射を Jev が選ぶ見張り（設計書 28）。プレイと一緒に動き、一緒に止まる
+        danger = asyncio.create_task(self._danger.run()) if self._danger is not None else None
+        try:
+            return await self._play_steps(session, max_steps, keep_going)
+        finally:
+            if danger is not None:
+                danger.cancel()
+                await asyncio.gather(danger, return_exceptions=True)
+
+    async def _play_steps(
+        self, session: PlaySession, max_steps: int | None, keep_going: bool
+    ) -> PlayOutcome:
         failures = 0
         steps = 0
         house_complete = False

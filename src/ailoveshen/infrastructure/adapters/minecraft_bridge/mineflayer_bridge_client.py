@@ -104,6 +104,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
             ok=bool(data["ok"]),
             result=str(data["result"]),
             seconds=float(data["seconds"]),
+            interrupted=bool(data.get("interrupted", False)),
         )
 
     async def run_tool(self, name: str, args: dict[str, Any]) -> tuple[bool, str, float, bool]:
@@ -261,6 +262,18 @@ class MineflayerBridgeClient(IMinecraftBridge):
             seconds=float(d.get("seconds", 0.0)),
             learned=bool(d.get("learned")),
         )
+
+    async def danger(self) -> dict[str, Any] | None:
+        """反射の危険と、判断に渡す状態（なければ None）。"""
+        data: Any = await self._request("GET", "/danger")
+        return data if isinstance(data, dict) else None
+
+    async def steer_reflex(self, danger_id: int, choice: str, confidence: float) -> bool:
+        """反射を選んだものに切り替える。"""
+        data = await self._request(
+            "POST", "/reflex", json={"id": danger_id, "choice": choice, "confidence": confidence}
+        )
+        return bool(data.get("accepted", False))
 
     async def answer_judge(self, judge_id: int, answer: Any, confidence: float) -> None:
         """技の judge() に答える。"""

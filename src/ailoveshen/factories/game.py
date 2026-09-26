@@ -5,6 +5,7 @@ from __future__ import annotations
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.use_cases.builds import BuildDesigner
+from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
@@ -164,7 +165,12 @@ def create_game_service(
     # control: tools（設計書 21）: Gemini が道具を呼び、Jev が実行中に質問に答える
     fast_judge = None
     tool_watcher = None
-    if minecraft.control == "tools" or (minecraft.small_goals == "jev" and jev.api_key):
+    reflex_by_jev = minecraft.reflex.judge == "jev" and bool(jev.api_key)
+    if (
+        minecraft.control == "tools"
+        or (minecraft.small_goals == "jev" and jev.api_key)
+        or reflex_by_jev
+    ):
         fast_judge = JevFastJudge(
             api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
         )
@@ -193,6 +199,21 @@ def create_game_service(
                 consecutive=w.consecutive,
                 act_on_progress=w.act_on_progress,
                 act_on_questions=w.act_on_questions,
+            ),
+        )
+    # 襲われたときの反射を Jev が選ぶ（設計書 28）
+    danger_watcher = None
+    if reflex_by_jev:
+        assert fast_judge is not None
+        r = minecraft.reflex
+        danger_watcher = DangerWatcher(
+            bridge=bridge,
+            judge=fast_judge,
+            recorder=JsonlWatchRecorder(r.record_dir) if r.record_dir else None,
+            policy=ReflexPolicy(
+                poll_seconds=r.poll_seconds,
+                timeout_seconds=r.timeout_seconds,
+                min_confidence=r.min_confidence,
             ),
         )
     store = JsonMissionStore(minecraft.mission.store_path)
@@ -268,5 +289,6 @@ def create_game_service(
         action_selector=action_selector,
         mid_goals=mid_goals,
         fast_judge=fast_judge,
+        danger_watcher=danger_watcher,
         screen_capture=capture,
     )

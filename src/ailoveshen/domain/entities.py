@@ -580,6 +580,8 @@ class PlaySession(Entity):
     rethink_reason: str = field(default="", init=False)
     # 小目標を決めたときのブリッジの死んだ回数（増えたら、死んでリスポーンした: 小目標を選び直す）
     deaths_at_goal: Optional[int] = field(default=None, init=False)
+    # 直前のステップが襲われて止まった: 次の読み取りを「進まない」に数えない（docs/design/28）
+    _skip_stall: bool = field(default=False, init=False, repr=False)
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -633,10 +635,11 @@ class PlaySession(Entity):
         if self.goal is None or obs.goal is None:
             return
         remaining = obs.goal.remaining
+        skip, self._skip_stall = self._skip_stall, False
         if self.least_remaining is None or remaining < self.least_remaining:
             self.least_remaining = remaining
             self.stalled_steps = 0
-        elif self.steps_in_goal > 0:
+        elif self.steps_in_goal > 0 and not skip:
             self.stalled_steps += 1
 
     def phase_changed(self, obs: GameObservation) -> bool:
@@ -722,6 +725,10 @@ class PlaySession(Entity):
         """今の目標とその中目標の分としてステップを 1 つ数える。予算を超えて断念した中目標
         （視聴者の頼み）があれば返す。"""
         self.steps_in_goal += 1
-        self.consecutive_failures = 0 if result.ok else self.consecutive_failures + 1
+        if result.cut_by_attack:
+            # 襲われて止まったのは、やり方の失敗ではない（行き詰まりで Gemini を呼ばない）
+            self._skip_stall = True
+        else:
+            self.consecutive_failures = 0 if result.ok else self.consecutive_failures + 1
         self.updated_at = _utc_now()
         return self.plan.charge(self.goal.mid_goal_id if self.goal else None)

@@ -153,3 +153,36 @@ class TestKeepGoing:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+@pytest.mark.asyncio
+async def test_the_danger_watcher_runs_with_the_play_and_stops_with_it(start):
+    """襲われたときの反射の見張り（docs/design/28）はプレイの間だけ動く。"""
+    import asyncio
+
+    running = asyncio.Event()
+    cancelled = []
+
+    class Watcher:
+        async def run(self):
+            running.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(True)
+                raise
+
+    advance = AsyncMock()
+
+    async def step(session):
+        await running.wait()
+        return _report()
+
+    advance.execute.side_effect = step
+    closers = (AsyncMock(), AsyncMock(), AsyncMock())
+    service = GameService(start, advance, *closers, mid_goals=Mock(), danger_watcher=Watcher())
+
+    outcome = await service.play(max_steps=2)
+
+    assert outcome.steps == 2
+    assert cancelled == [True]

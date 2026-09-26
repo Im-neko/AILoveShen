@@ -165,6 +165,17 @@ class WatchSettings:
 
 
 @dataclass
+class ReflexSettings:
+    """襲われたときの反射の判断（docs/design/28）。きっかけと規則はブリッジ、選ぶのは Jev。"""
+
+    judge: str = "jev"  # jev（Jev のキーがなければ rules）| rules（ブリッジの規則だけ）
+    min_confidence: float = 0.5
+    poll_seconds: float = 0.25
+    timeout_seconds: float = 0.8
+    record_dir: str = "logs/reflex"
+
+
+@dataclass
 class VisionSettings:
     """配信の画面を Gemini に見せる（docs/design/23 §2）。撮り方は obs の設定。"""
 
@@ -200,6 +211,7 @@ class MinecraftSettings:
     skill_rewrites_per_hour: int = 3  # 1 つの技を書き直せる回数（費用の上限）
     watch: WatchSettings = field(default_factory=lambda: WatchSettings())
     vision: VisionSettings = field(default_factory=lambda: VisionSettings())
+    reflex: ReflexSettings = field(default_factory=lambda: ReflexSettings())
 
 
 @dataclass
@@ -508,6 +520,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         agent_data = mc_data.get("agent", {})
         mission_data = mc_data.get("mission", {})
         watch_data = mc_data.get("watch", {})
+        reflex_data = mc_data.get("reflex", {}) or {}
         vision_data = mc_data.get("vision", {})
         defaults = MinecraftSettings()
         watch_defaults = defaults.watch
@@ -559,6 +572,13 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                     "act_on_questions", watch_defaults.act_on_questions
                 ),
                 record_dir=watch_data.get("record_dir", watch_defaults.record_dir),
+            ),
+            reflex=ReflexSettings(
+                judge=reflex_data.get("judge", defaults.reflex.judge),
+                min_confidence=reflex_data.get("min_confidence", defaults.reflex.min_confidence),
+                poll_seconds=reflex_data.get("poll_seconds", defaults.reflex.poll_seconds),
+                timeout_seconds=reflex_data.get("timeout_seconds", defaults.reflex.timeout_seconds),
+                record_dir=reflex_data.get("record_dir", defaults.reflex.record_dir),
             ),
             vision=VisionSettings(
                 enabled=vision_data.get("enabled", defaults.vision.enabled),

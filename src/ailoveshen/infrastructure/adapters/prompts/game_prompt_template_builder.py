@@ -714,6 +714,17 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
                 for m in s.get("mobs", [])[:MOBS_SHOWN]
             ],
             "recent_actions": s.get("recent_actions", [])[-RECENT_ACTIONS_SHOWN:],
+            # まわりの目印（ベッド、ドア、作業台…）: 要約した同じ書式を毎回渡す（docs/design/28）
+            "nearby": [
+                {
+                    "kind": n.get("kind"),
+                    "count": n.get("count"),
+                    "distance_m": (n.get("nearest") or {}).get("distance_m"),
+                    "direction": (n.get("nearest") or {}).get("direction"),
+                    "owner": n.get("owner") or "not ours",
+                }
+                for n in s.get("nearby") or []
+            ],
         }
         return state, ACTION_INSTRUCTIONS
 

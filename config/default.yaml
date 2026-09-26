@@ -319,6 +319,17 @@ minecraft:
     skills: true
     skill_rewrites_per_hour: 3   # rewrites of one skill (a cost cap)
 
+  # Reflex when attacked (docs/design/28_jev_reflex.md). The bridge starts at once with its rule
+  # (fight or flee) on a close mob, damage (even from afar or unseen) or a mob walking toward the bot;
+  # Jev picks fight / flee / go_home / keep_distance / ignore from what is possible and the bridge
+  # switches. Steps cut by an attack are not counted as failures of the small goal.
+  reflex:
+    judge: "jev"             # jev (needs TYPESAFE_API_KEY, else rules) | rules
+    min_confidence: 0.5
+    poll_seconds: 0.25       # how often GET /danger is read
+    timeout_seconds: 0.8     # Jev's answer later than this keeps the rule
+    record_dir: "logs/reflex"  # rule vs Jev per danger
+
   # Watching a running tool (control: tools). Jev answers all questions in one call per tick.
   watch:
     interval_seconds: 1.0
