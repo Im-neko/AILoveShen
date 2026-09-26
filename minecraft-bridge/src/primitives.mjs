@@ -90,6 +90,8 @@ export function configureMovements (bot, state) {
   m.scafoldingBlocks = [bot.registry.itemsByName.dirt.id]
   m.allow1by1towers = true
   bot.pathfinder.setMovements(m)
+  // 歩きながら掘るときの道具も同じ選び方で（元のものは速い道具がないと持ち物の最初のものを返す）
+  bot.pathfinder.bestHarvestTool = (block) => chooseTool(bot, block)
 }
 
 // エンティティから `distance` 以上離れたどこかに行く。エンティティが2ブロックほど動くたびに経路を
@@ -318,10 +320,44 @@ const markUnreachable = (state, pos) => state.unreachableBlocks?.add(blockKey(po
 export const isUnreachable = (state, pos) => !!state.unreachableBlocks?.has(blockKey(pos))
 
 // そのブロックに一番速い道具を持っていれば装備する
-async function equipToolFor (bot, block) {
-  const tool = bot.pathfinder.bestHarvestTool(block)
-  if (tool) await bot.equip(tool, 'hand')
+// 掘るのに使う道具: 採るのに要る道具（石にツルハシ）か、素手より速く掘れる道具のうち一番速いもの。
+// 同じ速さなら安い方（木 < 石 < 金 < 鉄 < ダイヤ < ネザライト）。壊れかけの道具は要るときだけ。
+// どれも素手より速くなければ null（素手）。pathfinder の bestHarvestTool は、速い道具がないと
+// 持ち物の最初のもの（ツルハシや土）を返していて、原木をツルハシで切っていた
+const TIERS = ['wooden', 'stone', 'golden', 'iron', 'diamond', 'netherite']
+const tierOf = (name) => { const i = TIERS.indexOf(name.split('_')[0]); return i < 0 ? TIERS.length : i }
+const ALMOST_BROKEN = 0.05
+function almostBroken (item) {
+  const max = item.maxDurability
+  return !!max && (item.durabilityUsed ?? 0) >= max * (1 - ALMOST_BROKEN)
 }
+export function chooseTool (bot, block) {
+  if (typeof block?.digTime !== 'function' || !bot.inventory?.items) return null
+  const effects = bot.entity?.effects ?? {}
+  const hand = block.digTime(null, false, false, false, [], effects)
+  const needs = block.harvestTools ? Object.keys(block.harvestTools).map(Number) : null
+  let best = null
+  for (const item of bot.inventory.items()) {
+    const required = !!needs && needs.includes(item.type)
+    if (needs && !required) continue
+    const t = block.digTime(item.type, false, false, false, item.enchants ?? [], effects)
+    if (!required && t >= hand) continue
+    if (!required && almostBroken(item)) continue
+    if (!best || t < best.t || (t === best.t && tierOf(item.name) < tierOf(best.item.name))) best = { item, t }
+  }
+  return best?.item ?? null
+}
+
+async function equipToolFor (bot, block) {
+  const tool = chooseTool(bot, block)
+  if (tool) {
+    if (bot.heldItem?.name !== tool.name) await bot.equip(tool, 'hand')
+  } else if (TOOL_ITEM.test(bot.heldItem?.name ?? '')) {
+    // 素手のほうがよい（道具を減らさない）
+    await bot.unequip?.('hand')?.catch(() => {})
+  }
+}
+const TOOL_ITEM = /_(pickaxe|axe|shovel|hoe|sword)$|^shears$/
 
 // 階段掘り（docs/design/17_dig_down.md）: 1 マス幅・2 マスの高さで、前に 1、下に 1 ずつ下りる。
 // 真下には掘らない（溶岩に落ちる、出られない穴になる）。階段なら歩いて戻れる
