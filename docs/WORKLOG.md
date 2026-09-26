@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 死んで遠くに戻された後、家のドアやチェストへの行動が全部時間切れで止まる (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザーのログ: スポーンが (204, 64, -114)、家は (-76, 65, -151)（約 280 m）。`place door`（20 秒）、`take 2 beef from the chest`（45 秒）が毎回 timeout で失敗し、操作が止まったように見えた
+- 遠い所への行動は区間（48 m）ごとに歩くが、区間の途中で時間切れになると、進んでいても「失敗」になり、続けて失敗すると小目標が行き詰まり扱いになっていた
+- `runner.mjs`: 時間切れの理由に、そのときの段階と進んだ距離（`timeout (while walking toward home (280m away); moved 12m)`）。歩いている段階（`bot.actionPhase` が walking…、`legToward` が書く）で 8 m 以上進んでいれば、成功（`walked toward …: 20m this time, not there yet`）として返す
+- テスト: npm 182（runner 1）
+- 残り: 死んだ後に家から遠い所で復活する（ベッドで寝ればスポーン地点が家になる）
+
 ### ドアの置き直しの時間切れ（続き）: どこで止まったかをログに出す (2026-09-26)
 
 **Commit**: `0555fcd`

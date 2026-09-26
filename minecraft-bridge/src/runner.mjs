@@ -10,6 +10,8 @@ import { needsOutside } from './candidates.mjs'
 import { leaveHome, houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
 
+const WALK_PROGRESS_M = 8 // これだけ歩いていれば、時間切れでも進んだとみなす
+
 // deps: { primitives, afterRun(): 実行の後（見えたものの記録と保存）, log(line) }
 export function createRunner (bot, state, deps = {}) {
   const primitives = deps.primitives ?? PRIMITIVES
@@ -35,7 +37,13 @@ export function createRunner (bot, state, deps = {}) {
     const limit = TIMEOUTS_MS[c.verb] ?? DEFAULT_TIMEOUT_MS
     // 時間切れの理由に、そのとき何をしていたか（bot.actionPhase。プリミティブが書く）を添える
     bot.actionPhase = ''
-    const timer = setTimeout(() => abort(bot.actionPhase ? `timeout (while ${bot.actionPhase})` : 'timeout'), limit)
+    const startPos = bot.entity.position.clone()
+    let walkedOnTimeout = null // 歩いている間の時間切れ: どれだけ進んだか
+    const timer = setTimeout(() => {
+      const moved = round(bot.entity.position.distanceTo(startPos))
+      if (/^walking/.test(bot.actionPhase) && moved >= WALK_PROGRESS_M) walkedOnTimeout = `${bot.actionPhase.replace(/^walking/, 'walked')}: ${moved}m this time, not there yet`
+      abort(bot.actionPhase ? `timeout (while ${bot.actionPhase}; moved ${moved}m)` : `timeout (moved ${moved}m)`)
+    }, limit)
     const onHurt = (entity) => {
       if (entity !== bot.entity) return
       if (DAMAGE_TOLERANT.has(c.verb)) {
@@ -63,10 +71,16 @@ export function createRunner (bot, state, deps = {}) {
       result = await primitives[c.verb](bot, state, c, controller.signal)
       if (controller.signal.aborted) throw controller.signal.reason
     } catch (e) {
-      ok = false
       const reason = controller.signal.aborted ? controller.signal.reason : e
-      result = `failed: ${reason.message}`
       abort(reason.message)
+      if (walkedOnTimeout) {
+        // 遠い所へ歩いている途中の時間切れは、進んでいれば失敗ではない（次のステップで続きを歩く）。
+        // 死んで遠くに戻されたあと、家のドアやチェストへの行動が全部「失敗」になって止まった
+        result = walkedOnTimeout
+      } else {
+        ok = false
+        result = `failed: ${reason.message}`
+      }
     } finally {
       clearTimeout(timer)
       bot.off('entityHurt', onHurt)

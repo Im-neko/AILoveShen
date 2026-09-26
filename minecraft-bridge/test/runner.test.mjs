@@ -88,3 +88,23 @@ test('反射が動いている間と、別の行動の実行中は始めない',
   await abortCurrent(state, 'stop')
   await running
 })
+
+test('遠くへ歩いている途中の時間切れは、進んでいれば失敗にしない（進んだ距離を返す）', async () => {
+  const { TIMEOUTS_MS } = await import('../src/primitives.mjs')
+  TIMEOUTS_MS.test_walk = 50
+  TIMEOUTS_MS.test_stuck = 50
+  const walking = (moveBy) => (bot, state, c, signal) => {
+    bot.actionPhase = 'walking toward home (280m away)'
+    bot.entity.position = bot.entity.position.offset(moveBy, 0, 0)
+    return waitsForAbort(bot, state, c, signal)
+  }
+  const { run } = setup({ test_walk: walking(20), test_stuck: walking(1) })
+  const moved = await run({ verb: 'test_walk' }, 'go home')
+  assert.equal(moved.ok, true)
+  assert.match(moved.result, /^walked toward home \(280m away\): 20m this time/)
+  const stuck = await run({ verb: 'test_stuck' }, 'go home')
+  assert.equal(stuck.ok, false)
+  assert.match(stuck.result, /timeout \(while walking toward home \(280m away\); moved 1m\)/)
+  delete TIMEOUTS_MS.test_walk
+  delete TIMEOUTS_MS.test_stuck
+})

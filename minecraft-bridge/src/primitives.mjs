@@ -195,7 +195,9 @@ async function legToward (bot, target, what, signal) {
   const far = Math.hypot(target.x - me.x, target.z - me.z)
   if (far <= LEG) return null
   const k = LEG / far
+  bot.actionPhase = `walking toward ${what} (${round(far)}m away)`
   await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3), signal)
+  bot.actionPhase = ''
   const left = Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z)
   return `walked ${round(far - left)}m toward ${what} (${round(left)}m left)`
 }
