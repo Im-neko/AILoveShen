@@ -9,7 +9,7 @@
 
 ### 進まないときは原因を分析してから目標を変える（設計書 27） (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `08df41f`
 
 - ユーザー「続いて進まなければ、Gemini に原因分析をしてから、必要であれば目標の再設定をするようにしてほしい」。きっかけは 09-25 のログの食べ物探し（have(food) が stalled → Gemini が数だけ変えて同じ小目標、を約 1 分ごとに繰り返した）
 - 呼び出しは増やさない: 失敗の後の目標の決定（goal_after_failure）のスキーマの先頭に `diagnosis`、次に `remedy`（retry / change）と `advice`
