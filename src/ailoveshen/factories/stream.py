@@ -72,7 +72,11 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
 
     tts = None
     if settings.stream.speak:
-        from ailoveshen.factories.tts import create_and_connect_tts_service
+        from ailoveshen.factories.tts import (
+            create_and_connect_tts_service,
+            describe_engine,
+            engine_of,
+        )
 
         try:
             tts = await create_and_connect_tts_service(
@@ -84,16 +88,19 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         except Exception as e:  # noqa: BLE001 - どの失敗でも理由を言って始めない
             await game.close()
             await llm.close()
-            server = tts_config.get("server", {})
-            raise StreamSetupError(
-                f"TTS サーバー（{server.get('host')}:{server.get('port')}）につながらない: {e}。"
-                "cd docker && docker compose up -d で起動し、"
+            how = (
+                "Irodori-TTS-Server を起動し（scripts/irodori/start_mac.sh、docs/setup/irodori_tts.md）、"
+                "curl http://localhost:8088/health で確かめる。"
+                if engine_of(tts_config) == "irodori"
+                else "cd docker && docker compose up -d で起動し、"
                 "curl http://localhost:5001/models/info で確かめる。"
-                "読み上げなしで配信するなら --no-speak"
+            )
+            raise StreamSetupError(
+                f"TTS サーバー（{describe_engine(tts_config)}）につながらない: {e}。"
+                f"{how}読み上げなしで配信するなら --no-speak"
             ) from e
         closers.append(tts.stop)
-        voice = tts_config.get("voice", {}).get("model_name")
-        logger.info(f"[tts] 読み上げる（モデル {voice}）")
+        logger.info(f"[tts] 読み上げる（{describe_engine(tts_config)}）")
 
     async def say(text: str) -> None:
         logger.info(f"[say] {text}")

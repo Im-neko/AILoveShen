@@ -29,6 +29,14 @@
 1. 同じ声のサンプル（30 秒〜1 分、きれいな音声と書き起こし）で、Irodori-TTS と Qwen3-TTS の学習なしのクローンを作り、今の `shen` と聞き比べる（読み・アクセント、感情、1 文の合成時間）
 2. よいほうのアダプターを足し（例: Irodori-TTS-Server の OpenAI 互換 API）、`tts.engine` のような設定で切り替える。Style-Bert-VITS2 は予備に残す
 
+## 4.1 追記（2026-09-26）: Irodori-TTS を試せるようにした
+
+ユーザー: 「自然な日本語の発音と安定性を重視」「Mac（M5、32GB）で動かしたい」。Qwen3-TTS と GPT-SoVITS は、1 つずつ音を作る方式で語の抜け・繰り返しが出うる（安定性）ことと、日本語のアクセント（Qwen3-TTS）から外した。Irodori-TTS は Mac の MPS に公式に対応する（README: `uv sync --extra cpu` が macOS の CPU/MPS）。Docker からは MPS が使えないので、サーバーは Mac で直接動かす。
+
+- `IrodoriTtsClient`（`ISpeechSynthesizer`、`POST /v1/audio/speech`、WAV）、`tts.engine: style_bert_vits2 | irodori`（`TTS_ENGINE`）。seed を決めて同じ文は同じ音に。感情は caption（既定は切る: 声が参照から離れうる）
+- `scripts/irodori/setup_mac.sh` / `start_mac.sh`、`tools/irodori_voice.py`（学習データから参照音声）、`tools/tts_compare.py`（聞き比べと合成時間）
+- 手順: `docs/setup/irodori_tts.md`。実機ではまだ動かしていない
+
 ## 5. 限界
 
 詳しい比較記事（Zenn の音響分析、Qiita の 10 選）とモデルカード（Hugging Face）は調査の環境から開けず、検索結果の要約と各 GitHub の README に基づく。実際の音は聞いていない。

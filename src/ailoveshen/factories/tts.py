@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict, Optional
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
+from ailoveshen.application.ports.output.speech_synthesizer import ISpeechSynthesizer
 from ailoveshen.application.use_cases.speak_text import SpeakTextUseCase
 from ailoveshen.domain.value_objects import EmotionState, EmotionType
-from ailoveshen.infrastructure.adapters.audio.sounddevice_player import (
-    SounddevicePlayer,
-)
 from ailoveshen.infrastructure.adapters.tts.emotion_style_service import EmotionStyleService
 from ailoveshen.infrastructure.adapters.tts.style_bert_vits2_client import (
     StyleBertVits2Client,
@@ -47,6 +46,81 @@ def _parse_emotion_style_map(
             pass
 
     return result
+
+
+ENGINES = ("style_bert_vits2", "irodori")
+
+
+def engine_of(config: Dict[str, Any]) -> str:
+    """設定の読み上げの方式（tts.engine。既定は style_bert_vits2）。"""
+    engine = str(config.get("engine") or "style_bert_vits2").strip().lower()
+    if engine not in ENGINES:
+        raise ValueError(f"tts.engine must be one of {', '.join(ENGINES)}, got {engine!r}")
+    return engine
+
+
+def describe_engine(config: Dict[str, Any]) -> str:
+    """ログと起動の失敗の説明に使う、方式・つなぎ先・声。"""
+    if engine_of(config) == "irodori":
+        c = config.get("irodori", {})
+        return f"Irodori-TTS {c.get('host', 'localhost')}:{c.get('port', 8088)}、声 {c.get('voice', 'shen')}"
+    server = config.get("server", {})
+    voice = config.get("voice", {}).get("model_name")
+    return f"Style-Bert-VITS2 {server.get('host')}:{server.get('port')}、モデル {voice}"
+
+
+def _parse_emotion_captions(config_map: Optional[Dict[str, str]]) -> Dict[EmotionType, str]:
+    result: Dict[EmotionType, str] = {}
+    for name, caption in (config_map or {}).items():
+        try:
+            result[EmotionType(name.lower())] = str(caption)
+        except ValueError:
+            pass
+    return result
+
+
+def create_synthesizer(config: Dict[str, Any]) -> ISpeechSynthesizer:
+    """tts.engine の合成器を作る（接続はまだしない）。"""
+    if engine_of(config) == "irodori":
+        from ailoveshen.infrastructure.adapters.tts.irodori_tts_client import IrodoriTtsClient
+
+        c = config.get("irodori", {})
+        return IrodoriTtsClient(
+            host=c.get("host", "localhost"),
+            port=int(c.get("port", 8088)),
+            timeout_seconds=float(c.get("timeout_seconds", 60.0)),
+            voice=c.get("voice", "shen"),
+            speed=float(c.get("speed", 1.0)),
+            num_steps=c.get("num_steps"),
+            seed=c.get("seed"),
+            cfg_scale_text=c.get("cfg_scale_text"),
+            cfg_scale_speaker=c.get("cfg_scale_speaker"),
+            emotion_captions=(
+                _parse_emotion_captions(c.get("emotion_captions")) if c.get("emotion") else None
+            ),
+            caption_min_intensity=float(c.get("caption_min_intensity", 0.6)),
+            api_key=os.environ.get("IRODORI_API_KEY", ""),
+        )
+
+    server_config = config.get("server", {})
+    voice_config = config.get("voice", {})
+    synthesis_config = config.get("synthesis", {})
+    # 感情からスタイルへの対応を作る（Style-Bert-VITS2 固有）
+    emotion_style_service = EmotionStyleService(
+        style_map=_parse_emotion_style_map(config.get("emotion_style_map")),
+        default_style=voice_config.get("default_style", "Neutral"),
+    )
+    return StyleBertVits2Client(
+        host=server_config.get("host", "localhost"),
+        port=server_config.get("port", 5000),
+        timeout_seconds=server_config.get("timeout_seconds", 30.0),
+        model_name=voice_config.get("model_name", "default"),
+        sdp_ratio=synthesis_config.get("sdp_ratio", 0.2),
+        noise=synthesis_config.get("noise", 0.6),
+        noisew=synthesis_config.get("noisew", 0.8),
+        length=synthesis_config.get("length", 1.0),
+        emotion_style_service=emotion_style_service,
+    )
 
 
 def create_tts_service(
@@ -91,32 +165,13 @@ def create_tts_service(
         ```
     """
     # 設定の各セクションを既定値付きで取り出す
-    server_config = config.get("server", {})
-    voice_config = config.get("voice", {})
-    synthesis_config = config.get("synthesis", {})
     queue_config = config.get("queue", {})
     audio_config = config.get("audio", {})
-    emotion_style_map_config = config.get("emotion_style_map")
 
-    # 感情からスタイルへの対応を作る（Style-Bert-VITS2 固有）
-    emotion_style_map = _parse_emotion_style_map(emotion_style_map_config)
-    emotion_style_service = EmotionStyleService(
-        style_map=emotion_style_map,
-        default_style=voice_config.get("default_style", "Neutral"),
-    )
+    synthesizer = create_synthesizer(config)
 
-    # インフラのアダプターを作る
-    synthesizer = StyleBertVits2Client(
-        host=server_config.get("host", "localhost"),
-        port=server_config.get("port", 5000),
-        timeout_seconds=server_config.get("timeout_seconds", 30.0),
-        model_name=voice_config.get("model_name", "default"),
-        sdp_ratio=synthesis_config.get("sdp_ratio", 0.2),
-        noise=synthesis_config.get("noise", 0.6),
-        noisew=synthesis_config.get("noisew", 0.8),
-        length=synthesis_config.get("length", 1.0),
-        emotion_style_service=emotion_style_service,
-    )
+    # 音の再生は読み上げるときだけ要る（合成器だけを使う道具は sounddevice なしで動く）
+    from ailoveshen.infrastructure.adapters.audio.sounddevice_player import SounddevicePlayer
 
     audio_player = SounddevicePlayer(
         device=audio_config.get("device"),

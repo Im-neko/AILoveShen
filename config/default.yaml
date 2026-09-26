@@ -134,6 +134,9 @@ character:
 # TTS (Style-Bert-VITS2)
 tts:
   enabled: true
+  # Which engine speaks: style_bert_vits2 (Docker, tts.server) / irodori (Irodori-TTS-Server,
+  # tts.irodori; run it natively on the Mac, not in Docker: docs/setup/irodori_tts.md)
+  engine: "${TTS_ENGINE:-style_bert_vits2}"
 
   # Server connection settings
   server:
@@ -178,6 +181,31 @@ tts:
     surprised: "Neutral"
     scared: "Neutral"
     excited: "Neutral"
+
+  # Irodori-TTS (engine: irodori). The voice is cloned from reference audio in the server's
+  # voices/ (tools/irodori_voice.py makes it from the Style-Bert-VITS2 training clips), no training.
+  irodori:
+    host: "${IRODORI_HOST:-localhost}"
+    port: 8088
+    timeout_seconds: 60        # the first call also loads the model
+    voice: "${IRODORI_VOICE:-shen}"
+    speed: 1.0
+    num_steps: null            # null: the model's default (fewer: faster, rougher)
+    seed: 1234                 # fixed: the same line always sounds the same (null: varies)
+    cfg_scale_text: null
+    cfg_scale_speaker: null    # higher: closer to the reference voice
+    # Emotions as a speaking-style caption (only at intensity >= caption_min_intensity).
+    # Off by default: a caption can pull the voice away from the reference; try it with
+    # tools/tts_compare.py --emotion first.
+    emotion: false
+    caption_min_intensity: 0.6
+    emotion_captions:
+      happy: "明るく楽しそうな話し方。"
+      excited: "テンションが高く、弾むような話し方。"
+      sad: "しょんぼりした、少し沈んだ話し方。"
+      angry: "むっとした、少し強い口調。"
+      surprised: "驚いた、声が少し上ずった話し方。"
+      scared: "怖がって、少し震えた話し方。"
 
 # MCP Settings
 mcp:

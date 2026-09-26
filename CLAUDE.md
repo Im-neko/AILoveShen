@@ -9,6 +9,7 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 - **Gemini 3.8 Flash** (`main_model`): Game commentary & thoughts (main), comment responses (sub/interrupt), and high-level Goal/direction decisions that get handed to Jev
 - **Gemini 3.8 Flash** (`filter_model`, planned): Comment filtering (dynamic threshold based on volume)
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control (JP/EN/ZH)
+- **Irodori-TTS** (optional, `tts.engine: irodori` / `TTS_ENGINE`): Japanese TTS cloning the voice from reference audio without training (`IrodoriTtsClient` → Irodori-TTS-Server `POST /v1/audio/speech` on :8088; on the Mac it runs natively for MPS, not in Docker: `scripts/irodori/setup_mac.sh` / `start_mac.sh`; reference clips from the Style-Bert-VITS2 training data by `tools/irodori_voice.py`; `tools/tts_compare.py` compares engines; fixed `seed`, emotion captions off by default; `docs/setup/irodori_tts.md`, design 32)
 - **MCP (Model Context Protocol)**: Memory management, expression control, and extensibility
 
 ### Core Concept
@@ -97,6 +98,7 @@ python examples/demo_phase3.py  # Demo Phase 3 LLM conversation (fake generator,
 GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gemini API (+ TTS)
 # The stream (docs/streaming.md): Docker servers + bridge first, then
 python -m ailoveshen.stream [--control tools] [--no-speak] [--no-chat] [--no-board] [--debug]
+# Irodori-TTS instead of Style-Bert-VITS2 (TTS_ENGINE=irodori): scripts/irodori/start_mac.sh; compare: python tools/tts_compare.py
 # Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
 docker compose -f docker/docker-compose.minecraft.yml up -d
 cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)

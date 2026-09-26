@@ -87,6 +87,8 @@ Style-Bert-VITS2/
 
 感情で声のスタイルを変えたいときは `config/default.yaml` の `tts.emotion_style_map` にモデルのスタイル名を書く（今はすべて `Neutral`。モデルにないスタイル名は 422 エラー）。
 
+Irodori-TTS（日本語専用、参照音声から学習なしで声をまねる。Mac では Docker の外で動かす）に切り替えるときは `docs/setup/irodori_tts.md`。`.env` の `TTS_ENGINE=irodori` で切り替わり、下の「TTS サーバー（Docker）」の代わりに `scripts/irodori/start_mac.sh` を起動する（確認は `curl http://localhost:8088/health`）。
+
 ### 5. 仮想オーディオ（読み上げの音を OBS に入れる）
 
 - Mac: `brew install blackhole-2ch`
@@ -135,6 +137,8 @@ tts:
 docker compose --env-file .env -f docker/docker-compose.minecraft.yml up -d
 cd docker && docker compose up -d && cd ..
 ```
+
+`TTS_ENGINE=irodori` のときは TTS の Docker の代わりに、別のターミナルで `scripts/irodori/start_mac.sh`（`docs/setup/irodori_tts.md`）。
 
 TTS サーバーは BERT の読み込みに 1〜2 分かかる。準備できたか:
 
@@ -294,6 +298,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 |---|---|
 | `プレイを始められない（GameBridgeError: Minecraft bridge unreachable …）。N 秒待ってやり直す` | ブリッジが動いていない → 起動の 2。起動すれば配信はそのまま始まる |
 | `ステップが失敗した（…）。N 秒待ってやり直す` | Gemini・Jev・ブリッジの一時的な失敗。続くなら中身（…）を見る |
+| `TTS サーバー（Irodori-TTS …）につながらない` で起動しない | `scripts/irodori/start_mac.sh` を起動する（`docs/setup/irodori_tts.md`）。Style-Bert-VITS2 に戻すなら `.env` の `TTS_ENGINE` を消す |
 | `TTS サーバー（…）につながらない` で起動しない | TTS サーバーを起動する（起動の 1）。読み上げなしなら `--no-speak` |
 | 視点のクライアントが `… was larger than I expected, found N bytes extra whilst reading packet …` で切れる | ミラーが自分で作ったパケットの形が本物のクライアントとずれている。持ち物（`container_set_content`）は数だけの部品に絞って送るようにした（2026-09-26）。まだ出るならクライアントの `logs/latest.log` のその行（パケットの名前）を控える。ブリッジを再起動すると直る |
 | `Twitch のチャットにつながらない` | ネットワークを確かめる。自動でつなぎ直す |

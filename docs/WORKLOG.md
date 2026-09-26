@@ -7,6 +7,19 @@
 
 ## Completed Work
 
+### Irodori-TTS を Mac で動かせるようにする（読み上げの方式の切り替え） (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「自然な日本語の発音と安定性を重視」「Mac（M5、32GB）で動かしたい、セットアップしてほしい」。候補から Irodori-TTS（日本語専用、MPS に公式対応）を選んだ（設計書 32 §4.1）
+- `infrastructure/adapters/tts/irodori_tts_client.py` `IrodoriTtsClient`（`POST /v1/audio/speech`、WAV、`/health` で接続確認、声がなければ警告、seed 固定、感情は caption（既定は切る））
+- `factories/tts.py`: `tts.engine`（`TTS_ENGINE`、style_bert_vits2 / irodori）、`create_synthesizer`、`describe_engine`。sounddevice は読み上げるときだけ読み込む。`factories/stream.py` のつながらないときの直し方を方式ごとに
+- `config/default.yaml` `tts.engine`、`tts.irodori`。`.env.example`
+- `scripts/irodori/setup_mac.sh`（~/Irodori-TTS-Server に取得、`uv sync --extra cpu`、.env に mps / fp32 / preload / 参照音声の置き場）、`start_mac.sh`（`PYTORCH_ENABLE_MPS_FALLBACK=1`）
+- `tools/irodori_voice.py`（学習データから 3〜12 秒のクリップを合計 60 秒まで選び、`data/irodori_voices/voices.json` に）、`tools/tts_compare.py`（同じ 20 文を方式ごとに読ませ、WAV と合成時間の report.md）
+- 手順書 `docs/setup/irodori_tts.md`、`docs/streaming.md` に切り替えの案内
+- テスト: pytest 652（アダプターと切り替え）。2 つの道具は偽のサーバーで動作を確認。実機（Mac）ではまだ動かしていない
+
 ### 同じ土を掘っては置く無限ループ (2026-09-26)
 
 **Commit**: `4bfd2f6`
