@@ -9,7 +9,7 @@
 
 ### Jev でできることは Jev に（設計書 34）: 1. 道具モードの 1 手をまず Jev が選ぶ (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `fd68f31`
 
 - ユーザー「Jev の役割を増やせないか。Jev でも可能な部分はなるべく Jev にしたい」→ 5 案を「順に実装して」。設計書 34（共通の決まり: 設定で切り替え、時間切れ・失敗・自信なしは前のやり方、記録、済んだかは判定させない、選択肢に順位をつけない）
 - `application/use_cases/step_picker.py` `StepPicker`: 候補モードと同じ `IActionSelector`（Jev）に、ブリッジの候補（16 まで）、成功していて引数の要らない技（5 まで）、`ask_gemini` を見せる。選んだら `do_suggestion(id)` / `run_skill(name)` を Gemini が選んだときと同じ経路（`ToolWatcher.run` / `_run_skill`）で実行し、`_recent_tools` に残す。Gemini に回す: ask_gemini、確信度 < 0.5、3 秒、失敗、直前の道具の失敗、Jev の手が 2 回続けて失敗、Jev が 8 回続けた
