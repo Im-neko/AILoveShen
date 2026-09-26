@@ -13,6 +13,8 @@
 //   stored(item, count)      家のチェストにアイテムかグループが `count` 個ある（最後に開けたときの中身で）
 //   lit(distance)            家のまわり半径 `distance` の地面に暗い所がない
 //   surveyed(count)          街の候補地を `count` か所調べた（docs/design/16_town_site.md）
+//   planted(item, count)     自分が植えた苗木（sapling か種類）が `count` 本ある（育った木も数える。設計書 33）
+//   farmed(item, count)      家のまわりの耕地に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
@@ -23,6 +25,7 @@ import { darkGround } from './lighting.mjs'
 import { cooking } from './cooking.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
+import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -37,10 +40,12 @@ const DAY_TICKS = 24000
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed']
 // ワールドの状態だけから判定するので、中目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed']
+const MAX_PLANTED = 32
+const MAX_FARMED = 64
 
 // 目標の指定を検証し、保持する目標の状態を返す。不正なら理由を添えて投げる
 // 正しいが、何か（家、計画）ができるまで追えない目標
@@ -132,6 +137,22 @@ function validGoal (spec, bot, state, knowledge) {
       const distance = Number(spec.distance)
       if (!Number.isInteger(distance) || distance < MIN_LIT || distance > MAX_LIT) throw new Error(`distance (the radius) must be ${MIN_LIT}-${MAX_LIT}`)
       return { spec: { predicate, distance } }
+    }
+    case 'planted': {
+      needHome()
+      const item = String(spec.item ?? 'sapling')
+      if (item !== 'sapling' && !(isSaplingItem(item) && bot.registry.itemsByName[item])) throw new Error('planted takes sapling (any kind) or one kind like oak_sapling')
+      const count = Number(spec.count)
+      if (!Number.isInteger(count) || count < 1 || count > MAX_PLANTED) throw new Error(`count must be 1-${MAX_PLANTED}`)
+      return { spec: { predicate, item, count } }
+    }
+    case 'farmed': {
+      needHome()
+      const crop = cropOf(spec.item ?? 'wheat')
+      if (!crop) throw new Error(`farmed takes one of ${Object.keys(CROPS).join(', ')}`)
+      const count = Number(spec.count)
+      if (!Number.isInteger(count) || count < 1 || count > MAX_FARMED) throw new Error(`count must be 1-${MAX_FARMED}`)
+      return { spec: { predicate, item: crop, count } }
     }
     case 'cleared': {
       needHome()
@@ -349,6 +370,41 @@ export function evaluate (bot, state, knowledge, world) {
       const torches = inventoryCounts(bot).torch ?? 0
       if (torches) out.leaves.push({ kind: 'light', pos: dark[0] })
       else addSolved([{ spec: 'torch', count: 4 }])
+      break
+    }
+    case 'planted': {
+      // 植えた場所に苗木か育った木（設計書 33）。足りなければ、持っている苗木を植える
+      const { item, count } = goal.spec
+      const t = plantingStatus(bot, state, item)
+      const have = t.saplings + t.trees + t.unseen
+      out.met = have >= count
+      out.remaining = Math.max(0, count - have)
+      out.lines.push(`trees you planted (${item}): ${have}/${count} (saplings ${t.saplings}, grown ${t.trees}${t.unseen ? `, out of view ${t.unseen}` : ''}${t.gone ? `, gone ${t.gone}` : ''})`)
+      if (out.met) break
+      const held = Object.entries(inventoryCounts(bot)).find(([n, c]) => c > 0 && saplingMatches(item, n))
+      if (!held) addSolved([{ spec: item, count: out.remaining }])
+      else if (plantSpot(bot, state)) out.leaves.push({ kind: 'plant', item: held[0] })
+      else out.blocked.push('no free ground to plant a sapling 6-24m from the home')
+      break
+    }
+    case 'farmed': {
+      // 家のまわりの耕地の作物。種がなければ集める、空いた耕地があればまく、なければ耕す（クワ）
+      const { item: crop, count } = goal.spec
+      const info = CROPS[crop]
+      const c = cropStatus(bot, state, crop)
+      out.met = c.planted >= count
+      out.remaining = Math.max(0, count - c.planted)
+      out.lines.push(`${crop} planted on farmland near the home: ${c.planted}/${count} (ripe ${c.mature})`)
+      if (out.met) break
+      const inv = inventoryCounts(bot)
+      if (!(inv[info.seed] > 0)) {
+        addSolved([{ spec: info.seed, count: Math.min(out.remaining, 16) }])
+        break
+      }
+      if (sowSpot(bot, state)) { out.leaves.push({ kind: 'sow', item: info.seed }); break }
+      if (!Object.keys(inv).some((n) => n.endsWith('_hoe'))) { addSolved([{ spec: 'hoe', count: 1 }]); break }
+      if (tillSpot(bot, state)) out.leaves.push({ kind: 'till' })
+      else out.blocked.push('no dirt or grass to till 6-24m from the home')
       break
     }
     case 'cleared': {

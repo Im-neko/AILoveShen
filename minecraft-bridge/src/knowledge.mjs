@@ -20,8 +20,14 @@ const GROUP_PATTERNS = {
   door: /^(?!iron_).*_door$/,
   bed: /_bed$/,
   wool: /_wool$/,
-  sword: /_sword$/
+  sword: /_sword$/,
+  sapling: /(_sapling|^mangrove_propagule)$/,
+  hoe: /_hoe$/
 }
+// 確率で落ちるもの（設計書 33）: 葉からは苗木だけ（棒とリンゴの数字は当てにならない）、草からは種。
+// 掘っても落ちないことが多い（葉 5%、草 12.5%）ので、掘るのは失敗に数えない（primitives の dig）
+export const CHANCE_DROP_BLOCKS = /(_leaves|^short_grass|^tall_grass|^fern)$/
+const SEED_GRASS = ['short_grass', 'tall_grass', 'fern']
 const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'suspicious_stew',
   'chorus_fruit', 'ominous_bottle'])
 
@@ -93,6 +99,11 @@ export class Knowledge {
         push(this.blockSources, d.item, loot.block)
       }
     }
+    for (const loot of md.blockLootArray) {
+      if (!loot.block.endsWith('_leaves')) continue
+      for (const d of loot.drops) if (GROUP_PATTERNS.sapling.test(d.item)) push(this.blockSources, d.item, loot.block)
+    }
+    for (const b of SEED_GRASS) if (md.blocksByName[b]) push(this.blockSources, 'wheat_seeds', b)
     this.mobSources = new Map() // アイテム -> [エンティティ名]
     for (const loot of md.entityLootArray) {
       if (!HUNTABLE.has(loot.entity)) continue

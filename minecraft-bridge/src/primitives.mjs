@@ -13,10 +13,11 @@ import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
-import { smeltingProduct } from './knowledge.mjs'
+import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto } from './move.mjs'
 import { digTargets } from './world.mjs'
+import { isSaplingItem, recordPlanting } from './farming.mjs'
 
 const { Movements, goals } = pathfinderPkg
 export const REACH = 4.5 // サバイバルで目からブロックに届く距離
@@ -372,6 +373,8 @@ export const PRIMITIVES = {
     signal.throwIfAborted()
     const why = await collectNearbyDrops(bot, state, signal)
     const gained = totalItems(bot) - before
+    // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
+    if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
     if (gained <= 0) {
       const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
       throw new Error(`dug ${c.block} but picked nothing up (${dropsAround(bot)}${why ? `; path: ${why}` : ''}${full})`)
@@ -391,6 +394,8 @@ export const PRIMITIVES = {
     }
     await collected
     const gained = totalItems(bot) - before
+    // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
+    if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
     if (gained <= 0) {
       state.unreachableDrops.add(c.entityId)
       const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
@@ -745,9 +750,56 @@ export const PRIMITIVES = {
     if (!placed || placed.boundingBox === 'empty') throw new Error(`the ${c.item} was not placed`)
     return `placed ${placed.name} at ${c.pos.x},${c.pos.y},${c.pos.z}`
   },
+  // 植林と畑（設計書 33）。c.pos: 苗木を置く空いたセル / 耕す土 / 種をまく耕地
+  async plant (bot, state, c, signal) {
+    const item = bot.inventory.items().find((i) => i.name === c.item)
+    if (!item) throw new Error(`no ${c.item}`)
+    await goNear(bot, c.pos, 3, signal)
+    const ground = bot.blockAt(c.pos.offset(0, -1, 0))
+    if (ground?.boundingBox !== 'block' || bot.blockAt(c.pos)?.name !== 'air') throw new Error(`no free ground for a sapling at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+    await bot.equip(item, 'hand')
+    await bot.placeBlock(ground, { x: 0, y: 1, z: 0 })
+    const placed = bot.blockAt(c.pos)
+    if (!isSaplingItem(placed?.name)) throw new Error(`the ${c.item} was not planted (${placed?.name ?? 'nothing'} there)`)
+    recordPlanting(state, c.pos, placed.name)
+    return `planted ${placed.name} at ${c.pos.x},${c.pos.y},${c.pos.z}`
+  },
+  async till (bot, state, c, signal) {
+    const hoe = bot.inventory.items().find((i) => i.name.endsWith('_hoe'))
+    if (!hoe) throw new Error('no hoe')
+    await goNear(bot, c.pos, 3, signal)
+    const block = bot.blockAt(c.pos)
+    if (!/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') || bot.blockAt(c.pos.offset(0, 1, 0))?.name !== 'air') {
+      throw new Error(`nothing to till at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${block?.name ?? 'unloaded'})`)
+    }
+    await bot.equip(hoe, 'hand')
+    await bot.activateBlock(block, { x: 0, y: 1, z: 0 })
+    await bot.waitForTicks(4)
+    if (bot.blockAt(c.pos)?.name !== 'farmland') throw new Error(`the ground at ${c.pos.x},${c.pos.y},${c.pos.z} did not turn into farmland`)
+    return `tilled farmland at ${c.pos.x},${c.pos.y},${c.pos.z}`
+  },
+  async sow (bot, state, c, signal) {
+    const seed = bot.inventory.items().find((i) => i.name === c.item)
+    if (!seed) throw new Error(`no ${c.item}`)
+    await goNear(bot, c.pos, 3, signal)
+    const farmland = bot.blockAt(c.pos)
+    if (farmland?.name !== 'farmland' || bot.blockAt(c.pos.offset(0, 1, 0))?.name !== 'air') throw new Error(`no free farmland at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+    await bot.equip(seed, 'hand')
+    await bot.activateBlock(farmland, { x: 0, y: 1, z: 0 })
+    await bot.waitForTicks(4)
+    const crop = bot.blockAt(c.pos.offset(0, 1, 0))
+    if (crop?.name === 'air') throw new Error(`the ${c.item} was not sown`)
+    return `sowed ${c.item} (${crop.name}) at ${c.pos.x},${c.pos.y + 1},${c.pos.z}`
+  },
   async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
-    const target = start.offset(c.dx * EXPLORE_DISTANCE, 0, c.dz * EXPLORE_DISTANCE)
+    const go = c.go ?? EXPLORE_DISTANCE
+    const target = start.offset(c.dx * go, 0, c.dz * go)
+    // まだ見ていない土地が遠ければ、そこへ区間ごとに進む（1 回 LEG m）
+    if (go > LEG) {
+      const leg = await legToward(bot, target, `the unexplored land ${c.target}`, signal)
+      if (leg) return leg
+    }
     let error = ''
     try {
       await goto(bot, new goals.GoalNearXZ(target.x, target.z, 3), signal)

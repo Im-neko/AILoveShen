@@ -37,6 +37,7 @@
 //   リポジトリ直下の .env にも書ける（env.mjs。シェルの環境変数が優先）
 
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
+import { plantingStatus, cropStatus, cropOf } from './farming.mjs'
 import http from 'node:http'
 import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
@@ -191,6 +192,9 @@ const skillDeps = {
   },
   abortTool: (reason) => abortCurrent(state, reason),
   count (predicate, item) {
+    // 植林と畑の「+N」の起点（設計書 33）
+    if (predicate === 'planted') { const t = plantingStatus(bot, state, item); return t.saplings + t.trees + t.unseen }
+    if (predicate === 'farmed') return cropStatus(bot, state, cropOf(item)).planted
     const { members } = knowledge.resolve(item)
     if (predicate === 'stored') {
       return homeChests(state.memory ?? {}, state.home).reduce((n, c) => n + members.reduce((m, x) => m + (c.contents?.[x] ?? 0), 0), 0)

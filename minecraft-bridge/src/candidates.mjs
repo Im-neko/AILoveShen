@@ -11,9 +11,11 @@
 // 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
+import { plantSpot, tillSpot, sowSpot } from './farming.mjs'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, exitSpots, shelterOf } from './home.mjs'
-import { recall, visited, homeChests, chestWith, furnaceWith } from './memory.mjs'
+import { recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
+const FRONTIER_SLACK = 8
 import { cooking } from './cooking.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
@@ -135,13 +137,20 @@ function fromLeaf (bot, state, world, leaf) {
           distance: p.distance, seen_minutes_ago: p.minutesAgo, count: p.count
         }))
         : []
+      // その向きで、まだ見ていない土地までの距離。近くを見尽くしていれば、そこまで区間ごとに進む
+      // （見た所を行き来する探索のくり返しを避ける）
       const directions = Object.entries(EXPLORE_DIRECTIONS)
         .filter(([, [dx, dz]]) => !leaf.away || awayFrom(bot, leaf.away, dx, dz))
-        .map(([dir, [dx, dz]]) => ({
-          id: `explore ${dir}`, verb: 'explore', target: dir, looking_for: lookingFor, dx, dz,
-          been_there: !!state.memory && visited(state.memory, me.offset(dx * EXPLORE_DISTANCE, 0, dz * EXPLORE_DISTANCE))
-        }))
-        .sort((a, b) => a.been_there - b.been_there)
+        .map(([dir, [dx, dz]]) => {
+          const go = state.memory ? Math.max(EXPLORE_DISTANCE, frontierDistance(state.memory, me, dx, dz)) : EXPLORE_DISTANCE
+          const far = go > EXPLORE_DISTANCE + FRONTIER_SLACK
+          return {
+            id: far ? `explore ${dir} (unexplored land ${go}m away)` : `explore ${dir}`,
+            verb: 'explore', target: dir, looking_for: lookingFor, dx, dz, go,
+            been_there: !!state.memory && visited(state.memory, me.offset(dx * EXPLORE_DISTANCE, 0, dz * EXPLORE_DISTANCE))
+          }
+        })
+        .sort((a, b) => a.go - b.go)
       return [...recalled, ...directions]
     }
     case 'craft': {
@@ -235,6 +244,19 @@ function fromLeaf (bot, state, world, leaf) {
     }
     case 'sleep':
       return [{ id: 'sleep in the bed', verb: 'sleep', target: 'bed', inPlace: true, effect: 'skips the night' }]
+    case 'plant': {
+      // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面
+      const p = plantSpot(bot, state)
+      return p ? [{ id: `plant ${leaf.item} at ${fmt(p)}`, verb: 'plant', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+    }
+    case 'till': {
+      const p = tillSpot(bot, state)
+      return p ? [{ id: `till the ground at ${fmt(p)} with a hoe`, verb: 'till', target: 'farmland', pos: p, distance: dist(bot, p) }] : []
+    }
+    case 'sow': {
+      const p = sowSpot(bot, state)
+      return p ? [{ id: `sow ${leaf.item} on the farmland at ${fmt(p)}`, verb: 'sow', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+    }
     default:
       return []
   }

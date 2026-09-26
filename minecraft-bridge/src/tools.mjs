@@ -8,6 +8,7 @@ import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
+import { CROPS, cropBySeed, farmRefusal, isSaplingItem, plantSpot, sowSpot, tillSpot } from './farming.mjs'
 import { isHomeCell } from './builds.mjs'
 import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
@@ -26,10 +27,11 @@ const MAX_CRAFT_TIMES = 16
 const FIND_RADIUS = 64
 const FIND_SHOWN = 8
 const DROP_RADIUS = 16
+const PLANTS = /^(short_grass|tall_grass|fern|large_fern|wheat|carrots|potatoes|beetroots|sweet_berry_bush|dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony)$|(_sapling|_propagule)$/
 const REPLACEABLE = new Set(['air', 'cave_air', 'water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'dead_bush'])
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
-  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'wait']
+  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait']
 export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get']
 
 class Refused extends Error {}
@@ -93,7 +95,8 @@ export function createTools (deps) {
       within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
-      if (block.boundingBox !== 'block') refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig`)
+      // 草・作物・苗木・花は当たり判定がないが掘れる（草から種、育った作物の収穫。設計書 33）
+      if (block.boundingBox !== 'block' && !PLANTS.test(block.name)) refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig`)
       const why = protectedReason(state, pos, 0, block)
       if (why) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${why}`)
       const tools = knowledge.harvestTools(block.name)
@@ -219,6 +222,40 @@ export function createTools (deps) {
         if (!cell || !REPLACEABLE.has(cell.name)) refuse(`${fmt(to)} is not free`)
       }
       return { c: { verb: 'move_placed', target: block.name, block: block.name, pos, ...(to ? { to } : {}) } }
+    },
+    // 植林と畑（設計書 33）。場所を省くと、ブリッジが家から 6〜24 m の所を選ぶ
+    plant (args) {
+      const item = args.item ?? Object.keys(inventoryCounts(bot)).find(isSaplingItem)
+      if (!item || !isSaplingItem(item)) refuse('item must be a sapling you have (e.g. oak_sapling)')
+      holding(bot, item)
+      const pos = args.x != null ? position(args) : plantSpot(bot, state)
+      if (!pos) refuse('no free ground to plant a sapling 6-24m from the home')
+      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const why = farmRefusal(state, pos)
+      if (why) refuse(`will not plant at ${fmt(pos)}: ${why}`)
+      if (bot.blockAt(pos)?.name !== 'air' || bot.blockAt(pos.offset(0, -1, 0))?.boundingBox !== 'block') refuse(`${fmt(pos)} is not free ground (give the air cell above dirt or grass)`)
+      return { c: { verb: 'plant', target: item, item, pos } }
+    },
+    till (args) {
+      if (!Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_hoe'))) refuse('you have no hoe (craft one: 2 sticks + 2 planks or cobblestone)')
+      const pos = args.x != null ? position(args) : tillSpot(bot, state)
+      if (!pos) refuse('no dirt or grass to till 6-24m from the home')
+      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const why = farmRefusal(state, pos)
+      if (why) refuse(`will not till at ${fmt(pos)}: ${why}`)
+      if (!/^(dirt|grass_block|dirt_path)$/.test(bot.blockAt(pos)?.name ?? '')) refuse(`${fmt(pos)} is not dirt or grass (give the ground block itself)`)
+      return { c: { verb: 'till', target: 'farmland', pos } }
+    },
+    sow (args) {
+      const inv = inventoryCounts(bot)
+      const item = args.item ?? Object.values(CROPS).map((c) => c.seed).find((s) => inv[s] > 0)
+      if (!item || !cropBySeed(item)) refuse(`item must be seeds you have: ${Object.values(CROPS).map((c) => c.seed).join(', ')}`)
+      holding(bot, item)
+      const pos = args.x != null ? position(args) : sowSpot(bot, state)
+      if (!pos) refuse('no free farmland near the home (till some first)')
+      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      if (bot.blockAt(pos)?.name !== 'farmland') refuse(`${fmt(pos)} is not farmland (give the farmland block itself)`)
+      return { c: { verb: 'sow', target: item, item, pos } }
     },
     wait () {
       const inside = !!state.home && shelterOf(bot, state.home).inside

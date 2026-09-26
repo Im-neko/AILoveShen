@@ -24,7 +24,7 @@ export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
 const MAX_CALLS_SHOWN = 30
-const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'progress']
+const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'progress']
 const NAME = /^[a-z][a-z0-9_]{1,39}$/
 // 技から呼べる行動（ソルバーの提案は技からは使わない: 技はソルバーに依存しない手順にする）
 export const SKILL_ACTIONS = ACTION_TOOLS.filter((n) => n !== 'do_suggestion')
@@ -83,7 +83,7 @@ function substitute (value, args) {
 // 実行の前: 相対の数（"+N"）のための今の数と、progress のための今の残り
 export function expectsBaseline (expects, args, deps) {
   if (expects.predicate === 'progress') return { remaining: deps.remaining() }
-  if (!['have', 'stored'].includes(expects.predicate)) return {}
+  if (!['have', 'stored', 'planted', 'farmed'].includes(expects.predicate)) return {}
   const count = substitute(expects.count, args)
   if (typeof count === 'string' && count.startsWith('+')) {
     return { count: deps.count(expects.predicate, String(substitute(expects.item, args))) }

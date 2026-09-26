@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
-import { newMemory, remember, recall, rememberDeath, summarizeMemory, visited, MAX_PLACES_PER_KIND, ANIMAL_STALE_TICKS } from '../src/memory.mjs'
+import { newMemory, remember, recall, rememberDeath, summarizeMemory, visited, frontierDistance, MAX_PLACES_PER_KIND, ANIMAL_STALE_TICKS } from '../src/memory.mjs'
 import { bearing } from '../src/observe.mjs'
 import { ground } from '../src/candidates.mjs'
 
@@ -71,7 +71,18 @@ test('探すときは覚えている場所を先に出し、次にまだ行っ�
   const { candidates } = ground(bot, state, null, { dig: () => [], hunt: () => [] }, { leaves: [leaf] })
   assert.equal(candidates[0].id, 'go to sheep seen at 0,-100')
   assert.equal(candidates[0].verb, 'goto_memory')
-  const east = candidates.find((c) => c.id === 'explore east')
+  const east = candidates.find((c) => c.id.startsWith('explore east'))
   assert.equal(east.been_there, true)
-  assert.equal(candidates.at(-1).id, 'explore east')
+  // 東は見た所が続くので、その先のまだ見ていない土地まで行く（行き来をくり返さない）
+  assert.equal(east.id, 'explore east (unexplored land 48m away)')
+  assert.equal(east.go, 48)
+  assert.equal(candidates.at(-1), east)
+})
+
+test('まわりを見尽くしたら、まだ見ていない土地まで区間ごとに進む（原木がなく同じ所を探し続けた）', () => {
+  const memory = newMemory()
+  for (let x = -96; x <= 96; x += 16) for (let z = -96; z <= 96; z += 16) remember(memory, [], at(x, z), 0)
+  assert.equal(frontierDistance(memory, { x: 0, z: 0 }, 1, 0), 128)
+  assert.equal(frontierDistance(memory, { x: 0, z: 0 }, 0, -1), 128)
+  assert.equal(frontierDistance(newMemory(), { x: 0, z: 0 }, 1, 0), 16)
 })

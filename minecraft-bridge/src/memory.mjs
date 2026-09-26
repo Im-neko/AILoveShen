@@ -157,6 +157,21 @@ export function smeltingCounts (memory) {
 
 export const visited = (memory, pos) => memory.explored[regionOf(pos)] !== undefined
 
+// 見たことのある所: 行った区域か、その隣（まわりは 16〜32 m 先まで見えている）
+const known = (memory, x, z) => [-1, 0, 1].some((i) => [-1, 0, 1].some((j) =>
+  memory.explored[regionOf({ x: x + i * REGION, z: z + j * REGION })] !== undefined))
+
+// (dx, dz) の向きに、まだ見ていない土地が始まるまでの距離（区域ごとに調べる、max まで）。
+// 探しものが近くにないとき、行った所を行き来せずに、その先へ進むため（2026-09-26: 原木が見つからず、
+// 家のまわりの同じ所の探索を繰り返していた）
+export const FRONTIER_MAX = 320
+export function frontierDistance (memory, from, dx, dz, max = FRONTIER_MAX) {
+  for (let d = REGION; d <= max; d += REGION) {
+    if (!known(memory, from.x + dx * d, from.z + dz * d)) return d
+  }
+  return max
+}
+
 // 判断する側が見るもの: 種類ごとの一番近い場所と、ボットが死んだ場所
 export function summarizeMemory (memory, me, now, bearing) {
   const places = Object.entries(memory.places).flatMap(([kind, list]) => {
