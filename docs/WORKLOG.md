@@ -9,7 +9,7 @@
 
 ### irodori_from_sbv2 generate が全部を「音割れ」で捨てる (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `44bf28c`
 
 - ユーザーの実行: `generate --for-reference` で「使う 0 文、除いた 64 文」
 - 原因: Style-Bert-VITS2 のサーバーは出力を最大値ちょうどに揃えて返す（`convert_to_16_bit_wav`: `data / abs(data).max() * 32767`）ので、どの音声も最大振幅が 0.99997。判定が「最大振幅 0.999 以上は音割れ」だった
