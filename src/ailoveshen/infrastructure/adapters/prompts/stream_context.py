@@ -52,7 +52,8 @@ ABILITIES = """\
 
 PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.BUILT: (
-        "built: 設計図の家を完成させる（材料集めとクラフトも含めて進む）。"
+        "built: 設計図の家を完成させる（材料集めとクラフトも含めて進むが、小目標では材料を"
+        "先に have で集め、built は置くだけの仕上げに使う）。"
         "built(name): 自分で設計した建物 name を完成させる（増築、倉庫、塔など。"
         "新しい name を中目標の条件に書くと、足すときに設計する）"
     ),
