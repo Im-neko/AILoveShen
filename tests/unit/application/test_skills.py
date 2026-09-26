@@ -356,3 +356,8 @@ def test_a_failed_run_describes_why_with_the_record():
         "skill hunt v2 failed (fail): no pig; expects: food 2/3; log: looked around; "
         'last calls: goto({"x": 1})=failed no path'
     )
+
+
+def test_a_broken_fix_points_to_the_version_that_worked():
+    fixed = SkillInfo(name="hunt", description="狩り", version=3, last_good_version=2)
+    assert fixed.describe().startswith("hunt v3（試し中。v2 は成功した）: 狩り")

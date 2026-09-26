@@ -1302,11 +1302,19 @@ class SkillInfo:
     successes: int = 0
     failures: int = 0
     last_failure: Optional[str] = None
+    last_good_version: Optional[int] = None  # 一番新しい版が未成功のとき、前に成功した版
     code: str = ""  # 直すときだけ読む（一覧には入らない）
 
     def describe(self) -> str:
         """プロンプト用の 1 行。"""
-        mark = "" if self.verified else "（試し中）"
+        good = self.last_good_version
+        mark = (
+            ""
+            if self.verified
+            else f"（試し中。v{good} は成功した）"
+            if good and good != self.version
+            else "（試し中）"
+        )
         failure = f"、最後の失敗: {self.last_failure}" if self.last_failure else ""
         return (
             f"{self.name} v{self.version}{mark}: {self.description}"

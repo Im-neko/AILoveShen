@@ -151,6 +151,7 @@ test('store: versions, counts, the list and the cleaning outside the stream', ()
   const [broken, hunt] = store.list()
   assert.equal(broken.verified, false)
   assert.deepEqual([hunt.uses, hunt.successes, hunt.failures, hunt.last_failure], [3, 2, 1, 'no pig'])
+  assert.deepEqual([hunt.verified, hunt.last_good_version], [false, 1])
 
   assert.deepEqual(store.clean({ dryRun: true }), { removed: ['broken'], pruned: [{ name: 'hunt', versions: [2] }] })
   assert.equal(store.names().length, 2)

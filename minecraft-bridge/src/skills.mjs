@@ -199,8 +199,9 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
   }, 100)
   try {
     const context = await isolate.createContext()
+    // 止めた後に終わった道具の結果は、破棄した isolate に返さない
     await context.global.set('__call', new ivm.Reference((kind, name, argsJson) =>
-      dispatch(kind, name, argsJson).then((r) => JSON.stringify(r ?? null))))
+      dispatch(kind, name, argsJson).then((r) => stopped ? 'null' : JSON.stringify(r ?? null))))
     await context.global.set('__args', JSON.stringify(args ?? {}))
     const script = await isolate.compileScript(`${BOOT}\n${wrap(skill.code)};\n` +
       ';(async () => { const r = await __skill(t, JSON.parse(__args)); return JSON.stringify(r ?? null) })()')
@@ -306,6 +307,8 @@ export class SkillStore {
         successes: sum('successes'),
         failures: sum('failures'),
         last_failure: latest.last_failure,
+        // 一番新しい版がまだ成功していないとき、前に成功した版（run_skill の version で使える）
+        last_good_version: [...s.versions].reverse().find((v) => v.successes > 0)?.version ?? null,
         last_used: s.versions.map((v) => v.last_used).filter(Boolean).sort().at(-1) ?? null
       }
     })
