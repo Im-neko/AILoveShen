@@ -96,3 +96,11 @@ def test_factory_picks_the_engine():
     assert "Irodori-TTS localhost:8088" in describe_engine({"engine": "irodori"})
     with pytest.raises(ValueError, match="tts.engine"):
         engine_of({"engine": "voicevox"})
+
+
+def test_lora_adapter_goes_with_each_request():
+    body = IrodoriTtsClient(lora_adapter="/x/lora/checkpoint_final", seed=None).request_body("x", EmotionState())
+    assert body["irodori"] == {"lora_adapter": "/x/lora/checkpoint_final"}
+    assert create_synthesizer({"engine": "irodori", "irodori": {"lora_adapter": "/y"}}).request_body(
+        "x", EmotionState()
+    )["irodori"]["lora_adapter"] == "/y"

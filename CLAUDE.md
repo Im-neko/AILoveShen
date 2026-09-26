@@ -9,7 +9,7 @@ AILoveShen is an AI Streamer project for **Twitch** combining:
 - **Gemini 3.8 Flash** (`main_model`): Game commentary & thoughts (main), comment responses (sub/interrupt), and high-level Goal/direction decisions that get handed to Jev
 - **Gemini 3.8 Flash** (`filter_model`, planned): Comment filtering (dynamic threshold based on volume)
 - **Style-Bert-VITS2**: BERT-based TTS with emotional style control (JP/EN/ZH)
-- **Irodori-TTS** (optional, `tts.engine: irodori` / `TTS_ENGINE`): Japanese TTS cloning the voice from reference audio without training (`IrodoriTtsClient` → Irodori-TTS-Server `POST /v1/audio/speech` on :8088; on the Mac it runs natively for MPS, not in Docker: `scripts/irodori/setup_mac.sh` / `start_mac.sh`; reference clips from the Style-Bert-VITS2 training data by `tools/irodori_voice.py`; `tools/tts_compare.py` compares engines; fixed `seed`, emotion captions off by default; `docs/setup/irodori_tts.md`, design 32)
+- **Irodori-TTS** (optional, `tts.engine: irodori` / `TTS_ENGINE`): Japanese TTS cloning the voice from reference audio without training (`IrodoriTtsClient` → Irodori-TTS-Server `POST /v1/audio/speech` on :8088; on the Mac it runs natively for MPS, not in Docker: `scripts/irodori/setup_mac.sh` / `start_mac.sh`; reference clips from the Style-Bert-VITS2 training data by `tools/irodori_voice.py`; `tools/tts_compare.py` compares engines; fixed `seed`, emotion captions off by default; `tools/irodori_from_sbv2.py` makes a clean reference voice or a LoRA (`tts.irodori.lora_adapter`) from Style-Bert-VITS2's readings of the recording script; `docs/setup/irodori_tts.md`, design 32)
 - **MCP (Model Context Protocol)**: Memory management, expression control, and extensibility
 
 ### Core Concept

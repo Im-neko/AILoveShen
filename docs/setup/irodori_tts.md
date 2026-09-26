@@ -88,7 +88,40 @@ TTS_ENGINE=irodori
 | `emotion` | false | 感情を話し方の説明にする（`emotion_captions`、強さ `caption_min_intensity` 以上） |
 | `timeout_seconds` | 60 | 1 文を待つ秒数 |
 
-## 6. 困ったとき
+## 6. Style-Bert-VITS2 の音声から Irodori-TTS の声を作る
+
+生の学習データは雑音が多いが、Style-Bert-VITS2 で作った音声は声がきれい（イントネーションは弱い）。台本（`docs/voice/*.tsv`、書き下ろし 249 文 + ITA コーパス 424 文）を Style-Bert-VITS2 に読ませて、それを Irodori-TTS のお手本にする（`tools/irodori_from_sbv2.py`）。
+
+```bash
+# 1. Style-Bert-VITS2 で読ませる（TTS サーバー :5001 を起動しておく。673 文で 30〜40 分ぶんの音声）
+python tools/irodori_from_sbv2.py generate            # --limit 50 で試しに、--by-emotion で台本の感情のスタイル
+```
+
+`data/irodori_train/shen_sbv2/audio/<番号>.wav` と `metadata.csv`。揺れを小さくするため `sdp_ratio 0.1`、`noise 0.4`、`noisew 0.6` で読ませる（引数で変えられる）。長さ・音割れ・無音・読みの速さ（ITA はカナの読みがあるので、読み飛ばしや間延びがわかる）で外れたものは使わず、`rejected.tsv` に理由を書く。途中で止めても、作ったものは次に使う。
+
+### 6a. 学習なし: 参照音声を差し替える（まずこれ）
+
+```bash
+python tools/irodori_from_sbv2.py reference           # 語り（L…）とふつうの文から 60 秒 → 声 shen_sbv2
+```
+
+`.env` に `IRODORI_VOICE=shen_sbv2`（サーバーを起動し直す）。Irodori-TTS は参照音声から声の質を、話し方（イントネーション）は自分のモデルから作るので、雑音のない声で、イントネーションは Irodori-TTS のままになる見込み。
+
+### 6b. LoRA の追加学習（6a で足りなければ）
+
+```bash
+scripts/irodori/setup_train_mac.sh                    # 学習用のリポジトリ（~/Irodori-TTS。サーバーとは別）
+python tools/irodori_from_sbv2.py base                # 元のモデル（既定 Aratako/Irodori-TTS-v4-Small）の重み
+python tools/irodori_from_sbv2.py prepare             # 音声を学習用に符号化（manifest.jsonl、latents/）
+python tools/irodori_from_sbv2.py train --max-steps 3000
+```
+
+- 学習の設定は元の `configs/train_v4_small_lora.yaml`（LoRA、rank 16）を、少ないデータ・1 台向けに小さくして使う（batch 4 × 積算 4、3000 歩、500 歩ごとに保存と検証、5% を検証用）
+- できた LoRA（`data/irodori_train/shen_sbv2/lora/checkpoint_final`、途中のものも）を `.env` の `IRODORI_LORA=<そのフォルダーの絶対パス>` に。サーバーの元のモデルは学習と同じものにする（サーバーの `.env` の `IRODORI_HF_CHECKPOINT`）
+- **注意**: 学習すると Style-Bert-VITS2 のイントネーションの癖も覚えうる。途中の保存（500 歩ごと）を `tools/tts_compare.py --engines irodori` で聞き比べ、声は似て話し方が崩れていないところを選ぶ
+- **Mac での学習**: Irodori-TTS の案内は CUDA の例だけで、MPS での学習は確かめられていない（`--device mps`、fp32 になる）。動かない・遅すぎるときは、同じ手順を GPU のあるマシン（クラウドでも）で `--device cuda` にして、できた LoRA のフォルダーを Mac に持ってくる
+
+## 7. 困ったとき
 
 | 症状 | 見るところ |
 |---|---|

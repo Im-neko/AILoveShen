@@ -100,6 +100,7 @@ def create_synthesizer(config: Dict[str, Any]) -> ISpeechSynthesizer:
             ),
             caption_min_intensity=float(c.get("caption_min_intensity", 0.6)),
             api_key=os.environ.get("IRODORI_API_KEY", ""),
+            lora_adapter=str(c.get("lora_adapter") or ""),
         )
 
     server_config = config.get("server", {})

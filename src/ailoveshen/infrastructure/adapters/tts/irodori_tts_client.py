@@ -41,6 +41,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
         emotion_captions: Optional[Mapping[EmotionType, str]] = None,
         caption_min_intensity: float = 0.6,
         api_key: str = "",
+        lora_adapter: str = "",
     ) -> None:
         """
         Args:
@@ -56,6 +57,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
             emotion_captions: 感情 → 話し方の説明。空なら感情は声に出さない
             caption_min_intensity: この強さ以上の感情だけ説明を付ける
             api_key: サーバーの IRODORI_API_KEY（空: なし）
+            lora_adapter: 追加学習した LoRA のフォルダー（サーバーのマシンのパス。空: 使わない）
         """
         self._base_url = f"http://{host}:{port}"
         self._timeout = timeout_seconds
@@ -68,6 +70,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
         self._captions = dict(emotion_captions or {})
         self._caption_min = caption_min_intensity
         self._api_key = api_key
+        self._lora = lora_adapter
         self._client: Optional[httpx.AsyncClient] = None
 
     async def connect(self) -> None:
@@ -130,6 +133,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
             ("cfg_scale_text", self._cfg_text),
             ("cfg_scale_speaker", self._cfg_speaker),
             ("caption", self.caption_for(emotion)),
+            ("lora_adapter", self._lora or None),
         ):
             if value is not None:
                 irodori[key] = value

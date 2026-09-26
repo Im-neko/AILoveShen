@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+"""
+Style-Bert-VITS2 で作った（雑音のない）音声から、Irodori-TTS の声を作る（docs/setup/irodori_tts.md §6）。
+
+生の学習データは雑音が多いが、Style-Bert-VITS2 の出力は声はきれい（イントネーションは弱い）。
+
+    # 1. 台本（docs/voice/*.tsv、673 文）を Style-Bert-VITS2 で読ませて WAV にする（TTS サーバーが要る）
+    python tools/irodori_from_sbv2.py generate [--name shen_sbv2] [--limit 0] [--by-emotion]
+
+    # 2a. 学習なし: その中から参照音声を選んで Irodori-TTS の声にする（まずこれを試す）
+    python tools/irodori_from_sbv2.py reference [--name shen_sbv2] [--seconds 60]
+
+    # 2b. LoRA の追加学習（Irodori-TTS の学習用リポジトリが要る: scripts/irodori/setup_train_mac.sh）
+    python tools/irodori_from_sbv2.py base                 # 元のモデルの重みを取ってくる
+    python tools/irodori_from_sbv2.py prepare [--device mps]
+    python tools/irodori_from_sbv2.py train [--device mps] [--max-steps 3000]
+
+注意: 学習すると Style-Bert-VITS2 のイントネーションの癖も覚えうる。2a（声の質だけを参照音声から、話し方は
+Irodori-TTS のまま）で足りればそれがよい。2b は tools/tts_compare.py で聞き比べて、歩数（--max-steps）を
+少なめから試す。学習の Mac（MPS）での動作は Irodori-TTS 側では案内されていない（例は CUDA）: 遅すぎる・
+動かないときは同じコマンドを GPU のあるマシンで --device cuda で。
+
+出力: data/irodori_train/<name>/audio/<番号>.wav、metadata.csv（file_name,text,speaker）、除いた文の
+rejected.tsv、manifest.jsonl と latents/（prepare）、lora/（train）
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import copy
+import csv
+import io
+import os
+import shutil
+import subprocess
+import sys
+import wave
+from array import array
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "src"))
+SCRIPTS = [REPO / "docs" / "voice" / "recording_script.tsv", REPO / "docs" / "voice" / "ita_corpus.tsv"]
+DEFAULT_TRAIN_REPO = Path(os.environ.get("IRODORI_TRAIN_DIR", Path.home() / "Irodori-TTS"))
+DEFAULT_BASE = "Aratako/Irodori-TTS-v4-Small"  # Irodori-TTS-Server の既定と同じ（LoRA は同じ元に載せる）
+
+# 読み上げの出来の目安（外れたものは学習に入れない）
+MIN_SECONDS = 0.6
+MAX_SECONDS = 20.0
+CLIP = 0.999          # これ以上の振幅は音割れ
+MIN_RMS = 0.005       # これより小さければほぼ無音
+KANA_PER_SECOND = (3.0, 14.0)  # 読みの速さ（カナの数 / 秒）がこの外なら、読み飛ばしか間延び
+
+
+@dataclass(frozen=True)
+class Line:
+    id: str
+    text: str
+    emotion: str
+    kana: str = ""
+
+
+def read_lines(extra: Path | None = None) -> list[Line]:
+    lines: list[Line] = []
+    for path in SCRIPTS:
+        if path.exists():
+            with path.open(encoding="utf-8", newline="") as f:
+                for row in csv.DictReader(f, delimiter="\t"):
+                    lines.append(Line(row["id"], row["text"], row.get("emotion") or "neutral", row.get("kana") or ""))
+    if extra:
+        for i, text in enumerate(t.strip() for t in extra.read_text(encoding="utf-8").splitlines()):
+            if text:
+                lines.append(Line(f"X{i + 1:04d}", text, "neutral"))
+    return lines
+
+
+def wav_stats(data: bytes) -> tuple[float, float, float]:
+    """(秒, 最大振幅, RMS)。16bit PCM を読む（Style-Bert-VITS2 の出力）。"""
+    with wave.open(io.BytesIO(data), "rb") as w:
+        rate, width, channels, frames = w.getframerate(), w.getsampwidth(), w.getnchannels(), w.readframes(w.getnframes())
+    seconds = len(frames) / (rate * width * channels)
+    if width != 2 or not frames:
+        return seconds, 0.0, 1.0
+    samples = array("h", frames)
+    peak = max(abs(s) for s in samples) / 32768.0
+    rms = (sum(s * s for s in samples) / len(samples)) ** 0.5 / 32768.0
+    return seconds, peak, rms
+
+
+def check(line: Line, seconds: float, peak: float, rms: float) -> str:
+    """学習に入れない理由（入れてよければ空）。"""
+    if not MIN_SECONDS <= seconds <= MAX_SECONDS:
+        return f"長さ {seconds:.1f} 秒"
+    if peak >= CLIP:
+        return "音割れ"
+    if rms < MIN_RMS:
+        return "ほぼ無音"
+    if line.kana:
+        speed = len([c for c in line.kana if c not in "。、！？ー・ 　"]) / seconds
+        lo, hi = KANA_PER_SECOND
+        if not lo <= speed <= hi:
+            return f"読みの速さ {speed:.1f} カナ/秒（読み飛ばしか間延び）"
+    return ""
+
+
+def folder(name: str) -> Path:
+    return REPO / "data" / "irodori_train" / name
+
+
+# ---- 1. generate ----
+
+async def generate(args: argparse.Namespace) -> int:
+    from ailoveshen.domain.value_objects import EmotionState, EmotionType
+    from ailoveshen.factories.tts import create_synthesizer
+    from ailoveshen.infrastructure.config import load_config_dict
+
+    config = copy.deepcopy(load_config_dict(REPO / "config").get("tts", {}))
+    config["engine"] = "style_bert_vits2"
+    synthesis = config.setdefault("synthesis", {})
+    # 学習用は揺れを小さく（同じ声で、はっきり）。明示されたものだけ上書き
+    for key, value in (("sdp_ratio", args.sdp_ratio), ("noise", args.noise), ("noisew", args.noisew), ("length", args.length)):
+        if value is not None:
+            synthesis[key] = value
+    synthesizer = create_synthesizer(config)
+    await synthesizer.connect()
+
+    out = folder(args.name)
+    audio = out / "audio"
+    audio.mkdir(parents=True, exist_ok=True)
+    lines = read_lines(args.texts)
+    if args.limit:
+        lines = lines[: args.limit]
+    kept: list[tuple[Line, float]] = []
+    rejected: list[tuple[Line, str]] = []
+    try:
+        for n, line in enumerate(lines, 1):
+            target = audio / f"{line.id}.wav"
+            if target.exists() and not args.overwrite:
+                data = target.read_bytes()
+            else:
+                kind = EmotionType(line.emotion) if args.by_emotion and line.emotion in EmotionType._value2member_map_ else EmotionType.NEUTRAL
+                try:
+                    data = await synthesizer.synthesize(line.text, EmotionState(primary=kind, intensity=0.8))
+                except Exception as e:  # noqa: BLE001 - 1 文の失敗で止めない
+                    rejected.append((line, f"合成の失敗: {e}"))
+                    continue
+            seconds, peak, rms = wav_stats(data)
+            why = check(line, seconds, peak, rms)
+            if why:
+                rejected.append((line, why))
+                target.unlink(missing_ok=True)
+                continue
+            target.write_bytes(data)
+            kept.append((line, seconds))
+            if n % 25 == 0:
+                print(f"  {n}/{len(lines)}（使う {len(kept)}、除いた {len(rejected)}）")
+    finally:
+        await synthesizer.disconnect()
+
+    with (out / "metadata.csv").open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["file_name", "text", "speaker"])
+        for line, _ in kept:
+            w.writerow([f"audio/{line.id}.wav", line.text, args.speaker])
+    with (out / "rejected.tsv").open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f, delimiter="\t")
+        w.writerow(["id", "reason", "text"])
+        for line, why in rejected:
+            w.writerow([line.id, why, line.text])
+    total = sum(s for _, s in kept)
+    print(f"使う {len(kept)} 文（{total / 60:.1f} 分）、除いた {len(rejected)} 文 → {out}")
+    if rejected:
+        print(f"除いた理由: {out / 'rejected.tsv'}（耳で確かめて、よければ台本の文を直す）")
+    print(f"次: python tools/irodori_from_sbv2.py reference --name {args.name}")
+    return 0 if kept else 1
+
+
+# ---- 2a. reference ----
+
+def reference(args: argparse.Namespace) -> int:
+    out = folder(args.name)
+    meta = out / "metadata.csv"
+    if not meta.exists():
+        print(f"{meta} がない: 先に generate", file=sys.stderr)
+        return 1
+    with meta.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    # 語り（L…、ふだんの話し方で長め）を先に、足りなければふつうの文（N…）の長いものから
+    def rank(row: dict[str, str]) -> tuple[int, float]:
+        stem = Path(row["file_name"]).stem
+        seconds = wav_stats((out / row["file_name"]).read_bytes())[0]
+        return (0 if stem.startswith("L") else 1 if stem.startswith("N") else 2, -seconds)
+
+    chosen, total = [], 0.0
+    for row in sorted(rows, key=rank):
+        path = out / row["file_name"]
+        seconds = wav_stats(path.read_bytes())[0]
+        if seconds < 2.0 or total + seconds > args.seconds:
+            continue
+        chosen.append(path)
+        total += seconds
+    if not chosen:
+        print("参照音声に使える WAV がない", file=sys.stderr)
+        return 1
+    cmd = [sys.executable, str(REPO / "tools" / "irodori_voice.py"), "--name", args.voice or args.name, *map(str, chosen)]
+    print(f"参照音声: {len(chosen)} 個、{total:.0f} 秒")
+    return subprocess.call(cmd)
+
+
+# ---- 2b. LoRA ----
+
+def train_repo(args: argparse.Namespace) -> Path:
+    repo = Path(args.train_repo).expanduser()
+    if not (repo / "train.py").exists():
+        sys.exit(f"{repo} に Irodori-TTS の学習用リポジトリがない: 先に scripts/irodori/setup_train_mac.sh")
+    return repo
+
+
+def run(cmd: list[str], cwd: Path) -> int:
+    print("$ " + " ".join(cmd))
+    env = dict(os.environ, PYTORCH_ENABLE_MPS_FALLBACK="1")
+    return subprocess.call(cmd, cwd=cwd, env=env)
+
+
+def base_checkpoint(args: argparse.Namespace) -> Path:
+    return folder(args.name).parent / "base" / args.base.replace("/", "__") / "model.safetensors"
+
+
+def base(args: argparse.Namespace) -> int:
+    repo = train_repo(args)
+    target = base_checkpoint(args)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    code = (
+        "import sys, shutil; from huggingface_hub import hf_hub_download, list_repo_files;"
+        f"files = list_repo_files({args.base!r});"
+        "name = 'model.safetensors' if 'model.safetensors' in files else next((f for f in files if f.endswith('.safetensors') and '/' not in f), None);"
+        "name or sys.exit('no .safetensors in the repo: ' + ', '.join(files));"
+        f"shutil.copy(hf_hub_download({args.base!r}, name), {str(target)!r}); print('base:', name)"
+    )
+    status = run(["uv", "run", "--no-sync", "python", "-c", code], repo)
+    if status == 0:
+        print(f"→ {target}（サーバーも同じ元のモデルで動かす: サーバーの .env の IRODORI_HF_CHECKPOINT={args.base}）")
+    return status
+
+
+def prepare(args: argparse.Namespace) -> int:
+    repo = train_repo(args)
+    out = folder(args.name).resolve()
+    if not (out / "metadata.csv").exists():
+        print(f"{out / 'metadata.csv'} がない: 先に generate", file=sys.stderr)
+        return 1
+    # data/irodori_train/<name>/ は Hugging Face datasets の audiofolder（metadata.csv の file_name が音声）
+    return run([
+        "uv", "run", "--no-sync", "python", "prepare_manifest.py",
+        "--dataset", str(out), "--split", "train",
+        "--audio-column", "audio", "--text-column", "text", "--speaker-column", "speaker",
+        "--output-manifest", str(out / "manifest.jsonl"), "--latent-dir", str(out / "latents"),
+        "--device", args.device, "--prefetch", "0",
+    ], repo)
+
+
+def train(args: argparse.Namespace) -> int:
+    repo = train_repo(args)
+    out = folder(args.name).resolve()
+    manifest = out / "manifest.jsonl"
+    checkpoint = base_checkpoint(args).resolve()
+    if not manifest.exists():
+        print(f"{manifest} がない: 先に prepare", file=sys.stderr)
+        return 1
+    if not checkpoint.exists():
+        print(f"{checkpoint} がない: 先に base", file=sys.stderr)
+        return 1
+    warmup = max(1, args.max_steps // 20)
+    status = run([
+        "uv", "run", "--no-sync", "python", "train.py",
+        "--config", "configs/train_v4_small_lora.yaml",
+        "--manifest", str(manifest), "--output-dir", str(out / "lora"),
+        "--init-checkpoint", str(checkpoint),
+        "--device", args.device, "--precision", "bf16" if args.device.startswith("cuda") else "fp32",
+        # 少ないデータ（数十分）・1 台向け: 元の設定（batch 40、30000 歩）から小さく
+        "--batch-size", str(args.batch_size), "--gradient-accumulation-steps", str(args.grad_accum),
+        "--num-workers", "2", "--max-steps", str(args.max_steps),
+        "--warmup-steps", str(warmup), "--stable-steps", str(int(args.max_steps * 0.8)),
+        "--save-every", str(args.save_every), "--valid-ratio", "0.05", "--valid-every", str(args.save_every),
+        *(["--lora-r", str(args.lora_r)] if args.lora_r else []),
+    ], repo)
+    if status == 0:
+        print(f"→ {out / 'lora' / 'checkpoint_final'}")
+        print("使う: config/development.yaml の tts.irodori.lora_adapter にこのパスを書き、tools/tts_compare.py で聞き比べる")
+    return status
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def common(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--name", default="shen_sbv2", help="データの名前（data/irodori_train/<name>/）")
+
+    g = sub.add_parser("generate", help="台本を Style-Bert-VITS2 で読ませる")
+    common(g)
+    g.add_argument("--texts", type=Path, help="足す文（1 行 1 文）")
+    g.add_argument("--limit", type=int, default=0, help="先頭から何文だけ（試しに）")
+    g.add_argument("--by-emotion", action="store_true", help="台本の感情のスタイルで読ませる（tts.emotion_style_map）")
+    g.add_argument("--overwrite", action="store_true", help="作ってあるものも作り直す")
+    g.add_argument("--speaker", default="shen")
+    g.add_argument("--sdp-ratio", type=float, default=0.1, help="小さいほど読みが安定（既定 0.1）")
+    g.add_argument("--noise", type=float, default=0.4)
+    g.add_argument("--noisew", type=float, default=0.6)
+    g.add_argument("--length", type=float, default=None)
+
+    r = sub.add_parser("reference", help="参照音声を選んで Irodori-TTS の声にする")
+    common(r)
+    r.add_argument("--seconds", type=float, default=60.0)
+    r.add_argument("--voice", help="声の ID（既定は --name）")
+
+    for cmd, text in (("base", "元のモデルの重みを取ってくる"), ("prepare", "学習用に符号化する"), ("train", "LoRA を学習する")):
+        p = sub.add_parser(cmd, help=text)
+        common(p)
+        p.add_argument("--train-repo", default=str(DEFAULT_TRAIN_REPO), help="Irodori-TTS の学習用リポジトリ")
+        p.add_argument("--base", default=DEFAULT_BASE, help="元のモデル（Hugging Face）")
+        if cmd in ("prepare", "train"):
+            p.add_argument("--device", default="mps", help="mps / cuda / cpu")
+        if cmd == "train":
+            p.add_argument("--max-steps", type=int, default=3000)
+            p.add_argument("--batch-size", type=int, default=4)
+            p.add_argument("--grad-accum", type=int, default=4)
+            p.add_argument("--save-every", type=int, default=500)
+            p.add_argument("--lora-r", type=int, default=0, help="LoRA の rank（0: 設定のまま 16）")
+
+    args = ap.parse_args()
+    if args.cmd == "generate":
+        return asyncio.run(generate(args))
+    return {"reference": reference, "base": base, "prepare": prepare, "train": train}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

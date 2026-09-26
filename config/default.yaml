@@ -194,6 +194,8 @@ tts:
     seed: 1234                 # fixed: the same line always sounds the same (null: varies)
     cfg_scale_text: null
     cfg_scale_speaker: null    # higher: closer to the reference voice
+    # LoRA trained with tools/irodori_from_sbv2.py train (a folder on the server's machine; empty: none)
+    lora_adapter: "${IRODORI_LORA:-}"
     # Emotions as a speaking-style caption (only at intensity >= caption_min_intensity).
     # Off by default: a caption can pull the voice away from the reference; try it with
     # tools/tts_compare.py --emotion first.
