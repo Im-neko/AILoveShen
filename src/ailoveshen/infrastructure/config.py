@@ -46,6 +46,10 @@ class TwitchSettings:
     bot_login: str = ""
     # 何にも反応しないボットのアカウント（ログイン名）。配信者自身と bot_login は返事だけしない
     ignore_users: list[str] = field(default_factory=lambda: ["streamelements"])
+    # 返事の前の仕分け（docs/design/34 §5）: jev（返事の要らないものを飛ばし、取り下げと頼みを先に）か off
+    triage: str = "jev"
+    skip_min_confidence: float = 0.7
+    triage_record_dir: str = "logs/chat"
 
 
 @dataclass
@@ -468,6 +472,13 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ignore_users=[
                 str(u) for u in twitch_data.get("ignore_users", TwitchSettings().ignore_users) or []
             ],
+            triage=str(response_data.get("triage", TwitchSettings.triage)),
+            skip_min_confidence=float(
+                response_data.get("skip_min_confidence", TwitchSettings.skip_min_confidence)
+            ),
+            triage_record_dir=str(
+                response_data.get("triage_record_dir", TwitchSettings.triage_record_dir)
+            ),
         )
 
     if "stream" in data:

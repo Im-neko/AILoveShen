@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### Jev でできることは Jev に: 3. コメントの仕分け (2026-09-26)
+
+**Commit**: (this commit)
+
+- `application/use_cases/comment_triage.py` `CommentTriage`: 1 回の Jev で「返事をするか」と種類（request / advice / withdraw / question / chat / noise）。頼み・助言・取り下げ・質問は必ず返事。返事をしないのは chat / noise で「要らない」、両方の確信度 0.7 以上のときだけ。Jev が答えなければ返事をする。`logs/chat/*.jsonl`（コメントの文ごと）
+- `ChatResponder(triage=)`: 待っているコメントを仕分けて、取り下げ・頼みを先に。返事をしないものは捨てて `skipped` に数える
+- 設定 `twitch.response.triage: jev | off`、`skip_min_confidence`、`triage_record_dir`。factory は Twitch を読むときで TypeSafe のキーがあるとき
+- テスト 8 件。pytest 680
+
 ### Jev でできることは Jev に: 2. 読み上げの感情 (2026-09-26)
 
 **Commit**: `d2a029a`

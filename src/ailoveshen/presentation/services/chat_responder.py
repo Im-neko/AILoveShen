@@ -12,6 +12,7 @@ from loguru import logger
 
 from ailoveshen.application.ports.output.chat_sink import IChatSink
 from ailoveshen.application.ports.output.chat_source import IChatSource
+from ailoveshen.application.use_cases.comment_triage import Triage
 from ailoveshen.application.use_cases.readings import COMMAND, VIEWER, NameReadings
 from ailoveshen.domain.entities import PlaySession
 from ailoveshen.domain.value_objects import ChatComment
@@ -65,6 +66,7 @@ class ChatResponder:
         quiet: Iterable[str] = (),
         ignore: Iterable[str] = (),
         refresh: Callable[[], Awaitable[None]] | None = None,
+        triage: Callable[[ChatComment], Awaitable[Triage]] | None = None,
     ) -> None:
         """
         Args:
@@ -80,6 +82,8 @@ class ChatResponder:
                 実行する）
             ignore: 何にも反応しないアカウントのログイン名（ボット: StreamElements など）
             refresh: 返事を作る前にゲームの様子を取り直す（行動の途中の変化: 道具が壊れた、など）
+            triage: 返事を作る前の仕分け（Jev。docs/design/34 §5）。返事の要らないものは飛ばし、
+                取り下げと頼みを先にする。None なら全部に古い順に返事をする
         """
         self._llm = llm
         self._session = session
@@ -96,6 +100,9 @@ class ChatResponder:
         self._ignore = {q.strip().lower() for q in ignore if q.strip()}
         self._help_at: float | None = None
         self._refresh = refresh
+        self._triage = triage
+        self._triaged: dict[int, Triage] = {}
+        self.skipped = 0  # 仕分けで返事をしなかったコメントの数
         self.dropped = 0  # 返事をせずに捨てたコメントの数
 
     async def run(self, source: IChatSource) -> None:
@@ -176,7 +183,9 @@ class ChatResponder:
             wait = self._last_reply_at + self._interval - self._clock()
             if wait > 0:
                 await asyncio.sleep(wait)
-        comment = self._queue.popleft()
+        comment = await self._next_comment()
+        if comment is None:
+            return True
         started = self._clock()
         if self._refresh is not None:
             await self._refresh()
@@ -190,6 +199,30 @@ class ChatResponder:
         logger.info(f"[reply] ({self._last_reply_at - started:.1f}s) {reply}")
         await self._say(reply)
         return True
+
+    async def _next_comment(self) -> ChatComment | None:
+        """
+        次に返事をするコメント（仕分けがあれば、取り下げと頼みを先に）。返事の要らないものだった
+        ときは None（そのコメントは捨てる）。
+        """
+        if self._triage is None:
+            return self._queue.popleft()
+        for comment in list(self._queue):
+            if id(comment) not in self._triaged:
+                self._triaged[id(comment)] = await self._triage(comment)
+        queued = list(self._queue)
+        comment = next((c for c in queued if self._triaged[id(c)].urgent), queued[0])
+        self._queue.remove(comment)
+        result = self._triaged.pop(id(comment))
+        self._triaged = {k: v for k, v in self._triaged.items() if k in {id(c) for c in self._queue}}
+        if not result.answer:
+            self.skipped += 1
+            logger.info(
+                f"[chat] 返事しない（{result.kind}、確信度 {result.confidence:.2f}）: "
+                f"{comment.user_name}: {comment.message}"
+            )
+            return None
+        return comment
 
     async def _answer_forever(self) -> None:
         while True:

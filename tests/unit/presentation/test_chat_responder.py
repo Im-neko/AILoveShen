@@ -199,3 +199,25 @@ async def test_refreshes_the_game_before_each_reply():
     responder.accept(ChatComment("a", "ツルハシ壊れてるよ"))
     await responder.answer_next()
     assert order == ["refresh", "reply"]
+
+
+@pytest.mark.asyncio
+async def test_triage_skips_what_needs_no_reply_and_answers_urgent_ones_first():
+    """仕分け（docs/design/34 §5）: 取り下げ・頼みを先に、返事の要らないものは飛ばす。"""
+    from ailoveshen.application.use_cases.comment_triage import Triage
+
+    kinds = {"こんにちは": Triage(False, "noise", 0.9, "jev"), "やっぱりいいや": Triage(True, "withdraw", 0.9, "jev"), "草": Triage(True, "chat", 0.9, "jev")}
+
+    async def triage(comment):
+        return kinds[comment.message]
+
+    llm = AsyncMock()
+    llm.generate_response.side_effect = lambda user, msg, **kw: f"re:{msg}"
+    said = []
+    responder = _responder(llm, said, backlog=5, triage=triage)
+    for text in ["草", "こんにちは", "やっぱりいいや"]:
+        responder.accept(ChatComment("u", text))
+    while await responder.answer_next():
+        pass
+    assert said == ["re:やっぱりいいや", "re:草"]
+    assert responder.skipped == 1

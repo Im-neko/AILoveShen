@@ -28,6 +28,13 @@ twitch:
   response:
     min_interval_seconds: 5.0
     backlog: 3             # comments kept while a reply is being made (the newest ones)
+    # Before a reply (docs/design/34 §5): jev = Jev sorts each comment (reply or not, and its kind);
+    # requests, advice and withdrawals always get a reply (Gemini); only chat / noise that Jev says
+    # needs no reply (both answers >= skip_min_confidence) is skipped; withdrawals and requests go
+    # first. off = reply to every comment in order
+    triage: "jev"
+    skip_min_confidence: 0.7
+    triage_record_dir: "logs/chat"   # every comment's triage, skipped ones with their text
 
   # How viewers' names are read aloud (docs/design/30_name_readings.md): learned from `!yomi <reading>`
   # and from replies; used only for the text sent to TTS. Lookup: GET /api/readings on the board
