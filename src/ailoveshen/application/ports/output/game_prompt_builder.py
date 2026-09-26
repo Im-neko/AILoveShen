@@ -10,6 +10,7 @@ from ailoveshen.domain.value_objects import (
     Activity,
     Candidate,
     CharacterProfile,
+    ConditionStatus,
     ConversationMessage,
     GameObservation,
     Goal,
@@ -154,6 +155,7 @@ class IGamePromptBuilder(ABC):
         failure_record: Sequence[str] = (),
         offered: Sequence[Candidate] = (),
         retry_allowed: bool = True,
+        step_status: Sequence[ConditionStatus] = (),
     ) -> str:
         """
         LLM に次の目標を決めさせるプロンプトを組み立てる。
@@ -170,6 +172,7 @@ class IGamePromptBuilder(ABC):
                 あれば原因を分析させる（docs/design/27）
             offered: その小目標で最後に出ていた候補
             retry_allowed: 同じ小目標のやり直しを選べるか（同じ失敗が続いたら選べない）
+            step_status: 一番上の中目標の手順を今判定したもの（見直しの材料。docs/design/31）
         """
         ...
 

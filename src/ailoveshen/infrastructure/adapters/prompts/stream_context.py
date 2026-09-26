@@ -341,6 +341,8 @@ def _format_goal(goal: Goal | None, obs: GameObservation | None, titles: dict[st
         lines.append(f"  前の小目標がうまくいかなかった理由（自分の分析）: {goal.diagnosis}")
     if goal.advice:
         lines.append(f"  やり方の助言: {goal.advice}")
+    if goal.review:
+        lines.append(f"  決めたときの見直し: {goal.review}")
     if obs is not None and obs.goal is not None:
         lines += [f"  {line}" for line in obs.goal.lines]
         if obs.goal.blocked:

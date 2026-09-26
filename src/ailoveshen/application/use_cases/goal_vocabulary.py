@@ -140,6 +140,8 @@ class GoalDecision:
     diagnosis: str = ""
     remedy: Optional[Remedy] = None
     advice: str = ""
+    # 毎回: 今の状態で何ができるか、もっと早い・無駄のないやり方はないかの見直し（docs/design/31）
+    review: str = ""
 
 
 def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
@@ -246,9 +248,18 @@ def goal_schema(
     schema: dict[str, Any] = {
         "type": "object",
         "properties": {
+            "review": {
+                "type": "string",
+                "description": "First, every time: from the state now (what you carry, the "
+                "chests, what is nearby and remembered, the time, which steps are already done "
+                "or impossible), is there a faster or less wasteful way to the mid goals (another "
+                "order, other steps, skipping what is done)? Say what you change, or why the "
+                "plan stays. 1-2 sentences in Japanese",
+            },
             "plan_changes": {
                 "type": "array",
-                "description": "Edits of the mid-goal list, applied in order (usually none)",
+                "description": "Edits of the mid-goal list that the review calls for, applied in "
+                "order (none if the order is still the best)",
                 "maxItems": MAX_PLAN_CHANGES,
                 "items": change,
             },
@@ -277,8 +288,10 @@ def goal_schema(
                 "type": "array",
                 "maxItems": MAX_STEPS,
                 "description": "The steps (small goals, in order) to reach the mid goal at the top "
-                "of the list after the edits. Write them when it has no steps yet or they are not "
-                "working; otherwise leave empty (the fast model picks the next step itself)",
+                "of the list after the edits. Write them when it has no steps yet, they are not "
+                "working, or the review finds a faster way (a step already done, materials at hand "
+                "or in a chest, a nearer source); otherwise leave empty (the steps stay and the "
+                "fast model picks the next one itself)",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -289,7 +302,7 @@ def goal_schema(
                 },
             },
         },
-        "required": ["predicate", "serves", "reason"],
+        "required": ["review", "predicate", "serves", "reason"],
     }
     if not after_failure:
         return schema
@@ -474,6 +487,7 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         diagnosis=str(data.get("diagnosis", "")).strip(),
         remedy=remedy,
         advice=str(data.get("advice", "")).strip(),
+        review=str(data.get("review", "")).strip(),
     )
 
 

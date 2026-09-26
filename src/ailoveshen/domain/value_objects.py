@@ -475,6 +475,8 @@ class Goal:
     # docs/design/27）
     diagnosis: str = ""
     advice: str = ""
+    # この小目標を決めたときの、今の状態での見直し（docs/design/31）
+    review: str = ""
 
 
 @dataclass(frozen=True)

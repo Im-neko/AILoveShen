@@ -14,6 +14,7 @@ from ailoveshen.domain.value_objects import (
     BuildDesign,
     Candidate,
     CharacterProfile,
+    ConditionStatus,
     ConversationMessage,
     GameObservation,
     Goal,
@@ -196,7 +197,18 @@ $previous_error
 GOAL_SYSTEM_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで家を建てて暮らすAI配信者の方針を決めます。
 目標は3層です: 大目標（変わらない）、中目標（上から順に取り組むリスト）、小目標（今の1つ）。
-あなたが決めるのは次の小目標と、必要なときだけ中目標リストと自分のメモの編集です。
+あなたが決めるのは次の小目標と、見直しに応じた中目標リスト・手順・自分のメモの編集です。
+
+## 見直し（review。毎回、最初に）
+今の状態（持ち物、チェストの中身、近くにあるもの、覚えている場所、時間帯、「手順の今の状態」）を
+見て、もっと早く・無駄なく進むやり方がないかを探す。例:
+- 済んだ手順・もう持っている物・チェストにある物の手順は飛ばす（集め直さない）
+- 近くにある材料や、同じ場所・同じ外出でまとめてできることを先にする
+- 先に作ると速くなる道具（石のツルハシなど）は先に作る
+- 今は手に入らない手順は、手に入るようにする手順を前に入れるか、中目標を後ろに回す
+- 夜や家の中の時間は、中でできること（クラフト、置く、しまう）に使う
+見つけたら plan_changes / steps を直し、review に何をどう変えたかを書く。今のままが一番よければ
+変えずに、review にその理由を書く（変えないのも答え。理由のない入れ替えはしない）
 
 ## 小目標の決め方
 - 小目標は、中目標リストの一番上（編集したあとの）を進めるもの（serves は current）
@@ -232,14 +244,14 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
 - 一番上の中目標のための手順を、小目標の並び（1〜6 個、順番どおり）で書く。書いた手順の中から、
   次の小目標は速いモデルが自分で選び、済んだかはゲームの状態から判定される。あなたが呼ばれるのは、
   中目標が変わったとき、うまくいかなかったとき、手順が尽きたとき、ときどきの見直しのとき
-- 書くのは、一番上の中目標に手順がないとき（「今していること」の中目標に「手順:」がない）と、
-  今の手順がうまくいっていないとき。うまくいっているなら空にする（今の手順のまま）
+- 書くのは、一番上の中目標に手順がないとき（「今していること」の中目標に「手順:」がない）、
+  今の手順がうまくいっていないとき、見直しでもっとよい手順が見つかったとき。それ以外は空にする
 - 手順に使えるのは have / stored / built / placed / lit（ゲームの状態から済んだかを判定できるもの）。
   各手順に、なぜそれかを 1 文で付ける（配信の画面と実況に出る）
 - 最後の手順は中目標の完了条件そのものにする（例: 家を建てる → have(log, 12)、have(planks, 40)、built）
 - 小目標（predicate）は手順の中から選ぶ（夜や空腹で身を守るときは survival）
 
-## 中目標リストの編集（plan_changes。変える理由があるときだけ）
+## 中目標リストの編集（plan_changes。見直しで変える理由があるときだけ）
 - 順番は合理的に調整しながら進めてよい: 今の場所・持ち物・時間帯・状況で、別の中目標を先に
   やるほうが早い・安全・無駄がないなら move で入れ替える（理由を言う。配信で伝えられる）。
   理由なく入れ替えを繰り返さない（前の判断を覆すなら、何が変わったかを理由に書く）
@@ -290,8 +302,8 @@ $conditions
 $all_predicates
 
 ## 出力
-中目標リストの編集とメモの編集（なければ空）、次の小目標（predicate と必要な引数）、serves、
-その理由（短い1文）を指定の JSON で出力してください。
+見直し（review）、中目標リストの編集とメモの編集（なければ空）、次の小目標（predicate と必要な
+引数）、serves、その理由（短い1文）を指定の JSON で出力してください。
 """)
 
 GOAL_TEMPLATE = Template("""\
@@ -303,6 +315,7 @@ $activity
 
 ## 今使える小目標
 $predicates
+$steps
 
 ## 最近の会話（配信での自分の発言と視聴者のコメント）
 $recent_messages
@@ -582,6 +595,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         failure_record: Sequence[str] = (),
         offered: Sequence[Candidate] = (),
         retry_allowed: bool = True,
+        step_status: Sequence[ConditionStatus] = (),
     ) -> str:
         """LLM に次の目標を決めさせるプロンプトを組み立てる。"""
         error = (
@@ -598,6 +612,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             reason=goal_ended_because or "なし",
             failure=_format_failure(failure_record, offered, retry_allowed),
             previous_error=error,
+            steps=_format_step_status(step_status),
         )
 
     def build_tool_prompt(
@@ -727,6 +742,23 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             ],
         }
         return state, ACTION_INSTRUCTIONS
+
+
+def _format_step_status(statuses: Sequence[ConditionStatus]) -> str:
+    """一番上の中目標の手順の、今の判定（docs/design/31。見直しの材料）。手順がなければ空。"""
+    if not statuses:
+        return ""
+    lines = ["", "## 手順の今の状態（一番上の中目標。見直しの材料）"]
+    for st in statuses:
+        if st.met:
+            lines.append(f"- {st.spec.describe()}: 済み")
+            continue
+        detail = "; ".join(line.strip() for line in st.lines[:2])
+        if st.impossible:
+            detail = f"{detail}; " if detail else ""
+            detail += "今は手に入らない: " + ", ".join(st.impossible)
+        lines.append(f"- {st.spec.describe()}: まだ" + (f"（{detail}）" if detail else ""))
+    return "\n".join(lines) + "\n"
 
 
 def _format_failure(

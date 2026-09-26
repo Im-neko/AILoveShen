@@ -48,19 +48,25 @@ from ailoveshen.application.use_cases.watcher import ToolWatcher
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, Notebook, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
-    SkillLearnedEvent,
-    SkillRevisedEvent,
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
+    SkillLearnedEvent,
+    SkillRevisedEvent,
 )
-from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
+from ailoveshen.domain.exceptions import (
+    AILoveShenError,
+    GameBridgeError,
+    GoalRejectedError,
+    TextGenerationError,
+)
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
     Activity,
     Candidate,
+    ConditionStatus,
     ConversationMessage,
     GameObservation,
     Goal,
@@ -642,6 +648,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         if failed and self._screen is not None:
             shot = await self._screen.after_failure()
             images = [shot] if shot else []
+        step_status = await self._step_status(plan)
         error = ""
         for attempt in range(1, self._max_goal_attempts + 1):
             prompt = self._prompt_builder.build_goal_prompt(
@@ -654,6 +661,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 failure_record=record,
                 offered=offered,
                 retry_allowed=retry_allowed,
+                step_status=step_status,
             )
             schema = goal_schema(
                 predicates,
@@ -706,6 +714,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                     f"失敗の分析: {decision.diagnosis} → {decision.remedy.value if decision.remedy else '?'}"
                     + (f"（助言: {decision.advice}）" if decision.advice else "")
                 )
+            if decision.review:
+                logger.info(
+                    f"見直し: {decision.review}（中目標の編集 {len(decision.changes)}、"
+                    f"手順 {'書き直し' if decision.steps else 'そのまま'}）"
+                )
             await self._mid_goals.commit(plan, decision.changes)
             if decision.steps and plan.current is not None:
                 await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
@@ -715,6 +728,17 @@ class AdvancePlayUseCase(IAdvancePlay):
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"
         )
+
+    async def _step_status(self, plan: MidGoalPlan) -> tuple[ConditionStatus, ...]:
+        """一番上の中目標の手順を今判定する（見直しの材料。docs/design/31）。判定できなければ空。"""
+        current = plan.current
+        if current is None or not current.plan_steps:
+            return ()
+        try:
+            return tuple(await self._bridge.check([s.spec for s in current.plan_steps]))
+        except AILoveShenError as e:
+            logger.debug(f"手順を判定できなかった: {e}")
+            return ()
 
     def _write_notes(
         self,
@@ -799,6 +823,7 @@ def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
         mid_goal_id=mid_goal_id,
         diagnosis=decision.diagnosis,
         advice=decision.advice,
+        review=decision.review,
     )
 
 

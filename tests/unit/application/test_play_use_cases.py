@@ -994,6 +994,35 @@ class TestStepsChosenByJev:
         await confident.execute(session)
         assert text_generator.generate_json.await_count == 3
 
+    @pytest.mark.asyncio
+    async def test_each_gemini_decision_reviews_the_steps_as_they_are_now(
+        self, make, text_generator, bridge, prompt_builder
+    ):
+        """Gemini が決めるたびに、手順の今の判定を見せ、見直し（review）を毎回書かせる（31）。"""
+        text_generator.generate_json.return_value = {
+            **STEPS_DECISION,
+            "review": "原木はもう 12 本あるので板材から",
+        }
+        session = _session()
+        use_case = make(FakeJev("A", confidence=0.1))
+        await use_case.execute(session)  # 手順がない: 判定するものもない
+        assert prompt_builder.build_goal_prompt.call_args.kwargs["step_status"] == ()
+
+        bridge.observe.return_value = _obs(met=True)
+        bridge.check.side_effect = _judged({LOG})
+        await use_case.execute(session)  # 自信がない → Gemini。手順の今の判定を見せる
+
+        status = prompt_builder.build_goal_prompt.call_args.kwargs["step_status"]
+        assert [(st.spec, st.met) for st in status] == [
+            (LOG, True),
+            (HAVE_PLANKS, False),
+            (BUILT, False),
+        ]
+        schema = text_generator.generate_json.call_args.args[1]
+        assert list(schema["properties"])[0] == "review"
+        assert "review" in schema["required"]
+        assert session.goal.review == "原木はもう 12 本あるので板材から"
+
     def test_which_boundaries_go_to_gemini(self, make):
         from ailoveshen.domain.value_objects import PlannedStep
 
@@ -1092,7 +1121,8 @@ class TestFailureDiagnosis:
         assert [c.action_id for c in kwargs["offered"]][0] == "go to pig seen at -21,-267"
         assert kwargs["retry_allowed"]
         schema = text_generator.generate_json.call_args.args[1]
-        assert list(schema["properties"])[:3] == ["diagnosis", "remedy", "advice"]
+        # 分析してから、今の状態で見直す（31）
+        assert list(schema["properties"])[:4] == ["diagnosis", "remedy", "advice", "review"]
         assert session.goal.diagnosis == "近くに木がない"
         assert session.goal.advice == "Explore west."
 

@@ -6,6 +6,7 @@ from ailoveshen.domain.value_objects import (
     Activity,
     Candidate,
     CharacterProfile,
+    ConditionStatus,
     ConversationMessage,
     GameObservation,
     Goal,
@@ -535,3 +536,30 @@ class TestPromptLength:
 
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500
+
+
+class TestReviewPrompt:
+    """毎回の見直し（docs/design/31）。"""
+
+    def test_the_steps_as_judged_now_are_shown(self):
+        log = GoalSpec(GoalPredicate.HAVE, item="log", count=12)
+        planks = GoalSpec(GoalPredicate.HAVE, item="planks", count=40)
+        wool = GoalSpec(GoalPredicate.HAVE, item="wool", count=3)
+        prompt = _goal_prompt(
+            step_status=(
+                ConditionStatus(log, True),
+                ConditionStatus(planks, False, ("planks 8/40",)),
+                ConditionStatus(wool, False, (), ("wool",)),
+            )
+        )
+
+        assert "## 手順の今の状態" in prompt
+        assert "- have(log, 12): 済み" in prompt
+        assert "- have(planks, 40): まだ（planks 8/40）" in prompt
+        assert "- have(wool, 3): まだ（今は手に入らない: wool）" in prompt
+
+    def test_no_steps_no_section_and_the_rules_ask_for_a_review_every_time(self):
+        assert "手順の今の状態" not in _goal_prompt()
+        system = GamePromptTemplateBuilder().build_goal_system()
+        assert "## 見直し（review。毎回、最初に）" in system
+        assert "変えないのも答え" in system
