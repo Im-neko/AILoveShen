@@ -115,12 +115,14 @@ function fromLeaf (bot, state, world, leaf) {
   switch (leaf.kind) {
     case 'dig':
       return leaf.sources.flatMap((name) => world.dig(name).map((p) => ({
-        id: `dig ${name} at ${fmt(p)}`, verb: 'dig', target: name, distance: dist(bot, p), pos: p, block: name
-      })))
+        id: `dig ${name} at ${fmt(p)}`, verb: 'dig', target: name, distance: dist(bot, p), pos: p, block: name,
+        ...(leaf.also ? { also: leaf.also } : {})
+      }))).filter((c) => !leaf.near || c.distance <= leaf.near)
     case 'kill':
       return leaf.sources.flatMap((name) => world.hunt(name).map(({ e, dist: d }) => ({
-        id: `attack ${name} #${e.id}`, verb: 'attack', target: name, distance: round(d), pos: e.position, entityId: e.id, hostile: false
-      })))
+        id: `attack ${name} #${e.id}`, verb: 'attack', target: name, distance: round(d), pos: e.position, entityId: e.id, hostile: false,
+        ...(leaf.also ? { also: leaf.also } : {})
+      }))).filter((c) => !leaf.near || c.distance <= leaf.near)
     case 'dig_down': {
       const [name] = leaf.sources
       const t = world.buried?.(name)?.[0]

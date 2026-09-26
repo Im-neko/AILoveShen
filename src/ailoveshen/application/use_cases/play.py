@@ -367,6 +367,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         else:
             decision, result = await self._act_on_candidate(goal, obs)
         await self._mid_goals.step_counted(session.plan, session.record(result))
+        if self._side_work(obs, decision):
+            # ついでの作業（そばの葉から苗木など）は、今の小目標の「進まない」に数えない
+            session.skip_stall_once()
         if goal.mid_goal_id is not None and goal.mid_goal_id == self._mid_watch[0]:
             self._mid_idle_steps += 1
         self._goal_steps.append(_step_line(decision, result))
@@ -401,6 +404,13 @@ class AdvancePlayUseCase(IAdvancePlay):
             )
             decision = await self._action_selector.select(state, candidates, instructions)
         return decision, await self._bridge.act(decision.action_id)
+
+    @staticmethod
+    def _side_work(obs: GameObservation, decision: ActionDecision) -> bool:
+        """選んだ候補が、ほかの中目標の物をついでに取るものか（今の目標の残りは減らない）。"""
+        return any(
+            c.action_id == decision.action_id and c.description.get("also") for c in obs.candidates
+        )
 
     async def _act_with_tools(
         self, session: PlaySession, obs: GameObservation
@@ -580,7 +590,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             picked = await self._chooser.choose(session, obs, reason)
             if isinstance(picked, ChosenGoal):
                 try:
-                    status = await self._bridge.set_goal(picked.spec, _kept(session.plan))
+                    status = await self._bridge.set_goal(
+                        picked.spec, _kept(session.plan), _also(session.plan, picked.spec)
+                    )
                 except GoalRejectedError as e:
                     why = f"the bridge rejected {picked.spec.describe()}: {e}"
                 else:
@@ -708,8 +720,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                     _check_remedy(decision, failed_goal, same_failures)
                 await self._mid_goals.check_new(decision.changes)
                 _serving(decision, self._mid_goals.rehearse(plan, decision.changes))
+                rehearsed = self._mid_goals.rehearse(plan, decision.changes)
                 status = await self._bridge.set_goal(
-                    decision.spec, _kept(self._mid_goals.rehearse(plan, decision.changes))
+                    decision.spec, _kept(rehearsed), _also(rehearsed, decision.spec)
                 )
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
@@ -925,6 +938,24 @@ def _step_line(decision: ActionDecision, result: ActionResult) -> str:
     """失敗の分析に見せる 1 ステップ: 選んだ行動、確信度、結果。"""
     outcome = "ok" if result.ok else "failed"
     return f"{result.action_id} ({decision.confidence:.2f}) → {outcome}: {result.result[:80]}"
+
+
+_GATHERED = (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.PLANTED, GoalPredicate.FARMED)
+
+
+def _also(plan: MidGoalPlan, spec: GoalSpec) -> tuple[GoalSpec, ...]:
+    """
+    ほかの中目標（と今の中目標の手順）で集める物: そばで取れたら一緒に取る。今の小目標と
+    同じ物は除く（木を見つけたら原木と、ついでに葉から苗木）。
+    """
+    specs = [c for g in plan.pending for c in g.conditions]
+    if plan.current is not None:
+        specs += [s.spec for s in plan.current.plan_steps]
+    out: list[GoalSpec] = []
+    for s in specs:
+        if s.predicate in _GATHERED and s.item != spec.item and s not in out:
+            out.append(s)
+    return tuple(out)
 
 
 def _kept(plan: MidGoalPlan) -> tuple[GoalSpec, ...]:

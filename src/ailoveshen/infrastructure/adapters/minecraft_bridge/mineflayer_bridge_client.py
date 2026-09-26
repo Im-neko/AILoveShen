@@ -16,6 +16,7 @@ from ailoveshen.domain.value_objects import (
     Candidate,
     ConditionStatus,
     GameObservation,
+    GoalPredicate,
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
@@ -55,9 +56,15 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data = await self._request("GET", "/observe")
         return _to_observation(data)
 
-    async def set_goal(self, spec: GoalSpec, keep: Sequence[GoalSpec] = ()) -> GoalStatus:
+    async def set_goal(
+        self, spec: GoalSpec, keep: Sequence[GoalSpec] = (), also: Sequence[GoalSpec] = ()
+    ) -> GoalStatus:
         """目標を設定する。ブリッジが返す 400 には、拒否した理由が入っている。"""
-        body = {**spec.to_dict(), "keep": [{"item": k.item, "count": k.count} for k in keep]}
+        body = {
+            **spec.to_dict(),
+            "keep": [{"item": k.item, "count": k.count} for k in keep],
+            "also": [a for a in map(_gathered, also) if a],
+        }
         try:
             response = await self._client.put("/goal", json=body)
         except httpx.RequestError as e:
@@ -345,3 +352,26 @@ def _to_skill(d: dict[str, Any]) -> SkillInfo:
         last_good_version=d.get("last_good_version"),
         code=str(d.get("code", "")),
     )
+
+
+# 畑の作物 → まく物（ついでに集めるのは種）
+_SEEDS = {
+    "wheat": "wheat_seeds",
+    "carrots": "carrot",
+    "potatoes": "potato",
+    "beetroots": "beetroot_seeds",
+}
+_ALSO_SEEDS_MAX = 16
+
+
+def _gathered(spec: GoalSpec) -> dict[str, object] | None:
+    """ついでに集める物（ブリッジの also）。集める物でない条件は None。"""
+    if spec.count is None:
+        return None
+    if spec.predicate in (GoalPredicate.HAVE, GoalPredicate.STORED):
+        return {"item": spec.item, "count": spec.count}
+    if spec.predicate == GoalPredicate.PLANTED:
+        return {"item": spec.item or "sapling", "count": spec.count}
+    if spec.predicate == GoalPredicate.FARMED and spec.item in _SEEDS:
+        return {"item": _SEEDS[spec.item], "count": min(spec.count, _ALSO_SEEDS_MAX)}
+    return None

@@ -1,6 +1,6 @@
 // Minecraft ブリッジ: Mineflayer のボット + 視点のミラー + Python 側のための HTTP API。
 //
-//   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}]}
+//   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}], also?: [{item, count}]}
 //                          -> 目標を設定する（不正なら理由を添えて 400）。目標の状態を返す。
 //                             keep: 中目標のためにチェストに取っておくもの（この目標のために取り出さない）
 //   GET  /observe          -> { busy, observation（survey: 調べた候補地の数字を含む）, needs, goal: {spec, met, remaining, lines, blocked} | null,

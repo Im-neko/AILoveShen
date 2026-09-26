@@ -41,7 +41,9 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
-    async def set_goal(self, spec: GoalSpec, keep: Sequence[GoalSpec] = ()) -> GoalStatus:
+    async def set_goal(
+        self, spec: GoalSpec, keep: Sequence[GoalSpec] = (), also: Sequence[GoalSpec] = ()
+    ) -> GoalStatus:
         """
         候補を具体化する対象の目標を設定する。
 
@@ -49,6 +51,8 @@ class IMinecraftBridge(ABC):
             spec: 小目標
             keep: 中目標の stored() 条件。チェストがそのために取っておくものは、この目標の
                 ために取り出さない（食料は飢えているときだけ取り出す）
+            also: ほかの中目標で集める物（have / stored / planted / farmed）。そばで取れるなら
+                一緒に取る候補が出る（木を見つけたら原木と、葉から苗木）
 
         Raises:
             GoalRejectedError: ブリッジが目標を拒否したとき（理由つき）

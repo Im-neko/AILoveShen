@@ -114,6 +114,7 @@ class TestMineflayerBridgeClient:
                 "item": "planks",
                 "count": 12,
                 "keep": [{"item": "food", "count": 10}],
+                "also": [],
             },
         }
         assert status.remaining == 4
@@ -424,3 +425,23 @@ class TestSkillsOverHttp:
         assert await client.skill("x") is None
         run = await client.run_skill("x", {})
         assert not run.ok and "no skill" in run.reason
+
+
+def test_what_other_mid_goals_gather_is_sent_as_also():
+    from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
+        _gathered,
+    )
+
+    assert _gathered(GoalSpec(GoalPredicate.PLANTED, item="sapling", count=4)) == {
+        "item": "sapling",
+        "count": 4,
+    }
+    assert _gathered(GoalSpec(GoalPredicate.FARMED, item="wheat", count=30)) == {
+        "item": "wheat_seeds",
+        "count": 16,
+    }
+    assert _gathered(GoalSpec(GoalPredicate.STORED, item="log", count=32)) == {
+        "item": "log",
+        "count": 32,
+    }
+    assert _gathered(GoalSpec(GoalPredicate.BUILT)) is None

@@ -45,6 +45,10 @@ export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night'
 // （ほかはその時点や、目標を立てた場所によって変わる）
 export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed']
 const MAX_PLANTED = 32
+const DEPOSIT_BATCH = 32 // これだけ持ったらチェストに入れに行く
+const NEAR_HOME = 12
+const FULL_SLOTS = 3
+const SIDE_RADIUS = 8 // ほかの中目標の物を一緒に取るのは、このくらいそばにあるときだけ
 const MAX_FARMED = 64
 
 // 目標の指定を検証し、保持する目標の状態を返す。不正なら理由を添えて投げる
@@ -64,7 +68,29 @@ export function makeGoal (spec, bot, state, knowledge) {
     if (!Number.isInteger(depth) || depth < 0 || depth > MAX_DIG_DEPTH) throw new Error(`dig_depth must be 0-${MAX_DIG_DEPTH}`)
     goal.spec.dig_depth = depth
   }
-  return { ...goal, exploreFrom: { x: p.x, y: p.y, z: p.z }, surfaceY: Math.floor(p.y), keep: validKeep(spec.keep ?? [], knowledge) }
+  return {
+    ...goal,
+    exploreFrom: { x: p.x, y: p.y, z: p.z },
+    surfaceY: Math.floor(p.y),
+    keep: validKeep(spec.keep ?? [], knowledge),
+    also: validAlso(spec.also ?? [], knowledge)
+  }
+}
+
+// also: ほかの中目標のために集めたい物（[{item, count}]）。今の目標の途中で、すぐそばで取れるなら
+// 一緒に取る候補を出す（木を見つけたら原木と、ついでに葉から苗木）。知らない物は黙って外す
+const MAX_ALSO = 6
+function validAlso (also, knowledge) {
+  if (!Array.isArray(also)) return []
+  return also.slice(0, MAX_ALSO).flatMap(({ item, count }) => {
+    const n = Number(count)
+    if (!Number.isInteger(n) || n < 1) return []
+    try {
+      return [{ item: String(item), count: Math.min(n, MAX_COUNT), members: knowledge.resolve(String(item)).members }]
+    } catch {
+      return []
+    }
+  })
 }
 
 function validKeep (keep, knowledge) {
@@ -345,14 +371,25 @@ export function evaluate (bot, state, knowledge, world) {
       if (!homeChests(state.memory ?? {}, state.home).length) {
         if (addSolved([{ spec: 'chest', count: 1 }], gathering).met) out.leaves.push({ kind: 'place_chest' })
         out.remaining += 1
-      } else {
-        const inv = inventoryCounts(bot)
-        // いま焼ける生肉は焼いてから入れる（焼く候補、次にかまど）
-        const cook = cooking(bot, knowledge)
-        const held = members.filter((m) => inv[m] > 0 && m !== cook?.input).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
-        if (held.length) out.leaves.push({ kind: 'deposit', items: held })
+        addSolved([{ spec: goal.spec.item, count: want }], gathering)
+        break
       }
-      addSolved([{ spec: goal.spec.item, count: want }], gathering)
+      const r = addSolved([{ spec: goal.spec.item, count: want }], gathering)
+      const inv = inventoryCounts(bot)
+      // いま焼ける生肉は焼いてから入れる（焼く候補、次にかまど）
+      const cook = cooking(bot, knowledge)
+      const held = members.filter((m) => inv[m] > 0 && m !== cook?.input).map((m) => ({ item: m, count: Math.min(inv[m], want) }))
+      const carrying = held.reduce((s, h) => s + h.count, 0)
+      // 1 個ずつ家に運ばない: ある程度たまったら（足りる数、DEPOSIT_BATCH、持ち物がいっぱい）、
+      // ここで集めるものがなくなったら、家の近くにいるなら、夕方・夜なら（どうせ帰る）入れに行く
+      const nearHome = bot.entity.position.distanceTo(state.home.inside) <= NEAR_HOME
+      const nothingHere = !r.leaves.some((l) => l.kind !== 'explore')
+      const full = (bot.inventory.emptySlotCount?.() ?? 36) <= FULL_SLOTS
+      if (held.length && (carrying >= want || carrying >= DEPOSIT_BATCH || full || nearHome || nothingHere || phase !== 'day')) {
+        out.leaves.push({ kind: 'deposit', items: held })
+      } else if (held.length) {
+        out.lines.push(`carrying ${carrying}: take them to the chest at ${DEPOSIT_BATCH}, when nothing is left to gather here, or at dusk`)
+      }
       break
     }
     case 'lit': {
@@ -418,6 +455,18 @@ export function evaluate (bot, state, knowledge, world) {
       else if (danger.some(({ e }) => EXPLODES.has(e.name))) out.blocked.push('a creeper is near the door: it explodes when fought in melee; wait for it to leave')
       else out.leaves.push({ kind: 'clear', mobs: danger.map(({ e }) => e) })
       break
+    }
+  }
+  // ついでに取れるもの（ほかの中目標の物）: 昼に、そばにあれば。今の目標の残りには数えない
+  if (!out.met && phase === 'day' && goal.also?.length) {
+    const inv = inventoryCounts(bot)
+    for (const a of goal.also) {
+      const have = a.members.reduce((s, m) => s + (inv[m] ?? 0), 0)
+      if (have >= a.count) continue
+      const r = solve(knowledge, world, [{ spec: a.item, count: a.count - have }])
+      for (const l of r.leaves) {
+        if (l.kind === 'dig' || l.kind === 'kill') out.leaves.push({ ...l, also: `${a.item} for another mid goal`, near: SIDE_RADIUS })
+      }
     }
   }
   return out

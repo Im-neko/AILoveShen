@@ -721,6 +721,10 @@ class PlaySession(Entity):
         self.intent = intent.strip()
         self.updated_at = _utc_now()
 
+    def skip_stall_once(self) -> None:
+        """次の進み具合の記録を「進まない」に数えない（ついでの作業、襲われて止まった行動）。"""
+        self._skip_stall = True
+
     def record(self, result: ActionResult) -> Optional[MidGoal]:
         """今の目標とその中目標の分としてステップを 1 つ数える。予算を超えて断念した中目標
         （視聴者の頼み）があれば返す。"""

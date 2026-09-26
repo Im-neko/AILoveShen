@@ -116,3 +116,45 @@ test('check はボットに手に入れる手段がない物を挙げる（街�
   const [bedrock] = checkConditions([{ predicate: 'have', item: 'bedrock', count: 1 }], bot, state, k, world())
   assert.deepEqual(bedrock.impossible, ['no way to get bedrock'])
 })
+
+test('集めた物は 1 個ずつ運ばない: たまるか、ここで集める物がなくなるか、夕方になってから入れに行く', () => {
+  const memory = newMemory()
+  rememberChest(memory, v(1, 70, 1), {}, 0)
+  const state = { home, plan: null, memory }
+  const at = (logs, timeOfDay = 1000, pos = v(40, 70, 40)) => {
+    const bot = { entity: { position: pos }, time: { timeOfDay }, inventory: { items: () => [{ name: 'oak_log', count: logs }], emptySlotCount: () => 30 } }
+    const goal = makeGoal({ predicate: 'stored', item: 'log', count: 40 }, bot, state, k)
+    const r = evaluate(bot, { ...state, goal }, k, world({ inventory: { oak_log: logs }, blocks: { oak_log: 9 } }))
+    return r.leaves.some((l) => l.kind === 'deposit')
+  }
+  assert.equal(at(4), false) // 遠くで 4 本: 集め続ける
+  assert.equal(at(32), true) // たまった
+  assert.equal(at(4, 12500), true) // 夕方: どうせ帰る
+  assert.equal(at(4, 1000, v(3, 70, 6)), true) // 家のそば
+})
+
+test('ほかの中目標の物がそばで取れるなら一緒に取る（木を見つけたら原木と、葉から苗木）', () => {
+  const state = { home, plan: null, memory: newMemory(), unreachableDrops: new Set() }
+  const bot = {
+    entity: { position: v(40, 70, 40) },
+    entities: {},
+    time: { timeOfDay: 1000, age: 0 },
+    health: 20,
+    food: 20,
+    heldItem: null,
+    blockAt: () => null,
+    inventory: { items: () => [] }
+  }
+  const goal = makeGoal({ predicate: 'have', item: 'log', count: 8, also: [{ item: 'sapling', count: 2 }, { item: 'nonsense_item', count: 1 }] }, bot, state, k)
+  assert.deepEqual(goal.also.map((a) => a.item), ['sapling'])
+  const w = {
+    ...world({ blocks: { oak_log: 9, oak_leaves: 20 } }),
+    dig: (name) => name === 'oak_log' ? [v(42, 70, 40)] : name === 'oak_leaves' ? [v(43, 73, 40), v(60, 72, 40)] : []
+  }
+  const status = evaluate(bot, { ...state, goal }, k, w)
+  const { candidates } = ground(bot, { ...state, goal }, k, w, status)
+  const leaves = candidates.filter((c) => c.target === 'oak_leaves')
+  assert.deepEqual(leaves.map((c) => c.id), ['dig oak_leaves at 43,73,40']) // 遠い葉は出さない
+  assert.equal(leaves[0].also, 'sapling for another mid goal')
+  assert.ok(candidates.some((c) => c.id === 'dig oak_log at 42,70,40'))
+})
