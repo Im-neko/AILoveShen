@@ -7,7 +7,7 @@
         [--emotion] [--repeat 1] [--out logs/tts_compare]
 
 - --lines: 1 行 1 文のファイル（省略: 実況でよく出る文。アイテム名、数、英単語、名前、短い相づち）
-- --emotion: Irodori-TTS で、感情の説明（tts.irodori.emotion_captions）を付けたものも作る
+- --emotion: 感情つきでも読ませる（Irodori-TTS は感情の説明と感情の声、Style-Bert-VITS2 は感情のスタイル）
 - --repeat: 同じ文を何回読ませるか（seed を決めていれば同じ音になるかの確認。時間は平均）
 - 結果: <out>/<日時>/<方式>/NN.wav と report.md（読み間違いは耳で確かめて report.md に書き込む）
 - Minecraft と OBS を起動したまま測ると、配信中の速さに近い
@@ -126,10 +126,13 @@ async def main() -> int:
         config = copy.deepcopy(base)
         config["engine"] = engine
         runs.append((engine, config, False))
-        if engine == "irodori" and args.emotion:
+        if args.emotion:
+            # 感情つき: Irodori-TTS は説明（と tts.irodori.emotion_voices）、Style-Bert-VITS2 はスタイル
+            # （tts.emotion_style_map、tools/sbv2_add_styles.py で足したもの）
             emotional = copy.deepcopy(config)
-            emotional.setdefault("irodori", {})["emotion"] = True
-            runs.append(("irodori_emotion", emotional, True))
+            if engine == "irodori":
+                emotional.setdefault("irodori", {})["emotion"] = True
+            runs.append((f"{engine}_emotion", emotional, True))
 
     results: dict[str, list[tuple[float, str]]] = {}
     for label, config, with_emotion in runs:

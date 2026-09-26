@@ -156,4 +156,4 @@ python tools/irodori_from_sbv2.py emotions --source irodori --per-emotion 20
 
 - 感情ごとの音声の埋め込み（pyannote wespeaker、Style-Bert-VITS2 の `style_gen`）の平均を、`model_assets/shen/style_vectors.npy` に Happy / Surprised / Sad / Angry / Fear として足す（同じ名前があれば置き換え）。**今の Neutral はそのまま**（公式 WebUI の「方法0」は Neutral を全体の平均で作り直すので使わない）。前のファイルは `*.<日時>.bak`
 - 学習し直さない。Docker の TTS サーバーは推論だけの環境（pyannote なし、モデルのフォルダーは読み取り専用）なので、学習に使った Style-Bert-VITS2 の環境で動かす
-- 出てくる `tts.emotion_style_map` と `tts.synthesis.style_weight`（感情の強さ、1 で弱ければ 2〜5）を `config/development.yaml` に。`python tools/tts_compare.py --engines style_bert_vits2 --emotion` はまだないので、`--lines` に感情の文を入れて聞く
+- 出てくる `tts.emotion_style_map` と `tts.synthesis.style_weight`（感情の強さ、1 で弱ければ 2〜5）を `config/development.yaml` に。聞き比べは `python tools/tts_compare.py --emotion`（両方の方式で、感情なしと感情つき）
