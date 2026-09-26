@@ -392,7 +392,7 @@ class TestToolControlSettings:
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "default.yaml").write_text("gemini: {}\nminecraft: {}\n")
             settings = load_settings(config_dir=Path(tmpdir))
-        assert settings.minecraft.control == "candidates"
+        assert settings.minecraft.control == "tools"
         assert settings.minecraft.watch.act_on_progress is False
         assert settings.minecraft.watch.act_on_questions is True
         assert settings.gemini.thinking_levels["town"] == "high"

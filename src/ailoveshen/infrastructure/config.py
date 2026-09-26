@@ -204,9 +204,9 @@ class MinecraftSettings:
     # 自分のメモ（docs/design/18_notes.md）。再起動をまたいで残す
     notes_path: str = "data/notes.json"
     mission: MissionSettings = field(default_factory=MissionSettings)
-    # 行動の決め方（docs/design/21）: candidates（候補から Jev が選ぶ）か
-    # tools（Gemini が道具を呼ぶ）
-    control: str = "candidates"
+    # 行動の決め方（docs/design/21）: tools（既定。Gemini が道具を呼ぶ）か candidates（候補から Jev が
+    # 選ぶ。前の方式、比べるときだけ）
+    control: str = "tools"
     # 小目標の決め方（docs/design/26）: jev（Gemini が書いた手順から Jev が選ぶ）か gemini（毎回 Gemini）
     small_goals: str = "jev"
     jev_goal_min_confidence: float = 0.4

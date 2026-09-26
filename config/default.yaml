@@ -347,9 +347,11 @@ minecraft:
     # The streamer's own notes (docs/design/18_notes.md), kept across restarts
     notes_path: "data/notes.json"
     # How actions are chosen (docs/design/21_tool_control.md):
-    #   candidates: the bridge grounds candidates (solver) and Jev picks one (the baseline)
-    #   tools: Gemini calls tools itself; Jev answers watch questions while a tool runs
-    control: "candidates"
+    #   tools (the default): Gemini calls tools itself (and runs its skills; do_suggestion runs one
+    #     of the bridge's candidates); Jev answers watch questions while a tool runs
+    #   candidates: the bridge grounds candidates (solver) and Jev picks one (the old baseline, kept
+    #     for comparison: --control candidates)
+    control: "tools"
     # How small goals are chosen (docs/design/26_steps_and_context.md):
     #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
     #        at each boundary. Gemini is asked again after a failure, when the steps run out, when

@@ -7,6 +7,13 @@
 
 ## Completed Work
 
+### 道具モードを既定に (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「最終的に操作を決めているのは誰？」→（候補モードではブリッジが座標まで決め、Jev が選ぶ。道具モードでは Gemini が座標まで指定できる）→「道具モードだけにしていい」
+- `minecraft.agent.control` の既定を `tools` に（`config/default.yaml`、`MinecraftSettings`）。候補モードのコードは残す（`--control candidates` で比べられる。道具モードの `do_suggestion` もブリッジの候補を使う）。CLAUDE.md、streaming.md を更新。pytest 659
+
 ### ブリッジの自動再起動（npm run dev） (2026-09-26)
 
 **Commit**: `5ae209b`

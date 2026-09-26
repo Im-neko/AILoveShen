@@ -187,7 +187,7 @@ Twitch のチャット #<チャンネル> を読み始めた
 
 | オプション | 内容 |
 |---|---|
-| `--control tools` | Gemini が道具を呼んで直接操作する（既定 `candidates` は候補から Jev が選ぶ。設定は `minecraft.agent.control`）。技（Gemini が書いて覚える手順。`minecraft.agent.skills`、既定オン）も使う |
+| `--control candidates` | 前の方式（ブリッジの候補から Jev が選ぶ）で動かす。既定は `tools`（Gemini が道具を呼んで直接操作し、技（Gemini が書いて覚える手順。`minecraft.agent.skills`、既定オン）も使う）。設定は `minecraft.agent.control` |
 | `--no-speak` | 読み上げない（TTS サーバーなしで試すとき） |
 | `--no-chat` | Twitch のチャットを読まない |
 | `--no-board` | 目標ボードとアバターを出さない |
@@ -285,7 +285,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 |---|---|
 | Gemini の思考（直近の呼び出し） | `http://127.0.0.1:8765/debug/gemini`（JSON: `/api/debug/gemini?limit=20`） |
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
-| 見張りの記録（`--control tools`） | `logs/watch/*.jsonl` |
+| 見張りの記録（道具モード） | `logs/watch/*.jsonl` |
 | 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
 | 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |
