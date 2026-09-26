@@ -498,11 +498,18 @@ export const PRIMITIVES = {
     // ブロックを置いていて、「place door」を選んでも別のブロックで失敗し続けた
     const b = c.planBlock && !plan.isPlaced(bot, c.planBlock) ? c.planBlock : plan.pending(bot)[0]
     if (!b) return 'the plan is complete'
+    if (b.block === 'door') {
+      // 家から遠ければ、まずドアへ区間ごとに歩く（遠くから直しに行って毎回時間切れになった）
+      const leg = await legToward(bot, plan.worldPos(b), 'the door of the house', signal)
+      if (leg) return leg
+    }
     try {
       await placeOne(bot, plan, b, signal)
       if (b.block === 'door') state.doorFailures = 0
     } catch (e) {
-      if (b.block === 'door' && !signal.aborted) state.doorFailures = (state.doorFailures ?? 0) + 1
+      // 時間切れも数える（襲われて止まったのは数えない）
+      const why = signal.aborted ? String(signal.reason?.message ?? '') : ''
+      if (b.block === 'door' && !/^(interrupted|reflex)/.test(why)) state.doorFailures = (state.doorFailures ?? 0) + 1
       throw e
     }
     const s = plan.status(bot)

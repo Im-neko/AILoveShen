@@ -231,6 +231,20 @@ async function clearCell (bot, plan, b, signal, allowDig) {
   await bot.dig(bot.blockAt(pos), true)
 }
 
+const DOOR_WALK_MS = 8000
+// 決めた時間までに着かなければ諦める（経路が見つからないときの長い探索を切る）
+async function walkWithin (bot, goal, signal, ms) {
+  let timer
+  const late = new Promise((resolve, reject) => {
+    timer = setTimeout(() => { bot.pathfinder.setGoal(null); reject(new Error(`could not get there in ${ms / 1000}s`)) }, ms)
+  })
+  try {
+    await Promise.race([walkTo(bot, goal, signal), late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ドアの向きは、置くときにプレイヤーが向いている方角になる。壁の外側のマス（だめなら内側）に立ち、
 // ドアのマスの床を見て置く: 視線が壁と直角になる。向きの違うドアは壊して置き直す。ドアは下の
 // マスに置けば上のマスもできる
@@ -243,7 +257,8 @@ async function placeDoor (bot, plan, b, signal) {
   let error = null
   for (const side of [1, -1]) {
     try {
-      await walkTo(bot, new goals.GoalBlock(pos.x + out.x * side, pos.y, pos.z + out.z * side), signal)
+      // 片側に行けないと経路探しが長引いて全体が時間切れになった（外が行けなければ内側を試す）
+      await walkWithin(bot, new goals.GoalBlock(pos.x + out.x * side, pos.y, pos.z + out.z * side), signal, DOOR_WALK_MS)
       error = null
       break
     } catch (e) {
