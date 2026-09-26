@@ -102,8 +102,11 @@ python tools/irodori_from_sbv2.py generate            # --limit 50 で試しに�
 ### 6a. 学習なし: 参照音声を差し替える（まずこれ）
 
 ```bash
-python tools/irodori_from_sbv2.py reference           # 語り（L…）とふつうの文から 60 秒 → 声 shen_sbv2
+python tools/irodori_from_sbv2.py generate --for-reference   # 6a だけなら: 語りとふつうの文（64 文）だけ
+python tools/irodori_from_sbv2.py reference           # 語り（L…）とふつうの文から 30 秒 → 声 shen_sbv2
 ```
+
+参照音声は毎回の合成でモデルが読むので、長いほど遅い（既定 30 秒で効果の大半、`--seconds` で最大 120）。30〜40 分の量は 6b の学習用で、合成の速さには関係しない（LoRA は小さく、学習データは合成のときには使わない）。
 
 `.env` に `IRODORI_VOICE=shen_sbv2`（サーバーを起動し直す）。Irodori-TTS は参照音声から声の質を、話し方（イントネーション）は自分のモデルから作るので、雑音のない声で、イントネーションは Irodori-TTS のままになる見込み。
 

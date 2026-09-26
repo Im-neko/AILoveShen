@@ -5,10 +5,14 @@ Style-Bert-VITS2 で作った（雑音のない）音声から、Irodori-TTS の
 生の学習データは雑音が多いが、Style-Bert-VITS2 の出力は声はきれい（イントネーションは弱い）。
 
     # 1. 台本（docs/voice/*.tsv、673 文）を Style-Bert-VITS2 で読ませて WAV にする（TTS サーバーが要る）
-    python tools/irodori_from_sbv2.py generate [--name shen_sbv2] [--limit 0] [--by-emotion]
+    python tools/irodori_from_sbv2.py generate [--name shen_sbv2] [--limit 0] [--by-emotion] [--for-reference]
 
     # 2a. 学習なし: その中から参照音声を選んで Irodori-TTS の声にする（まずこれを試す）
-    python tools/irodori_from_sbv2.py reference [--name shen_sbv2] [--seconds 60]
+    python tools/irodori_from_sbv2.py reference [--name shen_sbv2] [--seconds 30]
+
+参照音声（2a）は毎回の合成でモデルが読むので、長いほど合成が遅くなる: 既定は 30 秒（効果の大半）。2a だけなら
+generate --for-reference で語りとふつうの文（64 文）だけ作れば足りる。学習用の量（30〜40 分）は 2b の LoRA
+のためで、学習した LoRA は小さく、合成の速さはほとんど変わらない（学習データは合成のときには使わない）。
 
     # 2b. LoRA の追加学習（Irodori-TTS の学習用リポジトリが要る: scripts/irodori/setup_train_mac.sh）
     python tools/irodori_from_sbv2.py base                 # 元のモデルの重みを取ってくる
@@ -130,6 +134,9 @@ async def generate(args: argparse.Namespace) -> int:
     audio = out / "audio"
     audio.mkdir(parents=True, exist_ok=True)
     lines = read_lines(args.texts)
+    if args.for_reference:
+        # 参照音声の候補だけ（語り L と、ふつうの文 N）
+        lines = [line for line in lines if line.id[0] in "LN" and line.id[1:].isdigit()]
     if args.limit:
         lines = lines[: args.limit]
     kept: list[tuple[Line, float]] = []
@@ -303,6 +310,7 @@ def main() -> int:
     common(g)
     g.add_argument("--texts", type=Path, help="足す文（1 行 1 文）")
     g.add_argument("--limit", type=int, default=0, help="先頭から何文だけ（試しに）")
+    g.add_argument("--for-reference", action="store_true", help="参照音声の候補（語りとふつうの文、64 文）だけ作る")
     g.add_argument("--by-emotion", action="store_true", help="台本の感情のスタイルで読ませる（tts.emotion_style_map）")
     g.add_argument("--overwrite", action="store_true", help="作ってあるものも作り直す")
     g.add_argument("--speaker", default="shen")
@@ -313,7 +321,7 @@ def main() -> int:
 
     r = sub.add_parser("reference", help="参照音声を選んで Irodori-TTS の声にする")
     common(r)
-    r.add_argument("--seconds", type=float, default=60.0)
+    r.add_argument("--seconds", type=float, default=30.0, help="参照音声の長さ（長いほど合成が遅い。最大 120）")
     r.add_argument("--voice", help="声の ID（既定は --name）")
 
     for cmd, text in (("base", "元のモデルの重みを取ってくる"), ("prepare", "学習用に符号化する"), ("train", "LoRA を学習する")):
