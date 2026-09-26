@@ -53,7 +53,10 @@ DEFAULT_BASE = "Aratako/Irodori-TTS-v4-Small"  # Irodori-TTS-Server の既定と
 # 読み上げの出来の目安（外れたものは学習に入れない）
 MIN_SECONDS = 0.6
 MAX_SECONDS = 20.0
-CLIP = 0.999          # これ以上の振幅は音割れ
+# 音割れ: 最大値の近くに張り付いたサンプルが続く。最大振幅だけでは判定しない（Style-Bert-VITS2 のサーバーは
+# 出力を最大値ちょうどに揃えて返すので、どの音声も最大振幅が 1.0 になる: 全部を音割れとして捨てていた）
+CLIP_LEVEL = 32767  # 最大値そのもの（なめらかな山は最大値に 1 サンプルしか届かない）
+CLIP_RUN = 3
 MIN_RMS = 0.005       # これより小さければほぼ無音
 KANA_PER_SECOND = (3.0, 14.0)  # 読みの速さ（カナの数 / 秒）がこの外なら、読み飛ばしか間延び
 
@@ -80,24 +83,28 @@ def read_lines(extra: Path | None = None) -> list[Line]:
     return lines
 
 
-def wav_stats(data: bytes) -> tuple[float, float, float]:
-    """(秒, 最大振幅, RMS)。16bit PCM を読む（Style-Bert-VITS2 の出力）。"""
+def wav_stats(data: bytes) -> tuple[float, float, float, bool]:
+    """(秒, 最大振幅, RMS, 音割れ)。16bit PCM を読む（Style-Bert-VITS2 の出力）。"""
     with wave.open(io.BytesIO(data), "rb") as w:
         rate, width, channels, frames = w.getframerate(), w.getsampwidth(), w.getnchannels(), w.readframes(w.getnframes())
     seconds = len(frames) / (rate * width * channels)
     if width != 2 or not frames:
-        return seconds, 0.0, 1.0
+        return seconds, 0.0, 1.0, False
     samples = array("h", frames)
     peak = max(abs(s) for s in samples) / 32768.0
     rms = (sum(s * s for s in samples) / len(samples)) ** 0.5 / 32768.0
-    return seconds, peak, rms
+    run = longest = 0
+    for s in samples:
+        run = run + 1 if abs(s) >= CLIP_LEVEL else 0
+        longest = max(longest, run)
+    return seconds, peak, rms, longest >= CLIP_RUN
 
 
-def check(line: Line, seconds: float, peak: float, rms: float) -> str:
+def check(line: Line, seconds: float, peak: float, rms: float, clipped: bool = False) -> str:
     """学習に入れない理由（入れてよければ空）。"""
     if not MIN_SECONDS <= seconds <= MAX_SECONDS:
         return f"長さ {seconds:.1f} 秒"
-    if peak >= CLIP:
+    if clipped:
         return "音割れ"
     if rms < MIN_RMS:
         return "ほぼ無音"
@@ -153,8 +160,8 @@ async def generate(args: argparse.Namespace) -> int:
                 except Exception as e:  # noqa: BLE001 - 1 文の失敗で止めない
                     rejected.append((line, f"合成の失敗: {e}"))
                     continue
-            seconds, peak, rms = wav_stats(data)
-            why = check(line, seconds, peak, rms)
+            seconds, peak, rms, clipped = wav_stats(data)
+            why = check(line, seconds, peak, rms, clipped)
             if why:
                 rejected.append((line, why))
                 target.unlink(missing_ok=True)
