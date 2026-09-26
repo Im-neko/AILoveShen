@@ -206,6 +206,26 @@ python examples/integration_test_minecraft.py --board-port 8765 --speak --max-st
 [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}]
 ```
 
+#### ローカルの LLM で動かす（設計書 36）
+
+文だけの呼び出し（実況、返事、目標の決定、道具の 1 手、技を書く…）をローカルの LLM（OpenAI 互換: FreeToken、Ollama など）に送り、画像のある呼び出し（画面、建物の地図）とローカルに入らない長さのものだけ Gemini に送る。
+
+```bash
+# 先に測る（JSON スキーマで縛るか、道具を呼ぶか、速さ、先頭のキャッシュ）
+python tools/llm_probe.py                                             # FreeToken（:1919）
+python tools/llm_probe.py --base-url http://127.0.0.1:11434/v1 --model <ollama のモデル名>
+# 動かす（.env に書いてもよい）
+LOCAL_LLM=1 python -m ailoveshen.stream
+LOCAL_LLM=1 LOCAL_LLM_URL=http://127.0.0.1:11434/v1 LOCAL_LLM_MODEL=<名前> python -m ailoveshen.stream
+```
+
+- 起動のログに「LLM: ローカル …、振り分け …、画像は Gemini」と出る。使用量の行は `Local <モデル>`（Gemini は `Gemini <モデル>`）。`python tools/gemini_usage.py <ログ>` は `local:<用途>` の行に分けて数える（費用 0）
+- 用途ごとに Gemini に戻す: `config/development.yaml` などで `llm.routes: {default: local, skill_write: gemini}`
+- `llm.local.context_tokens` はサーバーの 1 回の最大の長さに合わせる（FreeToken は `--max-seq-len-override`、Ollama は `OLLAMA_CONTEXT_LENGTH`。Ollama の既定は小さく、超えた分は黙って切られる）。入らない呼び出しは Gemini に回る（ログに「too long for the local model」）
+- ローカルが落ちたらエラーのまま（`llm.fallback: none`）。Gemini で続けるなら `fallback: gemini`
+- FreeToken: `--enable-cache-report` を付けると使用量の行の `cached=` が出る
+- Ollama: 思考の切り替え（`chat_template_kwargs`）が効かないことがある。そのときは `llm.local.thinking_param: none`
+
 ### 5. OBS
 
 OBS を開く（すでに開いていればブラウザソースを「再読み込み」）。ログに「OBS から画面を撮れるようになった」と出れば、Gemini が画面を見られている。

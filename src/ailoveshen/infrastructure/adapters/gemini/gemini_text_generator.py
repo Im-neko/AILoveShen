@@ -413,6 +413,7 @@ class GeminiTextGenerator(ITextGenerator):
         level = config.thinking_config.thinking_level if config.thinking_config else None
         entry: dict[str, Any] = {
             "at": datetime.now(timezone.utc).isoformat(),
+            "model": f"gemini:{self._model}",
             "purpose": purpose or "default",
             "thinking_level": str(getattr(level, "value", level) or "").lower() or None,
             "elapsed_ms": int((time.monotonic() - started) * 1000),

@@ -71,6 +71,30 @@ comment_filter:
   log_results: true
 
 # Gemini API
+# Local LLM (docs/design/36_local_llm.md): an OpenAI-compatible server (FreeToken :1919, Ollama
+# :11434/v1, llama.cpp, vLLM) answers the text calls; calls with images always go to Gemini (the local
+# model runs without vision), and so does a call too long for context_tokens. Off by default: LOCAL_LLM=1
+llm:
+  local:
+    enabled: "${LOCAL_LLM:-false}"
+    base_url: "${LOCAL_LLM_URL:-http://127.0.0.1:1919/v1}"
+    model: "${LOCAL_LLM_MODEL:-}"        # empty: the first of /v1/models
+    api_key: "${LOCAL_LLM_API_KEY:-}"
+    context_tokens: 32768                # per request (the server's max sequence length)
+    max_output_tokens: 4096              # thinking included
+    # auto: also send response_format json_schema (dropped for good if the server refuses it);
+    # the schema is always written in the prompt and the answer checked against it
+    response_format: "auto"
+    # chat_template_kwargs: {"enable_thinking": ...} per call (thinking for gemini.thinking_levels
+    # medium / high); none: leave it to the server
+    thinking_param: "chat_template_kwargs"
+    max_concurrent: 2
+    timeout_seconds: 180
+  # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini
+  routes:
+    default: "local"
+  fallback: "none"                       # none | gemini: when the local model fails
+
 gemini:
   api_key: "${GEMINI_API_KEY:-}"
   main_model: "gemini-3.8-flash"

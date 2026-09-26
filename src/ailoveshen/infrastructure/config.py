@@ -111,6 +111,32 @@ class GeminiSettings:
 
 
 @dataclass
+class LocalLlmSettings:
+    """ローカルの LLM（OpenAI 互換: FreeToken、Ollama など）の設定（docs/design/36）。"""
+
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:1919/v1"
+    model: str = ""  # 空: /v1/models の最初
+    api_key: str = ""
+    context_tokens: int = 32768
+    max_output_tokens: int = 4096
+    response_format: str = "auto"  # auto | off
+    thinking_param: str = "chat_template_kwargs"  # chat_template_kwargs | none
+    max_concurrent: int = 2
+    timeout_seconds: float = 180.0
+
+
+@dataclass
+class LlmSettings:
+    """ローカルの LLM と Gemini の振り分け（docs/design/36）。画像のある呼び出しはいつも Gemini。"""
+
+    local: LocalLlmSettings = field(default_factory=LocalLlmSettings)
+    # 用途（purpose）→ local / gemini。default は表にない用途
+    routes: dict[str, str] = field(default_factory=lambda: {"default": "local"})
+    fallback: str = "none"  # none | gemini（ローカルが失敗したとき）
+
+
+@dataclass
 class JevSettings:
     """Jev（TypeSafe AI の System One）の設定。"""
 
@@ -372,6 +398,7 @@ class Settings:
 
     twitch: TwitchSettings = field(default_factory=TwitchSettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
+    llm: LlmSettings = field(default_factory=LlmSettings)
     character: CharacterSettings = field(default_factory=CharacterSettings)
     jev: JevSettings = field(default_factory=JevSettings)
     minecraft: MinecraftSettings = field(default_factory=MinecraftSettings)
@@ -386,6 +413,13 @@ class Settings:
 # =============================================================================
 # 設定の読み込み
 # =============================================================================
+
+
+def _truthy(value: object) -> bool:
+    """設定の真偽（環境変数から来た "0" / "false" / "" は偽）。"""
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "no", "off")
+    return bool(value)
 
 
 def load_env_file(path: Path) -> list[str]:
@@ -549,6 +583,27 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             rate_limit=GeminiRateLimitSettings(
                 min_interval_seconds=rate_limit_data.get("min_interval_seconds", 1.0),
             ),
+        )
+
+    if "llm" in data:
+        llm_data = data["llm"] or {}
+        local_data = llm_data.get("local") or {}
+        d = LocalLlmSettings()
+        settings.llm = LlmSettings(
+            local=LocalLlmSettings(
+                enabled=_truthy(local_data.get("enabled", d.enabled)),
+                base_url=str(local_data.get("base_url", d.base_url)),
+                model=str(local_data.get("model", d.model) or ""),
+                api_key=str(local_data.get("api_key", d.api_key) or ""),
+                context_tokens=int(local_data.get("context_tokens", d.context_tokens)),
+                max_output_tokens=int(local_data.get("max_output_tokens", d.max_output_tokens)),
+                response_format=str(local_data.get("response_format", d.response_format)),
+                thinking_param=str(local_data.get("thinking_param", d.thinking_param)),
+                max_concurrent=int(local_data.get("max_concurrent", d.max_concurrent)),
+                timeout_seconds=float(local_data.get("timeout_seconds", d.timeout_seconds)),
+            ),
+            routes={"default": "local", **dict(llm_data.get("routes") or {})},
+            fallback=str(llm_data.get("fallback", "none")),
         )
 
     if "character" in data:

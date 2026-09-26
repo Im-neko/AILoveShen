@@ -47,6 +47,7 @@ async def run(speak: bool) -> bool:
         character=settings.character,
         event_publisher=event_bus,
         conversation=Conversation(),
+        llm=settings.llm,
     )
 
     tts = None

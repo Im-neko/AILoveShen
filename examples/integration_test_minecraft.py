@@ -161,6 +161,7 @@ async def run(
         event_publisher=event_bus,
         conversation=conversation,
         generation_log=gemini_calls,
+        llm=settings.llm,
         obs=settings.obs,
     )
     llm = create_llm_service(
@@ -170,6 +171,7 @@ async def run(
         conversation=conversation,
         mid_goals=game.mid_goals,
         generation_log=gemini_calls,
+        llm=settings.llm,
     )
 
     def activity():

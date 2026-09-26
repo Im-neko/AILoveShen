@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 LINE = re.compile(
-    r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Gemini .*?: (?P<ms>\d+)ms, "
+    r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*(?P<backend>Gemini|Local) .*?: (?P<ms>\d+)ms, "
     r"purpose=(?P<purpose>\S+) images=(?P<images>\d+) prompt=(?P<prompt>\d+|None) "
     r"cached=(?P<cached>\d+|None) thoughts=(?P<thoughts>\d+|None) output=(?P<output>\d+|None)"
 )
@@ -55,6 +55,8 @@ def main() -> None:
             m = LINE.search(line)
             if m:
                 purpose, images, cached = m["purpose"], int(m["images"]), _n(m["cached"])
+                if m["backend"] == "Local":
+                    purpose = f"local:{purpose}"  # ローカルの LLM（docs/design/36）: 費用に数えない
             else:
                 m = OLD_LINE.search(line)
                 if not m:
@@ -92,7 +94,9 @@ def main() -> None:
             f"{r['ms'] / calls / 1000:>7.1f}{r['prompt'] / calls:>9.0f}"
             f"{r['thoughts'] / calls:>9.0f}{r['output'] / calls:>8.0f}"
         )
-        if priced:
+        if priced and purpose.startswith("local:"):
+            line += f"  {0:>8.0f}"
+        elif priced:
             usd = (
                 r["prompt"] * args.input_price + (r["thoughts"] + r["output"]) * args.output_price
             ) / 1e6

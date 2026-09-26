@@ -22,7 +22,7 @@ from ailoveshen.application.use_cases.watcher import ToolWatcher, WatchPolicy
 from ailoveshen.domain.entities import Conversation, MidGoalPlan
 from ailoveshen.domain.value_objects import Mission
 from ailoveshen.factories.llm import create_character_profile
-from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
+from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
 from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
 from ailoveshen.infrastructure.adapters.map import PilMapRenderer
@@ -40,6 +40,7 @@ from ailoveshen.infrastructure.config import (
     CharacterSettings,
     GeminiSettings,
     JevSettings,
+    LlmSettings,
     MinecraftSettings,
     MissionSettings,
     OBSSettings,
@@ -77,6 +78,7 @@ def create_game_service(
     event_publisher: IEventPublisher,
     conversation: Conversation,
     generation_log: IGenerationLog | None = None,
+    llm: LlmSettings | None = None,
     obs: OBSSettings | None = None,
 ) -> GameService:
     """
@@ -96,6 +98,7 @@ def create_game_service(
         conversation: 配信で話したこと（create_llm_service と共有する）。目標の決定が
             これを読み、話したことと食い違う目標を立てないようにする
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_llm_service と共有する）
+        llm: ローカルの LLM と Gemini の振り分け（docs/design/36。None か無効なら Gemini だけ）
         obs: OBS の設定（settings.obs）。minecraft.vision.enabled で obs.game_source があれば、
             配信の画面を Gemini に見せる（docs/design/23）。None なら見せない
 
@@ -116,22 +119,7 @@ def create_game_service(
         await game.close()
         ```
     """
-    text_generator = GeminiTextGenerator(
-        api_key=gemini.api_key,
-        model=gemini.main_model,
-        thinking_level=gemini.main_thinking_level,
-        max_output_tokens=gemini.max_output_tokens,
-        retry_attempts=gemini.retry.max_attempts,
-        retry_initial_delay_seconds=gemini.retry.base_delay_seconds,
-        retry_max_delay_seconds=gemini.retry.max_delay_seconds,
-        retry_exponential_base=gemini.retry.exponential_base,
-        min_request_interval_seconds=gemini.rate_limit.min_interval_seconds,
-        thinking_levels=gemini.thinking_levels,
-        include_thoughts=gemini.include_thoughts,
-        generation_log=generation_log,
-        media_resolution=gemini.media_resolution,
-        media_resolutions=gemini.media_resolutions,
-    )
+    text_generator = create_text_generator(gemini, llm, generation_log)
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
     )

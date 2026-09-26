@@ -56,6 +56,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         event_publisher=bus,
         conversation=conversation,
         generation_log=gemini_calls,
+        llm=settings.llm,
         obs=settings.obs,
     )
     llm = create_llm_service(
@@ -65,6 +66,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         conversation=conversation,
         mid_goals=game.mid_goals,
         generation_log=gemini_calls,
+        llm=settings.llm,
         readings=readings,
         notes=game.notes,
         lessons=game.lessons,

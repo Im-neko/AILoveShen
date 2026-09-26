@@ -12,11 +12,11 @@ from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import CharacterProfile
-from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
 from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
     PromptTemplateBuilder,
 )
-from ailoveshen.infrastructure.config import CharacterSettings, GeminiSettings
+from ailoveshen.factories.text import create_text_generator
+from ailoveshen.infrastructure.config import CharacterSettings, GeminiSettings, LlmSettings
 from ailoveshen.presentation.services.llm_service import LLMService
 
 
@@ -40,6 +40,7 @@ def create_llm_service(
     mid_goals: MidGoalKeeper | None = None,
     history_limit: int = 10,
     generation_log: IGenerationLog | None = None,
+    llm: LlmSettings | None = None,
     readings: NameReadings | None = None,
     notes: NoteKeeper | None = None,
     lessons: LessonBook | None = None,
@@ -60,6 +61,7 @@ def create_llm_service(
             頼みをここに受けることがある。None なら返答は話すだけ
         history_limit: モデルに渡す最近のメッセージの数
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_game_service と共有する）
+        llm: ローカルの LLM と Gemini の振り分け（docs/design/36。None か無効なら Gemini だけ）
         readings: 視聴者の名前の読みの辞書（返答のプロンプトに出し、返答から覚える）
         notes: 自分のメモ（返答が、納得したアドバイスを教訓として書く）
         lessons: 教訓帳（あれば、納得したアドバイスはメモではなくこちらに書く）
@@ -88,22 +90,7 @@ def create_llm_service(
         ```
     """
     # インフラのアダプターを作る
-    text_generator = GeminiTextGenerator(
-        api_key=gemini.api_key,
-        model=gemini.main_model,
-        thinking_level=gemini.main_thinking_level,
-        max_output_tokens=gemini.max_output_tokens,
-        retry_attempts=gemini.retry.max_attempts,
-        retry_initial_delay_seconds=gemini.retry.base_delay_seconds,
-        retry_max_delay_seconds=gemini.retry.max_delay_seconds,
-        retry_exponential_base=gemini.retry.exponential_base,
-        min_request_interval_seconds=gemini.rate_limit.min_interval_seconds,
-        thinking_levels=gemini.thinking_levels,
-        include_thoughts=gemini.include_thoughts,
-        generation_log=generation_log,
-        media_resolution=gemini.media_resolution,
-        media_resolutions=gemini.media_resolutions,
-    )
+    text_generator = create_text_generator(gemini, llm, generation_log)
     prompt_builder = PromptTemplateBuilder()
 
     # ドメインのオブジェクトを作る
