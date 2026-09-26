@@ -1,6 +1,6 @@
 ## Current Status
 
-**Active Phase**: 設計書 21（Gemini が道具で操作し、Jev が見張る。`--control tools`）と 23（OBS のスクリーンショットを Gemini に見せる）を実装した。どちらも実機では未確認（クラウドの環境に API キー・Minecraft・OBS がない）。次はユーザーの環境で `examples/integration_test_minecraft.py --control tools --board-port 8765` を OBS つきで動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`
+**Active Phase**: 設計書 26（小目標は Jev が手順から選ぶ §2、キャッシュが効くプロンプトと入力の削減 §4）を実装した。実機では未確認。次はユーザーの環境で配信を回し、`tools/gemini_usage.py` で用途ごとの回数と `cached=` を前日のログと比べること、`logs/goals/` で Jev の選び方を見ること。道具モード（`--control tools`）の `TOOL_TEMPLATE` はまだ決まった文が本文にある（毎ステップ呼ぶので、道具モードを使うなら次に手を付ける）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
 **Test Status**: `pytest tests/` 572 passed, 2 skipped。ブリッジ `npm test` 138 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
