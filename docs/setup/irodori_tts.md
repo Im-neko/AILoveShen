@@ -129,6 +129,7 @@ python tools/irodori_from_sbv2.py train --max-steps 3000
 | 症状 | 見るところ |
 |---|---|
 | `TTS サーバー（Irodori-TTS …）につながらない` | `scripts/irodori/start_mac.sh` が動いているか、`curl http://localhost:8088/health` |
+| 参照音声と違う声（別の人の声が混ざる） | `python tools/irodori_check.py --voice shen_sbv2 --say "テストだよ。"`: 設定の声（`IRODORI_VOICE`）、サーバーが知っている声とその中身、手元のファイル、その声 / 参照音声なし / 設定の声で読んだ WAV（`logs/irodori_check/`）。その声と「なし」が似ていれば参照音声が効いていない |
 | 起動のログに `声 'shen' がない` | `python tools/irodori_voice.py` のあとサーバーを起動し直したか |
 | 遅い | Activity Monitor の GPU、`num_steps` を下げる、量子化モデル（サーバーの `.env` の `IRODORI_HF_CHECKPOINT`。int8 など。MPS で速くなるかは未確認） |
 | MPS のエラーで止まる | `start_mac.sh` は `PYTORCH_ENABLE_MPS_FALLBACK=1`（ない演算は CPU）。それでもなら `IRODORI_MODEL_DEVICE=cpu` で動くか確かめる |
