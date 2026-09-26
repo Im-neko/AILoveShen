@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,6 +36,7 @@ from ailoveshen.infrastructure.adapters.local_llm.schema_check import (  # noqa:
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (  # noqa: E402
     GamePromptTemplateBuilder,
 )
+from ailoveshen.infrastructure.config import load_env_file  # noqa: E402
 
 
 REFUSED: set[str] = set()  # サーバーが断った指定（以後送らない）
@@ -169,9 +171,11 @@ def timed(client: httpx.Client, model: str, system: str, user: str, max_tokens: 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ローカルの LLM がこの配信で使えるかを測る")
-    parser.add_argument("--base-url", default="http://127.0.0.1:1919/v1")
-    parser.add_argument("--model", default="")
-    parser.add_argument("--api-key", default="")
+    # 既定は配信と同じ接続先（.env の LOCAL_LLM_URL / LOCAL_LLM_MODEL / LOCAL_LLM_API_KEY）
+    load_env_file(Path(__file__).resolve().parents[1] / ".env")
+    parser.add_argument("--base-url", default=os.environ.get("LOCAL_LLM_URL") or "http://127.0.0.1:1919/v1")
+    parser.add_argument("--model", default=os.environ.get("LOCAL_LLM_MODEL", ""))
+    parser.add_argument("--api-key", default=os.environ.get("LOCAL_LLM_API_KEY", ""))
     parser.add_argument("--output-tokens", type=int, default=200)
     args = parser.parse_args()
 
