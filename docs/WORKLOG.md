@@ -9,7 +9,7 @@
 
 ### 設計書 34 の見直しの直し (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `166e35d`
 
 - 読み上げの感情: モデルにないスタイル（`development.yaml` の `emotion_style_map` が Happy などを指すが、スタイルをまだ足していない）は 422 で文が読まれなかった → 接続のときに `/models/info` からスタイルを読み（`styles_of`: 番号ごとの答えは model_path で探す）、ないものは Neutral で読む（スタイルごとに 1 回警告）
 - コメントの仕分け: 仕分けを待つ間に届いたコメントで KeyError / 空の列で IndexError になりえた → 仕分けていないものがなくなるまで繰り返し、空なら何もしない
