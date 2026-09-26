@@ -440,3 +440,42 @@ class TestRethinkFromChat:
             GenerateResponseRequest(user_name="neko", message="がんばれ", session=session)
         )
         assert not session.rethink_reason
+
+
+class TestWithdraw:
+    """頼んだ本人の「もういいよ」で、その人の中目標をやめる。"""
+
+    @pytest.mark.asyncio
+    async def test_the_requester_withdraws_their_own_mid_goal(
+        self, use_case, mock_text_generator, mock_event_publisher
+    ):
+        from ailoveshen.domain.events import MidGoalDroppedEvent
+
+        session = _playing()
+        mock_text_generator.generate_json.return_value = BED_REQUEST
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="ベッド作って", session=session)
+        )
+        assert any(g.requested_by == "neko" for g in session.plan.pending)
+
+        mock_text_generator.generate_json.return_value = {
+            "reply": "わかった、ベッドはやめておくね",
+            "request": "withdraw",
+        }
+        # ほかの人の「もういいよ」では消えない
+        await use_case.execute(
+            GenerateResponseRequest(user_name="tama", message="もういいよ", session=session)
+        )
+        assert any(g.requested_by == "neko" for g in session.plan.pending)
+
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="やっぱりもういいよ", session=session)
+        )
+        assert not any(g.requested_by == "neko" for g in session.plan.pending)
+        dropped = [
+            c.args[0]
+            for c in mock_event_publisher.publish.call_args_list
+            if isinstance(c.args[0], MidGoalDroppedEvent)
+        ]
+        assert dropped[-1].requested_by == "neko"
+        assert "withdrew" in dropped[-1].reason

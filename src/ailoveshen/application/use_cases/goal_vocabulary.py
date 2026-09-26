@@ -78,6 +78,7 @@ class RequestHandling(str, Enum):
     NONE = "none"  # 雑談か質問
     ACCEPT = "accept"  # 中目標に足した
     DECLINE = "decline"  # 受けない理由を返答で言う
+    WITHDRAW = "withdraw"  # 本人が自分の頼みを取り下げた（「もういいよ」）: その中目標をやめる
 
 
 @dataclass(frozen=True)
@@ -345,7 +346,8 @@ def reply_schema() -> dict[str, Any]:
                 "type": "string",
                 "enum": [r.value for r in RequestHandling],
                 "description": "none: chat or a question; accept: add the request to the mid "
-                "goals; decline: not taken (the reply says why)",
+                "goals; decline: not taken (the reply says why); withdraw: the viewer calls off "
+                "their own request in the list (e.g. never mind, no need any more)",
             },
             "title": {"type": "string", "description": "accept: the mid goal's title"},
             "conditions": _conditions_schema(),

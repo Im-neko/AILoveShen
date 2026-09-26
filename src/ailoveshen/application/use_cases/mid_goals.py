@@ -264,6 +264,20 @@ class MidGoalKeeper:
         await self._publish([_added(plan, goal)])
         return goal
 
+    async def withdraw(self, plan: MidGoalPlan, requested_by: str) -> MidGoal | None:
+        """
+        視聴者が自分の頼みを取り下げた（「もういいよ」）: その人の中目標をやめる。なければ None。
+        やめられるのは本人の頼みだけ（ほかの人の頼みや配信者自身の中目標は変えない）。
+        """
+        mine = next((g for g in plan.pending if g.requested_by == requested_by), None)
+        if mine is None:
+            return None
+        dropped = plan.drop(mine.id, f"{requested_by} withdrew the request")
+        logger.info(f"視聴者の頼みを取り下げた: {dropped.describe()}（{requested_by}）")
+        self._store.save(plan)
+        await self._publish([_dropped(dropped)])
+        return dropped
+
     async def _design_builds(
         self, proposal: MidGoalProposal, max_blocks: int = BuildDesign.MAX_BLOCKS
     ) -> int:

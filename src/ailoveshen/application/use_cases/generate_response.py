@@ -189,6 +189,9 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
             self._learn_reading(request, data.get("name_reading"))
             text = str(data.get("reply", "")).strip()
+            if data.get("request") == RequestHandling.WITHDRAW.value:
+                await self._withdraw(session, request.user_name)
+                return text, None
             if data.get("request") != RequestHandling.ACCEPT.value:
                 self._rethink(session, request.user_name, data.get("rethink"))
                 return text, None
@@ -247,3 +250,16 @@ class GenerateResponseUseCase(IGenerateResponse):
             f"{user_name} pointed out in chat: {point.strip()} (you were on {was})"
         )
         logger.info(f"{user_name} の指摘で小目標を決め直す: {point}")
+
+    async def _withdraw(self, session: PlaySession, user_name: str) -> None:
+        """本人の頼みの中目標をやめる。それに向けた小目標なら、次の切れ目で決め直す。"""
+        assert self._mid_goals is not None
+        dropped = await self._mid_goals.withdraw(session.plan, user_name)
+        if dropped is None:
+            logger.info(f"{user_name} が取り下げた頼みはリストにない")
+            return
+        if session.goal is not None and session.goal.mid_goal_id == dropped.id:
+            session.request_rethink(
+                f'{user_name} withdrew the request "{dropped.title}" (you were on '
+                f"{session.goal.spec.describe()} for it)"
+            )
