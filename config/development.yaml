@@ -6,3 +6,6 @@ debug: true
 logging:
   level: "DEBUG"
   file: "data/logs/ailoveshen-dev.log"
+tts:
+  audio:
+    device: "BlackHole 2ch"
