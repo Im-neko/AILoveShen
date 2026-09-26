@@ -2,14 +2,14 @@
 
 **Active Phase**: 設計書 36（ローカル LLM と Gemini の振り分け）を実装した。ユーザーの FreeToken（Qwen3.6）で `tools/llm_probe.py` を測り、`LOCAL_LLM=1` で様子を見る段階。その前に 設計書 35（教訓帳: 指摘と失敗を似た状況で思い出す）を実装した（実機では未確認。`logs/lessons` と `data/lessons.json` を見て点の重みと閾値を直す）。アバターは既定で全身表示（OBS で切り抜く）。その前に設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
-**Test Status**: `pytest tests/` 720 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
+**Test Status**: `pytest tests/` 735 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
 
 ### ローカル LLM（FreeToken / Ollama）と Gemini の振り分け (2026-09-26)
 
-**Commit**: `TBD`
+**Commit**: `4a85c53`, `4f697eb`
 
 ユーザー: 「費用節約のため Qwen3.6（ローカル、Vision なし）に切り替えて様子を見たい。Vision だけは Gemini。コンテキストの違い、モデルが 2 つになるところ」→ FreeToken で動かしている → 「JSON_SCHEMA がないと厳しそう。Ollama も考えている。速さはどのくらい変わる？」。設計書 `docs/design/36_local_llm.md`。
 - `infrastructure/adapters/local_llm/`: `OpenAICompatTextGenerator`（スキーマをプロンプトに書き、response_format も送る、答えを確かめて 1 回書き直させる、道具は tools + required、文なら JSON で選ばせる、思考は用途の深さ、断られた指定は外して以後送らない）、`RoutingTextGenerator`（用途、画像はいつも Gemini、長さ、fallback）、`schema_check`（JSON の取り出し、スキーマの確かめ、トークンの見積もり）
