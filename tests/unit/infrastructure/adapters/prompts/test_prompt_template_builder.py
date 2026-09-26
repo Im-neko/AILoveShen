@@ -151,6 +151,8 @@ class TestPromptTemplateBuilder:
         assert "## 自分でできること（これ以外はできない）" in system
         assert "松明を持っていれば置いて湧き潰しする" in system
         assert "できない約束はしない" in system
+        # 「かまどを使って」は none ではなく、物の条件で引き受ける（言うだけで何も変わらなかった）
+        assert "have(cooked_beef, 4)" in system and "none だと" in system
         assert "頼んだ人の名前は入れない" in system
         assert "JSON" in system
         assert "頼みは受けられなかった: neko already has a request" in prompt
