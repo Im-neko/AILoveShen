@@ -9,7 +9,7 @@
 
 ### チャット: 自分とボットには反応しない、`!commands` の一覧 (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `d8e3cc5`
 
 - ユーザー「自分のコメントには反応しないように」「!command で使えるコマンドをチャットに出せるように」「bot アカウント（StreamElements）には反応しないように」
 - `ChatComment.login`（IRC のニック、小文字）。`ChatResponder(quiet=, ignore=)`: 配信者自身（チャンネル名）と書き込むアカウントには返事をしない（コマンドは使える）、`twitch.ignore_users`（既定 `[streamelements]`）には何も反応しない
