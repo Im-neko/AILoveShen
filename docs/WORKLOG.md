@@ -9,7 +9,7 @@
 
 ### 建物の設計がいつも 400、そのせいで空腹の決定まで差し戻された (2026-09-27)
 
-**Commit**: (this commit)
+**Commit**: `2b37749`
 
 - ユーザーのログ: `build_design`（地図の画像つき、thinking high → medium）が毎回 400「Request contains an invalid argument」→ 3 回とも設計できず、`storehouse` の中目標の追加だけでなく、満腹度 0 で食料を取る決定ごと差し戻された
 - 原因はまだ確かめられていない（この環境に API キーがない）。画像つきの用途は build_design だけが `media_resolution: medium`（ほかは low）。候補: 解像度の指定、地図の画像、スキーマ
