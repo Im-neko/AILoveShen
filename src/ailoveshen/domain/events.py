@@ -215,3 +215,21 @@ class TownCompletedEvent(DomainEvent):
     """街のすべての段階が済んだときのイベント。"""
 
     text: str = ""
+
+
+@dataclass(frozen=True)
+class SkillLearnedEvent(DomainEvent):
+    """技が初めて成功した（覚えた）ときのイベント（docs/design/22_skills.md）。"""
+
+    name: str = ""
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class SkillRevisedEvent(DomainEvent):
+    """技を書いた（version 1）か、失敗を読んで直した（2 以上）ときのイベント。"""
+
+    name: str = ""
+    description: str = ""
+    version: int = 1
+    reason: str = ""  # 直した理由（前の失敗）

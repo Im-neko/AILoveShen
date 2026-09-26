@@ -17,6 +17,8 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    SkillLearnedEvent,
+    SkillRevisedEvent,
 )
 from ailoveshen.presentation.services.chat_responder import ChatResponder
 from ailoveshen.presentation.services.game_service import GameService
@@ -95,6 +97,15 @@ class Stream:
         bus.subscribe(MidGoalCompletedEvent, mid_done)
         bus.subscribe(MidGoalDroppedEvent, mid_dropped)
         bus.subscribe(HouseCompletedEvent, house)
+
+        async def skill_learned(e: SkillLearnedEvent) -> None:
+            logger.info(f"[skill+] {e.name}: {e.description}")
+
+        async def skill_revised(e: SkillRevisedEvent) -> None:
+            logger.info(f"[skill v{e.version}] {e.name}: {e.description}")
+
+        bus.subscribe(SkillLearnedEvent, skill_learned)
+        bus.subscribe(SkillRevisedEvent, skill_revised)
 
     async def run(self) -> None:
         """キャンセルされるまで配信する。"""

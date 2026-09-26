@@ -71,6 +71,7 @@ DEFAULT_THINKING_LEVELS = {
     "commentary": "low",
     "reply": "low",
     "screen_review": "medium",
+    "skill_write": "high",
 }
 
 
@@ -194,6 +195,9 @@ class MinecraftSettings:
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
     goal_record_dir: str = "logs/goals"
+    # 技（docs/design/22）: 道具モードで、Gemini が JS の技を書いて覚え、直して使い回す
+    skills_enabled: bool = True
+    skill_rewrites_per_hour: int = 3  # 1 つの技を書き直せる回数（費用の上限）
     watch: WatchSettings = field(default_factory=lambda: WatchSettings())
     vision: VisionSettings = field(default_factory=lambda: VisionSettings())
 
@@ -539,6 +543,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             replan_minutes=float(agent_data.get("replan_minutes", defaults.replan_minutes)),
             goal_record_dir=agent_data.get("goal_record_dir", defaults.goal_record_dir),
+            skills_enabled=bool(agent_data.get("skills", defaults.skills_enabled)),
+            skill_rewrites_per_hour=int(
+                agent_data.get("skill_rewrites_per_hour", defaults.skill_rewrites_per_hour)
+            ),
             watch=WatchSettings(
                 interval_seconds=watch_data.get(
                     "interval_seconds", watch_defaults.interval_seconds

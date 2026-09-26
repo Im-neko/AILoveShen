@@ -45,6 +45,12 @@ class GameBridgeError(AILoveShenError):
     pass
 
 
+class SkillRejectedError(GameBridgeError):
+    """ブリッジが技を受け取らなかった（形、構文、expects）。理由は Gemini に返して書き直させる。"""
+
+    pass
+
+
 class GoalRejectedError(GameBridgeError):
     """ブリッジが目標を拒否したときに送出する（知らないアイテム、まだ家がない、など）。"""
 

@@ -16,6 +16,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     HouseBlueprint,
     Mission,
+    SkillInfo,
     ToolOutcome,
     TownDefinition,
     TownSite,
@@ -173,12 +174,45 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_skill_system(self) -> str:
+        """技を書くシステム指示（API の説明と書き方。状態では変わらない。docs/design/22）。"""
+        ...
+
+    @abstractmethod
+    def build_skill_prompt(
+        self,
+        name: str,
+        what: str,
+        activity: Activity,
+        recent_tools: Sequence[ToolOutcome],
+        skills: Sequence[SkillInfo],
+        previous: SkillInfo | None = None,
+        last_failure: str = "",
+        previous_error: str = "",
+    ) -> str:
+        """
+        技を書く（直す）本文。
+
+        Args:
+            name: 技の名前
+            what: 技がすること（直すときは何を直すか）
+            activity: 配信者が今していること
+            recent_tools: 直近の道具の呼び出しと結果（手順の手本）
+            skills: ほかの技（重複を避け、使い回す）
+            previous: 同じ名前の一番新しい版（直すとき。コードを含む）
+            last_failure: その技の前の失敗（理由、記録、最後の道具）
+            previous_error: 前に書いたものをブリッジが受け取らなかった理由
+        """
+        ...
+
+    @abstractmethod
     def build_tool_prompt(
         self,
         activity: Activity,
         state: dict[str, Any],
         suggestions: Sequence[Candidate],
         recent_tools: Sequence[ToolOutcome],
+        skills: Sequence[SkillInfo] | None = None,
     ) -> str:
         """
         配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。
@@ -188,6 +222,7 @@ class IGamePromptBuilder(ABC):
             state: ブリッジの共通の状態（まわりの形、モブと id、欲求）
             suggestions: ソルバーの提案（参考。従わなくてよい）
             recent_tools: 直近の道具の呼び出しと結果（古い順）
+            skills: 覚えた技（None: 技を使わない。docs/design/22）
         """
         ...
 

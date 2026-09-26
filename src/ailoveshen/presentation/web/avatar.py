@@ -43,6 +43,7 @@ from ailoveshen.domain.events import (
     HouseCompletedEvent,
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
+    SkillLearnedEvent,
     SpeechCompletedEvent,
     SpeechStartedEvent,
     TownSiteChosenEvent,
@@ -147,6 +148,7 @@ class AvatarStage:
             HouseCompletedEvent,
             TownSiteChosenEvent,
             GameActionExecutedEvent,
+            SkillLearnedEvent,
         ):
             bus.subscribe(event_type, self._on_event)
 
@@ -165,7 +167,7 @@ class AvatarStage:
             if self._uses_tts() or not event.text.strip():
                 return []
             return [self._speak(event.text, speech_ms(event.text), emotion_from_text(event.text))]
-        if isinstance(event, (MidGoalCompletedEvent, HouseCompletedEvent)):
+        if isinstance(event, (MidGoalCompletedEvent, HouseCompletedEvent, SkillLearnedEvent)):
             return [_emote(EmotionType.HAPPY, 1.0, 4.0, "cheer")]
         if isinstance(event, TownSiteChosenEvent):
             return [_emote(EmotionType.HAPPY, 0.8, 3.0, "nod")]

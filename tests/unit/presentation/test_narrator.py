@@ -11,6 +11,8 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    SkillLearnedEvent,
+    SkillRevisedEvent,
     TownCompletedEvent,
     TownDefinedEvent,
     TownSiteChosenEvent,
@@ -172,3 +174,21 @@ class TestNarrator:
             "大目標の街をこう決めた: 小さな街（段階: 備蓄 → 明かり）",
             "街が完成した（小さな街）",
         ]
+
+    @pytest.mark.asyncio
+    async def test_a_learned_skill_is_told_at_once_and_a_fix_with_the_next_goal(
+        self, narrator, llm
+    ):
+        """技を覚えたらすぐ話す（見どころ）。直したことは次の目標と一緒に（docs/design/22 §7）。"""
+        await narrator.on_skill_learned(
+            SkillLearnedEvent(name="hunt", description="近くの動物を狩る")
+        )
+        await narrator.drain()
+        assert _events(llm) == [["新しい技を覚えた: 近くの動物を狩る（hunt。初めてうまくいった）"]]
+
+        await narrator.on_skill_revised(
+            SkillRevisedEvent(name="hunt", description="狩り", version=2, reason="no pig")
+        )
+        await narrator.on_goal_set(GoalSetEvent(goal="have(food, 2)", reason="", mid_goal=""))
+        await narrator.drain()
+        assert _events(llm)[1][0] == "技「狩り」を直した（v2）（前の失敗: no pig）"

@@ -7,13 +7,16 @@
 - コードの 1 問「この行動は進んでいるか」。規則に勝つまでは記録だけ（19 §13 の 4）
 - 配信者（Gemini）が道具に添えた質問。「はい」が続けば、決まった 3 つのこと（止める・起こす・
   終わったかも）のどれかを起こす。Jev の答えが直接ワールドの行動を起こすことはなく、完了も判定しない
+
+技（docs/design/22）の実行も同じように見張る。技の judge() の質問（状態の `pending_judge`）は、その
+ティックの呼び出しに入れて答える（答えを読んで道具を呼ぶのは技のコード）。
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Optional
 
@@ -45,6 +48,24 @@ PROGRESS_QUESTION = FastQuestion(
         "or nothing changes",
     },
 )
+
+JUDGE = "skill_judge"
+
+
+def _judge_question(pending: dict) -> FastQuestion:
+    """技の judge() の質問（はい/いいえ、または選択肢から 1 つ）。"""
+    options = pending.get("options") or []
+    if pending.get("kind") == "choice" and options:
+        return FastQuestion(
+            name=JUDGE,
+            kind=FastQuestionKind.CHOICE,
+            instructions=str(pending.get("question", "")),
+            criteria={str(o): str(o) for o in options},
+        )
+    return FastQuestion(
+        name=JUDGE, kind=FastQuestionKind.YES_NO, instructions=str(pending.get("question", ""))
+    )
+
 
 # on_yes ごとの、結果に入れる言葉
 REASONS = {
@@ -91,9 +112,18 @@ class ToolWatcher:
         self._policy = policy
         self._clock = clock
 
-    async def run(self, call: ToolCall) -> ToolOutcome:
-        """道具を実行し、終わるまで見張る。見張りの失敗でプレイは止めない。"""
-        task = asyncio.ensure_future(self._bridge.run_tool(call.name, call.args))
+    async def run(
+        self,
+        call: ToolCall,
+        execute: Optional[Callable[[], Awaitable[tuple[bool, str, float, bool]]]] = None,
+    ) -> ToolOutcome:
+        """
+        道具を実行し、終わるまで見張る。見張りの失敗でプレイは止めない。
+
+        `execute` を渡すと、道具の代わりにそれを実行する（技: `(ok, result, seconds, refused)` を返す）。
+        """
+        started = execute() if execute is not None else self._bridge.run_tool(call.name, call.args)
+        task = asyncio.ensure_future(started)
         stopped_by: Optional[str] = None
         if self._judge is not None:
             try:
@@ -128,11 +158,20 @@ class ToolWatcher:
             if self._clock() - started < policy.grace_seconds:
                 continue
             state = await self._bridge.state()
-            if state.get("action") is None:  # まだ始まっていないか、もう終わった
+            pending = state.get("pending_judge")
+            if state.get("action") is None and not pending:  # まだ始まっていないか、もう終わった
                 continue
+            asked = questions + ([_judge_question(pending)] if pending else [])
             # 前の呼び出しが終わるまで次は聞かない（await するので重ならない）
-            verdict = await self._judge.ask(state, questions)
+            verdict = await self._judge.ask(state, asked)
             tick += 1
+            if pending:
+                answer = verdict.answers.get(JUDGE)
+                await self._bridge.answer_judge(
+                    int(pending["id"]),
+                    answer.value if answer else None,
+                    answer.confidence if answer else 0.0,
+                )
             fired: Optional[str] = None
             for q in questions:
                 answer = verdict.answers.get(q.name)

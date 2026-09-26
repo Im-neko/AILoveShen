@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from string import Template
 from typing import Any
@@ -19,6 +20,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     HouseBlueprint,
     Mission,
+    SkillInfo,
     ToolOutcome,
     TownDefinition,
     TownSite,
@@ -345,6 +347,77 @@ $recent
 - 画像が添えてあれば、それはいま配信に映っている自分の視点
 """)
 
+# 技（docs/design/22）: 道具の選択に足す節（技を使うときだけ）
+TOOL_SKILLS_SECTION = """
+## 覚えた技（run_skill で呼ぶ。今の小目標に合うものが先）
+$skills
+- 技は道具をいくつも呼ぶ手順で、1 回の呼び出しで最後まで動く。合う技があれば、道具を 1 つずつ
+  呼ぶより先に使う
+- 同じ道具の並びを何度も呼んでいるとき、手順にしたほうが確かなときは write_skill で技にする
+- 技が失敗したら理由を読む。直せそうなら同じ名前で write_skill（what に何を直すか）、合わない場面
+  なら道具で進める
+"""
+
+# 技を書く（docs/design/22 §3・§4）。決まった文なのでシステム指示に置く（26 §4）
+SKILL_SYSTEM = """\
+あなたは Minecraft のサバイバルで暮らす AI 配信者の「技」を JavaScript で書きます。技は道具を
+組み合わせた手順で、ブリッジのサンドボックスで動き、うまくいったものは覚えて何度も使います。
+
+## 形
+export default async function (t, args) {
+  // t: 下の API。args: 引数（params のスキーマどおり）
+  return t.done('何をしたか')   // 最後は t.done(...) か t.fail('理由')
+}
+
+## API（t）。どれも await する
+- 行動（A の道具と同じ名前と引数。結果は { ok, result, refused? }。断られても例外にならない）:
+  t.goto({x, y, z, range?}), t.dig({x, y, z}), t.place({item, x, y, z}), t.craft({item, times?}),
+  t.pickup(), t.attack({entity}), t.flee({entity}), t.eat({item}), t.equip({item}),
+  t.smelt({input, count?}), t.deposit({item, count?}), t.withdraw({item, count?}), t.go_home(),
+  t.sleep(), t.build_next({name?}), t.wait()
+- 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed}] か文 },
+  t.recipe_of({item}), t.how_to_get({item, count?}),
+  t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
+  hostile, distance_m, direction}], surroundings, needs, time, action },
+  t.block_at({x, y, z}) → { name }
+- 判定: t.judge(question, {kind: 'yes_no' | 'choice', options?}) → { answer, confidence }（速い判断
+  モデルが今の状態を見て答える。答えがなければ answer: null）
+- 記録: t.log(message)（失敗したときに読み返す）
+- ないもの: require、fetch、process、setTimeout、ファイル。ソルバーの提案（do_suggestion）も使えない
+
+## 決まり
+- 座標を決め打ちしない。t.state() や t.find_blocks() で探すか、引数にする（技は別の場所・別の
+  ワールドでも使う）
+- 行動の結果の ok を確かめ、だめなら理由を t.log して別の手か t.fail(理由) にする
+- ループには上限を付ける。上限: 1 回 180 秒、行動 40 回、調べもの 200 回、judge 10 回。
+  await せずに回るループは止められる
+- 行動を同時に呼ばない（Promise.all で行動を並べない。1 つずつ）
+- 安全の制約（夜に家の外へ出ない、家を壊さない）は道具の側にあり、断られる。回り道をしない
+- 1 つの技は 1 つのこと（狩る、木を切って板材にする、家のまわりに松明を置く）。大きな目標は小さな
+  技の組み合わせで進める
+- expects: 技が成功したときに世界で成り立つこと。have / stored（item と count。count は数、
+  "+N"（始めより N 多い）、"$引数名"）、built（name）、placed（where: home）、lit（distance）、
+  progress（今の小目標の残りの作業が減る）。done() だけでは成功にならない
+- 直すとき: 前のコードと失敗の記録（理由、log、最後の道具）を読み、原因を直す。同じ失敗を
+  繰り返さない
+- コードは 4000 字まで。説明は日本語 1 文
+"""
+
+SKILL_TEMPLATE = Template("""\
+## 書く技
+名前: $name
+すること: $what
+
+## 配信者が今していること
+$activity
+
+## 直近の道具の呼び出し（古い順。手順の手本）
+$recent
+
+## ほかの技（重複しない。使えるものは真似る）
+$skills
+$previous$previous_error""")
+
 SCREEN_REVIEW_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者です。添えた画像は、いま配信に映っている
 自分の視点の画面です。下の「配信者が今していること」と見比べてください。
@@ -533,6 +606,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         state: dict[str, Any],
         suggestions: Sequence[Candidate],
         recent_tools: Sequence[ToolOutcome],
+        skills: Sequence[SkillInfo] | None = None,
     ) -> str:
         """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
         around = state.get("surroundings") or {}
@@ -558,6 +632,51 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             )
             or "- なし",
             recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
+        ) + (
+            Template(TOOL_SKILLS_SECTION).substitute(
+                skills="\n".join(f"- {s.describe()}" for s in skills) or "- まだない"
+            )
+            if skills is not None
+            else ""
+        )
+
+    def build_skill_system(self) -> str:
+        """技を書くシステム指示（API と書き方。docs/design/22）。"""
+        return SKILL_SYSTEM
+
+    def build_skill_prompt(
+        self,
+        name: str,
+        what: str,
+        activity: Activity,
+        recent_tools: Sequence[ToolOutcome],
+        skills: Sequence[SkillInfo],
+        previous: SkillInfo | None = None,
+        last_failure: str = "",
+        previous_error: str = "",
+    ) -> str:
+        """技を書く（直す）本文。"""
+        prev = ""
+        if previous is not None:
+            prev = (
+                f"\n## 直す前の版（v{previous.version}、成功 {previous.successes}/{previous.uses}）\n"
+                f"説明: {previous.description}\nexpects: "
+                f"{json.dumps(previous.expects, ensure_ascii=False)}\n```js\n{previous.code}\n```\n"
+                f"前の失敗: {last_failure or previous.last_failure or 'なし'}\n"
+            )
+        error = (
+            f"\n## 前に書いたものが受け取られなかった理由\n{previous_error}\n"
+            if previous_error
+            else ""
+        )
+        return SKILL_TEMPLATE.substitute(
+            name=name,
+            what=what,
+            activity=format_activity(activity),
+            recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
+            skills="\n".join(f"- {s.describe()}" for s in skills) or "- まだない",
+            previous=prev,
+            previous_error=error,
         )
 
     def build_screen_review_prompt(self, activity: Activity) -> str:

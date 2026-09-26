@@ -15,6 +15,8 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    SkillLearnedEvent,
+    SkillRevisedEvent,
     TownCompletedEvent,
     TownDefinedEvent,
     TownSiteChosenEvent,
@@ -68,6 +70,8 @@ class Narrator:
         bus.subscribe(TownSiteChosenEvent, self.on_town_site_chosen)
         bus.subscribe(TownDefinedEvent, self.on_town_defined)
         bus.subscribe(TownCompletedEvent, self.on_town_completed)
+        bus.subscribe(SkillLearnedEvent, self.on_skill_learned)
+        bus.subscribe(SkillRevisedEvent, self.on_skill_revised)
 
     async def on_goal_ended(self, event: GoalEndedEvent) -> None:
         """小目標の終わりを取っておき、次の目標と一緒に話す。"""
@@ -117,6 +121,20 @@ class Narrator:
     async def on_town_completed(self, event: TownCompletedEvent) -> None:
         """街の完成。次の目標と一緒に話す。"""
         self._pending.append(f"街が完成した（{event.text}）")
+
+    async def on_skill_learned(self, event: SkillLearnedEvent) -> None:
+        """技を覚えた（初めて成功した）。見どころなので、次の目標を待たずにすぐ話す。"""
+        self._comment(
+            [f"新しい技を覚えた: {event.description}（{event.name}。初めてうまくいった）"]
+        )
+
+    async def on_skill_revised(self, event: SkillRevisedEvent) -> None:
+        """技を書いた・直した。次の目標と一緒に話す。"""
+        if event.version <= 1:
+            self._pending.append(f"技「{event.description}」を書いて試した")
+        else:
+            why = f"（前の失敗: {event.reason[:120]}）" if event.reason else ""
+            self._pending.append(f"技「{event.description}」を直した（v{event.version}）{why}")
 
     async def drain(self) -> None:
         """生成中の実況を待つ。"""

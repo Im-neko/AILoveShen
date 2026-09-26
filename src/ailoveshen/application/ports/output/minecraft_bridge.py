@@ -14,6 +14,9 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    SkillDraft,
+    SkillInfo,
+    SkillRun,
     TownSite,
 )
 
@@ -143,6 +146,38 @@ class IMinecraftBridge(ABC):
             GameBridgeError: ブリッジがプランを拒否したとき
         """
         ...
+
+    @abstractmethod
+    async def skills(self) -> list[SkillInfo]:
+        """覚えた技の一覧（docs/design/22_skills.md）。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def skill(self, name: str) -> SkillInfo | None:
+        """技の一番新しい版（コードを含む。直すときに読む）。なければ None。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def save_skill(self, name: str, draft: SkillDraft) -> int:
+        """
+        技を新しい版として保存し、版の番号を返す。
+
+        Raises:
+            SkillRejectedError: 形・構文・expects が正しくないとき（理由つき）
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def run_skill(
+        self, name: str, args: dict[str, Any], version: int | None = None
+    ) -> SkillRun:
+        """技を 1 回実行する（サンドボックス。成功は expects を世界で判定）。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def answer_judge(self, judge_id: int, answer: Any, confidence: float) -> None:
+        """技の judge() の質問（状態の pending_judge）に答える。"""
+        raise NotImplementedError
 
     @abstractmethod
     async def close(self) -> None:

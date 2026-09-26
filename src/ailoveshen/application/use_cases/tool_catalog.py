@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from loguru import logger
@@ -22,6 +24,9 @@ from ailoveshen.domain.value_objects import (
 )
 
 LOOK_SCREEN = "look_screen"
+RUN_SKILL = "run_skill"
+WRITE_SKILL = "write_skill"
+SKILL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 
 
 class ToolCallError(ValueError):
@@ -123,6 +128,29 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
     "wait": ("その場で 10 秒ほど待つ（家の中ならドアを向いて）", {}, []),
 }
 
+# 技（docs/design/22_skills.md）。行動の道具と同じく intent と見張りを付け、1 ステップになる
+SKILL_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
+    RUN_SKILL: (
+        "覚えた技（一覧の名前）を実行する。技は道具をいくつも呼ぶ手順で、終わると結果（成功・失敗の"
+        "理由、記録）が返る",
+        {
+            "name": _str("技の名前"),
+            "args": _str('技の引数（JSON の文字列。例 {"animal": "pig"}。なければ {}）'),
+            "version": _int("版（省略: 一番新しい版。直した版が悪いときに前の版を使う）"),
+        },
+        ["name"],
+    ),
+    WRITE_SKILL: (
+        "新しい技を書く、または失敗した技を直す（同じ名前で書くと次の版）。何度も同じ道具の並びを"
+        "呼んでいるとき、手順にしたほうが確かなときに使う。別の呼び出しで書き、すぐ 1 回試す",
+        {
+            "name": _str("技の名前（英小文字と _、例 hunt_nearest_animal）"),
+            "what": _str("技がすること（1〜2 文。直すときは、何を直すか）"),
+        },
+        ["name", "what"],
+    ),
+}
+
 QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
     "find_blocks": (
         "近くのそのブロックの位置を近い順に調べる（すぐ返る）",
@@ -145,10 +173,11 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 }
 
 
-def tool_specs(can_look: bool = False) -> list[ToolSpec]:
-    """配信者に渡す道具の一覧。`can_look` が偽なら look_screen を出さない。"""
+def tool_specs(can_look: bool = False, skills: bool = False) -> list[ToolSpec]:
+    """配信者に渡す道具の一覧。`can_look` が偽なら look_screen を、`skills` が偽なら技の道具を出さない。"""
     specs = []
-    for name, (description, props, required) in ACTION_TOOLS.items():
+    actions = {**ACTION_TOOLS, **(SKILL_TOOLS if skills else {})}
+    for name, (description, props, required) in actions.items():
         specs.append(
             ToolSpec(
                 name=name,
@@ -191,7 +220,7 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
         ToolCallError: 知らない道具か、行動の道具に intent がないとき
     """
     name = choice.name
-    if name not in ACTION_TOOLS and name not in QUERY_TOOLS:
+    if name not in ACTION_TOOLS and name not in QUERY_TOOLS and name not in SKILL_TOOLS:
         raise ToolCallError(f"unknown tool {name!r}")
     args = dict(choice.args)
     intent = str(args.pop("intent", "") or "").strip()
@@ -200,6 +229,8 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
         return ToolCall(name=name, args=args)
     if not intent:
         raise ToolCallError(f"{name} needs an intent (what you are trying to do, one sentence)")
+    if name in SKILL_TOOLS:
+        args = _skill_args(name, args)
     watch: list[WatchQuestion] = []
     for item in raw_watch if isinstance(raw_watch, list) else []:
         try:
@@ -213,3 +244,31 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
         if len(watch) == MAX_WATCH_QUESTIONS:
             break
     return ToolCall(name=name, args=args, intent=intent, watch=tuple(watch))
+
+
+def is_skill_tool(name: str) -> bool:
+    """技の道具（run_skill / write_skill）か。"""
+    return name in SKILL_TOOLS
+
+
+def _skill_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """技の道具の引数を確かめる（名前の形、引数の JSON）。"""
+    skill = str(args.get("name", "")).strip()
+    if not SKILL_NAME.match(skill):
+        raise ToolCallError("the skill name must be snake_case: a-z, 0-9 and _, 2-40 characters")
+    if name == WRITE_SKILL:
+        what = str(args.get("what", "")).strip()
+        if not what:
+            raise ToolCallError("write_skill needs what (what the skill does)")
+        return {"name": skill, "what": what}
+    raw = args.get("args") or "{}"
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except json.JSONDecodeError as e:
+        raise ToolCallError(f"args must be a JSON object: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ToolCallError("args must be a JSON object")
+    out: dict[str, Any] = {"name": skill, "args": parsed}
+    if args.get("version") is not None:
+        out["version"] = int(args["version"])
+    return out

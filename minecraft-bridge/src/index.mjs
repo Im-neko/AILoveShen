@@ -23,6 +23,7 @@
 //   POST /abort {reason}   -> 実行中の行動を理由をつけて止める: { aborted, action? | why }。終わった行動には何もしない
 //                             （技の実行中なら技ごと止める）
 //   GET  /skills           -> 技の一覧（設計書 22）: [{ name, description, params, expects, version, verified, uses, successes, failures, last_failure }]
+//   GET  /skills/<name>    -> 一番新しい版（コードを含む。直すときに読む）
 //   PUT  /skills/<name> {description, params, expects, code} -> 確かめて新しい版として保存: { name, version }（だめなら 400 と理由）
 //   POST /skills/<name>/run {args, version?} -> 技を 1 回実行する: { ok, ended, version, summary?, reason?, expects: {met, lines},
 //                             calls, log, seconds, learned }（learned: この実行で初めて成功した）
@@ -306,6 +307,10 @@ async function handle (req, res) {
     return send(res, 200, skills.list())
   }
   const skillPath = req.url.match(/^\/skills\/([a-z][a-z0-9_]{1,39})(\/run)?$/)
+  if (req.method === 'GET' && skillPath && !skillPath[2]) {
+    const skill = skills.get(skillPath[1])
+    return send(res, skill ? 200 : 404, skill ?? { error: `there is no skill named ${skillPath[1]}` })
+  }
   if (req.method === 'PUT' && skillPath && !skillPath[2]) {
     try {
       const version = skills.put(skillPath[1], await readJson(req))

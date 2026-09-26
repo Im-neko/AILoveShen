@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum, IntEnum
@@ -1280,6 +1281,95 @@ class ToolOutcome:
         return ActionResult(
             action_id=self.call.describe(), ok=self.ok, result=self.result, seconds=self.seconds
         )
+
+
+# =============================================================================
+# 技（docs/design/22_skills.md）
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class SkillInfo:
+    """覚えた技の一覧の 1 件（一番新しい版と、全部の版の合計）。"""
+
+    name: str
+    description: str
+    version: int
+    params: dict[str, Any] = field(default_factory=dict)
+    expects: dict[str, Any] = field(default_factory=dict)
+    verified: bool = False  # 一番新しい版が 1 回でも成功した
+    uses: int = 0
+    successes: int = 0
+    failures: int = 0
+    last_failure: Optional[str] = None
+    code: str = ""  # 直すときだけ読む（一覧には入らない）
+
+    def describe(self) -> str:
+        """プロンプト用の 1 行。"""
+        mark = "" if self.verified else "（試し中）"
+        failure = f"、最後の失敗: {self.last_failure}" if self.last_failure else ""
+        return (
+            f"{self.name} v{self.version}{mark}: {self.description}"
+            f"（引数 {list((self.params.get('properties') or {}).keys())}、"
+            f"成功 {self.successes}/{self.uses}{failure}）"
+        )
+
+
+@dataclass(frozen=True)
+class SkillDraft:
+    """Gemini が書いた技（保存する前）。"""
+
+    description: str
+    params: dict[str, Any]
+    expects: dict[str, Any]
+    code: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "description": self.description,
+            "params": self.params,
+            "expects": self.expects,
+            "code": self.code,
+        }
+
+
+@dataclass(frozen=True)
+class SkillRun:
+    """技を 1 回実行した結果（成功は、技の done() と expects の世界での判定の両方）。"""
+
+    name: str
+    version: int
+    ok: bool
+    ended: str  # done | fail | error | stopped
+    summary: str = ""
+    reason: str = ""
+    expects_lines: tuple[str, ...] = ()
+    calls: tuple[dict[str, Any], ...] = ()
+    log: tuple[str, ...] = ()
+    seconds: float = 0.0
+    learned: bool = False  # この実行で初めて成功した
+
+    def describe(self) -> str:
+        """次の道具の選択に見せる結果（失敗なら理由、記録、最後の道具）。"""
+        head = f"skill {self.name} v{self.version}"
+        if self.ok:
+            return f"{head} succeeded: {self.summary}"
+        parts = [f"{head} failed ({self.ended}): {self.reason}"]
+        if self.expects_lines:
+            parts.append("expects: " + "; ".join(self.expects_lines))
+        if self.log:
+            parts.append("log: " + " | ".join(self.log[-5:]))
+        if self.calls:
+            last = self.calls[-3:]
+            parts.append(
+                "last calls: "
+                + " | ".join(
+                    f"{c.get('tool')}({json.dumps(c.get('args', {}), ensure_ascii=False)})"
+                    f"={'ok' if c.get('ok') else 'failed'} {c.get('result', '')}"
+                    for c in last
+                )
+            )
+        return "; ".join(parts)
 
 
 # =============================================================================

@@ -5,12 +5,13 @@ import json
 import httpx
 import pytest
 
-from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, SkillRejectedError
 from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     HouseBlueprint,
     Side,
+    SkillDraft,
     TownSite,
 )
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
@@ -344,3 +345,82 @@ async def test_set_build_puts_the_expanded_blocks_and_a_rejection_carries_the_re
     seen["reject"] = True
     with pytest.raises(GoalRejectedError, match="overlap the build shed"):
         await client.set_build(design)
+
+
+class TestSkillsOverHttp:
+    """技の取り決め（minecraft-bridge/src/index.mjs、docs/design/22）。"""
+
+    @pytest.mark.asyncio
+    async def test_list_save_run_and_answer(self):
+        seen = []
+
+        def handler(req):
+            seen.append((req.method, req.url.path, json.loads(req.content or b"null")))
+            if req.url.path == "/skills":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {
+                            "name": "hunt",
+                            "description": "狩る",
+                            "version": 2,
+                            "successes": 1,
+                            "uses": 2,
+                            "failures": 1,
+                            "verified": True,
+                            "params": {},
+                            "expects": {"predicate": "progress"},
+                            "last_failure": "x",
+                        }
+                    ],
+                )
+            if req.method == "PUT":
+                return httpx.Response(200, json={"name": "hunt", "version": 3})
+            if req.url.path == "/skills/hunt/run":
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": False,
+                        "ended": "fail",
+                        "version": 3,
+                        "reason": "no pig",
+                        "expects": {"met": False, "lines": ["food 1/2"]},
+                        "calls": [{"tool": "goto", "ok": True}],
+                        "log": ["a"],
+                        "seconds": 4.2,
+                        "learned": False,
+                    },
+                )
+            return httpx.Response(200, json={"accepted": True})
+
+        client = _client(handler)
+        [info] = await client.skills()
+        assert (info.name, info.version, info.verified, info.last_failure) == ("hunt", 2, True, "x")
+        draft = SkillDraft(
+            "狩る", {}, {"predicate": "progress"}, "export default async function () {}"
+        )
+        assert await client.save_skill("hunt", draft) == 3
+        run = await client.run_skill("hunt", {"animal": "pig"}, 3)
+        assert (run.ok, run.reason, run.expects_lines, run.seconds) == (
+            False,
+            "no pig",
+            ("food 1/2",),
+            4.2,
+        )
+        await client.answer_judge(4, True, 0.8)
+        assert seen[2] == ("POST", "/skills/hunt/run", {"args": {"animal": "pig"}, "version": 3})
+        assert seen[3] == ("POST", "/judge", {"id": 4, "answer": True, "confidence": 0.8})
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_skill_and_a_missing_one(self):
+        def handler(req):
+            if req.method == "PUT":
+                return httpx.Response(400, json={"error": "the code does not compile"})
+            return httpx.Response(404, json={"error": "there is no skill named x"})
+
+        client = _client(handler)
+        with pytest.raises(SkillRejectedError, match="does not compile"):
+            await client.save_skill("x", SkillDraft("d", {}, {"predicate": "progress"}, "c"))
+        assert await client.skill("x") is None
+        run = await client.run_skill("x", {})
+        assert not run.ok and "no skill" in run.reason

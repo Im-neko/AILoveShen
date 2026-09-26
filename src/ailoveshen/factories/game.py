@@ -11,6 +11,7 @@ from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
+from ailoveshen.application.use_cases.skills import SkillWriter
 from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.application.use_cases.vision import ScreenReviewer, VisionPolicy
 from ailoveshen.application.use_cases.watcher import ToolWatcher, WatchPolicy
@@ -248,6 +249,16 @@ def create_game_service(
         screen=screen,
         chooser=chooser,
         replan_minutes=minecraft.replan_minutes,
+        skills=(
+            SkillWriter(
+                text_generator,
+                prompt_builder,
+                bridge,
+                rewrites_per_hour=minecraft.skill_rewrites_per_hour,
+            )
+            if minecraft.control == "tools" and minecraft.skills_enabled
+            else None
+        ),
     )
     return GameService(
         start_play=start,

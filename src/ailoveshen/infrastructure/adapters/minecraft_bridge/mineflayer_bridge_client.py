@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, SkillRejectedError
 from ailoveshen.domain.value_objects import (
     ActionResult,
     BuildDesign,
@@ -19,8 +19,14 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    SkillDraft,
+    SkillInfo,
+    SkillRun,
     TownSite,
 )
+
+# 技の実行はブリッジの上限（180 秒）まで続く。それより少し長く待つ
+SKILL_TIMEOUT = 200.0
 
 
 class MineflayerBridgeClient(IMinecraftBridge):
@@ -175,6 +181,93 @@ class MineflayerBridgeClient(IMinecraftBridge):
         """HTTP クライアントを閉じる。"""
         await self._client.aclose()
 
+    async def skills(self) -> list[SkillInfo]:
+        """覚えた技の一覧。"""
+        data: Any = await self._request("GET", "/skills")
+        return [_to_skill(x) for x in data] if isinstance(data, list) else []
+
+    async def skill(self, name: str) -> SkillInfo | None:
+        """技の一番新しい版（コードを含む）。"""
+        try:
+            response = await self._client.get(f"/skills/{name}")
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (GET /skills): {e}") from e
+        if response.status_code == 404:
+            return None
+        if response.status_code != 200:
+            raise GameBridgeError(f"Minecraft bridge GET /skills/{name} -> {response.status_code}")
+        return _to_skill(response.json())
+
+    async def save_skill(self, name: str, draft: SkillDraft) -> int:
+        """技を保存する。400 には受け取れない理由が入っている。"""
+        try:
+            response = await self._client.put(f"/skills/{name}", json=draft.to_dict())
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (PUT /skills): {e}") from e
+        if response.status_code == 400:
+            raise SkillRejectedError(response.json()["error"])
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge PUT /skills/{name} -> {response.status_code}: "
+                f"{response.text[:200]}"
+            )
+        return int(response.json()["version"])
+
+    async def run_skill(
+        self, name: str, args: dict[str, Any], version: int | None = None
+    ) -> SkillRun:
+        """技を 1 回実行する（終わるまで待つ。上限はブリッジが持つ）。"""
+        payload: dict[str, Any] = {"args": args}
+        if version is not None:
+            payload["version"] = version
+        try:
+            response = await self._client.post(
+                f"/skills/{name}/run", json=payload, timeout=SKILL_TIMEOUT
+            )
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (POST /skills/run): {e}") from e
+        if response.status_code == 404:
+            return SkillRun(
+                name=name,
+                version=version or 0,
+                ok=False,
+                ended="error",
+                reason=response.json().get("error", "no such skill"),
+            )
+        if response.status_code == 409:
+            return SkillRun(
+                name=name,
+                version=version or 0,
+                ok=False,
+                ended="error",
+                reason="another action is running",
+            )
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge POST /skills/{name}/run -> {response.status_code}: "
+                f"{response.text[:200]}"
+            )
+        d = response.json()
+        return SkillRun(
+            name=name,
+            version=int(d.get("version", 0)),
+            ok=bool(d.get("ok")),
+            ended=str(d.get("ended", "")),
+            summary=str(d.get("summary") or ""),
+            reason=str(d.get("reason") or ""),
+            expects_lines=tuple(str(x) for x in (d.get("expects") or {}).get("lines", [])),
+            calls=tuple(d.get("calls") or ()),
+            log=tuple(str(x) for x in d.get("log") or ()),
+            seconds=float(d.get("seconds", 0.0)),
+            learned=bool(d.get("learned")),
+        )
+
+    async def answer_judge(self, judge_id: int, answer: Any, confidence: float) -> None:
+        """技の judge() に答える。"""
+        await self._request(
+            "POST", "/judge", json={"id": judge_id, "answer": answer, "confidence": confidence}
+        )
+
     async def _request(self, method: str, path: str, json: Any = None) -> dict[str, Any]:
         try:
             response = await self._client.request(method, path, json=json)
@@ -221,4 +314,20 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         ),
         busy=bool(data.get("busy", False)),
         day=int(obs["time"]["day"]) if obs["time"]["day"] is not None else None,
+    )
+
+
+def _to_skill(d: dict[str, Any]) -> SkillInfo:
+    return SkillInfo(
+        name=str(d["name"]),
+        description=str(d.get("description", "")),
+        version=int(d.get("version", 0)),
+        params=dict(d.get("params") or {}),
+        expects=dict(d.get("expects") or {}),
+        verified=bool(d.get("verified", d.get("successes", 0) > 0)),
+        uses=int(d.get("uses", 0)),
+        successes=int(d.get("successes", 0)),
+        failures=int(d.get("failures", 0)),
+        last_failure=d.get("last_failure"),
+        code=str(d.get("code", "")),
     )

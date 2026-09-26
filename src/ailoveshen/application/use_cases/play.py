@@ -31,11 +31,14 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 from ailoveshen.application.use_cases.house import HouseDesigner, parse_blueprint
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
+from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
 from ailoveshen.application.use_cases.tool_catalog import (
     ACTION_TOOLS,
     LOOK_SCREEN,
+    WRITE_SKILL,
     ToolCallError,
     is_query,
+    is_skill_tool,
     parse_tool_call,
     tool_specs,
 )
@@ -45,12 +48,14 @@ from ailoveshen.application.use_cases.watcher import ToolWatcher
 from ailoveshen.domain.entities import Conversation, MidGoalPlan, Notebook, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
+    SkillLearnedEvent,
+    SkillRevisedEvent,
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
 )
-from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
@@ -66,6 +71,8 @@ from ailoveshen.domain.value_objects import (
     MessageRole,
     MessageType,
     Screenshot,
+    SkillInfo,
+    SkillRun,
     ToolCall,
     ToolOutcome,
     is_survival,
@@ -242,6 +249,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         chooser: Optional[GoalChooser] = None,
         replan_minutes: float = 20.0,
         clock: Callable[[], float] = time.monotonic,
+        skills: Optional[SkillWriter] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -269,6 +277,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             replan_minutes: 手順があっても Gemini に見直させる間隔（中目標リストが変わって
                 いなければ、その 3 倍まで待つ）
             clock: 時計（テストで差し替える）
+            skills: 技を書くもの（docs/design/22）。"tools" のとき、技の道具（run_skill /
+                write_skill）と技の一覧を出す。None なら技を使わない
 
         Raises:
             ValueError: control が不明か、"tools" なのに tool_watcher がないとき
@@ -300,6 +310,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 今の小目標の行動の記録と、最後に出ていた候補（失敗の分析に見せる。docs/design/27）
         self._goal_steps: deque[str] = deque(maxlen=GOAL_STEPS_SHOWN)
         self._offered: tuple[Candidate, ...] = ()
+        self._skills = skills if control == "tools" else None
+        self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""
@@ -380,8 +392,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         選び直す（MAX_QUERIES_PER_STEP 回まで。その後は行動の道具だけを出す）。行動の道具は
         見張りつきで実行し、1 ステップはそれで終わる。
         """
-        specs = tool_specs(can_look=self._screen is not None)
-        action_specs = [t for t in specs if t.name in ACTION_TOOLS]
+        specs = tool_specs(can_look=self._screen is not None, skills=self._skills is not None)
+        action_specs = [t for t in specs if t.name in ACTION_TOOLS or is_skill_tool(t.name)]
+        skills = await self._skill_list(session) if self._skills is not None else None
         images: list[Screenshot] = []  # 次の選択にだけ添える画面（ステップをまたがない）
         last = self._recent_tools[-1] if self._recent_tools else None
         if self._screen is not None and last is not None and not last.ok:
@@ -394,6 +407,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 state,
                 obs.candidates[:SUGGESTIONS_SHOWN],
                 tuple(self._recent_tools),
+                skills=skills,
             )
             last = self._recent_tools[-1] if self._recent_tools else None
             purpose = "tool_after_failure" if last is not None and not last.ok else "tool"
@@ -445,11 +459,89 @@ class AdvancePlayUseCase(IAdvancePlay):
                 + (f" 見張り: {[w.question for w in call.watch]}" if call.watch else "")
             )
             assert self._watcher is not None
-            outcome = await self._watcher.run(call)
+            if is_skill_tool(call.name):
+                outcome = await self._skill_step(session, call, skills or [])
+            else:
+                outcome = await self._watcher.run(call)
             self._recent_tools.append(outcome)
             break
         decision = ActionDecision(action_id=outcome.call.describe(), confidence=1.0)
         return decision, outcome.as_action_result()
+
+    async def _skill_list(self, session: PlaySession) -> list[SkillInfo]:
+        """道具の選択に見せる技（今の小目標に合うものが先）。読めなければ空（プレイは止めない）。"""
+        try:
+            skills = await self._bridge.skills()
+        except GameBridgeError as e:
+            logger.warning(f"技の一覧を読めなかった: {e}")
+            return []
+        item = session.goal.spec.item if session.goal else None
+        return order_skills(skills, item)
+
+    async def _skill_step(
+        self, session: PlaySession, call: ToolCall, skills: list[SkillInfo]
+    ) -> ToolOutcome:
+        """技を実行する（write_skill なら、書いてからすぐ 1 回試す）。docs/design/22 §4。"""
+        assert self._skills is not None
+        name = call.args["name"]
+        if call.name != WRITE_SKILL:
+            known = next((s for s in skills if s.name == name), None)
+            return await self._run_skill(
+                call,
+                name,
+                call.args.get("args", {}),
+                call.args.get("version"),
+                known.description if known else name,
+            )
+        written = await self._skills.write(
+            name,
+            call.args["what"],
+            session.activity(),
+            tuple(self._recent_tools),
+            skills,
+            self._skill_failures.get(name, ""),
+        )
+        if isinstance(written, NotWritten):
+            logger.info(f"技を書けなかった: {name}: {written.why}")
+            return ToolOutcome(call=call, ok=False, result=written.why, seconds=0.0, refused=True)
+        await self._event_publisher.publish(
+            SkillRevisedEvent(
+                name=name,
+                description=written.description,
+                version=written.version,
+                reason=written.revised_because,
+            )
+        )
+        outcome = await self._run_skill(
+            call, name, written.trial_args, written.version, written.description
+        )
+        return replace(outcome, result=f"wrote {name} v{written.version}; trial: {outcome.result}")
+
+    async def _run_skill(
+        self, call: ToolCall, name: str, args: dict, version: Optional[int], description: str
+    ) -> ToolOutcome:
+        """技を見張りつきで 1 回実行し、覚えたら知らせ、失敗は次に直すときのために取っておく。"""
+        assert self._watcher is not None
+        runs: list[SkillRun] = []
+
+        async def execute() -> tuple[bool, str, float, bool]:
+            run = await self._bridge.run_skill(name, args, version)
+            runs.append(run)
+            return run.ok, run.describe(), run.seconds, False
+
+        outcome = await self._watcher.run(call, execute=execute)
+        if runs:
+            run = runs[0]
+            logger.info(f"技: {run.describe()}（{run.seconds}秒、道具 {len(run.calls)}）")
+            if run.ok:
+                self._skill_failures.pop(name, None)
+            else:
+                self._skill_failures[name] = run.describe()
+            if run.learned:
+                await self._event_publisher.publish(
+                    SkillLearnedEvent(name=name, description=description)
+                )
+        return outcome
 
     async def _change_goal(self, session: PlaySession, obs: GameObservation) -> None:
         reason = session.goal_end_reason(obs)
