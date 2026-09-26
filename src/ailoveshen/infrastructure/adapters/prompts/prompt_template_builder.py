@@ -44,21 +44,11 @@ $personality_traits
 - 出力はそのまま音声合成されるため、記号・絵文字・括弧書きの注釈は使わない
 """)
 
-COMMENTARY_TEMPLATE = Template("""\
-## 今していること
-$activity
-
-## 最近のイベント（最後のものが今起きたこと）
-$recent_events
-
-## 最近の会話
-$recent_messages
-
-## あなたの感情状態
-$emotion
-
-## タスク
-上記の状況を踏まえて、配信者として自然な実況・独り言・考えを1-2文で述べてください。
+# 用途ごとの決まりはシステム指示に置き、状態で変わる所だけを本文にする（暗黙のキャッシュが
+# 先頭の同じ部分に効く。docs/design/26_steps_and_context.md §4）
+COMMENTARY_RULES = """
+## 実況の仕方
+本文の状況を踏まえて、配信者として自然な実況・独り言・考えを1-2文で述べてください。
 - 今起きたことと、今していることに即した内容（していないことを言わない）
 - 目標を変えたりやめたりしたときは、その理由を言う
 - 中目標が終わったとき（完了・断念）はそれを言う。視聴者の頼みをやめたときは、その人の
@@ -69,35 +59,50 @@ $emotion
 
 ## 出力
 実況テキストのみを出力してください（説明や注釈は不要）。
-""")
+"""
 
-CHAT_RESPONSE_TEMPLATE = Template("""\
-## 視聴者からのコメント
-ユーザー名: $user_name
-コメント: $message
-
+COMMENTARY_TEMPLATE = Template("""\
 ## 今していること
 $activity
 
 ## 最近の会話
 $recent_messages
-$plan
 
 ## あなたの感情状態
 $emotion
 
-## タスク
-このコメントに対して、配信者として自然に返答してください。
+## 最近のイベント（最後のものが今起きたこと）
+$recent_events
+""")
+
+REPLY_RULES = Template("""
+## 返答の仕方
+本文の最後の視聴者のコメントに、配信者として自然に返答してください。
 - 視聴者の名前を呼んで親しみを込める
 - 短く簡潔に（1-2文）
 - キャラクターらしい話し方
-- 今していることについて聞かれたら、上の「今していること」のとおりに答える（作り話をしない）
-
+- 今していることについて聞かれたら、本文の「今していること」のとおりに答える（作り話をしない）
+$plan
 ## 出力
 $output
 """)
 
-PLAN_TEMPLATE = Template("""\
+CHAT_RESPONSE_TEMPLATE = Template("""\
+## 今していること
+$activity
+
+## 最近の会話
+$recent_messages
+
+## あなたの感情状態
+$emotion
+$previous_error
+## 視聴者からのコメント
+ユーザー名: $user_name
+コメント: $message
+""")
+
+PLAN_TEMPLATE = Template("""
 ## 視聴者の頼みについて
 配信の大目標と中目標は「今していること」のとおり。頼みを引き受けると中目標リストに入る
 （ふつうは今取り組んでいる中目標の後ろ。今の小目標は中断しない）。
@@ -131,7 +136,7 @@ $conditions
 
 ## 自分でできること（これ以外はできない）
 $abilities
-$previous_error""")
+""")
 
 
 OUTPUT_TEXT = "返答テキストのみを出力してください。"
@@ -149,9 +154,9 @@ class PromptTemplateBuilder(IPromptBuilder):
     プロンプトはモデルに依存しないので、すべての LLM でこのアダプターを共有する。
     """
 
-    def build_system_prompt(self, character: CharacterProfile) -> str:
-        """キャラクターを説明するシステム指示を組み立てる。"""
-        return CHARACTER_SYSTEM_TEMPLATE.substitute(
+    def build_system_prompt(self, character: CharacterProfile, purpose: str = "") -> str:
+        """キャラクターと、用途（commentary / reply / reply_requests）の決まりのシステム指示。"""
+        base = CHARACTER_SYSTEM_TEMPLATE.substitute(
             name=character.name,
             description=character.description.strip(),
             personality_traits="、".join(character.personality_traits) or NO_INFORMATION,
@@ -159,9 +164,22 @@ class PromptTemplateBuilder(IPromptBuilder):
             first_person=character.first_person,
             sentence_endings="、".join(character.sentence_endings),
         )
+        if purpose == "commentary":
+            return base + COMMENTARY_RULES
+        if purpose in ("reply", "reply_requests"):
+            takes_requests = purpose == "reply_requests"
+            plan = (
+                PLAN_TEMPLATE.substitute(conditions=format_conditions(), abilities=ABILITIES)
+                if takes_requests
+                else ""
+            )
+            return base + REPLY_RULES.substitute(
+                plan=plan, output=OUTPUT_JSON if takes_requests else OUTPUT_TEXT
+            )
+        return base
 
     def build_commentary_prompt(self, context: GenerationContext) -> str:
-        """ゲーム実況のプロンプトを組み立てる。"""
+        """ゲーム実況の本文（状態で変わる所だけ）。"""
         return COMMENTARY_TEMPLATE.substitute(
             activity=format_activity(context.activity),
             recent_events=_format_events(context.recent_events),
@@ -177,18 +195,11 @@ class PromptTemplateBuilder(IPromptBuilder):
         takes_requests: bool = False,
         previous_error: str = "",
     ) -> str:
-        """視聴者のチャットへの返答（と、場合によっては頼みを受けること）のプロンプトを組み立てる。"""
+        """視聴者のチャットへの返答の本文。決まりはシステム指示の側（build_system_prompt）。"""
         error = (
-            f"\n前回の返答の頼みは受けられなかった: {previous_error}\n"
+            f"\n## 前回の返答\n頼みは受けられなかった: {previous_error}\n"
             "直せるなら直し、無理なら decline にして返答で理由を言う。\n"
-            if previous_error
-            else ""
-        )
-        plan = (
-            PLAN_TEMPLATE.substitute(
-                conditions=format_conditions(), abilities=ABILITIES, previous_error=error
-            )
-            if takes_requests
+            if takes_requests and previous_error
             else ""
         )
         return CHAT_RESPONSE_TEMPLATE.substitute(
@@ -196,9 +207,8 @@ class PromptTemplateBuilder(IPromptBuilder):
             message=message,
             activity=format_activity(context.activity),
             recent_messages=format_messages(context.recent_messages),
-            plan=plan,
             emotion=_format_emotion(context.emotion_state),
-            output=OUTPUT_JSON if takes_requests else OUTPUT_TEXT,
+            previous_error=error,
         )
 
 

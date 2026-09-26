@@ -16,8 +16,15 @@ class IPromptBuilder(ABC):
     """
 
     @abstractmethod
-    def build_system_prompt(self, character: CharacterProfile) -> str:
-        """キャラクターを説明するシステム指示を組み立てる。"""
+    def build_system_prompt(self, character: CharacterProfile, purpose: str = "") -> str:
+        """
+        システム指示: キャラクターと、用途の決まり（状態では変わらない。暗黙のキャッシュが効く）。
+
+        Args:
+            character: 配信者
+            purpose: "commentary"（実況）、"reply"（返答）、"reply_requests"（頼みも受ける返答）。
+                空ならキャラクターだけ
+        """
         ...
 
     @abstractmethod

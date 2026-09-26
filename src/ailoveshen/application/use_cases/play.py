@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import Optional
 
@@ -62,6 +62,7 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     MessageRole,
+    MessageType,
     Screenshot,
     ToolCall,
     ToolOutcome,
@@ -514,7 +515,7 @@ class AdvancePlayUseCase(IAdvancePlay):
     ) -> None:
         plan = session.plan
         predicates = predicates_now(obs, plan)
-        messages = self._conversation.recent_messages(self._history_limit)
+        messages = _for_goal(self._conversation.recent_messages(self._history_limit))
         goals = _shown_goals(activity, reason)
         viewers = _viewers(messages)
         # 行き詰まった・進まなかった・画面で考え直すことになった後は、深く考え直す（19 §7）。
@@ -543,7 +544,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                 viewers,
             )
             data = await self._text_generator.generate_json(
-                prompt, schema, purpose=purpose, images=images
+                prompt,
+                schema,
+                system_instruction=self._prompt_builder.build_goal_system(),
+                purpose=purpose,
+                images=images,
             )
             try:
                 decision = parse_decision(data)
@@ -667,3 +672,13 @@ def _kept(plan: MidGoalPlan) -> tuple[GoalSpec, ...]:
     return tuple(
         c for g in plan.pending for c in g.conditions if c.predicate == GoalPredicate.STORED
     )
+
+
+GOAL_COMMENTARY = 3
+
+
+def _for_goal(messages: Sequence[ConversationMessage]) -> tuple[ConversationMessage, ...]:
+    """目標の決定に渡す会話: チャットと返答は全部、実況は直近の数件だけ（26 §4）。"""
+    commentary = [m for m in messages if m.message_type == MessageType.COMMENTARY]
+    keep = set(map(id, commentary[-GOAL_COMMENTARY:]))
+    return tuple(m for m in messages if m.message_type != MessageType.COMMENTARY or id(m) in keep)

@@ -143,8 +143,8 @@ class GenerateResponseUseCase(IGenerateResponse):
         context: GenerationContext,
         session: PlaySession | None,
     ) -> tuple[str, MidGoal | None]:
-        system_prompt = self._prompt_builder.build_system_prompt(self._character)
         if session is None or self._mid_goals is None:
+            system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply")
             prompt = self._prompt_builder.build_chat_response_prompt(
                 user_name=request.user_name, message=request.message, context=context
             )
@@ -153,6 +153,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
             return text, None
 
+        system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply_requests")
         error = ""
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_chat_response_prompt(

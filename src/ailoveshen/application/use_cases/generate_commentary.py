@@ -76,7 +76,7 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
                 recent_messages=self._conversation.recent_messages(self._history_limit),
             )
 
-            system_prompt = self._prompt_builder.build_system_prompt(self._character)
+            system_prompt = self._prompt_builder.build_system_prompt(self._character, "commentary")
             prompt = self._prompt_builder.build_commentary_prompt(context)
 
             logger.debug("実況を生成する")

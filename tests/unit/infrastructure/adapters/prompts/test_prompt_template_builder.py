@@ -118,10 +118,13 @@ class TestPromptTemplateBuilder:
         assert "- 大目標: 生き延びながら家を建て、街にしていく" in prompt
         assert "1. 自分の家を作る [取り組み中] 完了条件: built()" in prompt
         assert "2. ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
-        assert "「今していること」のとおりに答える" in prompt
-        # 頼みを受けないときは、返答はテキストだけ
-        assert "視聴者の頼みについて" not in prompt
-        assert "返答テキストのみを出力してください。" in prompt
+        # 決まりはシステム指示の側（26 §4）。頼みを受けないときは、返答はテキストだけ
+        system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply")
+        assert "「今していること」のとおりに答える" in system
+        assert "視聴者の頼みについて" not in system
+        assert "返答テキストのみを出力してください。" in system
+        # コメントは本文の最後（状態の部分が先頭から同じになるように）
+        assert prompt.rstrip().endswith("コメント: 今なにしてるの？")
 
     def test_chat_response_prompt_takes_requests_as_mid_goals(self):
         """頼みを受けられる返答には、条件と規則を並べる。"""
@@ -133,15 +136,27 @@ class TestPromptTemplateBuilder:
             previous_error="neko already has a request in the list",
         )
 
-        assert "placed(item=bed)" in prompt and "have(item, count)" in prompt and "built" in prompt
-        assert "explored(distance)" not in prompt and "cleared:" not in prompt
-        assert "今の小目標は中断しない" in prompt
-        assert "同じ人の頼みは同時に1つまで" in prompt
-        assert "大目標と今の目標は変えない" in prompt
+        system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply_requests")
+        assert "placed(item=bed)" in system and "have(item, count)" in system and "built" in system
+        assert "explored(distance)" not in system and "cleared:" not in system
+        assert "今の小目標は中断しない" in system
+        assert "同じ人の頼みは同時に1つまで" in system
+        assert "大目標と今の目標は変えない" in system
         # やり方についての頼みには、配信者が実際にできることから答える
-        assert "## 自分でできること（これ以外はできない）" in prompt
-        assert "松明を持っていれば置いて湧き潰しする" in prompt
-        assert "できない約束はしない" in prompt
-        assert "頼んだ人の名前は入れない" in prompt
-        assert "前回の返答の頼みは受けられなかった: neko already has a request" in prompt
+        assert "## 自分でできること（これ以外はできない）" in system
+        assert "松明を持っていれば置いて湧き潰しする" in system
+        assert "できない約束はしない" in system
+        assert "頼んだ人の名前は入れない" in system
+        assert "JSON" in system
+        assert "頼みは受けられなかった: neko already has a request" in prompt
         assert "decline" in prompt
+        assert "視聴者の頼みについて" not in prompt
+
+    def test_system_prompts_do_not_change_with_the_state(self):
+        """用途ごとのシステム指示は状態を含まない（暗黙のキャッシュが効く）。"""
+        builder = PromptTemplateBuilder()
+        for purpose in ("commentary", "reply", "reply_requests"):
+            system = builder.build_system_prompt(CharacterProfile(), purpose)
+            assert "$" not in system
+            assert system.startswith(builder.build_system_prompt(CharacterProfile()))
+        assert "実況テキストのみ" in builder.build_system_prompt(CharacterProfile(), "commentary")

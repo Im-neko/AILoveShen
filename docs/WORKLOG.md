@@ -1,11 +1,22 @@
 ## Current Status
 
 **Active Phase**: 設計書 21（Gemini が道具で操作し、Jev が見張る。`--control tools`）と 23（OBS のスクリーンショットを Gemini に見せる）を実装した。どちらも実機では未確認（クラウドの環境に API キー・Minecraft・OBS がない）。次はユーザーの環境で `examples/integration_test_minecraft.py --control tools --board-port 8765` を OBS つきで動かすこと。19 §13 の 10（夜の決まり）は返事待ちで、それまでは今の決まり (a)。16 の実機（town4d の続き）と 18 の残りは止めたまま。ブランチ `claude/peaceful-edison-prr51v`
-**Last Updated**: 2026-09-25
-**Test Status**: `pytest tests/` 509 passed, 1 skipped。ブリッジ `npm test` 117 件
+**Last Updated**: 2026-09-26
+**Test Status**: `pytest tests/` 572 passed, 2 skipped。ブリッジ `npm test` 138 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### キャッシュが効くプロンプトと入力の削減（設計書 26 §4） (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「コンテキストエンジニアリングにも手を付けたい。キャッシュが効きやすく、構造化して入力自体も削れる所は削る」
+- 目標の決定: 決まった文（決まり、述語の説明の全部、手順の書き方、出力）を `build_goal_system()` でシステム指示に（約 4,700 字、毎回同じ）。本文は状態だけ（代表的な状態で約 900 字）。今使える述語は名前だけ 1 行で本文の側
+- 実況・返答: `build_system_prompt(character, purpose)` でキャラクター＋用途の決まり（頼みの扱い、完了条件、できること、出力）。本文は 今していること → 会話 → 感情 → その回だけのもの（イベント / コメント）
+- 削減: チェストは中身のあるものの上位 6 種、死んだ場所は 2 件、持ち物は JSON をやめた、目標の決定の会話は実況を直近 3 件に
+- テスト: システム指示が状態で変わらない、長さの上限（`TestPromptLength`）、実況の絞り込み。pytest 572、npm 138
+- 未確認: 実機の `cached=` の割合（`tools/gemini_usage.py` で前後比較）
 
 ### 小目標は Jev が選び、Gemini は手順を書く（設計書 26 §2） (2026-09-26)
 

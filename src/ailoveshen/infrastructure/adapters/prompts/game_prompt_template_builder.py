@@ -189,7 +189,9 @@ $previous_error
 指定の JSON で出力してください。
 """)
 
-GOAL_TEMPLATE = Template("""\
+# 目標の決定の決まり（システム指示）。どの呼び出しでも同じ文にして、Gemini の暗黙のキャッシュに
+# 当たるようにする（docs/design/26 §4）。状態で変わるものは GOAL_TEMPLATE の側に書く
+GOAL_SYSTEM_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで家を建てて暮らすAI配信者の方針を決めます。
 目標は3層です: 大目標（変わらない）、中目標（上から順に取り組むリスト）、小目標（今の1つ）。
 あなたが決めるのは次の小目標と、必要なときだけ中目標リストと自分のメモの編集です。
@@ -267,14 +269,23 @@ $conditions
 - メモは書いた日から 3 日で消える。まだ正しいメモは keep すると今日から 3 日延びる。
   間違っていたとわかったメモは drop する
 
-## 使える目標（小目標）
-$predicates
+## 小目標の述語（全部。今使えるものは状態の側に書く）
+$all_predicates
 
+## 出力
+中目標リストの編集とメモの編集（なければ空）、次の小目標（predicate と必要な引数）、serves、
+その理由（短い1文）を指定の JSON で出力してください。
+""")
+
+GOAL_TEMPLATE = Template("""\
 ## 建てる家
 $blueprint
 
 ## 今していること
 $activity
+
+## 今使える小目標
+$predicates
 
 ## 最近の会話（配信での自分の発言と視聴者のコメント）
 $recent_messages
@@ -282,9 +293,6 @@ $recent_messages
 ## 小目標を選び直す理由
 $reason
 $previous_error
-## 出力
-中目標リストの編集とメモの編集（なければ空）、次の小目標（predicate と必要な引数）、serves、
-その理由（短い1文）を指定の JSON で出力してください。
 """)
 
 # spikes/primitive_choice_eval.py で測った: 体が必要とするもの（needs）を状態に書くと効いた。
@@ -468,6 +476,12 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             previous_error=_retry(previous_error, "書き直してください。"),
         )
 
+    def build_goal_system(self) -> str:
+        """目標の決定の決まり（毎回同じ文。システム指示に渡す）。"""
+        return GOAL_SYSTEM_TEMPLATE.substitute(
+            conditions=format_conditions(), all_predicates=format_predicates(list(GoalPredicate))
+        )
+
     def build_goal_prompt(
         self,
         blueprint: HouseBlueprint | None,
@@ -485,9 +499,8 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             else ""
         )
         return GOAL_TEMPLATE.substitute(
-            predicates=format_predicates(list(predicates)),
+            predicates=", ".join(p.value for p in predicates),
             blueprint=_format_blueprint(blueprint, activity.observation),
-            conditions=format_conditions(),
             activity=format_activity(activity, with_ids=True),
             recent_messages=format_messages(tuple(recent_messages)),
             reason=goal_ended_because or "なし",

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from ailoveshen.domain.value_objects import (
@@ -101,6 +100,8 @@ DIRECTION_NAMES = {
     "W": "西",
     "NW": "北西",
 }
+CHEST_ITEMS = 6  # チェストごとに見せる品の数
+DEATHS_SHOWN = 2  # 見せる死んだ場所の数（新しいもの）
 EQUIPMENT_NAMES = {"head": "頭", "chest": "胴", "legs": "脚", "feet": "足", "off_hand": "左手"}
 
 
@@ -224,20 +225,27 @@ def _format_memory(memory: dict) -> str:
         return f"{direction} {p['distance_m']}m、{p['minutes_ago']} 分前"
 
     parts = [f"{p['kind']} {p['count']}（{where(p)}）" for p in memory.get("places", [])]
-    parts += [f"死んだ場所（{where(d)}）" for d in memory.get("deaths", [])]
+    parts += [f"死んだ場所（{where(d)}）" for d in memory.get("deaths", [])[-DEATHS_SHOWN:]]
     return "、".join(parts) or "なし"
 
 
 def _format_chests(memory: dict) -> str:
-    chests = memory.get("chests", [])
+    """中身のあるチェストだけ、多い品から数件（26 §4）。"""
+    chests = [c for c in memory.get("chests", []) if c.get("contents")]
     if not chests:
         return "なし"
 
     def contents(c: dict) -> str:
-        items = "、".join(f"{name} {n}" for name, n in c["contents"].items()) or "空"
-        return f"{items}（{c['minutes_ago']} 分前に開けたとき）"
+        top = sorted(c["contents"].items(), key=lambda kv: -kv[1])
+        items = "、".join(f"{name} {n}" for name, n in top[:CHEST_ITEMS])
+        more = f" ほか {len(top) - CHEST_ITEMS} 種" if len(top) > CHEST_ITEMS else ""
+        return f"{items}{more}（{c['minutes_ago']} 分前）"
 
     return " / ".join(contents(c) for c in chests)
+
+
+def _format_inventory(inventory: dict) -> str:
+    return "、".join(f"{name} {n}" for name, n in inventory.items()) or "なし"
 
 
 def _format_equipment(me: dict) -> str:
@@ -385,7 +393,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 家: {_format_home(obs)}",
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
         f"- 装備: {_format_equipment(s.get('self', {}))}",
-        f"- 持ち物: {json.dumps(s.get('inventory', {}), ensure_ascii=False)}",
+        f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
         f"- チェストの中身: {_format_chests(s.get('memory') or {})}",
         f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",

@@ -68,7 +68,7 @@ class TestGenerateCommentaryUseCase:
     """GenerateCommentaryUseCase のテスト。"""
 
     @pytest.mark.asyncio
-    async def test_execute_success(self, use_case, mock_text_generator):
+    async def test_execute_success(self, use_case, mock_text_generator, mock_prompt_builder):
         """実況が生成される。"""
         response = await use_case.execute(GenerateCommentaryRequest())
 
@@ -79,6 +79,7 @@ class TestGenerateCommentaryUseCase:
             system_instruction="System prompt",
             purpose="commentary",
         )
+        assert mock_prompt_builder.build_system_prompt.call_args.args[1] == "commentary"
 
     @pytest.mark.asyncio
     async def test_execute_builds_context(self, use_case, mock_prompt_builder, conversation):

@@ -134,6 +134,14 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_goal_system(self) -> str:
+        """
+        目標の決定のシステム指示（決まり、述語の説明の全部、出力の書き方）。状態では変わらない
+        （暗黙のキャッシュが効くように先頭に置く。docs/design/26_steps_and_context.md §4）。
+        """
+        ...
+
+    @abstractmethod
     def build_goal_prompt(
         self,
         blueprint: HouseBlueprint | None,

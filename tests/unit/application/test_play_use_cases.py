@@ -123,6 +123,7 @@ def prompt_builder():
     builder = Mock()
     builder.build_house_design_prompt.return_value = "design prompt"
     builder.build_goal_prompt.return_value = "goal prompt"
+    builder.build_goal_system.return_value = "goal system"
     builder.build_action_context.return_value = ({"goal": "g"}, "instructions")
     return builder
 
@@ -620,6 +621,23 @@ class TestAdvancePlay:
 
         messages = prompt_builder.build_goal_prompt.call_args.kwargs["recent_messages"]
         assert [m.content for m in messages] == ["家まだ？", "もうすぐ完成するよ"]
+
+    @pytest.mark.asyncio
+    async def test_goal_decision_sees_only_the_last_commentary(
+        self, use_case, text_generator, prompt_builder, conversation
+    ):
+        """実況は直近の 3 件だけ。チャットと返答は残す（26 §4）。"""
+        conversation.add_viewer_message("家まだ？", "neko")
+        for i in range(5):
+            conversation.add_streamer_message(f"実況{i}", MessageType.COMMENTARY)
+        text_generator.generate_json.return_value = PLANKS
+
+        await use_case.execute(_session())
+
+        messages = prompt_builder.build_goal_prompt.call_args.kwargs["recent_messages"]
+        assert [m.content for m in messages] == ["家まだ？", "実況2", "実況3", "実況4"]
+        kwargs = text_generator.generate_json.call_args.kwargs
+        assert kwargs["system_instruction"] == "goal system"
 
     @pytest.mark.asyncio
     async def test_small_goal_serves_the_top_mid_goal(self, use_case, text_generator, events):

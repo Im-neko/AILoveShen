@@ -140,7 +140,7 @@ class TestGenerateResponseUseCase:
     """GenerateResponseUseCase のテスト。"""
 
     @pytest.mark.asyncio
-    async def test_execute_success(self, use_case, mock_text_generator):
+    async def test_execute_success(self, use_case, mock_text_generator, mock_prompt_builder):
         """コメントへの返答が生成される。"""
         response = await use_case.execute(_request())
 
@@ -153,6 +153,7 @@ class TestGenerateResponseUseCase:
             system_instruction="System prompt",
             purpose="reply",
         )
+        assert mock_prompt_builder.build_system_prompt.call_args.args[1] == "reply"
 
     @pytest.mark.asyncio
     async def test_execute_records_chat_and_reply(self, use_case, conversation):

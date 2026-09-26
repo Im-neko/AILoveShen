@@ -149,12 +149,20 @@ class TestGamePromptTemplateBuilder:
         assert "width must be 5-7" in prompt
 
     def test_goal_prompt_lists_only_the_given_predicates(self):
-        """渡された述語だけを出す。"""
+        """今使える述語は名前だけを状態の側に出す。説明は全部システム指示に（26 §4）。"""
         prompt = _goal_prompt(predicates=[GoalPredicate.HAVE, GoalPredicate.EXPLORED])
-        offered = prompt.split("## 使える目標（小目標）\n")[1].split("\n\n")[0]
+        offered = prompt.split("## 今使える小目標\n")[1].split("\n\n")[0]
 
-        assert "have(item, count)" in offered and "explored(distance)" in offered
-        assert "through_night" not in offered and "built:" not in offered
+        assert offered == "have, explored"
+        system = GamePromptTemplateBuilder().build_goal_system()
+        assert "have(item, count)" in system and "through_night" in system
+
+    def test_goal_system_does_not_change_with_the_state(self):
+        """システム指示は状態で変わらない（暗黙のキャッシュが先頭に当たる）。"""
+        builder = GamePromptTemplateBuilder()
+
+        assert builder.build_goal_system() == builder.build_goal_system()
+        assert "$" not in builder.build_goal_system()
 
     def test_goal_prompt_shows_the_current_goal_status(self):
         """小目標の進み具合と、何が妨げているかが LLM に届く。"""
@@ -208,10 +216,25 @@ class TestGamePromptTemplateBuilder:
         prompt = _goal_prompt(obs)
 
         assert "家: ぽかぽかログハウス、完成している（外にいる）、ベッドなし、チェスト 2" in prompt
-        assert (
-            "チェストの中身: oak_log 20、cobblestone 14（2 分前に開けたとき）"
-            " / 空（5 分前に開けたとき）"
-        ) in prompt
+        # 空のチェストは出さない（数は家の行にある。26 §4）
+        assert "- チェストの中身: oak_log 20、cobblestone 14（2 分前）\n" in prompt
+
+    def test_goal_prompt_shows_only_the_top_chest_items(self):
+        """チェストは多い品から数件だけ。"""
+        obs = _obs()
+        obs.state["memory"]["chests"] = [
+            {
+                "direction": "N",
+                "distance_m": 3,
+                "contents": {f"item{i}": i for i in range(1, 10)},
+                "minutes_ago": 1,
+            }
+        ]
+
+        prompt = _goal_prompt(obs)
+
+        assert "item9 9、item8 8、item7 7、item6 6、item5 5、item4 4 ほか 3 種（1 分前）" in prompt
+        assert "item3 3" not in prompt
 
     def test_goal_prompt_recent_goals_and_previous_error(self):
         """過去の小目標はどう終わったかを示し、断られた小目標は理由を示す。"""
@@ -259,8 +282,11 @@ class TestGamePromptTemplateBuilder:
         # 小目標の番号はメモの根拠に使う（今の小目標は、これまでのものの次）
         assert "今の小目標 [2]: have(planks, 12)（「自分の家を作る」のため）: 壁の材料" in prompt
         assert "  - [1] through_night()（身を守るため）: 夜は危ない（達成" in prompt
-        assert "完了条件に使えるのは次だけ" in prompt
-        assert "食べ物を探すときも have(food, n) を選ぶ" in prompt
+        assert "完了条件に使えるのは次だけ" in GamePromptTemplateBuilder().build_goal_system()
+        assert (
+            "食べ物を探すときも have(food, n) を選ぶ"
+            in GamePromptTemplateBuilder().build_goal_system()
+        )
         assert "nekoさん: ベッド作って\nあなた: 家ができたら作るね" in prompt
 
     def test_goal_prompt_shows_the_town_and_its_stage(self):
@@ -273,7 +299,7 @@ class TestGamePromptTemplateBuilder:
         assert "- 街の定義: 安全で備えのある小さな街" in prompt
         assert "  1. [今] 備蓄: 冬に備える\n  2. [先] 敷地の安全: 夜に備える" in prompt
         assert "[m4] 備蓄 [街の段階 1: やめられない] [取り組み中]" in prompt
-        assert "街の段階の中目標はやめられない" in prompt
+        assert "街の段階の中目標はやめられない" in GamePromptTemplateBuilder().build_goal_system()
 
     def test_goal_prompt_shows_what_the_town_waits_for(self):
         """取り組む段階は未解決の部分を示す。街が完成したらそう言う。"""
@@ -434,3 +460,13 @@ class TestToolPrompt:
             "気になったこと: 出られていない。目標と合っていないように見えた"
         ) in prompt
         assert "目標を達成したかは画像では決めない" in prompt
+
+
+class TestPromptLength:
+    """代表的な状態のプロンプトの長さ。増えたら気づけるように（26 §4）。"""
+
+    def test_goal_system_length(self):
+        assert len(GamePromptTemplateBuilder().build_goal_system()) < 5500
+
+    def test_goal_prompt_length(self):
+        assert len(_goal_prompt()) < 2500
