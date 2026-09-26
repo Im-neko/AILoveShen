@@ -80,3 +80,30 @@ test('作り直して送るアイテムは数だけの部品に絞る（視聴�
   assert.equal(back.metadata.size, buf.length)
   assert.equal(back.data.params.items[36].components[0].data, 7)
 })
+
+test('部品つきの装備（set_equipment）は数だけの部品に絞って送る（視聴者が「74 bytes extra」で切れた）', async () => {
+  const { sanitizedEquipment } = await import('../src/mirror.mjs')
+  const plain = { entityId: 5, equipments: [{ slot: 0, item: { itemCount: 1, itemId: 866, addedComponentCount: 0, removedComponentCount: 0, components: [], removeComponents: [] } }] }
+  assert.equal(sanitizedEquipment(plain), null) // そのまま中継
+  const fancy = {
+    entityId: 5,
+    equipments: [{
+      slot: 0,
+      item: {
+        itemCount: 1,
+        itemId: 866,
+        addedComponentCount: 2,
+        removedComponentCount: 0,
+        components: [{ type: 'damage', data: 3 }, { type: 'custom_name', data: { type: 'string', value: 'x' } }],
+        removeComponents: []
+      }
+    }]
+  }
+  const safe = sanitizedEquipment(fancy)
+  assert.deepEqual(safe.equipments[0].item.components, [{ type: 'damage', data: 3 }])
+  const { createRequire } = await import('node:module')
+  const mc = createRequire(import.meta.url)('minecraft-protocol')
+  const buf = mc.createSerializer({ state: 'play', isServer: true, version: '1.21.4' }).createPacketBuffer({ name: 'entity_equipment', params: safe })
+  const back = mc.createDeserializer({ state: 'play', isServer: false, version: '1.21.4' }).parsePacketBuffer(buf)
+  assert.equal(back.metadata.size, buf.length)
+})

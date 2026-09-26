@@ -258,14 +258,39 @@ export function relayOwnState (bot, viewers, Item, { delayMs = INVENTORY_SYNC_MS
   }
 }
 
+// 装備の表示（set_equipment）に部品（附呪、名前、NBT など）つきのアイテムがあると、視聴者が
+// 「74 bytes extra whilst reading packet set_equipment」で切れた。部品のある装備は、数だけの部品に
+// 絞って書き直して送る（部品がなければそのまま中継）。持ち物と同じ扱い（safeSlot）
+export function sanitizedEquipment (data) {
+  const risky = (data.equipments ?? []).some((e) => (e.item?.addedComponentCount ?? 0) > 0 || (e.item?.removedComponentCount ?? 0) > 0)
+  if (!risky) return null
+  return { entityId: data.entityId, equipments: data.equipments.map((e) => ({ slot: e.slot, item: safeSlot(e.item) })) }
+}
+
 export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}) {
   const rec = new WorldRecorder()
   const viewers = new Set()
+  let equipmentSerializer = null
+  const encodeEquipment = (params) => {
+    equipmentSerializer ??= mc.createSerializer({ state: 'play', isServer: true, version: VERSION })
+    return equipmentSerializer.createPacketBuffer({ name: 'entity_equipment', params })
+  }
 
   bot._client.on('packet', (data, meta, _buffer, fullBuffer) => {
-    rec.record(data, meta, fullBuffer)
+    let buffer = fullBuffer
+    if (meta.state === 'play' && meta.name === 'entity_equipment') {
+      const safe = sanitizedEquipment(data)
+      if (safe) {
+        try {
+          buffer = encodeEquipment(safe)
+        } catch (e) {
+          return // 書き直せなければ送らない（装備の見た目だけ）
+        }
+      }
+    }
+    rec.record(data, meta, buffer)
     if (meta.state !== 'play' || NOT_RELAYED.has(meta.name)) return
-    for (const v of viewers) v.writeRaw(fullBuffer)
+    for (const v of viewers) v.writeRaw(buffer)
   })
 
   relayCloses(bot._client, viewers)
