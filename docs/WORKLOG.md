@@ -9,7 +9,7 @@
 
 ### Irodori-TTS を Mac で動かせるようにする（読み上げの方式の切り替え） (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `ec644be`
 
 - ユーザー「自然な日本語の発音と安定性を重視」「Mac（M5、32GB）で動かしたい、セットアップしてほしい」。候補から Irodori-TTS（日本語専用、MPS に公式対応）を選んだ（設計書 32 §4.1）
 - `infrastructure/adapters/tts/irodori_tts_client.py` `IrodoriTtsClient`（`POST /v1/audio/speech`、WAV、`/health` で接続確認、声がなければ警告、seed 固定、感情は caption（既定は切る））
