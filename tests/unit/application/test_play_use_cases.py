@@ -1026,6 +1026,22 @@ class TestStepsChosenByJev:
         assert picked.spec == GoalSpec(GoalPredicate.THROUGH_NIGHT)
         assert picked.mid_goal_id is None
 
+    @pytest.mark.asyncio
+    async def test_a_survival_goal_already_met_is_not_offered(self, make, text_generator, bridge):
+        """夕方にもう家の中なら at_home は出さない（選ぶとすぐ済んで、また選ぶことになる）。"""
+        from ailoveshen.application.use_cases.goal_chooser import GoalChooser
+
+        text_generator.generate_json.return_value = STEPS_DECISION
+        session = _session()
+        await make().execute(session)
+        dusk = _obs(met=True, time_phase="dusk", has_home=True, inside_home=True)
+        bridge.check.side_effect = _judged({LOG, HAVE_PLANKS, GoalSpec(GoalPredicate.AT_HOME)})
+        jev = FakeJev("A")
+        picked = await GoalChooser(jev, bridge).choose(session, dusk, "goal x is met")
+        # 残りは「建てる」だけ: Jev を呼ばずにそれ
+        assert picked.spec == BUILT
+        assert jev.asked == []
+
 
 def test_steps_must_be_conditions_the_world_can_judge():
     from ailoveshen.application.use_cases.goal_vocabulary import parse_decision

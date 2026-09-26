@@ -26,7 +26,7 @@ LINE = re.compile(
 )
 # 用途が入る前の行（2026-09-26 より前のログ）: 用途の代わりに thinking の深さで分ける
 OLD_LINE = re.compile(
-    r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Gemini .*?thinking (?P<level>\w+).*?: "
+    r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Gemini .*?thinking (?:ThinkingLevel\.)?(?P<level>\w+).*?: "
     r"(?P<ms>\d+)ms, prompt=(?P<prompt>\d+|None) thoughts=(?P<thoughts>\d+|None) "
     r"output=(?P<output>\d+|None)"
 )

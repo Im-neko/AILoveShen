@@ -102,12 +102,15 @@ class GoalChooser:
         if current is None or not current.plan_steps:
             return self._not("the top mid goal has no steps")
         steps = current.plan_steps
+        needed = survival_options(obs)
         try:
-            statuses = await self._bridge.check([s.spec for s in steps])
+            # 身を守る小目標も、もう済んでいれば出さない（夕方にもう家の中、など）
+            statuses = await self._bridge.check([s.spec for s in steps] + [o.spec for o in needed])
         except AILoveShenError as e:
             return self._not(f"the steps cannot be judged: {e}")
+        statuses, survival_statuses = statuses[: len(steps)], statuses[len(steps) :]
         open_steps = [s for s, st in zip(steps, statuses) if not st.met]
-        survival = survival_options(obs)
+        survival = [o for o, st in zip(needed, survival_statuses) if not st.met]
         if not open_steps and not survival:
             return self._not("all the steps are done but the mid goal is not")
         options = [Option(s.spec, s.reason, current.id) for s in open_steps] + survival
