@@ -102,18 +102,50 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         closers.append(tts.stop)
         logger.info(f"[tts] 読み上げる（{describe_engine(tts_config)}）")
 
+    def activity():
+        return game.session.activity() if game.session else None
+
+    # 読み上げの感情は、読む前に Jev がアバターの表情と一緒に選ぶ（設計書 34 §4）
+    from ailoveshen.application.use_cases.avatar_director import (
+        AvatarReaction,
+        LineReactions,
+        voice_emotion,
+    )
+    from ailoveshen.factories.avatar import create_avatar_director
+    from ailoveshen.presentation.web.avatar import emotion_from_text
+
+    reactions = LineReactions()
+    voice_director = None
+    if tts is not None and str(tts_config.get("emotion_judge", "jev")) == "jev":
+        voice_director = create_avatar_director(
+            settings.avatar, settings.jev, activity, base_dir=base_dir
+        )
+        if voice_director is not None:
+            closers.append(voice_director.close)
+            logger.info("[tts] 読み上げの感情は Jev が選ぶ")
+
+    async def voiced(text: str):
+        """読む前に選ぶ感情（選べなければ None: 中立のまま）。"""
+        if voice_director is None:
+            return None
+        rule = emotion_from_text(text)
+        reaction = await voice_director.react(
+            "speaking", text, AvatarReaction(emotion=rule.value if rule else None)
+        )
+        reactions.remember(text, reaction)
+        return voice_emotion(reaction)
+
     async def say(text: str) -> None:
         logger.info(f"[say] {text}")
         if tts is not None:
-            await tts.speak(text, source="commentary")
+            await tts.speak(text, emotion=await voiced(text), source="commentary")
 
     async def say_reply(text: str) -> None:
         if tts is not None:
             # 視聴者への返事は実況より先に読む
-            await tts.speak(text, priority=SpeechPriority.HIGH, source="chat")
-
-    def activity():
-        return game.session.activity() if game.session else None
+            await tts.speak(
+                text, priority=SpeechPriority.HIGH, emotion=await voiced(text), source="chat"
+            )
 
     Narrator(llm, activity=activity, say=say).subscribe(bus)
 
@@ -122,7 +154,13 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         from ailoveshen.factories.avatar import create_avatar_stage
         from ailoveshen.presentation.web.goal_board import GoalBoard
 
-        avatar = create_avatar_stage(settings.avatar, settings.jev, activity, base_dir=base_dir)
+        avatar = create_avatar_stage(
+            settings.avatar,
+            settings.jev,
+            activity,
+            base_dir=base_dir,
+            reactions=reactions if voice_director is not None else None,
+        )
         avatar.subscribe(bus)
         closers.append(avatar.close)
         board = GoalBoard(

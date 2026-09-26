@@ -137,6 +137,10 @@ tts:
   # Which engine speaks: style_bert_vits2 (Docker, tts.server) / irodori (Irodori-TTS-Server,
   # tts.irodori; run it natively on the Mac, not in Docker: docs/setup/irodori_tts.md)
   engine: "${TTS_ENGINE:-style_bert_vits2}"
+  # Who picks the emotion of each spoken line (docs/design/34 §4): jev = Jev picks it together with
+  # the avatar's expression before the line is spoken (Style-Bert-VITS2 style via
+  # emotion_style_map, Irodori-TTS emotion voices/captions); off = always neutral
+  emotion_judge: "jev"
 
   # Server connection settings
   server:

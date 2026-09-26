@@ -19,7 +19,13 @@ from loguru import logger
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
 from ailoveshen.domain.exceptions import AILoveShenError
-from ailoveshen.domain.value_objects import Activity, FastQuestion, FastQuestionKind
+from ailoveshen.domain.value_objects import (
+    Activity,
+    EmotionState,
+    EmotionType,
+    FastQuestion,
+    FastQuestionKind,
+)
 
 EMOTIONS = {
     "neutral": "calm and matter-of-fact",
@@ -192,3 +198,43 @@ class AvatarDirector:
 def _intensity(score: float) -> float:
     """Score の期待値（0〜3）を、表情の重み（0.3〜1.0）にする。"""
     return round(min(1.0, max(0.3, 0.3 + 0.7 * float(score) / (len(INTENSITY_LEVELS) - 1))), 2)
+
+
+# 表情 → 読み上げの感情（docs/design/34 §4）。relaxed と中立は声では中立
+VOICE_EMOTIONS = {
+    "happy": EmotionType.HAPPY,
+    "sad": EmotionType.SAD,
+    "angry": EmotionType.ANGRY,
+    "surprised": EmotionType.SURPRISED,
+}
+
+
+def voice_emotion(reaction: AvatarReaction) -> EmotionState | None:
+    """
+    アバターの反応から読み上げの感情を作る（強さはそのまま）。規則の答え（Jev が答えなかった）なら
+    None（前と同じく、声は中立のまま）。
+    """
+    if reaction.source != "jev":
+        return None
+    kind = VOICE_EMOTIONS.get(reaction.emotion or "", EmotionType.NEUTRAL)
+    return EmotionState(primary=kind, intensity=max(0.0, min(1.0, reaction.intensity)))
+
+
+class LineReactions:
+    """
+    読み上げる前に選んだ反応を、その文の読み上げが始まるまで覚えておく（アバターが同じ文で
+    もう一度 Jev を呼ばないように）。古いものから捨てる。
+    """
+
+    def __init__(self, limit: int = 32) -> None:
+        self._items: dict[str, AvatarReaction] = {}
+        self._limit = limit
+
+    def remember(self, text: str, reaction: AvatarReaction) -> None:
+        self._items.pop(text.strip(), None)
+        self._items[text.strip()] = reaction
+        while len(self._items) > self._limit:
+            self._items.pop(next(iter(self._items)))
+
+    def take(self, text: str) -> AvatarReaction | None:
+        return self._items.pop(text.strip(), None)

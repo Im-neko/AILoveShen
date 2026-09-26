@@ -163,3 +163,21 @@ def test_ending_the_streams_puts_the_end_mark():
     stage._listeners.add(queue)
     stage.end_streams()
     assert queue.get_nowait() is None
+
+
+async def test_a_reaction_chosen_before_speaking_is_reused_without_asking_jev_again():
+    """読む前に声の感情と一緒に選んだ反応は、その文の読み上げで使う（docs/design/34 §4）。"""
+    from ailoveshen.application.use_cases.avatar_director import AvatarReaction, LineReactions
+
+    director = _Director(AvatarReaction("sad", 0.6, "tilt", "jev", 0.7))
+    reactions = LineReactions()
+    reactions.remember("やった！", AvatarReaction("happy", 0.9, "cheer", "jev", 0.8))
+    stage = AvatarStage(lip_sync="tts", director=director, reactions=reactions)
+    sent = _sent(stage)
+    await stage._on_event(
+        SpeechStartedEvent(text="やった！", emotion=EmotionState(EmotionType.HAPPY, 0.9), duration_ms=1000)
+    )
+    assert sent[0]["type"] == "speak" and sent[0]["emotion"] is None
+    assert (sent[1]["emotion"], sent[1]["gesture"], sent[1]["source"]) == ("happy", "cheer", "jev")
+    assert director.calls == []
+    assert reactions.take("やった！") is None  # 一度使ったら忘れる

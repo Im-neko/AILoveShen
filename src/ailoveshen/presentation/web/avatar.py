@@ -32,7 +32,11 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
-from ailoveshen.application.use_cases.avatar_director import AvatarDirector, AvatarReaction
+from ailoveshen.application.use_cases.avatar_director import (
+    AvatarDirector,
+    AvatarReaction,
+    LineReactions,
+)
 from ailoveshen.domain.events import (
     ChatResponseGeneratedEvent,
     CommentaryGeneratedEvent,
@@ -115,12 +119,15 @@ class AvatarStage:
         model_path: str | Path | None = None,
         lip_sync: str = "auto",
         director: AvatarDirector | None = None,
+        reactions: LineReactions | None = None,
     ) -> None:
         """
         Args:
             model_path: VRM のファイル。None か、ファイルがなければ /assets/avatar.vrm は 404
             lip_sync: 口の動きの元（"auto"、"text"、"tts"）
             director: 表情としぐさを Jev に選ばせるもの。None なら規則だけ
+            reactions: 読み上げる前に選んだ反応（声の感情と同じもの。あればその文では Jev を
+                呼ばない。docs/design/34 §4）
 
         Raises:
             ValueError: lip_sync が不明なとき
@@ -132,6 +139,7 @@ class AvatarStage:
         self._tts_seen = False
         self._listeners: set[asyncio.Queue[str | None]] = set()
         self._director = director
+        self._reactions = reactions
         self._pending: set[asyncio.Task] = set()  # Jev の答えを待っている判断
 
     def subscribe(self, bus: IEventSubscriber) -> None:
@@ -223,6 +231,16 @@ class AvatarStage:
 
     async def _on_event(self, event: DomainEvent) -> None:
         for cue in self.cues_for(event):
+            known = (
+                self._reactions.take(cue["text"])
+                if self._reactions is not None and cue["type"] == "speak"
+                else None
+            )
+            if known is not None and known.source == "jev":
+                # 読み上げる前に選んだもの（声の感情と同じ）をそのまま使う
+                self._send({**cue, "emotion": None})
+                self._show(known, max(2.5, cue["duration_ms"] / 1000))
+                continue
             if self._director is None or cue["type"] not in ("speak", "emote"):
                 self._send(cue)
                 continue
@@ -251,6 +269,9 @@ class AvatarStage:
     async def _react(self, moment: str, line: str, rule: AvatarReaction, seconds: float) -> None:
         assert self._director is not None
         reaction = await self._director.react(moment, line, rule)
+        self._show(reaction, seconds)
+
+    def _show(self, reaction: AvatarReaction, seconds: float) -> None:
         if reaction.emotion is None and reaction.gesture is None:
             return
         self._send(

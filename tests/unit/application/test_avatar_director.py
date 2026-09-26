@@ -106,3 +106,23 @@ def test_questions_convert_to_jev_questions():
     from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import to_sdk_question
 
     assert [type(to_sdk_question(q)).__name__ for q in QUESTIONS] == ["Choice", "Score", "Choice"]
+
+
+def test_the_voice_takes_jevs_expression_and_strength_but_not_the_rules():
+    from ailoveshen.application.use_cases.avatar_director import (
+        AvatarReaction,
+        LineReactions,
+        voice_emotion,
+    )
+    from ailoveshen.domain.value_objects import EmotionType
+
+    happy = voice_emotion(AvatarReaction("happy", 0.8, None, "jev", 0.9))
+    assert happy.primary == EmotionType.HAPPY and happy.intensity == 0.8
+    assert voice_emotion(AvatarReaction("relaxed", 0.5, None, "jev", 0.9)).primary == EmotionType.NEUTRAL
+    assert voice_emotion(AvatarReaction(None, 0.7, None, "jev", 0.9)).primary == EmotionType.NEUTRAL
+    assert voice_emotion(AvatarReaction("happy", 0.8, None, "rule")) is None  # Jev が答えなかった
+
+    memo = LineReactions(limit=2)
+    for text in ("a", "b", "c"):
+        memo.remember(text, AvatarReaction("happy", source="jev"))
+    assert memo.take("a") is None and memo.take("c") is not None
