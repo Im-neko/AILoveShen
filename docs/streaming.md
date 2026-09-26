@@ -286,6 +286,9 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 | Gemini の思考（直近の呼び出し） | `http://127.0.0.1:8765/debug/gemini`（JSON: `/api/debug/gemini?limit=20`） |
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
 | 見張りの記録（道具モード） | `logs/watch/*.jsonl` |
+| 1 手を Jev が選んだか・Gemini に回した理由（設計書 34） | `logs/steps/*.jsonl` |
+| コメントの仕分け（返事をしなかったコメントの文も） | `logs/chat/*.jsonl` |
+| 実況の間合い（話した・取っておいた） | `logs/commentary/*.jsonl` |
 | 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
 | 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |

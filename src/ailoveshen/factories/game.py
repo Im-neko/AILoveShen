@@ -286,6 +286,7 @@ def create_game_service(
         replan_minutes=minecraft.replan_minutes,
         mid_goal_stall_steps=minecraft.mid_goal_stall_steps,
         step_picker=step_picker,
+        failure_routing=minecraft.failure_routing,
         skills=(
             SkillWriter(
                 text_generator,

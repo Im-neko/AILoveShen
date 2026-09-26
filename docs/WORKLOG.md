@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### Jev でできることは Jev に: 5. 失敗の後の振り分け (2026-09-26)
+
+**Commit**: (this commit)
+
+- 行き詰まった・進まなかった小目標の後、まず Jev（`GoalChooser.choose(avoid=失敗した小目標)`）が、一番上の中目標のまだ済んでいない別の手順（同じ種類は外す: 同じやり方を繰り返すには Gemini の分析と助言が要る）か `rethink`（Gemini が原因を分析する: 27）を選ぶ。Gemini に回す: 同じ種類の失敗が 2 回続いた、死んだ、中目標が進まない、画面で考え直す、別の手順がない、Jev が迷う
+- `AdvancePlayUseCase(failure_routing=)`、`_needs_gemini`。設定 `minecraft.agent.failure_routing: jev | gemini`
+- streaming.md に新しい記録（logs/steps、chat、commentary）。テスト 2 件。pytest 684
+- これで設計書 34 の 5 つ（1 手、声の感情、コメントの仕分け、実況の間合い、失敗の振り分け）が入った。どれも実機では未確認。閾値は記録を見て直す
+
 ### Jev でできることは Jev に: 4. 実況の間合い (2026-09-26)
 
 **Commit**: `10a9d07`

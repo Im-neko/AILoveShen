@@ -1104,6 +1104,49 @@ class TestStepsChosenByJev:
         now[0] = 21 * 60
         assert "periodic" in use_case._needs_gemini(session, "goal x is met")
 
+    def test_after_a_first_failure_jev_may_route_it(self, make):
+        """失敗の後の振り分け（docs/design/34 §7）: 1 回目は Jev に、同じ種類が 2 回続いたら Gemini。"""
+        from ailoveshen.domain.value_objects import GoalOutcome, PlannedStep
+
+        session = _session()
+        session.plan.set_steps("m1", (PlannedStep(LOG, "原木"),))
+        use_case = make()
+        use_case._failure_routing = "jev"
+        stuck = "goal have(planks, 4) is stuck (3 failed actions)"
+        assert use_case._needs_gemini(session, stuck) is None
+        failed = Goal(spec=HAVE_PLANKS, reason="r")
+        session._recent_goals.extend([GoalOutcome(failed, stuck), GoalOutcome(failed, stuck)])
+        assert "2 times in a row" in use_case._needs_gemini(session, stuck)
+        assert "did not work out" in use_case._needs_gemini(session, "goal x is reconsidered: y")
+
+    @pytest.mark.asyncio
+    async def test_after_a_failure_jev_picks_another_step_or_hands_it_to_gemini(self, bridge):
+        from ailoveshen.application.use_cases.goal_chooser import (
+            ASK_STREAMER,
+            ChosenGoal,
+            GoalChooser,
+            NotChosen,
+        )
+        from ailoveshen.domain.value_objects import PlannedStep
+
+        session = _session()
+        session.plan.set_steps(
+            "m1", (PlannedStep(LOG, "原木"), PlannedStep(HAVE_PLANKS, "板材"), PlannedStep(BUILT, "建てる"))
+        )
+        bridge.check.side_effect = _judged()
+        failed_planks = GoalSpec(GoalPredicate.HAVE, item="planks", count=8)  # 数だけ違う: 同じ種類
+        jev = FakeJev("A")
+        picked = await GoalChooser(jev, bridge).choose(session, _obs(), "stuck", avoid=failed_planks)
+        assert isinstance(picked, ChosenGoal) and picked.spec == LOG
+        criteria = jev.asked[0][1][0].criteria
+        assert ASK_STREAMER in criteria and not any("planks" in v for v in criteria.values())
+
+        bridge.check.side_effect = _judged()
+        rethink = await GoalChooser(FakeJev(ASK_STREAMER), bridge).choose(
+            session, _obs(), "stuck", avoid=failed_planks
+        )
+        assert isinstance(rethink, NotChosen) and "rethink" in rethink.why
+
     @pytest.mark.asyncio
     async def test_at_night_the_survival_goal_serves_no_mid_goal(
         self, make, text_generator, bridge

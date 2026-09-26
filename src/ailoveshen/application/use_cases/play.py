@@ -261,6 +261,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         skills: Optional[SkillWriter] = None,
         mid_goal_stall_steps: int = 60,
         step_picker: Optional[StepPicker] = None,
+        failure_routing: str = "gemini",
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -331,6 +332,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._skills = skills if control == "tools" else None
         # 道具モードの 1 手は、まず Jev が候補と技から選ぶ（docs/design/34 §3）
         self._step_picker = step_picker if control == "tools" else None
+        # 行き詰まった後、まず Jev が別の手順か Gemini に考え直させるかを選ぶ（docs/design/34 §7）
+        self._failure_routing = failure_routing
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
@@ -628,7 +631,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         why = self._needs_gemini(session, reason)
         if why is None:
             assert self._chooser is not None
-            picked = await self._chooser.choose(session, obs, reason)
+            failed = (
+                session.recent_goals[-1].goal.spec
+                if _no_progress(reason) and session.recent_goals
+                else None
+            )
+            picked = await self._chooser.choose(session, obs, reason, avoid=failed)
             if isinstance(picked, ChosenGoal):
                 try:
                     status = await self._bridge.set_goal(
@@ -661,8 +669,14 @@ class AdvancePlayUseCase(IAdvancePlay):
             return f"the streamer died: the situation changed ({reason})"
         if MID_STALLED in reason:
             return f"the mid goal is not progressing ({reason})"
-        if any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: ")):
+        if " is reconsidered: " in reason:
             return f"the last goal did not work out ({reason})"
+        if any(k in reason for k in (" is stuck ", " stalled ")):
+            if self._failure_routing != "jev":
+                return f"the last goal did not work out ({reason})"
+            same = _same_failures(session) if session.recent_goals else 0
+            if same >= MAX_SAME_FAILURES:
+                return f"the same kind of goal failed {same} times in a row ({reason})"
         current = session.plan.current
         if current is None:
             return "there is no mid goal"

@@ -29,6 +29,7 @@ from ailoveshen.domain.value_objects import (
 )
 
 FOOD_WHEN_HUNGRY = GoalSpec(GoalPredicate.HAVE, item="food", count=4)
+ASK_STREAMER = "rethink"  # 失敗の後に Jev が「Gemini に考え直させる」を選ぶときの答え
 
 
 @dataclass(frozen=True)
@@ -111,9 +112,18 @@ class GoalChooser:
         self._recorder = recorder
 
     async def choose(
-        self, session: PlaySession, obs: GameObservation, ended_because: str
+        self,
+        session: PlaySession,
+        obs: GameObservation,
+        ended_because: str,
+        avoid: Optional[GoalSpec] = None,
     ) -> ChosenGoal | NotChosen:
-        """次の小目標を選ぶ。選べなければ理由（NotChosen）。"""
+        """
+        次の小目標を選ぶ。選べなければ理由（NotChosen）。
+
+        `avoid` は行き詰まった・進まなかった小目標（docs/design/34 §7）: 同じ種類の手順は選択肢から
+        外し（同じやり方を繰り返すには Gemini の分析と助言が要る）、「Gemini に考え直させる」を足す。
+        """
         current = session.plan.current
         if current is None or not current.plan_steps:
             return self._not("the top mid goal has no steps")
@@ -130,22 +140,36 @@ class GoalChooser:
         if not open_steps and not survival:
             return self._not("all the steps are done but the mid goal is not")
         options = [Option(s.spec, s.reason, current.id) for s in open_steps] + survival
+        if avoid is not None:
+            options = [o for o in options if not o.spec.same_kind(avoid)]
+            if not options:
+                return self._not(f"no other step than {avoid.describe()} after it failed")
         state = self._state(session, obs, ended_because, steps, statuses)
-        if len(options) == 1:
+        if len(options) == 1 and avoid is None:
             return self._chosen(state, options, 0, 1.0)
         labels = [chr(ord("A") + i) for i in range(len(options))]
+        criteria = {label: f"{o.spec.describe()}: {o.reason}" for label, o in zip(labels, options)}
+        instructions = (
+            "Which small goal should the streamer work on next? Follow the steps in order "
+            "unless another open step is clearly better now (it is nearer, or the inventory "
+            "already has what it needs). Choose a survival goal when the night, danger or "
+            "hunger requires it."
+        )
+        if avoid is not None:
+            criteria[ASK_STREAMER] = (
+                "none of these: the streamer should look into why the last goal failed and "
+                "rethink the plan"
+            )
+            instructions = (
+                f"The last small goal {avoid.describe()} did not work out ({ended_because}). "
+                "Should the streamer move on to another open step now, or stop and rethink? "
+                + instructions
+            )
         question = FastQuestion(
             name="next_goal",
             kind=FastQuestionKind.CHOICE,
-            instructions=(
-                "Which small goal should the streamer work on next? Follow the steps in order "
-                "unless another open step is clearly better now (it is nearer, or the inventory "
-                "already has what it needs). Choose a survival goal when the night, danger or "
-                "hunger requires it."
-            ),
-            criteria={
-                label: f"{o.spec.describe()}: {o.reason}" for label, o in zip(labels, options)
-            },
+            instructions=instructions,
+            criteria=criteria,
         )
         try:
             verdict = await asyncio.wait_for(
@@ -154,6 +178,8 @@ class GoalChooser:
         except (AILoveShenError, TimeoutError) as e:
             return self._not(f"Jev did not answer ({type(e).__name__})", state, options)
         answer = verdict.answers.get("next_goal")
+        if answer is not None and answer.value == ASK_STREAMER:
+            return self._not("Jev chose to have the streamer rethink after the failure", state, options)
         if answer is None or answer.value not in labels:
             return self._not("Jev gave no usable answer", state, options)
         if answer.confidence < self._min_confidence:
