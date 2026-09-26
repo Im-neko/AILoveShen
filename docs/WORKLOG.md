@@ -7,6 +7,14 @@
 
 ## Completed Work
 
+### 目標の決定の JSON が max_output_tokens で切れる (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザーのログ: 「Gemini が max_output_tokens（思考を含む）に達した」の後に `Gemini returned invalid JSON`（見直し → 中目標の編集の途中で切れた）。ユーザーは「途中である程度のところでコンパクションしたい」→ 原因は入力（文脈）の長さではなく出力の上限（思考を含めて 8192）。見直し（31）、中目標の編集、手順を書くと長くなる
+- `gemini.max_output_tokens` の既定を 16384 に（使った分だけ課金される）。`generate_json`: 上限で切れたら（finish_reason MAX_TOKENS）上限を倍（最大 32768）にして 1 回だけやり直す
+- テスト: pytest 639
+
 ### 植林と畑（設計書 33、軽い形）、探索がまだ見ていない土地へ進む (2026-09-26)
 
 **Commits**: `be7506b`（ブリッジ）, `349028e`（Python）

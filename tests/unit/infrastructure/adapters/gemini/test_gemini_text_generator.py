@@ -170,6 +170,24 @@ class TestGeminiTextGeneratorGenerate:
         )
 
     @pytest.mark.asyncio
+    async def test_a_json_output_cut_at_the_limit_is_retried_with_twice_the_limit(
+        self, mock_client
+    ):
+        """思考で上限を使い切って JSON が切れた（目標の決定）: 上限を倍にして 1 回やり直す。"""
+        client = mock_client.return_value
+        client.aio.models.generate_content.side_effect = [
+            _response('{"review": "途中', finish_reason=types.FinishReason.MAX_TOKENS),
+            _response('{"review": "全部"}'),
+        ]
+        generator = _generator(max_output_tokens=8192)
+
+        data = await generator.generate_json("p", {"type": "object"}, purpose="goal")
+
+        assert data == {"review": "全部"}
+        calls = client.aio.models.generate_content.call_args_list
+        assert [c.kwargs["config"].max_output_tokens for c in calls] == [8192, 16384]
+
+    @pytest.mark.asyncio
     async def test_unexpected_error_raises_text_generation_error(self, mock_client):
         """ほかの例外も TextGenerationError に変える。"""
         client = mock_client.return_value

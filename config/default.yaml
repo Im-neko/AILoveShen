@@ -69,8 +69,9 @@ gemini:
   main_thinking_level: "low"
   filter_thinking_level: "low"
   # Includes thinking tokens. Too small a value yields truncated or empty output.
-  # Measured total usage peaks around 1.3k tokens (medium); 8192 is headroom.
-  max_output_tokens: 8192
+  # Measured total usage peaks around 1.3k tokens (medium), but a long goal decision (review, plan
+  # edits, steps) was cut at 8192 (2026-09-26). A cut JSON output is retried once at twice the limit.
+  max_output_tokens: 16384
   # thinking_level per purpose (docs/design/19 §7, 21 §7). Purposes not listed use
   # main_thinking_level. high is unmeasured (it may hit max_output_tokens): measure before relying on it.
   thinking_levels:

@@ -289,7 +289,7 @@ class TestSettingsDataclasses:
         assert gemini.filter_model == "gemini-3.8-flash"
         assert gemini.main_thinking_level == "low"
         assert gemini.filter_thinking_level == "low"
-        assert gemini.max_output_tokens == 8192
+        assert gemini.max_output_tokens == 16384
         assert gemini.retry.max_attempts == 3
         assert gemini.retry.base_delay_seconds == 1.0
         assert gemini.retry.max_delay_seconds == 10.0

@@ -24,6 +24,8 @@ from ailoveshen.domain.value_objects import Screenshot
 
 # Gemini 3.8 Flash が受け付けるのはこのレベルだけ（"minimal" は API が拒否する）
 SUPPORTED_THINKING_LEVELS = ("low", "medium", "high")
+# 出力が切れたときにやり直す上限（思考を含む）
+MAX_OUTPUT_TOKENS_RETRY = 32768
 
 
 class GeminiTextGenerator(ITextGenerator):
@@ -174,7 +176,18 @@ class GeminiTextGenerator(ITextGenerator):
                 "response_json_schema": schema,
             }
         )
-        text = await self._generate_text(prompt, config, purpose, images)
+        text, finish = await self._generate(prompt, config, purpose, images)
+        if finish == types.FinishReason.MAX_TOKENS and config.max_output_tokens:
+            # 思考で上限を使い切って JSON が途中で切れた: 上限を倍にして 1 回だけやり直す
+            # （2026-09-26: 目標の決定の見直し・中目標の編集が長くなって切れた）
+            bigger = min(config.max_output_tokens * 2, MAX_OUTPUT_TOKENS_RETRY)
+            if bigger > config.max_output_tokens:
+                logger.warning(
+                    f"出力が途中で切れたので max_output_tokens を {bigger} にしてやり直す"
+                    f"（purpose={purpose}）"
+                )
+                config = config.model_copy(update={"max_output_tokens": bigger})
+                text, finish = await self._generate(prompt, config, purpose, images)
         try:
             data = json.loads(text)
         except json.JSONDecodeError as e:
@@ -252,6 +265,17 @@ class GeminiTextGenerator(ITextGenerator):
         images: Sequence[Screenshot] = (),
     ) -> str:
         """API を呼び、空の出力を診断してテキストを返す。"""
+        text, _ = await self._generate(prompt, config, purpose, images)
+        return text
+
+    async def _generate(
+        self,
+        prompt: str,
+        config: types.GenerateContentConfig,
+        purpose: Optional[str],
+        images: Sequence[Screenshot] = (),
+    ) -> tuple[str, Any]:
+        """API を呼び、空の出力を診断して（テキスト、終わった理由）を返す。"""
         response = await self._request(prompt, config, purpose, images)
         text = (response.text or "").strip()
         finish_reason = self._finish_reason(response)
@@ -270,7 +294,7 @@ class GeminiTextGenerator(ITextGenerator):
             else:
                 logger.warning(f"Gemini がテキストを返さなかった（finish_reason={finish_reason}）")
 
-        return text
+        return text, finish_reason
 
     async def _request(
         self,

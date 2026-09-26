@@ -91,7 +91,7 @@ class GeminiSettings:
     main_thinking_level: str = "low"
     filter_thinking_level: str = "low"
     # 思考のトークンを含む。小さすぎると出力が空になる
-    max_output_tokens: int = 8192
+    max_output_tokens: int = 16384
     # 用途（呼び出しの purpose）ごとの thinking_level（docs/design/19 §7、21 §7）。
     # ない用途は main_thinking_level
     thinking_levels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_THINKING_LEVELS))
@@ -477,7 +477,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             filter_model=gemini_data.get("filter_model", "gemini-3.8-flash"),
             main_thinking_level=gemini_data.get("main_thinking_level", "low"),
             filter_thinking_level=gemini_data.get("filter_thinking_level", "low"),
-            max_output_tokens=gemini_data.get("max_output_tokens", 8192),
+            max_output_tokens=gemini_data.get("max_output_tokens", 16384),
             thinking_levels={
                 **DEFAULT_THINKING_LEVELS,
                 **dict(gemini_data.get("thinking_levels") or {}),
