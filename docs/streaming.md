@@ -46,7 +46,7 @@ pip install -r requirements.txt      # Python の依存（OBS 用の obsws-pytho
 cd minecraft-bridge && npm install && cd ..
 ```
 
-ブリッジの `npm install` は、技のサンドボックス（`isolated-vm`、ネイティブのモジュール）もビルドする。主な OS はビルド済みが落ちてくる。ビルドに失敗したら、C++ のビルドツール（Windows: Visual Studio Build Tools、Linux: `build-essential` と `python3`）を入れて入れ直す。
+ブリッジの `npm install` は、技のサンドボックス（`isolated-vm` 6、ネイティブのモジュール）も入れる。Node 22 か 24 で、macOS（Apple Silicon）・Windows（x64）・Linux ならビルド済みのものが入る（コンパイルしない）。それ以外（Intel の Mac など）はその場でコンパイルする（C++20 のビルドツール: Xcode Command Line Tools、Visual Studio Build Tools、`build-essential` と `python3`）。Node は 22 以上（`node -v`）。
 
 Linux では `sounddevice` に PortAudio が要る（`sudo apt install libportaudio2`）。
 

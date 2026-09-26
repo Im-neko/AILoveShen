@@ -11,7 +11,7 @@
     "skills:clean": "node --no-node-snapshot tools/clean-skills.mjs"
   },
   "dependencies": {
-    "isolated-vm": "^5.0.4",
+    "isolated-vm": "^6.2.0",
     "minecraft-data": "^3.117.0",
     "minecraft-protocol": "1.68.0",
     "mineflayer": "4.39.0",
@@ -20,5 +20,8 @@
   },
   "devDependencies": {
     "patch-package": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

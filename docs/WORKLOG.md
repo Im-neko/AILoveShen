@@ -7,6 +7,11 @@
 
 ## Completed Work
 
+### isolated-vm を 6 に（Node 24 の Mac でビルドに失敗した） (2026-09-26)
+
+- ユーザーの Mac（Node 24.11.1）で `npm install` が isolated-vm 5.0.4 のコンパイルで失敗（Node 24 にはビルド済みがなく、C++17 で Node 24 のヘッダ（C++20 の concept）を読めない）
+- `isolated-vm@^6.2.0` に上げた（Node 22 と 24 のビルド済み: darwin-arm64、win32-x64、linux。コンパイルするときも C++20）。`engines: node >=22`。API は同じで、ブリッジのテスト 152 件はそのまま通る
+
 ### B: 技を実装（設計書 22） (2026-09-26)
 
 **Commits**: `89a775a`（ブリッジ）、`317fef2`（Python）、`f542656`（文書）
