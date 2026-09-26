@@ -234,3 +234,17 @@ test('建築予定地には作業台を仮設できる（土などは今まで�
   assert.equal((await callTool('place', { item: 'crafting_table', x: 12, y: 70, z: 10 })).ok, true)
   assert.match((await callTool('place', { item: 'dirt', x: 12, y: 70, z: 11 })).result, /house being built/)
 })
+
+test('家具を動かす: 前の家のベッドは家に運べる、今の家の家具は家の中でだけ、ベッドの置き先は家、中身のあるチェストは断る', async () => {
+  const { callTool, runs, state } = setup({ at: v(10.5, 70, 10.5), extra: { '3,70,1': 'crafting_table', '1,70,3': 'chest' } })
+  const bed = await callTool('move_furniture', { x: 22, y: 70, z: 2 })
+  assert.equal(bed.ok, true)
+  assert.deepEqual([runs[0].c.verb, runs[0].c.block, runs[0].c.to], ['move_placed', 'white_bed', undefined])
+  assert.match((await callTool('move_furniture', { x: 22, y: 70, z: 2, to_x: 12, to_y: 70, to_z: 12 })).result, /a bed is always put in the home/)
+  // 今の家の作業台: 家の中なら動かせる、外へは出さない
+  assert.equal((await callTool('move_furniture', { x: 3, y: 70, z: 1, to_x: 2, to_y: 70, to_z: 2 })).ok, true)
+  assert.match((await callTool('move_furniture', { x: 3, y: 70, z: 1, to_x: 12, to_y: 70, to_z: 12 })).result, /stays in the home/)
+  state.memory.chests = { '1,70,3': { contents: { oak_log: 5 } } }
+  assert.match((await callTool('move_furniture', { x: 1, y: 70, z: 3 })).result, /still holds oak_log 5/)
+  assert.match((await callTool('move_furniture', { x: 10, y: 69, z: 10 })).result, /no bed, crafting table, furnace or chest/)
+})

@@ -446,6 +446,21 @@ export const PRIMITIVES = {
     return `crafted ${itemCount(bot, c.item) - before} ${c.item}`
   },
   // ボットのそばに作業台かかまどを置く
+  // 置いてある家具を拾って置き直す（furniture.mjs）: 壊して拾い、ベッドは家に、ほかは指定の場所か
+  // 家の中の空いた所（なければ近く）に置く
+  async move_placed (bot, state, c, signal) {
+    const from = `${c.pos.x},${c.pos.y},${c.pos.z}`
+    const wasHomeBed = !!state.home?.bed && c.block.endsWith('_bed') &&
+      bot.blockAt(state.home.bed)?.name === c.block && state.home.bed.distanceTo(c.pos) <= 1
+    await PRIMITIVES.dig(bot, state, { pos: c.pos, block: c.block }, signal)
+    if (/chest|barrel/.test(c.block)) forgetChest(state.memory, c.pos)
+    if (wasHomeBed) state.home.bed = null
+    signal.throwIfAborted()
+    if (c.block.endsWith('_bed')) return `${await PRIMITIVES.place_bed(bot, state, c, signal)} (moved from ${from})`
+    const inside = stationSpots(bot, state, c.block).find((s) => s.where === 'inside')?.pos
+    const placed = await PRIMITIVES.place_station(bot, state, { item: c.block, pos: c.to ?? inside }, signal)
+    return `${placed} (moved from ${from})`
+  },
   async place_station (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
@@ -784,6 +799,6 @@ async function placeBuildBlock (bot, state, name, signal) {
   return `${b.block === 'air' ? 'cleared a block' : `placed ${b.block}`} (${s.placed}/${s.total}) for ${name}`
 }
 
-export const TIMEOUTS_MS = { goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { move_placed: 45000, goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

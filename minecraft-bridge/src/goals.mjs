@@ -21,6 +21,7 @@ import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
 import { cooking } from './cooking.mjs'
+import { placedBedToTake } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
@@ -213,6 +214,9 @@ export function evaluate (bot, state, knowledge, world) {
       out.lines.push(`a bed in the house: ${out.met ? 'yes' : 'no'}`)
       if (out.met) break
       const bed = Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))
+      // 近くに置いてあるベッド（家の外）は、拾って運べる（作るのと並べて出す: どちらかは選ぶ側）
+      const placedBed = bed ? null : placedBedToTake(bot, state)
+      if (placedBed) out.leaves.push({ kind: 'take_placed', ...placedBed })
       if (!bed) addSolved([{ spec: 'bed', count: 1 }])
       else if (bedSpot(bot, state.home)) out.leaves.push({ kind: 'place_bed' })
       else out.blocked.push('no free spot for the bed in the house')

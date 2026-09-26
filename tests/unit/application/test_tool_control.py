@@ -357,3 +357,10 @@ class TestToolStep:
                 notes=Mock(),
                 control="tools",
             )
+
+
+def test_move_furniture_is_an_action_tool_with_an_optional_target():
+    specs = {t.name: t for t in tool_specs()}
+    move = specs["move_furniture"].parameters
+    assert move["required"] == ["intent", "x", "y", "z"]
+    assert {"to_x", "to_y", "to_z"} <= set(move["properties"])

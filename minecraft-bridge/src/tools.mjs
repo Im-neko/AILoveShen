@@ -13,6 +13,7 @@ import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
 import { homeChests, chestWith } from './memory.mjs'
 import { exposed } from './world.mjs'
+import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 
 const FURNITURE = new Set(['crafting_table', 'furnace', 'chest'])
 const { Vec3 } = vec3Pkg
@@ -27,7 +28,7 @@ const DROP_RADIUS = 16
 const REPLACEABLE = new Set(['air', 'cave_air', 'water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'dead_bush'])
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
-  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'wait']
+  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'wait']
 export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'how_to_get']
 
 class Refused extends Error {}
@@ -199,6 +200,24 @@ export function createTools (deps) {
       if (!state.plan) refuse('there is no house plan')
       if (state.plan.status(bot).complete) refuse('the house plan is complete')
       return { c: { verb: 'place_plan', target: 'the next block of the house', inPlace: true } }
+    },
+    // 置いてある家具（ベッド、作業台、かまど、チェスト）を拾って置き直す。今の家の家具も動かせる
+    // （家の中でだけ）。to を省くと、ベッドは家の中の空いた所、ほかは家の中（なければ近く）
+    move_furniture (args) {
+      const pos = position(args)
+      within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+      const block = bot.blockAt(pos)
+      const to = args.to_x != null ? position({ x: args.to_x, y: args.to_y, z: args.to_z }) : null
+      const why = moveRefusal(bot, state, pos, block, to)
+      if (why) refuse(why)
+      // 家のものでなければ、建物や建てている家の一部でないか（ふつうの掘る決まり）
+      const guard = isHomeFurniture(state, pos) ? null : protectedReason(state, pos, 0, block)
+      if (guard) refuse(`will not move ${block.name} at ${fmt(pos)}: ${guard}`)
+      if (to) {
+        const cell = bot.blockAt(to)
+        if (!cell || !REPLACEABLE.has(cell.name)) refuse(`${fmt(to)} is not free`)
+      }
+      return { c: { verb: 'move_placed', target: block.name, block: block.name, pos, ...(to ? { to } : {}) } }
     },
     wait () {
       const inside = !!state.home && shelterOf(bot, state.home).inside
