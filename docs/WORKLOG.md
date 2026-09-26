@@ -9,7 +9,7 @@
 
 ### Irodori-TTS がどの参照音声で読んでいるかを確かめる道具 (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `d5ace23`
 
 - ユーザー「Style-Bert-VITS2 で作った音声を参照音声にできていないかも」
 - 疑い: 配信と tts_compare は `tts.irodori.voice`（`IRODORI_VOICE`、既定 `shen`: 生の学習データから選んだ、別の人の声が混ざりうる参照音声）を使う。`shen_sbv2` を作っても .env を変えなければ使われない。サーバーが起動前の voices.json のまま、でも同じ
