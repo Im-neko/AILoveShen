@@ -21,6 +21,12 @@
 //                             実行する。断るとき（安全の制約、引数が世界と合わない）は refused: true と理由
 //   GET  /state            -> 共通の状態（実行中の行動の進み具合、まわりの形、モブ、欲求）。見張りの質問と道具の選択が見る
 //   POST /abort {reason}   -> 実行中の行動を理由をつけて止める: { aborted, action? | why }。終わった行動には何もしない
+//                             （技の実行中なら技ごと止める）
+//   GET  /skills           -> 技の一覧（設計書 22）: [{ name, description, params, expects, version, verified, uses, successes, failures, last_failure }]
+//   PUT  /skills/<name> {description, params, expects, code} -> 確かめて新しい版として保存: { name, version }（だめなら 400 と理由）
+//   POST /skills/<name>/run {args, version?} -> 技を 1 回実行する: { ok, ended, version, summary?, reason?, expects: {met, lines},
+//                             calls, log, seconds, learned }（learned: この実行で初めて成功した）
+//   POST /judge {id, answer, confidence} -> 技の judge() の質問（/state の pending_judge）に答える（見張りのティック）
 //
 // 設計: docs/design/11_primitive_actions.md
 // 環境変数: MC_HOST (localhost) MC_PORT (25565) BOT_NAME (AILoveShen) BRIDGE_PORT (3000) MIRROR_PORT (25578)
@@ -34,7 +40,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { mapAround } from './map.mjs'
-import { summarize, bearing } from './observe.mjs'
+import { summarize, bearing, inventoryCounts } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools } from './tools.mjs'
@@ -47,8 +53,10 @@ import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed } from './home.mjs'
 import { startReflex } from './reflex.mjs'
-import { newMemory, remember, rememberDeath, summarizeMemory } from './memory.mjs'
+import { newMemory, remember, rememberDeath, summarizeMemory, homeChests } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
+import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
+import vec3Pkg from 'vec3'
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
 const VERSION = '1.21.4'
@@ -77,7 +85,9 @@ const state = {
   formerHomes: [], // 引っ越す前の家（壊さない）
   builds: {}, // 名前付きの建物（builds.mjs）
   survey: null, // 街の候補地の調査の計画（survey.mjs）
-  memory: newMemory() // 前に見た場所（memory.mjs）。state.json に保存する
+  memory: newMemory(), // 前に見た場所（memory.mjs）。state.json に保存する
+  skill: null, // 実行中の技 { name, version, control }（skills.mjs）
+  pendingJudge: null // 技の judge() が Jev の答えを待っている質問 { id, question, kind, options, resolve }
 }
 loadState(state)
 const knowledge = new Knowledge(minecraftData(VERSION))
@@ -132,6 +142,75 @@ const callTool = createTools({
   check: (specs) => checkConditions(specs, bot, state, knowledge, snapshot(bot, state))
 })
 
+// 技（設計書 22）: 保存はワールドのリセットの後も残す
+const skills = new SkillStore(process.env.SKILLS_DIR ?? DEFAULT_DIR)
+let judgeIds = 0
+const skillDeps = {
+  callTool,
+  state: () => sharedState(bot, state, needs),
+  blockAt ({ x, y, z }) {
+    const p = new vec3Pkg.Vec3(Math.floor(Number(x)), Math.floor(Number(y)), Math.floor(Number(z)))
+    const b = bot.blockAt(p)
+    return b ? { name: b.name, x: p.x, y: p.y, z: p.z } : { name: null, error: 'not loaded' }
+  },
+  // 質問を /state に出し、見張りのティックで Jev が答えるのを待つ（来なければ answer: null）
+  judge (q, signal, waitMs) {
+    return new Promise((resolve) => {
+      const id = ++judgeIds
+      const done = (a) => {
+        if (state.pendingJudge?.id === id) state.pendingJudge = null
+        clearTimeout(timer)
+        resolve({ question: q.question, answer: null, confidence: 0, ...a })
+      }
+      const timer = setTimeout(() => done({ why: 'no answer in time' }), waitMs)
+      signal.addEventListener('abort', () => done({ why: 'stopped' }), { once: true })
+      state.pendingJudge = { id, question: q.question, kind: q.kind ?? 'yes_no', options: q.options ?? null, resolve: done }
+    })
+  },
+  abortTool: (reason) => abortCurrent(state, reason),
+  count (predicate, item) {
+    const { members } = knowledge.resolve(item)
+    if (predicate === 'stored') {
+      return homeChests(state.memory ?? {}, state.home).reduce((n, c) => n + members.reduce((m, x) => m + (c.contents?.[x] ?? 0), 0), 0)
+    }
+    const inv = inventoryCounts(bot)
+    return members.reduce((n, x) => n + (inv[x] ?? 0), 0)
+  },
+  check: (specs) => checkConditions(specs, bot, state, knowledge, snapshot(bot, state)),
+  remaining: () => state.goal ? evaluate(bot, state, knowledge, snapshot(bot, state)).remaining : null
+}
+
+async function runSkillOnce (name, args, version) {
+  const skill = skills.get(name, version)
+  if (!skill) return null
+  let before
+  try {
+    before = expectsBaseline(skill.expects, args, skillDeps)
+  } catch (e) {
+    return { ok: false, ended: 'error', version: skill.version, reason: e.message, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
+  }
+  const control = {}
+  state.skill = { name, version: skill.version, control }
+  let r
+  try {
+    r = await runSkill(skill, args, skillDeps, LIMITS, control)
+  } finally {
+    state.skill = null
+    state.pendingJudge = null
+  }
+  let expects = { met: false, lines: [] }
+  try {
+    expects = judgeExpects(skill.expects, args, before, skillDeps)
+  } catch (e) {
+    expects = { met: false, lines: [e.message] }
+  }
+  const ok = r.ended === 'done' && expects.met
+  const reason = ok ? null : r.reason ?? `expects not met: ${expects.lines.join('; ')}`
+  const learned = skills.record(name, skill.version, ok, reason)
+  persist()
+  return { ok, version: skill.version, ...r, reason, expects, learned }
+}
+
 async function act (id) {
   if (state.reflex) return { ok: false, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
   const c = decisionView().candidates.find((x) => x.id === id)
@@ -155,7 +234,7 @@ async function handle (req, res) {
   if (req.method === 'GET' && req.url === '/observe') {
     const { status, candidates } = decisionView()
     return send(res, 200, {
-      busy: state.busy || state.reflex,
+      busy: state.busy || state.reflex || !!state.skill,
       observation: observation(),
       needs: needs(bot, state),
       goal: publicStatus(status),
@@ -183,20 +262,28 @@ async function handle (req, res) {
   }
   if (req.method === 'POST' && req.url === '/act') {
     const { id } = await readJson(req)
-    if (state.busy) return send(res, 409, { error: 'busy' })
+    if (state.busy || state.skill) return send(res, 409, { error: 'busy' })
     return send(res, 200, await act(id))
   }
   if (req.method === 'POST' && req.url === '/tool') {
     const { name, args } = await readJson(req)
+    if (state.skill) return send(res, 409, { error: `the skill ${state.skill.name} is running` })
     const r = await callTool(name, args ?? {})
     console.log(`[tool] ${name} ${JSON.stringify(args ?? {})}: ${r.refused ? '断った' : r.ok ? '成功' : '失敗'} ${typeof r.result === 'string' ? r.result : '(調べた)'}`)
     return send(res, 200, r)
   }
   if (req.method === 'GET' && req.url === '/state') {
-    return send(res, 200, sharedState(bot, state, needs))
+    const skill = state.skill && { name: state.skill.name, version: state.skill.version, ...state.skill.control.view?.() }
+    const judge = state.pendingJudge && { id: state.pendingJudge.id, question: state.pendingJudge.question, kind: state.pendingJudge.kind, options: state.pendingJudge.options }
+    return send(res, 200, { ...sharedState(bot, state, needs), skill: skill || null, pending_judge: judge || null })
   }
   if (req.method === 'POST' && req.url === '/abort') {
     const { reason } = await readJson(req)
+    if (state.skill) {
+      const name = state.skill.name
+      state.skill.control.stop?.(String(reason ?? 'aborted'))
+      return send(res, 200, { aborted: true, action: `skill ${name}` })
+    }
     return send(res, 200, await abortCurrent(state, String(reason ?? 'aborted')))
   }
   if (req.method === 'PUT' && req.url === '/build-plan') {
@@ -214,6 +301,35 @@ async function handle (req, res) {
       if (e instanceof BuildError) return send(res, 400, { error: e.message })
       throw e
     }
+  }
+  if (req.method === 'GET' && req.url === '/skills') {
+    return send(res, 200, skills.list())
+  }
+  const skillPath = req.url.match(/^\/skills\/([a-z][a-z0-9_]{1,39})(\/run)?$/)
+  if (req.method === 'PUT' && skillPath && !skillPath[2]) {
+    try {
+      const version = skills.put(skillPath[1], await readJson(req))
+      console.log(`[skill] ${skillPath[1]} v${version} を保存した`)
+      return send(res, 200, { name: skillPath[1], version })
+    } catch (e) {
+      if (e instanceof SkillError) return send(res, 400, { error: e.message })
+      throw e
+    }
+  }
+  if (req.method === 'POST' && skillPath?.[2]) {
+    const { args, version } = await readJson(req)
+    if (state.busy || state.reflex || state.skill) return send(res, 409, { error: 'busy' })
+    const r = await runSkillOnce(skillPath[1], args ?? {}, version)
+    if (!r) return send(res, 404, { error: `there is no skill named ${skillPath[1]}${version != null ? ` v${version}` : ''}` })
+    console.log(`[skill] ${skillPath[1]} v${r.version}: ${r.ok ? '成功' : '失敗'} ${r.ok ? r.summary : r.reason}（${r.seconds}秒、道具 ${r.calls.length}）`)
+    return send(res, 200, r)
+  }
+  if (req.method === 'POST' && req.url === '/judge') {
+    const { id, answer, confidence } = await readJson(req)
+    const pending = state.pendingJudge
+    if (!pending || pending.id !== Number(id)) return send(res, 200, { accepted: false })
+    pending.resolve({ answer: answer ?? null, confidence: Number(confidence ?? 0) })
+    return send(res, 200, { accepted: true })
   }
   if (req.method === 'GET' && req.url === '/map') {
     return send(res, 200, mapAround(bot, state))

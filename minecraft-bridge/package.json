@@ -5,11 +5,13 @@
   "description": "Mineflayer sidecar for AILoveShen: goals, a dependency solver, primitive actions and a POV mirror",
   "main": "src/index.mjs",
   "scripts": {
-    "start": "node src/index.mjs",
-    "test": "node --test 'test/*.test.mjs'",
-    "postinstall": "patch-package"
+    "start": "node --no-node-snapshot src/index.mjs",
+    "test": "node --no-node-snapshot --test 'test/*.test.mjs'",
+    "postinstall": "patch-package",
+    "skills:clean": "node --no-node-snapshot tools/clean-skills.mjs"
   },
   "dependencies": {
+    "isolated-vm": "^5.0.4",
     "minecraft-data": "^3.117.0",
     "minecraft-protocol": "1.68.0",
     "mineflayer": "4.39.0",
