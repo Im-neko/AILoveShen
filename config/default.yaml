@@ -81,7 +81,7 @@ llm:
     model: "${LOCAL_LLM_MODEL:-}"        # empty: the first of /v1/models
     api_key: "${LOCAL_LLM_API_KEY:-}"
     context_tokens: 32768                # per request (the server's max sequence length)
-    max_output_tokens: 4096              # thinking included
+    max_output_tokens: 16384             # thinking included; cut to what the context leaves per call
     # auto: also send response_format json_schema (dropped for good if the server refuses it);
     # the schema is always written in the prompt and the answer checked against it
     response_format: "auto"

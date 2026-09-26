@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
+from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
@@ -41,6 +42,7 @@ def create_llm_service(
     history_limit: int = 10,
     generation_log: IGenerationLog | None = None,
     llm: LlmSettings | None = None,
+    text_generator: ITextGenerator | None = None,
     readings: NameReadings | None = None,
     notes: NoteKeeper | None = None,
     lessons: LessonBook | None = None,
@@ -62,6 +64,8 @@ def create_llm_service(
         history_limit: モデルに渡す最近のメッセージの数
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_game_service と共有する）
         llm: ローカルの LLM と Gemini の振り分け（docs/design/36。None か無効なら Gemini だけ）
+        text_generator: 作ってある生成器を使う（ゲームと返事で 1 つを共有し、ローカルに同時に送る数を
+            まとめて数える）
         readings: 視聴者の名前の読みの辞書（返答のプロンプトに出し、返答から覚える）
         notes: 自分のメモ（返答が、納得したアドバイスを教訓として書く）
         lessons: 教訓帳（あれば、納得したアドバイスはメモではなくこちらに書く）
@@ -90,7 +94,7 @@ def create_llm_service(
         ```
     """
     # インフラのアダプターを作る
-    text_generator = create_text_generator(gemini, llm, generation_log)
+    text_generator = text_generator or create_text_generator(gemini, llm, generation_log)
     prompt_builder = PromptTemplateBuilder()
 
     # ドメインのオブジェクトを作る

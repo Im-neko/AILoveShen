@@ -57,6 +57,7 @@ def create_text_generator(
         model=local.model,
         api_key=local.api_key,
         max_output_tokens=local.max_output_tokens,
+        context_tokens=local.context_tokens,
         response_format=local.response_format,
         thinking_param=local.thinking_param,
         thinking_levels=gemini.thinking_levels,
@@ -77,6 +78,5 @@ def create_text_generator(
         remote,
         routes=llm.routes,
         context_tokens=local.context_tokens,
-        reserve_output_tokens=local.max_output_tokens,
         fallback=llm.fallback,
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
+from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.step_picker import StepPicker
@@ -79,6 +80,7 @@ def create_game_service(
     conversation: Conversation,
     generation_log: IGenerationLog | None = None,
     llm: LlmSettings | None = None,
+    text_generator: ITextGenerator | None = None,
     obs: OBSSettings | None = None,
 ) -> GameService:
     """
@@ -99,6 +101,8 @@ def create_game_service(
             これを読み、話したことと食い違う目標を立てないようにする
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_llm_service と共有する）
         llm: ローカルの LLM と Gemini の振り分け（docs/design/36。None か無効なら Gemini だけ）
+        text_generator: 作ってある生成器を使う（ゲームと返事で 1 つを共有し、ローカルに同時に送る数を
+            まとめて数える）
         obs: OBS の設定（settings.obs）。minecraft.vision.enabled で obs.game_source があれば、
             配信の画面を Gemini に見せる（docs/design/23）。None なら見せない
 
@@ -119,7 +123,7 @@ def create_game_service(
         await game.close()
         ```
     """
-    text_generator = create_text_generator(gemini, llm, generation_log)
+    text_generator = text_generator or create_text_generator(gemini, llm, generation_log)
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
     )

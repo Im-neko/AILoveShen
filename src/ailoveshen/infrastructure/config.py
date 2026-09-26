@@ -119,7 +119,7 @@ class LocalLlmSettings:
     model: str = ""  # 空: /v1/models の最初
     api_key: str = ""
     context_tokens: int = 32768
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 16384  # 思考を含む（1 回ごとにコンテキストの残りまでに減らす）
     response_format: str = "auto"  # auto | off
     thinking_param: str = "chat_template_kwargs"  # chat_template_kwargs | none
     max_concurrent: int = 2

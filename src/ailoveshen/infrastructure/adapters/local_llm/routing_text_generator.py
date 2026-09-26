@@ -37,7 +37,7 @@ class RoutingTextGenerator(ITextGenerator):
         gemini: Optional[ITextGenerator],
         routes: Optional[Mapping[str, str]] = None,
         context_tokens: int = 32768,
-        reserve_output_tokens: int = 4096,
+        reserve_output_tokens: int = 2048,
         fallback: str = "none",
     ) -> None:
         """
@@ -46,7 +46,8 @@ class RoutingTextGenerator(ITextGenerator):
             gemini: Gemini（画像、入らない大きさ、fallback のとき。None なら画像は外して送る）
             routes: 用途 → "local" / "gemini"（"default" は表にない用途）
             context_tokens: ローカルの 1 回のコンテキストの長さ
-            reserve_output_tokens: そのうち出力に残す分
+            reserve_output_tokens: そのうち答えに最低限残す分（思考を含む出力の上限は、ローカルの
+                アダプターが 1 回ごとに残りに合わせる）
             fallback: ローカルが失敗したとき "none"（エラー）か "gemini"
         """
         routes = {"default": "local", **dict(routes or {})}
@@ -60,6 +61,7 @@ class RoutingTextGenerator(ITextGenerator):
         self._routes = routes
         self._budget = max(1, context_tokens - reserve_output_tokens)
         self._fallback = fallback
+        self._closed = False
 
     def backend_for(
         self, purpose: Optional[str], images: Sequence[Screenshot] = (), size: int = 0
@@ -135,6 +137,10 @@ class RoutingTextGenerator(ITextGenerator):
             return await gemini.choose_tool(prompt, tools, system_instruction, purpose, images)
 
     async def close(self) -> None:
+        # ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）: 閉じるのは 1 回
+        if self._closed:
+            return
+        self._closed = True
         await self._local.close()
         if self._gemini is not None:
             await self._gemini.close()

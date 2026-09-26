@@ -181,3 +181,53 @@ async def test_a_local_failure_is_an_error_unless_the_fallback_is_gemini():
 def test_unknown_routes_are_refused():
     with pytest.raises(ValueError):
         RoutingTextGenerator(AsyncMock(), AsyncMock(), routes={"reply": "claude"})
+
+
+@pytest.mark.asyncio
+async def test_only_the_field_the_server_refuses_is_dropped():
+    """chat_template_kwargs だけを断るサーバー: response_format は送り続ける。"""
+    seen = []
+
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        body = json.loads(request.content)
+        seen.append(body)
+        if "chat_template_kwargs" in body:
+            return httpx.Response(400, text="unknown field chat_template_kwargs")
+        return httpx.Response(200, json=_answer('{"color": "red"}'))
+
+    local = OpenAICompatTextGenerator("http://local/v1", transport=httpx.MockTransport(server))
+    await local.generate_json("pick", SCHEMA, purpose="goal")
+    await local.generate_json("pick", SCHEMA, purpose="goal")
+    last = seen[-1]
+    assert "response_format" in last and "chat_template_kwargs" not in last
+    assert len(seen) == 4  # 400、response_format なし（400）、chat_template_kwargs なし（通る）、2 回目
+
+
+@pytest.mark.asyncio
+async def test_an_answer_cut_by_thinking_is_a_clear_error_not_a_retry():
+    cut = _answer("")
+    cut["choices"][0]["finish_reason"] = "length"
+    server = _Server(cut)
+    local = _local(server, max_output_tokens=2000)
+    with pytest.raises(TextGenerationError, match="max_output_tokens"):
+        await local.generate_json("pick", SCHEMA, purpose="goal_after_failure")
+    assert len(server.requests) == 1
+    assert server.requests[0]["max_tokens"] == 2000
+
+
+@pytest.mark.asyncio
+async def test_the_output_budget_shrinks_to_what_the_context_leaves():
+    server = _Server(_answer("ok"))
+    local = _local(server, max_output_tokens=16000, context_tokens=8000)
+    await local.generate("あ" * 5000, purpose="reply")
+    assert server.requests[0]["max_tokens"] == 8000 - 5000
+
+
+@pytest.mark.asyncio
+async def test_a_shared_router_is_closed_once():
+    router, local, gemini = _router()
+    await router.close()
+    await router.close()
+    assert local.close.await_count == 1 and gemini.close.await_count == 1

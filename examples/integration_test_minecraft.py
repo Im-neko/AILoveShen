@@ -59,6 +59,7 @@ from ailoveshen.domain.events import (
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import create_llm_service
+from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
 from ailoveshen.infrastructure.config import load_config_dict, load_settings
 from ailoveshen.infrastructure.events import AsyncEventBus
@@ -153,6 +154,12 @@ async def run(
     event_bus.subscribe(MidGoalDroppedEvent, on_mid_dropped)
 
     gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
+    # ローカルの LLM を使うときは、ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）
+    shared_text = (
+        create_text_generator(settings.gemini, settings.llm, gemini_calls)
+        if settings.llm.local.enabled
+        else None
+    )
     game = create_game_service(
         gemini=settings.gemini,
         jev=settings.jev,
@@ -162,6 +169,7 @@ async def run(
         conversation=conversation,
         generation_log=gemini_calls,
         llm=settings.llm,
+        text_generator=shared_text,
         obs=settings.obs,
     )
     llm = create_llm_service(
@@ -172,6 +180,7 @@ async def run(
         mid_goals=game.mid_goals,
         generation_log=gemini_calls,
         llm=settings.llm,
+        text_generator=shared_text,
     )
 
     def activity():

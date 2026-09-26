@@ -25,6 +25,7 @@ from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import Screenshot
 from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     check,
+    estimate_tokens,
     extract_json,
     strip_thinking,
 )
@@ -51,7 +52,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
         base_url: str,
         model: str = "",
         api_key: str = "",
-        max_output_tokens: int = 4096,
+        max_output_tokens: int = 16384,
+        context_tokens: int = 32768,
         response_format: str = "auto",
         thinking_param: str = "chat_template_kwargs",
         thinking_levels: Optional[Mapping[str, str]] = None,
@@ -66,7 +68,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
             base_url: 例 http://127.0.0.1:1919/v1
             model: モデル ID（空: /v1/models の最初）
             api_key: 要るサーバーだけ
-            max_output_tokens: 出力の上限（思考を含む）
+            max_output_tokens: 出力の上限（思考を含む）。1 回ごとに、コンテキストの残り（見積もり）
+                までに減らす
+            context_tokens: サーバーの 1 回の最大の長さ
             response_format: "auto"（json_schema を送り、断られたらやめる）か "off"
             thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）か "none"
             thinking_levels: 用途ごとの深さ（Gemini の表をそのまま使う）
@@ -82,6 +86,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
             raise ValueError(f"thinking_param must be one of {THINKING_PARAMS}")
         self._model = model
         self._max_output = max_output_tokens
+        self._context = context_tokens
         self._use_response_format = response_format == "auto"
         self._tool_choice = "required"
         self._thinking_param = thinking_param
@@ -191,7 +196,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
         return ToolChoice(name=str(data.get("tool") or ""), args=args if isinstance(args, dict) else {})
 
     async def close(self) -> None:
-        await self._client.aclose()
+        if not self._client.is_closed:
+            await self._client.aclose()
 
     async def _model_id(self) -> str:
         async with self._model_lock:
@@ -204,6 +210,12 @@ class OpenAICompatTextGenerator(ITextGenerator):
                     raise TextGenerationError(f"local LLM: could not read /models: {e}") from e
                 logger.info(f"ローカルの LLM: {self._model}")
             return self._model
+
+    def _output_budget(self, messages: list[dict[str, Any]], tools: Sequence[ToolSpec]) -> int:
+        """出力の上限: 設定の値か、コンテキストの残り（見積もり）の小さい方（最低 1024）。"""
+        used = sum(estimate_tokens(str(m.get("content") or "")) for m in messages)
+        used += sum(estimate_tokens(json.dumps(t.parameters)) + estimate_tokens(t.description) for t in tools)
+        return max(1024, min(self._max_output, self._context - used))
 
     def _thinking(self, purpose: Optional[str]) -> bool:
         return self._levels.get(purpose or "default", self._levels["default"]) in THINKING_ON
@@ -239,33 +251,42 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 for t in tools
             ]
             body["tool_choice"] = self._tool_choice
+        body["max_tokens"] = self._output_budget(messages, tools)
         data = await self._post(body, purpose, think)
         try:
-            return data["choices"][0]["message"]
+            choice = data["choices"][0]
+            message = choice["message"]
         except (KeyError, IndexError, TypeError) as e:
             raise TextGenerationError(f"local LLM: unexpected answer {str(data)[:200]}") from e
+        if (
+            choice.get("finish_reason") == "length"
+            and not (message.get("content") or "").strip()
+            and not message.get("tool_calls")
+        ):
+            # 思考で出力の上限を使い切った: 同じことを頼み直しても同じ
+            raise TextGenerationError(
+                f"local LLM output was cut at {body['max_tokens']} tokens with no answer "
+                f"({purpose}): raise llm.local.max_output_tokens or think less for this purpose"
+            )
+        return message
 
     async def _post(self, body: dict[str, Any], purpose: Optional[str], think: bool) -> dict[str, Any]:
         started = time.monotonic()
-        async with self._slots:
-            try:
-                response = await self._client.post("/chat/completions", json=body)
-            except httpx.HTTPError as e:
-                self._record(body, purpose, think, started, error=str(e))
-                raise TextGenerationError(f"local LLM request failed: {e}") from e
+        response = await self._send(body, purpose, think, started)
         if response.status_code in (400, 422):
-            dropped = self._drop_unsupported(body)
-            if dropped:
-                # 断られた指定を外して送り直す。通れば以後も送らない。通らなければ別の理由だった
-                try:
-                    data = await self._post(body, purpose, think)
-                except TextGenerationError:
-                    self._restore(dropped)
-                    raise
-                logger.warning(
-                    f"ローカルの LLM は {dropped} を受け付けない（{response.status_code}）: 以後は送らない"
-                )
-                return data
+            # 断られたかもしれない指定を 1 つずつ外して試す。通った指定だけを以後送らない
+            for field in self._optional_fields(body):
+                trial = self._without(body, field)
+                retry = await self._send(trial, purpose, think, started)
+                if retry.status_code in (400, 422):
+                    continue
+                if retry.status_code < 400:
+                    self._drop(field)
+                    logger.warning(
+                        f"ローカルの LLM は {field} を受け付けない（{response.status_code}）: 以後は送らない"
+                    )
+                response = retry
+                break
         if response.status_code >= 400:
             error = f"local LLM error {response.status_code}: {response.text[:300]}"
             self._record(body, purpose, think, started, error=error)
@@ -275,29 +296,40 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._record(body, purpose, think, started, data=data)
         return data
 
-    def _drop_unsupported(self, body: dict[str, Any]) -> str:
-        """断られたかもしれない指定を 1 つ外す（外したものの名前。なければ ""）。"""
-        if "response_format" in body:
-            self._use_response_format = False
-            body.pop("response_format")
-            return "response_format"
-        if body.get("tool_choice") == "required":
-            self._tool_choice = "auto"
-            body["tool_choice"] = "auto"
-            return "tool_choice"
-        if "chat_template_kwargs" in body:
-            self._thinking_param = "none"
-            body.pop("chat_template_kwargs")
-            return "chat_template_kwargs"
-        return ""
+    async def _send(
+        self, body: dict[str, Any], purpose: Optional[str], think: bool, started: float
+    ) -> httpx.Response:
+        async with self._slots:
+            try:
+                return await self._client.post("/chat/completions", json=body)
+            except httpx.HTTPError as e:
+                self._record(body, purpose, think, started, error=str(e))
+                raise TextGenerationError(f"local LLM request failed: {e}") from e
 
-    def _restore(self, dropped: str) -> None:
-        if dropped == "response_format":
-            self._use_response_format = True
-        elif dropped == "tool_choice":
-            self._tool_choice = "required"
-        elif dropped == "chat_template_kwargs":
-            self._thinking_param = "chat_template_kwargs"
+    @staticmethod
+    def _optional_fields(body: dict[str, Any]) -> list[str]:
+        """サーバーが知らないかもしれない指定（外しても答えは出る）。"""
+        fields = [f for f in ("response_format", "chat_template_kwargs") if f in body]
+        if body.get("tool_choice") == "required":
+            fields.append("tool_choice")
+        return fields
+
+    @staticmethod
+    def _without(body: dict[str, Any], field: str) -> dict[str, Any]:
+        trial = dict(body)
+        if field == "tool_choice":
+            trial["tool_choice"] = "auto"
+        else:
+            trial.pop(field)
+        return trial
+
+    def _drop(self, field: str) -> None:
+        if field == "response_format":
+            self._use_response_format = False
+        elif field == "tool_choice":
+            self._tool_choice = "auto"
+        elif field == "chat_template_kwargs":
+            self._thinking_param = "none"
 
     def _log_usage(self, data: dict[str, Any], started: float, purpose: Optional[str], think: bool) -> None:
         """使用量の行（Gemini と同じ形: tools/gemini_usage.py が読む）。"""

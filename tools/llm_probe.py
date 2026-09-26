@@ -37,6 +37,28 @@ from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder imp
 )
 
 
+REFUSED: set[str] = set()  # サーバーが断った指定（以後送らない）
+OPTIONAL = ("chat_template_kwargs", "stream_options")
+
+
+def _clean(body: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in body.items() if k not in REFUSED}
+
+
+def post(client: httpx.Client, body: dict[str, Any]) -> httpx.Response:
+    """送る。400/422 なら、知らないかもしれない指定を 1 つずつ外して送り直す。"""
+    r = client.post("/chat/completions", json=_clean(body))
+    for field in OPTIONAL:
+        if r.status_code not in (400, 422) or field not in body or field in REFUSED:
+            continue
+        retry = client.post("/chat/completions", json={k: v for k, v in _clean(body).items() if k != field})
+        if retry.status_code < 400:
+            REFUSED.add(field)
+            print(f"（サーバーは {field} を受け付けない: 外して測る）")
+            return retry
+    return r
+
+
 def _model(client: httpx.Client, model: str) -> str:
     if model:
         return model
@@ -56,7 +78,7 @@ def probe_schema(client: httpx.Client, model: str) -> str:
         "max_tokens": 256,
         "chat_template_kwargs": {"enable_thinking": False},
     }
-    r = client.post("/chat/completions", json=body)
+    r = post(client, body)
     if r.status_code >= 400:
         return f"断られた（{r.status_code}: {r.text[:120]}）→ プロンプトにスキーマを書いて確かめる方式で動く"
     text = r.json()["choices"][0]["message"].get("content") or ""
@@ -82,7 +104,7 @@ def probe_tools(client: httpx.Client, model: str) -> str:
         "max_tokens": 512,
         "chat_template_kwargs": {"enable_thinking": False},
     }
-    r = client.post("/chat/completions", json=body)
+    r = post(client, body)
     if r.status_code >= 400:
         return f"tool_choice: required を断った（{r.status_code}）→ auto で送り、文なら JSON で選ばせる"
     calls = r.json()["choices"][0]["message"].get("tool_calls") or []
@@ -105,9 +127,15 @@ def timed(client: httpx.Client, model: str, system: str, user: str, max_tokens: 
     first = None
     chunks = 0
     usage: dict[str, Any] = {}
+    body = _clean(body)
     with client.stream("POST", "/chat/completions", json=body) as r:
         if r.status_code >= 400:
             r.read()
+            left = [f for f in OPTIONAL if f in body]
+            if r.status_code in (400, 422) and left:
+                REFUSED.add(left[-1])  # stream_options から外して試す
+                print(f"（サーバーは {left[-1]} を受け付けないかもしれない: 外して測る）")
+                return timed(client, model, system, user, max_tokens)
             raise RuntimeError(f"{r.status_code}: {r.text[:200]}")
         for line in r.iter_lines():
             if not line.startswith("data:"):

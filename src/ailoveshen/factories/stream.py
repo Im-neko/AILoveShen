@@ -13,6 +13,7 @@ from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import create_llm_service
+from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog, JsonReadingStore
 from ailoveshen.infrastructure.config import Settings
 from ailoveshen.infrastructure.events import AsyncEventBus
@@ -48,6 +49,12 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
     # 視聴者の名前の読み（docs/design/30_name_readings.md）: 返答で覚え、読み上げで使う
     readings = NameReadings(JsonReadingStore(base_dir / settings.twitch.readings_path))
+    # ローカルの LLM を使うときは、ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）
+    shared_text = (
+        create_text_generator(settings.gemini, settings.llm, gemini_calls)
+        if settings.llm.local.enabled
+        else None
+    )
     game = create_game_service(
         gemini=settings.gemini,
         jev=settings.jev,
@@ -57,6 +64,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         conversation=conversation,
         generation_log=gemini_calls,
         llm=settings.llm,
+        text_generator=shared_text,
         obs=settings.obs,
     )
     llm = create_llm_service(
@@ -67,6 +75,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         mid_goals=game.mid_goals,
         generation_log=gemini_calls,
         llm=settings.llm,
+        text_generator=shared_text,
         readings=readings,
         notes=game.notes,
         lessons=game.lessons,
