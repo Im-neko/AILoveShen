@@ -15,7 +15,13 @@ twitch:
   channel: "${TWITCH_CHANNEL:-}"
   client_id: "${TWITCH_CLIENT_ID:-}"
   client_secret: "${TWITCH_CLIENT_SECRET:-}"
+  # Posting to chat (the !commands list): a user access token with chat:edit and its account's login
+  # (empty login: the channel's own account). Without a token the chat is only read; the list is spoken
   access_token: "${TWITCH_ACCESS_TOKEN:-}"
+  bot_login: "${TWITCH_BOT_LOGIN:-}"
+  # The channel's own account and bot_login get no reply (their !commands still work).
+  # Bots (logins) get nothing at all, not even commands. Add others such as nightbot here
+  ignore_users: [streamelements]
 
   # Replies to chat (python -m ailoveshen.stream). The chat is read anonymously: only the channel
   # is needed (TWITCH_CHANNEL), no token.

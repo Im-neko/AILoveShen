@@ -5,15 +5,35 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
 
 from loguru import logger
 
+from ailoveshen.application.ports.output.chat_sink import IChatSink
 from ailoveshen.application.ports.output.chat_source import IChatSource
 from ailoveshen.application.use_cases.readings import COMMAND, VIEWER, NameReadings
 from ailoveshen.domain.entities import PlaySession
 from ailoveshen.domain.value_objects import ChatComment
 from ailoveshen.presentation.services.llm_service import LLMService
+
+# 一覧を出す間（同じ一覧でチャットを埋めない）
+HELP_COOLDOWN_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
+class ChatCommand:
+    """チャットのコマンド 1 つ: 呼び名（最初が代表）、使い方、説明。"""
+
+    names: tuple[str, ...]
+    usage: str
+    description: str
+
+
+YOMI = ChatCommand(
+    ("yomi", "読み", "よみ"), "!yomi <よみ>", "名前の読み方を教える（例: !yomi ねこまる）"
+)
+HELP = ChatCommand(("commands", "help", "コマンド"), "!commands", "この一覧")
 
 
 class ChatResponder:
@@ -23,8 +43,11 @@ class ChatResponder:
     - 返事は 1 つずつ作る。作っている間に来たコメントは、新しいものから `backlog` 件だけ
       取っておき、古いものは捨てる（多いときに遅れを積み上げない）
     - 返事と返事の間は `min_interval_seconds` 以上空ける
-    - `!` で始まるコメント（ほかのボットのコマンド）には返事をしない。ただし `!yomi よみ`
-      （`!読み` / `!よみ`）は、その人の名前の読みを覚えて短く応える（設計書 30）
+    - `!` で始まるコメント（コマンド）には返事をしない。自分のコマンドは実行する:
+      `!yomi よみ`（`!読み` / `!よみ`）は、その人の名前の読みを覚えて短く応える（設計書 30）、
+      `!commands`（`!help` / `!コマンド`）は、使えるコマンドの一覧をチャットに書く（書けなければ声で）
+    - `quiet` のアカウント（配信者自身）のコメントには返事をしない（コマンドは実行する）。
+      `ignore` のアカウント（ボット）には何も反応しない
     - 返事はプレイ中のセッションを見て作る。視聴者の頼みは中目標になることがある
       （`LLMService.generate_response`）
     """
@@ -38,6 +61,9 @@ class ChatResponder:
         backlog: int = 3,
         clock: Callable[[], float] = time.monotonic,
         readings: NameReadings | None = None,
+        chat: IChatSink | None = None,
+        quiet: Iterable[str] = (),
+        ignore: Iterable[str] = (),
     ) -> None:
         """
         Args:
@@ -48,6 +74,10 @@ class ChatResponder:
             backlog: 返事を待つコメントを何件まで取っておくか
             clock: 時計（テストで差し替える）
             readings: 視聴者の名前の読みの辞書（None: `!yomi` も読まない）
+            chat: チャットへの書き込み（`!commands` の一覧。None か書けなければ声で言う）
+            quiet: 返事をしないアカウントのログイン名（配信者自身、書き込むアカウント。コマンドは
+                実行する）
+            ignore: 何にも反応しないアカウントのログイン名（ボット: StreamElements など）
         """
         self._llm = llm
         self._session = session
@@ -58,7 +88,11 @@ class ChatResponder:
         self._clock = clock
         self._last_reply_at: float | None = None
         self._readings = readings
-        self._acks: list[asyncio.Task[None]] = []
+        self._acks: list[asyncio.Task[object]] = []
+        self._chat = chat
+        self._quiet = {q.strip().lower() for q in quiet if q.strip()}
+        self._ignore = {q.strip().lower() for q in ignore if q.strip()}
+        self._help_at: float | None = None
         self.dropped = 0  # 返事をせずに捨てたコメントの数
 
     async def run(self, source: IChatSource) -> None:
@@ -73,8 +107,13 @@ class ChatResponder:
     def accept(self, comment: ChatComment) -> None:
         """コメントを 1 つ受け取る（返事の順番を待つ）。"""
         logger.info(f"[chat] {comment.user_name}: {comment.message}")
+        login = (comment.login or "").lower()
+        if login in self._ignore:
+            return
         if comment.message.lstrip().startswith("!"):
             self._command(comment)
+            return
+        if login in self._quiet:
             return
         if len(self._queue) == self._queue.maxlen:
             self.dropped += 1
@@ -82,8 +121,21 @@ class ChatResponder:
         self._queue.append(comment)
         self._arrived.set()
 
+    @property
+    def commands(self) -> tuple[ChatCommand, ...]:
+        """今使えるコマンド（`!commands` の一覧に出るもの）。"""
+        return ((YOMI,) if self._readings is not None else ()) + (HELP,)
+
+    def help_text(self) -> str:
+        """コマンドの一覧（チャットに書く 1 行。`!` で始めない: 自分のコマンドとして読まない）。"""
+        items = " / ".join(f"{c.usage}（{c.description}）" for c in self.commands)
+        return f"使えるコマンド: {items}"
+
     def _command(self, comment: ChatComment) -> None:
-        """`!yomi よみ`: 名前の読みを覚えて、その読みで呼んで応える。"""
+        words = comment.message.strip()[1:].split(maxsplit=1)
+        if words and words[0].lower() in HELP.names:
+            self._help()
+            return
         match = COMMAND.match(comment.message)
         if self._readings is None or match is None:
             return
@@ -91,7 +143,25 @@ class ChatResponder:
         if learned is None:
             return
         # 読み上げで名前が読みに置き換わる。返事の順番は待たない（短い決まった一言）
-        task = asyncio.ensure_future(self._say(f"{comment.user_name}さん、読み方覚えたよ！"))
+        self._spawn(self._say(f"{comment.user_name}さん、読み方覚えたよ！"))
+
+    def _help(self) -> None:
+        """`!commands`: 一覧をチャットに書く（書けなければ声で）。続けて呼ばれたら飛ばす。"""
+        now = self._clock()
+        if self._help_at is not None and now - self._help_at < HELP_COOLDOWN_SECONDS:
+            return
+        self._help_at = now
+        self._spawn(self._post_help())
+
+    async def _post_help(self) -> None:
+        text = self.help_text()
+        if self._chat is not None and self._chat.can_post and await self._chat.post(text):
+            return
+        logger.info("チャットに書き込めないので、コマンドの一覧を声で言う")
+        await self._say(text)
+
+    def _spawn(self, work: Awaitable[object]) -> None:
+        task = asyncio.ensure_future(work)
         self._acks = [t for t in self._acks if not t.done()] + [task]
 
     async def answer_next(self) -> bool:

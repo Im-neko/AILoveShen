@@ -126,3 +126,56 @@ async def test_a_failed_reply_does_not_stop_the_chat():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert said == ["ok"]
+
+
+class FakeSink:
+    def __init__(self, can_post=True):
+        self.can_post = can_post
+        self.posted = []
+
+    async def post(self, text):
+        self.posted.append(text)
+        return True
+
+
+@pytest.mark.asyncio
+async def test_own_account_gets_no_reply_but_commands_and_bots_get_nothing():
+    llm = AsyncMock()
+    llm.generate_response.side_effect = lambda user, msg, **kw: msg
+    said = []
+    sink = FakeSink()
+    responder = _responder(llm, said, chat=sink, quiet=("Shen",), ignore=("StreamElements",))
+    responder.accept(ChatComment("しぇん", "テスト中", login="shen"))
+    responder.accept(ChatComment("StreamElements", "Follow!", login="streamelements"))
+    responder.accept(ChatComment("StreamElements", "!commands", login="streamelements"))
+    responder.accept(ChatComment("しぇん", "!commands", login="shen"))
+    responder.accept(ChatComment("neko", "こんにちは", login="neko"))
+    await asyncio.sleep(0)
+    while await responder.answer_next():
+        pass
+    assert said == ["こんにちは"]
+    assert sink.posted == ["使えるコマンド: !commands（この一覧）"]
+
+
+@pytest.mark.asyncio
+async def test_commands_list_goes_to_chat_once_per_cooldown_and_is_spoken_without_chat():
+    from ailoveshen.application.use_cases.readings import NameReadings
+
+    store = type("S", (), {"load": lambda self: (), "save": lambda self, r: None})()
+    clock = Clock()
+    said = []
+    sink = FakeSink()
+    responder = _responder(AsyncMock(), said, clock=clock, chat=sink, readings=NameReadings(store))
+    responder.accept(ChatComment("neko", "!help"))
+    responder.accept(ChatComment("tama", "!コマンド"))  # 30 秒以内: 飛ばす
+    await asyncio.sleep(0)
+    assert len(sink.posted) == 1
+    assert sink.posted[0].startswith("使えるコマンド: !yomi <よみ>")
+    assert not sink.posted[0].startswith("!")
+
+    sink.can_post = False
+    clock.now += 31
+    responder.accept(ChatComment("neko", "!commands"))
+    await asyncio.sleep(0)
+    assert len(sink.posted) == 1
+    assert said == [sink.posted[0]]

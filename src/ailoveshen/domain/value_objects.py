@@ -1449,6 +1449,8 @@ class ChatComment:
     message: str
     user_id: Optional[str] = None
     received_at: datetime = field(default_factory=_utc_now)
+    # ログイン名（小文字。表示名とは違うことがある）。自分や決めたボットのコメントを見分ける
+    login: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.user_name.strip():

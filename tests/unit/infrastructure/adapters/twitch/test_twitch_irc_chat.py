@@ -141,3 +141,75 @@ async def test_an_unexpected_error_is_retried_too():
     chat = TwitchIrcChat("shen", opener=opener, retry_seconds=0.01)
     assert [c async for c in chat.comments()] == []
     assert attempts == 2
+
+
+def test_the_login_is_kept_in_lower_case():
+    assert parse_privmsg(TAGGED).login == "mame"
+
+
+@pytest.mark.asyncio
+async def test_with_a_token_it_logs_in_and_can_post():
+    fake = FakeTwitch(
+        # 偽のサーバーは最初の 3 行だけ先に読む: JOIN と書き込みは続けて読む
+        [[":shenbot!shenbot@shenbot.tmi.twitch.tv JOIN #shen", "<wait-pong>", "<wait-pong>"]]
+    )
+    port = await fake.start()
+    chat = TwitchIrcChat(
+        "shen",
+        opener=lambda: asyncio.open_connection("127.0.0.1", port),
+        login="ShenBot",
+        token="oauth:secret",
+    )
+    assert not chat.can_post
+
+    async def read():
+        async for _ in chat.comments():
+            pass
+
+    task = asyncio.create_task(read())
+    for _ in range(100):
+        if chat.can_post:
+            break
+        await asyncio.sleep(0.01)
+    assert await chat.post("使えるコマンド:\n !commands")
+    for _ in range(100):
+        if len(fake.received) >= 5:
+            break
+        await asyncio.sleep(0.01)
+    await chat.close()
+    task.cancel()
+    fake.server.close()
+
+    # CAP の後に PASS と NICK（FakeTwitch は最初の 3 行を読む）、JOIN、書き込み
+    assert fake.received[:3] == ["CAP REQ :twitch.tv/tags", "PASS oauth:secret", "NICK shenbot"]
+    assert fake.received[3] == "JOIN #shen"
+    assert fake.received[4] == "PRIVMSG #shen :使えるコマンド: !commands"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_login_falls_back_to_reading_anonymously():
+    fake = FakeTwitch([[":tmi.twitch.tv NOTICE * :Login authentication failed"], []])
+    port = await fake.start()
+    chat = TwitchIrcChat(
+        "shen",
+        opener=lambda: asyncio.open_connection("127.0.0.1", port),
+        retry_seconds=0.01,
+        token="bad",
+    )
+
+    async def read():
+        async for _ in chat.comments():
+            pass
+
+    task = asyncio.create_task(read())
+    for _ in range(200):
+        if len(fake.received) >= 6:
+            break
+        await asyncio.sleep(0.01)
+    await chat.close()
+    task.cancel()
+    fake.server.close()
+
+    assert fake.received[1] == "PASS oauth:bad"
+    assert fake.received[4].startswith("NICK justinfan")  # 2 回目は匿名
+    assert chat.login == "" and not chat.can_post

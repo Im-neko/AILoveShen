@@ -7,6 +7,17 @@
 
 ## Completed Work
 
+### チャット: 自分とボットには反応しない、`!commands` の一覧 (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「自分のコメントには反応しないように」「!command で使えるコマンドをチャットに出せるように」「bot アカウント（StreamElements）には反応しないように」
+- `ChatComment.login`（IRC のニック、小文字）。`ChatResponder(quiet=, ignore=)`: 配信者自身（チャンネル名）と書き込むアカウントには返事をしない（コマンドは使える）、`twitch.ignore_users`（既定 `[streamelements]`）には何も反応しない
+- `!commands` / `!help` / `!コマンド`: コマンドの一覧（表から作る。`!` で始めない）をチャットに書く。30 秒に 1 回。書けなければ声で
+- 書き込み: 出力ポート `IChatSink`（`can_post` / `post`）。`TwitchIrcChat(login=, token=)`: `TWITCH_ACCESS_TOKEN`（`chat:edit`）があれば `PASS`/`NICK` でログインして `PRIVMSG`（450 字まで）。ログインに失敗したら匿名に戻る。設定 `twitch.bot_login`（`TWITCH_BOT_LOGIN`、空ならチャンネル名）
+- テスト: pytest 634（chat_responder 2、twitch 3）
+- 未確認（実機）: トークンでのログインと書き込み
+
 ### 目標を決めるたびに今の状態で見直す（設計書 31） (2026-09-26)
 
 **Commit**: `c2cc4a5`

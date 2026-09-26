@@ -1,8 +1,10 @@
 """
-Twitch のチャットを読むだけのアダプター（IRC、匿名）。
+Twitch のチャットを読み、トークンがあれば書き込むアダプター（IRC）。
 
 Twitch の IRC は `justinfan<数字>` の名前なら認証なしで読める（書き込みはできない）。
-配信者の返事は声（TTS）で返すので、読むだけでよい。トークンも API キーも要らない。
+配信者の返事は声（TTS）で返すので、ふだんは読むだけでよい。トークン（`chat:edit` の
+ユーザーアクセストークン）とそのアカウントのログイン名があれば、そのアカウントでログインして
+書き込める（`!commands` の一覧など）。ログインに失敗したら、匿名で読むだけに戻る。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
+from ailoveshen.application.ports.output.chat_sink import IChatSink
 from ailoveshen.application.ports.output.chat_source import IChatSource
 from ailoveshen.domain.value_objects import ChatComment
 
@@ -23,6 +26,9 @@ TLS_PORT = 6697
 # Twitch はおよそ 5 分ごとに PING を送る。これより長く何も来なければ切れたとみなす
 READ_TIMEOUT_SECONDS = 360.0
 CONNECT_TIMEOUT_SECONDS = 15.0
+# Twitch の 1 行の上限は 500 字。余裕をみる
+MAX_POST_CHARS = 450
+_AUTH_FAILED = ("Login authentication failed", "Improperly formatted auth")
 
 Opener = Callable[[], Any]  # () -> awaitable (reader, writer)
 
@@ -51,14 +57,19 @@ def parse_privmsg(line: str) -> Optional[ChatComment]:
     nick = prefix.split("!", 1)[0]
     name = tags.get("display-name") or nick
     try:
-        return ChatComment(user_name=name, message=message, user_id=tags.get("user-id") or None)
+        return ChatComment(
+            user_name=name,
+            message=message,
+            user_id=tags.get("user-id") or None,
+            login=nick.lower() or None,
+        )
     except ValueError:
         return None
 
 
-class TwitchIrcChat(IChatSource):
+class TwitchIrcChat(IChatSource, IChatSink):
     """
-    Twitch のチャンネルのチャットを匿名で読む。
+    Twitch のチャンネルのチャットを読む（トークンがあれば書き込める）。
 
     - つながらない・切れたら、1 秒から倍々に最長 60 秒待ってつなぎ直す（成功したら戻す）
     - PING には PONG を返す。RECONNECT（Twitch の保守）ならつなぎ直す
@@ -73,6 +84,8 @@ class TwitchIrcChat(IChatSource):
         retry_max_seconds: float = 60.0,
         read_timeout_seconds: float = READ_TIMEOUT_SECONDS,
         connect_timeout_seconds: float = CONNECT_TIMEOUT_SECONDS,
+        login: str = "",
+        token: str = "",
     ) -> None:
         """
         Args:
@@ -82,6 +95,9 @@ class TwitchIrcChat(IChatSource):
             retry_max_seconds: つなぎ直す前の最長の待ち
             read_timeout_seconds: これより長く何も届かなければつなぎ直す
             connect_timeout_seconds: 接続とログインの時間の上限（応答しない接続で止まらない）
+            login: 書き込むアカウントのログイン名（token があるとき。空ならチャンネル名）
+            token: そのアカウントのユーザーアクセストークン（`chat:edit`。`oauth:` は付けても
+                付けなくてもよい）。空なら匿名で読むだけ。ログには出さない
 
         Raises:
             ValueError: channel が空のとき
@@ -97,10 +113,38 @@ class TwitchIrcChat(IChatSource):
         self._connect_timeout = connect_timeout_seconds
         self._writer: Any = None
         self._closed = False
+        self._token = token.strip().removeprefix("oauth:")
+        self._login_name = (login.strip().lower() or channel) if self._token else ""
+        self._joined = False
 
     @property
     def channel(self) -> str:
         return self._channel
+
+    @property
+    def login(self) -> str:
+        """書き込むアカウントのログイン名（匿名なら空）。"""
+        return self._login_name
+
+    @property
+    def can_post(self) -> bool:
+        return bool(self._token) and self._joined and self._writer is not None
+
+    async def post(self, text: str) -> bool:
+        """1 行書き込む（改行は空白に、長ければ切る）。書き込めなければ偽。"""
+        if not self.can_post:
+            return False
+        line = " ".join(text.split())[:MAX_POST_CHARS]
+        if not line:
+            return False
+        try:
+            self._writer.write(f"PRIVMSG #{self._channel} :{line}\r\n".encode())
+            await self._writer.drain()
+        except Exception as e:  # noqa: BLE001 - 書き込めなくても読むのは続ける
+            logger.warning(f"Twitch のチャットに書き込めなかった（{type(e).__name__}: {e}）")
+            return False
+        logger.info(f"[chat post] {line}")
+        return True
 
     async def comments(self) -> AsyncIterator[ChatComment]:
         failures = 0
@@ -136,8 +180,11 @@ class TwitchIrcChat(IChatSource):
         await self._drop()
 
     async def _login(self, writer: Any) -> None:
-        nick = f"justinfan{random.randint(10000, 99999)}"
-        for line in ("CAP REQ :twitch.tv/tags", f"NICK {nick}", f"JOIN #{self._channel}"):
+        if self._token:
+            lines = [f"PASS oauth:{self._token}", f"NICK {self._login_name}"]
+        else:
+            lines = [f"NICK justinfan{random.randint(10000, 99999)}"]
+        for line in ("CAP REQ :twitch.tv/tags", *lines, f"JOIN #{self._channel}"):
             writer.write(f"{line}\r\n".encode())
         await writer.drain()
 
@@ -157,9 +204,18 @@ class TwitchIrcChat(IChatSource):
                 logger.info("Twitch がつなぎ直しを求めた")
                 return
             if command == "JOIN":
+                self._joined = True
                 yield None, True
                 continue
             if command == "NOTICE":
+                if self._token and any(k in line for k in _AUTH_FAILED):
+                    logger.error(
+                        f"Twitch に {self._login_name} でログインできない（トークンを確かめる: "
+                        "TWITCH_ACCESS_TOKEN、TWITCH_BOT_LOGIN）。匿名で読むだけに戻る"
+                    )
+                    self._token = ""
+                    self._login_name = ""
+                    return
                 logger.warning(f"Twitch から: {line}")
                 continue
             comment = parse_privmsg(line)
@@ -167,6 +223,7 @@ class TwitchIrcChat(IChatSource):
                 yield comment, False
 
     async def _drop(self) -> None:
+        self._joined = False
         writer, self._writer = self._writer, None
         if writer is None:
             return

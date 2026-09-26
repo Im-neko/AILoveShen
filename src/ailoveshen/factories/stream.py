@@ -131,7 +131,8 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     if twitch.enabled and twitch.channel.strip():
         from ailoveshen.infrastructure.adapters.twitch import TwitchIrcChat
 
-        chat = TwitchIrcChat(twitch.channel)
+        # トークンがあれば、そのアカウントでログインしてチャットに書ける（!commands の一覧）
+        chat = TwitchIrcChat(twitch.channel, login=twitch.bot_login, token=twitch.access_token)
         responder = ChatResponder(
             llm,
             session=lambda: game.session,
@@ -139,8 +140,14 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             min_interval_seconds=twitch.min_interval_seconds,
             backlog=twitch.backlog,
             readings=readings,
+            chat=chat,
+            # 配信者自身と書き込むアカウントのコメントには返事をしない（コマンドは実行する）。
+            # ボット（StreamElements など）には何も反応しない
+            quiet=(chat.channel, chat.login),
+            ignore=twitch.ignore_users,
         )
-        logger.info(f"[chat] Twitch #{chat.channel} のチャットを読む（読むだけ）")
+        how = f"{chat.login} で書き込みもする" if chat.login else "読むだけ"
+        logger.info(f"[chat] Twitch #{chat.channel} のチャットを読む（{how}）")
     else:
         logger.info("[chat] Twitch のチャットは読まない（.env の TWITCH_CHANNEL が空か、オフ）")
 
