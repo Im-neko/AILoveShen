@@ -9,7 +9,7 @@
 
 ### Jev でできることは Jev に: 2. 読み上げの感情 (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `8560c54`
 
 - それまで声はいつも中立だった（`LLMService.update_emotion` を呼ぶところがなかった）
 - 読む前に `AvatarDirector.react("speaking", 文, 規則)` を 1 回呼び、`voice_emotion` で声の感情（happy/sad/angry/surprised、relaxed と中立は中立、強さはそのまま）にして `TTSService.speak(emotion=)` に渡す（`factories/stream.py` の say / say_reply）。同じ反応は `LineReactions` に覚え、読み上げが始まったらアバターがそのまま使う（同じ文で Jev をもう一度呼ばない）。Jev が答えなければ前と同じ（中立、アバターは規則）
