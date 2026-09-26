@@ -146,9 +146,12 @@ function fromLeaf (bot, state, world, leaf) {
         .map(([dir, [dx, dz]]) => {
           const go = state.memory ? Math.max(EXPLORE_DISTANCE, frontierDistance(state.memory, me, dx, dz)) : EXPLORE_DISTANCE
           const far = go > EXPLORE_DISTANCE + FRONTIER_SLACK
+          // id は変えない（/act は候補を作り直して id で探す。距離を入れると、観測と実行の間に
+          // 見た区域が増えて id が変わり、選んだ探索が「今はできない」になって何も動かなかった）
           return {
-            id: far ? `explore ${dir} (unexplored land ${go}m away)` : `explore ${dir}`,
+            id: `explore ${dir}`,
             verb: 'explore', target: dir, looking_for: lookingFor, dx, dz, go,
+            ...(far ? { unexplored_land_m: go } : {}),
             been_there: !!state.memory && visited(state.memory, me.offset(dx * EXPLORE_DISTANCE, 0, dz * EXPLORE_DISTANCE))
           }
         })
@@ -247,17 +250,18 @@ function fromLeaf (bot, state, world, leaf) {
     case 'sleep':
       return [{ id: 'sleep in the bed', verb: 'sleep', target: 'bed', inPlace: true, effect: 'skips the night' }]
     case 'plant': {
-      // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面
+      // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面。id に場所は入れない
+      // （/act は候補を作り直して id で探す: 場所の選び直しで id が変わると動かない）
       const p = plantSpot(bot, state)
-      return p ? [{ id: `plant ${leaf.item} at ${fmt(p)}`, verb: 'plant', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+      return p ? [{ id: `plant ${leaf.item} near the home`, verb: 'plant', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
     }
     case 'till': {
       const p = tillSpot(bot, state)
-      return p ? [{ id: `till the ground at ${fmt(p)} with a hoe`, verb: 'till', target: 'farmland', pos: p, distance: dist(bot, p) }] : []
+      return p ? [{ id: 'till the ground near the home with a hoe', verb: 'till', target: 'farmland', pos: p, distance: dist(bot, p) }] : []
     }
     case 'sow': {
       const p = sowSpot(bot, state)
-      return p ? [{ id: `sow ${leaf.item} on the farmland at ${fmt(p)}`, verb: 'sow', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+      return p ? [{ id: `sow ${leaf.item} on the farmland near the home`, verb: 'sow', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
     }
     default:
       return []

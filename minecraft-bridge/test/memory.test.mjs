@@ -71,11 +71,12 @@ test('探すときは覚えている場所を先に出し、次にまだ行っ�
   const { candidates } = ground(bot, state, null, { dig: () => [], hunt: () => [] }, { leaves: [leaf] })
   assert.equal(candidates[0].id, 'go to sheep seen at 0,-100')
   assert.equal(candidates[0].verb, 'goto_memory')
-  const east = candidates.find((c) => c.id.startsWith('explore east'))
+  const east = candidates.find((c) => c.id === 'explore east')
   assert.equal(east.been_there, true)
   // 東は見た所が続くので、その先のまだ見ていない土地まで行く（行き来をくり返さない）
-  assert.equal(east.id, 'explore east (unexplored land 48m away)')
+  assert.equal(east.id, 'explore east') // id は距離で変わらない（/act は id で探し直す）
   assert.equal(east.go, 48)
+  assert.equal(east.unexplored_land_m, 48)
   assert.equal(candidates.at(-1), east)
 })
 
