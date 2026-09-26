@@ -31,6 +31,32 @@ REPO = Path(__file__).resolve().parent.parent
 STYLES = {"happy": "Happy", "surprised": "Surprised", "sad": "Sad", "angry": "Angry", "scared": "Fear"}
 
 
+def accept_old_hub_arguments() -> None:
+    """
+    pyannote.audio（style_gen が使う）の古い版は hf_hub_download(use_auth_token=...) と呼ぶが、新しい
+    huggingface_hub にはその引数がない（「unexpected keyword argument 'use_auth_token'」で読めなかった）。
+    pyannote を読み込む前に、use_auth_token を token に読み替える形に差し替える。
+    """
+    import functools
+
+    import huggingface_hub
+    from huggingface_hub import file_download
+
+    original = huggingface_hub.hf_hub_download
+    if getattr(original, "_accepts_use_auth_token", False):
+        return
+
+    @functools.wraps(original)
+    def hf_hub_download(*args, use_auth_token=None, **kwargs):
+        if use_auth_token is not None and "token" not in kwargs:
+            kwargs["token"] = None if use_auth_token is True else use_auth_token
+        return original(*args, **kwargs)
+
+    hf_hub_download._accepts_use_auth_token = True  # type: ignore[attr-defined]
+    huggingface_hub.hf_hub_download = hf_hub_download
+    file_download.hf_hub_download = hf_hub_download
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sbv2", type=Path, default=REPO / "Style-Bert-VITS2", help="Style-Bert-VITS2 のフォルダー")
@@ -71,6 +97,8 @@ def main() -> int:
     sys.path.insert(0, str(sbv2))
     try:
         import numpy as np
+
+        accept_old_hub_arguments()
         from style_gen import get_style_vector
     except Exception as e:  # noqa: BLE001 - 環境が違う
         print(
