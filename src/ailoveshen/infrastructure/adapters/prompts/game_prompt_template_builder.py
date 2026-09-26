@@ -269,6 +269,21 @@ $conditions
 - メモは書いた日から 3 日で消える。まだ正しいメモは keep すると今日から 3 日延びる。
   間違っていたとわかったメモは drop する
 
+## 小目標がうまくいかなかったとき（本文に「うまくいかなかった小目標の記録」があるとき）
+- まず原因を分析する（diagnosis）。記録（選んだ行動、確信度、結果）、最後に出ていた候補、
+  進み具合、持ち物、覚えている場所、画面から、どの事実でそう言えるかを示して 1〜2 文で書く
+  （例: 東と南の探索を交互に選んで同じ所を回っている。豚は約 300m 先の記録だけで、腐った肉を
+  拾う候補は選ばれていない）
+- 次に対処（remedy）を決める
+  - retry: 同じ小目標（述語と品目が同じ。数だけ変えるのも同じ）をやり方を変えてやり直す。
+    助言（advice）が必須: 行動の選択器への英語 1〜2 文で、出ていた候補に即して何を選ぶ・
+    避けるかを書く（例: "Pick up the rotten_flesh first. Keep exploring west instead of
+    alternating east and south."）
+  - change: 原因から見て、別の小目標のほうがよいとき（材料が先に要る、ここでは無理、
+    身を守るのが先、など）。原因が中目標の立て方にあるなら、中目標リストや手順も直す
+- 同じ小目標が続けて失敗しているときは、やり直しは選べない（本文に書いてある）
+- 分析と助言は配信の画面と実況にも出る。記録にない事実を作らない
+
 ## 小目標の述語（全部。今使えるものは状態の側に書く）
 $all_predicates
 
@@ -292,7 +307,7 @@ $recent_messages
 
 ## 小目標を選び直す理由
 $reason
-$previous_error
+$failure$previous_error
 """)
 
 # spikes/primitive_choice_eval.py で測った: 体が必要とするもの（needs）を状態に書くと効いた。
@@ -351,7 +366,8 @@ $activity
 ACTION_INSTRUCTIONS = (
     "You control a Minecraft survival player working toward the goal in the state. "
     "Choose the single best next primitive action. Stay alive first; otherwise make progress on "
-    "the goal."
+    "the goal. If the state has advice from the planner, follow it unless it would put you in "
+    "danger."
 )
 MOBS_SHOWN = 8
 RECENT_ACTIONS_SHOWN = 3
@@ -490,6 +506,9 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         recent_messages: Sequence[ConversationMessage],
         predicates: Sequence[GoalPredicate],
         previous_error: str = "",
+        failure_record: Sequence[str] = (),
+        offered: Sequence[Candidate] = (),
+        retry_allowed: bool = True,
     ) -> str:
         """LLM に次の目標を決めさせるプロンプトを組み立てる。"""
         error = (
@@ -504,6 +523,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             activity=format_activity(activity, with_ids=True),
             recent_messages=format_messages(tuple(recent_messages)),
             reason=goal_ended_because or "なし",
+            failure=_format_failure(failure_record, offered, retry_allowed),
             previous_error=error,
         )
 
@@ -553,6 +573,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         state = {
             "goal": goal.spec.describe(),
             "goal_reason": goal.reason,
+            **({"advice": goal.advice} if goal.advice else {}),
             "progress": list(status.lines) if status else [],
             "blocked": list(status.blocked) if status else [],
             "needs": list(observation.needs),
@@ -576,6 +597,32 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             "recent_actions": s.get("recent_actions", [])[-RECENT_ACTIONS_SHOWN:],
         }
         return state, ACTION_INSTRUCTIONS
+
+
+def _format_failure(
+    record: Sequence[str], offered: Sequence[Candidate], retry_allowed: bool
+) -> str:
+    """うまくいかなかった小目標の記録（docs/design/27 §3）。失敗でなければ空。"""
+    if not record and not offered:
+        return ""
+    lines = ["", "## うまくいかなかった小目標の記録（古い順。行動 (確信度) → 結果）"]
+    lines += [f"- {line}" for line in record] or ["- なし"]
+    lines.append("最後に出ていた候補:")
+    lines += [f"- {_format_offered(c)}" for c in offered] or ["- なし"]
+    if not retry_allowed:
+        lines.append("この小目標は続けて失敗している。やり直しは選べない（change にする）")
+    return "\n".join(lines) + "\n"
+
+
+def _format_offered(c: Candidate) -> str:
+    d = c.description
+    facts = [
+        f"{d['distance']}m" if d.get("distance") is not None else "",
+        "行ったことがある方角" if d.get("been_there") else "",
+        f"{d['seen_minutes_ago']} 分前に見た" if d.get("seen_minutes_ago") is not None else "",
+    ]
+    facts = [f for f in facts if f]
+    return c.action_id + (f"（{'、'.join(facts)}）" if facts else "")
 
 
 def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> str:

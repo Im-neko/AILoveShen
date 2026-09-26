@@ -150,6 +150,9 @@ class IGamePromptBuilder(ABC):
         recent_messages: Sequence[ConversationMessage],
         predicates: Sequence[GoalPredicate],
         previous_error: str = "",
+        failure_record: Sequence[str] = (),
+        offered: Sequence[Candidate] = (),
+        retry_allowed: bool = True,
     ) -> str:
         """
         LLM に次の目標を決めさせるプロンプトを組み立てる。
@@ -162,6 +165,10 @@ class IGamePromptBuilder(ABC):
             recent_messages: 配信で話されたこと（配信者の言葉と視聴者のチャット）
             predicates: 今意味のある述語
             previous_error: 前回の目標、または中目標の編集が使えなかった理由
+            failure_record: 行き詰まった・進まなかった小目標の行動の記録（古い順。空: 失敗ではない）。
+                あれば原因を分析させる（docs/design/27）
+            offered: その小目標で最後に出ていた候補
+            retry_allowed: 同じ小目標のやり直しを選べるか（同じ失敗が続いたら選べない）
         """
         ...
 

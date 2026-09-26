@@ -21,6 +21,7 @@ from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import (
     GoalDecision,
+    Remedy,
     Serves,
     goal_schema,
     parse_decision,
@@ -54,6 +55,7 @@ from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
     Activity,
+    Candidate,
     ConversationMessage,
     GameObservation,
     Goal,
@@ -73,6 +75,9 @@ CONTROLS = ("candidates", "tools")
 MAX_QUERIES_PER_STEP = 3  # 1 ステップの中で調べものをしてよい回数
 SUGGESTIONS_SHOWN = 12  # 道具の選択に見せるソルバーの提案の数
 RECENT_TOOLS = 8  # 道具の選択に見せる直近の呼び出しの数
+GOAL_STEPS_SHOWN = 12  # 失敗の分析に見せる、その小目標の行動の数（docs/design/27）
+OFFERED_SHOWN = 12  # 失敗の分析に見せる、最後に出ていた候補の数
+MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら、やり直しは選べない
 
 
 def _plan_blueprint(obs: GameObservation) -> HouseBlueprint | None:
@@ -292,6 +297,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._clock = clock
         self._last_gemini_at: float | None = None
         self._last_plan: tuple[str, ...] = ()  # 前の Gemini の決定のときの中目標の並び
+        # 今の小目標の行動の記録と、最後に出ていた候補（失敗の分析に見せる。docs/design/27）
+        self._goal_steps: deque[str] = deque(maxlen=GOAL_STEPS_SHOWN)
+        self._offered: tuple[Candidate, ...] = ()
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""
@@ -325,11 +333,13 @@ class AdvancePlayUseCase(IAdvancePlay):
 
         goal = session.goal
         assert goal is not None
+        self._offered = obs.candidates[:OFFERED_SHOWN]
         if self._control == "tools":
             decision, result = await self._act_with_tools(session, obs)
         else:
             decision, result = await self._act_on_candidate(goal, obs)
         await self._mid_goals.step_counted(session.plan, session.record(result))
+        self._goal_steps.append(_step_line(decision, result))
         await self._event_publisher.publish(
             GameActionExecutedEvent(
                 action_id=result.action_id,
@@ -522,6 +532,16 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 画面も添える（23 §2）
         failed = any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: "))
         purpose = "goal_after_failure" if failed else "goal"
+        # 行き詰まった・進まなかったときは、原因を分析してから決める（docs/design/27）
+        failed_goal = (
+            session.recent_goals[-1].goal.spec
+            if _no_progress(reason) and session.recent_goals
+            else None
+        )
+        same_failures = _same_failures(session) if failed_goal else 0
+        retry_allowed = same_failures < MAX_SAME_FAILURES
+        record = tuple(self._goal_steps) if failed_goal else ()
+        offered = self._offered if failed_goal else ()
         images: list[Screenshot] = []
         if failed and self._screen is not None:
             shot = await self._screen.after_failure()
@@ -535,6 +555,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                 recent_messages=messages,
                 predicates=predicates,
                 previous_error=error,
+                failure_record=record,
+                offered=offered,
+                retry_allowed=retry_allowed,
             )
             schema = goal_schema(
                 predicates,
@@ -542,6 +565,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                 [n.id for n in session.notebook.notes],
                 len(goals),
                 viewers,
+                after_failure=failed_goal is not None,
+                retry_allowed=retry_allowed,
             )
             data = await self._text_generator.generate_json(
                 prompt,
@@ -556,6 +581,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                     raise ValueError(
                         f"{decision.spec.predicate.value} is not one of the goals offered"
                     )
+                if failed_goal is not None:
+                    _check_remedy(decision, failed_goal, same_failures)
                 await self._mid_goals.check_new(decision.changes)
                 _serving(decision, self._mid_goals.rehearse(plan, decision.changes))
                 status = await self._bridge.set_goal(
@@ -578,6 +605,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                 error = str(e)
                 logger.warning(f"目標の決定 {attempt} を差し戻した: {data!r}: {error}")
                 continue
+            if decision.diagnosis:
+                logger.info(
+                    f"失敗の分析: {decision.diagnosis} → {decision.remedy.value if decision.remedy else '?'}"
+                    + (f"（助言: {decision.advice}）" if decision.advice else "")
+                )
             await self._mid_goals.commit(plan, decision.changes)
             if decision.steps and plan.current is not None:
                 await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
@@ -614,6 +646,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         status: GoalStatus,
     ) -> None:
         session.set_goal(goal, obs.time_phase)
+        self._goal_steps.clear()
         # これから見えるもの（このイベントの語り、返答）は、終わった目標ではなく
         # 新しい目標の状態
         session.observe(replace(obs, goal=status))
@@ -664,7 +697,59 @@ def _viewers(messages: tuple[ConversationMessage, ...]) -> list[str]:
 def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
     current = plan.current
     mid_goal_id = current.id if decision.serves == Serves.CURRENT and current else None
-    return Goal(spec=decision.spec, reason=decision.reason, mid_goal_id=mid_goal_id)
+    return Goal(
+        spec=decision.spec,
+        reason=decision.reason,
+        mid_goal_id=mid_goal_id,
+        diagnosis=decision.diagnosis,
+        advice=decision.advice,
+    )
+
+
+def _no_progress(reason: str) -> bool:
+    """小目標が行き詰まったか進まなかったか（原因を分析する失敗。docs/design/27）。"""
+    return " is stuck " in reason or " stalled " in reason
+
+
+def _same_failures(session: PlaySession) -> int:
+    """最後に終わった小目標と同じ種類の小目標が、続けて何回失敗で終わったか。"""
+    recent = session.recent_goals
+    last = recent[-1].goal.spec
+    n = 0
+    for outcome in reversed(recent):
+        if not (_no_progress(outcome.ended_because) and outcome.goal.spec.same_kind(last)):
+            break
+        n += 1
+    return n
+
+
+def _check_remedy(decision: GoalDecision, failed: GoalSpec, same_failures: int) -> None:
+    """失敗の後の決定が、分析と対処の決まりに合うか（docs/design/27 §2）。"""
+    if not decision.diagnosis or decision.remedy is None:
+        raise ValueError("after a failure, write the diagnosis first and then the remedy")
+    same = decision.spec.same_kind(failed)
+    if decision.remedy == Remedy.RETRY and not same:
+        raise ValueError(
+            f"retry means the same small goal as {failed.describe()}; for another one use change"
+        )
+    if decision.remedy == Remedy.CHANGE and same:
+        raise ValueError(
+            f"{decision.spec.describe()} is the same small goal as {failed.describe()} "
+            "(only the number differs); choose a different one, or retry with advice"
+        )
+    if same and same_failures >= MAX_SAME_FAILURES:
+        raise ValueError(
+            f"{failed.describe()} made no progress {same_failures} times in a row; "
+            "choose a different small goal (remedy change)"
+        )
+    if same and not decision.advice:
+        raise ValueError("retry needs advice: what the action chooser should do differently")
+
+
+def _step_line(decision: ActionDecision, result: ActionResult) -> str:
+    """失敗の分析に見せる 1 ステップ: 選んだ行動、確信度、結果。"""
+    outcome = "ok" if result.ok else "failed"
+    return f"{result.action_id} ({decision.confidence:.2f}) → {outcome}: {result.result[:80]}"
 
 
 def _kept(plan: MidGoalPlan) -> tuple[GoalSpec, ...]:

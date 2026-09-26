@@ -82,6 +82,13 @@ def _obs(
 
 
 HAVE_PLANKS = GoalSpec(GoalPredicate.HAVE, item="planks", count=4)
+# 失敗の後の決定: 分析、対処、助言（docs/design/27）
+RETRY_PLANKS = {
+    **PLANKS,
+    "diagnosis": "近くに木がない",
+    "remedy": "retry",
+    "advice": "Explore west.",
+}
 BUILT = GoalSpec(GoalPredicate.BUILT)
 BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
 SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
@@ -573,7 +580,7 @@ class TestAdvancePlay:
     @pytest.mark.asyncio
     async def test_stalled_goal_is_replaced(self, use_case, text_generator, bridge, prompt_builder):
         """残りの作業が減らなくなった小目標は stalled で終わる。"""
-        text_generator.generate_json.return_value = PLANKS
+        text_generator.generate_json.return_value = RETRY_PLANKS
         session = _session(HAVE_PLANKS)  # max_stalled_steps=2。残りは 3 のまま
 
         assert not (await use_case.execute(session)).goal_changed  # 作業量の最初の読み取り
@@ -1050,3 +1057,103 @@ def test_steps_must_be_conditions_the_world_can_judge():
     assert [s.reason for s in decision.steps] == ["原木を集める", "板材にする", "家を建てる"]
     with pytest.raises(ValueError, match="step 1: explored cannot be a step"):
         parse_decision({**PLANKS, "steps": [{"predicate": "explored", "distance": 30}]})
+
+
+class TestFailureDiagnosis:
+    """進まないときは原因を分析してから、必要なら目標を変える（docs/design/27）。"""
+
+    conversation = TestAdvancePlay.conversation
+    town = TestAdvancePlay.town
+    note_store = TestAdvancePlay.note_store
+    notes = TestAdvancePlay.notes
+    use_case = TestAdvancePlay.use_case
+
+    async def _stall(self, use_case, session):
+        # max_stalled_steps=2: 最初の読み取り、進まない 1、進まない 2 で終わる
+        for _ in range(3):
+            report = await use_case.execute(session)
+        return report
+
+    @pytest.mark.asyncio
+    async def test_the_record_and_options_go_to_gemini_with_a_diagnosis_first(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        bridge.observe.return_value = _obs(
+            candidates=("go to pig seen at -21,-267", "explore east")
+        )
+        text_generator.generate_json.return_value = RETRY_PLANKS
+        session = _session(HAVE_PLANKS)
+
+        assert (await self._stall(use_case, session)).goal_changed
+
+        kwargs = prompt_builder.build_goal_prompt.call_args.kwargs
+        assert len(kwargs["failure_record"]) == 2  # この小目標の間の行動
+        assert "(0.90) → ok" in kwargs["failure_record"][0]
+        assert [c.action_id for c in kwargs["offered"]][0] == "go to pig seen at -21,-267"
+        assert kwargs["retry_allowed"]
+        schema = text_generator.generate_json.call_args.args[1]
+        assert list(schema["properties"])[:3] == ["diagnosis", "remedy", "advice"]
+        assert session.goal.diagnosis == "近くに木がない"
+        assert session.goal.advice == "Explore west."
+
+    @pytest.mark.asyncio
+    async def test_a_goal_that_is_met_is_not_diagnosed(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        text_generator.generate_json.return_value = PLANKS
+        bridge.observe.return_value = _obs(met=True)
+        await use_case.execute(_session(HAVE_PLANKS))
+        kwargs = prompt_builder.build_goal_prompt.call_args.kwargs
+        assert kwargs["failure_record"] == ()
+        schema = text_generator.generate_json.call_args.args[1]
+        assert "diagnosis" not in schema["properties"]
+
+    @pytest.mark.asyncio
+    async def test_retry_needs_advice_and_change_needs_another_goal(
+        self, use_case, text_generator, prompt_builder
+    ):
+        no_advice = {**RETRY_PLANKS, "advice": ""}
+        # 数だけ変えても同じ小目標: change とは言えない
+        disguised = {**RETRY_PLANKS, "remedy": "change", "count": 2}
+        text_generator.generate_json.side_effect = [no_advice, disguised, RETRY_PLANKS]
+
+        await self._stall(use_case, _session(HAVE_PLANKS))
+
+        errors = [
+            c.kwargs["previous_error"] for c in prompt_builder.build_goal_prompt.call_args_list
+        ]
+        assert "retry needs advice" in errors[1]
+        assert "only the number differs" in errors[2]
+
+    @pytest.mark.asyncio
+    async def test_the_same_goal_failing_twice_must_change(
+        self, use_case, text_generator, prompt_builder
+    ):
+        text_generator.generate_json.side_effect = [
+            RETRY_PLANKS,  # 1 回目の失敗の後: やり直す
+            RETRY_PLANKS,  # 2 回目の失敗の後: やり直しは選べない
+            {
+                **PLANKS,
+                "predicate": "explored",
+                "distance": 40,
+                "serves": "current",
+                "diagnosis": "木がない",
+                "remedy": "change",
+            },
+        ]
+        session = _session(HAVE_PLANKS)
+        await self._stall(use_case, session)
+        await self._stall(use_case, session)
+
+        kwargs = prompt_builder.build_goal_prompt.call_args.kwargs
+        assert not kwargs["retry_allowed"]
+        assert "2 times in a row" in kwargs["previous_error"]
+        schema = text_generator.generate_json.call_args.args[1]
+        assert schema["properties"]["remedy"]["enum"] == ["change"]
+        assert session.goal.spec.predicate == GoalPredicate.EXPLORED
+
+
+def test_same_kind_ignores_the_numbers():
+    food = GoalSpec(GoalPredicate.HAVE, item="food", count=2)
+    assert food.same_kind(GoalSpec(GoalPredicate.HAVE, item="food", count=1))
+    assert not food.same_kind(GoalSpec(GoalPredicate.HAVE, item="log", count=2))

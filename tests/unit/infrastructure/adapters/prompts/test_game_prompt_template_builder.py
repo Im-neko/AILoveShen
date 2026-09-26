@@ -462,6 +462,45 @@ class TestToolPrompt:
         assert "目標を達成したかは画像では決めない" in prompt
 
 
+class TestFailureDiagnosisPrompt:
+    """失敗の記録、分析、助言の見え方（docs/design/27）。"""
+
+    def test_the_failure_record_and_the_options_are_shown(self):
+        prompt = _goal_prompt(
+            failure_record=("explore east (0.13) → ok: walked 21m east",),
+            offered=(
+                Candidate(
+                    "go to pig seen at -21,-267",
+                    {"distance": 296, "seen_minutes_ago": 40},
+                ),
+                Candidate("explore east", {"been_there": True}),
+            ),
+            retry_allowed=False,
+        )
+
+        assert "## うまくいかなかった小目標の記録" in prompt
+        assert "- explore east (0.13) → ok: walked 21m east" in prompt
+        assert "- go to pig seen at -21,-267（296m、40 分前に見た）" in prompt
+        assert "- explore east（行ったことがある方角）" in prompt
+        assert "やり直しは選べない" in prompt
+
+    def test_no_record_section_without_a_failure(self):
+        assert "うまくいかなかった小目標の記録" not in _goal_prompt()
+        assert "まず原因を分析する" in GamePromptTemplateBuilder().build_goal_system()
+
+    def test_the_advice_reaches_the_chooser_and_the_diagnosis_the_stream(self):
+        goal = replace(PLANKS, diagnosis="近くに木がない", advice="Explore west.")
+        state, instructions = GamePromptTemplateBuilder().build_action_context(goal, _obs())
+        assert state["advice"] == "Explore west."
+        assert "advice" in instructions
+        plain, _ = GamePromptTemplateBuilder().build_action_context(PLANKS, _obs())
+        assert "advice" not in plain
+
+        prompt = _goal_prompt(activity=Activity(mission=MISSION, goal=goal, observation=_obs()))
+        assert "前の小目標がうまくいかなかった理由（自分の分析）: 近くに木がない" in prompt
+        assert "やり方の助言: Explore west." in prompt
+
+
 class TestPromptLength:
     """代表的な状態のプロンプトの長さ。増えたら気づけるように（26 §4）。"""
 

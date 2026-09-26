@@ -119,6 +119,13 @@ class NoteChange:
     viewer: str = ""
 
 
+class Remedy(str, Enum):
+    """失敗の後の対処: 同じ小目標をやり方を変えてやり直すか、別の小目標にするか。"""
+
+    RETRY = "retry"
+    CHANGE = "change"
+
+
 @dataclass(frozen=True)
 class GoalDecision:
     """次の小目標、それが何のためか、一緒に行う中目標リストの編集。"""
@@ -129,6 +136,10 @@ class GoalDecision:
     changes: tuple[PlanChange, ...] = ()
     # 一番上の中目標のための手順（書き直すときだけ。空: 今の手順のまま）。docs/design/26
     steps: tuple[PlannedStep, ...] = ()
+    # 前の小目標が失敗で終わったときだけ（docs/design/27）: 原因の分析、対処、やり方の助言
+    diagnosis: str = ""
+    remedy: Optional[Remedy] = None
+    advice: str = ""
 
 
 def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
@@ -200,12 +211,16 @@ def goal_schema(
     note_ids: list[str] | None = None,
     goals: int = 0,
     viewers: list[str] | None = None,
+    after_failure: bool = False,
+    retry_allowed: bool = True,
 ) -> dict[str, Any]:
     """
     目標の決定の JSON スキーマ: 小目標、中目標リストの編集、自分のメモの編集。
 
     `goals` は示した小目標の数（lesson の根拠に使える）、`viewers` は示した会話にいる
-    視聴者。
+    視聴者。`after_failure` なら、先頭に原因の分析、次に対処と助言（docs/design/27。
+    出力はスキーマの順に書かれるので、分析してから決める）。`retry_allowed` が False なら
+    同じ小目標のやり直しは選べない。
     """
     change: dict[str, Any] = {
         "type": "object",
@@ -228,7 +243,7 @@ def goal_schema(
             "enum": mid_goal_ids,
             "description": "move / drop: the mid goal",
         }
-    return {
+    schema: dict[str, Any] = {
         "type": "object",
         "properties": {
             "plan_changes": {
@@ -276,6 +291,31 @@ def goal_schema(
         },
         "required": ["predicate", "serves", "reason"],
     }
+    if not after_failure:
+        return schema
+    remedies = [Remedy.RETRY.value, Remedy.CHANGE.value] if retry_allowed else [Remedy.CHANGE.value]
+    head = {
+        "diagnosis": {
+            "type": "string",
+            "description": "First: why the last small goal made no progress, citing the facts "
+            "(its action record, the options offered, the state, the screen). 1-2 sentences in "
+            "Japanese",
+        },
+        "remedy": {
+            "type": "string",
+            "enum": remedies,
+            "description": "retry: the same small goal again (same predicate and item), done "
+            "differently as the advice says; change: a different small goal",
+        },
+        "advice": {
+            "type": "string",
+            "description": "retry: required. 1-2 English sentences for the action chooser, "
+            "concrete to the options it was offered (which to prefer or avoid). change: optional",
+        },
+    }
+    schema["properties"] = {**head, **schema["properties"]}
+    schema["required"] = ["diagnosis", "remedy", *schema["required"]]
+    return schema
 
 
 def reply_schema() -> dict[str, Any]:
@@ -413,12 +453,21 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
             steps.append(PlannedStep(parse_spec(raw), str(raw.get("reason", "")).strip()))
         except ValueError as e:
             raise ValueError(f"step {i + 1}: {e}") from e
+    remedy = None
+    if data.get("remedy"):
+        try:
+            remedy = Remedy(data["remedy"])
+        except ValueError as e:
+            raise ValueError(f"remedy must be one of {[r.value for r in Remedy]}") from e
     return GoalDecision(
         spec=parse_spec(data),
         reason=str(data.get("reason", "")),
         serves=serves,
         changes=tuple(changes),
         steps=tuple(steps[:MAX_STEPS]),
+        diagnosis=str(data.get("diagnosis", "")).strip(),
+        remedy=remedy,
+        advice=str(data.get("advice", "")).strip(),
     )
 
 

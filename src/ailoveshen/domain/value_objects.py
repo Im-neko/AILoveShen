@@ -436,6 +436,15 @@ class GoalSpec:
                 out[key] = value
         return out
 
+    def same_kind(self, other: GoalSpec) -> bool:
+        """数や距離だけが違う同じ目標か（have(food, 2) と have(food, 1)。docs/design/27）。"""
+        return (self.predicate, self.item, self.where, self.name) == (
+            other.predicate,
+            other.item,
+            other.where,
+            other.name,
+        )
+
     def describe(self) -> str:
         """プロンプトとログ用の短い形。例: have(planks, 12)。"""
         args = [
@@ -461,6 +470,10 @@ class Goal:
     reason: str = ""
     mid_goal_id: Optional[str] = None
     set_at: datetime = field(default_factory=_utc_now)
+    # 前の小目標が失敗で終わったとき: その原因の分析と、この小目標のやり方の助言（選択器が読む。
+    # docs/design/27）
+    diagnosis: str = ""
+    advice: str = ""
 
 
 @dataclass(frozen=True)
