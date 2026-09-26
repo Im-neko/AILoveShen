@@ -1,6 +1,6 @@
 # B: Gemini が技を書き、確かめて覚え、直して使い回す
 
-作成: 2026-09-26。19 §3・§9 の B の詳細。A（設計書 21、`--control tools`）の道具の上に作る。
+作成: 2026-09-26。19 §3・§9 の B の詳細。A（設計書 21、`--control tools`）の道具の上に作る。§8 は決定済み、§12 に実装。
 
 ## 1. 目的
 
@@ -115,7 +115,7 @@ A の道具と同じ名前・同じ引数（19 §3「A の道具は B で JS か
 | 道具の呼び出し（行動） | 40 回 | 止めて失敗 |
 | 調べもの・`state()` | 200 回 | 止めて失敗 |
 | `judge` | 10 回 | 止めて失敗 |
-| 同期の実行（await なしで回るループ） | 50 ms | 止めて失敗（「止まらないループ」） |
+| isolate の中の CPU 時間（await なしで回るループ） | 合計 1 秒 | 止めて失敗（「止まらないループ」）。技はほとんどの時間を道具の完了待ちに使うので、1 秒で足りる |
 | メモリ | 32 MB | 止めて失敗 |
 
 - 反射（近くの敵、溺れ）は技より優先: 技の中の行動も今までどおり反射で止まり、技には `{ ok: false, result: 'interrupted: …' }` が返る
@@ -142,14 +142,14 @@ A の道具と同じ名前・同じ引数（19 §3「A の道具は B で JS か
 - 直したときは `SkillRevisedEvent`（実況で失敗の理由と直したことを一言）
 - `/debug/gemini` に `skill_write` の呼び出し（書いたコード）が出る。`/api/skills` で一覧（読むだけ）
 
-## 8. 決めてほしいこと
+## 8. 決めたこと（2026-09-26、ユーザー）
 
-1. サンドボックス: (a) `isolated-vm`（おすすめ）/ (b) 子プロセスと Node の permission / その他
-2. 上限の既定値（§5.2）と、直す回数（1 つの技に 1 時間 3 回）
-3. 技をワールドのリセットの後も残すか（おすすめ: 残す。座標を決め打ちした技は引数にするよう、書く決まりに入れる）
-4. 技を消せるか（おすすめ: Gemini は消さない。使わなくなった技は一覧の下に下がるだけ。消すのは開発者が手で）
-5. 最初の技（おすすめ: なし。A の道具だけから始め、Gemini が覚えていくところを配信で見せる）
-6. 技を書く呼び出しの深さ（おすすめ: high。費用は `tools/gemini_usage.py` の `skill_write` で見る）
+1. サンドボックス: (a) `isolated-vm`
+2. 上限（§5.2）と、直す回数（1 つの技に 1 時間 3 回）: このまま
+3. 技はワールドのリセットの後も残す
+4. 失敗作は消す。消すのは配信の外の掃除で（`npm run skills:clean`: 一度も成功していない版を消し、成功した版がない技はファイルごと消す。ブリッジが動いていれば断る）。配信中の Gemini は消さない
+5. 最初の技はなし（ゼロから）
+6. 技を書く呼び出しは high
 
 ## 9. 実装の順番
 
@@ -171,3 +171,9 @@ A の道具と同じ名前・同じ引数（19 §3「A の道具は B で JS か
 - 視聴者のチャットから技を書かせる・呼ばせる（技を書けるのは Gemini の道具の選択だけ）
 - 完了の判定を技の `done()` に任せる（`expects` を世界で判定する）
 - 候補モード（Jev が候補から選ぶ）を消す
+
+## 12. 実装（2026-09-26）
+
+- ブリッジ: `src/skills.mjs`（`runSkill`: isolated-vm、API、上限、止め方。`validateSkill`、`expectsBaseline` / `judgeExpects`、`SkillStore`: 版、数、一覧、`clean`）、`index.mjs`（`GET /skills`、`GET/PUT /skills/<name>`、`POST /skills/<name>/run`、`POST /judge`、`/state` の `skill` と `pending_judge`、技の実行中は `/act`・`/tool` が 409、`/abort` は技ごと止める）、`tools/clean-skills.mjs`（`npm run skills:clean`）。`npm start` と `npm test` は `--no-node-snapshot`（isolated-vm の求め）。テスト `test/skills.test.mjs`
+- Python: `tool_catalog`（`run_skill` / `write_skill`、引数は JSON の文字列）、`use_cases/skills.py`（`SkillWriter`: `skill_write` の呼び出し、受け取られなければ 3 回まで、1 時間 3 回まで。`order_skills`）、`AdvancePlay`（技の一覧を道具の選択に、`_skill_step`、失敗を直すときに見せる、`SkillLearnedEvent` / `SkillRevisedEvent`）、`ToolWatcher.run(call, execute=)` と judge の答え、`GamePromptTemplateBuilder`（`build_skill_system` / `build_skill_prompt`、道具の選択の技の節）、`Narrator`（覚えたらすぐ話す）、アバター（覚えたら喜ぶ）、設定 `minecraft.agent.skills` と `skill_rewrites_per_hour`、`gemini.thinking_levels.skill_write: high`。テスト `tests/unit/application/test_skills.py` ほか
+- 未確認（実機）: Gemini が書く技の質、技の成功率、A だけのときと比べた Gemini の回数と費用（`tools/gemini_usage.py` の `tool` と `skill_write`）

@@ -46,6 +46,8 @@ pip install -r requirements.txt      # Python の依存（OBS 用の obsws-pytho
 cd minecraft-bridge && npm install && cd ..
 ```
 
+ブリッジの `npm install` は、技のサンドボックス（`isolated-vm`、ネイティブのモジュール）もビルドする。主な OS はビルド済みが落ちてくる。ビルドに失敗したら、C++ のビルドツール（Windows: Visual Studio Build Tools、Linux: `build-essential` と `python3`）を入れて入れ直す。
+
 Linux では `sounddevice` に PortAudio が要る（`sudo apt install libportaudio2`）。
 
 ### 3. `.env`
@@ -177,7 +179,7 @@ Twitch のチャット #<チャンネル> を読み始めた
 
 | オプション | 内容 |
 |---|---|
-| `--control tools` | Gemini が道具を呼んで直接操作する（既定 `candidates` は候補から Jev が選ぶ。設定は `minecraft.agent.control`） |
+| `--control tools` | Gemini が道具を呼んで直接操作する（既定 `candidates` は候補から Jev が選ぶ。設定は `minecraft.agent.control`）。技（Gemini が書いて覚える手順。`minecraft.agent.skills`、既定オン）も使う |
 | `--no-speak` | 読み上げない（TTS サーバーなしで試すとき） |
 | `--no-chat` | Twitch のチャットを読まない |
 | `--no-board` | 目標ボードとアバターを出さない |
@@ -219,8 +221,19 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 |---|---|---|
 | ミッションと中目標 | `data/mission.json` | 中目標の一覧と進み具合。最初のミッションは `config/default.yaml` の `minecraft.mission` |
 | 家と記憶 | `minecraft-bridge/data/state.json` | 家（名前、設計図、場所）、前に見た場所、チェストの中身 |
+| 覚えた技 | `minecraft-bridge/data/skills/*.json` | 技のコード、版、成功と失敗の数。ワールドを作り直しても残す |
 
-最初からやり直したいときは、ブリッジとプレイの処理を止めてから、この 2 つを別の名前に移す（消さずに取っておく）。
+最初からやり直したいときは、ブリッジとプレイの処理を止めてから、上の 2 つ（ミッションと中目標、家と記憶）を別の名前に移す（消さずに取っておく）。技はそのまま残してよい（どのワールドでも使える）。
+
+### 技の掃除（配信の外で）
+
+一度も成功していない技（失敗作）と、成功していない版を消す。配信とブリッジを止めてから:
+
+```bash
+cd minecraft-bridge
+npm run skills:clean -- --dry-run   # 何を消すかだけ見る
+npm run skills:clean                # 消す（ブリッジが動いていると断る）
+```
 
 ## ワールドを作り直す
 
@@ -265,6 +278,7 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | Gemini の思考（直近の呼び出し） | `http://127.0.0.1:8765/debug/gemini`（JSON: `/api/debug/gemini?limit=20`） |
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
 | 見張りの記録（`--control tools`） | `logs/watch/*.jsonl` |
+| 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
 | 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |
 | Gemini の費用（用途ごとの回数とトークン） | `python tools/gemini_usage.py data/logs/ailoveshen-dev.log`（価格を渡すと円の目安） |
@@ -291,12 +305,15 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | 読み上げで 422 | `tts.emotion_style_map` にモデルにないスタイル名がある |
 | 音が OBS に入らない | `tts.audio.device` と OBS の音声入力キャプチャのデバイスを確かめる |
 | Ctrl-C で止まらない | 最新のコードにする（`git pull`） |
+| `[skill] … 失敗 time limit` / `too many actions` | 技が上限（180 秒、行動 40 回）に当たった。Gemini が理由を読んで直すか、道具で進める。続くなら配信の後に掃除する |
+| ブリッジの起動で `isolated-vm` のエラー | `cd minecraft-bridge && npm install`（ビルドツールが要ることがある。準備の 2） |
 | ブラウザソースが空 | 配信が動いているか、`--no-board` にしていないか。動いていれば OBS でソースを再読み込み |
 
 ## 関係する設計書
 
 - 目標の階層: `docs/design/13_goal_hierarchy.md`
 - 道具での操作と見張り: `docs/design/21_tool_control.md`
+- 技（Gemini が書いて覚える手順）: `docs/design/22_skills.md`
 - 画面を Gemini に見せる: `docs/design/23_screen_vision.md`
 - アバター: `docs/design/24_avatar.md`
 - TTS サーバー（Docker）: `docker/README.md`、`docs/setup/docker.md`

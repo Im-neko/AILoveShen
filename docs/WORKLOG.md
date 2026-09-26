@@ -1,11 +1,21 @@
 ## Current Status
 
-**Active Phase**: 設計書 26（小目標は Jev が手順から選ぶ §2、キャッシュが効くプロンプトと入力の削減 §4）を実装した。実機では未確認。次はユーザーの環境で配信を回し、`tools/gemini_usage.py` で用途ごとの回数と `cached=` を前日のログと比べること、`logs/goals/` で Jev の選び方を見ること。道具モード（`--control tools`）の `TOOL_TEMPLATE` はまだ決まった文が本文にある（毎ステップ呼ぶので、道具モードを使うなら次に手を付ける）。ブランチ `claude/peaceful-edison-prr51v`
+**Active Phase**: B（設計書 22、技）を実装した。道具モード（`--control tools`）で Gemini が JS の技を書いて覚え、失敗したら直す。実機では未確認。次はユーザーの環境で、`cd minecraft-bridge && npm install`（isolated-vm）→ ブリッジと配信を再起動し、技を覚えるか、`tools/gemini_usage.py` で A と比べること。26（Jev の小目標、キャッシュ）と 27（失敗の分析）も実機で測る。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
 **Test Status**: `pytest tests/` 572 passed, 2 skipped。ブリッジ `npm test` 138 件
 **実機の状態**: プレイの処理は止めた（前の家に閉じ込められていたため）。31490a4 と dee7158、それに 21 のブリッジの変更はまだブリッジに反映していない（ブリッジの再起動が要る）。ボットは前の家の中、持ち物なし
 
 ## Completed Work
+
+### B: 技を実装（設計書 22） (2026-09-26)
+
+**Commits**: `89a775a`（ブリッジ）、`317fef2`（Python）、(this commit)（文書）
+
+- ユーザーの決定（22 §8）: サンドボックスは isolated-vm、上限はそのまま、ワールドのリセット後も残す、失敗作は配信の外の掃除で消す、ゼロから、書く深さは high
+- ブリッジ `src/skills.mjs` と `index.mjs` の `/skills`・`/judge`、`npm run skills:clean`。isolated-vm は同期の時間切れと CPU の見張りの両方で止まらないループを止める（どちらが先でも同じ理由にした）。`npm test` 152 件
+- Python: `run_skill` / `write_skill`、`SkillWriter`、道具の選択の技の一覧、失敗を直すときに見せる、見張りが judge に答える、イベントと実況・アバター、設定。pytest 598 件
+- 設計からの変更: 同期の 50 ms の上限を、isolate の CPU 時間の合計 1 秒にした（isolated-vm では非同期の続きの時間を分けて測れないため）
+- 次: 実機（`--control tools`）で、技を覚えるか、直せるか、Gemini の回数と費用が A より減るか
 
 ### B（技）の設計: 設計書 22 (2026-09-26)
 
