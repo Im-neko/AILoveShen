@@ -179,3 +179,43 @@ class TestJevFirstStep:
 
         text_generator.choose_tool.assert_awaited()
         assert watcher.run.await_args.args[0].name == "wait"
+
+
+@pytest.mark.asyncio
+async def test_a_stuck_record_ends_the_goal_for_gemini(monkeypatch):
+    """行き詰まりの確認（34 §9）が「行き詰まっている」なら、次の切れ目で考え直す。"""
+    from ailoveshen.application.use_cases.stuck_check import StuckCheck
+    from ailoveshen.domain.value_objects import FastAnswer, FastVerdict
+
+    bridge = AsyncMock()
+    bridge.observe.return_value = _obs()
+    from ailoveshen.domain.value_objects import ActionResult
+
+    bridge.act.return_value = ActionResult("dig oak_log at 1,70,2", False, "no path", 1.0)
+    judge = AsyncMock()
+    judge.ask.return_value = FastVerdict({"stuck": FastAnswer("stuck", "failing", 0.9)}, 20)
+    selector = AsyncMock()
+    selector.select.return_value = ActionDecision("dig oak_log at 1,70,2", 0.9)
+    store = Mock()
+    store.load.return_value = None
+    notes = Mock()
+    notes.load.return_value = None
+    events = AsyncMock()
+    use_case = AdvancePlayUseCase(
+        bridge=bridge,
+        text_generator=AsyncMock(),
+        prompt_builder=Mock(**{"build_action_context.return_value": ({}, "pick")}),
+        action_selector=selector,
+        event_publisher=events,
+        conversation=Conversation(),
+        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+        town=AsyncMock(),
+        notes=NoteKeeper(notes),
+        stuck_check=StuckCheck(judge, every_steps=2),
+    )
+    session = _session(HAVE_PLANKS)
+    await use_case.execute(session)
+    assert session.rethink_reason == ""
+    await use_case.execute(session)
+    assert "is stuck (failing" in session.rethink_reason
+    assert "is reconsidered: Jev judged" in session.goal_end_reason(_obs())

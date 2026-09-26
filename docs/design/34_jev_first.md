@@ -73,6 +73,15 @@ Gemini に回すとき:
 - 次のときは Jev に聞かずに Gemini: 同じ種類の失敗が 2 回続いた、種類を問わず 3 回続いた（A→B→A と行き来しない）、死んだ、中目標が進まない（`mid_goal_stall_steps`）、画面で考え直すことになった、別の手順がない
 - Jev が選んだら、失敗の分析は行わない（代わりに、失敗した小目標は記録に残り、次に Gemini が決めるときに見える）
 
+## 9. 行動の記録から行き詰まりを確かめる（`minecraft.agent.stuck_check_steps`）
+
+ユーザー（2026-09-26）: 「行動履歴から行動がスタックしていないかも Jev で定期的にチェックしたい。その場合も Gemini に判断し直してもらいたい」。
+
+- 今の小目標で `stuck_check_steps`（6）回の行動ごとに、Jev に行動の記録（最新 12: 行動、確信度、結果、そのときの位置）と目標の進み具合を見せ、1 つの Choice で聞く: fine（進んでいる・目標に合ういろいろな作業）/ repeating（同じ行動の繰り返し）/ failing（失敗の繰り返し）/ back_and_forth（同じ場所の行き来）/ no_progress（忙しいのに進まない）
+- fine 以外を `stuck_min_confidence`（0.75）以上で答えたら、`session.request_rethink` で次の切れ目に今の小目標を終わらせ、Gemini が決め直す。理由は「Jev judged from the action record that it is stuck (…)」: 「is reconsidered」なので失敗の振り分け（§7）を通らず必ず Gemini、「is stuck」を含むので Gemini は行動の記録を見て原因を分析する（27）
+- 数の上の行き詰まり（stalled: 残りが減らない、stuck: 失敗が続く）はそのまま。これは、数は動いているのに同じことを繰り返す・行き来するのを見る
+- Jev が答えられない・迷うときは何もしない。小目標が変わったら記録を消す。`logs/stuck/*.jsonl`
+
 ## 8. 決めなかったこと・あとで
 
 - 技の引数を Jev に埋めさせる（数や名前は Jev の不得意な自由な値）

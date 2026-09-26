@@ -224,6 +224,10 @@ class MinecraftSettings:
     # 小目標が行き詰まった後（docs/design/34 §7）: jev（まず Jev が別の手順か Gemini に考え直させるかを
     # 選ぶ）か gemini（いつも Gemini が原因を分析する）
     failure_routing: str = "jev"
+    # 行動の記録から行き詰まりを Jev が定期的に確かめる（docs/design/34 §9）。0 で確かめない
+    stuck_check_steps: int = 6
+    stuck_min_confidence: float = 0.75
+    stuck_record_dir: str = "logs/stuck"
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
     # 一番上の中目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
@@ -610,6 +614,11 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             step_gemini_every=int(agent_data.get("step_gemini_every", defaults.step_gemini_every)),
             step_record_dir=agent_data.get("step_record_dir", defaults.step_record_dir),
             failure_routing=agent_data.get("failure_routing", defaults.failure_routing),
+            stuck_check_steps=int(agent_data.get("stuck_check_steps", defaults.stuck_check_steps)),
+            stuck_min_confidence=float(
+                agent_data.get("stuck_min_confidence", defaults.stuck_min_confidence)
+            ),
+            stuck_record_dir=agent_data.get("stuck_record_dir", defaults.stuck_record_dir),
             jev_goal_min_confidence=float(
                 agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
             ),

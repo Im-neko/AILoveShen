@@ -7,6 +7,7 @@ from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.step_picker import StepPicker
+from ailoveshen.application.use_cases.stuck_check import StuckCheck
 from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
@@ -230,6 +231,21 @@ def create_game_service(
             if minecraft.step_record_dir
             else None,
         )
+    # 行動の記録から行き詰まりを Jev が定期的に確かめる（設計書 34 §9）
+    stuck_check = None
+    if minecraft.stuck_check_steps > 0 and jev.api_key:
+        if fast_judge is None:
+            fast_judge = JevFastJudge(
+                api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+            )
+        stuck_check = StuckCheck(
+            judge=fast_judge,
+            every_steps=minecraft.stuck_check_steps,
+            min_confidence=minecraft.stuck_min_confidence,
+            recorder=JsonlWatchRecorder(minecraft.stuck_record_dir)
+            if minecraft.stuck_record_dir
+            else None,
+        )
     store = JsonMissionStore(minecraft.mission.store_path)
     notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
     profile = create_character_profile(character)
@@ -287,6 +303,7 @@ def create_game_service(
         mid_goal_stall_steps=minecraft.mid_goal_stall_steps,
         step_picker=step_picker,
         failure_routing=minecraft.failure_routing,
+        stuck_check=stuck_check,
         skills=(
             SkillWriter(
                 text_generator,

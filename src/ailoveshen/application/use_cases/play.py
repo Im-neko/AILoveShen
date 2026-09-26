@@ -21,6 +21,7 @@ from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
+from ailoveshen.application.use_cases.stuck_check import StuckCheck
 from ailoveshen.application.use_cases.goal_vocabulary import (
     GoalDecision,
     Remedy,
@@ -263,6 +264,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         mid_goal_stall_steps: int = 60,
         step_picker: Optional[StepPicker] = None,
         failure_routing: str = "gemini",
+        stuck_check: Optional[StuckCheck] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -335,6 +337,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._step_picker = step_picker if control == "tools" else None
         # 行き詰まった後、まず Jev が別の手順か Gemini に考え直させるかを選ぶ（docs/design/34 §7）
         self._failure_routing = failure_routing
+        # 行動の記録から、行き詰まっていないかを Jev に定期的に聞く（docs/design/34 §9）
+        self._stuck = stuck_check
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
@@ -380,7 +384,14 @@ class AdvancePlayUseCase(IAdvancePlay):
             session.skip_stall_once()
         if goal.mid_goal_id is not None and goal.mid_goal_id == self._mid_watch[0]:
             self._mid_idle_steps += 1
-        self._goal_steps.append(_step_line(decision, result))
+        line = _step_line(decision, result)
+        self._goal_steps.append(line)
+        if self._stuck is not None and not session.rethink_reason:
+            self._stuck.note(line, obs)
+            why = await self._stuck.check_if_due(goal, obs)
+            if why:
+                logger.info(f"行き詰まり: {why}。次の切れ目で Gemini が考え直す")
+                session.request_rethink(why)
         await self._event_publisher.publish(
             GameActionExecutedEvent(
                 action_id=result.action_id,
@@ -885,6 +896,8 @@ class AdvancePlayUseCase(IAdvancePlay):
     ) -> None:
         session.set_goal(goal, obs.time_phase)
         self._goal_steps.clear()
+        if self._stuck is not None:
+            self._stuck.reset()
         # これから見えるもの（このイベントの語り、返答）は、終わった目標ではなく
         # 新しい目標の状態
         session.observe(replace(obs, goal=status))

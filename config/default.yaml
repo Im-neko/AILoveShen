@@ -384,6 +384,13 @@ minecraft:
     # Gemini always after 2 failures of the same kind, a death, a stalled mid goal or a screen
     # rethink. gemini = Gemini always analyses (design 27)
     failure_routing: "jev"
+    # Every stuck_check_steps actions of a small goal Jev reads the action record (actions, results,
+    # positions) and says whether the play is stuck (repeating, failing, back and forth, busy without
+    # progress); a sure yes (>= stuck_min_confidence) ends the goal and Gemini rethinks with the
+    # action record (design 27). 0: off (docs/design/34 §9)
+    stuck_check_steps: 6
+    stuck_min_confidence: 0.75
+    stuck_record_dir: "logs/stuck"
     # How small goals are chosen (docs/design/26_steps_and_context.md):
     #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
     #        at each boundary. Gemini is asked again after a failure, when the steps run out, when

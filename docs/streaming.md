@@ -289,6 +289,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 | 1 手を Jev が選んだか・Gemini に回した理由（設計書 34） | `logs/steps/*.jsonl` |
 | コメントの仕分け（返事をしなかったコメントの文も） | `logs/chat/*.jsonl` |
 | 実況の間合い（話した・取っておいた） | `logs/commentary/*.jsonl` |
+| 行き詰まりの確認（Jev の答え、考え直させたか） | `logs/stuck/*.jsonl` |
 | 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
 | 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |
