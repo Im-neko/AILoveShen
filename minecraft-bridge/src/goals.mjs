@@ -26,6 +26,7 @@ import { cooking } from './cooking.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
+import { toReplace } from './wear.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -491,6 +492,21 @@ export function evaluate (bot, state, knowledge, world) {
       if (r.leaves.length) {
         out.leaves.push(...r.leaves.map((l) => ({ ...l, also: 'a sword for hunting' })))
         out.lines.push(craftOnly ? 'no sword: craft one before hunting' : 'no sword: gather for one while hunting')
+      }
+    }
+  }
+  // 壊れた道具を作り直す（同じ種類をもう持っていなければ）。作るだけでできるものだけ出す。材料から
+  // 要るなら、それが要る目標のときにソルバーが道具から組み立てる
+  if (!out.met) {
+    for (const { item, kind } of toReplace(bot, state)) {
+      if (kind === 'sword' && out.lines.some((l) => l.startsWith('no sword'))) continue
+      const r = [item, kind].map((spec) => solve(knowledge, world, [{ spec, count: 1 }]))
+        .find((r) => r.leaves.length && r.leaves.every((l) => l.kind === 'craft' || l.kind === 'place'))
+      if (r) {
+        out.leaves.push(...r.leaves.map((l) => ({ ...l, also: `a new ${kind} (the ${item} broke)` })))
+        out.lines.push(`the ${item} broke: craft another ${kind}`)
+      } else {
+        out.lines.push(`the ${item} broke: no materials at hand to craft another ${kind}`)
       }
     }
   }

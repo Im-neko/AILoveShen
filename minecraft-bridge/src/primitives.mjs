@@ -351,8 +351,17 @@ export function chooseTool (bot, block) {
   return best?.item ?? null
 }
 
-async function equipToolFor (bot, block) {
+// 採るのに道具が要るブロック（石にツルハシ）を素手で掘っても何も落ちない: 掘らずに理由を返す
+// （ツルハシが壊れたあとも、素手で石を掘り続けていた）
+function checkHarvestable (bot, state, block, tool = chooseTool(bot, block)) {
+  if (tool || !block?.harvestTools || !Object.keys(block.harvestTools).length) return
+  const last = (state?.brokenTools ?? []).at(-1)
+  throw new Error(`no tool that can mine ${block.name}${last ? ` (the ${last.item} broke)` : ''}: make one first`)
+}
+
+async function equipToolFor (bot, state, block) {
   const tool = chooseTool(bot, block)
+  checkHarvestable(bot, state, block, tool)
   if (tool) {
     if (bot.heldItem?.name !== tool.name) await bot.equip(tool, 'hand')
   } else if (TOOL_ITEM.test(bot.heldItem?.name ?? '')) {
@@ -398,6 +407,7 @@ export const PRIMITIVES = {
     const block = bot.blockAt(c.pos)
     if (!block || block.name !== c.block) throw new Error(`${c.block} is gone from ${c.pos}`)
     const before = totalItems(bot)
+    checkHarvestable(bot, state, block) // 歩いて行く前に
     // 近くではなく、ブロックに届く場所に立つ: そうしないと、頭より高い原木には木の葉の上からしか
     // 「近く」にならない。
     // 当たり判定のない草・花・作物は、視線の先に見える位置を探す GoalLookAtBlock が決して成り立たない
@@ -415,7 +425,7 @@ export const PRIMITIVES = {
     signal.throwIfAborted()
     // 空中で掘ると5倍遅い（例えば、立っていたブロックを切った直後）
     for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
-    await equipToolFor(bot, block)
+    await equipToolFor(bot, state, block)
     await bot.dig(bot.blockAt(c.pos), true)
     signal.throwIfAborted()
     // 確率でしか落ちない物（草から種 1/8、葉から苗木 1/20）: 1 回の行動でまわりの同じものを続けて
@@ -796,7 +806,7 @@ export const PRIMITIVES = {
       for (const p of next.step.cells) {
         const block = bot.blockAt(p)
         if (!block || block.boundingBox === 'empty') continue
-        await equipToolFor(bot, block)
+        await equipToolFor(bot, state, block)
         await bot.dig(block, true)
         signal.throwIfAborted()
       }

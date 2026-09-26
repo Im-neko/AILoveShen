@@ -9,6 +9,7 @@ import { PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CR
 import { needsOutside } from './candidates.mjs'
 import { leaveHome, houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
+import { brokeSince } from './wear.mjs'
 
 const WALK_PROGRESS_M = 8 // これだけ歩いていれば、時間切れでも進んだとみなす
 
@@ -91,6 +92,7 @@ export function createRunner (bot, state, deps = {}) {
       afterRun()
     }
     const seconds = round((Date.now() - t) / 1000)
+    result += brokeSince(state, t) // この行動の間に壊れた道具（すぐ持ち物の見方を直すため）
     state.history.push({ action: label, ok, result, seconds })
     log(`[act] ${label}: ${ok ? '成功' : '失敗'} ${result}（${seconds}秒）`)
     // 襲われて止まった（ダメージ、反射）: 小目標の失敗に数えない（設計書 28 §3）

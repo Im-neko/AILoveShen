@@ -179,3 +179,23 @@ async def test_commands_list_goes_to_chat_once_per_cooldown_and_is_spoken_withou
     await asyncio.sleep(0)
     assert len(sink.posted) == 1
     assert said == [sink.posted[0]]
+
+
+@pytest.mark.asyncio
+async def test_refreshes_the_game_before_each_reply():
+    """返事の前にゲームの様子を取り直す（行動の途中で道具が壊れた、など）。"""
+    order = []
+    llm = AsyncMock()
+
+    async def generate(user, msg, **kw):
+        order.append("reply")
+        return "ok"
+
+    async def refresh():
+        order.append("refresh")
+
+    llm.generate_response.side_effect = generate
+    responder = _responder(llm, [], refresh=refresh)
+    responder.accept(ChatComment("a", "ツルハシ壊れてるよ"))
+    await responder.answer_next()
+    assert order == ["refresh", "reply"]

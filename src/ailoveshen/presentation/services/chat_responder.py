@@ -64,6 +64,7 @@ class ChatResponder:
         chat: IChatSink | None = None,
         quiet: Iterable[str] = (),
         ignore: Iterable[str] = (),
+        refresh: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """
         Args:
@@ -78,6 +79,7 @@ class ChatResponder:
             quiet: 返事をしないアカウントのログイン名（配信者自身、書き込むアカウント。コマンドは
                 実行する）
             ignore: 何にも反応しないアカウントのログイン名（ボット: StreamElements など）
+            refresh: 返事を作る前にゲームの様子を取り直す（行動の途中の変化: 道具が壊れた、など）
         """
         self._llm = llm
         self._session = session
@@ -93,6 +95,7 @@ class ChatResponder:
         self._quiet = {q.strip().lower() for q in quiet if q.strip()}
         self._ignore = {q.strip().lower() for q in ignore if q.strip()}
         self._help_at: float | None = None
+        self._refresh = refresh
         self.dropped = 0  # 返事をせずに捨てたコメントの数
 
     async def run(self, source: IChatSource) -> None:
@@ -175,6 +178,8 @@ class ChatResponder:
                 await asyncio.sleep(wait)
         comment = self._queue.popleft()
         started = self._clock()
+        if self._refresh is not None:
+            await self._refresh()
         reply = await self._llm.generate_response(
             comment.user_name, comment.message, user_id=comment.user_id, session=self._session()
         )

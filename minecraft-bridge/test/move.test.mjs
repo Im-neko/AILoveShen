@@ -37,3 +37,42 @@ test('掘り終えて拾う前に中断されたら、落とし物を拾いに�
   await assert.rejects(PRIMITIVES.dig(bot, state, c, controller.signal), /timeout/)
   assert.equal(goals.length, 1) // 掘る場所へ行く移動だけ
 })
+
+// 位置が変わらないまま歩き続ける pathfinder（setGoal(null) で goto が失敗する）
+function stuckBot (movesAfter = Infinity) {
+  let calls = 0
+  const log = []
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    look: async () => {},
+    setControlState: (k, v) => log.push(`${k}=${v}`),
+    clearControlStates: () => log.push('clear'),
+    waitForTicks: async () => {},
+    pathfinder: {
+      movements: { allowParkour: true, allowSprinting: true },
+      setMovements (m) { this.movements = m; log.push(`movements parkour=${m.allowParkour}`) },
+      setGoal (g) { if (g === null && this.reject) { const r = this.reject; this.reject = null; r(new Error('GoalChanged')) } },
+      goto (g) {
+        calls++
+        if (calls > movesAfter) return Promise.resolve()
+        return new Promise((resolve, reject) => { this.reject = reject })
+      }
+    }
+  }
+  return { bot, log, calls: () => calls }
+}
+
+test('歩いているのに動けないときは、跳ぶ・慎重に歩く・下がるを試してから失敗にする', async () => {
+  const { bot, log } = stuckBot()
+  const original = bot.pathfinder.movements
+  await assert.rejects(walkTo(bot, 'far', new AbortController().signal, 30), /stuck: .*jumped out.*walked carefully.*backed off/)
+  assert.ok(log.includes('jump=true'))
+  assert.ok(log.includes('movements parkour=false'))
+  assert.equal(bot.pathfinder.movements, original) // 元の歩き方に戻す
+})
+
+test('跳んで抜け出せたら、そのまま目的地へ歩く', async () => {
+  const { bot, calls } = stuckBot(1)
+  await walkTo(bot, 'far', new AbortController().signal, 30)
+  assert.equal(calls(), 2)
+})

@@ -189,6 +189,17 @@ class TestGamePromptTemplateBuilder:
             "死んだ場所（南 40m、12 分前）"
         ) in prompt
 
+    def test_goal_prompt_shows_broken_tools(self):
+        """壊れた道具は、壊れた直後から「もう持っていない」と出る。"""
+        obs = _obs()
+        obs.state["broken_tools"] = [
+            {"item": "stone_pickaxe", "seconds_ago": 30, "replaced": False}
+        ]
+
+        prompt = _goal_prompt(obs)
+
+        assert "壊れた道具: stone_pickaxe（1分前、もう持っていない）" in prompt
+
     def test_goal_prompt_at_night_counts_to_morning(self):
         """夜は朝までの時間と拠点を示す。"""
         obs = replace(_obs(), has_home=True, inside_home=True, bed_in_home=True)

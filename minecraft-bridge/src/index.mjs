@@ -38,6 +38,7 @@
 
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
 import { plantingStatus, cropStatus, cropOf } from './farming.mjs'
+import { watchWear, recentBreaks } from './wear.mjs'
 import http from 'node:http'
 import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
@@ -132,6 +133,9 @@ function observation () {
   // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
   extra.nearby = landmarks(bot, state)
   extra.underground = isUnderground(bot)
+  // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
+  const broken = recentBreaks(bot, state)
+  if (broken.length) extra.broken_tools = broken
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
@@ -418,6 +422,7 @@ bot.on('death', () => {
 
 bot.once('spawn', () => {
   configureMovements(bot, state)
+  watchWear(bot, state)
   console.log(`[bot] ${bot.entity.position} にスポーンした`)
 })
 // 採掘の開始をすべて記録する。pathfinder が道を開けるために掘るものも含む

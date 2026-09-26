@@ -146,6 +146,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             # ボット（StreamElements など）には何も反応しない
             quiet=(chat.channel, chat.login),
             ignore=twitch.ignore_users,
+            refresh=game.refresh,
         )
         how = f"{chat.login} で書き込みもする" if chat.login else "読むだけ"
         logger.info(f"[chat] Twitch #{chat.channel} のチャットを読む（{how}）")

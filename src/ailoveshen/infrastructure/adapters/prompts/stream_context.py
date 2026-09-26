@@ -437,6 +437,18 @@ def _format_home(obs: GameObservation) -> str:
     return f"{f'{name}、' if name else ''}{where}、{bed}、チェスト {chests}"
 
 
+def _format_broken(broken: list) -> list[str]:
+    """最近壊れた道具（壊れたものはもう持っていない。持ち物の行が正しい）。"""
+    if not broken:
+        return []
+    parts = [
+        f"{b['item']}（{max(1, round(b.get('seconds_ago', 0) / 60))}分前、"
+        f"{'作り直した' if b.get('replaced') else 'もう持っていない'}）"
+        for b in broken
+    ]
+    return [f"- 壊れた道具: {'、'.join(parts)}"]
+
+
 def _format_situation(obs: GameObservation) -> str:
     s = obs.state
     lines = [
@@ -446,6 +458,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
+        *_format_broken(s.get("broken_tools") or []),
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
         f"- チェストの中身: {_format_chests(s.get('memory') or {})}",
         f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",

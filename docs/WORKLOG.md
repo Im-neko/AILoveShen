@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 道具が壊れたらすぐ気づいて作り直す、歩いて動けないときは歩き方を変える (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「ツルハシが折れたら作り直してほしい。指摘してもしばらく持っていると勘違いしている」「移動しようとしているのに位置がしばらく変わらないときは移動方針を変えてほしい（操作の精度で脱出できなくなる）」
+- ブリッジ `src/wear.mjs`: 持ち物のスロットの更新で、耐久を使い切った道具が消えたら壊れたと記録（`state.brokenTools`）。観測に `broken_tools`（何分前、作り直したか）。行動の結果に「the X broke」を添える（runner）。同じ種類をもう持っていなければ、作るだけでできるとき作り直す候補を `also` で出す（goals.evaluate）。道具が要るブロック（石など）を道具なしでは掘らず、「no tool that can mine stone (the stone_pickaxe broke): make one first」で失敗にする（dig、dig_down。素手で掘り続けていた）
+- Python: 状況に「壊れた道具: stone_pickaxe（1分前、もう持っていない）」。チャットの返事の前に `GameService.refresh()` で様子を取り直す（行動の途中の変化が返事に入る）
+- ブリッジ `src/move.mjs`: 移動（walkTo）の間、掘る・足場を置く以外で 6 秒 0.5 m 未満しか動かなければ止めて、跳んで抜け出す → 走り・飛び越えなしの慎重な歩き方 → 数ブロック下がる、の順に試してやり直す。それでもだめなら「stuck: did not move for 6s while walking (tried: …)」で失敗
+- テスト: npm（wear.test.mjs、move.test.mjs に追加）、pytest 646
+
 ### 夜の越し方を柔軟に: 近くのベッド、持っているベッド、地下 (2026-09-26)
 
 **Commit**: `b1bf030`

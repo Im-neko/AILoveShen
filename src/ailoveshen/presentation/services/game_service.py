@@ -87,6 +87,19 @@ class GameService:
         """プレイ中のセッション（実況とチャットへの返答が見るもの）。play() の前は None。"""
         return self._session
 
+    async def refresh(self) -> None:
+        """
+        今のゲームの様子を取り直す（チャットの返事の前: 行動の途中で道具が壊れた、など）。
+
+        取れなければ前の様子のまま。
+        """
+        if self._session is None:
+            return
+        try:
+            self._session.observe(await self._bridge.observe())
+        except Exception as e:
+            logger.debug(f"返事の前に様子を取り直せなかった: {e}")
+
     @property
     def mid_goals(self) -> MidGoalKeeper:
         """中目標を持つ。チャットへの返答は、これを通して視聴者の頼みを受ける。"""
