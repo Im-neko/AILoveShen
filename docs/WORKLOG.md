@@ -9,7 +9,7 @@
 
 ### 感情の声: Irodori-TTS で読ませて、Style-Bert-VITS2 のスタイルに (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `0a9550c`
 
 - ユーザー「shen_sbv2 はそれっぽくなった」→「Irodori-TTS に shen_sbv2 の声と話し方の説明で感情をつけて読ませたものを、Style-Bert-VITS2 の各スタイルの参照音声にしたい」
 - `irodori_from_sbv2.py emotions`（`--source irodori|sbv2|auto`）: 台本の感情の文を Irodori-TTS（声 shen_sbv2 + `emotion_captions`、seed なし）で読ませ、`data/irodori_train/shen_sbv2_<感情>/audio/`、声 `shen_sbv2_<感情>` として登録。`--register-only`
