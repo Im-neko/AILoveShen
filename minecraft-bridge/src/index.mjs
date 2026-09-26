@@ -88,7 +88,8 @@ const state = {
   survey: null, // 街の候補地の調査の計画（survey.mjs）
   memory: newMemory(), // 前に見た場所（memory.mjs）。state.json に保存する
   skill: null, // 実行中の技 { name, version, control }（skills.mjs）
-  pendingJudge: null // 技の judge() が Jev の答えを待っている質問 { id, question, kind, options, resolve }
+  pendingJudge: null, // 技の judge() が Jev の答えを待っている質問 { id, question, kind, options, resolve }
+  deaths: 0 // このブリッジが動いてから死んだ回数（増えたら、Python は小目標を選び直す）
 }
 loadState(state)
 const knowledge = new Knowledge(minecraftData(VERSION))
@@ -109,6 +110,7 @@ function observation () {
   extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
   // 調べた候補地の数字（ブリッジが測ったものだけ。まだ調べていない候補地は入らない）
   if (state.survey) extra.survey = { planned: state.survey.sites.length, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) }
+  extra.deaths = state.deaths
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
@@ -364,6 +366,7 @@ startReflex(bot, state, {
 })
 
 bot.on('death', () => {
+  state.deaths += 1
   rememberDeath(state.memory, bot.entity.position, worldAge())
   persist()
   console.log(`[bot] ${bot.entity.position} で死んだ`)

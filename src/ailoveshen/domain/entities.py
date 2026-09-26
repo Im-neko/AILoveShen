@@ -578,6 +578,8 @@ class PlaySession(Entity):
     screen_note: Optional[ScreenNote] = field(default=None, init=False)
     # 次の切れ目で今の小目標を終わらせる理由（画面の見直しで「考え直す」になった）
     rethink_reason: str = field(default="", init=False)
+    # 小目標を決めたときのブリッジの死んだ回数（増えたら、死んでリスポーンした: 小目標を選び直す）
+    deaths_at_goal: Optional[int] = field(default=None, init=False)
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -653,6 +655,12 @@ class PlaySession(Entity):
         if self.goal is None or obs.goal is None:
             return "no goal yet"
         name = self.goal.spec.describe()
+        if self.died_since_goal(obs):
+            # 場所も持ち物も変わった: 達成より先に見る（リスポーンで状況が一変する）
+            return (
+                f"goal {name} is cut because the streamer died and respawned "
+                "(the position changed and the items carried may be lost)"
+            )
         if obs.goal.met:
             return f"goal {name} is met"
         if self.rethink_reason:
@@ -672,8 +680,19 @@ class PlaySession(Entity):
             return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
         return ""
 
+    def died_since_goal(self, obs: GameObservation) -> bool:
+        """今の小目標を決めてから死んだか（ブリッジの死んだ回数が増えた）。"""
+        deaths = obs.state.get("deaths")
+        return (
+            isinstance(deaths, int)
+            and self.deaths_at_goal is not None
+            and deaths > self.deaths_at_goal
+        )
+
     def set_goal(self, goal: Goal, time_phase: str) -> None:
         """与えられた時間帯に、新しい目標を追い始める。"""
+        seen = self.last_observation.state.get("deaths") if self.last_observation else None
+        self.deaths_at_goal = seen if isinstance(seen, int) else None
         self.goal = goal
         self.goal_phase = time_phase
         self.steps_in_goal = 0

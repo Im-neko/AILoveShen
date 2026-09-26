@@ -583,6 +583,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         """小目標を Gemini に決めさせる理由（None なら Jev が選ぶ）。docs/design/26 §2。"""
         if self._chooser is None:
             return "small goals are decided by Gemini (minecraft.agent.small_goals: gemini)"
+        if " died and " in reason:
+            return f"the streamer died: the situation changed ({reason})"
         if any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: ")):
             return f"the last goal did not work out ({reason})"
         current = session.plan.current
@@ -622,7 +624,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         viewers = _viewers(messages)
         # 行き詰まった・進まなかった・画面で考え直すことになった後は、深く考え直す（19 §7）。
         # 画面も添える（23 §2）
-        failed = any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: "))
+        failed = any(
+            k in reason for k in (" is stuck ", " stalled ", " is reconsidered: ", " died and ")
+        )
         purpose = "goal_after_failure" if failed else "goal"
         # 行き詰まった・進まなかったときは、原因を分析してから決める（docs/design/27）
         failed_goal = (

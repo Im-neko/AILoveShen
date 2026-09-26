@@ -1157,3 +1157,49 @@ def test_same_kind_ignores_the_numbers():
     food = GoalSpec(GoalPredicate.HAVE, item="food", count=2)
     assert food.same_kind(GoalSpec(GoalPredicate.HAVE, item="food", count=1))
     assert not food.same_kind(GoalSpec(GoalPredicate.HAVE, item="log", count=2))
+
+
+class TestDeath:
+    """死んでリスポーンしたら、小目標を必ず選び直す（場所も持ち物も変わる）。"""
+
+    conversation = TestAdvancePlay.conversation
+    town = TestAdvancePlay.town
+    note_store = TestAdvancePlay.note_store
+    notes = TestAdvancePlay.notes
+    use_case = TestAdvancePlay.use_case
+
+    @staticmethod
+    def _with_deaths(n, **kwargs):
+        obs = _obs(**kwargs)
+        return replace(obs, state={**obs.state, "deaths": n})
+
+    def test_a_death_cuts_the_goal_even_if_it_looks_met(self):
+        session = _session()
+        session.observe(self._with_deaths(0))
+        session.set_goal(Goal(HAVE_PLANKS, mid_goal_id="m1"), "day")
+        assert session.goal_end_reason(self._with_deaths(0)) == ""
+        reason = session.goal_end_reason(self._with_deaths(1, met=True))
+        assert "died and respawned" in reason
+        # ブリッジを再起動すると数は 0 に戻る: 死んだとはみなさない
+        assert session.goal_end_reason(self._with_deaths(0)) == ""
+
+    @pytest.mark.asyncio
+    async def test_after_a_death_gemini_decides_with_the_screen(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        text_generator.generate_json.return_value = PLANKS
+        bridge.observe.return_value = self._with_deaths(0)
+        session = _session(HAVE_PLANKS)
+        session.observe(self._with_deaths(0))
+        session.set_goal(Goal(HAVE_PLANKS, mid_goal_id="m1"), "day")
+
+        bridge.observe.return_value = self._with_deaths(1)
+        report = await use_case.execute(session)
+
+        assert report.goal_changed
+        reason = prompt_builder.build_goal_prompt.call_args.kwargs["goal_ended_because"]
+        assert "died and respawned" in reason
+        assert text_generator.generate_json.call_args.kwargs["purpose"] == "goal_after_failure"
+        # 死んだことは失敗の分析（行き詰まった・進まない）ではない
+        assert prompt_builder.build_goal_prompt.call_args.kwargs["failure_record"] == ()
+        assert session.deaths_at_goal == 1  # 新しい小目標は、今の数から数える
