@@ -9,7 +9,7 @@
 
 ### 同じ土を掘っては置く無限ループ (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `4bfd2f6`
 
 - ユーザーのログ: `(-78, 39, -116) の dirt を掘る` が延々と続く。掘るとすぐ土を置いていた
 - 原因（見立て）: mineflayer-pathfinder は経路のそばのブロックが変わるたびに経路を作り直す（`blockUpdate` → `resetPath`）。掘ると次の経路がそこに足場の土（`scafoldingBlocks = dirt`、`allow1by1towers`）を置き、置くとまた掘る経路になる。前のコミットの「動けない」見張りは掘る・置く間を数えていなかったので止まらなかった
