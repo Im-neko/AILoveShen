@@ -9,7 +9,7 @@
 
 ### ITA コーパスを台本に、行ごとの録音ボタンのページ (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `7c4af33`
 
 - ユーザー「ITA コーパスも入っている？」→「調べてこれない？」: 公式（github.com/mmorise/ita-corpus）でパブリックドメインと確認。`docs/voice/ita_corpus.tsv`（EMOTION100 + RECITATION324、ふりがなと読みつき）。`tools/voice_dataset.py` が両方の台本を読む（ITA は Neutral、足りない録音は区分ごとに）
 - ユーザー「台本を web で見られるようにして、1 文ごとに録音ボタン、その行のファイル名で保存」: Artifact のページはマイクもファイルの保存もできないので、ローカルのページにした。`tools/voice_recorder.py`（標準ライブラリの HTTP サーバー、127.0.0.1:8770、`PUT /api/recordings/<番号>` で `data/voice_recordings/<番号>.wav`、前のものは `_previous/`）+ `tools/voice_recorder.html`（AudioWorklet でマイクから 16bit モノラル WAV、自動音量・雑音除去なし、0.2 秒の前取り、入力の大きさと音割れの印、Space / ↑↓ / P、録ったら次の行へ）。Chromium の偽のマイクで録音・保存・上書きを確認
