@@ -20,6 +20,7 @@ from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridg
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
+from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
 from ailoveshen.application.use_cases.goal_vocabulary import (
     GoalDecision,
     Remedy,
@@ -259,6 +260,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         clock: Callable[[], float] = time.monotonic,
         skills: Optional[SkillWriter] = None,
         mid_goal_stall_steps: int = 60,
+        step_picker: Optional[StepPicker] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -327,6 +329,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._goal_steps: deque[str] = deque(maxlen=GOAL_STEPS_SHOWN)
         self._offered: tuple[Candidate, ...] = ()
         self._skills = skills if control == "tools" else None
+        # 道具モードの 1 手は、まず Jev が候補と技から選ぶ（docs/design/34 §3）
+        self._step_picker = step_picker if control == "tools" else None
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
@@ -420,9 +424,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         選び直す（MAX_QUERIES_PER_STEP 回まで。その後は行動の道具だけを出す）。行動の道具は
         見張りつきで実行し、1 ステップはそれで終わる。
         """
+        skills = await self._skill_list(session) if self._skills is not None else None
+        picked = await self._jev_step(session, obs, skills or [])
+        if picked is not None:
+            return picked
         specs = tool_specs(can_look=self._screen is not None, skills=self._skills is not None)
         action_specs = [t for t in specs if t.name in ACTION_TOOLS or is_skill_tool(t.name)]
-        skills = await self._skill_list(session) if self._skills is not None else None
         images: list[Screenshot] = []  # 次の選択にだけ添える画面（ステップをまたがない）
         last = self._recent_tools[-1] if self._recent_tools else None
         if self._screen is not None and last is not None and not last.ok:
@@ -493,7 +500,41 @@ class AdvancePlayUseCase(IAdvancePlay):
                 outcome = await self._watcher.run(call)
             self._recent_tools.append(outcome)
             break
+        if self._step_picker is not None:
+            self._step_picker.note(by_jev=False, ok=outcome.ok)
         decision = ActionDecision(action_id=outcome.call.describe(), confidence=1.0)
+        return decision, outcome.as_action_result()
+
+    async def _jev_step(
+        self, session: PlaySession, obs: GameObservation, skills: list[SkillInfo]
+    ) -> Optional[tuple[ActionDecision, ActionResult]]:
+        """
+        まず Jev が候補と技から 1 手を選んで実行する（docs/design/34 §3）。Jev が選ばなければ
+        None（Gemini が選ぶ）。実行の経路と記録は Gemini が選んだときと同じ。
+        """
+        if self._step_picker is None or session.goal is None:
+            return None
+        last = self._recent_tools[-1] if self._recent_tools else None
+        state, instructions = self._prompt_builder.build_action_context(session.goal, obs)
+        picked = await self._step_picker.pick(
+            state, instructions, obs.candidates, skills, None if last is None else last.ok
+        )
+        if not isinstance(picked, PickedStep):
+            logger.info(f"1 手は Gemini が決める: {picked.why}")
+            return None
+        call = picked.call
+        session.set_intent(call.intent)
+        logger.info(f"1 手は Jev が選んだ（確信度 {picked.confidence:.2f}）: {call.describe()}")
+        assert self._watcher is not None
+        if picked.skill is not None:
+            outcome = await self._run_skill(
+                call, picked.skill.name, {}, None, picked.skill.description
+            )
+        else:
+            outcome = await self._watcher.run(call)
+        self._recent_tools.append(outcome)
+        self._step_picker.note(by_jev=True, ok=outcome.ok)
+        decision = ActionDecision(action_id=picked.option_id, confidence=picked.confidence)
         return decision, outcome.as_action_result()
 
     async def _skill_list(self, session: PlaySession) -> list[SkillInfo]:

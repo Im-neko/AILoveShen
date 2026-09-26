@@ -6,6 +6,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
+from ailoveshen.application.use_cases.step_picker import StepPicker
 from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
@@ -216,6 +217,19 @@ def create_game_service(
                 min_confidence=r.min_confidence,
             ),
         )
+    # 道具モードの 1 手は、まず Jev が候補と技から選ぶ（設計書 34 §3）
+    step_picker = None
+    if minecraft.control == "tools" and minecraft.step_picker == "jev" and jev.api_key:
+        step_picker = StepPicker(
+            selector=action_selector,
+            min_confidence=minecraft.step_min_confidence,
+            timeout_seconds=minecraft.step_timeout_seconds,
+            max_failures=minecraft.step_max_failures,
+            gemini_every=minecraft.step_gemini_every,
+            recorder=JsonlWatchRecorder(minecraft.step_record_dir)
+            if minecraft.step_record_dir
+            else None,
+        )
     store = JsonMissionStore(minecraft.mission.store_path)
     notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
     profile = create_character_profile(character)
@@ -271,6 +285,7 @@ def create_game_service(
         chooser=chooser,
         replan_minutes=minecraft.replan_minutes,
         mid_goal_stall_steps=minecraft.mid_goal_stall_steps,
+        step_picker=step_picker,
         skills=(
             SkillWriter(
                 text_generator,

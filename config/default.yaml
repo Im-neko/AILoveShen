@@ -352,6 +352,16 @@ minecraft:
     #   candidates: the bridge grounds candidates (solver) and Jev picks one (the old baseline, kept
     #     for comparison: --control candidates)
     control: "tools"
+    # Each step in tools mode (docs/design/34 §3): jev = Jev picks first among the bridge's
+    # candidates and the learned skills that worked and take no arguments; Gemini decides when Jev
+    # picks "ask_gemini", is unsure, too slow, fails, after a failed tool, after
+    # step_max_failures failed Jev steps, or every step_gemini_every steps. gemini = Gemini always
+    step_picker: "jev"
+    step_min_confidence: 0.5
+    step_timeout_seconds: 3.0
+    step_max_failures: 2
+    step_gemini_every: 8
+    step_record_dir: "logs/steps"   # options, chosen, confidence, why Gemini
     # How small goals are chosen (docs/design/26_steps_and_context.md):
     #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
     #        at each boundary. Gemini is asked again after a failure, when the steps run out, when

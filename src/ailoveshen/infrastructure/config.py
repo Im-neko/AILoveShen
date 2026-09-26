@@ -209,6 +209,14 @@ class MinecraftSettings:
     control: str = "tools"
     # 小目標の決め方（docs/design/26）: jev（Gemini が書いた手順から Jev が選ぶ）か gemini（毎回 Gemini）
     small_goals: str = "jev"
+    # 道具モードの 1 手（docs/design/34 §3）: jev（まず Jev が候補と技から選び、迷ったら Gemini）か
+    # gemini（毎回 Gemini）
+    step_picker: str = "jev"
+    step_min_confidence: float = 0.5
+    step_timeout_seconds: float = 3.0
+    step_max_failures: int = 2
+    step_gemini_every: int = 8
+    step_record_dir: str = "logs/steps"
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
     # 一番上の中目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
@@ -564,6 +572,16 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             control=agent_data.get("control", defaults.control),
             small_goals=agent_data.get("small_goals", defaults.small_goals),
+            step_picker=agent_data.get("step_picker", defaults.step_picker),
+            step_min_confidence=float(
+                agent_data.get("step_min_confidence", defaults.step_min_confidence)
+            ),
+            step_timeout_seconds=float(
+                agent_data.get("step_timeout_seconds", defaults.step_timeout_seconds)
+            ),
+            step_max_failures=int(agent_data.get("step_max_failures", defaults.step_max_failures)),
+            step_gemini_every=int(agent_data.get("step_gemini_every", defaults.step_gemini_every)),
+            step_record_dir=agent_data.get("step_record_dir", defaults.step_record_dir),
             jev_goal_min_confidence=float(
                 agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
             ),
