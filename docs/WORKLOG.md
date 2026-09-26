@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 種集め（have(wheat_seeds)）が毎回失敗して行き詰まる (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザーのログ: `goal have(wheat_seeds, 9) is stuck (actions keep failing)`
+- 原因: 掘る行動は「ブロックの面が見える位置」（GoalLookAtBlock）へ歩くが、草は当たり判定がなくレイが通り抜けるので、その位置が決して見つからず毎回失敗した
+- 当たり判定のないブロック（草、花、作物、苗木）は届く距離（2 m）まで近づいて掘る。種が落ちなかった掘り（8 回に 1 回ほどしか落ちない）は「進まない」「失敗」に数えない（`ActionResult.missed_by_chance`）
+- テスト: npm 186、pytest 642
+
 ### 狩りは剣で、なければ先に作る (2026-09-26)
 
 **Commit**: `d3b9f89`

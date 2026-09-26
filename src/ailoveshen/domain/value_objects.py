@@ -1173,7 +1173,13 @@ class ActionResult:
         """襲われて止まったか（印か、ブリッジの結果の文から。道具モードの結果は文だけ）。"""
         return self.interrupted or self.result.startswith(INTERRUPTED_PREFIXES)
 
+    @property
+    def missed_by_chance(self) -> bool:
+        """確率で落ちる物（草から種、葉から苗木）が今回は落ちなかった（やり方の失敗ではない）。"""
+        return self.ok and CHANCE_MISS in self.result
 
+
+CHANCE_MISS = "nothing dropped this time"
 INTERRUPTED_PREFIXES = (
     "failed: interrupted: took damage",
     "failed: reflex: ",

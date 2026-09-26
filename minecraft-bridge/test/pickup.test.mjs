@@ -10,7 +10,7 @@ function digger ({ drop, full = false }) {
   const bot = {
     entity: { position: new Vec3(0, 70, 0), onGround: true },
     entities: drop ? { 7: { id: 7, name: 'item', position: drop } } : {},
-    blockAt: (p) => ({ name: 'coal_ore', position: p }),
+    blockAt: (p) => ({ name: 'coal_ore', boundingBox: 'block', position: p }),
     dig: async () => {},
     equip: async () => {},
     waitForTicks: async () => {},

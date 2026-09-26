@@ -732,6 +732,10 @@ class PlaySession(Entity):
         if result.cut_by_attack:
             # 襲われて止まったのは、やり方の失敗ではない（行き詰まりで Gemini を呼ばない）
             self._skip_stall = True
+        elif result.missed_by_chance:
+            # 草から種が落ちなかった（8 回に 1 回ほど）: 進まないに数えない
+            self._skip_stall = True
+            self.consecutive_failures = 0
         else:
             self.consecutive_failures = 0 if result.ok else self.consecutive_failures + 1
         self.updated_at = _utc_now()

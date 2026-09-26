@@ -400,8 +400,13 @@ export const PRIMITIVES = {
     const before = totalItems(bot)
     // 近くではなく、ブロックに届く場所に立つ: そうしないと、頭より高い原木には木の葉の上からしか
     // 「近く」にならない。
+    // 当たり判定のない草・花・作物は、視線の先に見える位置を探す GoalLookAtBlock が決して成り立たない
+    // （レイが通り抜ける）: 届く距離まで近づくだけにする（種を集める小目標が毎回失敗した）
+    const goal = block.boundingBox === 'block'
+      ? new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH })
+      : new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 2)
     try {
-      await goto(bot, new goals.GoalLookAtBlock(c.pos, bot.world, { reach: REACH }), signal)
+      await goto(bot, goal, signal)
     } catch (e) {
       if (!signal.aborted) markUnreachable(state, c.pos)
       throw e

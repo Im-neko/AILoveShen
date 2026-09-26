@@ -126,3 +126,22 @@ def test_steps_cut_by_an_attack_are_not_failures_of_the_small_goal():
     session.record(ActionResult("dig log", False, "failed: no path", 1.0))
     session.record(ActionResult("dig log", False, "failed: no path", 1.0))
     assert "stuck" in session.goal_end_reason(obs)
+
+
+def test_grass_that_drops_no_seeds_is_not_a_stall():
+    """種は草から 8 回に 1 回ほど: 落ちなかった掘りは「進まない」に数えない。"""
+    session = _session()
+    obs = _obs(remaining=3)
+    session.track_progress(obs)
+    for _ in range(5):
+        session.record(
+            ActionResult(
+                "dig short_grass",
+                True,
+                "dug short_grass; nothing dropped this time (it drops only sometimes)",
+                1.0,
+            )
+        )
+        session.track_progress(obs)
+    assert session.stalled_steps == 0
+    assert session.goal_end_reason(obs) == ""

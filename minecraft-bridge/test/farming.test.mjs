@@ -86,3 +86,21 @@ test('planted と farmed は家があるときの目標・条件になる（数�
   assert.throws(() => makeGoal({ predicate: 'planted', item: 'sapling', count: 1 }, bot, state({ home: null }), k), /no home/)
   assert.ok(CONDITION_PREDICATES.includes('planted') && CONDITION_PREDICATES.includes('farmed'))
 })
+
+test('草は届く距離まで近づいて掘る（見える位置を探すと決して着かず、種集めが毎回失敗した）', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const goals = []
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0), onGround: true },
+    entities: {},
+    blockAt: (p) => ({ name: 'short_grass', boundingBox: 'empty', position: p }),
+    dig: async () => {},
+    equip: async () => {},
+    waitForTicks: async () => {},
+    inventory: { items: () => [], emptySlotCount: () => 30 },
+    pathfinder: { goto: async (g) => goals.push(g.constructor.name), setGoal: () => {} }
+  }
+  const r = await PRIMITIVES.dig(bot, { unreachableDrops: new Set() }, { block: 'short_grass', pos: new Vec3(3, 64, 0) }, new AbortController().signal)
+  assert.equal(goals[0], 'GoalNear')
+  assert.match(r, /nothing dropped this time/) // 種はときどきしか落ちない: 失敗ではない
+})
