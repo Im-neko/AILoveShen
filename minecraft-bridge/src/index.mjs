@@ -437,3 +437,22 @@ bot.on('physicsTick', () => {
 bot.on('death', () => { console.log('[bot] 死んだ'); state.history.push({ action: 'event', ok: false, result: 'died', seconds: 0 }) })
 bot.on('kicked', (r) => console.log('[bot] キックされた', JSON.stringify(r)))
 bot.on('error', (e) => console.log('[bot] エラー', e.message))
+
+// 止めるとき（Ctrl-C、npm run dev のファイル変更での再起動）: 実行中の行動を止め、状態を保存し、ボットを
+// サーバーから抜けさせる（抜けないと、次に入ったボットと同じ名前で重なる）
+let stopping = false
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    if (stopping) process.exit(1)
+    stopping = true
+    console.log(`[bridge] 止める（${signal}）`)
+    try {
+      state.current?.abort?.('the bridge is restarting')
+      if (bot.entity) saveState(state)
+    } catch (e) {
+      console.log('[bridge] 状態を保存できなかった', e.message)
+    }
+    try { bot.quit('bridge restarting') } catch {}
+    setTimeout(() => process.exit(0), 500)
+  })
+}

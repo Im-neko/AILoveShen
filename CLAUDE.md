@@ -102,6 +102,7 @@ python -m ailoveshen.stream [--control tools] [--no-speak] [--no-chat] [--no-boa
 # Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
 docker compose -f docker/docker-compose.minecraft.yml up -d
 cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)
+# while developing: npm run dev (restarts on changes under src/; state saved, bot rejoins; the POV client must reconnect)
 GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300] [--comments c.json] [--board-port 8765] [--control tools] [--speak]
 
 # Style-Bert-VITS2 tests (legacy)

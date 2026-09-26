@@ -153,6 +153,8 @@ curl "http://localhost:5001/voice?text=テスト&model_name=<モデル名>" -o t
 cd minecraft-bridge && npm start
 ```
 
+開発中は `npm run dev`（`src/` のファイルが変わると自動で再起動する。`git pull` でも）。再起動のたびに、実行中の行動は止まり、状態（`state.json`）を保存し、ボットは入り直す（数秒）。Python 側（配信）はそのまま動き続け、つながらない間は待ってやり直す。視点のミラーにつないだ Minecraft のクライアントは切れるので、つなぎ直す（配信中の OBS の画面も一度切れる。本番の配信では `npm start`）
+
 ボットが Minecraft サーバーに参加し、視点のミラー（25578）と HTTP（3000）が開く。これだけではボットは動かない（動かすのは次の 4）。
 
 ### 3. ボットの視点を映す

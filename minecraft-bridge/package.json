@@ -6,6 +6,7 @@
   "main": "src/index.mjs",
   "scripts": {
     "start": "node --no-node-snapshot src/index.mjs",
+    "dev": "node --no-node-snapshot --watch-path=src --watch-preserve-output src/index.mjs",
     "test": "node --no-node-snapshot --test 'test/*.test.mjs'",
     "postinstall": "patch-package",
     "skills:clean": "node --no-node-snapshot tools/clean-skills.mjs",

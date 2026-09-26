@@ -7,6 +7,14 @@
 
 ## Completed Work
 
+### ブリッジの自動再起動（npm run dev） (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「ブリッジに修正を入れるたびに再起動するのが面倒。ホットリロードにできる？」
+- 本当のホットリロード（ボットとミラーの接続を保ったまま、目標・候補・行動のモジュールだけ差し替える）は、ESM のモジュールのキャッシュ、ボットに付けたリスナー、pathfinder の設定がモジュールの中にあるため大きな作り替えになる。やらない
+- `npm run dev`: `node --watch-path=src`（`src/` が変わると再起動）。`index.mjs` に SIGINT / SIGTERM の片付け（実行中の行動を止め、`state.json` を保存し、`bot.quit`）。ミラーにつないだクライアントは切れる（本番は `npm start`）。Node 22 で再起動と SIGTERM の片付けが動くのを確認。npm test 194
+
 ### 感情の声: Irodori-TTS で読ませて、Style-Bert-VITS2 のスタイルに (2026-09-26)
 
 **Commit**: `0a9550c`
