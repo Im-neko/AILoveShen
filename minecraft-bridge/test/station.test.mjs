@@ -109,3 +109,17 @@ test('作業台が遠ければ、ここに新しく作って置く選択肢も�
   assert.deepEqual(placed.map((c) => c.id), ['place crafting_table inside the house', 'place crafting_table nearby'])
   assert.deepEqual(newTableHere(withItems([['oak_planks', 3]]), state, far), [])
 })
+
+test('建築予定地にも作業台を仮設できる。建てる番が来たら壊して置く（今の家のまわりには置かない）', async () => {
+  const { removable } = await import('../src/build.mjs')
+  // ボットのまわりはすべて家の予定地（まだ建っていない）
+  const plan = { origin: v(-6, 70, -6), size: { width: 13, depth: 13, height: 4 } }
+  const spot = stationSpot(bot(() => 70), { plan, home: null }, 'crafting_table')
+  assert.ok(spot, 'a spot on the planned site')
+  // 建てる側: 予定のマスにある仮設の作業台・かまどは壊してよい。ほかの物は今までどおり止まる
+  const house = { kind: 'house' }
+  assert.equal(removable(house, { name: 'crafting_table', boundingBox: 'block' }, spot), true)
+  assert.equal(removable(house, { name: 'furnace', boundingBox: 'block' }, spot), true)
+  assert.equal(removable(house, { name: 'chest', boundingBox: 'block' }, spot), false)
+  assert.equal(removable(house, { name: 'stone', boundingBox: 'block' }, spot), false)
+})

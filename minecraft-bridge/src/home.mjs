@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import vec3Pkg from 'vec3'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
-import { buildAllowsDig, inBuilds, isHomeCell } from './builds.mjs'
+import { buildAllowsDig, inBuilds, isHomeCell, buildBox } from './builds.mjs'
 import { walkTo } from './move.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase } from './observe.mjs'
 
@@ -201,6 +201,22 @@ export function inHouse (state, p, margin = 0) {
   return p.x >= o.x - margin && p.x < o.x + width + margin && p.z >= o.z - margin && p.z < o.z + depth + margin &&
     p.y >= o.y - 1 && p.y <= o.y + height
 }
+
+// 建っているもの（今の家、前の家、完成した建物）のまわりか。仮設の作業台・かまどは、これ以外なら
+// 建築予定地にも置いてよい（その場所に建てる番が来たら、建てる側が壊して置く）
+export function inStandingBuilding (bot, state, p, margin = 0) {
+  if ([state.home, ...(state.formerHomes ?? [])].some((h) => h && inBuilt(h, p, margin))) return true
+  return Object.values(state.builds ?? {}).some((plan) => plan.origin && plan.status(bot).complete && inBuildBox(plan, p, margin))
+}
+
+function inBuildBox (plan, p, margin) {
+  const box = buildBox(plan)
+  return p.x >= box.min.x - margin && p.x <= box.max.x + margin && p.z >= box.min.z - margin && p.z <= box.max.z + margin &&
+    p.y >= box.min.y && p.y <= box.max.y
+}
+
+// 仮設してよい物（建築予定地にも置く。建てる番が来たら壊す）
+export const TEMPORARY = /^(crafting_table|furnace)$/
 
 // 道具（設計書 21）で名指しされても壊さない・置かない所: 今の家と、建てている家。前の家は
 // 名指しされれば掘ってよい（town4d: 置いてきたベッドを取りに戻れなかった）。理由か null を返す

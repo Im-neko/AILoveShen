@@ -33,6 +33,8 @@ const KINDS = {
 const NATURAL = /^(dirt|grass_block|coarse_dirt|podzol|stone|granite|diorite|andesite|gravel|sand|clay|mud|tuff|deepslate|short_grass|tall_grass|fern|snow)$/
 
 // 敷地にあってよいブロック: 空気、植物、葉（置く前に掘る）
+// 仮設の作業台・かまど（建築予定地に置いてよい）は、建てる番が来たら壊して置く
+const TEMPORARY_STATION = /^(crafting_table|furnace)$/
 const isClearable = (block) => (block.boundingBox === 'empty' && !['water', 'lava'].includes(block.name)) || block.name.endsWith('_leaves')
 
 export class BuildPlan {
@@ -128,7 +130,7 @@ function siteFits (bot, origin, size) {
       if (!ground || ground.boundingBox !== 'block' || UNSUITABLE_GROUND.test(ground.name)) return false
       for (let dy = 0; dy < size.height; dy++) {
         const b = bot.blockAt(origin.offset(dx, dy, dz))
-        if (!b || !isClearable(b)) return false
+        if (!b || !(isClearable(b) || TEMPORARY_STATION.test(b.name))) return false
       }
     }
   }
@@ -165,8 +167,9 @@ let lastPlaceAt = 0
 const occupied = (block) => block && block.name !== 'air' && block.name !== 'cave_air'
 
 // 名前付きの建物で、置くマスにあってもよい（掘ってから置く）ブロック
-const removable = (plan, block, pos, allowDig) =>
-  isClearable(block) || (plan.kind === 'build' && (NATURAL.test(block.name) || !!allowDig?.(pos, block)))
+export const removable = (plan, block, pos, allowDig) =>
+  isClearable(block) || TEMPORARY_STATION.test(block.name) ||
+  (plan.kind === 'build' && (NATURAL.test(block.name) || !!allowDig?.(pos, block)))
 
 export async function placeOne (bot, plan, b, signal, allowDig = null) {
   if (b.block === 'door') return placeDoor(bot, plan, b, signal)
@@ -235,7 +238,7 @@ async function placeDoor (bot, plan, b, signal) {
   const lower = plan.blocks.find((d) => d.block === 'door' && d.x === b.x && d.z === b.z && d.y === b.y - 1) ?? b
   const pos = plan.worldPos(lower)
   const found = bot.blockAt(pos)
-  if (occupied(found) && !isClearable(found) && !KINDS.door(found.name)) throw new Error(`site blocked by ${found.name} at ${pos}`)
+  if (occupied(found) && !isClearable(found) && !TEMPORARY_STATION.test(found.name) && !KINDS.door(found.name)) throw new Error(`site blocked by ${found.name} at ${pos}`)
   const out = plan.doorOutward(lower)
   let error = null
   for (const side of [1, -1]) {
@@ -252,7 +255,7 @@ async function placeDoor (bot, plan, b, signal) {
   // 向きの違うドアや草は、ドアの前に立ってから壊す（遠くから掘るとサーバーは断る）
   const current = bot.blockAt(pos)
   if (occupied(current)) {
-    if (!isClearable(current) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    if (!isClearable(current) && !TEMPORARY_STATION.test(current.name) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
     await bot.dig(current, true)
   }
   // 壊したドアが落ちて拾われるのを待つ（隣のマスに立てば拾える）

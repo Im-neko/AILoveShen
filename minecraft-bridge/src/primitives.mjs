@@ -11,7 +11,7 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -167,7 +167,8 @@ function nearbySpot (bot, state) {
         const pos = me.offset(dx, dy, dz)
         const spot = bot.blockAt(pos)
         const ground = bot.blockAt(pos.offset(0, -1, 0))
-        if (spot?.name !== 'air' || ground?.boundingBox !== 'block' || inHouse(state, pos, 1)) continue
+        // 建っているもののまわりには置かない。建築予定地には仮設してよい（建てる側が壊す）
+        if (spot?.name !== 'air' || ground?.boundingBox !== 'block' || inStandingBuilding(bot, state, pos, 1)) continue
         spots.push({ pos, d: dx * dx + dz * dz + dy * dy })
         break
       }

@@ -227,3 +227,10 @@ test('作業台やチェストは家の中にも置ける（ドアの内側と�
   const { callTool: tight } = setup({ items: [['crafting_table', 1]], extra: cramped })
   assert.match((await tight('place', { item: 'crafting_table', x: 2, y: 70, z: 1 })).result, /current home/)
 })
+
+test('建築予定地には作業台を仮設できる（土などは今までどおり断る）', async () => {
+  const { callTool, state } = setup({ at: v(10.5, 70, 10.5), items: [['crafting_table', 1], ['dirt', 4]] })
+  state.plan = { origin: v(8, 70, 8), size: { width: 7, depth: 7, height: 4 } }
+  assert.equal((await callTool('place', { item: 'crafting_table', x: 12, y: 70, z: 10 })).ok, true)
+  assert.match((await callTool('place', { item: 'dirt', x: 12, y: 70, z: 11 })).result, /house being built/)
+})

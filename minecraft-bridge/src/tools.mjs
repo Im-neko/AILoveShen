@@ -7,7 +7,7 @@
 import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
-import { protectedReason, hasBed, bedSpot } from './home.mjs'
+import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
 import { isHomeCell } from './builds.mjs'
 import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
@@ -105,7 +105,9 @@ export function createTools (deps) {
       const cell = bot.blockAt(pos)
       if (!cell) refuse(`${fmt(pos)} is not loaded`)
       if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}`)
-      const why = furnishing(args.item, pos) ? null : protectedReason(state, pos)
+      // 家の中の家具、または建築予定地への仮設（建っているもののまわりでなければ。建てる番が来たら壊す）
+      const temporary = TEMPORARY.test(args.item) && !inStandingBuilding(bot, state, pos, 1)
+      const why = furnishing(args.item, pos) || temporary ? null : protectedReason(state, pos)
       if (why) refuse(`will not place at ${fmt(pos)}: ${why}`)
       const feet = bot.entity.position.floored()
       if (pos.equals(feet) || pos.equals(feet.offset(0, 1, 0))) refuse(`you are standing in ${fmt(pos)}; move first`)
