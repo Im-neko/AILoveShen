@@ -2,14 +2,14 @@
 
 **Active Phase**: 設計書 35（教訓帳: 指摘と失敗を似た状況で思い出す）を実装した（実機では未確認。`logs/lessons` と `data/lessons.json` を見て点の重みと閾値を直す）。アバターは既定で全身表示（OBS で切り抜く）。その前に設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
-**Test Status**: `pytest tests/` 719 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
+**Test Status**: `pytest tests/` 720 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
 
 ### 教訓帳: 指摘と失敗を似た状況で思い出す (2026-09-26)
 
-**Commit**: `TBD`
+**Commit**: `d2e8cb3`（テストと設計書の仕上げは次のコミット）
 
 ユーザー: 「過去の指摘などの記憶を、似たような状況で思い出すのが難しそう。指摘とその条件をうまく覚える方法は」→ 提案に「一旦それでやってみます」。設計書 `docs/design/35_lessons.md`（`6b86f92`）。
 - `domain/value_objects.py`: `Lesson`（本文、条件の文、状況のキー、explicit、出どころ、taught/used/helped/failed）、`SITUATION_VALUES`。`Activity.lessons`、`Goal.lessons`、`PlaySession.lessons`

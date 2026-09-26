@@ -549,6 +549,19 @@ class TestPromptLength:
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500
 
+    def test_recalled_lessons_add_a_bounded_block(self):
+        """思い出した教訓は最大 4 件（docs/design/35）: 1 件 80 字、条件 60 字でも 800 字まで。"""
+        from ailoveshen.domain.value_objects import Lesson
+
+        lessons = tuple(
+            Lesson(f"L{i}", "あ" * 80, condition="い" * 60, source="viewer:neko", used=9, helped=5)
+            for i in range(4)
+        )
+        base = Activity(mission=MISSION, mid_goals=(HOUSE,), goal=PLANKS, observation=_obs())
+        with_lessons = _goal_prompt(activity=replace(base, lessons=lessons))
+        assert "思い出したこと" in with_lessons
+        assert len(with_lessons) - len(_goal_prompt(activity=base)) < 800
+
 
 class TestReviewPrompt:
     """毎回の見直し（docs/design/31）。"""
