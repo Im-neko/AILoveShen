@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 声の録音の台本と、録音から学習データを作る道具 (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「モデルにする人に好きな言葉を喋ってもらえる場合の選択肢」→「台本を作ってほしい」
+- `docs/voice/recording_script.tsv`（249 文: ふつう 60、語り 4（Irodori-TTS の参照音声）、楽しい 25、驚き 25、悲しい 25、むっ 20、怖い 20、実況 40（アイテム名、数字、座標、英字、数え方）、相づち 30。キャラクター設定の話し方（私、だよ・だね））。ITA コーパスなどの文は写していない（すべて書き下ろし）
+- `docs/voice/README.md`（区分、録り方、録音後の流れ、感情とスタイルの対応、同意）
+- `tools/voice_dataset.py`: 録音（<番号>.wav）を Style-Bert-VITS2 の `Data/<model>/raw/<スタイル>/` に写し、台本の文で `esd.list` を書く（文字起こし不要。2.5.0 以降はサブフォルダーごとにスタイル: Neutral / Happy / Surprised / Sad / Angry / Fear）。足りない録音を表示、`--dry-run`
+- 読む人のための台本のページ（Artifact、録音済みの印はその端末だけに残る）: https://claude.ai/artifact/UG76jN4QpA2ukaXvZZ1xX3
+
 ### Irodori-TTS を Mac で動かせるようにする（読み上げの方式の切り替え） (2026-09-26)
 
 **Commit**: `ec644be`
