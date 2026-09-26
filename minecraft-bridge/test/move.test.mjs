@@ -76,3 +76,21 @@ test('跳んで抜け出せたら、そのまま目的地へ歩く', async () =>
   await walkTo(bot, 'far', new AbortController().signal, 30)
   assert.equal(calls(), 2)
 })
+
+test('同じブロックを 1 分に 3 回掘ったら、しばらくそこは掘らず置かない（掘っては置く繰り返し）', async () => {
+  const { EventEmitter } = await import('node:events')
+  const { guardDigLoops, isLoopCell } = await import('../src/move.mjs')
+  const bot = new EventEmitter()
+  let replans = 0
+  bot.pathfinder = { movements: {}, setMovements () { replans++ } }
+  const state = {}
+  guardDigLoops(bot, state)
+  const block = { name: 'dirt', position: new Vec3(-78, 39, -116) }
+  bot.emit('diggingCompleted', block)
+  bot.emit('diggingCompleted', block)
+  assert.equal(isLoopCell(state, block.position), false)
+  bot.emit('diggingCompleted', block)
+  assert.equal(isLoopCell(state, block.position), true)
+  assert.equal(isLoopCell(state, new Vec3(0, 39, 0)), false)
+  assert.equal(replans, 1)
+})

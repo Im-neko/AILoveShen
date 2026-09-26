@@ -7,7 +7,13 @@
 // 動けなくなったら移動の仕方を変える: 歩いているのに位置が STUCK_MS の間ほとんど変わらない（掘って
 // いる・足場を置いている間は数えない）ときは、その移動を止めて、跳んで抜け出す → 走りも飛び越えも
 // しない慎重な歩き方にする → 数ブロック下がってからやり直す、の順に試す。それでも動けなければ理由を
-// 添えて失敗にする（操作の精度で角や穴に引っかかり、時間切れまで同じ所で足踏みしていた）
+// 添えて失敗にする（操作の精度で角や穴に引っかかり、時間切れまで同じ所で足踏みしていた）。掘る・置く
+// 間はすぐには数えないが、それが WORKING_FACTOR 倍続いても進まなければ動けないとみなす
+//
+// 掘っては置く繰り返し: pathfinder はブロックが変わるたびに経路を作り直す。掘ると、次の経路がそこに
+// 足場の土を置き、置くとまた掘る経路になって、同じ土を掘り続けた（(-78,39,-116) の dirt）。同じ
+// ブロックを LOOP_WINDOW_MS の間に LOOP_DIGS 回掘ったら、そのセルはしばらく掘らず置かない
+// （guardDigLoops。Movements の除外は configureMovements が isLoopCell で読む）
 
 import pathfinderPkg from 'mineflayer-pathfinder'
 
@@ -18,6 +24,36 @@ const MOVED_M = 0.5
 const CHECK_MS = 250
 const ESCAPES = ['jumped out', 'walked carefully (no sprinting or parkour)', 'backed off a few blocks']
 const BACK_OFF_M = 4
+const WORKING_FACTOR = 5
+const LOOP_DIGS = 3
+const LOOP_WINDOW_MS = 60 * 1000
+const LOOP_BLOCK_MS = 3 * 60 * 1000
+
+const cellKey = (p) => `${p.x},${p.y},${p.z}`
+
+export function isLoopCell (state, pos, now = Date.now()) {
+  const until = state.loopCells?.get(cellKey(pos))
+  return !!until && until > now
+}
+
+export function guardDigLoops (bot, state) {
+  const digs = new Map()
+  state.loopCells ??= new Map()
+  bot.on('diggingCompleted', (block) => {
+    if (!block?.position) return
+    const key = cellKey(block.position)
+    const now = Date.now()
+    if (digs.size > 500) digs.clear()
+    const times = (digs.get(key) ?? []).filter((t) => now - t < LOOP_WINDOW_MS)
+    times.push(now)
+    digs.set(key, times)
+    if (times.length < LOOP_DIGS || isLoopCell(state, block.position, now)) return
+    state.loopCells.set(key, now + LOOP_BLOCK_MS)
+    console.log(`[move] ${key} の ${block.name} を掘っては置く繰り返し: しばらくそこは掘らず、置かない`)
+    // 経路を作り直させる（除外は次の経路から効く）
+    if (bot.pathfinder?.movements) bot.pathfinder.setMovements(bot.pathfinder.movements)
+  })
+}
 
 export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS) {
   signal.throwIfAborted()
@@ -51,12 +87,12 @@ async function walkWatched (bot, goal, stuckMs) {
   const timer = last && setInterval(() => {
     const p = pos()
     const working = !!bot.targetDigBlock || !!bot.pathfinder.isMining?.() || !!bot.pathfinder.isBuilding?.()
-    if (!p || working || p.distanceTo(last) >= MOVED_M) {
+    if (!p || p.distanceTo(last) >= MOVED_M) {
       if (p) last = p.clone()
       since = Date.now()
       return
     }
-    if (Date.now() - since >= stuckMs) {
+    if (Date.now() - since >= stuckMs * (working ? WORKING_FACTOR : 1)) {
       stuck = true
       bot.pathfinder.setGoal(null)
     }

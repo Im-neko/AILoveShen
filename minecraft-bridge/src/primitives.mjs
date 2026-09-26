@@ -15,7 +15,7 @@ import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isIn
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
-import { walkTo as goto } from './move.mjs'
+import { walkTo as goto, isLoopCell } from './move.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting } from './farming.mjs'
 
@@ -86,6 +86,9 @@ export function configureMovements (bot, state) {
   // 家、前の家、建てている家は壊さないし、そこに足場も置かない。
   m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
   m.exclusionAreasPlace.push((block) => block.position && !inHouse(state, block.position, 1) ? 0 : 100)
+  // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
+  m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
+  m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   // 丸石は石の道具とかまどの材料なので足場にしない。土は掘ればいつも手に入る
   m.scafoldingBlocks = [bot.registry.itemsByName.dirt.id]
   m.allow1by1towers = true
