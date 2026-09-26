@@ -468,6 +468,20 @@ export function evaluate (bot, state, knowledge, world) {
       break
     }
   }
+  // 狩るのに剣がなければ、先に作る（素手だと何発もかかる）。作るだけでできるなら狩りより先に
+  // （狩りの候補を外す）、材料を集めるところからなら狩りと並べて出す
+  if (!out.met && out.leaves.some((l) => l.kind === 'kill')) {
+    const inv = inventoryCounts(bot)
+    if (!Object.keys(inv).some((n) => n.endsWith('_sword') && inv[n] > 0)) {
+      const r = solve(knowledge, world, [{ spec: 'sword', count: 1 }])
+      const craftOnly = r.leaves.length > 0 && r.leaves.every((l) => l.kind === 'craft' || l.kind === 'place')
+      if (craftOnly) out.leaves = out.leaves.filter((l) => l.kind !== 'kill')
+      if (r.leaves.length) {
+        out.leaves.push(...r.leaves.map((l) => ({ ...l, also: 'a sword for hunting' })))
+        out.lines.push(craftOnly ? 'no sword: craft one before hunting' : 'no sword: gather for one while hunting')
+      }
+    }
+  }
   // ついでに取れるもの（ほかの中目標の物）: 昼に、そばにあれば。今の目標の残りには数えない
   if (!out.met && phase === 'day' && goal.also?.length) {
     const inv = inventoryCounts(bot)

@@ -52,3 +52,24 @@ test('体力が危ないとき、帰宅は周りに危険があるときだけ�
   assert.equal(offered(1000), false, '昼で脅威がなければ食料探しを続ける')
   assert.equal(offered(18000), true, '夜は帰る')
 })
+
+test('剣がなければ狩る前に作る（作るだけでできるなら狩りの候補を外す）', async () => {
+  const { makeGoal, evaluate } = await import('../src/goals.mjs')
+  const state = { home: null, plan: null, memory: null }
+  const bot = (items) => ({
+    entity: { position: new Vec3(0, 70, 0) },
+    time: { timeOfDay: 1000 },
+    inventory: { items: () => Object.entries(items).map(([name, count]) => ({ name, count })) }
+  })
+  const world = (inventory) => ({ inventory, stored: {}, blocks: {}, mobs: { cow: 2 }, table: 'near', unlocked: () => true, dig: () => [], hunt: () => [] })
+  const kinds = (inv) => {
+    const b = bot(inv)
+    const goal = makeGoal({ predicate: 'have', item: 'beef', count: 2 }, b, state, k)
+    const r = evaluate(b, { ...state, goal }, k, world(inv))
+    return r.leaves.map((l) => `${l.kind}${l.also ? '*' : ''}`)
+  }
+  // 板材と棒があれば: 剣を作るだけ（狩りは後）
+  assert.deepEqual(kinds({ oak_planks: 4, stick: 2 }), ['craft*'])
+  // 剣があれば狩る
+  assert.deepEqual(kinds({ stone_sword: 1 }), ['kill'])
+})

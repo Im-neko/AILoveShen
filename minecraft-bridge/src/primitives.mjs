@@ -225,6 +225,9 @@ export async function fight (bot, target, signal) {
       if (target.position.distanceTo(bot.entity.position) > 3) {
         if (bot.pathfinder.goal !== follow) bot.pathfinder.setGoal(follow, true)
       } else {
+        // 追う途中で掘ると道具に持ち替わる: 殴る前に武器に戻す
+        const weapon = bestWeapon(bot)
+        if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand')
         await bot.lookAt(target.position.offset(0, target.height * 0.8, 0), true)
         bot.attack(target)
       }

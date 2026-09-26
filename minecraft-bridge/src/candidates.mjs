@@ -35,7 +35,10 @@ const dist = (bot, p) => round(bot.entity.position.distanceTo(p))
 // ない作業台やかまど）
 export function ground (bot, state, knowledge, world, status) {
   const out = []
-  for (const leaf of status?.leaves ?? []) out.push(...fromLeaf(bot, state, world, leaf))
+  // also の印（ほかの中目標のため、狩りのための剣）は、その葉から出た候補すべてに付ける
+  for (const leaf of status?.leaves ?? []) {
+    out.push(...fromLeaf(bot, state, world, leaf).map((c) => leaf.also && !c.also ? { ...c, also: leaf.also } : c))
+  }
   out.push(...forNeeds(bot, state, knowledge))
   const home = state.home
   const { inside, day, danger, sheltering } = shelterOf(bot, home)
