@@ -2,10 +2,20 @@
 
 **Active Phase**: 設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
-**Test Status**: `pytest tests/` 698 passed, 2 skipped。ブリッジ `npm test` 194 件
+**Test Status**: `pytest tests/` 700 passed, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 建物の設計の 400 の続き: スキーマが原因、同じ建物を足し続ける (2026-09-27)
+
+**Commit**: (this commit)
+
+- ユーザーのログ: 画像も解像度も外しても 400（プロンプト 1299 字、スキーマつき）→ 建物の設計のスキーマ（`BUILD_SCHEMA`: 形の配列 1〜40、各形に enum と点の入れ子）が原因の見込み。ほかの用途のスキーマは通っている。さらに、建物を落とした後「中目標がない」で差し戻され、Gemini は 3 回とも同じ storehouse を足して、決定が通らなかった
+- `GeminiTextGenerator.generate_json`: スキーマつきで 400 なら、スキーマをプロンプトの終わりに書いて（response_json_schema を外し、JSON で答えさせるのはそのまま）1 回やり直し、通ればその用途では以後そうする（ログに「スキーマをプロンプトに書くと通った」）
+- `BUILD_SCHEMA`: minItems / maxItems を外した（数は BuildDesign が確かめる）
+- 目標の決定: 設計できなかった建物は 10 分間足さない（`_undesignable`）。落としたことを差し戻しの理由に書いて Gemini に伝える（「別の中目標を」）
+- テスト 2 件。pytest 700
 
 ### 建物の設計がいつも 400、そのせいで空腹の決定まで差し戻された (2026-09-27)
 

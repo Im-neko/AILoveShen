@@ -54,8 +54,9 @@ BUILD_SCHEMA: dict[str, Any] = {
         "anchor": {"type": "string", "enum": [a.value for a in BuildAnchor]},
         "shapes": {
             "type": "array",
-            "minItems": 1,
-            "maxItems": BuildDesign.MAX_SHAPES,
+            # 数の上限はスキーマに書かない（形が複雑になると Gemini が 400 を返すことがある）。
+            # BuildDesign が確かめ、破れば理由を返す
+            "description": f"1 to {BuildDesign.MAX_SHAPES} shapes",
             "items": {
                 "type": "object",
                 "properties": {

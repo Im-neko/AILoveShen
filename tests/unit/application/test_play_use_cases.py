@@ -1104,6 +1104,14 @@ class TestStepsChosenByJev:
         now[0] = 21 * 60
         assert "periodic" in use_case._needs_gemini(session, "goal x is met")
 
+    def test_a_build_that_could_not_be_designed_is_left_out_for_a_while(self, make):
+        now = [0.0]
+        use_case = make(clock=lambda: now[0])
+        use_case._undesignable["storehouse"] = 600.0
+        assert use_case._undesignable_now() == ["storehouse"]
+        now[0] = 601.0
+        assert use_case._undesignable_now() == []
+
     def test_after_a_first_failure_jev_may_route_it(self, make):
         """失敗の後の振り分け（docs/design/34 §7）: 1 回目は Jev に、同じ種類が 2 回続いたら Gemini。"""
         from ailoveshen.domain.value_objects import GoalOutcome, PlannedStep

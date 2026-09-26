@@ -204,6 +204,33 @@ class TestGeminiTextGeneratorGenerate:
         assert configs[2].media_resolution is None  # 以後この用途では外す
 
     @pytest.mark.asyncio
+    async def test_a_schema_400_is_retried_with_the_schema_in_the_prompt_and_remembered(
+        self, mock_client
+    ):
+        """建物の設計は画像も解像度も外して 400（2026-09-27）: スキーマをプロンプトに書く。"""
+        client = mock_client.return_value
+        bad = errors.ClientError(
+            400, {"error": {"code": 400, "message": "invalid", "status": "INVALID_ARGUMENT"}}
+        )
+        client.aio.models.generate_content.side_effect = [
+            bad,
+            _response('{"ok": 1}'),
+            _response('{"ok": 2}'),
+        ]
+        generator = _generator(thinking_levels={"build_design": "medium"})
+        schema = {"type": "object", "properties": {"ok": {"type": "integer"}}}
+
+        assert await generator.generate_json("p", schema, purpose="build_design") == {"ok": 1}
+        assert await generator.generate_json("p", schema, purpose="build_design") == {"ok": 2}
+
+        calls = client.aio.models.generate_content.call_args_list
+        assert calls[0].kwargs["config"].response_json_schema == schema
+        for call in calls[1:]:
+            assert call.kwargs["config"].response_json_schema is None
+            assert call.kwargs["config"].response_mime_type == "application/json"
+            assert '"ok"' in call.kwargs["contents"] and "JSON Schema" in call.kwargs["contents"]
+
+    @pytest.mark.asyncio
     async def test_a_json_output_cut_at_the_limit_is_retried_with_twice_the_limit(
         self, mock_client
     ):

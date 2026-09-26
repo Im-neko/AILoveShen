@@ -96,6 +96,7 @@ RECENT_TOOLS = 8  # 道具の選択に見せる直近の呼び出しの数
 GOAL_STEPS_SHOWN = 12  # 失敗の分析に見せる、その小目標の行動の数（docs/design/27）
 OFFERED_SHOWN = 12  # 失敗の分析に見せる、最後に出ていた候補の数
 MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら、やり直しは選べない
+UNDESIGNABLE_SECONDS = 600  # 設計できなかった建物を、中目標に足さない間（秒）
 MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
 
 
@@ -340,6 +341,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._failure_routing = failure_routing
         # 行動の記録から、行き詰まっていないかを Jev に定期的に聞く（docs/design/34 §9）
         self._stuck = stuck_check
+        self._undesignable: dict[str, float] = {}  # 設計できなかった建物 → また試してよい時刻
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
@@ -674,6 +676,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._last_gemini_at = self._clock()
         self._last_plan = tuple(g.id for g in session.plan.pending)
 
+    def _undesignable_now(self) -> list[str]:
+        """さっき設計できなかった建物（UNDESIGNABLE_SECONDS の間は足さない）。"""
+        now = self._clock()
+        self._undesignable = {n: t for n, t in self._undesignable.items() if t > now}
+        return list(self._undesignable)
+
     def _needs_gemini(self, session: PlaySession, reason: str) -> str | None:
         """小目標を Gemini に決めさせる理由（None なら Jev が選ぶ）。docs/design/26 §2。"""
         if self._chooser is None:
@@ -782,8 +790,18 @@ class AdvancePlayUseCase(IAdvancePlay):
                 purpose=purpose,
                 images=images,
             )
+            dropped = ""  # 設計できずに落とした建物（差し戻すとき Gemini に伝える）
             try:
                 decision = parse_decision(data)
+                # さっき設計できなかった建物は、しばらく足さない（毎回同じ建物を足して決定が
+                # 通らなかった: 2026-09-27）
+                for name in self._undesignable_now():
+                    if _without_build(decision, name) != decision:
+                        decision = _without_build(decision, name)
+                        dropped = (
+                            f" (the build {name} could not be designed a moment ago: do not add it "
+                            "again for a while; choose another mid goal)"
+                        )
                 if decision.spec.predicate not in predicates:
                     raise ValueError(
                         f"{decision.spec.predicate.value} is not one of the goals offered"
@@ -796,6 +814,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                     # 建物を設計できなくても、決定の残り（空腹なら食べる、など）は通す: その建物の
                     # 中目標と手順だけ落とす（2026-09-27: 餓死寸前に決定ごと差し戻していた）
                     logger.warning(f"建物 {e.name} を設計できないので、その中目標は足さない: {e}")
+                    self._undesignable[e.name] = self._clock() + UNDESIGNABLE_SECONDS
+                    dropped = (
+                        f" (the build {e.name} could not be designed just now and was left out: "
+                        "choose another mid goal for now)"
+                    )
                     decision = _without_build(decision, e.name)
                     await self._mid_goals.check_new(decision.changes)
                 _serving(decision, self._mid_goals.rehearse(plan, decision.changes))
@@ -817,7 +840,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                         f"write the steps for the mid goal at the top ({preview.current.title})"
                     )
             except (ValueError, GoalRejectedError) as e:
-                error = str(e)
+                error = str(e) + dropped
                 logger.warning(f"目標の決定 {attempt} を差し戻した: {data!r}: {error}")
                 continue
             if decision.diagnosis:

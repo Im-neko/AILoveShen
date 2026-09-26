@@ -106,6 +106,7 @@ class GeminiTextGenerator(ITextGenerator):
                 )
         self._media_resolutions = {p: resolutions[r] for p, r in by_purpose.items()}
         self._no_resolution: set[str] = set()  # 解像度の指定で 400 になった用途（以後つけない）
+        self._schema_in_prompt: set[str] = set()  # スキーマで 400 になった用途（以後プロンプトに書く）
         self._generation_log = generation_log
 
         self._model = model
@@ -177,7 +178,21 @@ class GeminiTextGenerator(ITextGenerator):
                 "response_json_schema": schema,
             }
         )
-        text, finish = await self._generate(prompt, config, purpose, images)
+        if (purpose or "default") in self._schema_in_prompt:
+            prompt, config = _schema_in_prompt(prompt, config, schema)
+        try:
+            text, finish = await self._generate(prompt, config, purpose, images)
+        except TextGenerationError as e:
+            if "error 400" not in str(e) or config.response_json_schema is None:
+                raise
+            # 構造化出力のスキーマで 400 になることがある（2026-09-27: 建物の設計は画像も解像度も
+            # 外して 400。形が複雑すぎると受けない）。スキーマをプロンプトに書いて 1 回やり直し、
+            # 通ればこの用途では以後そうする
+            logger.warning(f"スキーマつきで 400: スキーマをプロンプトに書いてやり直す（purpose={purpose}）")
+            prompt, config = _schema_in_prompt(prompt, config, schema)
+            text, finish = await self._generate(prompt, config, purpose, images)
+            self._schema_in_prompt.add(purpose or "default")
+            logger.warning(f"スキーマをプロンプトに書くと通った: purpose={purpose} では以後そうする")
         if finish == types.FinishReason.MAX_TOKENS and config.max_output_tokens:
             # 思考で上限を使い切って JSON が途中で切れた: 上限を倍にして 1 回だけやり直す
             # （2026-09-26: 目標の決定の見直し・中目標の編集が長くなって切れた）
@@ -479,3 +494,14 @@ class GeminiTextGenerator(ITextGenerator):
             f"output={usage.candidates_token_count} "
             f"total={usage.total_token_count}"
         )
+
+
+def _schema_in_prompt(
+    prompt: str, config: types.GenerateContentConfig, schema: dict[str, Any]
+) -> tuple[str, types.GenerateContentConfig]:
+    """構造化出力のスキーマを外し、プロンプトの終わりに書く（JSON で答えさせるのはそのまま）。"""
+    text = (
+        f"{prompt}\n\nAnswer with one JSON object that follows this JSON Schema exactly "
+        f"(no other text):\n{json.dumps(schema, ensure_ascii=False)}"
+    )
+    return text, config.model_copy(update={"response_json_schema": None})
