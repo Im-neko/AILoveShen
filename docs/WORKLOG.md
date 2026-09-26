@@ -9,7 +9,7 @@
 
 ### B: 技を実装（設計書 22） (2026-09-26)
 
-**Commits**: `89a775a`（ブリッジ）、`317fef2`（Python）、(this commit)（文書）
+**Commits**: `89a775a`（ブリッジ）、`317fef2`（Python）、`f542656`（文書）
 
 - ユーザーの決定（22 §8）: サンドボックスは isolated-vm、上限はそのまま、ワールドのリセット後も残す、失敗作は配信の外の掃除で消す、ゼロから、書く深さは high
 - ブリッジ `src/skills.mjs` と `index.mjs` の `/skills`・`/judge`、`npm run skills:clean`。isolated-vm は同期の時間切れと CPU の見張りの両方で止まらないループを止める（どちらが先でも同じ理由にした）。`npm test` 152 件
