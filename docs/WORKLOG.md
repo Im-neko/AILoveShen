@@ -9,7 +9,7 @@
 
 ### Jev でできることは Jev に: 5. 失敗の後の振り分け (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `7b94f9e`
 
 - 行き詰まった・進まなかった小目標の後、まず Jev（`GoalChooser.choose(avoid=失敗した小目標)`）が、一番上の中目標のまだ済んでいない別の手順（同じ種類は外す: 同じやり方を繰り返すには Gemini の分析と助言が要る）か `rethink`（Gemini が原因を分析する: 27）を選ぶ。Gemini に回す: 同じ種類の失敗が 2 回続いた、死んだ、中目標が進まない、画面で考え直す、別の手順がない、Jev が迷う
 - `AdvancePlayUseCase(failure_routing=)`、`_needs_gemini`。設定 `minecraft.agent.failure_routing: jev | gemini`
