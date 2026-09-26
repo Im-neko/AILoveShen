@@ -117,7 +117,7 @@ export function snapshot (bot, state) {
     remembered: state.memory ? recallableKinds(state.memory, bot.entity.position, Number(bot.time.age)) : new Set(),
     blocks: new Proxy({}, { get: (_, name) => typeof name === 'string' ? dig(name).length : undefined }),
     mobs: new Proxy({}, { get: (_, name) => typeof name === 'string' ? hunt(name).length : undefined }),
-    table: findTable(bot) ? 'near' : null,
+    table: findTable(bot, state) ? 'near' : null,
     furnace: findFurnace(bot) ? 'near' : null,
     smelting: smeltingCounts(state.memory ?? {}),
     unlocked: (item) => state.recipeBook.recipesFor(item).length > 0,

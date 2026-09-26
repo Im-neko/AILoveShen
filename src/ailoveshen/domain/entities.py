@@ -314,11 +314,13 @@ class MidGoalPlan(Entity):
         stage: Optional[int] = None,
         prepares_town: bool = False,
         budget: Optional[int] = None,
+        now: bool = False,
     ) -> MidGoal:
         """
         `position`（未完了のものの中で 0 始まり。None: 最後）に中目標を足す。
 
-        視聴者の中目標は、position が何でも、取り組んでいるものの後ろに入る。
+        視聴者の中目標は、position が何でも、取り組んでいるものの後ろに入る。ただし `now`
+        （配信者が待っている間に今やると引き受けた頼み）は先頭にも入れる。
         """
         if len(self._goals) >= self.max_goals:
             raise ValueError(f"the mid goal list is full ({self.max_goals})")
@@ -338,7 +340,7 @@ class MidGoalPlan(Entity):
             prepares_town=prepares_town,
             budget=budget,
         )
-        earliest = 1 if requested_by is not None and self._goals else 0
+        earliest = 1 if requested_by is not None and self._goals and not now else 0
         at = (
             len(self._goals) if position is None else min(max(position, earliest), len(self._goals))
         )

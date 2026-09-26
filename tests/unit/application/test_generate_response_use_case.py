@@ -263,6 +263,45 @@ class TestReplyWhilePlaying:
         store.save.assert_called_with(session.plan)
 
     @pytest.mark.asyncio
+    async def test_while_waiting_the_night_a_request_can_be_done_now(
+        self, use_case, mock_text_generator
+    ):
+        """夜に家の中で待っている間は、中でできる頼みを今やる（先頭に入れ、待ちを区切る）。"""
+        chest = {
+            "reply": "いいね、待ってる間にチェスト作っちゃおう！",
+            "request": "accept",
+            "title": "チェストを作る",
+            "conditions": [{"predicate": "have", "item": "chest", "count": 1}],
+            "reason": "待ち時間を使える",
+            "when": "now",
+        }
+        mock_text_generator.generate_json.return_value = chest
+        session = _playing("night")
+        session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜を越す"), "night")
+
+        response = await use_case.execute(self._request(session, "チェスト作ったら？"))
+
+        assert session.plan.current.title == "チェストを作る"
+        assert response.mid_goal.requested_by == "neko"
+        assert "now" in session.rethink_reason and "チェストを作る" in session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_now_while_working_is_sent_back_so_the_reply_matches(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        """作業中に now は使えない: 返答を作り直させる（「今やる」と言った返答を黙って後回しにしない）。"""
+        now = {**BED_REQUEST, "when": "now"}
+        mock_text_generator.generate_json.side_effect = [now, BED_REQUEST]
+        session = _playing()
+
+        await use_case.execute(self._request(session))
+
+        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
+        assert "only for while you are waiting" in error
+        assert session.plan.current.title == "剣を持つ"
+        assert not session.rethink_reason
+
+    @pytest.mark.asyncio
     async def test_request_never_cuts_in(self, use_case, mock_text_generator):
         """先にしてと頼まれても、今の中目標の後ろに入る。"""
         mock_text_generator.generate_json.return_value = {**BED_REQUEST, "position": 1}

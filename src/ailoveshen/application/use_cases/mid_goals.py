@@ -226,15 +226,26 @@ class MidGoalKeeper:
         await self._publish(events)
 
     async def accept(
-        self, plan: MidGoalPlan, proposal: MidGoalProposal, requested_by: str
+        self,
+        plan: MidGoalPlan,
+        proposal: MidGoalProposal,
+        requested_by: str,
+        waiting: bool = False,
     ) -> MidGoal:
         """
-        視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。
+        視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。`proposal.now` なら
+        先頭に（配信者が待っているときだけ。`waiting` は呼び出し側が今の小目標から決める）。
 
         Raises:
-            GoalRejectedError: 条件を判定できないとき
+            GoalRejectedError: 条件を判定できないとき、待っていないのに now のとき
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
+        if proposal.now and not waiting:
+            # 黙って後回しにすると、「今やるね」と言った返答と食い違う: 返答を作り直させる
+            raise GoalRejectedError(
+                "when now is only for while you are waiting (the night inside the home, "
+                "through_night or at_home); now you are working on something, so use next"
+            )
         blocks = await self._design_builds(proposal, BuildDesign.VIEWER_MAX_BLOCKS)
         await self._bridge.check(proposal.conditions)
         goal = plan.add(
@@ -242,9 +253,10 @@ class MidGoalKeeper:
             conditions=proposal.conditions,
             reason=proposal.reason,
             requested_by=requested_by,
-            position=proposal.position,
+            position=0 if proposal.now else proposal.position,
             # 建物は大きさに合わせて予算を広げる（1 ブロック 2 ステップと、材料集め）
             budget=max(plan.viewer_budget, 2 * blocks + 40) if blocks else None,
+            now=proposal.now,
         )
         logger.info(
             f"視聴者の頼みを中目標 {goal.id} として受けた: {goal.describe()}（{requested_by}）"

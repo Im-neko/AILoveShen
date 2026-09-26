@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 待っている間の頼みを今やる（設計書 13 §13） (2026-09-26)
+
+**Commit**: 次のコミット
+
+- ユーザー「夜に家の中で待っている間に『チェスト作ったら？』と言っても『夜が明けてベッドを作ってから』と聞かない。頑固すぎる」→ 原因は返答の決まり（頼みは今の中目標の後ろ、小目標は中断しない、今すぐやるとは言わない）と、夜は作業台を置けない・使えないブリッジ
+- ブリッジ: 避難中は作業台を家の中に置く（`stationSpot(bot, state, item)`、`chestSpot` と同じ場所の決まり）、使える作業台は家の中のものだけ（`findTable(bot, state)`、ソルバーの `table`、道具の craft）。`shelterOf` を `home.mjs` に移した。テスト 2 件（npm 133）
+- Python: 返答の `when`（now/next）、`MidGoalProposal.now`、`MidGoalKeeper.accept(waiting=)`（待っていないのに now は `GoalRejectedError` → 返答の作り直し）、`MidGoalPlan.add(now=)` で先頭に、`session.request_rethink` で待ちを区切る。プロンプト（返答の決まり、小目標の決め方、`ABILITIES`）。テスト 2 件（pytest 558）
+- 昼の決まりは変えていない。反映にはブリッジと配信の再起動が要る
+
 ### ワールドを作り直す手順 (2026-09-25)
 
 - ユーザー「ワールドをリセットしたい。シードがちょっと難しそう」→ `docker-compose.minecraft.yml` に `LEVEL: ${MC_LEVEL:-world}` と `SEED: ${MC_SEED:-}`（`.env.example` にも）。名前を変えると新しいワールドになり、前のワールドはボリュームに残る。手順は `docs/streaming.md`「ワールドを作り直す」（state.json と mission.json を取っておいて別名に、`up -d --force-recreate`、シードの選び方）

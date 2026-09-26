@@ -45,3 +45,47 @@ test('置く場所がなければ候補に出さず、代わりに理由を示�
   assert.ok(open.candidates.some((c) => c.id === 'place crafting_table nearby'))
   assert.equal(open.withheld, null)
 })
+
+// 室内 3x3（x 101..103、z 1..3、床 y 69）、ドアは北 (102, 70, 0)、ベッドはドアからまっすぐ奥
+function room (timeOfDay, extra = {}) {
+  const blocks = { '102,70,2': 'red_bed', '102,70,3': 'red_bed', ...extra }
+  const wall = (x, z) => x === 100 || x === 104 || z === 0 || z === 4
+  return {
+    time: { timeOfDay },
+    entity: { position: v(102.5, 70, 1.5) },
+    entities: {},
+    registry: { blocksByName: { crafting_table: { id: 7 } } },
+    blockAt: (p) => {
+      let name = blocks[`${p.x},${p.y},${p.z}`] ?? 'air'
+      if (p.y === 69 || p.y === 73) name = 'oak_planks'
+      else if (p.y >= 70 && p.y <= 72 && p.x >= 100 && p.x <= 104 && p.z >= 0 && p.z <= 4 && wall(p.x, p.z) && name === 'air') name = 'oak_planks'
+      return { name, position: p, boundingBox: name === 'air' || name.endsWith('_bed') ? 'empty' : 'block' }
+    },
+    findBlocks: () => Object.entries(blocks).filter(([, n]) => n === 'crafting_table').map(([k]) => v(...k.split(',').map(Number))),
+    findBlock: () => null
+  }
+}
+const homeState = () => ({ home: { min: v(101, 70, 1), max: v(103, 70, 3), door: v(102, 70, 0), inside: v(102, 70, 1), outside: v(102, 70, -1), breach: [] } })
+
+test('夜に家の中にいれば、作業台は家の中に置く（夜の待ち時間にクラフトできるように）', async () => {
+  const { isInside } = await import('../src/home.mjs')
+  const state = homeState()
+  const night = stationSpot(room(18000), state, 'crafting_table')
+  assert.ok(night && isInside({ entity: { position: night } }, state.home), `inside: ${night}`)
+  assert.notEqual(`${night.x},${night.z}`, '102,1') // ドアの内側はふさがない
+  assert.ok(!['102,2', '102,3'].includes(`${night.x},${night.z}`)) // ベッドの上ではない
+  // 昼は今までどおり家の外（家の中には置かない）
+  const day = stationSpot(room(1000), state, 'crafting_table')
+  assert.ok(!day || !isInside({ entity: { position: day } }, state.home))
+  // かまどは夜でも家の中に置かない
+  const furnace = stationSpot(room(18000), state, 'furnace')
+  assert.ok(!furnace || !isInside({ entity: { position: furnace } }, state.home))
+})
+
+test('夜に家の中にいれば、使える作業台は家の中のものだけ', async () => {
+  const { findTable } = await import('../src/primitives.mjs')
+  const state = homeState()
+  assert.equal(findTable(room(18000, { '98,70,2': 'crafting_table' }), state), null) // 外の作業台
+  const indoor = findTable(room(18000, { '98,70,2': 'crafting_table', '101,70,3': 'crafting_table' }), state)
+  assert.deepEqual(indoor.position, v(101, 70, 3))
+})

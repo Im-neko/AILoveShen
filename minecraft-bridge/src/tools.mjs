@@ -108,7 +108,7 @@ export function createTools (deps) {
       if (!recipes.length) refuse(`${item} has no crafting recipe`)
       const times = Math.max(1, Math.min(MAX_CRAFT_TIMES, Math.floor(Number(args.times ?? 1))))
       const needsTable = recipes.every((r) => r.needsTable)
-      if (needsTable && !findTable(bot)) refuse(`${item} needs a crafting table within reach; place one first`)
+      if (needsTable && !findTable(bot, state)) refuse(`${item} needs a crafting table within reach; place one first`)
       return { c: { verb: 'craft', target: item, item, times, needsTable, inPlace: true } }
     },
     pickup () {

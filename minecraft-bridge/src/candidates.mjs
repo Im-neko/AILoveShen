@@ -12,7 +12,7 @@
 
 import vec3Pkg from 'vec3'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
-import { isInside, dangerOutside, exitSpots } from './home.mjs'
+import { isInside, exitSpots, shelterOf } from './home.mjs'
 import { recall, visited, homeChests, chestWith, furnaceWith } from './memory.mjs'
 import { cooking } from './cooking.mjs'
 import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
@@ -56,7 +56,7 @@ export function ground (bot, state, knowledge, world, status) {
   // 出す。目的なしに出すと、選ぶ側は何も変わらないのに中で待った: 昼に9ステップ続けて、また
   // ドアの前にハスクがいて体力が満タンのとき6回中6回。
   const station = (status?.leaves ?? []).find((l) => l.kind === 'place')
-  if (station && !stationSpot(bot, state)) {
+  if (station && !stationSpot(bot, state, station.item)) {
     const room = `no room here to place the ${station.item}: move to flat open ground`
     withheld = withheld ? `${withheld}; ${room}` : room
   }
@@ -67,14 +67,8 @@ export function ground (bot, state, knowledge, world, status) {
   return { candidates: safe, withheld }
 }
 
-// 家に避難しているか: 家の中にいて、夜か、ドアの前に敵対モブがいる。避難中は外での行動を出さない
-// （候補）・断る（道具、設計書 21）
-export function shelterOf (bot, home) {
-  const inside = isInside(bot, home)
-  const day = dayPhase(bot.time.timeOfDay) === 'day'
-  const danger = dangerOutside(bot, home)
-  return { inside, day, danger, sheltering: inside && (!day || danger.length > 0) }
-}
+// 避難の判定は home.mjs（作業台の置き場所も使う）。道具（tools.mjs）はここから import する
+export { shelterOf }
 
 // 自然回復には満腹度がほぼ満タンである必要がある
 const REGEN_FOOD = 18
@@ -133,15 +127,19 @@ function fromLeaf (bot, state, world, leaf) {
       return [...recalled, ...directions]
     }
     case 'craft': {
-      const table = leaf.needsTable ? findTable(bot) : null
+      const table = leaf.needsTable ? findTable(bot, state) : null
       return [{
         id: `craft ${leaf.item} x${leaf.times}`, verb: 'craft', target: leaf.item, item: leaf.item, times: leaf.times, needsTable: leaf.needsTable,
         ...(table ? { pos: table.position, distance: dist(bot, table.position) } : { inPlace: !leaf.needsTable })
       }]
     }
-    case 'place':
-      // 置ける場所でだけ出す（何も置けない場所で何度も選ばれた）
-      return stationSpot(bot, state) ? [{ id: `place ${leaf.item} nearby`, verb: 'place_station', target: leaf.item, item: leaf.item }] : []
+    case 'place': {
+      // 置ける場所でだけ出す（何も置けない場所で何度も選ばれた）。夜に家の中にいれば、作業台は
+      // 家の中に置く（位置が家の中なので、避難中でも外す対象にならない）
+      const spot = stationSpot(bot, state, leaf.item)
+      const indoor = spot && state.home && isInside({ entity: { position: spot } }, state.home)
+      return spot ? [{ id: `place ${leaf.item} ${indoor ? 'inside the house' : 'nearby'}`, verb: 'place_station', target: leaf.item, item: leaf.item, pos: spot, distance: dist(bot, spot) }] : []
+    }
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {

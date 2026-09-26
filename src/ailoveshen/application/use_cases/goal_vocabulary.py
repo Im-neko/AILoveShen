@@ -86,6 +86,8 @@ class MidGoalProposal:
     conditions: tuple[GoalSpec, ...]
     reason: str = ""
     position: Optional[int] = None
+    # 視聴者の頼みを、配信者が待っている間（夜に家の中）に今やる（docs/design/13 §8）
+    now: bool = False
 
 
 @dataclass(frozen=True)
@@ -282,6 +284,13 @@ def reply_schema() -> dict[str, Any]:
                 "on now)",
             },
             "reason": {"type": "string", "description": "accept: why it helps, in one sentence"},
+            "when": {
+                "type": "string",
+                "enum": ["now", "next"],
+                "description": "accept: now = do it right away because you are only waiting "
+                "(the night inside the home) and it can be done where you are; next = after "
+                "the mid goal worked on now (default)",
+            },
         },
         "required": ["reply", "request"],
     }
@@ -340,6 +349,7 @@ def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
         conditions=conditions,
         reason=str(data.get("reason", "")),
         position=int(position) - 1 if position is not None else None,
+        now=data.get("when") == "now",
     )
 
 

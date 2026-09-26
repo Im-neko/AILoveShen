@@ -14,7 +14,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
 import { buildAllowsDig, inBuilds, isHomeCell } from './builds.mjs'
 import { walkTo } from './move.mjs'
-import { nearbyEntities, isHostile, isLog, isPlanks } from './observe.mjs'
+import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const { goals } = pathfinderPkg
@@ -172,6 +172,15 @@ export async function enterHome (bot, home, signal) {
 }
 
 // 外のドアの近くで待っている敵対モブ
+// 家に避難しているか: 家の中にいて、夜か、ドアの前に敵対モブがいる。避難中は外での行動を出さない
+// （候補）・断る（道具、設計書 21）。作業台は家の中に置く（夜の待ち時間にクラフトできるように）
+export function shelterOf (bot, home) {
+  const inside = isInside(bot, home)
+  const day = dayPhase(bot.time.timeOfDay) === 'day'
+  const danger = dangerOutside(bot, home)
+  return { inside, day, danger, sheltering: inside && (!day || danger.length > 0) }
+}
+
 export function dangerOutside (bot, home) {
   if (!home) return []
   return nearbyEntities(bot).filter(({ e }) => isHostile(bot, e) && e.position.distanceTo(home.outside) <= DOOR_DANGER_RADIUS &&

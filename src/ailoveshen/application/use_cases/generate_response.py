@@ -24,6 +24,7 @@ from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GenerationContext,
+    GoalPredicate,
     MessageType,
     MidGoal,
 )
@@ -171,8 +172,18 @@ class GenerateResponseUseCase(IGenerateResponse):
             try:
                 proposal = parse_proposal(data)
                 mid_goal = await self._mid_goals.accept(
-                    session.plan, proposal, requested_by=request.user_name
+                    session.plan,
+                    proposal,
+                    requested_by=request.user_name,
+                    waiting=is_waiting(session),
                 )
+                if proposal.now:
+                    # 待っている小目標（夜明けまで）は切れ目が来ない: 次のステップで区切り、
+                    # 引き受けた頼みの小目標を決めさせる（返答で「今やる」と言っている）
+                    session.request_rethink(
+                        f'you told {request.user_name} you would do "{mid_goal.title}" now, '
+                        "while waiting: it is at the top of the mid goals"
+                    )
             except (ValueError, GoalRejectedError) as e:
                 # 返答が、プランに入らないものを受けている: それは決して言わせない
                 error = str(e)
@@ -180,3 +191,11 @@ class GenerateResponseUseCase(IGenerateResponse):
                 continue
             return text, mid_goal
         raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")
+
+
+WAITING_PREDICATES = (GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME)
+
+
+def is_waiting(session: PlaySession) -> bool:
+    """配信者が待っているだけか（夜明けまで家の中にいる、家に入っている）。"""
+    return session.goal is not None and session.goal.spec.predicate in WAITING_PREDICATES

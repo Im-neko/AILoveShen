@@ -11,7 +11,7 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -127,7 +127,10 @@ const goNear = (bot, pos, range, signal) => goto(bot, new goals.GoalNear(pos.x, 
 // 作業台やかまどを置く場所: 完全なブロックの上の空気で、ボットから 2〜3 ブロック（立っている場所では
 // ない）、上下1ブロックまで（自分の高さの決まった輪だけでは、坂や洞窟で何も見つからなかった）。
 // 家の中や計画中の敷地には置かない。近い順
-export function stationSpot (bot, state) {
+export function stationSpot (bot, state, item = null) {
+  // 避難中（夜に家の中）の作業台は家の中に: 外には出られず、夜の待ち時間にクラフトできなかった
+  // （視聴者に「チェスト作ったら？」と言われても朝まで待った）
+  if (item === 'crafting_table' && state.home && shelterOf(bot, state.home).sheltering) return chestSpot(bot, state.home)
   const me = bot.entity.position.floored()
   const spots = []
   for (let dx = -3; dx <= 3; dx++) {
@@ -263,8 +266,15 @@ function dropsAround (bot) {
 const itemCount = (bot, name) => bot.inventory.items().filter((i) => i.name === name).reduce((n, i) => n + i.count, 0)
 const totalItems = (bot) => bot.inventory.items().reduce((n, i) => n + i.count, 0)
 
-export function findTable (bot) {
-  return bot.findBlock({ matching: bot.registry.blocksByName.crafting_table.id, maxDistance: TABLE_SEARCH_RADIUS })
+// 使える作業台。避難中（夜に家の中）は家の中のものだけ（外のものへは行けない）
+export function findTable (bot, state = null) {
+  const matching = bot.registry.blocksByName.crafting_table.id
+  if (state?.home && shelterOf(bot, state.home).sheltering) {
+    return bot.findBlocks({ matching, maxDistance: TABLE_SEARCH_RADIUS, count: 16 })
+      .map((p) => bot.blockAt(p))
+      .find((b) => b && isInside({ entity: { position: b.position } }, state.home)) ?? null
+  }
+  return bot.findBlock({ matching, maxDistance: TABLE_SEARCH_RADIUS })
 }
 
 export function findFurnace (bot) {
@@ -396,7 +406,7 @@ export const PRIMITIVES = {
     for (let i = 0; i < RECIPE_UNLOCK_TICKS && !state.recipeBook.recipesFor(c.item).length; i++) await bot.waitForTicks(1)
     let table = null
     if (c.needsTable) {
-      table = findTable(bot)
+      table = findTable(bot, state)
       if (!table) throw new Error('no crafting table nearby')
       await goNear(bot, table.position, 3, signal)
     }
@@ -411,7 +421,7 @@ export const PRIMITIVES = {
   async place_station (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
-    const pos = stationSpot(bot, state)
+    const pos = stationSpot(bot, state, c.item)
     if (!pos) throw new Error(`no free spot for the ${c.item}`)
     await bot.equip(item, 'hand')
     await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
