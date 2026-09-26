@@ -12,6 +12,7 @@ from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.skills import SkillWriter
@@ -33,6 +34,7 @@ from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder imp
 )
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
 from ailoveshen.infrastructure.adapters.storage.json_note_store import JsonNoteStore
+from ailoveshen.infrastructure.adapters.storage.json_lesson_store import JsonLessonStore
 from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import JsonlWatchRecorder
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
@@ -246,6 +248,28 @@ def create_game_service(
             if minecraft.stuck_record_dir
             else None,
         )
+    # 教訓帳: 視聴者の助言と自分の失敗から学んだことを、似た状況で思い出す（設計書 35）
+    lessons = None
+    if minecraft.lessons != "off":
+        by_jev = minecraft.lessons == "jev" and bool(jev.api_key)
+        if by_jev and fast_judge is None:
+            fast_judge = JevFastJudge(
+                api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+            )
+        lessons = LessonBook(
+            JsonLessonStore(minecraft.lessons_path),
+            judge=fast_judge if by_jev else None,
+            mode="jev" if by_jev else "rules",
+            shown=minecraft.lessons_shown,
+            candidates=minecraft.lesson_candidates,
+            min_confidence=minecraft.lesson_min_confidence,
+            timeout_seconds=minecraft.lesson_timeout_seconds,
+            max_lessons=minecraft.max_lessons,
+            recorder=JsonlWatchRecorder(minecraft.lessons_record_dir)
+            if minecraft.lessons_record_dir
+            else None,
+        )
+        lessons.load()
     store = JsonMissionStore(minecraft.mission.store_path)
     notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
     profile = create_character_profile(character)
@@ -304,6 +328,7 @@ def create_game_service(
         step_picker=step_picker,
         failure_routing=minecraft.failure_routing,
         stuck_check=stuck_check,
+        lessons=lessons,
         skills=(
             SkillWriter(
                 text_generator,
@@ -326,4 +351,5 @@ def create_game_service(
         danger_watcher=danger_watcher,
         screen_capture=capture,
         notes=notes,
+        lessons=lessons,
     )

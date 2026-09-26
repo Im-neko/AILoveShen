@@ -1348,3 +1348,58 @@ class TestDeath:
         # 死んだことは失敗の分析（行き詰まった・進まない）ではない
         assert prompt_builder.build_goal_prompt.call_args.kwargs["failure_record"] == ()
         assert session.deaths_at_goal == 1  # 新しい小目標は、今の数から数える
+
+
+class TestLessons:
+    """失敗から学んだ教訓を、似た状況の小目標の始まりに思い出す（docs/design/35）。"""
+
+    conversation = TestAdvancePlay.conversation
+    town = TestAdvancePlay.town
+    note_store = TestAdvancePlay.note_store
+    notes = TestAdvancePlay.notes
+
+    @pytest.mark.asyncio
+    async def test_a_lesson_from_a_failure_is_recalled_when_the_same_goal_starts(
+        self, bridge, text_generator, prompt_builder, selector, events, conversation, mid_goals,
+        town, notes,
+    ):
+        from ailoveshen.application.use_cases.lessons import LessonBook
+
+        store = Mock()
+        store.load.return_value = None
+        book = LessonBook(store, mode="rules")
+        use_case = AdvancePlayUseCase(
+            bridge=bridge,
+            text_generator=text_generator,
+            prompt_builder=prompt_builder,
+            action_selector=selector,
+            event_publisher=events,
+            conversation=conversation,
+            mid_goals=mid_goals,
+            town=town,
+            notes=notes,
+            lessons=book,
+        )
+        bridge.observe.return_value = _obs(time_phase="day")
+        text_generator.generate_json.return_value = {
+            **RETRY_PLANKS,
+            "lesson": "木が見えないときは遠くまで探索する",
+            "lesson_when": {"text": "近くに木がないとき"},
+        }
+        session = _session(HAVE_PLANKS)
+        for _ in range(3):  # 進まないで終わる
+            await use_case.execute(session)
+
+        (lesson,) = book.lessons
+        # 条件のキーがないので、行き詰まった小目標とそのときの状況
+        assert lesson.keys["goal"] == "have" and lesson.keys["item"] == "planks"
+        assert lesson.keys["ended"] == "stalled" and not lesson.explicit
+        assert lesson.condition == "近くに木がないとき" and lesson.source == "failure"
+        # やり直す同じ小目標の始まりに思い出し、選択器と「思い出したこと」に出る
+        assert session.goal.lessons == ("木が見えないときは遠くまで探索する",)
+        assert session.activity().lessons == (book.lessons[0],)
+        assert book.lessons[0].used == 1
+
+        bridge.observe.return_value = _obs(met=True, remaining=0)
+        await use_case.execute(session)
+        assert book.lessons[0].helped == 1  # 思い出して始めた小目標が済んだ

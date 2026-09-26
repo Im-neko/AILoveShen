@@ -228,6 +228,16 @@ class MinecraftSettings:
     stuck_check_steps: int = 6
     stuck_min_confidence: float = 0.75
     stuck_record_dir: str = "logs/stuck"
+    # 教訓帳（docs/design/35）: jev（コードで絞って Jev が確かめる）、rules（コードの上位だけ）、
+    # off（使わない: 視聴者の教訓はメモへ）
+    lessons: str = "jev"
+    lessons_path: str = "data/lessons.json"
+    lessons_record_dir: str = "logs/lessons"
+    lessons_shown: int = 4
+    lesson_candidates: int = 6
+    lesson_min_confidence: float = 0.6
+    lesson_timeout_seconds: float = 2.0
+    max_lessons: int = 200
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
     # 一番上の中目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
@@ -619,6 +629,18 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("stuck_min_confidence", defaults.stuck_min_confidence)
             ),
             stuck_record_dir=agent_data.get("stuck_record_dir", defaults.stuck_record_dir),
+            lessons=str(agent_data.get("lessons", defaults.lessons)),
+            lessons_path=agent_data.get("lessons_path", defaults.lessons_path),
+            lessons_record_dir=agent_data.get("lessons_record_dir", defaults.lessons_record_dir),
+            lessons_shown=int(agent_data.get("lessons_shown", defaults.lessons_shown)),
+            lesson_candidates=int(agent_data.get("lesson_candidates", defaults.lesson_candidates)),
+            lesson_min_confidence=float(
+                agent_data.get("lesson_min_confidence", defaults.lesson_min_confidence)
+            ),
+            lesson_timeout_seconds=float(
+                agent_data.get("lesson_timeout_seconds", defaults.lesson_timeout_seconds)
+            ),
+            max_lessons=int(agent_data.get("max_lessons", defaults.max_lessons)),
             jev_goal_min_confidence=float(
                 agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
             ),

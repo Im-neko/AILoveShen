@@ -17,6 +17,7 @@ from ailoveshen.domain.value_objects import (
     Goal,
     GoalOutcome,
     GoalPredicate,
+    Lesson,
     MessageRole,
     MidGoal,
     MidGoalState,
@@ -198,6 +199,7 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
         or "  - なし"
     )
     lines += _format_notes(activity, with_ids)
+    lines += _format_lessons(activity)
     return "\n".join(lines)
 
 
@@ -390,6 +392,26 @@ def _format_note(note: Note, with_ids: bool) -> str:
     note_id = f"{note.id} " if with_ids else ""
     days = f"（{note.written_day} 日目に書いた、{note.expires_day} 日目まで）"
     return f"{note_id}[{NOTE_KINDS[note.kind]}] {note.text}{about.get(note.kind, '')}{days}"
+
+
+def _format_lessons(activity: Activity) -> list[str]:
+    """
+    今の状況で思い出した教訓（docs/design/35）: 前に似た状況で学んだこと。確かめていない。
+    思い出したものがなければ欄を出さない。
+    """
+    if not activity.lessons:
+        return []
+    return [
+        "- 思い出したこと（前に似た状況で学んだこと。確かめていない。事実は上のゲームの状況）:",
+        *(f"  - {_format_lesson(n)}" for n in activity.lessons),
+    ]
+
+
+def _format_lesson(lesson: Lesson) -> str:
+    when = f"（こういうとき: {lesson.condition}）" if lesson.condition else ""
+    source = f"{lesson.viewer}さんに教わった" if lesson.viewer else "自分の失敗から"
+    record = f"、効いた {lesson.helped} 回・効かなかった {lesson.failed} 回" if lesson.used else ""
+    return f"{lesson.text}{when}（{source}{record}）"
 
 
 def _format_screen_note(note: ScreenNote) -> str:

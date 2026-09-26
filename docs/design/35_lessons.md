@@ -48,7 +48,7 @@
 
 ## 4. 思い出す流れ
 
-1. **コードで絞る**: 今の状況と教訓のキーの重なりを点にする（`item` 3、`goal` 2、`body` 2（ok 以外）、`ended` 2（失敗のとき）、`time` 1（day 以外）、`place` 1（outside 以外）、`pickaxe` 1（no））。`explicit` の教訓は、書いてあるキーが今と違えば外す（「夜は…」を昼に出さない）。2 点以上を、点、実績（helped − failed）の順に最大 6 件
+1. **コードで絞る**: 今の状況と教訓のキーの重なりを点にする（`item` 3、`goal` 2、`body` 2（ok 以外）、`ended` 2（失敗のとき）、`time` 1（day 以外）、`place` 1（outside 以外）、`pickaxe` 1（no））。`explicit` の教訓は、書いてあるキーが今と違えば外し（「夜は…」を昼に出さない）、すべて合えば 1 点足す（「夜は…」だけの教訓も思い出せる）。2 点以上を、点、実績（helped − failed）の順に最大 6 件
 2. **Jev で確かめる**: 1 回の `IFastJudge.ask` で、教訓ごとに YES_NO（「この教訓は今の状況に当てはまるか」、`condition` と今の状況を見せる）。確信度 `min_confidence`（0.6）以上の「はい」だけ残す
 3. Jev が答えない・時間切れ（`timeout_seconds` 2 秒）・`judge: rules` のときは、コードの上位 3 件（前と同じくプレイは止めない）
 4. 最大 `shown`（4）件を出す
@@ -73,18 +73,20 @@
 
 ## 7. 設定
 
+`config/default.yaml` の `minecraft.agent`:
+
 ```yaml
-minecraft:
-  lessons:
-    judge: jev          # jev | rules（コードの上位だけ）| off（教訓帳を使わない: 視聴者の教訓はメモへ）
-    path: data/lessons.json
-    record_dir: logs/lessons
-    shown: 4
-    candidates: 6
-    min_confidence: 0.6
-    timeout_seconds: 2.0
-    max_lessons: 200
+lessons: jev              # jev | rules（コードの上位だけ）| off（使わない: 視聴者の教訓はメモへ）
+lessons_path: data/lessons.json
+lessons_record_dir: logs/lessons
+lessons_shown: 4
+lesson_candidates: 6
+lesson_min_confidence: 0.6
+lesson_timeout_seconds: 2.0
+max_lessons: 200
 ```
+
+TypeSafe のキーがなければ `jev` でも `rules` で動く。
 
 ## 8. 決めなかったこと・あとで
 

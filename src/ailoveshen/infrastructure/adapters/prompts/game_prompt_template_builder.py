@@ -299,6 +299,9 @@ $conditions
     身を守るのが先、など）。原因が中目標の立て方にあるなら、中目標リストや手順も直す
 - 同じ小目標が続けて失敗しているときは、やり直しは選べない（本文に書いてある）
 - 分析と助言は配信の画面と実況にも出る。記録にない事実を作らない
+- 次に似た状況で役に立つことがわかったら、最後に lesson（一般的な教訓 1 文、座標は書かない）と
+  lesson_when（どんなときか: 短い文と、本当に関係するものだけ）を書く。教訓帳に残り、似た状況で
+  「思い出したこと」に出る。「思い出したこと」の教訓を守れていなかったなら、それも分析に書く
 
 ## 小目標の述語（全部。今使えるものは状態の側に書く）
 $all_predicates
@@ -458,7 +461,7 @@ ACTION_INSTRUCTIONS = (
     "You control a Minecraft survival player working toward the goal in the state. "
     "Choose the single best next primitive action. Stay alive first; otherwise make progress on "
     "the goal. If the state has advice from the planner, follow it unless it would put you in "
-    "danger."
+    "danger. The state's remember lists lessons from similar situations before; keep them in mind."
 )
 MOBS_SHOWN = 8
 RECENT_ACTIONS_SHOWN = 3
@@ -713,6 +716,8 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             "goal": goal.spec.describe(),
             "goal_reason": goal.reason,
             **({"advice": goal.advice} if goal.advice else {}),
+            # 前に似た状況で学んだこと（docs/design/35。確かめていない）
+            **({"remember": list(goal.lessons)} if goal.lessons else {}),
             "progress": list(status.lines) if status else [],
             "blocked": list(status.blocked) if status else [],
             "needs": list(observation.needs),

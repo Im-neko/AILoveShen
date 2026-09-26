@@ -486,6 +486,8 @@ class Goal:
     advice: str = ""
     # この小目標を決めたときの、今の状態での見直し（docs/design/31）
     review: str = ""
+    # この小目標で思い出した教訓の文（選択器と道具のプロンプトが読む。docs/design/35）
+    lessons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1128,6 +1130,73 @@ class Note:
             raise ValueError("a plan note has no small goal or viewer")
 
 
+MAX_LESSON_CHARS = 80
+MAX_LESSON_CONDITION_CHARS = 60
+# 状況のキーと、取れる値（docs/design/35 §2.1。コードが観測から決める）
+SITUATION_VALUES: dict[str, tuple[str, ...]] = {
+    "time": ("day", "dusk", "night", "dawn"),
+    "place": ("home", "underground", "outside"),
+    "body": ("hungry", "hurt", "ok"),
+    "pickaxe": ("yes", "no"),
+    "ended": ("stuck", "stalled", "died", "met", "other"),
+}
+SITUATION_KEYS = ("goal", "item", *SITUATION_VALUES)
+
+
+@dataclass(frozen=True)
+class Lesson:
+    """
+    教訓帳の 1 件（docs/design/35）: 似た状況で思い出す教訓。確かめていない（世界の事実ではない）。
+
+    `situation` は決まった語彙のキー（SITUATION_KEYS）。`explicit` なら Gemini がその教訓の
+    条件として選んだキーで、違う状況では思い出さない。そうでなければ、教わったときの状況の
+    スナップショット。場所によらない（ワールドが作り直されても残す）。
+
+    Raises:
+        ValueError: 本文が空か長すぎる、条件が長すぎる、知らないキーがあるとき。
+    """
+
+    id: str
+    text: str
+    condition: str = ""
+    situation: tuple[tuple[str, str], ...] = ()
+    explicit: bool = False
+    source: str = "failure"  # "viewer:<名前>" か "failure"
+    taught: int = 1
+    used: int = 0
+    helped: int = 0
+    failed: int = 0
+    learned_at: str = ""  # ISO 8601（実時間）
+    last_used_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("a lesson needs text")
+        if len(self.text) > MAX_LESSON_CHARS:
+            raise ValueError(f"a lesson is one sentence of at most {MAX_LESSON_CHARS} characters")
+        if len(self.condition) > MAX_LESSON_CONDITION_CHARS:
+            raise ValueError(
+                f"a lesson's condition is at most {MAX_LESSON_CONDITION_CHARS} characters"
+            )
+        for key, _ in self.situation:
+            if key not in SITUATION_KEYS:
+                raise ValueError(f"unknown situation key {key!r}")
+
+    @property
+    def keys(self) -> dict[str, str]:
+        return dict(self.situation)
+
+    @property
+    def proven(self) -> bool:
+        """確かな教訓（何度も効いた）: 消さない。"""
+        return self.helped >= 2 and self.helped > self.failed
+
+    @property
+    def viewer(self) -> str:
+        """教えてくれた視聴者（自分の失敗からなら ""）。"""
+        return self.source.split(":", 1)[1] if self.source.startswith("viewer:") else ""
+
+
 @dataclass(frozen=True)
 class Activity:
     """
@@ -1148,6 +1217,7 @@ class Activity:
     notes: tuple[Note, ...] = ()  # 自分のメモ（確かめていない）
     intent: str = ""  # 道具で操作しているとき、今やろうとしていること（配信者が道具に添えた 1 文）
     screen_note: Optional["ScreenNote"] = None  # 画面で見たこと（確かめていない）
+    lessons: tuple[Lesson, ...] = ()  # 今の状況で思い出した教訓（確かめていない。docs/design/35）
 
 
 @dataclass(frozen=True)

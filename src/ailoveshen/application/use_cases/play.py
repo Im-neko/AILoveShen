@@ -33,6 +33,12 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 )
 from ailoveshen.application.use_cases.house import HouseDesigner, parse_blueprint
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.lessons import (
+    LessonBook,
+    clean_keys,
+    ended_kind,
+    situation_of,
+)
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
 from ailoveshen.application.use_cases.tool_catalog import (
@@ -78,6 +84,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    Lesson,
     MessageRole,
     MessageType,
     MidGoal,
@@ -267,6 +274,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         step_picker: Optional[StepPicker] = None,
         failure_routing: str = "gemini",
         stuck_check: Optional[StuckCheck] = None,
+        lessons: Optional[LessonBook] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -341,6 +349,10 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._failure_routing = failure_routing
         # 行動の記録から、行き詰まっていないかを Jev に定期的に聞く（docs/design/34 §9）
         self._stuck = stuck_check
+        # 教訓帳: 小目標の始まりと Gemini の決定の前に思い出し、実績を数える（docs/design/35）
+        self._lessons = lessons
+        self._in_play: tuple[Lesson, ...] = ()  # 今の小目標の始まりに思い出した教訓
+        self._last_ended = ""  # 前の小目標の終わり方（stuck / stalled / died / met / other）
         self._undesignable: dict[str, float] = {}  # 設計できなかった建物 → また試してよい時刻
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
 
@@ -642,6 +654,13 @@ class AdvancePlayUseCase(IAdvancePlay):
             reason = f"{reason}; {stuck}" if reason else stuck
         # 目標が終わる前の見え方: その状態が、終わる理由だ
         activity = session.activity()
+        ended = ended_kind(reason)
+        # 終わった小目標の状況（教訓の条件と、思い出す手がかり。docs/design/35）
+        situation = situation_of(session.goal.spec if session.goal else None, obs, ended)
+        if self._lessons is not None and self._in_play:
+            self._lessons.settle(self._in_play, ended)
+        self._in_play = ()
+        self._last_ended = ended
         await self._end_goal(session, obs, reason)
         why = self._needs_gemini(session, reason)
         if why is None:
@@ -672,7 +691,18 @@ class AdvancePlayUseCase(IAdvancePlay):
             else:
                 why = picked.why
         logger.info(f"小目標は Gemini が決める: {why}")
-        await self._decide_goal(session, obs, activity, reason)
+        if self._lessons is not None:
+            recalled = await self._lessons.recall(
+                situation,
+                _upcoming(session.plan),
+                {
+                    "last_goal": activity.goal.spec.describe() if activity.goal else None,
+                    "ended_because": reason,
+                },
+                moment="decision",
+            )
+            activity = replace(activity, lessons=recalled)
+        await self._decide_goal(session, obs, activity, reason, situation)
         self._last_gemini_at = self._clock()
         self._last_plan = tuple(g.id for g in session.plan.pending)
 
@@ -730,7 +760,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         )
 
     async def _decide_goal(
-        self, session: PlaySession, obs: GameObservation, activity: Activity, reason: str
+        self,
+        session: PlaySession,
+        obs: GameObservation,
+        activity: Activity,
+        reason: str,
+        situation: Optional[dict[str, str]] = None,
     ) -> None:
         plan = session.plan
         predicates = predicates_now(obs, plan)
@@ -857,6 +892,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             if decision.steps and plan.current is not None:
                 await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
             self._write_notes(session.notebook, data, obs.day, goals, viewers)
+            self._learn(decision, situation or {})
             await self._start_goal(session, obs, _goal(decision, plan), reason, status)
             return
         raise TextGenerationError(
@@ -917,6 +953,33 @@ class AdvancePlayUseCase(IAdvancePlay):
         except ValueError as e:
             logger.warning(f"メモの編集を飛ばした: {data.get('note_changes')!r}: {e}")
 
+    def _learn(self, decision: GoalDecision, situation: dict[str, str]) -> None:
+        """失敗の後の決定が書いた教訓を、教訓帳に書く（条件がなければ行き詰まった状況）。"""
+        if self._lessons is None or not decision.lesson:
+            return
+        keys = clean_keys(decision.lesson_when)
+        condition = decision.lesson_when.get("text")
+        self._lessons.learn(
+            decision.lesson,
+            condition if isinstance(condition, str) else "",
+            keys or situation,
+            explicit=bool(keys),
+            source="failure",
+        )
+
+    async def _recall_for(self, goal: Goal, obs: GameObservation) -> tuple[Lesson, ...]:
+        """小目標の始まりに、その状況で教訓を思い出す（実績の対象。docs/design/35 §4）。"""
+        if self._lessons is None:
+            return ()
+        recalled = await self._lessons.recall(
+            situation_of(goal.spec, obs, self._last_ended),
+            context={"goal": goal.spec.describe(), "goal_reason": goal.reason},
+            moment="start",
+        )
+        recalled = self._lessons.mark_used(recalled)
+        self._in_play = recalled
+        return recalled
+
     async def _start_goal(
         self,
         session: PlaySession,
@@ -925,6 +988,10 @@ class AdvancePlayUseCase(IAdvancePlay):
         reason: str,
         status: GoalStatus,
     ) -> None:
+        recalled = await self._recall_for(goal, obs)
+        if recalled:
+            goal = replace(goal, lessons=tuple(n.text for n in recalled))
+        session.lessons = recalled
         session.set_goal(goal, obs.time_phase)
         self._goal_steps.clear()
         if self._stuck is not None:
@@ -987,6 +1054,14 @@ def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
         advice=decision.advice,
         review=decision.review,
     )
+
+
+def _upcoming(plan: MidGoalPlan) -> list[dict[str, str]]:
+    """一番上の中目標の手順（これからやること）の状況のキー（教訓を思い出す手がかり）。"""
+    current = plan.current
+    if current is None:
+        return []
+    return [situation_of(step.spec, None) for step in current.plan_steps]
 
 
 def _no_progress(reason: str) -> bool:

@@ -21,6 +21,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     HouseBlueprint,
+    Lesson,
     MessageRole,
     MessageType,
     MidGoal,
@@ -578,6 +579,8 @@ class PlaySession(Entity):
     screen_note: Optional[ScreenNote] = field(default=None, init=False)
     # 次の切れ目で今の小目標を終わらせる理由（画面の見直しで「考え直す」になった）
     rethink_reason: str = field(default="", init=False)
+    # 今の状況で思い出した教訓（小目標の始まりか目標の決定の前。docs/design/35）
+    lessons: tuple[Lesson, ...] = field(default=(), init=False)
     # 小目標を決めたときのブリッジの死んだ回数（増えたら、死んでリスポーンした: 小目標を選び直す）
     deaths_at_goal: Optional[int] = field(default=None, init=False)
     # 直前のステップが襲われて止まった: 次の読み取りを「進まない」に数えない（docs/design/28）
@@ -615,6 +618,7 @@ class PlaySession(Entity):
             notes=self.notebook.notes,
             intent=self.intent,
             screen_note=self.screen_note,
+            lessons=self.lessons,
         )
 
     @property

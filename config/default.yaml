@@ -391,6 +391,18 @@ minecraft:
     stuck_check_steps: 6
     stuck_min_confidence: 0.75
     stuck_record_dir: "logs/stuck"
+    # Lesson book (docs/design/35): lessons from viewers' advice and own failures, with the situation
+    # (goal, item, time, place, body, pickaxe, how the last goal ended), recalled in similar situations.
+    # jev: code narrows by the situation, Jev checks each (< lesson_min_confidence: not shown);
+    # rules: the code's top 3 only; off: not used (viewers' lessons go to the notes as before)
+    lessons: "jev"
+    lessons_path: "data/lessons.json"
+    lessons_record_dir: "logs/lessons"
+    lessons_shown: 4
+    lesson_candidates: 6
+    lesson_min_confidence: 0.6
+    lesson_timeout_seconds: 2.0
+    max_lessons: 200
     # How small goals are chosen (docs/design/26_steps_and_context.md):
     #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
     #        at each boundary. Gemini is asked again after a failure, when the steps run out, when

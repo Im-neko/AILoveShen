@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
@@ -17,6 +17,7 @@ from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.value_objects import (
     MAX_NOTE_CHARS,
     PLANNABLE_CONDITIONS,
+    SITUATION_VALUES,
     GameObservation,
     GoalPredicate,
     GoalSpec,
@@ -157,6 +158,9 @@ class GoalDecision:
     advice: str = ""
     # 毎回: 今の状態で何ができるか、もっと早い・無駄のないやり方はないかの見直し（docs/design/31）
     review: str = ""
+    # 失敗の後だけ（任意）: 似た状況で思い出す教訓と、その条件（docs/design/35）
+    lesson: str = ""
+    lesson_when: dict[str, Any] = field(default_factory=dict)
 
 
 def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
@@ -342,9 +346,38 @@ def goal_schema(
             "concrete to the options it was offered (which to prefer or avoid). change: optional",
         },
     }
-    schema["properties"] = {**head, **schema["properties"]}
+    tail = {
+        "lesson": {
+            "type": "string",
+            "description": "Optional, last: what to remember from this failure for similar "
+            "situations later (general, no coordinates), one Japanese sentence of at most 80 "
+            "characters",
+        },
+        "lesson_when": lesson_when_schema(),
+    }
+    schema["properties"] = {**head, **schema["properties"], **tail}
     schema["required"] = ["diagnosis", "remedy", *schema["required"]]
     return schema
+
+
+def lesson_when_schema() -> dict[str, Any]:
+    """教訓の条件（docs/design/35 §3）: どんなときの教訓か。似た状況で思い出すのに使う。"""
+    return {
+        "type": "object",
+        "description": "When the lesson applies (it is recalled in such situations): a short "
+        "phrase, and only the keys that really matter for it (leave the others out)",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "when it applies, a short Japanese phrase (at most 60 characters)",
+            },
+            "goal": {"type": "string", "enum": [p.value for p in GoalPredicate]},
+            "item": {"type": "string", "description": "the item or build it is about"},
+            "time": {"type": "string", "enum": list(SITUATION_VALUES["time"])},
+            "place": {"type": "string", "enum": list(SITUATION_VALUES["place"])},
+            "body": {"type": "string", "enum": ["hungry", "hurt"]},
+        },
+    }
 
 
 def reply_schema() -> dict[str, Any]:
@@ -392,8 +425,9 @@ def reply_schema() -> dict[str, Any]:
                 "description": "Only when the viewer gives advice you agree is right for the "
                 "future too (cook meat before eating it, craft a crafting table where you work): "
                 "the lesson in your own words, one Japanese sentence of at most 80 characters. It "
-                "is kept in your notes and seen by every later decision",
+                "is kept and recalled in similar situations later",
             },
+            "lesson_when": lesson_when_schema(),
             "name_reading": {
                 "type": "string",
                 "description": "the viewer's name read aloud, in hiragana: only when the prompt "
@@ -515,6 +549,8 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         remedy=remedy,
         advice=str(data.get("advice", "")).strip(),
         review=str(data.get("review", "")).strip(),
+        lesson=str(data.get("lesson", "") or "").strip(),
+        lesson_when=dict(data["lesson_when"]) if isinstance(data.get("lesson_when"), dict) else {},
     )
 
 

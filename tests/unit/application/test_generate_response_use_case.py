@@ -506,3 +506,34 @@ async def test_advice_the_streamer_agrees_with_becomes_a_lesson(
     )
     notebook, lesson, viewer, _day = notes.learn_from_viewer.call_args.args
     assert (notebook, lesson, viewer) == (session.notebook, "肉は焼いてから食べる", "neko")
+
+
+@pytest.mark.asyncio
+async def test_with_a_lesson_book_the_advice_is_kept_with_when_it_applies(
+    mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+):
+    """教訓帳があれば、アドバイスはメモではなく条件つきで教訓帳へ（docs/design/35）。"""
+    notes, lessons = Mock(), Mock()
+    use_case = GenerateResponseUseCase(
+        text_generator=mock_text_generator,
+        prompt_builder=mock_prompt_builder,
+        event_publisher=mock_event_publisher,
+        conversation=conversation,
+        character=CharacterProfile(),
+        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        notes=notes,
+        lessons=lessons,
+    )
+    mock_text_generator.generate_json.return_value = {
+        "reply": "覚えておくね",
+        "request": "none",
+        "lesson": "夜は外に出ずに家で寝る",
+        "lesson_when": {"text": "夜になったとき", "time": "night", "place": "moon"},
+    }
+    await use_case.execute(
+        GenerateResponseRequest(user_name="neko", message="夜は出歩かない方がいいよ", session=_playing())
+    )
+    notes.learn_from_viewer.assert_not_called()
+    text, condition, keys = lessons.learn.call_args.args
+    assert (text, condition, keys) == ("夜は外に出ずに家で寝る", "夜になったとき", {"time": "night"})
+    assert lessons.learn.call_args.kwargs == {"explicit": True, "source": "viewer:neko"}
