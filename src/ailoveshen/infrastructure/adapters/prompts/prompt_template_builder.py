@@ -137,6 +137,11 @@ $conditions
   できること」にあれば none にして、普段からそうしていると言う。なければ decline にして、まだ
   できないと言う（「気をつけるね」のような、できない約束はしない）
 
+## 視聴者の名前の読み
+- ユーザー名に（読み: …）がなければ、name_reading にひらがなで読みを推測して出す（英字は自然な読み。
+  ひらがな・カタカナだけの名前には出さない）。視聴者が自分の名前の読み方を言ったら、その読みを出す
+- 返答で名前を呼ぶときはユーザー名のまま書く（読み上げで読みに置き換わる）
+
 ## 自分でできること（これ以外はできない）
 $abilities
 """)
@@ -197,6 +202,7 @@ class PromptTemplateBuilder(IPromptBuilder):
         context: GenerationContext,
         takes_requests: bool = False,
         previous_error: str = "",
+        name_reading: str = "",
     ) -> str:
         """視聴者のチャットへの返答の本文。決まりはシステム指示の側（build_system_prompt）。"""
         error = (
@@ -206,7 +212,7 @@ class PromptTemplateBuilder(IPromptBuilder):
             else ""
         )
         return CHAT_RESPONSE_TEMPLATE.substitute(
-            user_name=user_name,
+            user_name=f"{user_name}（読み: {name_reading}）" if name_reading else user_name,
             message=message,
             activity=format_activity(context.activity),
             recent_messages=format_messages(context.recent_messages),

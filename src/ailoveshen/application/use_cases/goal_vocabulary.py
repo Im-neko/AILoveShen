@@ -350,6 +350,12 @@ def reply_schema() -> dict[str, Any]:
                 "(the night inside the home) and it can be done where you are; next = after "
                 "the mid goal worked on now (default)",
             },
+            "name_reading": {
+                "type": "string",
+                "description": "the viewer's name read aloud, in hiragana: only when the prompt "
+                "shows no reading for it yet (your guess), or when the viewer says how to read "
+                "their name",
+            },
         },
         "required": ["reply", "request"],
     }

@@ -5,6 +5,7 @@
 - GET /overlay           OBS のブラウザソース用のページ（背景は透明）
 - GET /overlay/vtuber    配信向けに飾ったページ（背景は透明。?demo=1 でサーバーなしの見本、
                          ?pos=right、?theme=mint|sky|lemon、?scale=0.8、?compact=1、?toast=0）
+- GET /api/readings      視聴者の名前の読みの辞書（?name= で 1 人だけ。設計書 30）
 - GET /api/debug/gemini  デバッグ: Gemini の直近の呼び出し（用途、考える深さ、思考の要約、出力、
                          道具の呼び出し、トークン、プロンプト）。新しい順、?limit=N（既定 20）
 - GET /debug/gemini      上を 2 秒ごとに読んで表示するページ（ブラウザや OBS のブラウザソース）
@@ -30,6 +31,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from loguru import logger
 
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
+from ailoveshen.application.ports.output.reading_store import NameReading
 from ailoveshen.domain.events import (
     DomainEvent,
     GameActionExecutedEvent,
@@ -263,6 +265,7 @@ class GoalBoard:
         gemini_calls: Callable[[int], list[dict[str, Any]]] | None = None,
         gemini_image: Callable[[str], tuple[bytes, str] | None] | None = None,
         avatar: AvatarStage | None = None,
+        readings: Callable[[], tuple[NameReading, ...]] | None = None,
     ) -> None:
         """
         ボードを初期化する。
@@ -274,11 +277,13 @@ class GoalBoard:
                 None なら /api/debug/gemini は空のリストを返す
             gemini_image: 呼び出しに添えた画像（データと形式）を id で返すもの
             avatar: アバター（VRM）のページと合図。あれば同じサーバーで /avatar を出す
+            readings: 視聴者の名前の読みの辞書の全部を返すもの（None: /api/readings は空）
         """
         self._activity = activity
         self._gemini_calls = gemini_calls
         self._gemini_image = gemini_image
         self._avatar = avatar
+        self._readings = readings
         self._listeners: set[asyncio.Queue[str | None]] = set()
         self.app = self._create_app()
 
@@ -358,6 +363,12 @@ class GoalBoard:
         @app.get("/overlay/vtuber", response_class=HTMLResponse)
         async def overlay_vtuber() -> str:
             return VTUBER_HTML.read_text(encoding="utf-8")
+
+        @app.get("/api/readings")
+        async def readings(name: str = "") -> list[dict[str, Any]]:
+            found = self._readings() if self._readings else ()
+            wanted = name.strip().casefold()
+            return [asdict(r) for r in found if not wanted or r.name.casefold() == wanted]
 
         @app.get("/api/debug/gemini")
         async def gemini_calls(limit: int = 20) -> list[dict[str, Any]]:

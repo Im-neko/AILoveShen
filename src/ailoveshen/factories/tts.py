@@ -53,6 +53,7 @@ def create_tts_service(
     config: Dict[str, Any],
     event_publisher: IEventPublisher,
     get_current_emotion: Optional[Callable[[], EmotionState]] = None,
+    pronounce: Optional[Callable[[str], str]] = None,
 ) -> TTSService:
     """
     依存をすべてつないだ TTS サービスを作る。
@@ -65,6 +66,7 @@ def create_tts_service(
         event_publisher: ドメインイベントの発行先
         get_current_emotion: 今の感情状態を返す呼び出し可能オブジェクト。
                             None なら既定の中立の感情を使う。
+        pronounce: 合成の前にテキストを置き換える（視聴者の名前の読み）。None なら何もしない
 
     Returns:
         設定済みで、すぐ使える TTSService
@@ -130,6 +132,7 @@ def create_tts_service(
         audio_player=audio_player,
         event_publisher=event_publisher,
         get_current_emotion=emotion_provider,
+        pronounce=pronounce,
     )
 
     # プレゼンテーション層のサービスを作る
@@ -143,6 +146,7 @@ async def create_and_connect_tts_service(
     config: Dict[str, Any],
     event_publisher: IEventPublisher,
     get_current_emotion: Optional[Callable[[], EmotionState]] = None,
+    pronounce: Optional[Callable[[str], str]] = None,
 ) -> TTSService:
     """
     TTS サービスを作り、TTS サーバーにつなぐ。
@@ -153,6 +157,7 @@ async def create_and_connect_tts_service(
         config: TTS の設定の辞書
         event_publisher: ドメインイベントの発行先
         get_current_emotion: 今の感情状態を返す呼び出し可能オブジェクト
+        pronounce: 合成の前にテキストを置き換える（視聴者の名前の読み）
 
     Returns:
         接続して開始した TTSService
@@ -165,6 +170,7 @@ async def create_and_connect_tts_service(
         config=config,
         event_publisher=event_publisher,
         get_current_emotion=get_current_emotion,
+        pronounce=pronounce,
     )
 
     # 接続のため、内部の合成器に触る

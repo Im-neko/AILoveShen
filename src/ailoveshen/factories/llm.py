@@ -7,6 +7,7 @@ from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import CharacterProfile
 from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
@@ -37,6 +38,7 @@ def create_llm_service(
     mid_goals: MidGoalKeeper | None = None,
     history_limit: int = 10,
     generation_log: IGenerationLog | None = None,
+    readings: NameReadings | None = None,
 ) -> LLMService:
     """
     依存をすべてつないだ LLM サービスを作る。
@@ -54,6 +56,7 @@ def create_llm_service(
             頼みをここに受けることがある。None なら返答は話すだけ
         history_limit: モデルに渡す最近のメッセージの数
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_game_service と共有する）
+        readings: 視聴者の名前の読みの辞書（返答のプロンプトに出し、返答から覚える）
 
     Returns:
         設定済みで、すぐ使える LLMService
@@ -117,6 +120,7 @@ def create_llm_service(
         character=character_profile,
         mid_goals=mid_goals,
         history_limit=history_limit,
+        readings=readings,
     )
 
     # プレゼンテーション層のサービスを作る

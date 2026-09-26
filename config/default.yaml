@@ -23,6 +23,10 @@ twitch:
     min_interval_seconds: 5.0
     backlog: 3             # comments kept while a reply is being made (the newest ones)
 
+  # How viewers' names are read aloud (docs/design/30_name_readings.md): learned from `!yomi <reading>`
+  # and from replies; used only for the text sent to TTS. Lookup: GET /api/readings on the board
+  readings_path: "data/readings.json"
+
   # Reconnection settings
   reconnect:
     enabled: true

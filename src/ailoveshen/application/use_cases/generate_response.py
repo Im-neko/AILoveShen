@@ -18,6 +18,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     reply_schema,
 )
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
 from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
@@ -58,6 +59,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         mid_goals: MidGoalKeeper | None = None,
         history_limit: int = 10,
         max_attempts: int = 2,
+        readings: NameReadings | None = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -71,6 +73,8 @@ class GenerateResponseUseCase(IGenerateResponse):
             mid_goals: 受けた頼みを中目標に足す（None: 返答は話すだけ）
             history_limit: モデルに渡す最近の会話のメッセージの数
             max_attempts: 受けた頼みが使えないとき、あきらめるまでに生成する回数
+            readings: 視聴者の名前の読みの辞書（プロンプトに出し、返答の name_reading で覚える。
+                docs/design/30_name_readings.md）
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -80,6 +84,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         self._mid_goals = mid_goals
         self._history_limit = history_limit
         self._max_attempts = max_attempts
+        self._readings = readings
 
     async def execute(self, request: GenerateResponseRequest) -> GenerateResponseResponse:
         """
@@ -143,10 +148,15 @@ class GenerateResponseUseCase(IGenerateResponse):
         context: GenerationContext,
         session: PlaySession | None,
     ) -> tuple[str, MidGoal | None]:
+        known = self._readings.get(request.user_name) if self._readings else None
+        name_reading = known.reading if known else ""
         if session is None or self._mid_goals is None:
             system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply")
             prompt = self._prompt_builder.build_chat_response_prompt(
-                user_name=request.user_name, message=request.message, context=context
+                user_name=request.user_name,
+                message=request.message,
+                context=context,
+                name_reading=name_reading,
             )
             text = await self._text_generator.generate(
                 prompt=prompt, system_instruction=system_prompt, purpose="reply"
@@ -162,10 +172,12 @@ class GenerateResponseUseCase(IGenerateResponse):
                 context=context,
                 takes_requests=True,
                 previous_error=error,
+                name_reading=name_reading,
             )
             data = await self._text_generator.generate_json(
                 prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
             )
+            self._learn_reading(request, data.get("name_reading"))
             text = str(data.get("reply", "")).strip()
             if data.get("request") != RequestHandling.ACCEPT.value:
                 return text, None
@@ -192,3 +204,12 @@ class GenerateResponseUseCase(IGenerateResponse):
                 continue
             return text, mid_goal
         raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")
+
+    def _learn_reading(self, request: GenerateResponseRequest, reading: object) -> None:
+        """返答の name_reading を覚える: 本人が読み方を言ったらその読み、知らない名前なら推測。"""
+        if self._readings is None or not isinstance(reading, str) or not reading.strip():
+            return
+        if tells_reading(request.message):
+            self._readings.learn(request.user_name, reading, VIEWER)
+        elif self._readings.get(request.user_name) is None:
+            self._readings.learn(request.user_name, reading, GUESS)

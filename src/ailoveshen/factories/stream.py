@@ -8,11 +8,12 @@ from typing import Any
 
 from loguru import logger
 
+from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import create_llm_service
-from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
+from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog, JsonReadingStore
 from ailoveshen.infrastructure.config import Settings
 from ailoveshen.infrastructure.events import AsyncEventBus
 from ailoveshen.presentation.services import ChatResponder, Narrator
@@ -45,6 +46,8 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     bus = AsyncEventBus()
     conversation = Conversation()
     gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
+    # 視聴者の名前の読み（docs/design/30_name_readings.md）: 返答で覚え、読み上げで使う
+    readings = NameReadings(JsonReadingStore(base_dir / settings.twitch.readings_path))
     game = create_game_service(
         gemini=settings.gemini,
         jev=settings.jev,
@@ -62,6 +65,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         conversation=conversation,
         mid_goals=game.mid_goals,
         generation_log=gemini_calls,
+        readings=readings,
     )
     closers: list[Any] = []
 
@@ -71,7 +75,10 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
 
         try:
             tts = await create_and_connect_tts_service(
-                config=tts_config, event_publisher=bus, get_current_emotion=llm.get_current_emotion
+                config=tts_config,
+                event_publisher=bus,
+                get_current_emotion=llm.get_current_emotion,
+                pronounce=readings.apply,
             )
         except Exception as e:  # noqa: BLE001 - どの失敗でも理由を言って始めない
             await game.close()
@@ -115,6 +122,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             gemini_calls=gemini_calls.recent,
             gemini_image=gemini_calls.image,
             avatar=avatar,
+            readings=readings.all,
         )
         board.subscribe(bus)
 
@@ -130,6 +138,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             say=say_reply,
             min_interval_seconds=twitch.min_interval_seconds,
             backlog=twitch.backlog,
+            readings=readings,
         )
         logger.info(f"[chat] Twitch #{chat.channel} のチャットを読む（読むだけ）")
     else:

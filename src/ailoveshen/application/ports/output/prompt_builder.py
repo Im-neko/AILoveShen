@@ -40,6 +40,7 @@ class IPromptBuilder(ABC):
         context: GenerationContext,
         takes_requests: bool = False,
         previous_error: str = "",
+        name_reading: str = "",
     ) -> str:
         """
         視聴者のチャットへの返答のプロンプトを組み立てる。
@@ -50,5 +51,6 @@ class IPromptBuilder(ABC):
             context: 配信者が今していることと、最近の会話
             takes_requests: 返答で頼みを中目標として受けてよいか（JSON で出力する）
             previous_error: 前回の返答で受けた頼みが使えなかった理由
+            name_reading: 視聴者の名前の読み（覚えていれば。docs/design/30_name_readings.md）
         """
         ...

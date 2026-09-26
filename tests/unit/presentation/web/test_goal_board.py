@@ -307,3 +307,18 @@ async def test_a_port_in_use_is_an_os_error_not_an_exit():
         port = busy.getsockname()[1]
         with pytest.raises(OSError, match="could not serve"):
             await GoalBoard(lambda: None).serve(port=port)
+
+
+def test_name_readings_can_be_looked_up():
+    from ailoveshen.application.ports.output.reading_store import NameReading
+
+    entries = (
+        NameReading("Neko", "ねこ", "viewer", "t"),
+        NameReading("tama", "たま", "guess", "t"),
+    )
+    client = TestClient(GoalBoard(lambda: None, readings=lambda: entries).app)
+    assert [r["reading"] for r in client.get("/api/readings").json()] == ["ねこ", "たま"]
+    assert client.get("/api/readings?name=neko").json() == [
+        {"name": "Neko", "reading": "ねこ", "source": "viewer", "updated_at": "t"}
+    ]
+    assert TestClient(GoalBoard(lambda: None).app).get("/api/readings").json() == []

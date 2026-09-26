@@ -40,6 +40,8 @@ class TwitchSettings:
     # 返事と返事の最短の間、返事を待つコメントを何件まで取っておくか
     min_interval_seconds: float = 5.0
     backlog: int = 3
+    # 視聴者の名前の読みの辞書（docs/design/30_name_readings.md）
+    readings_path: str = "data/readings.json"
 
 
 @dataclass
@@ -447,6 +449,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 response_data.get("min_interval_seconds", TwitchSettings.min_interval_seconds)
             ),
             backlog=int(response_data.get("backlog", TwitchSettings.backlog)),
+            readings_path=str(twitch_data.get("readings_path", TwitchSettings.readings_path)),
         )
 
     if "stream" in data:
