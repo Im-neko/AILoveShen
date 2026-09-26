@@ -194,9 +194,17 @@ function validGoal (spec, bot, state, knowledge) {
 
 // いまの目標についての { spec, met, remaining, lines, blocked, impossible, leaves }
 // 家の計画のうち、置けていないドア（向きが違うものを含む）
+// 家の計画が今の家のもの（ドアの位置が同じ）でなければ見ない: 見つけた拠点や引っ越した家に、
+// 別の場所の建てかけの計画のドアを直しに行かせない
+const MAX_DOOR_FAILURES = 3
 function brokenDoor (bot, state) {
   if (!state.home || !state.plan?.origin) return null
-  return state.plan.pending(bot).find((b) => b.block === 'door') ?? null
+  const door = state.plan.pending(bot).find((b) => b.block === 'door')
+  if (!door) return null
+  const pos = state.plan.worldPos(door)
+  const home = state.home.door
+  if (!home || Math.abs(pos.x - home.x) + Math.abs(pos.z - home.z) > 0 || Math.abs(pos.y - home.y) > 1) return null
+  return door
 }
 
 export function evaluate (bot, state, knowledge, world) {
@@ -218,7 +226,10 @@ export function evaluate (bot, state, knowledge, world) {
   // 向きの違うドア（開けても板が通り道をふさぐ）は、家に入る目標の前に置き直す。今のドアは壊して使う
   if (['at_home', 'through_night', 'placed'].includes(goal.spec.predicate) && !inside) {
     const door = brokenDoor(bot, state)
-    if (door) {
+    if (door && (state.doorFailures ?? 0) >= MAX_DOOR_FAILURES) {
+      // 何度やっても置き直せない: ほかの行動を止めない（ドアはそのままで入れることが多い）
+      out.blocked.push(`replacing the door failed ${state.doorFailures} times: left as it is`)
+    } else if (door) {
       out.blocked.push('the door of the house is turned the wrong way (it blocks the doorway when open): replace it')
       const pos = state.plan.worldPos(door)
       const reusable = [pos, pos.offset(0, -1, 0)].some((p) => bot.blockAt(p)?.name.endsWith('_door'))

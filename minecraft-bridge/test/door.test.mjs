@@ -71,3 +71,37 @@ test('家に入る目標は、向きの違うドアを先に置き直す（今�
   assert.deepEqual(r.leaves.map((l) => [l.kind, l.block.y]), [['place_plan', 0]])
   assert.match(r.blocked[0], /turned the wrong way/)
 })
+
+test('ドアを何度も置き直せないときや、計画が今の家のものでないときは、ほかの行動を止めない', async () => {
+  const { evaluate } = await import('../src/goals.mjs')
+  const home = { door: v(1, 70, 2), inside: v(1, 70, 1), outside: v(1, 70, 3), min: v(1, 70, 1), max: v(1, 70, 1), bed: null, breach: [] }
+  const bot = {
+    entity: { position: v(1.5, 70, 5.5) },
+    time: { timeOfDay: 13000 },
+    inventory: { items: () => [] },
+    blockAt: (p) => (p.x === 1 && p.z === 2 && p.y >= 70 ? door('west') : { name: p.y < 70 ? 'dirt' : 'air', boundingBox: p.y < 70 ? 'block' : 'empty' })
+  }
+  const goal = { spec: { predicate: 'at_home' } }
+  const failed = evaluate(bot, { home, plan, goal, doorFailures: 3 }, null, {})
+  assert.ok(!failed.leaves.some((l) => l.kind === 'place_plan'))
+  assert.match(failed.blocked[0], /failed 3 times/)
+  // 見つけた拠点や引っ越した家: ドアの位置が計画と違う
+  const moved = evaluate(bot, { home: { ...home, door: v(20, 70, 20) }, plan, goal }, null, {})
+  assert.ok(!moved.leaves.some((l) => l.kind === 'place_plan'))
+})
+
+test('place_plan は候補が指したドアを置こうとし、置けなければ失敗を数える', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const fakePlan = {
+    origin: v(0, 70, 0),
+    isPlaced: () => false,
+    pending: () => [{ x: 0, y: 0, z: 0, block: 'planks' }],
+    worldPos: (b) => v(b.x, 70 + b.y, b.z),
+    blocks: []
+  }
+  const state = { plan: fakePlan }
+  const bot = { entity: { position: v(0, 70, 0) }, blockAt: () => null }
+  // 指したのはドア（最初の未完成は板材）: ドアの置き直しに失敗したと数える
+  await assert.rejects(PRIMITIVES.place_plan(bot, state, { planBlock: { x: 1, y: 0, z: 2, block: 'door' } }, new AbortController().signal))
+  assert.equal(state.doorFailures, 1)
+})

@@ -205,7 +205,7 @@ function fromLeaf (bot, state, world, leaf) {
       const p = plan.origin ? plan.worldPos(leaf.block) : null
       return [{
         id: p ? `place ${leaf.block.block} at ${fmt(p)}` : plan.site ? `place ${leaf.block.block} (start the house at ${plan.site.x},${plan.site.z})` : `place ${leaf.block.block} (start the house here)`,
-        verb: 'place_plan', target: `${leaf.block.block} of the house`, progress: `${s.placed}/${s.total}`,
+        verb: 'place_plan', target: `${leaf.block.block} of the house`, progress: `${s.placed}/${s.total}`, planBlock: leaf.block,
         ...(p ? { pos: p, distance: dist(bot, p) } : plan.site ? { site: plan.site, distance: round(Math.hypot(plan.site.x - bot.entity.position.x, plan.site.z - bot.entity.position.z)) } : {})
       }]
     }

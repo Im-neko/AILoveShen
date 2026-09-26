@@ -494,9 +494,17 @@ export const PRIMITIVES = {
       }
       plan.origin = origin
     }
-    const b = plan.pending(bot)[0]
+    // 候補が指したブロック（向きの違うドアの置き直しなど）を置く。前は計画の最初の未完成の
+    // ブロックを置いていて、「place door」を選んでも別のブロックで失敗し続けた
+    const b = c.planBlock && !plan.isPlaced(bot, c.planBlock) ? c.planBlock : plan.pending(bot)[0]
     if (!b) return 'the plan is complete'
-    await placeOne(bot, plan, b, signal)
+    try {
+      await placeOne(bot, plan, b, signal)
+      if (b.block === 'door') state.doorFailures = 0
+    } catch (e) {
+      if (b.block === 'door' && !signal.aborted) state.doorFailures = (state.doorFailures ?? 0) + 1
+      throw e
+    }
     const s = plan.status(bot)
     return `placed ${b.block} (${s.placed}/${s.total})`
   },
