@@ -231,11 +231,11 @@ export async function fight (bot, target, signal) {
   return bot.entities[target.id] ? `${target.name} still alive` : `${target.name} gone (killed or despawned)`
 }
 
-export async function flee (bot, h, signal) {
-  bot.pathfinder.setGoal(new GoalAwayFrom(h, FLEE_DISTANCE + REPLAN_MOVE), true)
+export async function flee (bot, h, signal, distance = FLEE_DISTANCE) {
+  bot.pathfinder.setGoal(new GoalAwayFrom(h, distance + REPLAN_MOVE), true)
   const start = Date.now()
   try {
-    while (Date.now() - start < FLEE_TIMEOUT_MS && !signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < FLEE_DISTANCE) {
+    while (Date.now() - start < FLEE_TIMEOUT_MS && !signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < distance) {
       await bot.waitForTicks(5)
     }
   } finally {

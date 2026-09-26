@@ -27,6 +27,9 @@
 //   PUT  /skills/<name> {description, params, expects, code} -> 確かめて新しい版として保存: { name, version }（だめなら 400 と理由）
 //   POST /skills/<name>/run {args, version?} -> 技を 1 回実行する: { ok, ended, version, summary?, reason?, expects: {met, lines},
 //                             calls, log, seconds, learned }（learned: この実行で初めて成功した）
+//   GET  /danger           -> 反射が動いているとき、共通の状態に danger（id, trigger, target, options, rule, choice）、まわりの目印、
+//                             家までの距離、最近のダメージを足したもの。動いていなければ null（設計書 28。見張りが 0.25 秒ごとに読む）
+//   POST /reflex {id, choice, confidence} -> 反射を Jev の選んだもの（fight / flee / go_home / keep_distance / ignore）に切り替える
 //   POST /judge {id, answer, confidence} -> 技の judge() の質問（/state の pending_judge）に答える（見張りのティック）
 //
 // 設計: docs/design/11_primitive_actions.md
@@ -53,7 +56,7 @@ import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed } from './home.mjs'
-import { startReflex } from './reflex.mjs'
+import { startReflex, steerReflex, dangerView } from './reflex.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory, homeChests } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
 import { landmarks, adoptFoundBase } from './landmarks.mjs'
@@ -193,6 +196,18 @@ const skillDeps = {
   },
   check: (specs) => checkConditions(specs, bot, state, knowledge, snapshot(bot, state)),
   remaining: () => state.goal ? evaluate(bot, state, knowledge, snapshot(bot, state)).remaining : null
+}
+
+// 反射の判断に渡す状態（設計書 28 §3）: 共通の状態に、危険、まわりの目印、家までの距離、最近のダメージ
+function reflexState () {
+  const home = state.home
+  return {
+    ...sharedState(bot, state, needs),
+    danger: dangerView(state),
+    nearby: landmarks(bot, state),
+    home: home ? { distance_m: Math.round(bot.entity.position.distanceTo(home.door)), inside: isInside(bot, home) } : null,
+    last_hurt: state.lastHurt ? { seconds_ago: Math.round((Date.now() - state.lastHurt.at) / 100) / 10, damage: state.lastHurt.damage } : null
+  }
 }
 
 async function runSkillOnce (name, args, version) {
@@ -341,6 +356,14 @@ async function handle (req, res) {
     const r = await runSkillOnce(skillPath[1], args ?? {}, version)
     if (!r) return send(res, 404, { error: `there is no skill named ${skillPath[1]}${version != null ? ` v${version}` : ''}` })
     console.log(`[skill] ${skillPath[1]} v${r.version}: ${r.ok ? '成功' : '失敗'} ${r.ok ? r.summary : r.reason}（${r.seconds}秒、道具 ${r.calls.length}）`)
+    return send(res, 200, r)
+  }
+  if (req.method === 'GET' && req.url === '/danger') {
+    // 危険がなければ null（見張りは 0.25 秒ごとに読むので軽くする）。あれば Jev に渡す状態つき
+    return send(res, 200, state.danger ? reflexState() : null)
+  }
+  if (req.method === 'POST' && req.url === '/reflex') {
+    const r = steerReflex(state, await readJson(req))
     return send(res, 200, r)
   }
   if (req.method === 'POST' && req.url === '/judge') {

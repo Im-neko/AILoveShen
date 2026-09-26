@@ -19,7 +19,7 @@ export function createRunner (bot, state, deps = {}) {
   // c: 実行するもの（候補か、道具が作ったもの）。c.verb が PRIMITIVES の名前。
   // label: 履歴に残す名前（候補の id か、道具の呼び出し）
   return async function run (c, label) {
-    if (state.reflex) return { ok: false, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
+    if (state.reflex) return { ok: false, interrupted: true, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
     if (state.busy) return { ok: false, result: 'not started: another action is running', seconds: 0 }
     state.busy = true
     const t = Date.now()
@@ -73,7 +73,9 @@ export function createRunner (bot, state, deps = {}) {
     const seconds = round((Date.now() - t) / 1000)
     state.history.push({ action: label, ok, result, seconds })
     log(`[act] ${label}: ${ok ? '成功' : '失敗'} ${result}（${seconds}秒）`)
-    return { ok, result, seconds }
+    // 襲われて止まった（ダメージ、反射）: 小目標の失敗に数えない（設計書 28 §3）
+    const interrupted = !ok && /^failed: (interrupted: took damage|reflex: )/.test(result)
+    return { ok, result, seconds, ...(interrupted ? { interrupted: true } : {}) }
   }
 }
 
