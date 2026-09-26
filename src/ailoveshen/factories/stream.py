@@ -147,7 +147,34 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
                 text, priority=SpeechPriority.HIGH, emotion=await voiced(text), source="chat"
             )
 
-    Narrator(llm, activity=activity, say=say).subscribe(bus)
+    # 小目標の切れ目の実況は、今話す価値があるかを Jev が決める（設計書 34 §6）
+    gate = None
+    if settings.stream.commentary_judge == "jev" and settings.jev.api_key:
+        from ailoveshen.application.use_cases.commentary_gate import CommentaryGate
+        from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
+        from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
+            JsonlWatchRecorder,
+        )
+
+        gate = CommentaryGate(
+            judge=JevFastJudge(
+                api_key=settings.jev.api_key,
+                model=settings.jev.model,
+                timeout_seconds=settings.jev.timeout_seconds,
+            ),
+            activity=activity,
+            recorder=JsonlWatchRecorder(str(base_dir / settings.stream.commentary_record_dir))
+            if settings.stream.commentary_record_dir
+            else None,
+        )
+        closers.append(gate.close)
+    Narrator(
+        llm,
+        activity=activity,
+        say=say,
+        gate=gate.worth_speaking if gate is not None else None,
+        max_silence_seconds=settings.stream.max_silence_seconds,
+    ).subscribe(bus)
 
     board = None
     if settings.stream.board_port:

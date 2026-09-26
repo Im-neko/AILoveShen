@@ -324,6 +324,10 @@ class StreamSettings:
     board_port: int = 8765
     # 実況と返事を TTS で読み上げる
     speak: bool = True
+    # 小目標の切れ目の実況の間合い（docs/design/34 §6）: jev（今話す価値があるかを Jev が決める）か always
+    commentary_judge: str = "jev"
+    max_silence_seconds: float = 60.0
+    commentary_record_dir: str = "logs/commentary"
 
 
 @dataclass
@@ -486,6 +490,15 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
         settings.stream = StreamSettings(
             board_port=int(stream_data.get("board_port") or 0),
             speak=bool(stream_data.get("speak", StreamSettings.speak)),
+            commentary_judge=str(
+                stream_data.get("commentary_judge", StreamSettings.commentary_judge)
+            ),
+            max_silence_seconds=float(
+                stream_data.get("max_silence_seconds", StreamSettings.max_silence_seconds)
+            ),
+            commentary_record_dir=str(
+                stream_data.get("commentary_record_dir", StreamSettings.commentary_record_dir)
+            ),
         )
 
     if "gemini" in data:

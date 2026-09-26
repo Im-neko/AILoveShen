@@ -8,6 +8,12 @@ debug: false
 stream:
   board_port: 8765         # goal board, avatar and debug pages for OBS; 0: off
   speak: true              # read the commentary and replies aloud (the TTS server must be up)
+  # Narration at small-goal boundaries (docs/design/34 §6): jev = Jev says whether it is worth
+  # speaking now (highlights and max_silence_seconds of quiet always speak; skipped events are
+  # kept for the next line); always = every boundary
+  commentary_judge: "jev"
+  max_silence_seconds: 60
+  commentary_record_dir: "logs/commentary"
 
 # Twitch Integration
 twitch:
