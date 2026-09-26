@@ -9,7 +9,7 @@
 
 ### Jev でできることは Jev に: 4. 実況の間合い (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `10a9d07`
 
 - `application/use_cases/commentary_gate.py` `CommentaryGate`: 小目標の切れ目で「今話す価値があるか」（yes/no、出来事と黙っている秒数と今の小目標）。「話さない」は確信度 0.6 以上のときだけ。Jev が答えなければ話す。`logs/commentary/*.jsonl`
 - `Narrator(gate=, max_silence_seconds=)`: 見どころ（中目標の完了・やめた、家、街の場所・完成）と、60 秒黙っていたとき・最初は聞かずに話す。話さなかった出来事は取っておき（8 まで）、次に一緒に話す。技を覚えたときは前と同じくすぐ話す
