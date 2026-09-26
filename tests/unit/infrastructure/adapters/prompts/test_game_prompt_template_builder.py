@@ -530,7 +530,8 @@ class TestPromptLength:
     """代表的な状態のプロンプトの長さ。増えたら気づけるように（26 §4）。"""
 
     def test_goal_system_length(self):
-        assert len(GamePromptTemplateBuilder().build_goal_system()) < 5500
+        # 決まった文（システム指示、キャッシュに当たる部分）。27 の分析、家具の述語で増えた
+        assert len(GamePromptTemplateBuilder().build_goal_system()) < 6000
 
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500

@@ -77,7 +77,8 @@ test('染色のレシピは使わない（ベッドから別のベッドを作�
   const recipes = k.recipes('red_bed')
   assert.ok(recipes.length > 0)
   assert.ok(recipes.every((r) => !Object.keys(r.ingredients).some((n) => n.endsWith('_bed'))))
-  assert.ok(k.recipes('red_wool').every((r) => !Object.keys(r.ingredients).some((n) => n.endsWith('_wool'))))
+  // 色つきの羊毛は白い羊毛を染める（minecraft-data の黒い羊毛からのレシピは使わない）
+  assert.deepEqual(k.recipes('red_wool'), [{ count: 1, ingredients: { white_wool: 1, red_dye: 1 }, needsTable: false }])
 })
 
 test('入手元が見えなければ探索になり、blocked として報告する', () => {
@@ -116,4 +117,11 @@ test('道具が要るブロックは、先に道具を求める', () => {
 
 test('知らないアイテムは受け付けない', () => {
   assert.throws(() => k.resolve('unobtainium'), /unknown item/)
+})
+
+test('青いベッド: 青い羊毛 3 つ（白い羊毛＋ヤグルマギクの青の染料）と板材から作れる', () => {
+  const r = solve(k, world({ blocks: { cornflower: 3, oak_log: 5 }, mobs: { sheep: 3 }, inventory: { oak_planks: 3 } }), [{ spec: 'blue_bed', count: 1 }])
+  assert.equal(r.impossible?.length ?? 0, 0)
+  const ks = kinds(r)
+  assert.ok(ks.some((x) => x.startsWith('dig:cornflower')) || ks.some((x) => x.startsWith('kill:')), ks.join(', '))
 })

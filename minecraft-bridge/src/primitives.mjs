@@ -504,7 +504,8 @@ export const PRIMITIVES = {
     // ベッドの頭側は、プレイヤーが向いている方向に1ブロック先になる。向きは次の移動パケットで
     // やっとサーバーに届く: すぐに置くと、サーバーはドアを閉めたときの向きを使い、ベッドの頭側が
     // ドアの内側のセルをふさいだ。
-    const bed = bot.inventory.items().find((i) => i.name.endsWith('_bed'))
+    // 色の決まったベッド（placed(blue_bed)）ならそれを、なければどれでも
+    const bed = bot.inventory.items().find((i) => i.name === c.item) ?? bot.inventory.items().find((i) => i.name.endsWith('_bed'))
     await bot.equip(bed, 'hand')
     await bot.lookAt(spot.foot.offset(0.5, 0, 0.5), true)
     await bot.waitForTicks(2)

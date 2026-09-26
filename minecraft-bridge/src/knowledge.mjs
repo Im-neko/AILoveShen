@@ -7,6 +7,10 @@
 // - 羊は entityLoot に羊毛がない（色はエンティティのメタデータ）: EXTRA_MOB_DROPS で足す
 // - 狩るのは HUNTABLE の動物だけ（ゾンビは食料に数えられる rotten_flesh を落とす。ウサギは
 //   ボットより速く逃げる）
+// - 染める: minecraft-data は染色のレシピを 1 通りしか載せない（青い羊毛は黒い羊毛＋青の染料）。
+//   同じ種類からのレシピは外している（ベッドからベッドを作らない）ので、色つきの羊毛が作れなかった:
+//   DYED で白い羊毛＋染料を足す。色つきのベッドはその色の羊毛 3 つから作る
+// - 花（染料の材料）は自然のブロックに入れる（ヤグルマギクから青、ケシから赤…）
 // 精錬は minecraft-data にない: SMELTING にかまどで作るものを並べる（アイテムごとに材料は1つ）。
 
 // グループ: グループの必要はどのメンバーでも満たせる（例: 家の壁はどの板材でもよい）
@@ -24,7 +28,11 @@ const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato',
 // ドロップのために掘ってよい、自然にあるブロック（プレイヤーの建てたものは含めない: 家の壁は
 // 板材なので板材は入れない。原木は入れ、掘る候補からは家を除く）
 const NATURAL_BLOCKS = [/^(?!stripped_).*_log$/, /^(stone|granite|diorite|andesite|deepslate|tuff)$/,
-  /^(dirt|grass_block|coarse_dirt|podzol|sand|red_sand|gravel|clay)$/, /_ore$/, /^(sugar_cane|pumpkin|melon)$/]
+  /^(dirt|grass_block|coarse_dirt|podzol|sand|red_sand|gravel|clay)$/, /_ore$/, /^(sugar_cane|pumpkin|melon)$/,
+  /^(dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony)$/]
+
+// 染めた羊毛: 白い羊毛＋その色の染料（上の注意）
+const DYED = /^(orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_(wool)$/
 
 // かまどが何（アイテムかグループ）から何を作るか。出力1つに材料1つ、それぞれ 10 秒
 const SMELTING = {
@@ -102,6 +110,10 @@ export class Knowledge {
       if (Object.keys(ingredients).some((n) => n === item || sameGroup(n, item))) continue
       const needsTable = r.inShape ? r.inShape.length > 2 || r.inShape.some((row) => row.length > 2) : cells.length > 4
       out.push({ count: r.result.count, ingredients, needsTable })
+    }
+    const dyed = item.match(DYED)
+    if (dyed && this.md.itemsByName[`${dyed[1]}_dye`]) {
+      out.push({ count: 1, ingredients: { [`white_${dyed[2]}`]: 1, [`${dyed[1]}_dye`]: 1 }, needsTable: false })
     }
     return out
   }

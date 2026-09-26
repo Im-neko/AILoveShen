@@ -32,6 +32,7 @@ NO_INFORMATION = "特になし"
 # candidates.mjs）。返答で配信者ができないことを約束しないよう、それらと揃えておくこと
 ABILITIES = """\
 - 木を切る、石・石炭・鉄を掘る、動物を狩る、道具・ベッド・チェストなどをクラフトする
+- 花を摘んで染料を作り、羊毛を染めて色つきのベッドを作る（青: ヤグルマギクかラピスラズリ、赤: ケシ…）
 - かまどで焼く（鉄の延べ棒、木炭、焼いた肉）。鉄の道具や剣、石炭がなくても木炭で松明が作れる
 - 家を 1 軒建てる、ベッドで寝る、家のチェストに物を入れる・出す
 - 夜は家の中にいる（外には出ない）。その間も、持っている物からクラフトできる（作業台は家の中に置く）
@@ -72,8 +73,8 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "（松明を置いて湧き潰し。松明がなければ作るところから）。distance は 8〜32。例: lit(16)"
     ),
     GoalPredicate.PLACED: (
-        "placed(item): 家の中に bed / crafting_table / furnace / chest を置く（持っていなければ作る"
-        "ところから。夜に家の中にいてもできる）。例: placed(bed)、placed(crafting_table)"
+        "placed(item): 家の中に bed / crafting_table / furnace / chest か色つきのベッド（blue_bed）を"
+        "置く（なければ作る。夜の家の中でも可）"
     ),
     GoalPredicate.AT_HOME: "at_home: 家に入ってドアを閉める",
     GoalPredicate.THROUGH_NIGHT: "through_night: 家で夜を越す（ベッドがあれば寝る）",

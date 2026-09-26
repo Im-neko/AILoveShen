@@ -20,7 +20,7 @@ test('条件は目標に触れずに判定する', () => {
 test('世界から判定できる述語だけが条件になれる', () => {
   assert.throws(() => checkConditions([{ predicate: 'explored', distance: 30 }], bot, state, k, world({})), /cannot be a condition/)
   assert.throws(() => checkConditions([{ predicate: 'have', item: 'nonsense_item', count: 1 }], bot, state, k, world({})))
-  assert.throws(() => checkConditions([{ predicate: 'placed', item: 'torch', where: 'home' }], bot, state, k, world({})), /placed supports bed, crafting_table, furnace, chest in the home/)
+  assert.throws(() => checkConditions([{ predicate: 'placed', item: 'torch', where: 'home' }], bot, state, k, world({})), /placed supports bed, crafting_table, furnace, chest \(or a colored bed like blue_bed\) in the home/)
 })
 
 test('まだ判定できない条件は未達とし、ほかの条件の判定は続ける', () => {

@@ -23,8 +23,11 @@ export const HOME_FURNITURE = {
 }
 
 // 家の部屋（床の高さ）にその家具が置いてあれば、その位置
+// 家の中に置けるものか: 種類（bed など）か、色つきのベッド（blue_bed など）
+export const isHomeFurnitureItem = (item) => !!HOME_FURNITURE[item] || /^[a-z_]+_bed$/.test(item ?? '')
+
 export function furnitureInHome (bot, home, item) {
-  const pattern = HOME_FURNITURE[item]
+  const pattern = HOME_FURNITURE[item] ?? (isHomeFurnitureItem(item) ? new RegExp(`^${item}$`) : null)
   if (!home || !pattern) return null
   const cells = home.cells ?? []
   const spots = cells.length

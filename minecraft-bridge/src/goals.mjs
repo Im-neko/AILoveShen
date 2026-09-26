@@ -21,7 +21,7 @@ import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
 import { cooking } from './cooking.mjs'
-import { placedBedToTake, HOME_FURNITURE, furnitureInHome } from './furniture.mjs'
+import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
@@ -101,8 +101,8 @@ function validGoal (spec, bot, state, knowledge) {
       return { spec: { predicate } }
     case 'placed':
       // 家の中に置く家具（furniture.mjs の HOME_FURNITURE）: ベッド、作業台、かまど、チェスト
-      if (!HOME_FURNITURE[spec.item] || spec.where !== 'home') {
-        throw new Error(`placed supports ${Object.keys(HOME_FURNITURE).join(', ')} in the home, e.g. placed(crafting_table, home)`)
+      if (!isHomeFurnitureItem(spec.item) || spec.where !== 'home' || (spec.item.endsWith('_bed') && !bot.registry.itemsByName[spec.item])) {
+        throw new Error(`placed supports ${Object.keys(HOME_FURNITURE).join(', ')} (or a colored bed like blue_bed) in the home, e.g. placed(crafting_table, home)`)
       }
       needHome()
       return { spec: { predicate, item: spec.item, where: 'home' } }
@@ -213,6 +213,23 @@ export function evaluate (bot, state, knowledge, world) {
       break
     }
     case 'placed': {
+      if (goal.spec.item.endsWith('_bed')) {
+        // 色つきのベッド（blue_bed）: その色のベッドが家にあること。部屋が前のベッドでふさがって
+        // いれば、前のベッドを拾う候補も出す（拾ったベッドは白なら染められる）
+        const item = goal.spec.item
+        const at = furnitureInHome(bot, state.home, item)
+        out.met = !!at
+        out.lines.push(`a ${item} in the house: ${at ? 'yes' : 'no'}`)
+        if (out.met) break
+        const held = (inventoryCounts(bot)[item] ?? 0) > 0
+        const old = furnitureInHome(bot, state.home, 'bed')
+        if (!held) addSolved([{ spec: item, count: 1 }])
+        else if (bedSpot(bot, state.home)) out.leaves.push({ kind: 'place_bed', item })
+        else if (!old) out.blocked.push(`no free spot for the ${item} in the house`)
+        if (old && (held || !bedSpot(bot, state.home))) out.leaves.push({ kind: 'take_placed', pos: old, block: bot.blockAt(old)?.name })
+        out.remaining += 1
+        break
+      }
       if (goal.spec.item !== 'bed') {
         // 作業台・かまど・チェストを家の中に置く
         const item = goal.spec.item

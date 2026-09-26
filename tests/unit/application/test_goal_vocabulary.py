@@ -116,5 +116,19 @@ def test_placed_takes_any_furniture_for_the_home():
     from ailoveshen.domain.value_objects import GoalPredicate
 
     spec = parse_spec({"predicate": "placed", "item": "crafting_table"})
-    assert (spec.predicate, spec.item, spec.where) == (GoalPredicate.PLACED, "crafting_table", "home")
+    assert (spec.predicate, spec.item, spec.where) == (
+        GoalPredicate.PLACED,
+        "crafting_table",
+        "home",
+    )
     assert spec.describe() == "placed(crafting_table, home)"
+
+
+def test_a_colored_bed_can_be_the_goal():
+    """「ベッド青くしない？」: placed(blue_bed, home) が書ける。"""
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+
+    assert (
+        parse_spec({"predicate": "placed", "item": "blue_bed"}).describe()
+        == "placed(blue_bed, home)"
+    )

@@ -221,7 +221,7 @@ function fromLeaf (bot, state, world, leaf) {
       // 置いてある家具を壊して拾う（ベッドを家に運ぶ）。furniture.mjs
       return [{ id: `take the ${leaf.block} placed at ${fmt(leaf.pos)}`, verb: 'dig', target: leaf.block, block: leaf.block, pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'place_bed':
-      return [{ id: 'place the bed in the house', verb: 'place_bed', target: 'bed', inPlace: true, distance: dist(bot, state.home.inside) }]
+      return [{ id: `place the ${leaf.item ?? 'bed'} in the house`, verb: 'place_bed', target: leaf.item ?? 'bed', ...(leaf.item ? { item: leaf.item } : {}), inPlace: true, distance: dist(bot, state.home.inside) }]
     case 'go_home':
       return [{ id: 'go home', verb: 'go_home', target: 'home', inPlace: true, distance: dist(bot, state.home.inside) }]
     case 'clear': {
