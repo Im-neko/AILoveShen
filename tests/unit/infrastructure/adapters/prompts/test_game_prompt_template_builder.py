@@ -501,6 +501,31 @@ class TestFailureDiagnosisPrompt:
         assert "やり方の助言: Explore west." in prompt
 
 
+def test_the_landmarks_around_are_shown_with_whose_they_are():
+    """ボットが建てていないベッドや家も、近くにあれば見える（見えていても知らなかった）。"""
+    obs = _obs()
+    obs.state["nearby"] = [
+        {
+            "kind": "bed",
+            "count": 1,
+            "owner": None,
+            "nearest": {"x": 1, "y": 70, "z": 2, "distance_m": 6.5, "direction": "N"},
+        },
+        {
+            "kind": "torch",
+            "count": 4,
+            "owner": "home",
+            "nearest": {"x": 0, "y": 71, "z": 0, "distance_m": 3.0, "direction": "W"},
+        },
+    ]
+    prompt = _goal_prompt(obs)
+    assert (
+        "- 近くにあるもの（24 m 以内）: ベッド（一番近いもの: 北 6.5m、自分で建てたものではない）、"
+        "松明 4（一番近いもの: 西 3.0m、家のもの）" in prompt
+    )
+    assert "- 近くにあるもの（24 m 以内）: なし" in _goal_prompt()
+
+
 class TestPromptLength:
     """代表的な状態のプロンプトの長さ。増えたら気づけるように（26 §4）。"""
 

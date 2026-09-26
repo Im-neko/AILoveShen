@@ -56,6 +56,7 @@ import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed } from '
 import { startReflex } from './reflex.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory, homeChests } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
+import { landmarks, adoptFoundBase } from './landmarks.mjs'
 import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
 import vec3Pkg from 'vec3'
 
@@ -100,10 +101,19 @@ const worldAge = () => Number(bot.time.age)
 function persist () {
   const former = state.home
   if (settleHome(state, bot)) console.log(`[bridge] ${former ? '引っ越した' : '家を設定'}: ドア ${state.home.door}`)
+  adoptBase()
   saveState(state)
 }
 
+// 家がないとき、近くのドアつきの閉じた部屋を家にする（landmarks.mjs）
+function adoptBase () {
+  if (!adoptFoundBase(bot, state)) return false
+  console.log(`[bridge] 近くの拠点を家にした: ドア ${state.home.door}、部屋 ${state.home.cells.length} マス`)
+  return true
+}
+
 function observation () {
+  if (adoptBase()) saveState(state)
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
   if (Object.keys(state.builds ?? {}).length) extra.builds = buildsStatus(bot, state)
@@ -111,6 +121,8 @@ function observation () {
   // 調べた候補地の数字（ブリッジが測ったものだけ。まだ調べていない候補地は入らない）
   if (state.survey) extra.survey = { planned: state.survey.sites.length, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) }
   extra.deaths = state.deaths
+  // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
+  extra.nearby = landmarks(bot, state)
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }

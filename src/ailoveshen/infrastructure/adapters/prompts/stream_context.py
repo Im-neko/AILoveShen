@@ -380,6 +380,31 @@ def _format_screen_note(note: ScreenNote) -> str:
     )
 
 
+LANDMARK_RADIUS = 24  # ブリッジの landmarks.mjs と同じ
+LANDMARK_NAMES = {
+    "bed": "ベッド",
+    "door": "ドア",
+    "crafting_table": "作業台",
+    "furnace": "かまど",
+    "chest": "チェスト",
+    "torch": "松明",
+}
+OWNER_NAMES = {"home": "家のもの", "former_home": "前の家のもの"}
+
+
+def _format_nearby(nearby: list) -> str:
+    """まわりの目印（ブリッジが見たもの）。家のものでなければそう書く（自分で建てていない物も使える）。"""
+
+    def one(n: dict) -> str:
+        p = n.get("nearest") or {}
+        where = f"{DIRECTION_NAMES.get(p.get('direction'), p.get('direction', ''))} {p.get('distance_m')}m"
+        owner = OWNER_NAMES.get(n.get("owner"), "自分で建てたものではない")
+        count = f" {n['count']}" if n.get("count", 1) > 1 else ""
+        return f"{LANDMARK_NAMES.get(n.get('kind'), n.get('kind'))}{count}（一番近いもの: {where}、{owner}）"
+
+    return "、".join(one(n) for n in nearby) or "なし"
+
+
 def _format_home(obs: GameObservation) -> str:
     if not obs.has_home:
         return "まだない（夜までに建てる必要がある）"
@@ -395,6 +420,7 @@ def _format_situation(obs: GameObservation) -> str:
     lines = [
         f"- 時間帯: {format_time(s.get('time', {}))}",
         f"- 家: {_format_home(obs)}",
+        f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
