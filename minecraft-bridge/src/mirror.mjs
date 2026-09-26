@@ -195,8 +195,13 @@ function replayWorld (viewer, rec, bot) {
       })
     }
   }
+  // 記録したパケットはサーバーが送ったものだけ: ボット自身の持ち替えと持ち物の移動は今の状態から送る
+  if (bot.inventory) viewer.write('window_items', inventoryPacket(bot, itemClass(bot)))
+  if (bot.quickBarSlot != null) viewer.write('held_item_slot', { slot: bot.quickBarSlot })
   viewer.write('position', positionPacket(bot, 1))
 }
+
+const itemClass = (bot) => require('prismarine-item')(bot.registry ?? VERSION)
 
 // ボットがウィンドウ（チェスト、かまど、作業台）を閉じるのはサーバーへのパケットで、サーバーは
 // 何も返さない: これがないと、視聴者の画面には一度表示されたウィンドウがすべて開いたまま残った
@@ -205,6 +210,39 @@ export function relayCloses (client, viewers) {
   client.write = (name, params) => {
     write(name, params)
     if (name === 'close_window') for (const v of viewers) v.write('close_window', { windowId: params.windowId })
+  }
+}
+
+const INVENTORY_SYNC_MS = 100
+
+// プレイヤーの持ち物（ウィンドウ 0）の今の中身（視聴者に送る window_items）
+export function inventoryPacket (bot, Item) {
+  return {
+    windowId: 0,
+    stateId: 0,
+    items: bot.inventory.slots.map((i) => Item.toNotch(i ?? null)),
+    carriedItem: Item.toNotch(null)
+  }
+}
+
+// サーバーは、ボット自身が決めたことを送り返さない: 持ち替え（held_item_slot）と、クリックでの持ち物の
+// 移動（window_click: 装備する、クラフトの結果を取る、チェストとのやりとり）。視聴者の手に持つ物と
+// 持ち物がサーバーとずれていた。ボットの持ち替えはそのまま、持ち物はクリックの後に今の中身を送る
+export function relayOwnState (bot, viewers, Item, { delayMs = INVENTORY_SYNC_MS } = {}) {
+  const client = bot._client
+  const write = client.write.bind(client)
+  let timer = null
+  const syncInventory = () => {
+    timer = null
+    if (!bot.inventory || !viewers.size) return
+    const pkt = inventoryPacket(bot, Item())
+    for (const v of viewers) v.write('window_items', pkt)
+  }
+  client.write = (name, params) => {
+    write(name, params)
+    if (name === 'held_item_slot') for (const v of viewers) v.write('held_item_slot', { slot: params.slotId })
+    // Mineflayer はクリックの結果を自分の持ち物に先に反映する。少し待ってまとめて送る
+    if (name === 'window_click' && !timer) timer = setTimeout(syncInventory, delayMs)
   }
 }
 
@@ -219,6 +257,7 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
   })
 
   relayCloses(bot._client, viewers)
+  relayOwnState(bot, viewers, () => itemClass(bot))
 
   // registryCodec: {} -> nmp は自前の registry_data を書かない。代わりに、記録したボットの
   // 設定のパケット（known packs、registry data、tags、feature flags）を再生する。
