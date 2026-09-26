@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 感情の声: Irodori-TTS で読ませて、Style-Bert-VITS2 のスタイルに (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「shen_sbv2 はそれっぽくなった」→「Irodori-TTS に shen_sbv2 の声と話し方の説明で感情をつけて読ませたものを、Style-Bert-VITS2 の各スタイルの参照音声にしたい」
+- `irodori_from_sbv2.py emotions`（`--source irodori|sbv2|auto`）: 台本の感情の文を Irodori-TTS（声 shen_sbv2 + `emotion_captions`、seed なし）で読ませ、`data/irodori_train/shen_sbv2_<感情>/audio/`、声 `shen_sbv2_<感情>` として登録。`--register-only`
+- `tools/sbv2_add_styles.py`（Style-Bert-VITS2 の学習環境の Python で）: 感情ごとの埋め込み（`style_gen.get_style_vector`）の平均を `style_vectors.npy` / `config.json` に足す・置き換える。Neutral は残す（公式 WebUI の方法0 は Neutral を作り直すので使わない）。バックアップ付き。偽の style_gen で Neutral が変わらないことを確認
+- `IrodoriTtsClient(emotion_voices=)`、`tts.irodori.emotion_voices`。`StyleBertVits2Client(style_weight=)`、`tts.synthesis.style_weight`
+- 手順: `docs/setup/irodori_tts.md` §8。pytest 659。実機（本物の Irodori-TTS と pyannote）では未確認
+
 ### Irodori-TTS がどの参照音声で読んでいるかを確かめる道具 (2026-09-26)
 
 **Commit**: `d5ace23`

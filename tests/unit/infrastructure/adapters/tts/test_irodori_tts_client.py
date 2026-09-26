@@ -104,3 +104,21 @@ def test_lora_adapter_goes_with_each_request():
     assert create_synthesizer({"engine": "irodori", "irodori": {"lora_adapter": "/y"}}).request_body(
         "x", EmotionState()
     )["irodori"]["lora_adapter"] == "/y"
+
+
+def test_a_strong_emotion_reads_with_its_own_voice():
+    client = IrodoriTtsClient(
+        voice="shen_sbv2", emotion_voices={EmotionType.HAPPY: "shen_sbv2_happy"}, caption_min_intensity=0.6
+    )
+    assert client.request_body("x", EmotionState(EmotionType.HAPPY, 0.8))["voice"] == "shen_sbv2_happy"
+    assert client.request_body("x", EmotionState(EmotionType.HAPPY, 0.3))["voice"] == "shen_sbv2"
+    assert client.request_body("x", EmotionState(EmotionType.SAD, 0.9))["voice"] == "shen_sbv2"
+    made = create_synthesizer(
+        {"engine": "irodori", "irodori": {"voice": "v", "emotion_voices": {"sad": "v_sad"}}}
+    )
+    assert made.voice_for(EmotionState(EmotionType.SAD, 0.9)) == "v_sad"
+
+
+def test_style_weight_is_sent_only_when_set():
+    assert create_synthesizer({"synthesis": {"style_weight": 2.5}})._style_weight == 2.5
+    assert create_synthesizer({})._style_weight is None

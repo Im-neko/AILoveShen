@@ -157,6 +157,7 @@ tts:
     noise: 0.6
     noisew: 0.8
     length: 1.0
+    style_weight: null  # strength of the style (emotion); null: the server's default (1.0)
 
   # Queue settings
   queue:
@@ -196,6 +197,10 @@ tts:
     cfg_scale_speaker: null    # higher: closer to the reference voice
     # LoRA trained with tools/irodori_from_sbv2.py train (a folder on the server's machine; empty: none)
     lora_adapter: "${IRODORI_LORA:-}"
+    # A voice per emotion (reference clips spoken in that emotion, made by
+    # tools/irodori_from_sbv2.py emotions), used at intensity >= caption_min_intensity; other
+    # emotions and weak ones use `voice`. Example: {happy: shen_sbv2_happy, sad: shen_sbv2_sad}
+    emotion_voices: {}
     # Emotions as a speaking-style caption (only at intensity >= caption_min_intensity).
     # Off by default: a caption can pull the voice away from the reference; try it with
     # tools/tts_compare.py --emotion first.

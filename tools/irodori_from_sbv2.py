@@ -14,6 +14,9 @@ Style-Bert-VITS2 で作った（雑音のない）音声から、Irodori-TTS の
 generate --for-reference で語りとふつうの文（64 文）だけ作れば足りる。学習用の量（30〜40 分）は 2b の LoRA
 のためで、学習した LoRA は小さく、合成の速さはほとんど変わらない（学習データは合成のときには使わない）。
 
+    # 3. 感情ごとの声（shen_sbv2_happy …: tts.irodori.emotion_voices で感情に応じて切り替える）
+    python tools/irodori_from_sbv2.py emotions [--source auto|sbv2|irodori] [--emotions happy,sad]
+
     # 2b. LoRA の追加学習（Irodori-TTS の学習用リポジトリが要る: scripts/irodori/setup_train_mac.sh）
     python tools/irodori_from_sbv2.py base                 # 元のモデルの重みを取ってくる
     python tools/irodori_from_sbv2.py prepare [--device mps]
@@ -225,6 +228,128 @@ def reference(args: argparse.Namespace) -> int:
     return subprocess.call(cmd)
 
 
+# ---- 3. 感情ごとの声 ----
+
+EMOTIONS = ("happy", "surprised", "sad", "angry", "scared")
+
+
+async def emotions(args: argparse.Namespace) -> int:
+    """
+    感情ごとの参照音声を作り、声 <name>_<感情> として登録する（tts.irodori.emotion_voices で使う）。
+
+    読ませるのは台本のその感情の文（楽しい H、驚き S、悲しい D、むっ A、怖い F）。読み手:
+    - sbv2: Style-Bert-VITS2 のその感情のスタイル（tts.emotion_style_map がモデルにある Neutral 以外の
+      スタイルを指しているときだけ。shen モデルは Neutral しかない）
+    - irodori: Irodori-TTS に、ふだんの声（--name）と感情の話し方の説明（tts.irodori.emotion_captions）で
+    - auto（既定）: sbv2 でできる感情は sbv2、ほかは irodori
+    """
+    from ailoveshen.domain.value_objects import EmotionState, EmotionType
+    from ailoveshen.factories.tts import create_synthesizer
+    from ailoveshen.infrastructure.config import load_config_dict
+
+    tts = load_config_dict(REPO / "config").get("tts", {})
+    wanted = [e.strip() for e in args.emotions.split(",") if e.strip()]
+    unknown = [e for e in wanted if e not in EMOTIONS]
+    if unknown:
+        print(f"知らない感情: {', '.join(unknown)}（{', '.join(EMOTIONS)}）", file=sys.stderr)
+        return 1
+    lines = read_lines()
+
+    # Style-Bert-VITS2 でその感情のスタイルが使えるか
+    sbv2_ok: set[str] = set()
+    sbv2 = None
+    if args.source in ("auto", "sbv2") and not args.register_only:
+        config = copy.deepcopy(tts)
+        config["engine"] = "style_bert_vits2"
+        sbv2 = create_synthesizer(config)
+        try:
+            await sbv2.connect()
+            styles = set(await sbv2.get_available_styles())  # type: ignore[attr-defined]
+            mapping = {k.lower(): v for k, v in (tts.get("emotion_style_map") or {}).items()}
+            default = (tts.get("voice") or {}).get("default_style", "Neutral")
+            for e in wanted:
+                style = mapping.get(e)
+                if style and style in styles and style != default:
+                    sbv2_ok.add(e)
+            print(f"Style-Bert-VITS2 のスタイル: {', '.join(sorted(styles))}。感情のスタイルで読めるもの: {', '.join(sorted(sbv2_ok)) or 'なし'}")
+        except Exception as e:  # noqa: BLE001 - サーバーがなければ irodori で
+            print(f"Style-Bert-VITS2 につながらない: {e}")
+            sbv2 = None
+    if args.source == "sbv2" and not args.register_only:
+        missing = [e for e in wanted if e not in sbv2_ok]
+        if missing:
+            print(f"Style-Bert-VITS2 にスタイルがない感情（tts.emotion_style_map）: {', '.join(missing)}。--source irodori か auto で", file=sys.stderr)
+            wanted = [e for e in wanted if e in sbv2_ok]
+
+    irodori = None
+    if not args.register_only and any(e not in sbv2_ok for e in wanted):
+        config = copy.deepcopy(tts)
+        config["engine"] = "irodori"
+        c = config.setdefault("irodori", {})
+        c.update({"voice": args.name, "emotion": True, "caption_min_intensity": 0.0, "seed": None, "emotion_voices": {}})
+        irodori = create_synthesizer(config)
+        await irodori.connect()
+
+    status = 0
+    registered: list[str] = []
+    try:
+        for e in wanted:
+            voice = f"{args.name}_{e}"
+            out = folder(voice) / "audio"
+            out.mkdir(parents=True, exist_ok=True)
+            reader = "sbv2" if e in sbv2_ok else "irodori"
+            mine = [line for line in lines if line.emotion == e][: args.per_emotion]
+            if not args.register_only:
+                synth = sbv2 if reader == "sbv2" else irodori
+                kept = rejected = 0
+                for line in mine:
+                    target = out / f"{line.id}.wav"
+                    if target.exists() and not args.overwrite:
+                        continue
+                    try:
+                        data = await synth.synthesize(line.text, EmotionState(primary=EmotionType(e), intensity=0.9))  # type: ignore[union-attr]
+                    except Exception as err:  # noqa: BLE001
+                        print(f"  {line.id} 失敗: {err}")
+                        rejected += 1
+                        continue
+                    if check(line, *wav_stats(data)):
+                        rejected += 1
+                        continue
+                    target.write_bytes(data)
+                    kept += 1
+                print(f"{e}（{reader}）: 作った {kept}、除いた {rejected} → {out}")
+            clips = []
+            total = 0.0
+            for path in sorted(out.glob("*.wav")):
+                seconds = wav_stats(path.read_bytes())[0]
+                if 1.5 <= seconds <= 8.0 and total + seconds <= args.seconds:
+                    clips.append(path)
+                    total += seconds
+            if not clips:
+                print(f"  {e}: 参照音声にできる WAV がない", file=sys.stderr)
+                status = 1
+                continue
+            print(f"  声 {voice}: {len(clips)} 個、{total:.0f} 秒")
+            if subprocess.call([sys.executable, str(REPO / "tools" / "irodori_voice.py"), "--name", voice, *map(str, clips)]) == 0:
+                registered.append(e)
+    finally:
+        for synth in (sbv2, irodori):
+            if synth is not None:
+                await synth.disconnect()
+
+    if not registered:
+        return 1
+    print("\n聞いてみて、違う感情に聞こえるクリップや声の違うものは消し、--register-only でもう一度登録する。")
+    print("Irodori-TTS で感情の声を使う（config/development.yaml）:")
+    print("tts:\n  irodori:\n    emotion_voices:")
+    for e in registered:
+        print(f"      {e}: {args.name}_{e}")
+    if "happy" in registered:
+        print(f"      excited: {args.name}_happy")
+    print("Style-Bert-VITS2 のスタイルにする: <Style-Bert-VITS2 の Python> tools/sbv2_add_styles.py")
+    return status
+
+
 # ---- 2b. LoRA ----
 
 def train_repo(args: argparse.Namespace) -> Path:
@@ -335,6 +460,15 @@ def main() -> int:
     r.add_argument("--clip-min", type=float, default=2.5, help="使うクリップの長さの下限（秒）")
     r.add_argument("--clip-max", type=float, default=6.0, help="使うクリップの長さの上限（秒）")
 
+    em = sub.add_parser("emotions", help="感情ごとの参照音声を作って声にする")
+    common(em)
+    em.add_argument("--source", choices=("auto", "sbv2", "irodori"), default="auto", help="読み手（既定 auto）")
+    em.add_argument("--emotions", default=",".join(EMOTIONS), help="作る感情（カンマ区切り）")
+    em.add_argument("--per-emotion", type=int, default=14, help="感情ごとに読ませる文の数")
+    em.add_argument("--seconds", type=float, default=30.0, help="感情ごとの参照音声の長さ")
+    em.add_argument("--overwrite", action="store_true", help="作ってあるものも作り直す")
+    em.add_argument("--register-only", action="store_true", help="作らずに、残っている WAV で登録し直す")
+
     for cmd, text in (("base", "元のモデルの重みを取ってくる"), ("prepare", "学習用に符号化する"), ("train", "LoRA を学習する")):
         p = sub.add_parser(cmd, help=text)
         common(p)
@@ -352,6 +486,8 @@ def main() -> int:
     args = ap.parse_args()
     if args.cmd == "generate":
         return asyncio.run(generate(args))
+    if args.cmd == "emotions":
+        return asyncio.run(emotions(args))
     return {"reference": reference, "base": base, "prepare": prepare, "train": train}[args.cmd](args)
 
 

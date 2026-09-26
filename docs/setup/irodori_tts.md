@@ -135,3 +135,25 @@ python tools/irodori_from_sbv2.py train --max-steps 3000
 | MPS のエラーで止まる | `start_mac.sh` は `PYTORCH_ENABLE_MPS_FALLBACK=1`（ない演算は CPU）。それでもなら `IRODORI_MODEL_DEVICE=cpu` で動くか確かめる |
 
 実機（M5 / 32GB）ではまだ動かしていない。速さと読みは聞き比べで確かめる。
+
+## 8. 感情の声（Irodori-TTS で読ませて、Style-Bert-VITS2 のスタイルにも）
+
+`shen_sbv2` の声で、台本の感情の文（楽しい H、驚き S、悲しい D、むっ A、怖い F）を Irodori-TTS に感情の話し方の説明（`tts.irodori.emotion_captions`）付きで読ませる。
+
+```bash
+python tools/irodori_from_sbv2.py emotions --source irodori --per-emotion 20
+```
+
+- `data/irodori_train/shen_sbv2_<感情>/audio/*.wav`。**聞いて、その感情に聞こえないもの・声が違うものは消す**。消したら `--register-only` で登録し直す
+- 同時に Irodori-TTS の声 `shen_sbv2_happy` … として登録する（`tts.irodori.emotion_voices` に書くと、強い感情のときその声で読む）
+
+### Style-Bert-VITS2 のスタイルにする
+
+```bash
+<Style-Bert-VITS2 の学習に使った環境の Python> tools/sbv2_add_styles.py --model shen   # --dry-run で確認だけ
+(cd docker && docker compose restart)                    # TTS サーバーがスタイルを読み直す
+```
+
+- 感情ごとの音声の埋め込み（pyannote wespeaker、Style-Bert-VITS2 の `style_gen`）の平均を、`model_assets/shen/style_vectors.npy` に Happy / Surprised / Sad / Angry / Fear として足す（同じ名前があれば置き換え）。**今の Neutral はそのまま**（公式 WebUI の「方法0」は Neutral を全体の平均で作り直すので使わない）。前のファイルは `*.<日時>.bak`
+- 学習し直さない。Docker の TTS サーバーは推論だけの環境（pyannote なし、モデルのフォルダーは読み取り専用）なので、学習に使った Style-Bert-VITS2 の環境で動かす
+- 出てくる `tts.emotion_style_map` と `tts.synthesis.style_weight`（感情の強さ、1 で弱ければ 2〜5）を `config/development.yaml` に。`python tools/tts_compare.py --engines style_bert_vits2 --emotion` はまだないので、`--lines` に感情の文を入れて聞く

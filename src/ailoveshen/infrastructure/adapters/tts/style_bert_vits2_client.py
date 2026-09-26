@@ -32,6 +32,7 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         noise: float = 0.6,
         noisew: float = 0.8,
         length: float = 1.0,
+        style_weight: Optional[float] = None,
         emotion_style_service: Optional[EmotionStyleService] = None,
     ) -> None:
         """
@@ -46,6 +47,7 @@ class StyleBertVits2Client(ISpeechSynthesizer):
             noise: 合成のノイズのパラメーター
             noisew: 合成のノイズの重みのパラメーター
             length: 合成の長さの倍率のパラメーター
+            style_weight: スタイル（感情）の強さ。None ならサーバーの既定
             emotion_style_service: 感情からスタイルへの対応（既定は組み込みの対応）
         """
         self._base_url = f"http://{host}:{port}"
@@ -55,6 +57,7 @@ class StyleBertVits2Client(ISpeechSynthesizer):
         self._noise = noise
         self._noisew = noisew
         self._length = length
+        self._style_weight = style_weight
         self._emotion_style_service = emotion_style_service or EmotionStyleService()
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -126,6 +129,7 @@ class StyleBertVits2Client(ISpeechSynthesizer):
                     "noise": self._noise,
                     "noisew": self._noisew,
                     "length": self._length,
+                    **({"style_weight": self._style_weight} if self._style_weight is not None else {}),
                 },
             )
             response.raise_for_status()

@@ -101,6 +101,7 @@ def create_synthesizer(config: Dict[str, Any]) -> ISpeechSynthesizer:
             caption_min_intensity=float(c.get("caption_min_intensity", 0.6)),
             api_key=os.environ.get("IRODORI_API_KEY", ""),
             lora_adapter=str(c.get("lora_adapter") or ""),
+            emotion_voices=_parse_emotion_captions(c.get("emotion_voices")),
         )
 
     server_config = config.get("server", {})
@@ -120,6 +121,7 @@ def create_synthesizer(config: Dict[str, Any]) -> ISpeechSynthesizer:
         noise=synthesis_config.get("noise", 0.6),
         noisew=synthesis_config.get("noisew", 0.8),
         length=synthesis_config.get("length", 1.0),
+        style_weight=synthesis_config.get("style_weight"),
         emotion_style_service=emotion_style_service,
     )
 

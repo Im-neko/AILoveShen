@@ -42,6 +42,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
         caption_min_intensity: float = 0.6,
         api_key: str = "",
         lora_adapter: str = "",
+        emotion_voices: Optional[Mapping[EmotionType, str]] = None,
     ) -> None:
         """
         Args:
@@ -58,6 +59,8 @@ class IrodoriTtsClient(ISpeechSynthesizer):
             caption_min_intensity: この強さ以上の感情だけ説明を付ける
             api_key: サーバーの IRODORI_API_KEY（空: なし）
             lora_adapter: 追加学習した LoRA のフォルダー（サーバーのマシンのパス。空: 使わない）
+            emotion_voices: 感情 → その感情で話した参照音声の声（強さが caption_min_intensity 以上の
+                とき。ない感情と弱い感情は voice）。tools/irodori_from_sbv2.py emotions が作る
         """
         self._base_url = f"http://{host}:{port}"
         self._timeout = timeout_seconds
@@ -71,6 +74,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
         self._caption_min = caption_min_intensity
         self._api_key = api_key
         self._lora = lora_adapter
+        self._emotion_voices = dict(emotion_voices or {})
         self._client: Optional[httpx.AsyncClient] = None
 
     async def connect(self) -> None:
@@ -118,6 +122,12 @@ class IrodoriTtsClient(ISpeechSynthesizer):
         """クライアントが接続しているかを返す。"""
         return self._client is not None
 
+    def voice_for(self, emotion: EmotionState) -> str:
+        """その感情で読む声（感情の声がなければ、ふだんの声）。"""
+        if emotion.intensity < self._caption_min:
+            return self._voice
+        return self._emotion_voices.get(emotion.primary) or self._voice
+
     def caption_for(self, emotion: EmotionState) -> Optional[str]:
         """感情の話し方の説明（付けないときは None）。"""
         if emotion.intensity < self._caption_min:
@@ -140,7 +150,7 @@ class IrodoriTtsClient(ISpeechSynthesizer):
         body: dict[str, Any] = {
             "model": MODEL_ID,
             "input": text,
-            "voice": self._voice,
+            "voice": self.voice_for(emotion),
             "response_format": "wav",
             "speed": self._speed,
         }
