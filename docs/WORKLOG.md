@@ -9,7 +9,7 @@
 
 ### 種集め（have(wheat_seeds)）が毎回失敗して行き詰まる (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `2e983ba`
 
 - ユーザーのログ: `goal have(wheat_seeds, 9) is stuck (actions keep failing)`
 - 原因: 掘る行動は「ブロックの面が見える位置」（GoalLookAtBlock）へ歩くが、草は当たり判定がなくレイが通り抜けるので、その位置が決して見つからず毎回失敗した
