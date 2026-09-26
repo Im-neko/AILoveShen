@@ -9,7 +9,7 @@
 
 ### 視点の中継が「74 bytes extra whilst reading packet set_equipment」で切れる (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `f9f75e5`
 
 - ミラーは set_equipment（モブ・プレイヤーの手と防具）を生のバイト列で中継しているだけだが、部品（附呪、名前、NBT など）つきのアイテムで本物のクライアントが切れた（原因のずれは特定できていない）
 - `mirror.mjs sanitizedEquipment`: 部品のある装備だけ、持ち物と同じく数だけの部品（damage など）に絞って 1.21.4 の形で書き直して送る（部品がなければ今までどおり生で中継。書き直せなければ送らない）。記録（後から来た視聴者への再生）も同じもの
