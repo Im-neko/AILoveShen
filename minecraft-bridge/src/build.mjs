@@ -231,7 +231,18 @@ async function clearCell (bot, plan, b, signal, allowDig) {
   await bot.dig(bot.blockAt(pos), true)
 }
 
-const DOOR_WALK_MS = 8000
+const DOOR_WALK_MS = 6000
+const DOOR_DIG_MS = 6000
+// 約束が ms までに終わらなければ、理由をつけて失敗にする（stop で止める）
+async function within (promise, ms, why, stop = () => {}) {
+  let timer
+  const late = new Promise((resolve, reject) => { timer = setTimeout(() => { stop(); reject(new Error(why)) }, ms) })
+  try {
+    return await Promise.race([promise, late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 // 決めた時間までに着かなければ諦める（経路が見つからないときの長い探索を切る）
 async function walkWithin (bot, goal, signal, ms) {
   let timer
@@ -249,13 +260,18 @@ async function walkWithin (bot, goal, signal, ms) {
 // ドアのマスの床を見て置く: 視線が壁と直角になる。向きの違うドアは壊して置き直す。ドアは下の
 // マスに置けば上のマスもできる
 async function placeDoor (bot, plan, b, signal) {
+  const phase = (p) => { bot.actionPhase = p }
   const lower = plan.blocks.find((d) => d.block === 'door' && d.x === b.x && d.z === b.z && d.y === b.y - 1) ?? b
   const pos = plan.worldPos(lower)
   const found = bot.blockAt(pos)
   if (occupied(found) && !isClearable(found) && !TEMPORARY_STATION.test(found.name) && !KINDS.door(found.name)) throw new Error(`site blocked by ${found.name} at ${pos}`)
   const out = plan.doorOutward(lower)
   let error = null
-  for (const side of [1, -1]) {
+  // ボットに近い側から（前は必ず外から: 中にいても外へ回ろうとした）
+  const sides = [1, -1].sort((a, b) => bot.entity.position.distanceTo(pos.offset(out.x * a + 0.5, 0, out.z * a + 0.5)) -
+    bot.entity.position.distanceTo(pos.offset(out.x * b + 0.5, 0, out.z * b + 0.5)))
+  for (const side of sides) {
+    phase(`walking to the ${side === 1 ? 'outside' : 'inside'} of the door`)
     try {
       // 片側に行けないと経路探しが長引いて全体が時間切れになった（外が行けなければ内側を試す）
       await walkWithin(bot, new goals.GoalBlock(pos.x + out.x * side, pos.y, pos.z + out.z * side), signal, DOOR_WALK_MS)
@@ -271,14 +287,18 @@ async function placeDoor (bot, plan, b, signal) {
   const current = bot.blockAt(pos)
   if (occupied(current)) {
     if (!isClearable(current) && !TEMPORARY_STATION.test(current.name) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
-    await bot.dig(current, true)
+    phase(`breaking the old ${current.name}`)
+    await within(bot.dig(current, true), DOOR_DIG_MS, `the ${current.name} did not break in ${DOOR_DIG_MS / 1000}s`, () => bot.stopDigging())
   }
+  phase('picking up the door')
   // 壊したドアが落ちて拾われるのを待つ（隣のマスに立てば拾える）
   for (let i = 0; i < 40 && !findItem(bot, 'door'); i++) await bot.waitForTicks(1)
   const item = findItem(bot, 'door')
   if (!item) throw new Error('no door to place (the old door was not picked up)')
+  phase('placing the door')
   await bot.equip(item, 'hand')
   await bot.lookAt(pos.offset(0.5, 0, 0.5), true)
   await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), new Vec3(0, 1, 0))
   lastPlaceAt = Date.now()
+  phase('')
 }

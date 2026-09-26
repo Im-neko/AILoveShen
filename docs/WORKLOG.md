@@ -7,6 +7,14 @@
 
 ## Completed Work
 
+### ドアの置き直しの時間切れ（続き）: どこで止まったかをログに出す (2026-09-26)
+
+**Commit**: (this commit)
+
+- まだ `place door ...: failed: timeout（20.1秒）` が続く（ユーザーがブリッジを再起動したかは未確認）。どの段階で止まっているかが分からないので、`runner.mjs` の時間切れの理由に `bot.actionPhase`（プリミティブが書く今の段階）を添える: 例 `timeout (while walking to the outside of the door)`、`leaving the house`
+- `placeDoor`: ボットに近い側から立つ（前は必ず外から）、片側 6 秒、古いドアを壊すのは 6 秒まで（壊れなければ止めて失敗に）、段階を記録
+- テスト: npm 181
+
 ### ドアの置き直しが毎回 20 秒で時間切れ (2026-09-26)
 
 **Commit**: `2ff3a0a`

@@ -33,7 +33,9 @@ export function createRunner (bot, state, deps = {}) {
       return true
     }
     const limit = TIMEOUTS_MS[c.verb] ?? DEFAULT_TIMEOUT_MS
-    const timer = setTimeout(() => abort('timeout'), limit)
+    // 時間切れの理由に、そのとき何をしていたか（bot.actionPhase。プリミティブが書く）を添える
+    bot.actionPhase = ''
+    const timer = setTimeout(() => abort(bot.actionPhase ? `timeout (while ${bot.actionPhase})` : 'timeout'), limit)
     const onHurt = (entity) => {
       if (entity !== bot.entity) return
       if (DAMAGE_TOLERANT.has(c.verb)) {
@@ -52,7 +54,11 @@ export function createRunner (bot, state, deps = {}) {
     state.current = { id: label, verb: c.verb, abort, progress, done: new Promise((resolve) => { finished = resolve }) }
     try {
       const house = houseAround(bot, state)
-      if (house && needsOutside(c, house)) await leaveHome(bot, house, controller.signal, { confront: !!c.confront })
+      if (house && needsOutside(c, house)) {
+        bot.actionPhase = 'leaving the house'
+        await leaveHome(bot, house, controller.signal, { confront: !!c.confront })
+        bot.actionPhase = ''
+      }
       controller.signal.throwIfAborted()
       result = await primitives[c.verb](bot, state, c, controller.signal)
       if (controller.signal.aborted) throw controller.signal.reason
