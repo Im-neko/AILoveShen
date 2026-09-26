@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import wave
@@ -53,6 +54,25 @@ def pick(clips: list[tuple[Path, float]], seconds: float) -> list[tuple[Path, fl
     return sorted(chosen, key=lambda c: c[0].name)
 
 
+def server_status(name: str, server: str) -> str:
+    """動いているサーバーがこの声を知っているか（知らなければ、起動し直すと読み込む）。"""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{server}/v1/audio/voices", timeout=3) as res:
+            data = json.loads(res.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - 止まっている・つながらない
+        return f"サーバー（{server}）は止まっている: 起動すると声 {name!r} が使える（scripts/irodori/start_mac.sh）"
+    voices = data.get("data", data) if isinstance(data, dict) else data
+    ids = {str(v.get("id", v.get("voice_id", ""))) if isinstance(v, dict) else str(v) for v in voices or []}
+    if name in ids:
+        return f"サーバー（{server}）はもう声 {name!r} を知っている: そのまま使える"
+    return (
+        f"サーバー（{server}）は動いているが、声 {name!r} がまだ一覧にない（起動し直すと voices.json を読み直す）: "
+        "start_mac.sh のターミナルで Ctrl-C で止めて、もう一度 scripts/irodori/start_mac.sh"
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="*", type=Path, help="使う音声ファイル（省略: --source から選ぶ）")
@@ -60,6 +80,11 @@ def main() -> int:
     ap.add_argument("--name", default="shen", help="声の ID（config の tts.irodori.voice）")
     ap.add_argument("--seconds", type=float, default=60.0, help="合計の長さの上限（秒、最大 120）")
     ap.add_argument("--out", type=Path, default=REPO / "data" / "irodori_voices", help="参照音声の置き場")
+    ap.add_argument(
+        "--server",
+        default=f"http://{os.environ.get('IRODORI_HOST', 'localhost')}:{os.environ.get('IRODORI_PORT', '8088')}",
+        help="Irodori-TTS-Server（登録済みかを確かめる）",
+    )
     args = ap.parse_args()
 
     seconds = min(args.seconds, MAX_TOTAL)
@@ -104,7 +129,7 @@ def main() -> int:
     print(f"voices.json: {index}")
     if total and total < 20:
         print("注意: 20 秒より短い。似せるには 30 秒以上がよい", file=sys.stderr)
-    print("サーバーを起動し直すと使える（scripts/irodori/start_mac.sh）")
+    print(server_status(args.name, args.server))
     return 0
 
 
