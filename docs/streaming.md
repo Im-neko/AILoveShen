@@ -124,7 +124,7 @@ tts:
 表示の調整（URL の後ろに付ける）:
 
 - 目標: `?pos=right`、`?theme=mint|sky|lemon`（既定はピンク）、`?scale=0.8`、`?compact=1`、`?toast=0`（クリアの知らせを出さない）
-- アバター: `?pos=left|center|right`（既定 right）、`?view=full`（全身）、`?scale=1.2`
+- アバター: 既定は全身が収まる表示で中央（OBS のクロップで好きな部分を切り抜く）。`?view=bust`（胸から上）、`?pos=left|center|right`（既定 center）、`?scale=1.2`
 - 見た目だけ確かめる: `?demo=1`（プレイの処理がなくても動く）
 
 ## 毎回の起動

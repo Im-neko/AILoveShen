@@ -9,8 +9,8 @@
 
   クエリ:
     ?demo=1        サーバーの合図なしで、話す・表情・しぐさを順に見せる（見た目の調整用）
-    ?view=full     全身（既定は bust: 胸から上）
-    ?pos=left      画面の左に寄せる（既定は right。center もある）
+    ?view=bust     胸から上（既定は full: 全身が収まる。OBS で好きな所を切り抜く）
+    ?pos=left      画面の左に寄せる（既定は center。right もある）
     ?scale=1.2     大きさ（カメラの寄り）
     ?model=URL     別の VRM を読む（既定は /assets/avatar.vrm）
 -->
@@ -36,8 +36,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 
 const params = new URLSearchParams(location.search)
-const VIEW = params.get('view') === 'full' ? 'full' : 'bust'
-const POS = ['left', 'center', 'right'].includes(params.get('pos')) ? params.get('pos') : 'right'
+const VIEW = params.get('view') === 'bust' ? 'bust' : 'full'
+const POS = ['left', 'center', 'right'].includes(params.get('pos')) ? params.get('pos') : 'center'
 const ZOOM = Number(params.get('scale')) || 1
 
 function showError (message) {
@@ -114,10 +114,16 @@ function frame () {
   bones.head.getWorldPosition(head)
   const hips = new THREE.Vector3()
   bones.hips.getWorldPosition(hips)
-  // bust: 画面の下 2/3 ほどに、頭から腰の上まで。full: 頭から足まで
-  const aim = VIEW === 'full' ? new THREE.Vector3(0, (head.y + 0.1) / 2, 0) : new THREE.Vector3(0, head.y - 0.2, 0)
-  const distance = VIEW === 'full' ? (head.y + 0.25) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.1 : 2.2
-  const halfWidth = distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect / camera.zoom
+  // bust: 画面の下 2/3 ほどに、頭から腰の上まで。full: 足の下から、両手を挙げた手の先（頭の上 0.5 m）まで
+  // 全身が必ず収まる（OBS のクロップで好きな部分を切り抜く）。横長でも縦長でも、狭い方の辺で合わせる
+  const top = head.y + 0.5
+  const bottom = -0.05
+  const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
+  const aim = VIEW === 'full' ? new THREE.Vector3(0, (top + bottom) / 2, 0) : new THREE.Vector3(0, head.y - 0.2, 0)
+  const fitHeight = (top - bottom) / (2 * tanHalf)
+  const fitWidth = 1.6 / (2 * tanHalf * camera.aspect) // 両腕を広げた幅（約 1.6 m）
+  const distance = VIEW === 'full' ? Math.max(fitHeight, fitWidth) * 1.08 : 2.2
+  const halfWidth = distance * tanHalf * camera.aspect / camera.zoom
   const shift = POS === 'center' ? 0 : (POS === 'left' ? 1 : -1) * halfWidth * 0.62
   camera.position.set(aim.x + shift, aim.y, distance)
   camera.lookAt(aim.x + shift, aim.y, 0)

@@ -39,7 +39,7 @@
 
 - `examples/integration_test_minecraft.py --board-port 8765` → OBS のブラウザソースに `http://127.0.0.1:8765/avatar`（幅 1920、高さ 1080）
 - 見た目だけ: `/avatar?demo=1`（話す・表情・しぐさを繰り返す）
-- `?view=full`（全身）、`?pos=left|center|right`（既定 right）、`?scale=1.2`、`?model=URL`
+- 既定は全身が収まる表示（両手を挙げても切れない。OBS で切り抜く。2026-09-26）。`?view=bust`（胸から上）、`?pos=left|center|right`（既定 center）、`?scale=1.2`、`?model=URL`
 - ブラウザのコンソールから `avatarCue({type: 'emote', emotion: 'happy', gesture: 'cheer'})` で試せる
 
 ## 5. 確かめたこと・まだのこと
