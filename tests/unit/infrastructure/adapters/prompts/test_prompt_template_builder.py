@@ -137,7 +137,7 @@ class TestPromptTemplateBuilder:
         )
 
         system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply_requests")
-        assert "placed(item=bed)" in system and "have(item, count)" in system and "built" in system
+        assert "placed(crafting_table)" in system and "have(item, count)" in system and "built" in system
         assert "explored(distance)" not in system and "cleared:" not in system
         assert "今の小目標は中断しない" in system
         assert "同じ人の頼みは同時に1つまで" in system

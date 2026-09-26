@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 「作業台も部屋に置いたら」が中目標にならなかった: placed を家具全般に (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「夜の籠城中に作業台を部屋にも置いたらと言ったら、置いとくねと言ったのに行動が変わらない」
+- 原因: 頼みは中目標（世界で判定できる条件）になって初めて行動に届くが、置く条件は placed(bed, home) しかなかった。「部屋に作業台」は書けず、返答が「置いとくね」と言っても中目標に入らない（none のまま約束した、have(crafting_table, 1) にして持っているのですぐ達成、など）
+- ブリッジ: `placed(item, home)` を bed / crafting_table / furnace / chest に（`furniture.mjs` の `HOME_FURNITURE`、`furnitureInHome`: 家の部屋の床とその上の段）。持っていなければ作る（solver）、持っていれば家の中の空いた所に置く候補（`place_in_home`、チェストは今までの place_chest）。夜に家の中でもできる
+- Python: 述語の説明（例 placed(crafting_table)）、家があればいつも placed を出す。npm 165、pytest 610
+
 ### 家具を拾って置き直す (2026-09-26)
 
 **Commit**: `b1b86e4`

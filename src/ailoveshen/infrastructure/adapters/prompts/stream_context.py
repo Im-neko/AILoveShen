@@ -72,7 +72,8 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "（松明を置いて湧き潰し。松明がなければ作るところから）。distance は 8〜32。例: lit(16)"
     ),
     GoalPredicate.PLACED: (
-        "placed(item=bed): 家の中にベッドを置く（ベッドがなければ作るところから）"
+        "placed(item): 家の中に bed / crafting_table / furnace / chest を置く（持っていなければ作る"
+        "ところから。夜に家の中にいてもできる）。例: placed(bed)、placed(crafting_table)"
     ),
     GoalPredicate.AT_HOME: "at_home: 家に入ってドアを閉める",
     GoalPredicate.THROUGH_NIGHT: "through_night: 家で夜を越す（ベッドがあれば寝る）",

@@ -108,3 +108,13 @@ class TestDigDepth:
         """負の深さは断る。"""
         with pytest.raises(ValueError, match="dig_depth"):
             GoalSpec(GoalPredicate.HAVE, item="stone", count=1, dig_depth=-1)
+
+
+def test_placed_takes_any_furniture_for_the_home():
+    """「作業台も部屋に置いたら」を中目標にできる（前は placed(bed, home) だけだった）。"""
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+    from ailoveshen.domain.value_objects import GoalPredicate
+
+    spec = parse_spec({"predicate": "placed", "item": "crafting_table"})
+    assert (spec.predicate, spec.item, spec.where) == (GoalPredicate.PLACED, "crafting_table", "home")
+    assert spec.describe() == "placed(crafting_table, home)"

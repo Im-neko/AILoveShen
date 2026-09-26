@@ -4,12 +4,43 @@
 // アイテムが落ちる（ベッドもそのまま拾える）。拾って置き直すことで、家の外のベッドを家に運ぶ、
 // 家の中の配置を変える、ができる。安全の決まり: 今の家の家具は家の外に出さない（家の中での置き直し
 // だけ）、ベッドは家の中にだけ置く、中身の分かっているチェストは先に中身を出す。
+import vec3Pkg from 'vec3'
 import { isHomeCell } from './builds.mjs'
+
+const { Vec3 } = vec3Pkg
 
 export const MOVABLE = /(_bed|^crafting_table|^furnace|^blast_furnace|^smoker|^chest|^trapped_chest|^barrel)$/
 const TAKE_RADIUS = 32
 
 const key = (p) => `${p.x},${p.y},${p.z}`
+
+// 家の中に置けるもの（placed(item, home) の item）→ 置いてあるかを見るブロックの名前
+export const HOME_FURNITURE = {
+  bed: /_bed$/,
+  crafting_table: /^crafting_table$/,
+  furnace: /^(furnace|blast_furnace|smoker)$/,
+  chest: /^(chest|trapped_chest|barrel)$/
+}
+
+// 家の部屋（床の高さ）にその家具が置いてあれば、その位置
+export function furnitureInHome (bot, home, item) {
+  const pattern = HOME_FURNITURE[item]
+  if (!home || !pattern) return null
+  const cells = home.cells ?? []
+  const spots = cells.length
+    ? cells
+    : Array.from({ length: (home.max.x - home.min.x + 1) * (home.max.z - home.min.z + 1) }, (_, i) => ({
+      x: home.min.x + (i % (home.max.x - home.min.x + 1)),
+      z: home.min.z + Math.floor(i / (home.max.x - home.min.x + 1))
+    }))
+  for (const c of spots) {
+    for (const dy of [0, 1]) {
+      const p = new Vec3(c.x, home.min.y + dy, c.z)
+      if (pattern.test(bot.blockAt(p)?.name ?? '')) return p
+    }
+  }
+  return null
+}
 
 // 今の家の家具か（家の部屋のセルで、床の高さ）
 export function isHomeFurniture (state, p) {

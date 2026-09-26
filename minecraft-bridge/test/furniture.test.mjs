@@ -25,3 +25,13 @@ test('家に運べるベッドは、今の家の外に置いてある一番近�
   assert.equal(placedBedToTake(bot([inHome]), { home }), null)
   assert.deepEqual(placedBedToTake(bot([inHome]), { home: null }).pos, inHome) // 家がなければどれでも
 })
+
+test('家の中の作業台・かまど・チェストを見つける（床とその上の段）', async () => {
+  const { furnitureInHome } = await import('../src/furniture.mjs')
+  const placed = new Map([['3,70,1', 'crafting_table'], ['1,71,3', 'furnace']])
+  const b = { blockAt: (p) => ({ name: placed.get(`${p.x},${p.y},${p.z}`) ?? 'air' }) }
+  assert.deepEqual(furnitureInHome(b, home, 'crafting_table'), new Vec3(3, 70, 1))
+  assert.deepEqual(furnitureInHome(b, home, 'furnace'), new Vec3(1, 71, 3))
+  assert.equal(furnitureInHome(b, home, 'chest'), null)
+  assert.equal(furnitureInHome(b, { ...home, cells: [{ x: 1, z: 1 }] }, 'crafting_table'), null) // 部屋のセルだけ見る
+})
