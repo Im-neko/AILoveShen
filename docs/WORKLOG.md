@@ -9,7 +9,7 @@
 
 ### 家具を拾って置き直す (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `b1b86e4`
 
 - ユーザー「アイテムの移動もできるようにならないか。ベッドの置き直しとか」
 - ブリッジ `src/furniture.mjs`: `placedBedToTake`（今の家の外に置いてある一番近いベッド）、`moveRefusal`（家の家具は家の中でだけ、ベッドは家にだけ、中身の分かっているチェストは断る）。`goals.mjs` の placed(bed, home): ベッドを持っていなければ、置いてあるベッドを拾う候補（`take the <bed> placed at …`、dig）を作る候補と並べて出す。プリミティブ `move_placed`（壊して拾い、ベッドは place_bed、ほかは place_station で指定の場所か家の中）。道具 `move_furniture`（道具モードと技の API）
