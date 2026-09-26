@@ -298,9 +298,12 @@ def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
     stage = f" [街の段階 {goal.stage + 1}: やめられない]" if goal.stage is not None else ""
     if goal.prepares_town:
         stage = " [街の準備: やめられない]"
+    steps = ""
+    if current and goal.plan_steps:
+        steps = " 手順: " + " → ".join(s.spec.describe() for s in goal.plan_steps)
     return (
         f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}{stage}"
-        f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}"
+        f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}{steps}"
     )
 
 

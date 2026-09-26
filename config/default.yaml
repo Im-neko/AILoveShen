@@ -77,7 +77,8 @@ gemini:
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
   # Debugging: ask for thought summaries and keep the last calls (purpose, level, thoughts,
   # output, tokens) for GET /api/debug/gemini and /debug/gemini on the goal board (--board-port)
-  include_thoughts: true
+  # Thought summaries cost output tokens on every call: off by default, on with --debug
+  include_thoughts: false
   debug_log_size: 50
   # Resolution of attached screenshots (low / medium / high): lower costs fewer image tokens
   media_resolution: "low"
@@ -302,6 +303,15 @@ minecraft:
     #   candidates: the bridge grounds candidates (solver) and Jev picks one (the baseline)
     #   tools: Gemini calls tools itself; Jev answers watch questions while a tool runs
     control: "candidates"
+    # How small goals are chosen (docs/design/26_steps_and_context.md):
+    #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
+    #        at each boundary. Gemini is asked again after a failure, when the steps run out, when
+    #        Jev is unsure, and every replan_minutes (if the mid goals changed; else 3x as long)
+    #   gemini: Gemini decides every small goal (the previous behaviour, costs more)
+    small_goals: "jev"
+    jev_goal_min_confidence: 0.4
+    replan_minutes: 20
+    goal_record_dir: "logs/goals"  # Jev's choices (options, chosen, confidence, why Gemini)
 
   # Watching a running tool (control: tools). Jev answers all questions in one call per tick.
   watch:

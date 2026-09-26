@@ -266,6 +266,8 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
 | 見張りの記録（`--control tools`） | `logs/watch/*.jsonl` |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
+| 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |
+| Gemini の費用（用途ごとの回数とトークン） | `python tools/gemini_usage.py data/logs/ailoveshen-dev.log`（価格を渡すと円の目安） |
 | 配信のログ | ターミナルと `data/logs/ailoveshen-dev.log`（`APP_ENV=development` のとき。設定の `logging.file`） |
 | ボットの様子 | ブリッジのターミナルの出力 |
 

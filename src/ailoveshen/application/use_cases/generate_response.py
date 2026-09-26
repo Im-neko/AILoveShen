@@ -191,4 +191,3 @@ class GenerateResponseUseCase(IGenerateResponse):
                 continue
             return text, mid_goal
         raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")
-

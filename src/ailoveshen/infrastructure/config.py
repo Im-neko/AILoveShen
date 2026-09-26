@@ -89,7 +89,7 @@ class GeminiSettings:
     # ない用途は main_thinking_level
     thinking_levels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_THINKING_LEVELS))
     # デバッグ: 思考の要約も返させ、直近の呼び出しを目標ボードの /api/debug/gemini に出す
-    include_thoughts: bool = True
+    include_thoughts: bool = False
     debug_log_size: int = 50
     # 画像を添えるときの解像度（low / medium / high。低いほど画像のトークンが少ない）
     media_resolution: str = "low"
@@ -189,6 +189,11 @@ class MinecraftSettings:
     # 行動の決め方（docs/design/21）: candidates（候補から Jev が選ぶ）か
     # tools（Gemini が道具を呼ぶ）
     control: str = "candidates"
+    # 小目標の決め方（docs/design/26）: jev（Gemini が書いた手順から Jev が選ぶ）か gemini（毎回 Gemini）
+    small_goals: str = "jev"
+    jev_goal_min_confidence: float = 0.4
+    replan_minutes: float = 20.0
+    goal_record_dir: str = "logs/goals"
     watch: WatchSettings = field(default_factory=lambda: WatchSettings())
     vision: VisionSettings = field(default_factory=lambda: VisionSettings())
 
@@ -450,7 +455,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 **DEFAULT_THINKING_LEVELS,
                 **dict(gemini_data.get("thinking_levels") or {}),
             },
-            include_thoughts=gemini_data.get("include_thoughts", True),
+            include_thoughts=gemini_data.get("include_thoughts", False),
             debug_log_size=gemini_data.get("debug_log_size", 50),
             media_resolution=gemini_data.get("media_resolution", "low"),
             media_resolutions={
@@ -528,6 +533,12 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 store_path=mission_data.get("store_path", mission_defaults.store_path),
             ),
             control=agent_data.get("control", defaults.control),
+            small_goals=agent_data.get("small_goals", defaults.small_goals),
+            jev_goal_min_confidence=float(
+                agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
+            ),
+            replan_minutes=float(agent_data.get("replan_minutes", defaults.replan_minutes)),
+            goal_record_dir=agent_data.get("goal_record_dir", defaults.goal_record_dir),
             watch=WatchSettings(
                 interval_seconds=watch_data.get(
                     "interval_seconds", watch_defaults.interval_seconds

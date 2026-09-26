@@ -68,6 +68,9 @@ def main(argv: list[str] | None = None) -> int:
         settings.stream.board_port = 0
     if args.no_chat:
         settings.twitch.enabled = False
+    if args.debug:
+        # 思考の要約は毎回の出力のトークンを使う: デバッグのときだけ（/debug/gemini に出る）
+        settings.gemini.include_thoughts = True
     missing = [
         name
         for name, value in (

@@ -97,3 +97,22 @@ class TestJsonMissionStore:
 
         assert saved.site == plan.site
         assert saved.pending[0].prepares_town
+
+
+def test_the_steps_of_a_mid_goal_survive_a_restart(tmp_path):
+    """Gemini が書いた手順（docs/design/26）と、名前付きの建物の条件も残る。"""
+    from ailoveshen.domain.value_objects import PlannedStep
+
+    plan = MidGoalPlan(mission=Mission("街にしていく"))
+    annex = GoalSpec(GoalPredicate.BUILT, name="annex")
+    goal = plan.add("増築", (annex,))
+    steps = (
+        PlannedStep(GoalSpec(GoalPredicate.HAVE, item="log", count=12), "原木"),
+        PlannedStep(annex, "建てる"),
+    )
+    plan.set_steps(goal.id, steps)
+    store = JsonMissionStore(tmp_path / "mission.json")
+    store.save(plan)
+    saved = store.load().pending[0]
+    assert saved.plan_steps == steps
+    assert saved.conditions == (annex,)

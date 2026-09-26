@@ -5,6 +5,7 @@ from __future__ import annotations
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.use_cases.builds import BuildDesigner
+from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
@@ -162,10 +163,23 @@ def create_game_service(
     # control: tools（設計書 21）: Gemini が道具を呼び、Jev が実行中に質問に答える
     fast_judge = None
     tool_watcher = None
-    if minecraft.control == "tools":
+    if minecraft.control == "tools" or (minecraft.small_goals == "jev" and jev.api_key):
         fast_judge = JevFastJudge(
             api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
         )
+    # 小目標は Gemini が書いた手順から Jev が選ぶ（設計書 26）
+    chooser = None
+    if minecraft.small_goals == "jev" and fast_judge is not None:
+        chooser = GoalChooser(
+            judge=fast_judge,
+            bridge=bridge,
+            min_confidence=minecraft.jev_goal_min_confidence,
+            recorder=JsonlWatchRecorder(minecraft.goal_record_dir)
+            if minecraft.goal_record_dir
+            else None,
+        )
+    if minecraft.control == "tools":
+        assert fast_judge is not None
         w = minecraft.watch
         tool_watcher = ToolWatcher(
             bridge=bridge,
@@ -232,6 +246,8 @@ def create_game_service(
         control=minecraft.control,
         tool_watcher=tool_watcher,
         screen=screen,
+        chooser=chooser,
+        replan_minutes=minecraft.replan_minutes,
     )
     return GameService(
         start_play=start,

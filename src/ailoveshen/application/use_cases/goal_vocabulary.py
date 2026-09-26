@@ -21,6 +21,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     NoteKind,
+    PlannedStep,
     TownDefinition,
     TownSite,
     TownStage,
@@ -32,6 +33,7 @@ MAX_EXPLORE_DISTANCE = 128
 MAX_DIG_DEPTH = 64  # minecraft-bridge/src/goals.mjs と同じ
 MAX_CONDITIONS = 3
 MAX_PLAN_CHANGES = 3
+MAX_STEPS = 6  # 中目標のための手順の数（docs/design/26）
 MAX_NOTE_CHANGES = 3
 ITEM_DESCRIPTION = (
     "have / stored / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
@@ -125,6 +127,8 @@ class GoalDecision:
     reason: str
     serves: Serves
     changes: tuple[PlanChange, ...] = ()
+    # 一番上の中目標のための手順（書き直すときだけ。空: 今の手順のまま）。docs/design/26
+    steps: tuple[PlannedStep, ...] = ()
 
 
 def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
@@ -254,6 +258,21 @@ def goal_schema(
                 "edits; survival: to stay alive (the night, home, the door, food)",
             },
             "reason": {"type": "string", "description": "Why this goal now, in one short sentence"},
+            "steps": {
+                "type": "array",
+                "maxItems": MAX_STEPS,
+                "description": "The steps (small goals, in order) to reach the mid goal at the top "
+                "of the list after the edits. Write them when it has no steps yet or they are not "
+                "working; otherwise leave empty (the fast model picks the next step itself)",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        **_spec_properties(_CONDITION_ORDER),
+                        "reason": {"type": "string", "description": "Why this step, one sentence"},
+                    },
+                    "required": ["predicate", "reason"],
+                },
+            },
         },
         "required": ["predicate", "serves", "reason"],
     }
@@ -388,11 +407,18 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
                 position=int(position) - 1 if position is not None else None,
             )
         )
+    steps = []
+    for i, raw in enumerate(data.get("steps") or []):
+        try:
+            steps.append(PlannedStep(parse_spec(raw), str(raw.get("reason", "")).strip()))
+        except ValueError as e:
+            raise ValueError(f"step {i + 1}: {e}") from e
     return GoalDecision(
         spec=parse_spec(data),
         reason=str(data.get("reason", "")),
         serves=serves,
         changes=tuple(changes),
+        steps=tuple(steps[:MAX_STEPS]),
     )
 
 

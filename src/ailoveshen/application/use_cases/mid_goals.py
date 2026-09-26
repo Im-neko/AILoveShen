@@ -26,7 +26,13 @@ from ailoveshen.domain.events import (
     TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError
-from ailoveshen.domain.value_objects import BuildDesign, GoalPredicate, GoalSpec, MidGoal
+from ailoveshen.domain.value_objects import (
+    BuildDesign,
+    GoalPredicate,
+    GoalSpec,
+    MidGoal,
+    PlannedStep,
+)
 
 MAX_STAGE_DESIGN_TRIES = 2
 
@@ -287,6 +293,14 @@ class MidGoalKeeper:
                 await self._builder.design(name, brief, max_blocks)
         totals = {str(b["name"]): int(b.get("total", 0)) for b in await self._bridge.builds()}
         return sum(totals.get(name, 0) for name in names)
+
+    async def set_steps(
+        self, plan: MidGoalPlan, mid_goal_id: str, steps: tuple[PlannedStep, ...]
+    ) -> None:
+        """中目標の手順（Gemini が書いた小目標の並び）を置き換えて保存する（docs/design/26）。"""
+        goal = plan.set_steps(mid_goal_id, steps)
+        logger.info(f"中目標 {goal.id} の手順: " + " → ".join(s.spec.describe() for s in steps))
+        self._store.save(plan)
 
     async def step_counted(self, plan: MidGoalPlan, goal: MidGoal | None) -> None:
         """ステップを数えたあとにプランを保存する。予算を超えて断念した中目標があれば伝える。"""

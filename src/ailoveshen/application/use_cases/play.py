@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Optional
 
@@ -16,6 +18,7 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import (
     GoalDecision,
     Serves,
@@ -230,6 +233,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         control: str = "candidates",
         tool_watcher: Optional[ToolWatcher] = None,
         screen: Optional[ScreenReviewer] = None,
+        chooser: Optional[GoalChooser] = None,
+        replan_minutes: float = 20.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -252,6 +258,11 @@ class AdvancePlayUseCase(IAdvancePlay):
             tool_watcher: "tools" のとき、道具を実行して見張るもの
             screen: 配信の画面を見せるもの（docs/design/23）。定期の見直し、失敗の後の考え直しに
                 画像を添える、道具モードの look_screen。None なら画面は見せない
+            chooser: 小目標を、Gemini が書いた手順の中から Jev に選ばせる（docs/design/26）。
+                None なら毎回 Gemini が決める（今までどおり）
+            replan_minutes: 手順があっても Gemini に見直させる間隔（中目標リストが変わって
+                いなければ、その 3 倍まで待つ）
+            clock: 時計（テストで差し替える）
 
         Raises:
             ValueError: control が不明か、"tools" なのに tool_watcher がないとき
@@ -275,6 +286,11 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._watcher = tool_watcher
         self._screen = screen
         self._recent_tools: deque[ToolOutcome] = deque(maxlen=RECENT_TOOLS)
+        self._chooser = chooser
+        self._replan_seconds = replan_minutes * 60
+        self._clock = clock
+        self._last_gemini_at: float | None = None
+        self._last_plan: tuple[str, ...] = ()  # 前の Gemini の決定のときの中目標の並び
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""
@@ -434,7 +450,49 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 目標が終わる前の見え方: その状態が、終わる理由だ
         activity = session.activity()
         await self._end_goal(session, obs, reason)
+        why = self._needs_gemini(session, reason)
+        if why is None:
+            assert self._chooser is not None
+            picked = await self._chooser.choose(session, obs, reason)
+            if isinstance(picked, ChosenGoal):
+                try:
+                    status = await self._bridge.set_goal(picked.spec, _kept(session.plan))
+                except GoalRejectedError as e:
+                    why = f"the bridge rejected {picked.spec.describe()}: {e}"
+                else:
+                    goal = Goal(
+                        spec=picked.spec, reason=picked.reason, mid_goal_id=picked.mid_goal_id
+                    )
+                    logger.info(
+                        f"小目標は Jev が選んだ（確信度 {picked.confidence:.2f}）: "
+                        f"{picked.spec.describe()}"
+                    )
+                    await self._start_goal(session, obs, goal, reason, status)
+                    return
+            else:
+                why = picked.why
+        logger.info(f"小目標は Gemini が決める: {why}")
         await self._decide_goal(session, obs, activity, reason)
+        self._last_gemini_at = self._clock()
+        self._last_plan = tuple(g.id for g in session.plan.pending)
+
+    def _needs_gemini(self, session: PlaySession, reason: str) -> str | None:
+        """小目標を Gemini に決めさせる理由（None なら Jev が選ぶ）。docs/design/26 §2。"""
+        if self._chooser is None:
+            return "small goals are decided by Gemini (minecraft.agent.small_goals: gemini)"
+        if any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: ")):
+            return f"the last goal did not work out ({reason})"
+        current = session.plan.current
+        if current is None:
+            return "there is no mid goal"
+        if not current.plan_steps:
+            return f"the mid goal {current.title} has no steps yet"
+        if self._last_gemini_at is not None:
+            elapsed = self._clock() - self._last_gemini_at
+            changed = tuple(g.id for g in session.plan.pending) != self._last_plan
+            if elapsed >= self._replan_seconds and (changed or elapsed >= 3 * self._replan_seconds):
+                return f"periodic re-planning ({elapsed / 60:.0f} minutes)"
+        return None
 
     async def _end_goal(self, session: PlaySession, obs: GameObservation, reason: str) -> None:
         met = obs.goal is not None and obs.goal.met
@@ -501,11 +559,23 @@ class AdvancePlayUseCase(IAdvancePlay):
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
                 _serving(decision, preview)
+                if (
+                    self._chooser is not None
+                    and preview.current is not None
+                    and not preview.current.plan_steps
+                    and not decision.steps
+                ):
+                    # 手順がないと、次の切れ目でまた Gemini を呼ぶことになる（docs/design/26）
+                    raise ValueError(
+                        f"write the steps for the mid goal at the top ({preview.current.title})"
+                    )
             except (ValueError, GoalRejectedError) as e:
                 error = str(e)
                 logger.warning(f"目標の決定 {attempt} を差し戻した: {data!r}: {error}")
                 continue
             await self._mid_goals.commit(plan, decision.changes)
+            if decision.steps and plan.current is not None:
+                await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
             self._write_notes(session.notebook, data, obs.day, goals, viewers)
             await self._start_goal(session, obs, _goal(decision, plan), reason, status)
             return

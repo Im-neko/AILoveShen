@@ -865,3 +865,154 @@ class TestAdvancePlay:
         assert "over the budget" in dropped.reason
         assert "served has ended" in session.goal_end_reason(bridge.observe.return_value)
         store.save.assert_called_with(plan)
+
+
+LOG = GoalSpec(GoalPredicate.HAVE, item="log", count=12)
+STEPS_DECISION = {
+    **PLANKS,
+    "steps": [
+        {"predicate": "have", "item": "log", "count": 12, "reason": "原木を集める"},
+        {"predicate": "have", "item": "planks", "count": 4, "reason": "板材にする"},
+        {"predicate": "built", "reason": "家を建てる"},
+    ],
+}
+
+
+class FakeJev:
+    """IFastJudge の代わり: 決めた選択肢（A, B, ...）を決めた確信度で返す。"""
+
+    def __init__(self, choice="A", confidence=0.9):
+        self.choice, self.confidence = choice, confidence
+        self.asked = []
+
+    async def ask(self, state, questions):
+        from ailoveshen.domain.value_objects import FastAnswer, FastVerdict
+
+        self.asked.append((state, questions))
+        return FastVerdict({"next_goal": FastAnswer("next_goal", self.choice, self.confidence)}, 5)
+
+    async def close(self):
+        pass
+
+
+class TestStepsChosenByJev:
+    """小目標は Gemini が書いた手順から Jev が選ぶ（docs/design/26）。"""
+
+    @pytest.fixture
+    def make(self, bridge, text_generator, prompt_builder, selector, events, mid_goals):
+        from ailoveshen.application.use_cases.goal_chooser import GoalChooser
+
+        def make(jev=None, clock=lambda: 0.0):
+            notes_store = Mock()
+            notes_store.load.return_value = None
+            chooser = GoalChooser(jev or FakeJev(), bridge) if jev is not False else None
+            return AdvancePlayUseCase(
+                bridge=bridge,
+                text_generator=text_generator,
+                prompt_builder=prompt_builder,
+                action_selector=selector,
+                event_publisher=events,
+                conversation=Conversation(),
+                mid_goals=mid_goals,
+                town=AsyncMock(),
+                notes=NoteKeeper(notes_store),
+                chooser=chooser,
+                clock=clock,
+            )
+
+        return make
+
+    @pytest.mark.asyncio
+    async def test_gemini_writes_the_steps_once_then_jev_picks_the_next(
+        self, make, text_generator, bridge
+    ):
+        text_generator.generate_json.return_value = STEPS_DECISION
+        use_case = make(FakeJev("B"))
+        session = _session()
+
+        await use_case.execute(session)  # 手順がない: Gemini が書く
+        assert [s.spec for s in session.plan.current.plan_steps] == [LOG, HAVE_PLANKS, BUILT]
+        assert text_generator.generate_json.await_count == 1
+
+        bridge.observe.return_value = _obs(met=True)  # 小目標が済んだ → Jev
+        bridge.check.side_effect = _judged({LOG})  # 原木は済んでいる
+        await use_case.execute(session)
+        assert text_generator.generate_json.await_count == 1  # Gemini は呼ばない
+        # 済んだ手順は出さない: A=板材、B=建てる
+        assert session.goal.spec == BUILT
+        assert session.goal.mid_goal_id == "m1"
+        assert session.goal.reason == "家を建てる"
+
+    @pytest.mark.asyncio
+    async def test_gemini_must_write_steps_when_the_top_has_none(
+        self, make, text_generator, prompt_builder
+    ):
+        text_generator.generate_json.side_effect = [PLANKS, STEPS_DECISION]
+        await make().execute(_session())
+        error = prompt_builder.build_goal_prompt.call_args.kwargs["previous_error"]
+        assert "write the steps" in error
+
+    @pytest.mark.asyncio
+    async def test_failure_low_confidence_and_used_up_steps_go_to_gemini(
+        self, make, text_generator, bridge
+    ):
+        text_generator.generate_json.return_value = STEPS_DECISION
+        session = _session()
+        use_case = make(FakeJev("A", confidence=0.1))
+        await use_case.execute(session)
+        bridge.observe.return_value = _obs(met=True)
+        await use_case.execute(session)  # 自信がない → Gemini
+        assert text_generator.generate_json.await_count == 2
+
+        confident = make(FakeJev("A"))
+        bridge.check.side_effect = _judged({LOG, HAVE_PLANKS, BUILT})  # 手順は全部済んだ
+        await confident.execute(session)
+        assert text_generator.generate_json.await_count == 3
+
+    def test_which_boundaries_go_to_gemini(self, make):
+        from ailoveshen.domain.value_objects import PlannedStep
+
+        session = _session()
+        assert "no steps yet" in make()._needs_gemini(session, "goal have(log, 12) is met")
+        session.plan.set_steps("m1", (PlannedStep(LOG, "原木"),))
+        assert make()._needs_gemini(session, "goal have(log, 12) is met") is None
+        assert make()._needs_gemini(session, "the time of day changed from day to dusk") is None
+        assert "did not work out" in make()._needs_gemini(session, "goal x is stuck (actions)")
+        assert "did not work out" in make()._needs_gemini(session, "goal x is reconsidered: y")
+        assert "decided by Gemini" in make(jev=False)._needs_gemini(session, "goal x is met")
+        # 定期の見直し: 中目標が変わっていなければ 3 倍まで待つ
+        now = [0.0]
+        use_case = make(clock=lambda: now[0])
+        use_case._last_gemini_at = 0.0
+        use_case._last_plan = tuple(g.id for g in session.plan.pending)
+        now[0] = 21 * 60
+        assert use_case._needs_gemini(session, "goal x is met") is None
+        now[0] = 61 * 60
+        assert "periodic" in use_case._needs_gemini(session, "goal x is met")
+        use_case._last_plan = ()
+        now[0] = 21 * 60
+        assert "periodic" in use_case._needs_gemini(session, "goal x is met")
+
+    @pytest.mark.asyncio
+    async def test_at_night_the_survival_goal_serves_no_mid_goal(
+        self, make, text_generator, bridge
+    ):
+        from ailoveshen.application.use_cases.goal_chooser import GoalChooser
+
+        text_generator.generate_json.return_value = STEPS_DECISION
+        session = _session()
+        await make().execute(session)
+        night = _obs(met=True, time_phase="night", has_home=True, inside_home=True)
+        chooser = GoalChooser(FakeJev("D"), bridge)  # A 原木 B 板材 C 建てる D 夜を越す
+        picked = await chooser.choose(session, night, "goal x is met")
+        assert picked.spec == GoalSpec(GoalPredicate.THROUGH_NIGHT)
+        assert picked.mid_goal_id is None
+
+
+def test_steps_must_be_conditions_the_world_can_judge():
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_decision
+
+    decision = parse_decision(STEPS_DECISION)
+    assert [s.reason for s in decision.steps] == ["原木を集める", "板材にする", "家を建てる"]
+    with pytest.raises(ValueError, match="step 1: explored cannot be a step"):
+        parse_decision({**PLANKS, "steps": [{"predicate": "explored", "distance": 30}]})

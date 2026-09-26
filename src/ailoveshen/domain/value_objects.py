@@ -541,6 +541,8 @@ class MidGoal:
     prepares_town: bool = False
     # 視聴者の頼みのステップの予算（None: プランの既定。建物は大きさに合わせて広げる）
     budget: Optional[int] = None
+    # Gemini が書いた、この中目標のための手順（小目標の並び）。Jev が次を選ぶ（docs/design/26）
+    plan_steps: tuple["PlannedStep", ...] = ()
 
     def __post_init__(self) -> None:
         """条件を確かめる。"""
@@ -724,6 +726,27 @@ class HouseBlueprint:
         for b in self.blocks():
             counts[b.kind] = counts.get(b.kind, 0) + 1
         return counts
+
+
+@dataclass(frozen=True)
+class PlannedStep:
+    """
+    中目標のための手順の 1 つ: 小目標の条件と、なぜそれか（ゴールボードと実況が使う）。
+    条件は世界から判定できるもの（`/check` で済んだかを見る）。
+
+    Raises:
+        ValueError: 世界から判定できない条件のとき。
+    """
+
+    spec: GoalSpec
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.spec.predicate not in PLANNABLE_CONDITIONS:
+            raise ValueError(
+                f"{self.spec.predicate.value} cannot be a step (steps must be conditions the "
+                "world can judge: have, stored, built, placed, lit)"
+            )
 
 
 class ShapeKind(str, Enum):

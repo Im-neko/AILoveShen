@@ -17,6 +17,7 @@ from ailoveshen.domain.value_objects import (
     MidGoal,
     MidGoalState,
     Mission,
+    PlannedStep,
     TownDefinition,
     TownSite,
     TownStage,
@@ -87,6 +88,7 @@ def _to_dict(goal: MidGoal) -> dict[str, Any]:
         "ended_because": goal.ended_because,
         "steps": goal.steps,
         "budget": goal.budget,
+        "plan_steps": [{"spec": s.spec.to_dict(), "reason": s.reason} for s in goal.plan_steps],
         "progress": list(goal.progress),
         "stage": goal.stage,
         "prepares_town": goal.prepares_town,
@@ -145,6 +147,9 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
         ended_because=data.get("ended_because", ""),
         steps=int(data.get("steps", 0)),
         budget=int(data["budget"]) if data.get("budget") else None,
+        plan_steps=tuple(
+            PlannedStep(_spec(s["spec"]), s.get("reason", "")) for s in data.get("plan_steps", [])
+        ),
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),
         prepares_town=bool(data.get("prepares_town", False)),

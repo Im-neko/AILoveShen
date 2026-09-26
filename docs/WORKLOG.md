@@ -7,6 +7,20 @@
 
 ## Completed Work
 
+### 小目標は Jev が選び、Gemini は手順を書く（設計書 26 §2） (2026-09-26)
+
+**Commit**: 次のコミット
+
+- ユーザー「小目標の決定を Jev に任せられないか。中目標と必要な行動と持ち物を渡して次を選ばせ、完了したら再設定」「材料は Gemini が渡しているのではないんだ（ソルバーだった）」「画面の見直しは詰まったときだけ」「小目標ごとの実況は数分に 1 回なのでそのまま」「設計書を書いてから実装して」
+- 設計書 26（前半: 手順と Jev、後半: キャッシュと入力の削減）。見直しで決めたこと: 手順は世界で判定できる条件だけ、ステップの上限・時間帯の変化は Jev（進んではいる）、失敗・考え直しは Gemini、定期の見直しは中目標リストが変わっていなければ 3 倍まで待つ、身を守る小目標は中目標に数えない、小目標の理由は手順を書いたときの 1 文になる
+- `PlannedStep` と `MidGoal.plan_steps`（保存）、`MidGoalPlan.set_steps`、`MidGoalKeeper.set_steps`。目標の決定の出力に `steps`（have/stored/built/placed/lit だけ）、Jev を使う設定で一番上に手順がなく書かなければ差し戻す
+- `GoalChooser`（application）: 済んでいない手順（`/check`）と身を守る小目標（夜 through_night、夕方 at_home、空腹 have(food, 4)）を候補に Jev の Choice。候補 1 つなら Jev を呼ばない。確信度 0.4 未満・答えなし・手順が尽きた・判定できないは理由を返して Gemini へ。`logs/goals/*.jsonl` に記録
+- `AdvancePlay._needs_gemini`（理由をログに出す）: 設定が gemini、失敗（stuck/stalled/reconsidered）、中目標がない、手順がない、定期の見直し
+- 設定 `minecraft.agent.small_goals: jev`（gemini で今までどおり）、`jev_goal_min_confidence`、`replan_minutes`、`goal_record_dir`。Jev のクライアントは見張りと共有
+- 費用のつまみ: `include_thoughts` を既定 false（`--debug` で true）。定期の画面の見直しは `4e3b2a3` で既定オフ
+- テスト 7 件（pytest 566）。未確認: 実機での Gemini の回数（`tools/gemini_usage.py` で前後比較）、Jev の選び方（`logs/goals`）
+- 次: 26 §4（キャッシュと入力の削減）
+
 ### Gemini の費用を用途ごとに測る (2026-09-26)
 
 - ユーザー「1 サイクルどのくらいで終わり、何回 API を呼ぶか。昨日 2 時間で Gemini だけで 1,500 円くらいかかった。見直したい」

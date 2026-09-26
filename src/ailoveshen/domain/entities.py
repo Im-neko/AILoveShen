@@ -28,6 +28,7 @@ from ailoveshen.domain.value_objects import (
     Mission,
     Note,
     NoteKind,
+    PlannedStep,
     ScreenNote,
     TownDefinition,
     TownSite,
@@ -382,6 +383,11 @@ class MidGoalPlan(Entity):
             self._stage_met += tuple(c for c in done.conditions if c not in self._stage_met)
             self.settle_stage()
         return done
+
+    def set_steps(self, mid_goal_id: str, steps: tuple[PlannedStep, ...]) -> MidGoal:
+        """中目標の手順を置き換える（Gemini が書いた小目標の並び。docs/design/26）。"""
+        goal = self._require(mid_goal_id)
+        return self._replace(goal, replace(goal, plan_steps=steps))
 
     def judged(self, mid_goal_id: str, progress: tuple[str, ...]) -> None:
         """中目標の条件の進み具合を保つ。"""
