@@ -105,6 +105,7 @@ class GeminiTextGenerator(ITextGenerator):
                     f"got {resolution!r} for {purpose!r}"
                 )
         self._media_resolutions = {p: resolutions[r] for p, r in by_purpose.items()}
+        self._no_resolution: set[str] = set()  # 解像度の指定で 400 になった用途（以後つけない）
         self._generation_log = generation_log
 
         self._model = model
@@ -302,6 +303,7 @@ class GeminiTextGenerator(ITextGenerator):
         config: types.GenerateContentConfig,
         purpose: Optional[str],
         images: Sequence[Screenshot] = (),
+        with_resolution: bool = True,
     ) -> types.GenerateContentResponse:
         """レート制限、使用量のログ、呼び出しの記録つきで API を呼ぶ。画像はテキストの後。"""
         await self._wait_for_rate_limit()
@@ -312,10 +314,11 @@ class GeminiTextGenerator(ITextGenerator):
                 types.Part.from_text(text=prompt),
                 *[types.Part.from_bytes(data=i.data, mime_type=i.mime_type) for i in images],
             ]
-            resolution = self._media_resolutions.get(
-                purpose or "default", self._media_resolutions["default"]
-            )
-            config = config.model_copy(update={"media_resolution": resolution})
+            if with_resolution and (purpose or "default") not in self._no_resolution:
+                resolution = self._media_resolutions.get(
+                    purpose or "default", self._media_resolutions["default"]
+                )
+                config = config.model_copy(update={"media_resolution": resolution})
         started = time.monotonic()
         try:
             response = await self._client.aio.models.generate_content(
@@ -330,9 +333,14 @@ class GeminiTextGenerator(ITextGenerator):
             level = str(getattr(level, "value", level) or "").lower()
             if e.code == 400:
                 # 400 は理由を言わない（Request contains an invalid argument）: 何を送ったかを残す
+                shown = ", ".join(
+                    f"{i.mime_type} {len(i.data)}B {i.data[:8].hex()}" for i in images
+                )
                 logger.warning(
                     f"Gemini が 400 を返した: purpose={purpose} thinking={level or '-'} "
-                    f"images={len(images)} json_schema={config.response_json_schema is not None} "
+                    f"images={len(images)}{f' [{shown}]' if images else ''} "
+                    f"media_resolution={getattr(config.media_resolution, 'value', config.media_resolution)} "
+                    f"json_schema={config.response_json_schema is not None} "
                     f"tools={bool(config.tools)} prompt={len(prompt)} 字"
                 )
                 if level == "high":
@@ -344,7 +352,25 @@ class GeminiTextGenerator(ITextGenerator):
                         config.model_copy(update={"thinking_config": self._thinking("medium")}),
                         purpose,
                         images,
+                        with_resolution,
                     )
+                if images and config.media_resolution is not None:
+                    # 画像の解像度の指定を受けないことがある（2026-09-27: 地図つきの建物の設計が
+                    # いつも 400）。外して 1 回やり直し、通ればこの用途では以後外す
+                    logger.warning(f"画像つきの 400: media_resolution を外してやり直す（purpose={purpose}）")
+                    response = await self._request(
+                        prompt,
+                        config.model_copy(update={"media_resolution": None}),
+                        purpose,
+                        images,
+                        with_resolution=False,
+                    )
+                    self._no_resolution.add(purpose or "default")
+                    logger.warning(
+                        f"media_resolution を外すと通った: purpose={purpose} では以後外す"
+                        "（gemini.media_resolutions からこの用途を消してよい）"
+                    )
+                    return response
             raise error from e
         except Exception as e:
             error = TextGenerationError(f"Gemini request failed: {e}")

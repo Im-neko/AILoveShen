@@ -60,6 +60,7 @@ from ailoveshen.domain.events import (
 )
 from ailoveshen.domain.exceptions import (
     AILoveShenError,
+    BuildNotDesignedError,
     GameBridgeError,
     GoalRejectedError,
     TextGenerationError,
@@ -789,7 +790,14 @@ class AdvancePlayUseCase(IAdvancePlay):
                     )
                 if failed_goal is not None:
                     _check_remedy(decision, failed_goal, same_failures)
-                await self._mid_goals.check_new(decision.changes)
+                try:
+                    await self._mid_goals.check_new(decision.changes)
+                except BuildNotDesignedError as e:
+                    # 建物を設計できなくても、決定の残り（空腹なら食べる、など）は通す: その建物の
+                    # 中目標と手順だけ落とす（2026-09-27: 餓死寸前に決定ごと差し戻していた）
+                    logger.warning(f"建物 {e.name} を設計できないので、その中目標は足さない: {e}")
+                    decision = _without_build(decision, e.name)
+                    await self._mid_goals.check_new(decision.changes)
                 _serving(decision, self._mid_goals.rehearse(plan, decision.changes))
                 rehearsed = self._mid_goals.rehearse(plan, decision.changes)
                 status = await self._bridge.set_goal(
@@ -982,6 +990,21 @@ def _same_failures(session: PlaySession) -> int:
             break
         n += 1
     return n
+
+
+def _without_build(decision: GoalDecision, name: str) -> GoalDecision:
+    """その建物（built(name)）を条件に持つ中目標の追加と、それを建てる手順を除いた決定。"""
+
+    def builds_it(spec: GoalSpec) -> bool:
+        return spec.predicate == GoalPredicate.BUILT and spec.name == name
+
+    changes = tuple(
+        c
+        for c in decision.changes
+        if c.proposal is None or not any(builds_it(s) for s in c.proposal.conditions)
+    )
+    steps = tuple(s for s in decision.steps if not builds_it(s.spec))
+    return replace(decision, changes=changes, steps=steps)
 
 
 def _failures_in_a_row(session: PlaySession) -> int:

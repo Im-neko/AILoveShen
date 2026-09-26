@@ -17,7 +17,12 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.ports.output.map_renderer import IMapRenderer
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
+from ailoveshen.domain.exceptions import (
+    BuildNotDesignedError,
+    GameBridgeError,
+    GoalRejectedError,
+    TextGenerationError,
+)
 from ailoveshen.domain.value_objects import (
     BlockKind,
     BuildAnchor,
@@ -195,6 +200,11 @@ class BuildDesigner:
             except TextGenerationError as e:
                 error = str(e)
                 logger.warning(f"建物 {name} の設計を生成できなかった（試行 {attempt}）: {e}")
+                if images:
+                    # 地図の画像つきで Gemini が断る（400）ことがあった: 次からは地図なしで設計させる
+                    # （置き場所は家の横か近く。2026-09-27）
+                    logger.warning(f"建物 {name} は地図なしで設計し直す")
+                    images, map_data = (), None
                 continue
             width, height, depth = design.size()
             logger.info(
@@ -202,8 +212,9 @@ class BuildDesigner:
                 f"（{len(design.blocks())} ブロック、{design.anchor.value}）- {design.purpose}"
             )
             return design
-        raise GoalRejectedError(
-            f"could not design the build {name} after {self._max_attempts} attempts: {error}"
+        raise BuildNotDesignedError(
+            f"could not design the build {name} after {self._max_attempts} attempts: {error}",
+            name=name,
         )
 
     async def _map(self) -> tuple[dict[str, Any] | None, tuple[Screenshot, ...]]:

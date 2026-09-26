@@ -306,3 +306,64 @@ async def test_without_a_map_the_map_anchor_is_sent_back():
     design = await designer.design("annex", "x")
     assert design.anchor == BuildAnchor.HOME_EAST
     assert "no map" in prompts.build_build_design_prompt.call_args.kwargs["previous_error"]
+
+
+@pytest.mark.asyncio
+async def test_when_gemini_refuses_the_map_the_build_is_designed_without_it():
+    """地図つきで Gemini が 400（2026-09-27）: 次の試行から地図なしで設計する。"""
+    from ailoveshen.domain.exceptions import TextGenerationError
+    from ailoveshen.domain.value_objects import Screenshot
+
+    designer, generator, prompts, bridge = _designer(
+        [TextGenerationError("Gemini API error 400: invalid"), ANNEX]
+    )
+    bridge.map.return_value = MAP
+    renderer = Mock()
+    renderer.render.return_value = Screenshot(b"PNG", "image/png")
+    designer._renderer = renderer
+    design = await designer.design("annex", "x")
+    assert design.anchor == BuildAnchor.HOME_EAST
+    assert generator.generate_json.call_args_list[0].kwargs["images"] != ()
+    assert generator.generate_json.call_args_list[1].kwargs["images"] == ()
+    assert prompts.build_build_design_prompt.call_args.kwargs["map_shown"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_build_that_cannot_be_designed_names_itself():
+    from ailoveshen.domain.exceptions import BuildNotDesignedError, TextGenerationError
+
+    designer, *_ = _designer([TextGenerationError("400")] * 3)
+    with pytest.raises(BuildNotDesignedError) as e:
+        await designer.design("storehouse", "x")
+    assert e.value.name == "storehouse"
+
+
+def test_the_decision_without_the_build_keeps_the_rest():
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_decision
+    from ailoveshen.application.use_cases.play import _without_build
+
+    decision = parse_decision(
+        {
+            "predicate": "have",
+            "item": "food",
+            "count": 2,
+            "serves": "survival",
+            "reason": "満腹度 0",
+            "review": "r",
+            "plan_changes": [
+                {
+                    "op": "add",
+                    "title": "資材保管庫を建てる",
+                    "conditions": [{"predicate": "built", "name": "storehouse"}],
+                    "reason": "街の第 2 段階",
+                }
+            ],
+            "steps": [
+                {"predicate": "have", "item": "cobblestone", "count": 30, "reason": "丸石"},
+                {"predicate": "built", "name": "storehouse", "reason": "建てる"},
+            ],
+        }
+    )
+    kept = _without_build(decision, "storehouse")
+    assert kept.changes == () and [s.spec.predicate.value for s in kept.steps] == ["have"]
+    assert kept.spec == decision.spec  # 食べる小目標はそのまま

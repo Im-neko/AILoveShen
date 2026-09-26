@@ -57,6 +57,14 @@ class GoalRejectedError(GameBridgeError):
     pass
 
 
+class BuildNotDesignedError(GoalRejectedError):
+    """名前付きの建物の設計ができなかった（Gemini が答えない・使える設計が出ない）。`name` はその建物。"""
+
+    def __init__(self, message: str, name: str = "") -> None:
+        super().__init__(message)
+        self.name = name
+
+
 class ActionSelectionError(AILoveShenError):
     """行動選択器（Jev）が決められなかったときに送出する。"""
 

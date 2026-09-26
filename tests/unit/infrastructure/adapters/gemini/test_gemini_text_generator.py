@@ -170,6 +170,40 @@ class TestGeminiTextGeneratorGenerate:
         )
 
     @pytest.mark.asyncio
+    async def test_an_image_400_is_retried_without_media_resolution_and_remembered(
+        self, mock_client
+    ):
+        """地図つきの建物の設計がいつも 400（2026-09-27）: 解像度の指定を外して 1 回やり直す。"""
+        from ailoveshen.domain.value_objects import Screenshot
+
+        client = mock_client.return_value
+        bad = errors.ClientError(
+            400, {"error": {"code": 400, "message": "invalid", "status": "INVALID_ARGUMENT"}}
+        )
+        client.aio.models.generate_content.side_effect = [
+            bad,
+            _response('{"ok": true}'),
+            _response('{"ok": 2}'),
+        ]
+        generator = _generator(
+            thinking_levels={"build_design": "medium"}, media_resolutions={"build_design": "medium"}
+        )
+        image = Screenshot(data=b"\x89PNG\r\n\x1a\nxxxx", mime_type="image/png", width=64)
+
+        data = await generator.generate_json(
+            "p", {"type": "object"}, purpose="build_design", images=(image,)
+        )
+        again = await generator.generate_json(
+            "p", {"type": "object"}, purpose="build_design", images=(image,)
+        )
+
+        assert data == {"ok": True} and again == {"ok": 2}
+        configs = [c.kwargs["config"] for c in client.aio.models.generate_content.call_args_list]
+        assert configs[0].media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
+        assert configs[1].media_resolution is None
+        assert configs[2].media_resolution is None  # 以後この用途では外す
+
+    @pytest.mark.asyncio
     async def test_a_json_output_cut_at_the_limit_is_retried_with_twice_the_limit(
         self, mock_client
     ):

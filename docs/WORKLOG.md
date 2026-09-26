@@ -2,10 +2,21 @@
 
 **Active Phase**: 設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-26
-**Test Status**: `pytest tests/` 694 passed, 2 skipped。ブリッジ `npm test` 194 件
+**Test Status**: `pytest tests/` 698 passed, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 建物の設計がいつも 400、そのせいで空腹の決定まで差し戻された (2026-09-27)
+
+**Commit**: (this commit)
+
+- ユーザーのログ: `build_design`（地図の画像つき、thinking high → medium）が毎回 400「Request contains an invalid argument」→ 3 回とも設計できず、`storehouse` の中目標の追加だけでなく、満腹度 0 で食料を取る決定ごと差し戻された
+- 原因はまだ確かめられていない（この環境に API キーがない）。画像つきの用途は build_design だけが `media_resolution: medium`（ほかは low）。候補: 解像度の指定、地図の画像、スキーマ
+- `GeminiTextGenerator`: 400 のログに画像の種類・大きさ・先頭 8 バイトと media_resolution を出す。画像つきの 400 は media_resolution を外して 1 回やり直し、通ればその用途では以後外す（ログに「media_resolution を外すと通った」）
+- `BuildDesigner`: 画像つきで生成できなかったら、次の試行から地図なしで設計する（置き場所は家の横か近く）。3 回だめなら `BuildNotDesignedError(name)`
+- 目標の決定: 建物を設計できなければ、その建物の中目標の追加と手順だけ落とし、残り（食べるなど）は通す（`_without_build`）
+- テスト 4 件。pytest 698。原因の切り分けはユーザーの環境のログで（地図なしで通るか、解像度を外して通るか）
 
 ### 行動の記録から行き詰まりを Jev が定期的に確かめる (2026-09-26)
 
