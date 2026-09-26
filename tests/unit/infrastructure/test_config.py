@@ -473,3 +473,21 @@ def test_config_dict_merges_the_env_file_and_expands_variables(tmp_path, monkeyp
     assert tts == {"voice": {"model_name": "yui"}, "server": {"port": 5002}}
     monkeypatch.setattr(os, "environ", {})
     assert load_config_dict(tmp_path)["tts"]["voice"]["model_name"] == "shen"
+
+
+def test_an_empty_value_with_a_comment_after_it_is_empty(tmp_path, monkeypatch):
+    """`KEY=   # 説明` は空（コメントを値にしない。2026-09-26: モデル名がコメントになった）。"""
+    from ailoveshen.infrastructure.config import load_env_file
+
+    (tmp_path / ".env").write_text(
+        "LOCAL_LLM_MODEL=                         # 空なら最初のモデル\n"
+        "LOCAL_LLM_URL=http://h:1919/v1   # FreeToken\n"
+        "TOKEN=abc#def\n"
+    )
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    for name in ("LOCAL_LLM_MODEL", "LOCAL_LLM_URL", "TOKEN"):
+        os.environ.pop(name, None)
+    load_env_file(tmp_path / ".env")
+    assert os.environ["LOCAL_LLM_MODEL"] == ""
+    assert os.environ["LOCAL_LLM_URL"] == "http://h:1919/v1"
+    assert os.environ["TOKEN"] == "abc#def"

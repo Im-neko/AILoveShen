@@ -17,6 +17,8 @@
 - 設定 `llm.local.*`・`llm.routes`・`llm.fallback`（`LOCAL_LLM`、`LOCAL_LLM_URL`、`LOCAL_LLM_MODEL`）、`config.py` の `LlmSettings`・`_truthy`
 - `tools/llm_probe.py`（スキーマで縛るか、道具、最初のトークンまで、読み込み・出力の速さ、先頭のキャッシュが別の先頭を挟んで残るか）、`tools/gemini_usage.py` は `local:<用途>` を分ける。Gemini のデバッグの記録に `model`
 - テスト: `tests/unit/infrastructure/adapters/test_local_llm.py`
+- ユーザーの FreeToken（192.168.1.43:1919、Qwen3.6）での `llm_probe` の結果（2026-09-26）: `response_format` は 400「no constrained decoding」（→ プロンプトのスキーマと確かめで動く）、道具は呼べた（日本語の intent つき）。約 1.2 万トークンの初回は最初のトークンまで 4.6 秒（読み込み約 2,500 t/s）、同じ先頭の 2 回目 0.9 秒、別の先頭を挟んだ 3 回目も 0.8 秒（先頭のキャッシュを複数持てる）、出力約 70 t/s。Ollama に替える理由は今のところない
+- `.env` の `KEY=   # 説明`（値が空でコメントだけ）がコメントを値にしていた（モデル名が「# 空なら…」になった）: `load_env_file` を直した
 
 
 ### 教訓帳: 指摘と失敗を似た状況で思い出す (2026-09-26)
