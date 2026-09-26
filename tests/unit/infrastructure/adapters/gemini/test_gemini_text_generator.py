@@ -151,6 +151,23 @@ class TestGeminiTextGeneratorGenerate:
             await _generator().generate("prompt")
 
     @pytest.mark.asyncio
+    async def test_a_400_at_high_thinking_is_retried_once_at_medium(self, mock_client):
+        """建物の設計（thinking high）がいつも 400 だった: medium で 1 回やり直す。"""
+        client = mock_client.return_value
+        bad = errors.ClientError(
+            400, {"error": {"code": 400, "message": "invalid", "status": "INVALID_ARGUMENT"}}
+        )
+        client.aio.models.generate_content.side_effect = [bad, _response('{"ok": true}')]
+        generator = _generator(thinking_levels={"build_design": "high"})
+
+        data = await generator.generate_json("p", {"type": "object"}, purpose="build_design")
+
+        assert data == {"ok": True}
+        calls = client.aio.models.generate_content.call_args_list
+        assert calls[0].kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.HIGH
+        assert calls[1].kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
+
+    @pytest.mark.asyncio
     async def test_unexpected_error_raises_text_generation_error(self, mock_client):
         """ほかの例外も TextGenerationError に変える。"""
         client = mock_client.return_value

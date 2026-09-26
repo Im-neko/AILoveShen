@@ -17,9 +17,10 @@ loguru>=0.7
 # llm: Gemini
 google-genai>=2.25
 
-# game: Minecraft ブリッジへの HTTP、Jev（TypeSafe AI）
+# game: Minecraft ブリッジへの HTTP、Jev（TypeSafe AI）、建物の場所を選ぶ地図の画像（Pillow）
 httpx>=0.25
 typesafe-sdk>=0.7.1
+pillow>=10.0
 
 # stream: 目標ボード、デバッグのエンドポイント、OBS（配信の画面を Gemini に見せる）
 fastapi>=0.110

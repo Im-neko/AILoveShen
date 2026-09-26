@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 建物の設計が 400 で失敗する、Pillow が依存にない (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザーのログ: 建物 stone_house の設計が 3 回とも `Gemini API error 400: Request contains an invalid argument`、その前に「Pillow がないので地図を描けない」
+- Pillow が requirements.txt と pyproject.toml に入っていなかった（地図の PilMapRenderer が使う）: `game` に `pillow>=10.0` を足した
+- 400 の原因は未確定（API は理由を返さない）。建物の設計は thinking `high` で、high は今まで実機で確かめていない（WORKLOG 「high は未計測」）。`GeminiTextGenerator`: 400 のとき何を送ったか（purpose、thinking、画像、スキーマ、道具、プロンプトの長さ）をログに出し、thinking high なら medium で 1 回やり直す（ログ「thinking high を medium に下げてやり直す」）。それで通るなら high が原因なので、`gemini.thinking_levels` の high（town / site / build_design / skill_write など）を medium にする
+- テスト: pytest 638
+
 ### 頼んだ本人の「もういいよ」で頼みを取り下げる (2026-09-26)
 
 **Commit**: `889c055`

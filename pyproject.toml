@@ -40,6 +40,7 @@ llm = [
 game = [
     "httpx>=0.25",
     "typesafe-sdk>=0.7.1",
+    "pillow>=10.0",
 ]
 stream = [
     "fastapi>=0.110",

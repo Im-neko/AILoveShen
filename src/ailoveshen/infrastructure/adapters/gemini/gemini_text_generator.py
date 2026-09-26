@@ -302,6 +302,25 @@ class GeminiTextGenerator(ITextGenerator):
         except errors.APIError as e:
             error = TextGenerationError(f"Gemini API error {e.code}: {e.message}")
             self._record(prompt, config, purpose, started, images, error=str(error))
+            level = config.thinking_config.thinking_level if config.thinking_config else None
+            level = str(getattr(level, "value", level) or "").lower()
+            if e.code == 400:
+                # 400 は理由を言わない（Request contains an invalid argument）: 何を送ったかを残す
+                logger.warning(
+                    f"Gemini が 400 を返した: purpose={purpose} thinking={level or '-'} "
+                    f"images={len(images)} json_schema={config.response_json_schema is not None} "
+                    f"tools={bool(config.tools)} prompt={len(prompt)} 字"
+                )
+                if level == "high":
+                    # high を受けないモデル・用途がある（2026-09-26: 建物の設計がいつも 400）。
+                    # medium で 1 回だけやり直す。直るなら gemini.thinking_levels で medium にする
+                    logger.warning(f"thinking high を medium に下げてやり直す（purpose={purpose}）")
+                    return await self._request(
+                        prompt,
+                        config.model_copy(update={"thinking_config": self._thinking("medium")}),
+                        purpose,
+                        images,
+                    )
             raise error from e
         except Exception as e:
             error = TextGenerationError(f"Gemini request failed: {e}")
