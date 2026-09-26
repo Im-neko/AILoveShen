@@ -201,17 +201,19 @@ def reference(args: argparse.Namespace) -> int:
         return 1
     with meta.open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
-    # 語り（L…、ふだんの話し方で長め）を先に、足りなければふつうの文（N…）の長いものから
-    def rank(row: dict[str, str]) -> tuple[int, float]:
-        stem = Path(row["file_name"]).stem
-        seconds = wav_stats((out / row["file_name"]).read_bytes())[0]
-        return (0 if stem.startswith("L") else 1 if stem.startswith("N") else 2, -seconds)
-
-    chosen, total = [], 0.0
-    for row in sorted(rows, key=rank):
+    # 短いきれいなクリップを何個も（Irodori-TTS の docs/parameters.md: v4-Small は短い発話をつないで
+    # 学習していて、合計 30 秒ほどで似せる効果の大半）。長い語り 3 本だと、途中で別の声に流れることがあった。
+    # ふつうの文（N…）を優先し、いろいろな文から選ぶ（台本の順に一定の間隔で）
+    candidates = []
+    for row in rows:
         path = out / row["file_name"]
         seconds = wav_stats(path.read_bytes())[0]
-        if seconds < 2.0 or total + seconds > args.seconds:
+        if args.clip_min <= seconds <= args.clip_max:
+            candidates.append((0 if path.stem.startswith("N") else 1, path, seconds))
+    candidates.sort(key=lambda c: (c[0], c[1].name))
+    chosen, total = [], 0.0
+    for _, path, seconds in candidates:
+        if total + seconds > args.seconds:
             continue
         chosen.append(path)
         total += seconds
@@ -330,6 +332,8 @@ def main() -> int:
     common(r)
     r.add_argument("--seconds", type=float, default=30.0, help="参照音声の長さ（長いほど合成が遅い。最大 120）")
     r.add_argument("--voice", help="声の ID（既定は --name）")
+    r.add_argument("--clip-min", type=float, default=2.5, help="使うクリップの長さの下限（秒）")
+    r.add_argument("--clip-max", type=float, default=6.0, help="使うクリップの長さの上限（秒）")
 
     for cmd, text in (("base", "元のモデルの重みを取ってくる"), ("prepare", "学習用に符号化する"), ("train", "LoRA を学習する")):
         p = sub.add_parser(cmd, help=text)

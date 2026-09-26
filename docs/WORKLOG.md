@@ -7,6 +7,14 @@
 
 ## Completed Work
 
+### Irodori-TTS で途中から別の男性の声になる (2026-09-26)
+
+**Commit**: (this commit)
+
+- ユーザー「途中で全然関係ない男の人の声が入る」「半分くらいは参照音声に近い声」
+- 見立て: 参照音声が長い語り 3 本（各 10 秒）だった。Irodori-TTS の docs/parameters.md は、v4-Small は短い発話をつないで学習していて、同じ話者の短いきれいなクリップを合計 30 秒ほどを勧める。似せ方が弱いと、生成の途中で学習データの別の話者に流れる。私が勧めた `cfg_scale_speaker: 5.0` はサーバーの既定と同じで、変化はなかった（誤り）
+- `irodori_from_sbv2.py reference`: ふつうの文の 2.5〜6 秒のクリップを台本の順に合計 30 秒（`--clip-min` / `--clip-max`）。偽のサーバーで 9 個 28 秒を確認。実機の効果は未確認
+
 ### irodori_from_sbv2 generate が全部を「音割れ」で捨てる (2026-09-26)
 
 **Commit**: `44bf28c`

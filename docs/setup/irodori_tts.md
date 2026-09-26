@@ -103,10 +103,10 @@ python tools/irodori_from_sbv2.py generate            # --limit 50 で試しに�
 
 ```bash
 python tools/irodori_from_sbv2.py generate --for-reference   # 6a だけなら: 語りとふつうの文（64 文）だけ
-python tools/irodori_from_sbv2.py reference           # 語り（L…）とふつうの文から 30 秒 → 声 shen_sbv2
+python tools/irodori_from_sbv2.py reference           # ふつうの文の短いクリップ（2.5〜6 秒）を合計 30 秒 → 声 shen_sbv2
 ```
 
-参照音声は毎回の合成でモデルが読むので、長いほど遅い（既定 30 秒で効果の大半、`--seconds` で最大 120）。30〜40 分の量は 6b の学習用で、合成の速さには関係しない（LoRA は小さく、学習データは合成のときには使わない）。
+参照音声は短いきれいなクリップを何個も（Irodori-TTS の docs/parameters.md: v4-Small は短い発話をつないで学習していて、合計 30 秒ほどで似せる効果の大半）。長いクリップ 3 本では、生成の途中で別の人の声に流れることがあった。声がまだ参照から離れるときは、`tts.irodori.cfg_scale_speaker` を少しずつ上げる（サーバーの既定は 5.0。上げすぎると不自然）か、6b の LoRA（モデル自体をこの声に寄せる）。参照音声は毎回の合成でモデルが読むので、長いほど遅い（既定 30 秒で効果の大半、`--seconds` で最大 120）。30〜40 分の量は 6b の学習用で、合成の速さには関係しない（LoRA は小さく、学習データは合成のときには使わない）。
 
 `.env` に `IRODORI_VOICE=shen_sbv2`（サーバーを起動し直す）。Irodori-TTS は参照音声から声の質を、話し方（イントネーション）は自分のモデルから作るので、雑音のない声で、イントネーションは Irodori-TTS のままになる見込み。
 
