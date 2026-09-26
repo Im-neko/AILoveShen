@@ -18,7 +18,7 @@
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
-import { dayPhase, inventoryCounts, EXPLODES, isDark } from './observe.mjs'
+import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
@@ -141,7 +141,7 @@ function validGoal (spec, bot, state, knowledge) {
       needHome()
       return { spec: { predicate } }
     case 'through_night':
-      needHome()
+      // 家がなくても夜は越せる（近くのベッド、持っているベッド、地下）
       return { spec: { predicate }, sawNight: dayPhase(bot.time.timeOfDay) !== 'day' }
     case 'explored': {
       const distance = Number(spec.distance)
@@ -330,8 +330,20 @@ export function evaluate (bot, state, knowledge, world) {
       // 朝までの分数: 待つことが進み具合に表れるので、停滞とみなされない
       const tod = bot.time.timeOfDay
       out.remaining = Math.max(1, Math.ceil(((MORNING - tod + DAY_TICKS) % DAY_TICKS) / TICKS_PER_MINUTE))
-      if (!inside) out.leaves.push({ kind: 'go_home' })
-      else if (hasBed(bot, state.home) && tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping) out.leaves.push({ kind: 'sleep' })
+      const sleepy = tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping
+      if (inside) {
+        if (hasBed(bot, state.home) && sleepy) out.leaves.push({ kind: 'sleep' })
+        break
+      }
+      // 家に帰るのは選択肢の 1 つ（2026-09-26: 絶対の決まりではない）。近くのベッド（村など）で寝る、
+      // 持っているベッドをここに置いて寝る、地下ならそのまま（地下は夜も昼も同じ）
+      if (state.home) out.leaves.push({ kind: 'go_home' })
+      if (sleepy) {
+        const bed = nearbyBed(bot, state)
+        if (bed) out.leaves.push({ kind: 'sleep_at', pos: bed })
+        else if (Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))) out.leaves.push({ kind: 'bed_here' })
+      }
+      if (isUnderground(bot)) out.leaves.push({ kind: 'stay_underground' })
       break
     }
     case 'explored': {
@@ -495,6 +507,16 @@ export function evaluate (bot, state, knowledge, world) {
     }
   }
   return out
+}
+
+// 家のものでない、近くに置いてあるベッド（村など）の足側
+const BED_SEARCH = 32
+function nearbyBed (bot, state) {
+  const ids = Object.values(bot.registry.blocksByName).filter((b) => b.name.endsWith('_bed')).map((b) => b.id)
+  const me = bot.entity.position
+  return bot.findBlocks({ matching: ids, maxDistance: BED_SEARCH, count: 16 })
+    .filter((p) => !state.home || !isInside({ entity: { position: p } }, state.home))
+    .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
 }
 
 // 目標を立てずに条件を判定する: [{ spec, met, lines, impossible }]（impossible: いまボットに何を

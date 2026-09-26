@@ -334,6 +334,7 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         ),
         busy=bool(data.get("busy", False)),
         day=int(obs["time"]["day"]) if obs["time"]["day"] is not None else None,
+        underground=bool(obs.get("underground", False)),
     )
 
 

@@ -142,6 +142,10 @@ export function isCovered (bot) {
   }
   return false
 }
+// 地下にいる（頭の上がふさがっていて、海面より下）: 夜でも家に帰らなくてよい（ここは夜も昼も暗い）
+const SEA_LEVEL = 62
+export const isUnderground = (bot) => bot.entity.position.y < SEA_LEVEL - 2 && isCovered(bot)
+
 export function isDark (bot) {
   if (!isCovered(bot)) return false
   const ids = LIGHT_SOURCES.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined)

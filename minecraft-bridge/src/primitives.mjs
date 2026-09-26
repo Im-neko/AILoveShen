@@ -601,6 +601,24 @@ export const PRIMITIVES = {
     if (tod >= SLEEP_FROM && tod <= SLEEP_UNTIL) throw new Error(`woke up but the night was not skipped (time ${tod})`)
     return `slept through the night; time ${tod}`
   },
+  async sleep_at (bot, state, c, signal) {
+    await goNear(bot, c.pos, 2, signal)
+    const bed = bot.blockAt(c.pos)
+    if (!bed?.name.endsWith('_bed')) throw new Error(`no bed at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+    return sleepIn(bot, bed, signal)
+  },
+  async bed_here (bot, state, c, signal) {
+    const item = bot.inventory.items().find((i) => i.name.endsWith('_bed'))
+    if (!item) throw new Error('no bed to place')
+    const spot = bedSpotHere(bot, state)
+    if (!spot) throw new Error('no flat free spot for a bed here')
+    await bot.equip(item, 'hand')
+    await bot.lookAt(spot.head.offset(0.5, 0, 0.5), true)
+    await bot.placeBlock(bot.blockAt(spot.foot.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
+    const bed = bot.blockAt(spot.foot)
+    if (!bed?.name.endsWith('_bed')) throw new Error('the bed was not placed')
+    return sleepIn(bot, bed, signal)
+  },
   async exit_wall (bot, state, c, signal) {
     await digExit(bot, state.home, c.spot, signal)
     // 出る前に掘ったブロック（壁を閉じるのに使う）を拾う: ブロックは内側にも落ちるので、出てから
@@ -926,6 +944,29 @@ async function sweepNearby (bot, state, name, before, signal) {
   }
 }
 
+// 家のでないベッドで眠り、夜が明けるのを待つ
+async function sleepIn (bot, bed, signal) {
+  await bot.sleep(bed)
+  while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
+  if (bot.isSleeping) await bot.wake()
+  await once(bot, 'time', { signal: AbortSignal.timeout(TIME_UPDATE_TIMEOUT_MS) })
+  const tod = bot.time.timeOfDay
+  if (tod >= SLEEP_FROM && tod <= SLEEP_UNTIL) throw new Error(`woke up but the night was not skipped (time ${tod})`)
+  return `slept through the night in the bed at ${bed.position.x},${bed.position.y},${bed.position.z}; time ${tod}`
+}
+
+// 持っているベッドを置ける、足元のすぐ横の 2 マス（床があり、空いていて、家・建物でない）
+function bedSpotHere (bot, state) {
+  const me = bot.entity.position.floored()
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const foot = me.offset(dx, 0, dz)
+    const head = foot.offset(dx, 0, dz)
+    const free = (p) => bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block' && !inHouse(state, p, 1)
+    if (free(foot) && free(head)) return { foot, head }
+  }
+  return null
+}
+
 // 自分でダメージに対処するプリミティブ: ダメージを受けても中断しない
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
@@ -944,6 +985,6 @@ async function placeBuildBlock (bot, state, name, signal) {
   return `${b.block === 'air' ? 'cleared a block' : `placed ${b.block}`} (${s.placed}/${s.total}) for ${name}`
 }
 
-export const TIMEOUTS_MS = { move_placed: 45000, goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { sleep_at: 45000, bed_here: 45000, move_placed: 45000, goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

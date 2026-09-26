@@ -253,6 +253,13 @@ function fromLeaf (bot, state, world, leaf) {
     }
     case 'sleep':
       return [{ id: 'sleep in the bed', verb: 'sleep', target: 'bed', inPlace: true, effect: 'skips the night' }]
+    case 'sleep_at':
+      // 家のでないベッド（村など）で寝る。寝るとスポーン地点もそこになる
+      return [{ id: 'sleep in the bed nearby', verb: 'sleep_at', target: 'bed', pos: leaf.pos, distance: dist(bot, leaf.pos), effect: 'skips the night; sets the respawn point there' }]
+    case 'bed_here':
+      return [{ id: 'place your bed here and sleep', verb: 'bed_here', target: 'bed', inPlace: true, effect: 'skips the night; sets the respawn point here; pick the bed up in the morning' }]
+    case 'stay_underground':
+      return [{ id: 'keep working underground through the night', verb: 'wait', target: 'here', inPlace: true, seconds: 10, purpose: 'underground it is as dark by day as by night: the night outside does not matter here' }]
     case 'plant': {
       // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面。id に場所は入れない
       // （/act は候補を作り直して id で探す: 場所の選び直しで id が変わると動かない）

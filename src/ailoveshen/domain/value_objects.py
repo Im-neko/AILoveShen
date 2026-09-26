@@ -992,6 +992,8 @@ class GameObservation:
     busy: bool = False  # ブリッジが行動か反射を実行している
     # ワールドの何日目か（寝て飛ばした夜も数える。まだ時刻がなければ None）
     day: Optional[int] = None
+    # 地下にいる（頭の上がふさがっていて海面より下）: 夜でも家に帰らなくてよい
+    underground: bool = False
 
 
 @dataclass(frozen=True)

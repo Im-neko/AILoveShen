@@ -45,7 +45,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { mapAround } from './map.mjs'
-import { summarize, bearing, inventoryCounts } from './observe.mjs'
+import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools } from './tools.mjs'
@@ -131,6 +131,7 @@ function observation () {
   extra.deaths = state.deaths
   // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
   extra.nearby = landmarks(bot, state)
+  extra.underground = isUnderground(bot)
   extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }

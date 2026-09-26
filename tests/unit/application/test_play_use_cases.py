@@ -455,12 +455,17 @@ class TestAdvancePlay:
 
         await use_case.execute(_session())
         schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["predicate"]["enum"] == ["have", "explored"]
+        assert schema["properties"]["predicate"]["enum"] == ["have", "through_night", "explored"]
 
         bridge.observe.return_value = _obs(goal=False, has_plan=True)
         await use_case.execute(_session())
         schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["predicate"]["enum"] == ["built", "have", "explored"]
+        assert schema["properties"]["predicate"]["enum"] == [
+            "built",
+            "have",
+            "through_night",
+            "explored",
+        ]
 
         bridge.observe.return_value = _obs(
             goal=False, has_plan=True, house_complete=True, has_home=True

@@ -58,12 +58,28 @@ class NotChosen:
 
 
 def survival_options(obs: GameObservation) -> list[Option]:
-    """今必要な身を守る小目標（夜は家で過ごす、夕方は家に入る、空腹なら食料）。"""
+    """
+    今必要な身を守る小目標（夜を越す、夕方は家に入る、空腹なら食料）。夜の越し方は決めつけない
+    （家、近くのベッド、持っているベッド。2026-09-26）。地下にいるなら夜の選択肢は出さない
+    （地下は夜も昼も同じ暗さ: そのまま作業を続けてよい）。
+    """
     out = []
-    if obs.has_home and obs.time_phase == "night":
-        out.append(Option(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜は危ないので家で夜を越す"))
-    elif obs.has_home and obs.time_phase == "dusk":
+    if obs.time_phase == "night" and not obs.underground:
+        out.append(
+            Option(
+                GoalSpec(GoalPredicate.THROUGH_NIGHT),
+                "夜は危ないので安全に夜を越す（家、近くのベッド、持っているベッドで寝る）",
+            )
+        )
+    elif obs.has_home and obs.time_phase == "dusk" and not obs.underground:
         out.append(Option(GoalSpec(GoalPredicate.AT_HOME), "暗くなる前に家に入る"))
+    if obs.time_phase == "dusk" and not obs.underground and not obs.inside_home:
+        out.append(
+            Option(
+                GoalSpec(GoalPredicate.THROUGH_NIGHT),
+                "家が遠ければ、その場で夜を越す（近くのベッドか、持っているベッドで寝る）",
+            )
+        )
     if any("hunger" in n for n in obs.needs):
         out.append(Option(FOOD_WHEN_HUNGRY, "お腹が空いたので食べ物を集める"))
     return out
