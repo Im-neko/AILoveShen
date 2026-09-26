@@ -18,9 +18,10 @@ class NoteKeeper:
     """
     メモ帳を変える唯一の経路（docs/design/18_notes.md）。
 
-    書けるのは小目標の切れ目の目標の決定だけ。チャットの返答からは書かない（視聴者の
-    言葉がそのままメモに入らないように）。根拠はプロンプトで示したものに限る: lesson は
-    示した小目標、viewer は示した会話にいる視聴者。編集は写しの上で試してから反映する。
+    ふだん書くのは小目標の切れ目の目標の決定。チャットの返答は、視聴者のアドバイスに納得した
+    ときだけ、自分の言葉の教訓を 1 つ書ける（learn_from_viewer。視聴者の文はそのまま入れない）。
+    根拠はプロンプトで示したものに限る: lesson は示した小目標（コメントの教訓はその視聴者）、
+    viewer は示した会話にいる視聴者。編集は写しの上で試してから反映する。
     """
 
     def __init__(self, store: INoteStore) -> None:
@@ -45,6 +46,35 @@ class NoteKeeper:
             self._store.save(notebook)
             return
         notebook.restore(list(saved.notes), saved.next_id)
+
+    def learn_from_viewer(
+        self, notebook: Notebook, lesson: str, viewer: str, day: Optional[int]
+    ) -> Optional[str]:
+        """
+        視聴者のアドバイスに配信者が納得したとき、教訓として書く（返答が自分の言葉で書いた 1 文。
+        視聴者の文をそのまま入れない）。同じ教訓があれば寿命を延ばすだけ。いっぱいなら一番早く
+        消えるメモを消す。書いた（延ばした）メモの id、書けなければ None。
+        """
+        text = lesson.strip()
+        if not text or day is None:
+            return None
+        for note in notebook.notes:
+            if note.kind == NoteKind.LESSON and _same(note.text, text):
+                notebook.keep(note.id, day)
+                self._store.save(notebook)
+                logger.info(f"教訓をまた教わった（延ばした）: {note.id} {note.text}")
+                return note.id
+        try:
+            _drop_for_room(notebook)
+            note = notebook.add(
+                NoteKind.LESSON, text, day, f"{VIEWER_LESSON_PREFIX}（{viewer}さん）"
+            )
+        except ValueError as e:
+            logger.warning(f"コメントの教訓を書けなかった: {text}: {e}")
+            return None
+        self._store.save(notebook)
+        logger.info(f"コメントの教訓を書いた: {note.id} {note.text}（{viewer}さん）")
+        return note.id
 
     def expire(self, notebook: Notebook, day: Optional[int]) -> None:
         """寿命が過ぎたメモを消す（まだ時刻を知らなければ何もしない）。"""
@@ -85,6 +115,23 @@ class NoteKeeper:
         for line in _apply(notebook, changes, day, goals, viewers):
             logger.info(line)
         self._store.save(notebook)
+
+
+VIEWER_LESSON_PREFIX = "コメントで教わった"
+
+
+def _same(a: str, b: str) -> bool:
+    return a.replace(" ", "").replace("。", "") == b.replace(" ", "").replace("。", "")
+
+
+def _drop_for_room(notebook: Notebook) -> None:
+    """いっぱいなら、一番早く消えるメモ（視聴者についてのメモ以外）を消して場所を空ける。"""
+    if len(notebook.notes) < notebook.max_notes:
+        return
+    candidates = [n for n in notebook.notes if n.kind != NoteKind.VIEWER] or list(notebook.notes)
+    oldest = min(candidates, key=lambda n: n.expires_day)
+    notebook.drop(oldest.id)
+    logger.info(f"メモがいっぱいなので消した: {oldest.id} {oldest.text}")
 
 
 def _apply(

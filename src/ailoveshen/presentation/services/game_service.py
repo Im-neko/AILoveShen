@@ -15,6 +15,7 @@ from ailoveshen.application.ports.output.screen_capture import IScreenCapture
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.danger import DangerWatcher
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.domain.entities import PlaySession
 
 
@@ -51,6 +52,7 @@ class GameService:
         fast_judge: IFastJudge | None = None,
         screen_capture: IScreenCapture | None = None,
         danger_watcher: DangerWatcher | None = None,
+        notes: NoteKeeper | None = None,
     ) -> None:
         """
         ゲームサービスを初期化する。
@@ -66,6 +68,7 @@ class GameService:
             screen_capture: 配信の画面を撮るもの（OBS）。サービスと一緒に閉じる
             danger_watcher: 襲われたときの反射を Jev に選ばせる見張り（docs/design/28）。プレイの
                 間だけ動かす
+            notes: 自分のメモ（チャットの返答が、視聴者のアドバイスを教訓として書く）
         """
         self._start = start_play
         self._advance = advance_play
@@ -76,6 +79,7 @@ class GameService:
         self._fast_judge = fast_judge
         self._screen_capture = screen_capture
         self._danger = danger_watcher
+        self._notes = notes
         self._session: PlaySession | None = None
 
     @property
@@ -87,6 +91,11 @@ class GameService:
     def mid_goals(self) -> MidGoalKeeper:
         """中目標を持つ。チャットへの返答は、これを通して視聴者の頼みを受ける。"""
         return self._mid_goals
+
+    @property
+    def notes(self) -> NoteKeeper | None:
+        """自分のメモ。チャットの返答は、これを通して視聴者のアドバイスを教訓にする。"""
+        return self._notes
 
     async def play(self, max_steps: int | None = 200, keep_going: bool = False) -> PlayOutcome:
         """

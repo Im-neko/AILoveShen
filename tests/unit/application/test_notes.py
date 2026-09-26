@@ -140,3 +140,24 @@ class TestNoteKeeper:
         NoteKeeper(store).load(book, 0)
         assert book.notes == ()
         store.save.assert_called_once_with(book)
+
+
+def test_a_viewers_advice_is_kept_as_a_lesson_and_repeated_advice_extends_it():
+    from ailoveshen.domain.value_objects import NoteKind
+
+    store = Mock()
+    store.load.return_value = None
+    keeper = NoteKeeper(store)
+    notebook = Notebook(max_notes=2)
+    first = keeper.learn_from_viewer(notebook, "肉は焼いてから食べる", "neko", day=3)
+    assert first is not None
+    note = notebook.notes[0]
+    assert (note.kind, note.about) == (NoteKind.LESSON, "コメントで教わった（nekoさん）")
+    # 同じ教訓: 書き足さずに寿命を延ばす
+    assert keeper.learn_from_viewer(notebook, "肉は焼いてから食べる。", "tama", day=5) == first
+    assert len(notebook.notes) == 1 and notebook.notes[0].expires_day > note.expires_day
+    # いっぱいなら一番早く消えるものを消して書く
+    keeper.learn_from_viewer(notebook, "作業する場所で作業台を作る", "tama", day=5)
+    keeper.learn_from_viewer(notebook, "夜は外に出ない", "mame", day=6)
+    assert len(notebook.notes) == 2
+    assert keeper.learn_from_viewer(notebook, "x", "neko", day=None) is None

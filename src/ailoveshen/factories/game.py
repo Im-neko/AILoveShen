@@ -292,4 +292,5 @@ def create_game_service(
         fast_judge=fast_judge,
         danger_watcher=danger_watcher,
         screen_capture=capture,
+        notes=notes,
     )

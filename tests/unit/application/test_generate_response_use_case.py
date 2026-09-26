@@ -479,3 +479,30 @@ class TestWithdraw:
         ]
         assert dropped[-1].requested_by == "neko"
         assert "withdrew" in dropped[-1].reason
+
+
+@pytest.mark.asyncio
+async def test_advice_the_streamer_agrees_with_becomes_a_lesson(
+    mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+):
+    notes = Mock()
+    use_case = GenerateResponseUseCase(
+        text_generator=mock_text_generator,
+        prompt_builder=mock_prompt_builder,
+        event_publisher=mock_event_publisher,
+        conversation=conversation,
+        character=CharacterProfile(),
+        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        notes=notes,
+    )
+    mock_text_generator.generate_json.return_value = {
+        "reply": "たしかに！これからは焼いてから食べるね",
+        "request": "none",
+        "lesson": "肉は焼いてから食べる",
+    }
+    session = _playing()
+    await use_case.execute(
+        GenerateResponseRequest(user_name="neko", message="肉は焼いた方がいいよ", session=session)
+    )
+    notebook, lesson, viewer, _day = notes.learn_from_viewer.call_args.args
+    assert (notebook, lesson, viewer) == (session.notebook, "肉は焼いてから食べる", "neko")

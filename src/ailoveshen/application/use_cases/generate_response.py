@@ -21,6 +21,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     reply_schema,
 )
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
 from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent
@@ -63,6 +64,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         history_limit: int = 10,
         max_attempts: int = 2,
         readings: NameReadings | None = None,
+        notes: NoteKeeper | None = None,
         rethink_interval_seconds: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -80,6 +82,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             max_attempts: 受けた頼みが使えないとき、あきらめるまでに生成する回数
             readings: 視聴者の名前の読みの辞書（プロンプトに出し、返答の name_reading で覚える。
                 docs/design/30_name_readings.md）
+            notes: 自分のメモ（納得した視聴者のアドバイスを教訓として書く。None なら書かない）
             rethink_interval_seconds: コメントの指摘で小目標を決め直す最短の間（荒らし対策）
             clock: 時計（テストで差し替える）
         """
@@ -92,6 +95,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         self._history_limit = history_limit
         self._max_attempts = max_attempts
         self._readings = readings
+        self._notes = notes
         self._rethink_interval = rethink_interval_seconds
         self._clock = clock
         self._last_rethink_at: float | None = None
@@ -188,6 +192,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
             )
             self._learn_reading(request, data.get("name_reading"))
+            self._learn_lesson(session, request.user_name, data.get("lesson"))
             text = str(data.get("reply", "")).strip()
             if data.get("request") == RequestHandling.WITHDRAW.value:
                 await self._withdraw(session, request.user_name)
@@ -263,3 +268,12 @@ class GenerateResponseUseCase(IGenerateResponse):
                 f'{user_name} withdrew the request "{dropped.title}" (you were on '
                 f"{session.goal.spec.describe()} for it)"
             )
+
+    def _learn_lesson(self, session: PlaySession, user_name: str, lesson: object) -> None:
+        """納得したアドバイスを教訓としてメモに書く（同じ教訓は寿命を延ばす）。"""
+        if self._notes is None or not isinstance(lesson, str) or not lesson.strip():
+            return
+        obs = session.last_observation
+        self._notes.learn_from_viewer(
+            session.notebook, lesson, user_name, obs.day if obs is not None else None
+        )

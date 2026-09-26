@@ -386,6 +386,13 @@ def reply_schema() -> dict[str, Any]:
                 "makes the current small goal or plan wrong or wasteful: what to reconsider, in one "
                 "English sentence. The small goal is then decided again with it. Otherwise omit",
             },
+            "lesson": {
+                "type": "string",
+                "description": "Only when the viewer gives advice you agree is right for the "
+                "future too (cook meat before eating it, craft a crafting table where you work): "
+                "the lesson in your own words, one Japanese sentence of at most 80 characters. It "
+                "is kept in your notes and seen by every later decision",
+            },
             "name_reading": {
                 "type": "string",
                 "description": "the viewer's name read aloud, in hiragana: only when the prompt "

@@ -66,6 +66,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         mid_goals=game.mid_goals,
         generation_log=gemini_calls,
         readings=readings,
+        notes=game.notes,
     )
     closers: list[Any] = []
 
