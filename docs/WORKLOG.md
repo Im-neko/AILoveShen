@@ -9,7 +9,7 @@
 
 ### 道具が壊れたらすぐ気づいて作り直す、歩いて動けないときは歩き方を変える (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `3ec7af2`
 
 - ユーザー「ツルハシが折れたら作り直してほしい。指摘してもしばらく持っていると勘違いしている」「移動しようとしているのに位置がしばらく変わらないときは移動方針を変えてほしい（操作の精度で脱出できなくなる）」
 - ブリッジ `src/wear.mjs`: 持ち物のスロットの更新で、耐久を使い切った道具が消えたら壊れたと記録（`state.brokenTools`）。観測に `broken_tools`（何分前、作り直したか）。行動の結果に「the X broke」を添える（runner）。同じ種類をもう持っていなければ、作るだけでできるとき作り直す候補を `also` で出す（goals.evaluate）。道具が要るブロック（石など）を道具なしでは掘らず、「no tool that can mine stone (the stone_pickaxe broke): make one first」で失敗にする（dig、dig_down。素手で掘り続けていた）
