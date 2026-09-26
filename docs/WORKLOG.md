@@ -9,7 +9,7 @@
 
 ### 建物の設計が 400 で失敗する、Pillow が依存にない (2026-09-26)
 
-**Commit**: (this commit)
+**Commit**: `208d304`
 
 - ユーザーのログ: 建物 stone_house の設計が 3 回とも `Gemini API error 400: Request contains an invalid argument`、その前に「Pillow がないので地図を描けない」
 - Pillow が requirements.txt と pyproject.toml に入っていなかった（地図の PilMapRenderer が使う）: `game` に `pillow>=10.0` を足した
