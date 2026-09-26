@@ -111,7 +111,7 @@ export function snapshot (bot, state) {
     return digCache.get(name)
   }
   const hunt = (name) => huntTargets(bot, [name])
-  // 掘り下げ: 深さは小目標の dig_depth（Gemini が決める。なければ掘り下げない）
+  // 掘り下げ: 埋まった物まで階段で下りてよい（2026-09-26: 上限なし。小目標の dig_depth があればそこまで）
   const surfaceY = Math.floor(state.goal?.surfaceY ?? bot.entity.position.y)
   const buriedCache = new Map()
   const buried = (name) => {
@@ -131,6 +131,7 @@ export function snapshot (bot, state) {
     dig,
     hunt,
     buried,
-    digDepth: state.goal?.spec?.dig_depth ?? 0
+    // 深さの上限は付けない（安全の決まりは掘るときに見る）。dig_depth があればそこまで
+    digDepth: state.goal?.spec?.dig_depth ?? Infinity
   }
 }

@@ -30,7 +30,7 @@ from ailoveshen.domain.value_objects import (
 MAX_GOAL_COUNT = 64
 MIN_EXPLORE_DISTANCE = 8
 MAX_EXPLORE_DISTANCE = 128
-MAX_DIG_DEPTH = 64  # minecraft-bridge/src/goals.mjs と同じ
+MAX_DIG_DEPTH = 384  # minecraft-bridge/src/goals.mjs と同じ（任意の上限。省けば上限なし）
 MAX_CONDITIONS = 3
 MAX_PLAN_CHANGES = 3
 MAX_STEPS = 6  # 中目標のための手順の数（docs/design/26）
@@ -289,8 +289,9 @@ def goal_schema(
                 "type": "integer",
                 "minimum": 0,
                 "maximum": MAX_DIG_DEPTH,
-                "description": "Optional: how many blocks below where you stand you may dig "
-                "stairs down to buried stone or ore for this goal (omit: do not dig down)",
+                "description": "Optional limit: at most how many blocks below where you stand to "
+                "dig stairs down to buried stone or ore (omit: no limit, as deep as the stone or "
+                "ore is; 0: do not dig down). Lava, water, gravel and bedrock always stop it",
             },
             "serves": {
                 "type": "string",

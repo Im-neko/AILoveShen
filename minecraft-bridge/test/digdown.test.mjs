@@ -34,7 +34,7 @@ test('深さが足りなければ探し、何段下にあるかと、掘り下�
   for (const depth of [0, 3]) {
     const r = solve(k, world(depth), cobble)
     assert.equal(r.leaves[0].kind, 'explore')
-    assert.match(r.blocked.join('\n'), /stone is buried 4 blocks down \(set dig_depth to 4 or more to dig stairs down\)/)
+    assert.match(r.blocked.join('\n'), /stone is buried 4 blocks down \(the goal's dig_depth [03] is shallower: leave it out to dig down\)/)
   }
   // 埋まったものもなければ、今までどおり探すだけ
   const none = solve(k, world(8, []), cobble)

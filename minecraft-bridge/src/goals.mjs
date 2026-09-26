@@ -30,7 +30,7 @@ import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
-const MAX_DIG_DEPTH = 64
+const MAX_DIG_DEPTH = 384 // 任意の上限（省けば上限なし）
 const MIN_EXPLORE = 8
 const MIN_LIT = 8
 const MAX_LIT = 32

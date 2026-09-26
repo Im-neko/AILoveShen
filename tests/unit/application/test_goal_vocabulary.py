@@ -100,7 +100,7 @@ class TestDigDepth:
     def test_offered_on_the_small_goal_only(self):
         """小目標のスキーマにはあり、中目標の条件（世界から判定する）にはない。"""
         schema = goal_schema([GoalPredicate.HAVE], [])
-        assert schema["properties"]["dig_depth"]["maximum"] == 64
+        assert schema["properties"]["dig_depth"]["maximum"] == 384
         condition = schema["properties"]["plan_changes"]["items"]["properties"]["conditions"]
         assert "dig_depth" not in condition["items"]["properties"]
 

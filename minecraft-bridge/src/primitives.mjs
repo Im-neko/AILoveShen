@@ -761,7 +761,7 @@ export const PRIMITIVES = {
   },
   async dig_down (bot, state, c, signal) {
     const surfaceY = state.goal?.surfaceY ?? Math.floor(bot.entity.position.y)
-    const maxDepth = state.goal?.spec?.dig_depth ?? 0
+    const maxDepth = state.goal?.spec?.dig_depth ?? Infinity // 上限なし（溶岩・水・砂利・岩盤で止まる）
     let steps = 0
     let stop = ''
     for (; steps < STAIR_STEPS; steps++) {

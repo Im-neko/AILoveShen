@@ -230,7 +230,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     cost += DIG_DOWN_COST + buried.t.depth
   } else {
     const hint = buried && buried.t.depth > (world.digDepth ?? 0)
-      ? `; ${buried.s} is buried ${buried.t.depth} blocks down (set dig_depth to ${buried.t.depth} or more to dig stairs down)`
+      ? `; ${buried.s} is buried ${buried.t.depth} blocks down (the goal's dig_depth ${world.digDepth} is shallower: leave it out to dig down)`
       : ''
     leaf = { kind: 'explore', item, sources: sought, reason: `no ${sought.join('/')} nearby for ${item}${known.length ? ' (seen before)' : ''}${hint}` }
     cost += known.length ? RECALL_COST : EXPLORE_COST
