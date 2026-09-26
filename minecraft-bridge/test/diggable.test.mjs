@@ -38,3 +38,25 @@ test('経路が届かなかったブロックは、もう候補に出さない',
   state.unreachableBlocks.add('3,69,0')
   assert.deepEqual(digTargets(bot, state, 'coal_ore'), [])
 })
+
+test('下の原木を切った後の浮いた幹も木と見なす（近くの木を木と認識しなかった）', () => {
+  // 地面は y 69 まで。原木は y 73〜75（下の 70〜72 は切られて空気）、葉の上に乗った原木は y 80
+  const logs = [v(2, 73, 0), v(2, 74, 0), v(2, 75, 0)]
+  const onLeaves = v(6, 80, 0)
+  const world = (inv) => ({
+    registry: md,
+    entity: { position: v(0, 70, 0) },
+    entities: {},
+    inventory: { items: () => inv },
+    findBlocks: () => [...logs, onLeaves],
+    blockAt: (p) => {
+      if (logs.some((l) => l.equals(p)) || onLeaves.equals(p)) return { name: 'oak_log', boundingBox: 'block', position: p }
+      if (p.x === 6 && p.y === 79) return { name: 'oak_leaves', boundingBox: 'block' }
+      return p.y < 70 ? { name: 'grass_block', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }
+    }
+  })
+  const state = { home: null, plan: null, unreachableBlocks: new Set() }
+  // 地面から 4 段上の原木には手が届く。それより上は土を積めば届く
+  assert.deepEqual(digTargets(world([]), state, 'oak_log'), [v(2, 73, 0), v(2, 74, 0)])
+  assert.deepEqual(digTargets(world([{ name: 'dirt', count: 8 }]), state, 'oak_log', 5), [v(2, 73, 0), v(2, 74, 0), v(2, 75, 0)])
+})

@@ -383,3 +383,60 @@ class TestReplyWhilePlaying:
 
         assert response.text == "nekoさん、ありがとう！"
         mock_text_generator.generate_json.assert_not_called()
+
+
+class TestRethinkFromChat:
+    """もっともな指摘で小目標を決め直す（今の目標に固執しない）。"""
+
+    @pytest.mark.asyncio
+    async def test_an_agreed_point_cuts_the_small_goal_once_per_interval(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        now = [100.0]
+        use_case = GenerateResponseUseCase(
+            text_generator=mock_text_generator,
+            prompt_builder=mock_prompt_builder,
+            event_publisher=mock_event_publisher,
+            conversation=conversation,
+            character=CharacterProfile(),
+            mid_goals=MidGoalKeeper(
+                bridge=bridge, event_publisher=mock_event_publisher, store=store
+            ),
+            clock=lambda: now[0],
+        )
+        mock_text_generator.generate_json.return_value = {
+            "reply": "ほんとだ、そこの木を切るね！",
+            "request": "none",
+            "rethink": "There is a tree right next to you; cut it instead of exploring.",
+        }
+        session = _playing()
+
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="すぐ横に木あるよ", session=session)
+        )
+        assert (
+            "neko pointed out in chat: There is a tree right next to you" in session.rethink_reason
+        )
+        assert "you were on have(log, 3)" in session.rethink_reason
+
+        session.rethink_reason = ""
+        now[0] += 30  # 60 秒以内: 見送る
+        await use_case.execute(
+            GenerateResponseRequest(user_name="tama", message="こっちにも木", session=session)
+        )
+        assert session.rethink_reason == ""
+
+    @pytest.mark.asyncio
+    async def test_no_rethink_without_the_field(self, use_case, mock_text_generator):
+        mock_text_generator.generate_json.return_value = {"reply": "がんばる！", "request": "none"}
+        session = _playing()
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="がんばれ", session=session)
+        )
+        assert not session.rethink_reason

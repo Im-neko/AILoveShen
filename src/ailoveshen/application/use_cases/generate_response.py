@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
+
 from loguru import logger
 
 from ailoveshen.application.dto.llm_dto import (
@@ -60,6 +63,8 @@ class GenerateResponseUseCase(IGenerateResponse):
         history_limit: int = 10,
         max_attempts: int = 2,
         readings: NameReadings | None = None,
+        rethink_interval_seconds: float = 60.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -75,6 +80,8 @@ class GenerateResponseUseCase(IGenerateResponse):
             max_attempts: 受けた頼みが使えないとき、あきらめるまでに生成する回数
             readings: 視聴者の名前の読みの辞書（プロンプトに出し、返答の name_reading で覚える。
                 docs/design/30_name_readings.md）
+            rethink_interval_seconds: コメントの指摘で小目標を決め直す最短の間（荒らし対策）
+            clock: 時計（テストで差し替える）
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
@@ -85,6 +92,9 @@ class GenerateResponseUseCase(IGenerateResponse):
         self._history_limit = history_limit
         self._max_attempts = max_attempts
         self._readings = readings
+        self._rethink_interval = rethink_interval_seconds
+        self._clock = clock
+        self._last_rethink_at: float | None = None
 
     async def execute(self, request: GenerateResponseRequest) -> GenerateResponseResponse:
         """
@@ -180,6 +190,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             self._learn_reading(request, data.get("name_reading"))
             text = str(data.get("reply", "")).strip()
             if data.get("request") != RequestHandling.ACCEPT.value:
+                self._rethink(session, request.user_name, data.get("rethink"))
                 return text, None
             try:
                 proposal = parse_proposal(data)
@@ -197,6 +208,8 @@ class GenerateResponseUseCase(IGenerateResponse):
                         f"(it is at the top of the mid goals; you were on {was}, go back to it "
                         "after)"
                     )
+                else:
+                    self._rethink(session, request.user_name, data.get("rethink"))
             except (ValueError, GoalRejectedError) as e:
                 # 返答が、プランに入らないものを受けている: それは決して言わせない
                 error = str(e)
@@ -213,3 +226,24 @@ class GenerateResponseUseCase(IGenerateResponse):
             self._readings.learn(request.user_name, reading, VIEWER)
         elif self._readings.get(request.user_name) is None:
             self._readings.learn(request.user_name, reading, GUESS)
+
+    def _rethink(self, session: PlaySession, user_name: str, point: object) -> None:
+        """
+        視聴者のもっともな指摘（近くに木がある、間違い、速いやり方）で、今の小目標を次の切れ目で
+        終わらせ、その指摘を理由に決め直させる（小目標に固執しない）。続けては使えない（荒らし対策）。
+        """
+        if not isinstance(point, str) or not point.strip():
+            return
+        now = self._clock()
+        if (
+            self._last_rethink_at is not None
+            and now - self._last_rethink_at < self._rethink_interval
+        ):
+            logger.info(f"{user_name} の指摘で決め直すのは見送った（間が短い）: {point}")
+            return
+        self._last_rethink_at = now
+        was = session.goal.spec.describe() if session.goal else "nothing"
+        session.request_rethink(
+            f"{user_name} pointed out in chat: {point.strip()} (you were on {was})"
+        )
+        logger.info(f"{user_name} の指摘で小目標を決め直す: {point}")

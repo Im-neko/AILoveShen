@@ -363,6 +363,13 @@ def reply_schema() -> dict[str, Any]:
                 "(the night inside the home) and it can be done where you are; next = after "
                 "the mid goal worked on now (default)",
             },
+            "rethink": {
+                "type": "string",
+                "description": "Only when the comment points out something concrete that you can "
+                "check in the state (a tree right there, a mistake, a faster way) and you agree it "
+                "makes the current small goal or plan wrong or wasteful: what to reconsider, in one "
+                "English sentence. The small goal is then decided again with it. Otherwise omit",
+            },
             "name_reading": {
                 "type": "string",
                 "description": "the viewer's name read aloud, in hiragana: only when the prompt "

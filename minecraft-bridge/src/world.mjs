@@ -9,17 +9,24 @@ import { REMEMBERED_BLOCK, REMEMBERED_STONE, REMEMBERED_ANIMALS, storedCounts, s
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
-const MAX_LOG_HEIGHT = 4 // 幹の下の地面からこの高さまでの原木は地面から切る
+const MAX_LOG_HEIGHT = 5 // 地面に立って手が届く、地面からの原木の高さ（目の高さ 1.6 ＋ 届く距離 4.5）
+const MAX_LOG_HEIGHT_TOWER = 8 // 土を持っていれば、足元に積んで（1x1 の塔）ここまで届く
 const HUNT_RADIUS = 32
 const TARGETS_PER_KIND = 3
 
-// 幹の下の地面が MAX_LOG_HEIGHT ブロック以内なら、その原木には届く。
+// 原木に届くか: 下へ、原木と空気を通り越して最初の地面（葉でない固いブロック）までの高さで決める。
+// 前は地面から原木が続いていることを求めていたので、下の原木を切った後の浮いた幹や、段差の上に
+// 張り出した木は、近くにあっても木と見なさなかった（2026-09-26）
 function logReachable (bot, block) {
-  for (let dy = 1; dy <= MAX_LOG_HEIGHT; dy++) {
+  const max = (inventoryCounts(bot).dirt ?? 0) > 0 ? MAX_LOG_HEIGHT_TOWER : MAX_LOG_HEIGHT
+  for (let dy = 1; dy <= max; dy++) {
     const below = bot.blockAt(block.position.offset(0, -dy, 0))
     if (!below) return false
-    if (isLog(below.name)) continue
-    return below.boundingBox === 'block' && !isLeaves(below.name)
+    if (isLog(below.name) || below.boundingBox === 'empty') {
+      if (/water|lava/.test(below.name)) return false
+      continue
+    }
+    return !isLeaves(below.name)
   }
   return false
 }
