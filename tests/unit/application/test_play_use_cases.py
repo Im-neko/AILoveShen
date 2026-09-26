@@ -1025,6 +1025,55 @@ class TestStepsChosenByJev:
         assert "review" in schema["required"]
         assert session.goal.review == "原木はもう 12 本あるので板材から"
 
+    @pytest.mark.asyncio
+    async def test_a_mid_goal_that_does_not_progress_goes_back_to_gemini(
+        self, bridge, text_generator, prompt_builder, selector, events, mid_goals
+    ):
+        """小目標が済んでも中目標の数が変わらないまま続けば、Jev ではなく Gemini が考え直す。"""
+        from ailoveshen.application.use_cases.goal_chooser import GoalChooser
+
+        notes_store = Mock()
+        notes_store.load.return_value = None
+        use_case = AdvancePlayUseCase(
+            bridge=bridge,
+            text_generator=text_generator,
+            prompt_builder=prompt_builder,
+            action_selector=selector,
+            event_publisher=events,
+            conversation=Conversation(),
+            mid_goals=mid_goals,
+            town=AsyncMock(),
+            notes=NoteKeeper(notes_store),
+            chooser=GoalChooser(FakeJev("A"), bridge),
+            mid_goal_stall_steps=4,
+        )
+        text_generator.generate_json.return_value = STEPS_DECISION
+        bridge.check.side_effect = _judged()
+        session = _session()
+        await use_case.execute(session)  # 手順を書く
+        assert text_generator.generate_json.await_count == 1
+
+        for remaining in (5, 4, 3, 2):  # 小目標は進むが、中目標の数は変わらない
+            bridge.observe.return_value = _obs(remaining=remaining)
+            await use_case.execute(session)
+        bridge.observe.return_value = _obs(met=True)
+        text_generator.generate_json.return_value = {
+            "predicate": "explored",
+            "distance": 120,
+            "serves": "current",
+            "reason": "近くに木がないので遠くへ",
+            "diagnosis": "まわりに木がない",
+            "remedy": "change",
+            "review": "近くの木は切り尽くした",
+        }
+        await use_case.execute(session)
+
+        assert text_generator.generate_json.await_count == 2
+        reason = prompt_builder.build_goal_prompt.call_args.kwargs["goal_ended_because"]
+        assert "has made no progress in 5 actions" in reason
+        assert session.goal.spec.predicate == GoalPredicate.EXPLORED
+        assert prompt_builder.build_goal_prompt.call_args.kwargs["retry_allowed"] is False
+
     def test_which_boundaries_go_to_gemini(self, make):
         from ailoveshen.domain.value_objects import PlannedStep
 

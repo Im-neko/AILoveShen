@@ -270,6 +270,7 @@ def create_game_service(
         screen=screen,
         chooser=chooser,
         replan_minutes=minecraft.replan_minutes,
+        mid_goal_stall_steps=minecraft.mid_goal_stall_steps,
         skills=(
             SkillWriter(
                 text_generator,

@@ -323,6 +323,10 @@ minecraft:
     small_goals: "jev"
     jev_goal_min_confidence: 0.4
     replan_minutes: 20
+    # When the top mid goal's progress (the counts of its conditions) stays the same over this many
+    # actions for it, Gemini reconsiders it (another approach, explore far, move it down or drop it):
+    # small goals ending as stalled could otherwise come back to the same one and circle. 0: off
+    mid_goal_stall_steps: 60
     goal_record_dir: "logs/goals"  # Jev's choices (options, chosen, confidence, why Gemini)
     # Skills (docs/design/22_skills.md, control: tools only): Gemini writes JS skills over the
     # tools, the bridge runs them in a sandbox and keeps the ones that worked

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
@@ -76,6 +77,7 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     MessageRole,
     MessageType,
+    MidGoal,
     Screenshot,
     SkillInfo,
     SkillRun,
@@ -256,6 +258,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         replan_minutes: float = 20.0,
         clock: Callable[[], float] = time.monotonic,
         skills: Optional[SkillWriter] = None,
+        mid_goal_stall_steps: int = 60,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -285,6 +288,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             clock: 時計（テストで差し替える）
             skills: 技を書くもの（docs/design/22）。"tools" のとき、技の道具（run_skill /
                 write_skill）と技の一覧を出す。None なら技を使わない
+            mid_goal_stall_steps: 一番上の中目標の進み具合（条件の数）が、そのための行動を
+                これだけ続けても変わらなければ、Gemini に考え直させる（小目標を変えても同じ所を
+                回るのを止める。0 なら見ない）
 
         Raises:
             ValueError: control が不明か、"tools" なのに tool_watcher がないとき
@@ -310,6 +316,10 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._recent_tools: deque[ToolOutcome] = deque(maxlen=RECENT_TOOLS)
         self._chooser = chooser
         self._replan_seconds = replan_minutes * 60
+        # 一番上の中目標の進み具合の見張り: その id、進み具合の数、変わらないまま使った行動の数
+        self._mid_stall_steps = mid_goal_stall_steps
+        self._mid_watch: tuple[Optional[str], tuple[int, ...]] = (None, ())
+        self._mid_idle_steps = 0
         self._clock = clock
         self._last_gemini_at: float | None = None
         self._last_plan: tuple[str, ...] = ()  # 前の Gemini の決定のときの中目標の並び
@@ -357,6 +367,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         else:
             decision, result = await self._act_on_candidate(goal, obs)
         await self._mid_goals.step_counted(session.plan, session.record(result))
+        if goal.mid_goal_id is not None and goal.mid_goal_id == self._mid_watch[0]:
+            self._mid_idle_steps += 1
         self._goal_steps.append(_step_line(decision, result))
         await self._event_publisher.publish(
             GameActionExecutedEvent(
@@ -556,6 +568,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         await self._mid_goals.judge(session.plan)
         await self._town.advance(session, obs)
         self._notes.expire(session.notebook, obs.day)
+        stuck = self._mid_goal_stuck(session)
+        if stuck:
+            reason = f"{reason}; {stuck}" if reason else stuck
         # 目標が終わる前の見え方: その状態が、終わる理由だ
         activity = session.activity()
         await self._end_goal(session, obs, reason)
@@ -591,6 +606,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             return "small goals are decided by Gemini (minecraft.agent.small_goals: gemini)"
         if " died and " in reason:
             return f"the streamer died: the situation changed ({reason})"
+        if MID_STALLED in reason:
+            return f"the mid goal is not progressing ({reason})"
         if any(k in reason for k in (" is stuck ", " stalled ", " is reconsidered: ")):
             return f"the last goal did not work out ({reason})"
         current = session.plan.current
@@ -631,7 +648,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 行き詰まった・進まなかった・画面で考え直すことになった後は、深く考え直す（19 §7）。
         # 画面も添える（23 §2）
         failed = any(
-            k in reason for k in (" is stuck ", " stalled ", " is reconsidered: ", " died and ")
+            k in reason
+            for k in (" is stuck ", " stalled ", " is reconsidered: ", " died and ", MID_STALLED)
         )
         purpose = "goal_after_failure" if failed else "goal"
         # 行き詰まった・進まなかったときは、原因を分析してから決める（docs/design/27）
@@ -641,7 +659,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             else None
         )
         same_failures = _same_failures(session) if failed_goal else 0
-        retry_allowed = same_failures < MAX_SAME_FAILURES
+        # 中目標が進まないときは、同じやり方のやり直しを出さない（別のやり方に変える）
+        retry_allowed = same_failures < MAX_SAME_FAILURES and MID_STALLED not in reason
         record = tuple(self._goal_steps) if failed_goal else ()
         offered = self._offered if failed_goal else ()
         images: list[Screenshot] = []
@@ -727,6 +746,32 @@ class AdvancePlayUseCase(IAdvancePlay):
             return
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"
+        )
+
+    def _mid_goal_stuck(self, session: PlaySession) -> str:
+        """
+        一番上の中目標が、そのための行動を mid_goal_stall_steps 続けても進んでいなければ、その理由
+        （小目標は「進まない」で区切られても、同じ小目標に戻って回り続けることがあった）。
+        進み具合は中目標の条件の数（例: log (3/20) の 3）。変わったら数え直す。
+        """
+        top = session.plan.current
+        if top is None or not self._mid_stall_steps:
+            self._mid_watch, self._mid_idle_steps = (None, ()), 0
+            return ""
+        numbers = _progress_numbers(top)
+        if (top.id, numbers) != self._mid_watch:
+            self._mid_watch, self._mid_idle_steps = (top.id, numbers), 0
+            return ""
+        if self._mid_idle_steps < self._mid_stall_steps:
+            return ""
+        steps, self._mid_idle_steps = self._mid_idle_steps, 0  # 考え直した後も同じだけ待つ
+        return (
+            f"the mid goal {top.title} {MID_STALLED} in {steps} actions for it "
+            f"({'; '.join(top.summary()) or 'no progress shown'}). Do not try the same way again: "
+            "change the approach: another source or method; grow what cannot be found (no trees "
+            "nearby: plant saplings with planted so trees grow near the home, and do other work "
+            "while they grow; no food: farmed); explore far in a new direction with explored; or "
+            "move this mid goal down or drop it with the reason"
         )
 
     async def _step_status(self, plan: MidGoalPlan) -> tuple[ConditionStatus, ...]:
@@ -829,7 +874,16 @@ def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
 
 def _no_progress(reason: str) -> bool:
     """小目標が行き詰まったか進まなかったか（原因を分析する失敗。docs/design/27）。"""
-    return " is stuck " in reason or " stalled " in reason
+    return " is stuck " in reason or " stalled " in reason or MID_STALLED in reason
+
+
+MID_STALLED = "has made no progress"
+_PROGRESS = re.compile(r"\((\d+)/\d+\)")
+
+
+def _progress_numbers(goal: MidGoal) -> tuple[int, ...]:
+    """中目標の進み具合の数（条件ごとの「(3/20)」の 3）。行き方の説明は変わっても数えない。"""
+    return tuple(int(m) for line in goal.summary() for m in _PROGRESS.findall(line))
 
 
 def _same_failures(session: PlaySession) -> int:

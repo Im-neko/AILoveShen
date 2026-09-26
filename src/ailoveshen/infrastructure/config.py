@@ -211,6 +211,8 @@ class MinecraftSettings:
     small_goals: str = "jev"
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
+    # 一番上の中目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
+    mid_goal_stall_steps: int = 60
     goal_record_dir: str = "logs/goals"
     # 技（docs/design/22）: 道具モードで、Gemini が JS の技を書いて覚え、直して使い回す
     skills_enabled: bool = True
@@ -566,6 +568,9 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
             ),
             replan_minutes=float(agent_data.get("replan_minutes", defaults.replan_minutes)),
+            mid_goal_stall_steps=int(
+                agent_data.get("mid_goal_stall_steps", defaults.mid_goal_stall_steps)
+            ),
             goal_record_dir=agent_data.get("goal_record_dir", defaults.goal_record_dir),
             skills_enabled=bool(agent_data.get("skills", defaults.skills_enabled)),
             skill_rewrites_per_hour=int(
