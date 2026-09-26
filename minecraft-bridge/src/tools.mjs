@@ -7,12 +7,14 @@
 import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
-import { protectedReason, hasBed } from './home.mjs'
+import { protectedReason, hasBed, bedSpot } from './home.mjs'
+import { isHomeCell } from './builds.mjs'
 import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
 import { homeChests, chestWith } from './memory.mjs'
 import { exposed } from './world.mjs'
 
+const FURNITURE = new Set(['crafting_table', 'furnace', 'chest'])
 const { Vec3 } = vec3Pkg
 
 const MAX_TOOL_DISTANCE = 256 // goto は 1 回 48m ずつ歩く
@@ -61,6 +63,16 @@ function entity (bot, args) {
 export function createTools (deps) {
   const { bot, state, knowledge } = deps
 
+  // 家の中に置いてよい家具（作業台・かまど・チェスト）: 室内の床の高さの空いたセルで、ドアの内側の
+  // セルでなく、ベッドがまだなければベッドの場所が残るとき。どこに置くかは Gemini が決める
+  const furnishing = (item, pos) => {
+    const home = state.home
+    if (!home || !FURNITURE.has(item) || pos.y !== home.min.y || !isHomeCell(home, pos) || pos.equals(home.inside)) return false
+    if (hasBed(bot, home)) return true
+    const occupied = { ...bot, blockAt: (p) => p.equals(pos) ? { name: item, boundingBox: 'block', position: p } : bot.blockAt(p) }
+    return !!bedSpot(occupied, home)
+  }
+
   // 行動の道具の引数から、実行するもの（PRIMITIVES の c）を作る
   const build = {
     do_suggestion ({ id }) {
@@ -93,7 +105,7 @@ export function createTools (deps) {
       const cell = bot.blockAt(pos)
       if (!cell) refuse(`${fmt(pos)} is not loaded`)
       if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}`)
-      const why = protectedReason(state, pos)
+      const why = furnishing(args.item, pos) ? null : protectedReason(state, pos)
       if (why) refuse(`will not place at ${fmt(pos)}: ${why}`)
       const feet = bot.entity.position.floored()
       if (pos.equals(feet) || pos.equals(feet.offset(0, 1, 0))) refuse(`you are standing in ${fmt(pos)}; move first`)
@@ -108,7 +120,7 @@ export function createTools (deps) {
       if (!recipes.length) refuse(`${item} has no crafting recipe`)
       const times = Math.max(1, Math.min(MAX_CRAFT_TIMES, Math.floor(Number(args.times ?? 1))))
       const needsTable = recipes.every((r) => r.needsTable)
-      if (needsTable && !findTable(bot, state)) refuse(`${item} needs a crafting table within reach; place one first`)
+      if (needsTable && !findTable(bot, state)) refuse(`${item} needs a crafting table within reach; craft one (4 planks) and place it`)
       return { c: { verb: 'craft', target: item, item, times, needsTable, inPlace: true } }
     },
     pickup () {

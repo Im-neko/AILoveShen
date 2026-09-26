@@ -214,3 +214,16 @@ test('まわりの形: 木の葉の下の平らな地面は、同じ高さ（葉
   const view = lookAround({ entity: { position: v(0.5, 70, 0.5) }, blockAt: canopy }, 1)
   assert.deepEqual(view.grid, [' 0  0  0', ' 0  @  0', ' 0  0  0'])
 })
+
+test('作業台やチェストは家の中にも置ける（ドアの内側とベッドの場所は残す）。ほかの物は今までどおり断る', async () => {
+  // 家の中（ボットは (2, 70, 2)）、昼、ベッドなし
+  const { callTool, runs } = setup({ items: [['crafting_table', 1], ['dirt', 4]] })
+  assert.equal((await callTool('place', { item: 'crafting_table', x: 1, y: 70, z: 1 })).ok, true)
+  assert.equal(runs.at(-1).c.verb, 'place_at')
+  assert.match((await callTool('place', { item: 'crafting_table', x: 2, y: 70, z: 3 })).result, /current home/) // ドアの内側
+  assert.match((await callTool('place', { item: 'dirt', x: 1, y: 70, z: 1 })).result, /current home/)
+  // ベッドの場所が残らない置き方は断る: 西と東の列、真ん中の奥がふさがっている
+  const cramped = { '1,70,2': 'chest', '1,70,3': 'chest', '3,70,1': 'chest', '3,70,2': 'chest', '3,70,3': 'chest' }
+  const { callTool: tight } = setup({ items: [['crafting_table', 1]], extra: cramped })
+  assert.match((await tight('place', { item: 'crafting_table', x: 2, y: 70, z: 1 })).result, /current home/)
+})

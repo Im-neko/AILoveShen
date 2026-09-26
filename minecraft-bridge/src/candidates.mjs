@@ -15,7 +15,7 @@ import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } 
 import { isInside, exitSpots, shelterOf } from './home.mjs'
 import { recall, visited, homeChests, chestWith, furnaceWith } from './memory.mjs'
 import { cooking } from './cooking.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
+import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
@@ -86,6 +86,24 @@ function waitsInside (bot, danger) {
 
 // 候補を実行するとボットが家の外に出るか（その場合は先にドアから出る）。位置のない候補は、
 // 外でボットのまわりに対して行う（探索、作業台を置く）。
+const NEAR_TABLE = 6 // これより遠い作業台には、新しく置く選択肢も出す
+const TABLE_PLANKS = 4
+
+function placeStation (bot, state, item, why = '') {
+  return stationSpots(bot, state, item).map(({ pos, where }) => ({
+    id: `place ${item} ${where === 'inside' ? 'inside the house' : 'nearby'}`, verb: 'place_station', target: item, item, pos, distance: dist(bot, pos), ...(why ? { why } : {})
+  }))
+}
+
+export function newTableHere (bot, state, table) {
+  const why = `the crafting table at ${fmt(table.position)} is ${dist(bot, table.position)}m away`
+  const inv = inventoryCounts(bot)
+  if (inv.crafting_table > 0) return placeStation(bot, state, 'crafting_table', why)
+  const planks = Object.entries(inv).filter(([n]) => n.endsWith('_planks')).reduce((s, [, c]) => s + c, 0)
+  if (planks < TABLE_PLANKS || !stationSpots(bot, state, 'crafting_table').length) return []
+  return [{ id: `craft a crafting_table to use here (${TABLE_PLANKS} planks)`, verb: 'craft', target: 'crafting_table', item: 'crafting_table', times: 1, needsTable: false, inPlace: true, why }]
+}
+
 export function needsOutside (c, home) {
   if (c.inPlace) return false
   return !c.pos || !isInside({ entity: { position: c.pos } }, home)
@@ -128,18 +146,18 @@ function fromLeaf (bot, state, world, leaf) {
     }
     case 'craft': {
       const table = leaf.needsTable ? findTable(bot, state) : null
-      return [{
+      const out = [{
         id: `craft ${leaf.item} x${leaf.times}`, verb: 'craft', target: leaf.item, item: leaf.item, times: leaf.times, needsTable: leaf.needsTable,
         ...(table ? { pos: table.position, distance: dist(bot, table.position) } : { inPlace: !leaf.needsTable })
       }]
+      // 作業台が遠ければ、ここに新しいものを置く選択肢も出す（歩くか、板材 4 枚で作るかは選ぶ側が決める）
+      if (table && dist(bot, table.position) > NEAR_TABLE) out.push(...newTableHere(bot, state, table))
+      return out
     }
-    case 'place': {
-      // 置ける場所でだけ出す（何も置けない場所で何度も選ばれた）。夜に家の中にいれば、作業台は
-      // 家の中に置く（位置が家の中なので、避難中でも外す対象にならない）
-      const spot = stationSpot(bot, state, leaf.item)
-      const indoor = spot && state.home && isInside({ entity: { position: spot } }, state.home)
-      return spot ? [{ id: `place ${leaf.item} ${indoor ? 'inside the house' : 'nearby'}`, verb: 'place_station', target: leaf.item, item: leaf.item, pos: spot, distance: dist(bot, spot) }] : []
-    }
+    case 'place':
+      // 置ける場所でだけ出す（何も置けない場所で何度も選ばれた）。家の中と外の両方を出し、選ぶ側が
+      // 決める（避難中は家の中だけ）
+      return placeStation(bot, state, leaf.item)
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {

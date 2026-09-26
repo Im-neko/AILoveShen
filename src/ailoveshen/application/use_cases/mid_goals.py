@@ -230,22 +230,15 @@ class MidGoalKeeper:
         plan: MidGoalPlan,
         proposal: MidGoalProposal,
         requested_by: str,
-        waiting: bool = False,
     ) -> MidGoal:
         """
-        視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。`proposal.now` なら
-        先頭に（配信者が待っているときだけ。`waiting` は呼び出し側が今の小目標から決める）。
+        視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。`proposal.now`
+        （配信者が今やると判断した）なら先頭に。呼び出し側が今の小目標を区切る。
 
         Raises:
-            GoalRejectedError: 条件を判定できないとき、待っていないのに now のとき
+            GoalRejectedError: 条件を判定できないとき
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
-        if proposal.now and not waiting:
-            # 黙って後回しにすると、「今やるね」と言った返答と食い違う: 返答を作り直させる
-            raise GoalRejectedError(
-                "when now is only for while you are waiting (the night inside the home, "
-                "through_night or at_home); now you are working on something, so use next"
-            )
         blocks = await self._design_builds(proposal, BuildDesign.VIEWER_MAX_BLOCKS)
         await self._bridge.check(proposal.conditions)
         goal = plan.add(

@@ -358,12 +358,12 @@ class TestMidGoalPlan:
         goal = plan.add("剣", (SWORD,), requested_by="neko", position=0)
         assert [g.id for g in plan.pending] == ["m1", goal.id, "m2"]
 
-    def test_viewer_goal_is_never_moved_first(self):
+    def test_the_streamer_may_move_a_viewer_goal_first(self):
+        """並べ替えは配信者の判断: 合理的なら視聴者の頼みも先頭にできる（13 §14）。"""
         plan = _plan()
         goal = plan.add("剣", (SWORD,), requested_by="neko")
         plan.move(goal.id, 0)
-        assert plan.current.id == "m1"
-        assert plan.pending[1].id == goal.id
+        assert plan.current.id == goal.id
 
     def test_viewer_goal_in_an_empty_list_is_first(self):
         plan = MidGoalPlan(mission=MISSION)

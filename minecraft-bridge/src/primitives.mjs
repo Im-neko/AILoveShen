@@ -11,7 +11,7 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -124,13 +124,40 @@ class GoalAwayFrom extends goals.Goal {
 
 const goNear = (bot, pos, range, signal) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range), signal)
 
-// 作業台やかまどを置く場所: 完全なブロックの上の空気で、ボットから 2〜3 ブロック（立っている場所では
-// ない）、上下1ブロックまで（自分の高さの決まった輪だけでは、坂や洞窟で何も見つからなかった）。
-// 家の中や計画中の敷地には置かない。近い順
+// 作業台やかまどを置ける場所: [{ pos, where: 'inside' | 'nearby' }]。どちらに置くかは選ぶ側
+// （Jev か Gemini）が決める。家の中は、ドアの通り道を空け、ベッドを置く場所を残せるときだけ
+// （roomSpot）。建てる予定の家の敷地と、家の壁のまわりには置かない（壁が建てられなくなる）。
+// 避難中（夜に家の中）は家の中だけ（外には出ない。夜の待ち時間にクラフトできなかった）
+export function stationSpots (bot, state, item = null) {
+  const out = []
+  if (state.home && isInside(bot, state.home)) {
+    const pos = roomSpot(bot, state.home)
+    if (pos) out.push({ pos, where: 'inside' })
+  }
+  if (state.home && shelterOf(bot, state.home).sheltering) return out
+  const pos = nearbySpot(bot, state)
+  if (pos) out.push({ pos, where: 'nearby' })
+  return out
+}
+
+// 1 つだけ要るとき（置けるかの確認、候補に位置がないとき）: 家の中を先に
 export function stationSpot (bot, state, item = null) {
-  // 避難中（夜に家の中）の作業台は家の中に: 外には出られず、夜の待ち時間にクラフトできなかった
-  // （視聴者に「チェスト作ったら？」と言われても朝まで待った）
-  if (item === 'crafting_table' && state.home && shelterOf(bot, state.home).sheltering) return chestSpot(bot, state.home)
+  return stationSpots(bot, state, item)[0]?.pos ?? null
+}
+
+// 家の中の空いたセル（ドアの列を外す。chestSpot と同じ）。ベッドがまだなければ、置いた後も
+// ベッドの場所が残るものだけ
+function roomSpot (bot, home) {
+  const spot = chestSpot(bot, home)
+  if (!spot || hasBed(bot, home)) return spot
+  const occupied = { ...bot, blockAt: (p) => p.equals(spot) ? { name: 'crafting_table', boundingBox: 'block', position: p } : bot.blockAt(p) }
+  return bedSpot(occupied, home) ? spot : null
+}
+
+// 外: 完全なブロックの上の空気で、ボットから 2〜3 ブロック（立っている場所ではない）、上下1ブロック
+// まで（自分の高さの決まった輪だけでは、坂や洞窟で何も見つからなかった）。家と計画中の敷地の
+// まわりには置かない。近い順
+function nearbySpot (bot, state) {
   const me = bot.entity.position.floored()
   const spots = []
   for (let dx = -3; dx <= 3; dx++) {
@@ -421,7 +448,9 @@ export const PRIMITIVES = {
   async place_station (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
-    const pos = stationSpot(bot, state, c.item)
+    // 候補が選んだ場所（家の中か外）。まだ空いていなければ、今置ける場所
+    const chosen = c.pos && bot.blockAt(c.pos)?.name === 'air' ? c.pos : null
+    const pos = chosen ?? stationSpot(bot, state, c.item)
     if (!pos) throw new Error(`no free spot for the ${c.item}`)
     await bot.equip(item, 'hand')
     await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })

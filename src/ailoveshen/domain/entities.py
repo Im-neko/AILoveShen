@@ -350,11 +350,13 @@ class MidGoalPlan(Entity):
         return goal
 
     def move(self, mid_goal_id: str, position: int) -> MidGoal:
-        """未完了の中目標の優先度を変える（position は 0 始まり）。視聴者のものは先頭にしない。"""
+        """
+        未完了の中目標の優先度を変える（position は 0 始まり）。配信者自身の判断なので、
+        視聴者の頼みも先頭にできる（合理的なら優先を変えながら進める。13 §14）。
+        """
         goal = self._require(mid_goal_id)
         self._goals.remove(goal)
-        earliest = 1 if goal.requested_by is not None and self._goals else 0
-        self._goals.insert(min(max(position, earliest), len(self._goals)), goal)
+        self._goals.insert(min(max(position, 0), len(self._goals)), goal)
         self.updated_at = _utc_now()
         return goal
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
-import { stationSpot } from '../src/primitives.mjs'
+import { stationSpot, stationSpots } from '../src/primitives.mjs'
 import { ground } from '../src/candidates.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -74,12 +74,19 @@ test('夜に家の中にいれば、作業台は家の中に置く（夜の待�
   assert.ok(night && isInside({ entity: { position: night } }, state.home), `inside: ${night}`)
   assert.notEqual(`${night.x},${night.z}`, '102,1') // ドアの内側はふさがない
   assert.ok(!['102,2', '102,3'].includes(`${night.x},${night.z}`)) // ベッドの上ではない
-  // 昼は今までどおり家の外（家の中には置かない）
-  const day = stationSpot(room(1000), state, 'crafting_table')
-  assert.ok(!day || !isInside({ entity: { position: day } }, state.home))
-  // かまどは夜でも家の中に置かない
-  const furnace = stationSpot(room(18000), state, 'furnace')
-  assert.ok(!furnace || !isInside({ entity: { position: furnace } }, state.home))
+  // 夜（避難中）は家の中だけ
+  assert.deepEqual(stationSpots(room(18000), state, 'crafting_table').map((s) => s.where), ['inside'])
+  // 昼は家の中と外の両方を出し、選ぶ側が決める
+  assert.deepEqual(stationSpots(room(1000), state, 'crafting_table').map((s) => s.where), ['inside', 'nearby'])
+})
+
+test('ベッドがまだなければ、ベッドの場所を残せないときは家の中に置かない', async () => {
+  const state = homeState()
+  // ベッドなし、東の列と真ん中の列がチェストでふさがっている: 空きは西の列（3 マス）とドアの内側。
+  // 西の列に作業台を置くと、残り 2 マスに立つ場所のあるベッドの向きがない
+  const chests = { '102,70,2': 'chest', '102,70,3': 'chest', '103,70,1': 'chest', '103,70,2': 'chest', '103,70,3': 'chest' }
+  const spots = stationSpots(room(18000, chests), state, 'crafting_table')
+  assert.deepEqual(spots, [])
 })
 
 test('夜に家の中にいれば、使える作業台は家の中のものだけ', async () => {
@@ -88,4 +95,17 @@ test('夜に家の中にいれば、使える作業台は家の中のものだ�
   assert.equal(findTable(room(18000, { '98,70,2': 'crafting_table' }), state), null) // 外の作業台
   const indoor = findTable(room(18000, { '98,70,2': 'crafting_table', '101,70,3': 'crafting_table' }), state)
   assert.deepEqual(indoor.position, v(101, 70, 3))
+})
+
+test('作業台が遠ければ、ここに新しく作って置く選択肢も出す（板材 4 枚。どちらにするかは選ぶ側）', async () => {
+  const { newTableHere } = await import('../src/candidates.mjs')
+  const state = homeState()
+  const far = { position: v(130, 70, 2) }
+  const withItems = (items) => ({ ...room(1000), inventory: { items: () => items.map(([name, count]) => ({ name, count })) } })
+  const [craft] = newTableHere(withItems([['oak_planks', 4]]), state, far)
+  assert.match(craft.id, /craft a crafting_table to use here/)
+  assert.match(craft.why, /130,70,2 is 27.5m away/)
+  const placed = newTableHere(withItems([['crafting_table', 1]]), state, far)
+  assert.deepEqual(placed.map((c) => c.id), ['place crafting_table inside the house', 'place crafting_table nearby'])
+  assert.deepEqual(newTableHere(withItems([['oak_planks', 3]]), state, far), [])
 })
