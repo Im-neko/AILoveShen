@@ -675,7 +675,7 @@ class TestEmptyPromise:
             "牛いるよ", "今はまず目の前の牛さんからお肉を分けてもらうね！", "none"
         )
         _, schema = mock_text_generator.generate_json.await_args_list[1].args
-        assert schema["properties"]["decision"]["enum"] == ["already", "now", "later", "cannot"]
+        assert schema["properties"]["decision"]["enum"] == ["none", "already", "now", "later", "cannot"]
         assert mock_text_generator.generate_json.await_args_list[1].kwargs["purpose"] == "promise"
         mock_prompt_builder.build_system_prompt.assert_any_call(CharacterProfile(), "promise")
         assert lessons.learn.call_count == 1
@@ -759,7 +759,80 @@ class TestEmptyPromise:
         assert len(session.plan.pending) == 2 and session.rethink_reason == ""
 
     @pytest.mark.asyncio
-    async def test_a_promise_that_cannot_be_kept_is_written_again_without_it(
+    async def test_a_promise_that_cannot_be_kept_is_said_without_it_from_the_same_decision(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """守れない約束は、約束の判断が書き直した返答を話す（返答を作り直さない。2026-09-27:
+        同じコメントに 2 回返答を作っていた）。"""
+        use_case, check, lessons = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ダンスしてみるね！", "request": "none", "lesson": "踊る"},
+            {
+                "decision": "cannot",
+                "reason": "dancing is not a condition",
+                "rewritten_reply": "ダンスはまだできないんだ、ごめんね！",
+            },
+        ]
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="踊って", session=_playing())
+        )
+
+        assert response.text == "ダンスはまだできないんだ、ごめんね！"
+        assert mock_text_generator.generate_json.await_count == 2
+        assert check.promises.await_count == 1
+        lessons.learn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_reply_jev_misread_as_a_promise_is_spoken_as_it_is(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """実例（2026-09-27 13:07）: 今していることの説明は約束ではない（none: そのまま話す）。"""
+        use_case, _, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "今作業台を作って資材保管庫を準備してるよ！", "request": "none"},
+            {"decision": "none", "reason": "it only tells what the streamer is doing now"},
+        ]
+        session = _playing()
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="なんて？", session=session)
+        )
+
+        assert response.text == "今作業台を作って資材保管庫を準備してるよ！"
+        assert response.mid_goal is None and len(session.plan.pending) == 2
+        assert mock_text_generator.generate_json.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_promise_that_cannot_be_kept_without_a_rewrite_is_written_again(
         self,
         mock_text_generator,
         mock_prompt_builder,

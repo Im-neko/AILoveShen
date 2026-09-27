@@ -49,6 +49,14 @@ class KeptPromise:
     now: bool
 
 
+@dataclass(frozen=True)
+class UnkeptPromise:
+    """中目標にできない約束: 理由と、約束を外して書き直した返答（空なら返答から作り直す）。"""
+
+    reason: str
+    reply: str = ""
+
+
 class GenerateResponseUseCase(IGenerateResponse):
     """
     視聴者のチャットに返答するユースケース（サブループ / 割り込み）。
@@ -259,12 +267,21 @@ class GenerateResponseUseCase(IGenerateResponse):
                 # する（今やるか後でやるかは Gemini が決める）。できなければ言わせない
                 logger.info(f"返答 {attempt} は約束している。守り方を決める: {data!r}")
                 kept = await self._keep_promise(request, context, session, text, str(handling))
-                if isinstance(kept, str):
+                if isinstance(kept, UnkeptPromise):
+                    if kept.reply:
+                        # 同じ判断で書き直した返答を使う（返答を作り直さない: 同じコメントに 2 回
+                        # 返答を作っていた。2026-09-27）。約束の教訓は覚えない
+                        logger.info(
+                            f"返答 {attempt} の約束は守れないので、約束を外して話す: "
+                            f"{kept.reason} → {kept.reply}"
+                        )
+                        self._learn_reading(request, data.get("name_reading"))
+                        return kept.reply, None
                     error = (
-                        f"返答「{text}」は行動を約束しているが、中目標にできない（{kept}）。"
+                        f"返答「{text}」は行動を約束しているが、中目標にできない（{kept.reason}）。"
                         "約束しない返答にする（覚えておく、普段からしている、まだできない）。"
                     )
-                    logger.warning(f"返答 {attempt} の約束は守れない: {kept}")
+                    logger.warning(f"返答 {attempt} の約束は守れない: {kept.reason}")
                     continue
                 self._learn(session, request, data)
                 if kept is None or not kept.now:
@@ -303,11 +320,12 @@ class GenerateResponseUseCase(IGenerateResponse):
         session: PlaySession,
         reply: str,
         handling: str,
-    ) -> KeptPromise | None | str:
+    ) -> KeptPromise | None | UnkeptPromise:
         """
         約束している返答の約束を中目標にする（docs/design/34 §10）。Gemini が今やる（小目標を
-        区切る）か後でやるかを決める。リストの中目標がもうしているなら何も足さない（None）。
-        中目標にできなければ、その理由（str: 返答を約束しない形に書き直させる）。
+        区切る）か後でやるかを決める。約束していない（Jev の読み違い）か、リストの中目標がもう
+        しているなら何も足さない（None）。中目標にできなければ、その理由と、約束を外して書き直した
+        返答（UnkeptPromise）。
         今やるでも、チャットの指摘で小目標を切ったばかりなら後でやる（小目標をばたつかせない）。
         """
         system_prompt = self._prompt_builder.build_system_prompt(self._character, "promise")
@@ -327,14 +345,17 @@ class GenerateResponseUseCase(IGenerateResponse):
                     prompt, schema, system_instruction=system_prompt, purpose="promise"
                 )
             except TextGenerationError as e:
-                return f"the decision failed: {e}"
+                return UnkeptPromise(f"the decision failed: {e}")
             decision = data.get("decision")
             reason = str(data.get("reason", "")).strip()
             logger.info(f"約束の守り方 {attempt}: {decision}（{reason}）")
-            if decision == PromiseHandling.ALREADY.value:
+            if decision in (PromiseHandling.NONE.value, PromiseHandling.ALREADY.value):
                 return None
             if decision not in (PromiseHandling.NOW.value, PromiseHandling.LATER.value):
-                return reason or "it cannot be written as conditions"
+                return UnkeptPromise(
+                    reason or "it cannot be written as conditions",
+                    str(data.get("rewritten_reply", "") or "").strip(),
+                )
             if handling == RequestHandling.DECLINE.value:
                 decision = PromiseHandling.LATER.value  # 断った返答では今やらない
             now = decision == PromiseHandling.NOW.value
@@ -352,7 +373,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             if proposal.now and not pending:
                 self._last_rethink_at = self._clock()
             return KeptPromise(mid_goal, proposal.now)
-        return error or "it could not become a mid goal"
+        return UnkeptPromise(error or "it could not become a mid goal")
 
     def _learn(
         self, session: PlaySession, request: GenerateResponseRequest, data: dict[str, object]

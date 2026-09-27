@@ -105,6 +105,7 @@ class RequestHandling(str, Enum):
 class PromiseHandling(str, Enum):
     """約束している返答の約束を、どう守るか（docs/design/34 §10）。"""
 
+    NONE = "none"  # ゲームでの行動を約束していない（今していることの説明、気持ち）: そのまま話す
     ALREADY = "already"  # リストの中目標がもうそれをしている: そのまま話す
     NOW = "now"  # 今の小目標を区切って今やる（中目標の先頭）
     LATER = "later"  # 今の中目標の後でやる
@@ -536,10 +537,13 @@ def promise_schema(allow_now: bool = True) -> dict[str, Any]:
             "decision": {
                 "type": "string",
                 "enum": decisions,
-                "description": "already: a mid goal in the list already has these conditions "
-                "(what only a survival small goal is doing does not count: make it a mid goal); "
-                "now: cut the current small goal and do it right away; later: after the mid goal "
-                "worked on now; cannot: only when its result cannot be written as conditions",
+                "description": "none: the reply promises no new action in the game (it tells "
+                "what the streamer is doing now, feelings, trying hard); already: a mid goal in "
+                "the list already has these conditions (what only a survival small goal is doing "
+                "does not count: make it a mid goal); now: cut the current small goal and do it "
+                "right away; later: after the mid goal worked on now (also when it is not the "
+                "most important now); cannot: only when its result cannot be written as "
+                "conditions",
             },
             "title": {"type": "string", "description": "now / later: the mid goal's title"},
             "conditions": _conditions_schema(),
@@ -554,8 +558,15 @@ def promise_schema(allow_now: bool = True) -> dict[str, Any]:
                 "description": "why it helps (now / later: and why now or later), or why it "
                 "cannot be done, in one sentence",
             },
+            "rewritten_reply": {
+                "type": "string",
+                "description": "cannot: the reply to the viewer written again without the "
+                "promise, spoken as it is (same tone, still answering the comment; say it cannot "
+                "be done yet or that you will remember it, never that you will do it). Otherwise "
+                "an empty string",
+            },
         },
-        "required": ["decision", "reason"],
+        "required": ["decision", "reason", "rewritten_reply"],
     }
 
 
