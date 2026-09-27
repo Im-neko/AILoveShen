@@ -577,8 +577,10 @@ class PlaySession(Entity):
     intent: str = field(default="", init=False)
     # 定期の見直しで画面について書いたこと（確かめていない。docs/design/23）
     screen_note: Optional[ScreenNote] = field(default=None, init=False)
-    # 次の切れ目で今の小目標を終わらせる理由（画面の見直しで「考え直す」になった）
-    rethink_reason: str = field(default="", init=False)
+    # 次の切れ目で今の小目標を終わらせる理由（コメントの指摘、画面の見直し、行き詰まりの確認）。
+    # 番号つきで溜める: 後から来た理由で前の理由を消さない、決めている間に来た理由を残す
+    _rethinks: list[tuple[int, str]] = field(default_factory=list, init=False, repr=False)
+    _rethink_seq: int = field(default=0, init=False, repr=False)
     # 今の状況で思い出した教訓（小目標の始まりか目標の決定の前。docs/design/35）
     lessons: tuple[Lesson, ...] = field(default=(), init=False)
     # 小目標を決めたときのブリッジの死んだ回数（増えたら、死んでリスポーンした: 小目標を選び直す）
@@ -696,8 +698,15 @@ class PlaySession(Entity):
             and deaths > self.deaths_at_goal
         )
 
-    def set_goal(self, goal: Goal, time_phase: str) -> None:
-        """与えられた時間帯に、新しい目標を追い始める。"""
+    def set_goal(self, goal: Goal, time_phase: str, rethinks_seen: Optional[int] = None) -> None:
+        """
+        与えられた時間帯に、新しい目標を追い始める。
+
+        Args:
+            rethinks_seen: この目標を決めたときに読んだ考え直しの番号（`rethink_mark`）。それより
+                後に頼まれた考え直し（決めている間に来たコメントの指摘）は残し、次の切れ目で使う。
+                None なら全部使ったことにする
+        """
         seen = self.last_observation.state.get("deaths") if self.last_observation else None
         self.deaths_at_goal = seen if isinstance(seen, int) else None
         self.goal = goal
@@ -707,12 +716,30 @@ class PlaySession(Entity):
         self.stalled_steps = 0
         self.least_remaining = None
         self.intent = ""
-        self.rethink_reason = ""
+        seen = self._rethink_seq if rethinks_seen is None else rethinks_seen
+        self._rethinks = [r for r in self._rethinks if r[0] > seen]
         self.updated_at = _utc_now()
 
+    @property
+    def rethink_reason(self) -> str:
+        """次の切れ目で今の小目標を終わらせる理由（溜まった順に「; 」でつなぐ。なければ ""）。"""
+        return "; ".join(text for _, text in self._rethinks)
+
+    @property
+    def rethink_mark(self) -> int:
+        """今までに頼まれた考え直しの番号（切れ目で読み、set_goal に渡す）。"""
+        return self._rethink_seq
+
     def request_rethink(self, reason: str) -> None:
-        """次の切れ目で今の小目標を終わらせ、この理由で次の小目標を決めさせる。"""
-        self.rethink_reason = reason.strip()
+        """
+        次の切れ目で今の小目標を終わらせ、この理由で次の小目標を決めさせる。まだ使われていない
+        理由があれば、置き換えずに足す（コメントの指摘を画面の見直しで消さない）。
+        """
+        text = reason.strip()
+        if not text or any(text == t for _, t in self._rethinks):
+            return
+        self._rethink_seq += 1
+        self._rethinks.append((self._rethink_seq, text))
         self.updated_at = _utc_now()
 
     def note_screen(self, note: ScreenNote) -> None:

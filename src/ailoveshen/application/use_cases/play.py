@@ -643,6 +643,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         return outcome
 
     async def _change_goal(self, session: PlaySession, obs: GameObservation) -> None:
+        # ここで読んだ考え直しだけを使ったことにする（決めている間に来たコメントの指摘は残す）
+        seen = session.rethink_mark
         reason = session.goal_end_reason(obs)
         # 決める前に判定する: もう済んでいる中目標（前の実行で建てた家）を、次の目標の
         # 対象にしてはいけない
@@ -686,7 +688,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                         f"小目標は Jev が選んだ（確信度 {picked.confidence:.2f}）: "
                         f"{picked.spec.describe()}"
                     )
-                    await self._start_goal(session, obs, goal, reason, status)
+                    await self._start_goal(session, obs, goal, reason, status, seen)
                     return
             else:
                 why = picked.why
@@ -702,7 +704,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 moment="decision",
             )
             activity = replace(activity, lessons=recalled)
-        await self._decide_goal(session, obs, activity, reason, situation)
+        await self._decide_goal(session, obs, activity, reason, situation, seen)
         self._last_gemini_at = self._clock()
         self._last_plan = tuple(g.id for g in session.plan.pending)
 
@@ -766,6 +768,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         activity: Activity,
         reason: str,
         situation: Optional[dict[str, str]] = None,
+        rethinks_seen: Optional[int] = None,
     ) -> None:
         plan = session.plan
         predicates = predicates_now(obs, plan)
@@ -893,7 +896,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                 await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
             self._write_notes(session.notebook, data, obs.day, goals, viewers)
             self._learn(decision, situation or {})
-            await self._start_goal(session, obs, _goal(decision, plan), reason, status)
+            await self._start_goal(
+                session, obs, _goal(decision, plan), reason, status, rethinks_seen
+            )
             return
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"
@@ -987,12 +992,13 @@ class AdvancePlayUseCase(IAdvancePlay):
         goal: Goal,
         reason: str,
         status: GoalStatus,
+        rethinks_seen: Optional[int] = None,
     ) -> None:
         recalled = await self._recall_for(goal, obs)
         if recalled:
             goal = replace(goal, lessons=tuple(n.text for n in recalled))
         session.lessons = recalled
-        session.set_goal(goal, obs.time_phase)
+        session.set_goal(goal, obs.time_phase, rethinks_seen)
         self._goal_steps.clear()
         if self._stuck is not None:
             self._stuck.reset()

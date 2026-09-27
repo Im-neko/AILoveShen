@@ -882,6 +882,25 @@ class TestAdvancePlay:
         ]
 
     @pytest.mark.asyncio
+    async def test_a_point_made_during_a_goal_decision_is_kept_for_the_next_boundary(
+        self, use_case, text_generator, bridge
+    ):
+        """決めている間に来たコメントの指摘は、新しい小目標で消さない（その決定は見ていない）。"""
+        session = _session(HAVE_PLANKS)
+        session.request_rethink("on screen: a creeper")
+        bridge.observe.return_value = _obs(met=True)
+
+        async def decide(*args, **kwargs):
+            session.request_rethink("neko pointed out in chat: a tree is right there")
+            return PLANKS
+
+        text_generator.generate_json.side_effect = decide
+
+        await use_case.execute(session)
+
+        assert session.rethink_reason == "neko pointed out in chat: a tree is right there"
+
+    @pytest.mark.asyncio
     async def test_viewer_mid_goal_over_budget_is_dropped_and_told(
         self, use_case, text_generator, bridge, events, store
     ):

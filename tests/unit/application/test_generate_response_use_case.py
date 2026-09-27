@@ -425,11 +425,73 @@ class TestRethinkFromChat:
         )
         assert "you were on have(log, 3)" in session.rethink_reason
 
-        session.rethink_reason = ""
-        now[0] += 30  # 60 秒以内: 見送る
+        # まだ使われていない考え直しには、間が短くても足す（小目標をもう一度切らない）
+        now[0] += 10
+        mock_text_generator.generate_json.return_value = {
+            "reply": "そっちの木も見るね",
+            "request": "none",
+            "rethink": "Another tree is to the east.",
+        }
         await use_case.execute(
+            GenerateResponseRequest(user_name="mame", message="東にも木", session=session)
+        )
+        assert "neko pointed out" in session.rethink_reason
+        assert "mame pointed out in chat: Another tree" in session.rethink_reason
+
+        session.set_goal(Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3)), "day")
+        now[0] += 20  # 切ってから 60 秒以内: rethink は使えない。同意だけの返答は書き直させる
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ほんとだ、そっちに行くね", "request": "none", "rethink": "Go there."},
+            {"reply": "今の木を切り終わったら見てみるね", "request": "none"},
+        ]
+        response = await use_case.execute(
             GenerateResponseRequest(user_name="tama", message="こっちにも木", session=session)
         )
+        assert response.text == "今の木を切り終わったら見てみるね"
+        assert session.rethink_reason == ""
+        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
+        assert "rethink は今は使えない" in error
+
+    @pytest.mark.asyncio
+    async def test_no_reply_when_every_attempt_rethinks_too_soon(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """間が短くて考え直せないのに、何度書かせても考え直すと言うなら言わない。"""
+        now = [100.0]
+        use_case = GenerateResponseUseCase(
+            text_generator=mock_text_generator,
+            prompt_builder=mock_prompt_builder,
+            event_publisher=mock_event_publisher,
+            conversation=conversation,
+            character=CharacterProfile(),
+            mid_goals=MidGoalKeeper(
+                bridge=bridge, event_publisher=mock_event_publisher, store=store
+            ),
+            clock=lambda: now[0],
+        )
+        mock_text_generator.generate_json.return_value = {
+            "reply": "そうするね",
+            "request": "none",
+            "rethink": "Cut the tree.",
+        }
+        session = _playing()
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="木あるよ", session=session)
+        )
+        session.set_goal(Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3)), "day")
+        now[0] += 30
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="tama", message="木あるよ", session=session)
+        )
+
+        assert not response.success
         assert session.rethink_reason == ""
 
     @pytest.mark.asyncio

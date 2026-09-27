@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### rethink の経路の漏れを塞ぐ (2026-09-27)
+
+**Commit**: （次のコミット）
+
+ユーザー:「rethink のパスも潰しときたい」（前の項の残り）。同意して rethink を書いた返事が何も起こさない道が 3 つあった。設計書 34 §10.1。
+- 間引き: 60 秒以内の 2 つ目の rethink は消えていた → まだ使われていない考え直しがあれば足す（切り直さないので間引かない）。切ってから 60 秒以内なら返事を書き直させる（accept か、今の小目標を続けると言う）。最後まで rethink なら返事しない。頼みを受ける前に確かめる（`GenerateResponseUseCase._rethink_wait`）
+- 上書き: `PlaySession.request_rethink` は置き換えていた（画面の見直しがコメントの指摘を消す）→ 番号つきで溜める（`_rethinks`、`rethink_reason` はつないだ文）
+- 決めている間の指摘: 新しい小目標の `set_goal` で消えていた → `AdvancePlayUseCase._change_goal` が切れ目で `rethink_mark` を読み、`set_goal(rethinks_seen=)` はそれまでの理由だけ消す（後の指摘は次の切れ目で使う）
+- テスト: `test_house.py`（溜まる、読んだ分だけ消す）、`test_play_use_cases.py`（決めている間の指摘が残る。直す前は落ちることを確かめた）、`test_generate_response_use_case.py`（足す、書き直し、最後まで rethink なら返事しない）
+
 ### 返事で「明るくしておくね」と約束して何もしない: Jev で返事の約束を確かめる (2026-09-27)
 
 **Commit**: `da71576`

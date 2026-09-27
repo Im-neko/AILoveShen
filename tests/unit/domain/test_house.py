@@ -268,6 +268,22 @@ class TestPlaySession:
             "goal through_night() is met"
         )
 
+    def test_rethinks_add_up_and_only_those_seen_are_used(self):
+        """後から来た考え直しで前の理由を消さない。決めたときに読んだ分だけ使ったことにする。"""
+        session = self._session()
+        session.request_rethink("neko pointed out in chat: a tree")
+        session.request_rethink("on screen: a creeper")
+        session.request_rethink("on screen: a creeper")
+        assert session.rethink_reason == "neko pointed out in chat: a tree; on screen: a creeper"
+        assert "is reconsidered: neko pointed out" in session.goal_end_reason(_obs())
+
+        seen = session.rethink_mark
+        session.request_rethink("tama pointed out in chat: a cave")  # 決めている間に来た
+        session.set_goal(Goal(PLANKS), "day", rethinks_seen=seen)
+        assert session.rethink_reason == "tama pointed out in chat: a cave"
+        session.set_goal(Goal(PLANKS), "day")
+        assert session.rethink_reason == ""
+
     def test_set_goal_resets_counters(self):
         session = self._session(max_stalled_steps=2)
         session.track_progress(_obs(remaining=5))

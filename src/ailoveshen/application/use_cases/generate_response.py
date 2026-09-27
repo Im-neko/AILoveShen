@@ -203,6 +203,16 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
             text = str(data.get("reply", "")).strip()
             handling = data.get("request")
+            wait = self._rethink_wait(session, data.get("rethink"))
+            if handling != RequestHandling.WITHDRAW.value and wait:
+                # 同意して考え直すと言っても、間引かれて何も起きない: それは言わせない
+                error = (
+                    f"rethink は今は使えない（{wait:.0f} 秒前に視聴者の指摘で小目標を考え直した"
+                    "ばかり）。rethink は書かない。条件で書けるなら accept にして中目標に入れる、"
+                    "そうでなければ今の小目標を続けると理由つきで言う（考え直す・変えるとは言わない）。"
+                )
+                logger.warning(f"返答 {attempt} の rethink は間が短くて使えない: {data!r}")
+                continue
             if handling == RequestHandling.ACCEPT.value:
                 try:
                     proposal = parse_proposal(data)
@@ -275,21 +285,28 @@ class GenerateResponseUseCase(IGenerateResponse):
         elif self._readings.get(request.user_name) is None:
             self._readings.learn(request.user_name, reading, GUESS)
 
+    def _rethink_wait(self, session: PlaySession, point: object) -> float:
+        """
+        返答の rethink が荒らし対策の間で使えないとき、前の指摘からの秒数（使えるなら 0）。
+        まだ使われていない考え直しがあれば、それに足すだけで小目標をもう一度切らないので使える。
+        """
+        if not isinstance(point, str) or not point.strip() or session.rethink_reason:
+            return 0.0
+        if self._last_rethink_at is None:
+            return 0.0
+        elapsed = self._clock() - self._last_rethink_at
+        return max(elapsed, 1.0) if elapsed < self._rethink_interval else 0.0
+
     def _rethink(self, session: PlaySession, user_name: str, point: object) -> None:
         """
         視聴者のもっともな指摘（近くに木がある、間違い、速いやり方）で、今の小目標を次の切れ目で
-        終わらせ、その指摘を理由に決め直させる（小目標に固執しない）。続けては使えない（荒らし対策）。
+        終わらせ、その指摘を理由に決め直させる（小目標に固執しない）。続けては切らない（荒らし対策:
+        間が短い rethink は `_rethink_wait` で書き直させる。まだ使われていない考え直しには足す）。
         """
         if not isinstance(point, str) or not point.strip():
             return
-        now = self._clock()
-        if (
-            self._last_rethink_at is not None
-            and now - self._last_rethink_at < self._rethink_interval
-        ):
-            logger.info(f"{user_name} の指摘で決め直すのは見送った（間が短い）: {point}")
-            return
-        self._last_rethink_at = now
+        if not session.rethink_reason:
+            self._last_rethink_at = self._clock()
         was = session.goal.spec.describe() if session.goal else "nothing"
         session.request_rethink(
             f"{user_name} pointed out in chat: {point.strip()} (you were on {was})"
