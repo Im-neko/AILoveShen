@@ -132,3 +132,15 @@ def test_a_colored_bed_can_be_the_goal():
         parse_spec({"predicate": "placed", "item": "blue_bed"}).describe()
         == "placed(blue_bed, home)"
     )
+
+
+def test_placed_takes_any_item_a_place_and_a_count():
+    """好きな物を好きな場所に（placed(item, where, count)）。書かなければ家の中に 1 つ。"""
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+    from ailoveshen.domain.value_objects import GoalPredicate
+
+    spec = parse_spec({"predicate": "placed", "item": "lantern", "where": "near_home", "count": 4})
+    assert (spec.predicate, spec.item, spec.where, spec.count) == (GoalPredicate.PLACED, "lantern", "near_home", 4)
+    assert spec.describe() == "placed(lantern, 4, near_home)"
+    torch = parse_spec({"predicate": "placed", "item": "torch"})
+    assert (torch.where, torch.count) == ("home", None)

@@ -12,9 +12,11 @@
 **Commit**: `44b83c7`
 
 ユーザーのログ: 返事で「松明を置いて明るくしておくね」→ チャットの指摘で考え直し → Gemini は `placed(torch)` の中目標を足そうとしたが、条件なしで差し戻され（`mid goal … needs conditions`）、2 回目は「朝になってから」と夜越しに戻り、そのことを言わなかった。家の中の松明を表す条件がそもそもなかった（`placed` はベッド・作業台・かまど・チェストだけ、`lit` は家の外の地面だけ）。
-- ブリッジ `furniture.mjs`: `HOME_FURNITURE.torch`（torch / wall_torch）。`placed(torch, home)` が条件・小目標になり、なければ作り、`place_in_home` で部屋に置く
+- ユーザー:「家の中の松明より、任意の場所に任意のアイテムを設置できる条件を」→ `placed(item, where, count)` に広げた（松明だけの家具扱いは取り消し）
+- ブリッジ `placing.mjs`: `where` は目印（`home` 部屋の中 / `near_home` 家から 3〜12m / `build:<名前>` 箱から 2m / `x,y,z` のまわり 2m）、置けるブロックの物なら何でも（`placedNames`: 壁につく松明・看板も数える）、その範囲にある数で判定、`placeSpots`（空気で下が固い、家や建物の上や家のドアの内側は外す）。`goals.mjs` は家具（ベッド・作業台・かまど・チェストを家に 1 つ）は今まで通り、ほかはこの判定で、持っていれば `place_at`、なければ作る・集める。`candidates.mjs` / `primitives.mjs` の `place_at`
+- Python: `parse_spec` が placed の `where`（既定 home）と `count` を読む、スキーマに `where`、ボードの表示
 - `stream_context` の placed の説明に torch、`goal_vocabulary` の条件なしのエラーに例、目標の決定の決まりに「視聴者の指摘で考え直すときは、今やるか中目標に足す（条件つき）、どちらもしないなら reason に理由。黙って戻らない」
-- テスト: `test/furniture.test.mjs`、`test/check.test.mjs`
+- テスト: `test/placing.test.mjs`、`test/check.test.mjs`、`tests/unit/application/test_goal_vocabulary.py`
 
 
 ### 建物の箱の中で閉じ込められる: 保護を設計のセルだけに、経路がなければドアを通って (2026-09-27)

@@ -173,7 +173,10 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.BUILT:
         return f"「{spec.name}」を建てる" if spec.name else "家を建てる"
     if p == GoalPredicate.PLACED:
-        return f"家に{item}を置く"
+        where = {"home": "家に", "near_home": "家のまわりに"}.get(spec.where or "home")
+        if where is None:
+            where = f"「{spec.where[6:]}」に" if (spec.where or "").startswith("build:") else "そこに"
+        return f"{where}{item}を{f' {n} 個' if n and n > 1 else ''}置く"
     if p == GoalPredicate.AT_HOME:
         return "家に帰る"
     if p == GoalPredicate.THROUGH_NIGHT:

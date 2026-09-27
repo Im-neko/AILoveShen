@@ -28,6 +28,7 @@ import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
 import { toReplace } from './wear.mjs'
 import { isNoPathTo } from './move.mjs'
+import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -133,12 +134,14 @@ function validGoal (spec, bot, state, knowledge) {
       if (!state.plan) throw new NotYetError('there is no house plan')
       return { spec: { predicate } }
     case 'placed':
-      // 家の中に置く物（furniture.mjs の HOME_FURNITURE）: ベッド、作業台、かまど、チェスト、松明
-      if (!isHomeFurnitureItem(spec.item) || spec.where !== 'home' || (spec.item.endsWith('_bed') && !bot.registry.itemsByName[spec.item])) {
-        throw new Error(`placed supports ${Object.keys(HOME_FURNITURE).join(', ')} (or a colored bed like blue_bed) in the home, e.g. placed(crafting_table, home)`)
+      // 家の中の家具（furniture.mjs の HOME_FURNITURE: ベッド、作業台、かまど、チェスト）は家具の扱い。
+      // ほかは好きな物を好きな場所に（placing.mjs: home / near_home / build:NAME / x,y,z と数）
+      if (isHomeFurnitureItem(spec.item) && (spec.where ?? 'home') === 'home' && (spec.count ?? 1) === 1) {
+        if (spec.item.endsWith('_bed') && !bot.registry.itemsByName[spec.item]) throw new Error(`there is no item ${spec.item}`)
+        needHome()
+        return { spec: { predicate, item: spec.item, where: 'home' } }
       }
-      needHome()
-      return { spec: { predicate, item: spec.item, where: 'home' } }
+      return { spec: checkPlacedSpec(bot, state, spec) }
     case 'at_home':
       needHome()
       return { spec: { predicate } }
@@ -273,6 +276,24 @@ export function evaluate (bot, state, knowledge, world) {
       break
     }
     case 'placed': {
+      if (!isHomeFurnitureItem(goal.spec.item) || goal.spec.where !== 'home' || (goal.spec.count ?? 1) !== 1) {
+        // 好きな物を好きな場所に（placing.mjs）: 足りなければ、持っていれば置く、なければ作る・集める
+        const { item, where, count } = goal.spec
+        const have = countPlaced(bot, state, where, item)
+        const need = Math.max(0, count - have)
+        out.met = need === 0
+        out.remaining = need
+        out.lines.push(`${item} ${describeWhere(where, state)}: ${have}/${count}`)
+        if (out.met) break
+        const held = inventoryCounts(bot)[item] ?? 0
+        if (held < need) addSolved([{ spec: item, count: need - held }])
+        if (held) {
+          const [spot] = placeSpots(bot, state, where, 1)
+          if (spot) out.leaves.push({ kind: 'place_at', item, where, pos: spot })
+          else out.blocked.push(`no free spot to place ${item} ${describeWhere(where, state)}`)
+        }
+        break
+      }
       if (goal.spec.item.endsWith('_bed')) {
         // 色つきのベッド（blue_bed）: その色のベッドが家にあること。部屋が前のベッドでふさがって
         // いれば、前のベッドを拾う候補も出す（拾ったベッドは白なら染められる）

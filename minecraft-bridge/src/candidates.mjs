@@ -12,6 +12,7 @@
 
 import vec3Pkg from 'vec3'
 import { plantSpot, tillSpot, sowSpot } from './farming.mjs'
+import { describeWhere } from './placing.mjs'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, exitSpots, shelterOf } from './home.mjs'
 import { recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
@@ -235,6 +236,9 @@ function fromLeaf (bot, state, world, leaf) {
       if (leaf.item === 'chest') return fromLeaf(bot, state, world, { kind: 'place_chest' })
       return placeStation(bot, state, leaf.item).filter((c) => c.id.endsWith('inside the house'))
     }
+    case 'place_at':
+      // 好きな物を好きな場所に置く（placed(item, where, count): placing.mjs）
+      return [{ id: `place ${leaf.item} ${describeWhere(leaf.where, state)} at ${fmt(leaf.pos)}`, verb: 'place_at', target: leaf.item, item: leaf.item, pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'take_placed':
       // 置いてある家具を壊して拾う（ベッドを家に運ぶ）。furniture.mjs
       return [{ id: `take the ${leaf.block} placed at ${fmt(leaf.pos)}`, verb: 'dig', target: leaf.block, block: leaf.block, pos: leaf.pos, distance: dist(bot, leaf.pos) }]

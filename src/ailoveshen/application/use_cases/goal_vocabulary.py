@@ -178,6 +178,12 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
             "type": "string",
             "description": BUILD_NAME_DESCRIPTION,
         },
+        "where": {
+            "type": "string",
+            "description": "placed: where to place the item: home (inside the home's room), near_home "
+            "(around the home, 3-12 m), build:<name> (at a named build), or x,y,z (within 2 m of a "
+            "spot you know, e.g. from find_blocks). Default home",
+        },
     }
 
 
@@ -451,8 +457,14 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
         return GoalSpec(
             predicate=predicate,
             item=str(data["item"]) if predicate in _ITEM_PREDICATES else None,
-            count=int(data["count"]) if predicate in _COUNT_PREDICATES else None,
-            where="home" if predicate == GoalPredicate.PLACED else None,
+            count=int(data["count"])
+            if predicate in _COUNT_PREDICATES
+            else _placed_count(data)
+            if predicate == GoalPredicate.PLACED
+            else None,
+            where=str(data.get("where") or "home").strip()
+            if predicate == GoalPredicate.PLACED
+            else None,
             distance=int(data["distance"])
             if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT)
             else None,
@@ -463,6 +475,12 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e
+
+
+def _placed_count(data: dict[str, Any]) -> int | None:
+    """placed の数（1 なら書かない: 家具の placed(bed, home) と同じ形のまま）。"""
+    count = data.get("count")
+    return int(count) if count is not None and int(count) != 1 else None
 
 
 def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:

@@ -19,9 +19,7 @@ export const HOME_FURNITURE = {
   bed: /_bed$/,
   crafting_table: /^crafting_table$/,
   furnace: /^(furnace|blast_furnace|smoker)$/,
-  chest: /^(chest|trapped_chest|barrel)$/,
-  // 家の中の明かり（2026-09-27: 「家の中に松明を置いて」を条件にできず、約束だけで何もしなかった）
-  torch: /^(torch|wall_torch)$/
+  chest: /^(chest|trapped_chest|barrel)$/
 }
 
 // 家の部屋（床の高さ）にその家具が置いてあれば、その位置
