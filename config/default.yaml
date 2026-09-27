@@ -109,10 +109,25 @@ llm:
     thinking_purposes: ["skill_write", "house", "town", "site"]
     max_concurrent: 2
     timeout_seconds: 180
-  # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini
+  # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.
+  # Measured 2026-09-27 (a day on the stream, Qwen3.6-35B on FreeToken): tool and tool_after_failure
+  # were ~80% of Gemini's input tokens and the local model kept their function calls right; the
+  # structured decisions (goal, reply, promise) often broke the schema locally and replies were slow
+  # (6.6 s vs 1.9 s). So the many small calls go local, the few that plan or answer viewers stay on
+  # Gemini (docs/design/36 §7)
   routes:
-    default: "local"
-  fallback: "none"                       # none | gemini: when the local model fails
+    default: "local"                     # tool, tool_after_failure, commentary, live
+    goal: "gemini"
+    goal_after_failure: "gemini"
+    reply: "gemini"
+    promise: "gemini"
+    town: "gemini"
+    site: "gemini"
+    house: "gemini"
+    build_design: "gemini"
+    skill_write: "gemini"
+    check_write: "gemini"
+  fallback: "gemini"                     # none | gemini: when the local model fails
 
 gemini:
   api_key: "${GEMINI_API_KEY:-}"

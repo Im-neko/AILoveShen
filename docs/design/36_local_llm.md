@@ -62,3 +62,13 @@ llm:
 - 画面を Gemini に文にさせてローカルが判断する（今は画像のある呼び出しを丸ごと Gemini）
 - トークン数を数える API（Anthropic の `count_tokens` など）を使う。今は文字数からの見積もり（日本語は 1 字 1 トークン、ほかは 4 字 1 トークン）
 - 実機での確認はまだ
+
+## 7. 振り分けの見直し（2026-09-27）
+
+Gemini の支出の上限に達した（403 Spend cap breached）。ユーザー:「振り分けを見直してほしい」。今日（7:20〜14:14、`tools/gemini_usage.py`）の Gemini の入力は、`tool` 685 回・`tool_after_failure` 479 回（どちらも 1 回 1.2 万トークン）で全体の約 8 割。ローカル（Qwen3.6-35B、FreeToken）で崩れた JSON は `goal` / `goal_after_failure` / `reply` / `promise`（複雑なスキーマ）に集まり、`tool`（function calling）には出ていない。返事はローカル 6.6 秒、Gemini 1.9 秒。
+
+- ローカル（`default`）: `tool`、`tool_after_failure`、`commentary`、`live`。回数が多く、形が単純か、数秒遅れても困らない
+- Gemini: `goal`、`goal_after_failure`（計画の質。1 時間 36 回ほど）、`reply`、`promise`（視聴者を待たせない、スキーマが崩れやすい）、`town`、`site`、`house`、`build_design`、`skill_write`、`check_write`（少なく、考えさせたい。ローカルの town は 1 回 49 秒）。画像つき（`screen_review` など）はいつも Gemini
+- `fallback: gemini`: ローカルが失敗した回だけ Gemini（様子を見る段階は終わった）
+- 見込み: 今日の使い方なら Gemini の入力は約 2 割に減る。道具の 1 手は 2.7 秒から 8〜9 秒に延びる
+- 有効にするのは `.env` の `LOCAL_LLM=1`（ローカルを切れば全部 Gemini に戻る）

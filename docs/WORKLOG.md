@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### ローカル LLM と Gemini の振り分けを見直す (2026-09-27)
+
+**Commit**: (次のコミット)
+
+Gemini が 403 Spend cap breached。ユーザー:「振り分けを見直してほしい」。設計書 36 §7。
+- 今日の Gemini の入力の約 8 割が `tool` / `tool_after_failure`。ローカルで崩れた JSON は goal / reply / promise に集中、tool には出ていない
+- `config/default.yaml` の `llm.routes`: 既定はローカル（tool、tool_after_failure、commentary、live）、goal・goal_after_failure・reply・promise・town・site・house・build_design・skill_write・check_write は Gemini。`fallback: gemini`
+- 有効にするには `.env` の `LOCAL_LLM=1`（今は 0）
+
 ### 起動のたびに街の段階を書き直さない (2026-09-27)
 
 **Commit**: `af18974`
