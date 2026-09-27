@@ -265,7 +265,11 @@ def _format_memory(memory: dict) -> str:
         direction = DIRECTION_NAMES.get(p["direction"], p["direction"])
         return f"{direction} {p['distance_m']}m、{p['minutes_ago']} 分前"
 
-    parts = [f"{p['kind']} {p['count']}（{where(p)}）" for p in memory.get("places", [])]
+    def gives(p: dict) -> str:
+        # ブロックから取れる物（作物の wheat → wheat・wheat_seeds）
+        return f"→ {'・'.join(p['gives'])}、" if p.get("gives") else ""
+
+    parts = [f"{p['kind']} {p['count']}（{gives(p)}{where(p)}）" for p in memory.get("places", [])]
     parts += [f"死んだ場所（{where(d)}）" for d in memory.get("deaths", [])[-DEATHS_SHOWN:]]
     return "、".join(parts) or "なし"
 
@@ -498,6 +502,14 @@ def _format_broken(broken: list) -> list[str]:
     return [f"- 壊れた道具: {'、'.join(parts)}"]
 
 
+def _format_farm(farm: dict) -> list[str]:
+    """家のまわりの畑: 作物ごとの植わっている数と熟した数（熟したものは掘ると取れて、植え直す）。"""
+    if not farm:
+        return []
+    parts = [f"{crop} {f['planted']} マス（熟した {f['ripe']}）" for crop, f in farm.items()]
+    return [f"- 家のまわりの畑: {'、'.join(parts)}（熟したものを掘ると収穫して植え直す）"]
+
+
 def _format_situation(obs: GameObservation) -> str:
     s = obs.state
     lines = [
@@ -509,6 +521,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
         *_format_broken(s.get("broken_tools") or []),
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
+        *_format_farm(s.get("farm") or {}),
         f"- チェストの中身: {_format_chests(s.get('memory') or {})}",
         f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",
     ]

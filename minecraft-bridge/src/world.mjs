@@ -5,6 +5,7 @@ import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
 import { findTable, findFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
+import { isRipe } from './farming.mjs'
 import { REMEMBERED_BLOCK, REMEMBERED_STONE, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
 const DIG_RADIUS = 32
@@ -42,7 +43,7 @@ export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
   if (id == null) return []
   const me = bot.entity.position
   return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
-    .filter((p) => !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) &&
+    .filter((p) => !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && isRipe(bot.blockAt(p)) &&
       (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY))
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
     .slice(0, limit)

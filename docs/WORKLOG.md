@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 畑の小麦を収穫する、ブロックから取れる物を見せる (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー:「畑に生えている小麦を認識できていない。環境情報にアイテムの情報も」（取れる物を添える、植え直す）。設計書 33 の追記。
+- 原因: 作物が取れる元の表にも記憶にもなく、`how_to_get(wheat)` が no way。畑は farmed のときしか数えていなかった
+- ブリッジ: `farming.mjs`（`CROP_BLOCK`、`cropByBlock`、`isRipe`、`farmSummary`）、`knowledge.mjs`（作物、`blockDrops`、`dropsOf`）、`memory.mjs`（作物を覚える）、`world.mjs`（熟したものだけ）、`primitives.mjs`（`harvestNearby`、`replant`）、`tools.mjs`（育ち途中を断る、find_blocks の ripe/age）、`index.mjs`（places の gives、farm）
+- Python: `stream_context`（「家のまわりの畑」、覚えている場所の「→ 取れる物」）
+- テスト: `test/crops.test.mjs`、`tools.test.mjs`、`test_stream_context.py`。ブリッジ 230、Python 804
+
 ### 束を見直しのたびに見直す (2026-09-27)
 
 **Commit**: `51dc9c9`

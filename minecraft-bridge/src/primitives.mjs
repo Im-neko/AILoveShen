@@ -19,7 +19,7 @@ import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './move.mjs'
 import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
-import { isSaplingItem, recordPlanting } from './farming.mjs'
+import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS } from './farming.mjs'
 import { levelStatus, fillItem, TERRAIN } from './leveling.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
@@ -567,7 +567,15 @@ export const PRIMITIVES = {
     // 確率でしか落ちない物（草から種 1/8、葉から苗木 1/20）: 1 回の行動でまわりの同じものを続けて
     // 刈る（1 本ずつだと、ほとんどの行動が空振りで種集めが行き詰まった）
     if (CHANCE_DROP_BLOCKS.test(c.block)) await sweepNearby(bot, state, c.block, before, signal)
+    // 熟した作物: まわりの熟した同じ作物も続けて収穫し、拾ってから植え直す（畑を減らさない）
+    const harvested = cropByBlock(c.block) ? [c.pos, ...await harvestNearby(bot, state, c.block, signal)] : []
     const why = await collectNearbyDrops(bot, state, signal)
+    if (harvested.length) {
+      const replanted = await replant(bot, harvested, c.block)
+      const gained = totalItems(bot) - before
+      return `harvested ${harvested.length} ${c.block}, replanted ${replanted}; ${gained >= 0 ? 'picked up' : 'net'} ${gained} items` +
+        (replanted < harvested.length ? ` (no ${CROPS[cropByBlock(c.block)].seed} left to replant ${harvested.length - replanted})` : '')
+    }
     const gained = totalItems(bot) - before
     // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
     if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
@@ -1232,6 +1240,45 @@ async function sweepNearby (bot, state, name, before, signal) {
       return
     }
   }
+}
+
+// まわり（SWEEP_RADIUS）の熟した同じ作物を収穫する。収穫した場所を返す（植え直す所）
+async function harvestNearby (bot, state, name, signal) {
+  const id = bot.registry.blocksByName[name]?.id
+  const done = []
+  for (let i = 0; i < SWEEP_MAX; i++) {
+    signal.throwIfAborted()
+    const next = bot.findBlock({ matching: id, maxDistance: SWEEP_RADIUS, useExtraInfo: (b) => isRipe(b) && !inHouse(state, b.position) })
+    if (!next) break
+    try {
+      if (!withinReach(bot, next.position)) await goto(bot, new goals.GoalNear(next.position.x, next.position.y, next.position.z, 2), signal)
+      await bot.dig(bot.blockAt(next.position), true)
+      done.push(next.position)
+    } catch (e) {
+      signal.throwIfAborted()
+      break
+    }
+  }
+  return done
+}
+
+// 収穫した耕地に種を植え直す。植えた数
+async function replant (bot, positions, block) {
+  const seed = CROPS[cropByBlock(block)].seed
+  let n = 0
+  for (const p of positions) {
+    const item = bot.inventory.items().find((i) => i.name === seed)
+    if (!item) break
+    const farmland = bot.blockAt(p.offset(0, -1, 0))
+    if (farmland?.name !== 'farmland' || bot.blockAt(p)?.name !== 'air') continue
+    try {
+      if (!withinReach(bot, p)) await goto(bot, new goals.GoalNear(p.x, p.y, p.z, 2), new AbortController().signal)
+      await bot.equip(item, 'hand')
+      await bot.placeBlock(farmland, new Vec3(0, 1, 0))
+      if (bot.blockAt(p)?.name === block) n++
+    } catch {}
+  }
+  return n
 }
 
 // 家のでないベッドで眠り、夜が明けるのを待つ

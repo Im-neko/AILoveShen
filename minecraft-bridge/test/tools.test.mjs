@@ -100,6 +100,11 @@ test('掘る道具はブロックの名前を世界から決め、道具がな�
   assert.equal(runs.length, 0)
 })
 
+test('育ち途中の作物は掘らない（種しか出ず、畑が減る）', async () => {
+  const { callTool } = setup({ at: v(10.5, 70, 10.5), extra: { '11,70,10': 'wheat' } })
+  assert.match((await callTool('dig', { x: 11, y: 70, z: 10 })).result, /wheat at 11,70,10 is not ripe yet \(age 0\/7\)/)
+})
+
 test('置く道具は空いたセルに、隣のブロックの面を借りて置く。自分が立っている所には置かない', async () => {
   const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), items: [['dirt', 4]] })
   assert.match((await callTool('place', { item: 'dirt', x: 10, y: 70, z: 10 })).result, /you are standing in/)

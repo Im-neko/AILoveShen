@@ -41,7 +41,7 @@
 //   リポジトリ直下の .env にも書ける（env.mjs。シェルの環境変数が優先）
 
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
-import { plantingStatus, cropStatus, cropOf } from './farming.mjs'
+import { plantingStatus, cropStatus, cropOf, farmSummary } from './farming.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops } from './move.mjs'
 import http from 'node:http'
@@ -136,6 +136,16 @@ function observation () {
   if (state.plan) extra.build = state.plan.status(bot)
   if (Object.keys(state.builds ?? {}).length) extra.builds = buildsStatus(bot, state)
   extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
+  // 覚えている場所のブロックから取れるアイテム（作物の wheat → wheat と wheat_seeds）
+  for (const p of extra.memory.places) {
+    const gives = knowledge.dropsOf(p.kind)
+    if (gives.length) p.gives = gives
+  }
+  // 家のまわりの畑（作物ごとの植わっている数と熟した数）
+  if (state.home) {
+    const farm = farmSummary(bot, state)
+    if (Object.keys(farm).length) extra.farm = farm
+  }
   // 調べた候補地の数字（ブリッジが測ったものだけ。まだ調べていない候補地は入らない）
   if (state.survey) extra.survey = { planned: state.survey.sites.length, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) }
   extra.deaths = state.deaths

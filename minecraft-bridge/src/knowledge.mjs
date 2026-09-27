@@ -36,6 +36,8 @@ const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato',
 // 板材なので板材は入れない。原木は入れ、掘る候補からは家を除く）
 const NATURAL_BLOCKS = [/^(?!stripped_).*_log$/, /^(stone|granite|diorite|andesite|deepslate|tuff)$/,
   /^(dirt|grass_block|coarse_dirt|podzol|sand|red_sand|gravel|clay)$/, /_ore$/, /^(sugar_cane|pumpkin|melon)$/,
+  // 畑の作物: 熟したものだけ掘る（world.mjs の digTargets）。収穫したら植え直す（primitives の dig）
+  /^(wheat|carrots|potatoes|beetroots)$/,
   /^(dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony)$/]
 
 // 染めた羊毛: 白い羊毛＋その色の染料（上の注意）
@@ -105,12 +107,20 @@ export class Knowledge {
       for (const d of loot.drops) if (GROUP_PATTERNS.sapling.test(d.item)) push(this.blockSources, d.item, loot.block)
     }
     for (const b of SEED_GRASS) if (md.blocksByName[b]) push(this.blockSources, 'wheat_seeds', b)
+    this.blockDrops = new Map() // ブロック -> [取れるアイテム]（観測に「取れる物」として添える）
+    for (const [item, blocks] of this.blockSources) for (const b of blocks) push(this.blockDrops, b, item)
     this.mobSources = new Map() // アイテム -> [エンティティ名]
     for (const loot of md.entityLootArray) {
       if (!HUNTABLE.has(loot.entity)) continue
       for (const d of loot.drops) push(this.mobSources, d.item, loot.entity)
     }
     for (const [mob, items] of Object.entries(EXTRA_MOB_DROPS)) for (const item of items) push(this.mobSources, item, mob)
+  }
+
+  // ブロックを壊すと取れるアイテム（取れる物がそのブロック自身だけなら空）
+  dropsOf (block) {
+    const items = this.blockDrops.get(block) ?? []
+    return items.length === 1 && items[0] === block ? [] : items
   }
 
   // 必要なもののアイテム: グループ名かアイテム名 -> { label, members: [アイテム名] }

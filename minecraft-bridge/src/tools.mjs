@@ -8,7 +8,7 @@ import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
-import { CROPS, cropBySeed, farmRefusal, isSaplingItem, plantSpot, sowSpot, tillSpot } from './farming.mjs'
+import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem, plantSpot, sowSpot, tillSpot } from './farming.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
@@ -114,6 +114,7 @@ export function createTools (deps) {
       if (block.boundingBox !== 'block' && !PLANTS.test(block.name)) refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig`)
       const why = protectedReason(state, pos, 0, block)
       if (why) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${why}`)
+      if (!isRipe(block)) refuse(`the ${block.name} at ${fmt(pos)} is not ripe yet (age ${ageOf(block)}/${CROPS[cropByBlock(block.name)].mature}): digging it now gives only seeds and loses the crop`)
       const tools = knowledge.harvestTools(block.name)
       if (tools && !tools.some((t) => inventoryCounts(bot)[t] > 0)) refuse(`${block.name} drops nothing without one of: ${tools.join(', ')}`)
       return { c: { verb: 'dig', target: block.name, block: block.name, pos } }
@@ -325,6 +326,11 @@ export function createTools (deps) {
     }
   }
 
+  // 作物なら熟しているか（育ち途中は掘らない）
+  const crop = (p) => {
+    const b = bot.blockAt(p)
+    return cropByBlock(b?.name) ? { ripe: isRipe(b), age: ageOf(b) } : {}
+  }
   const queries = {
     find_blocks (args) {
       const id = bot.registry.blocksByName[args.block]?.id
@@ -333,7 +339,7 @@ export function createTools (deps) {
       const me = bot.entity.position
       const found = bot.findBlocks({ matching: id, maxDistance: radius, count: 64 })
         .sort((a, b) => a.distanceTo(me) - b.distanceTo(me)).slice(0, FIND_SHOWN)
-        .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p) }))
+        .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...crop(p) }))
       return found.length ? found : `no ${args.block} within ${radius}m`
     },
     recipe_of (args) {

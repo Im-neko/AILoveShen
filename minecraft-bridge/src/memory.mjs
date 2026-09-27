@@ -21,7 +21,8 @@ const MAX_DEATHS = 3
 const RECALLED_OFFERED = 3
 const SUMMARY_PLACES = 10
 
-export const REMEMBERED_BLOCK = /^(?!stripped_).*_log$|^(deepslate_)?(coal|iron)_ore$/
+// 畑の作物も覚える（離れていても畑へ戻れる。熟しているかは行って確かめる）
+export const REMEMBERED_BLOCK = /^(?!stripped_).*_log$|^(deepslate_)?(coal|iron)_ore$|^(wheat|carrots|potatoes|beetroots)$/
 // 石: 掘り下げた階段の底や崖で見えた所に、次に石が要るときに戻る（docs/design/17_dig_down.md）。
 // 地表のどこにでもあるので、ほかのものとは別に数える
 export const REMEMBERED_STONE = /^(stone|deepslate)$/

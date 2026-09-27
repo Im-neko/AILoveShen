@@ -19,6 +19,13 @@ export const CROPS = {
   potatoes: { block: 'potatoes', seed: 'potato', mature: 7 },
   beetroots: { block: 'beetroots', seed: 'beetroot_seeds', mature: 3 }
 }
+export const CROP_BLOCK = /^(wheat|carrots|potatoes|beetroots)$/
+export const cropByBlock = (name) => Object.keys(CROPS).find((k) => CROPS[k].block === name) ?? null
+// 作物なら熟しているか（作物でなければ真）。育ち途中を掘ると種しか出ず、畑が減る
+export const isRipe = (block) => {
+  const crop = cropByBlock(block?.name)
+  return !crop || ageOf(block) >= CROPS[crop].mature
+}
 const CROP_ALIASES = { wheat: 'wheat', wheat_seeds: 'wheat', carrot: 'carrots', carrots: 'carrots', potato: 'potatoes', potatoes: 'potatoes', beetroot: 'beetroots', beetroots: 'beetroots', beetroot_seeds: 'beetroots' }
 export const cropOf = (item) => CROP_ALIASES[String(item)] ?? null
 export const cropBySeed = (seed) => Object.keys(CROPS).find((k) => CROPS[k].seed === seed) ?? null
@@ -70,6 +77,16 @@ export function cropStatus (bot, state, crop) {
     .filter((p) => bot.blockAt(p.offset(0, -1, 0))?.name === 'farmland')
   const mature = found.filter((p) => ageOf(bot.blockAt(p)) >= info.mature)
   return { planted: found.length, mature: mature.length, positions: found, maturePositions: mature }
+}
+
+// 家のまわりの畑: { wheat: { planted, ripe } }（植わっている作物だけ）
+export function farmSummary (bot, state) {
+  const out = {}
+  for (const crop of Object.keys(CROPS)) {
+    const s = cropStatus(bot, state, crop)
+    if (s.planted) out[crop] = { planted: s.planted, ripe: s.mature }
+  }
+  return out
 }
 
 export function ageOf (block) {
