@@ -1,5 +1,6 @@
 """StartPlayUseCase と AdvancePlayUseCase のテスト。"""
 
+import asyncio
 from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
@@ -899,6 +900,66 @@ class TestAdvancePlay:
         await use_case.execute(session)
 
         assert session.rethink_reason == "neko pointed out in chat: a tree is right there"
+
+    @pytest.mark.asyncio
+    async def test_a_rethink_during_an_action_stops_it(self, use_case, bridge, monkeypatch):
+        """行動は時間で止まらないので、実行中に考え直しを頼まれたらその行動を止める（38）。"""
+        monkeypatch.setattr("ailoveshen.application.use_cases.play.RETHINK_POLL_SECONDS", 0.01)
+        session = _session(HAVE_PLANKS)
+        stopped = asyncio.Event()
+        reasons: list[str] = []
+
+        async def act(action_id):
+            session.request_rethink("neko pointed out in chat: a tree is right there")
+            await stopped.wait()
+            return ActionResult(action_id, False, f"failed: {reasons[0]}", 3.0)
+
+        async def abort(reason):
+            reasons.append(reason)
+            stopped.set()
+            return True
+
+        bridge.act.side_effect = act
+        bridge.abort.side_effect = abort
+
+        report = await use_case.execute(session)
+
+        assert reasons == ["rethink: neko pointed out in chat: a tree is right there"]
+        assert report.result.cut_by_attack
+        # 理由は次の切れ目で使うので残る
+        assert session.rethink_reason == "neko pointed out in chat: a tree is right there"
+
+    @pytest.mark.asyncio
+    async def test_a_rethink_before_the_action_starts_stops_it_once_it_runs(
+        self, use_case, bridge, monkeypatch
+    ):
+        """まだ行動が始まっていなければ（止めるものがない）、始まるまで止め続ける。"""
+        monkeypatch.setattr("ailoveshen.application.use_cases.play.RETHINK_POLL_SECONDS", 0.01)
+        session = _session(HAVE_PLANKS)
+        running = asyncio.Event()
+        stopped = asyncio.Event()
+        calls: list[bool] = []
+
+        async def act(action_id):
+            session.request_rethink("on screen: the tree is behind the house")
+            await asyncio.sleep(0.05)
+            running.set()
+            await stopped.wait()
+            return ActionResult(action_id, False, "failed: rethink: on screen", 3.0)
+
+        async def abort(reason):
+            calls.append(running.is_set())
+            if running.is_set():
+                stopped.set()
+            return running.is_set()
+
+        bridge.act.side_effect = act
+        bridge.abort.side_effect = abort
+
+        await use_case.execute(session)
+
+        assert calls[0] is False and calls[-1] is True
+        assert calls.count(True) == 1
 
     @pytest.mark.asyncio
     async def test_viewer_mid_goal_over_budget_is_dropped_and_told(

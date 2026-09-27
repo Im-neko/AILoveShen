@@ -133,8 +133,8 @@ export async function mountBoat (bot, boat) {
 }
 
 // target に向かって水の上を進む。止まるのは: target の 3m 以内、向こう岸に着いた、進めない、signal、
-// 時間切れ。返すのは { moved, why, landed }（landed: 岸に着いた）
-export async function drive (bot, boat, target, signal, { maxMs = 40000, log = () => {} } = {}) {
+// 時間切れ（maxMs。既定はなし）。返すのは { moved, why, landed }（landed: 岸に着いた）
+export async function drive (bot, boat, target, signal, { maxMs = Infinity, log = () => {} } = {}) {
   const start = boat.position.clone()
   let pos = boat.position.clone()
   const offsetY = pos.y - Math.floor(pos.y) // 水面のセルからのボートの高さ

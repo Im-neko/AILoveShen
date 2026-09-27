@@ -12,7 +12,6 @@ import ivm from 'isolated-vm'
 import { ACTION_TOOLS, QUERY_TOOLS } from './tools.mjs'
 
 export const LIMITS = {
-  seconds: 180, // 1 回の実行の時間
   actions: 40, // 行動の道具の呼び出し
   queries: 200, // 調べもの・state()・block_at()
   judges: 10, // Jev への質問
@@ -191,7 +190,6 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     }
   }
 
-  const timer = setTimeout(() => stop(`time limit (${limits.seconds} s)`), limits.seconds * 1000)
   const cpu = setInterval(() => {
     try {
       if (Number(isolate.cpuTime) / 1e6 > limits.cpuMs) stop(ENDLESS)
@@ -215,7 +213,6 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     if (/execution timed out/.test(e.message)) return finish({ ended: 'stopped', reason: ENDLESS })
     return finish({ ended: 'error', reason: clip(e.message, 300) })
   } finally {
-    clearTimeout(timer)
     clearInterval(cpu)
     try { isolate.dispose() } catch {}
   }

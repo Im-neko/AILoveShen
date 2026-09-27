@@ -12,6 +12,7 @@ function fakeBot () {
   bot.entity = { position: new Vec3(0, 70, 0) }
   bot.entities = {}
   bot.health = 20
+  bot.food = 20
   bot.time = { timeOfDay: 1000 }
   bot.inventory = { items: () => [] }
   bot.pathfinder = { setGoal: () => {}, isMoving: () => false }
@@ -89,22 +90,35 @@ test('反射が動いている間と、別の行動の実行中は始めない',
   await running
 })
 
-test('遠くへ歩いている途中の時間切れは、進んでいれば失敗にしない（進んだ距離を返す）', async () => {
-  const { TIMEOUTS_MS } = await import('../src/primitives.mjs')
-  TIMEOUTS_MS.test_walk = 50
-  TIMEOUTS_MS.test_stuck = 50
-  const walking = (moveBy) => (bot, state, c, signal) => {
+test('時間では止めない: 夕方になった・空腹になったときだけ止め、失敗には数えない', async () => {
+  const walking = (bot, state, c, signal) => {
     bot.actionPhase = 'walking toward home (280m away)'
-    bot.entity.position = bot.entity.position.offset(moveBy, 0, 0)
+    bot.entity.position = bot.entity.position.offset(20, 0, 0)
     return waitsForAbort(bot, state, c, signal)
   }
-  const { run } = setup({ test_walk: walking(20), test_stuck: walking(1) })
-  const moved = await run({ verb: 'test_walk' }, 'go home')
-  assert.equal(moved.ok, true)
-  assert.match(moved.result, /^walked toward home \(280m away\): 20m this time/)
-  const stuck = await run({ verb: 'test_stuck' }, 'go home')
-  assert.equal(stuck.ok, false)
-  assert.match(stuck.result, /timeout \(while walking toward home \(280m away\); moved 1m\)/)
-  delete TIMEOUTS_MS.test_walk
-  delete TIMEOUTS_MS.test_stuck
+  const { bot, state, run } = setup({ explore: walking, sleep: walking })
+  setTimeout(() => { bot.time.timeOfDay = 12500 }, 700)
+  const dusk = await run({ verb: 'explore' }, 'explore east')
+  assert.equal(dusk.ok, false)
+  assert.equal(dusk.interrupted, true)
+  assert.match(dusk.result, /^failed: stopped: it is dusk now \(while walking toward home \(280m away\); moved 20m\)/)
+  // 夜を過ごす行動は止めない（始めたときより暗くなっても）。止めるのは POST /abort
+  bot.time.timeOfDay = 1000
+  const sleeping = run({ verb: 'sleep' }, 'sleep')
+  setTimeout(() => { bot.time.timeOfDay = 18000 }, 100)
+  await new Promise((resolve) => setTimeout(resolve, 800))
+  assert.ok(state.current, 'still sleeping at night')
+  await abortCurrent(state, 'woke up')
+  assert.match((await sleeping).result, /^failed: woke up$/)
+  // 空腹は、始めたときになかったときだけ（空腹のまま食料を探す行動は止めない）
+  const { run: run2, state: state2, bot: bot2 } = setup({ explore: walking })
+  bot2.food = 5
+  const hungry = run2({ verb: 'explore' }, 'explore')
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  assert.ok(state2.current, 'still walking while hungry from the start')
+  await abortCurrent(state2, 'stop')
+  assert.match((await hungry).result, /^failed: stop$/)
+  const { run: run3, bot: bot3 } = setup({ explore: walking })
+  setTimeout(() => { bot3.food = 6 }, 100)
+  assert.match((await run3({ verb: 'explore' }, 'explore')).result, /^failed: stopped: hungry \(food 6\/20\)/)
 })

@@ -1,18 +1,27 @@
 // 行動を 1 つ実行する唯一の経路。候補（POST /act）も道具（POST /tool）もここを通る。
 //
-// タイムアウトか、ボットがダメージを受けたら中断する（反射: 判断する側はそのあと攻撃してきた相手を
-// 見て、戦うか逃げるかを選べる）。中断すると経路移動と採掘を取り消し、実行関数が本当に止まるまで
+// 時間では止めない（ユーザー 2026-09-27:「基本制限は不要。必要になったら野営」）。止めるのは必要が
+// 出たとき: ボットがダメージを受けた（反射: 判断する側はそのあと攻撃してきた相手を見て、戦うか逃げるかを
+// 選べる）、夕方・夜になった、空腹・体力が危なくなった（needNow）、POST /abort（考え直し、見張り）。
+// 動けない・経路がないのは移動が失敗にする（move.mjs）。中断すると経路移動と採掘を取り消し、実行関数が本当に止まるまで
 // 待つので、行動が重なることはない。実行中は state.current を持ち（反射の割り込みと POST /abort が
 // 使う）、進み具合（state.mjs の共通の状態）を記録する。
-import { threats, round } from './observe.mjs'
-import { PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CRITICAL, TRAVELS, disembark } from './primitives.mjs'
+import { threats, round, dayPhase } from './observe.mjs'
+import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark } from './primitives.mjs'
 import { riding } from './boat.mjs'
 import { needsOutside } from './candidates.mjs'
 import { leaveHome, houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
 import { brokeSince } from './wear.mjs'
 
-const WALK_PROGRESS_M = 8 // これだけ歩いていれば、時間切れでも進んだとみなす
+const NEED_CHECK_MS = 500
+// 夕方・夜になっても止めない行動（夜を過ごす、家に入る、戦う・逃げる、食べる）
+const NIGHT_VERBS = new Set(['sleep', 'sleep_at', 'bed_here', 'place_bed', 'go_home', 'wait', 'repair_wall', 'exit_wall',
+  'attack', 'flee', 'stash', 'eat', 'place_torch'])
+// 始めたときより暗い時間帯になったら止める（明け方・朝になるのでは止めない）
+const DARKER = { day: ['dusk', 'night'], dusk: ['night'], night: [], dawn: [] }
+// 止めた理由のうち、やり方の失敗ではないもの（小目標の失敗・行き詰まりに数えない）
+const NOT_A_FAILURE = /^failed: (interrupted: took damage|reflex: |stopped: |rethink: )/
 
 // deps: { primitives, afterRun(): 実行の後（見えたものの記録と保存）, log(line) }
 export function createRunner (bot, state, deps = {}) {
@@ -36,16 +45,25 @@ export function createRunner (bot, state, deps = {}) {
       bot.clearControlStates()
       return true
     }
-    const limit = TIMEOUTS_MS[c.verb] ?? DEFAULT_TIMEOUT_MS
-    // 時間切れの理由に、そのとき何をしていたか（bot.actionPhase。プリミティブが書く）を添える
+    // 止めた理由に、そのとき何をしていたか（bot.actionPhase。プリミティブが書く）を添える
     bot.actionPhase = ''
     const startPos = bot.entity.position.clone()
-    let walkedOnTimeout = null // 歩いている間の時間切れ: どれだけ進んだか
-    const timer = setTimeout(() => {
+    const start = { phase: dayPhase(bot.time.timeOfDay), food: bot.food, health: bot.health }
+    // 必要が出たか: 始めたときになかったものだけ（空腹のまま食料を探す行動を毎回止めない）
+    const needNow = () => {
+      if (riding(bot)) return null // 水の上: 岸まで漕ぐ
+      const phase = dayPhase(bot.time.timeOfDay)
+      if (DARKER[start.phase]?.includes(phase) && !NIGHT_VERBS.has(c.verb)) return `it is ${phase} now`
+      if (c.verb !== 'eat' && bot.food <= HUNGER_URGENT && start.food > HUNGER_URGENT) return `hungry (food ${bot.food}/20)`
+      if (!DAMAGE_TOLERANT.has(c.verb) && bot.health <= HEALTH_CRITICAL && start.health > HEALTH_CRITICAL) return `health is low (${round(bot.health)}/20)`
+      return null
+    }
+    const timer = setInterval(() => {
+      const need = needNow()
+      if (!need) return
       const moved = round(bot.entity.position.distanceTo(startPos))
-      if (/^(walking|riding)/.test(bot.actionPhase) && moved >= WALK_PROGRESS_M) walkedOnTimeout = `${bot.actionPhase.replace(/^walking/, 'walked').replace(/^riding/, 'rode')}: ${moved}m this time, not there yet`
-      abort(bot.actionPhase ? `timeout (while ${bot.actionPhase}; moved ${moved}m)` : `timeout (moved ${moved}m)`)
-    }, limit)
+      abort(`stopped: ${need}${bot.actionPhase ? ` (while ${bot.actionPhase}; moved ${moved}m)` : moved >= 1 ? ` (moved ${moved}m)` : ''}`)
+    }, NEED_CHECK_MS)
     const onHurt = (entity) => {
       if (entity !== bot.entity) return
       // ボートで水の上を進んでいる: 止まるより進み続けて離れる（設計書 37）
@@ -62,7 +80,7 @@ export function createRunner (bot, state, deps = {}) {
     let ok = true
     let result
     let finished
-    const progress = startTracking(bot, c, limit)
+    const progress = startTracking(bot, c)
     state.current = { id: label, verb: c.verb, abort, progress, done: new Promise((resolve) => { finished = resolve }) }
     try {
       if (riding(bot) && !TRAVELS.has(c.verb)) {
@@ -83,16 +101,10 @@ export function createRunner (bot, state, deps = {}) {
     } catch (e) {
       const reason = controller.signal.aborted ? controller.signal.reason : e
       abort(reason.message)
-      if (walkedOnTimeout) {
-        // 遠い所へ歩いている途中の時間切れは、進んでいれば失敗ではない（次のステップで続きを歩く）。
-        // 死んで遠くに戻されたあと、家のドアやチェストへの行動が全部「失敗」になって止まった
-        result = walkedOnTimeout
-      } else {
-        ok = false
-        result = `failed: ${reason.message}`
-      }
+      ok = false
+      result = `failed: ${reason.message}`
     } finally {
-      clearTimeout(timer)
+      clearInterval(timer)
       bot.off('entityHurt', onHurt)
       progress.stop()
       state.busy = false
@@ -104,8 +116,9 @@ export function createRunner (bot, state, deps = {}) {
     result += brokeSince(state, t) // この行動の間に壊れた道具（すぐ持ち物の見方を直すため）
     state.history.push({ action: label, ok, result, seconds })
     log(`[act] ${label}: ${ok ? '成功' : '失敗'} ${result}（${seconds}秒）`)
-    // 襲われて止まった（ダメージ、反射）: 小目標の失敗に数えない（設計書 28 §3）
-    const interrupted = !ok && /^failed: (interrupted: took damage|reflex: )/.test(result)
+    // 襲われて止まった（ダメージ、反射。設計書 28 §3）、必要が出て止めた、考え直しで止めた: 小目標の失敗に
+    // 数えない
+    const interrupted = !ok && NOT_A_FAILURE.test(result)
     return { ok, result, seconds, ...(interrupted ? { interrupted: true } : {}) }
   }
 }

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
-from typing import Optional
+from typing import Optional, TypeVar
 
 from loguru import logger
 
@@ -105,6 +106,9 @@ OFFERED_SHOWN = 12  # 失敗の分析に見せる、最後に出ていた候補�
 MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら、やり直しは選べない
 UNDESIGNABLE_SECONDS = 600  # 設計できなかった建物を、中目標に足さない間（秒）
 MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
+RETHINK_POLL_SECONDS = 0.5  # 行動の間、考え直しの依頼が来たかを見る間隔（docs/design/38）
+
+T = TypeVar("T")
 
 
 def _plan_blueprint(obs: GameObservation) -> HouseBlueprint | None:
@@ -390,9 +394,10 @@ class AdvancePlayUseCase(IAdvancePlay):
         assert goal is not None
         self._offered = obs.candidates[:OFFERED_SHOWN]
         if self._control == "tools":
-            decision, result = await self._act_with_tools(session, obs)
+            acting = self._act_with_tools(session, obs)
         else:
-            decision, result = await self._act_on_candidate(goal, obs)
+            acting = self._act_on_candidate(goal, obs)
+        decision, result = await self._cut_on_rethink(session, acting)
         await self._mid_goals.step_counted(session.plan, session.record(result))
         if self._side_work(obs, decision):
             # ついでの作業（そばの葉から苗木など）は、今の小目標の「進まない」に数えない
@@ -423,6 +428,30 @@ class AdvancePlayUseCase(IAdvancePlay):
             result=result,
             house_complete=obs.house_complete,
         )
+
+    async def _cut_on_rethink(self, session: PlaySession, acting: Awaitable[T]) -> T:
+        """
+        行動の間に考え直しを頼まれたら（コメント、約束した頼み）、実行中の行動を止める。行動は時間で
+        止めないので、切れ目を待つと長い移動の終わりまで待つことになる（docs/design/38）。まだ
+        行動が始まっていなければ（道具を選んでいる）、始まるまで止め続ける。
+        """
+        mark = session.rethink_mark
+        task = asyncio.ensure_future(acting)
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=RETHINK_POLL_SECONDS)
+                if task.done() or session.rethink_mark <= mark:
+                    continue
+                try:
+                    if await self._bridge.abort(f"rethink: {session.rethink_reason}"):
+                        logger.info(f"考え直しの依頼で行動を止めた: {session.rethink_reason}")
+                        mark = session.rethink_mark
+                except GameBridgeError as e:
+                    logger.warning(f"考え直しで行動を止められない: {e}")
+            return task.result()
+        finally:
+            if not task.done():
+                task.cancel()
 
     async def _act_on_candidate(
         self, goal: Goal, obs: GameObservation

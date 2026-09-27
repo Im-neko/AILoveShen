@@ -233,7 +233,7 @@ class MinecraftSettings:
 
     bridge_host: str = "localhost"
     bridge_port: int = 3000
-    # ブリッジの行動の最も長いタイムアウト（45秒、primitives.mjs の TIMEOUTS_MS）より長くすること
+    # 行動の実行以外のリクエストのタイムアウト（行動は時間で止めないので、その返事は待ち続ける）
     request_timeout_seconds: float = 60.0
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3

@@ -2,7 +2,7 @@
 //
 // 各プリミティブは具体的な対象（ブロック、エンティティ、アイテム）に対して有界な1ステップを実行し、
 // ワールドで確かめた結果を返す。失敗は投げ、成功として返すことはない。
-// 実行関数は AbortSignal（タイムアウト、またはダメージを受けた）を受け取り、発火したらすぐ止まる:
+// 実行関数は AbortSignal（ダメージを受けた、必要が出た、POST /abort）を受け取り、発火したらすぐ止まる:
 // ループがそれを確かめ、呼び出し側が経路移動と採掘を取り消す。
 
 import { once } from 'node:events'
@@ -16,7 +16,7 @@ import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isIn
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
-import { walkTo as goto, isLoopCell, markNoPath, isNoPath, walkThroughDoors } from './move.mjs'
+import { walkTo as goto, isLoopCell, markNoPath, isNoPath, walkThroughDoors, STUCK_MS } from './move.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting } from './farming.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
@@ -34,8 +34,7 @@ const HOSTILE_STEP_COST = 20
 const HOSTILE_CACHE_MS = 1000
 const LEAVES_STEP_COST = 10
 const FLEE_DISTANCE = 16
-const FIGHT_TIMEOUT_MS = 10000
-const FLEE_TIMEOUT_MS = 8000
+const FIGHT_LOST_M = 24 // 相手がこれより離れたら見失った
 const PICKUP_WAIT_MS = 1500
 const DROP_COLLECT_RADIUS = 8
 const WAIT_TICKS = 200
@@ -194,28 +193,27 @@ export function torchSpot (bot) {
   return cell?.boundingBox === 'empty' && !/water|lava/.test(cell.name) && floor?.boundingBox === 'block' ? feet : null
 }
 
-// 長い道のりは、探索と同じく1ステップに1区間ずつ歩く: 各行動を短くして、タイムアウトに十分
-// 収まるように終え、次のステップでワールドを見直す（270m 先の家まで 45 秒以上かかった）
+// 長い道のりは、着くまで 1 回の行動で区間（LEG m）ごとに歩く。区間ごとに、先の長い水をボートで渡るかを
+// 見直す（チャンクは進むにつれて届く）。時間では止めない: 止まるのは必要が出たとき（runner）、動けない・
+// 経路がないとき（move.mjs）。区間を歩き終えたら null を返し、呼び出し側が最後の数 m を歩く
 export const LEG = 48
-const SMELT_WAIT_MS = 20000 // 1個 10 秒かかる: スタック全部を待つとタイムアウトを過ぎる
 async function legToward (bot, state, target, what, signal) {
-  const crossed = await crossWater(bot, state, target, what, signal)
-  if (crossed) return crossed
-  const me = bot.entity.position
-  const far = Math.hypot(target.x - me.x, target.z - me.z)
-  if (far <= LEG) return null
-  const k = LEG / far
-  bot.actionPhase = `walking toward ${what} (${round(far)}m away)`
-  await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3), signal)
-  bot.actionPhase = ''
-  const left = Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z)
-  return `walked ${round(far - left)}m toward ${what} (${round(left)}m left)`
+  for (;;) {
+    signal.throwIfAborted()
+    await crossWater(bot, state, target, what, signal)
+    const me = bot.entity.position
+    const far = Math.hypot(target.x - me.x, target.z - me.z)
+    if (far <= LEG) return null
+    const k = LEG / far
+    bot.actionPhase = `walking toward ${what} (${round(far)}m away)`
+    await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3), signal)
+    bot.actionPhase = ''
+  }
 }
 
-// 長い水（設計書 37）: ボートを持っていれば、岸まで歩いて置き、乗って渡る（1 回 RIDE_MS まで。岸に
-// 着いたら降りてボートを拾う）。乗っている途中なら続きを漕ぐ。持っていなければ泳いで歩き、水があった
-// ことを覚える（goals が、材料があればボートを作ることを勧める）
-const RIDE_MS = 20000
+// 長い水（設計書 37）: ボートを持っていれば、岸まで歩いて置き、乗って渡る（岸に着いたら降りてボートを
+// 拾う）。乗っている途中なら続きを漕ぐ。持っていなければ泳いで歩き、水があったことを覚える（goals が、
+// 材料があればボートを作ることを勧める）
 export const WATER_AHEAD_MS = 10 * 60 * 1000
 const BOARD_WITHIN_M = 24 // 水がこれより先から始まるなら、まず歩く（次の区間でまた見る）
 async function crossWater (bot, state, target, what, signal, minWater = undefined) {
@@ -251,7 +249,7 @@ async function rideBoat (bot, state, target, what, signal, crossing = null) {
     }
   }
   bot.actionPhase = `riding a boat toward ${what}`
-  const r = await drive(bot, boat, target, signal, { maxMs: RIDE_MS, log: (line) => console.log(line) })
+  const r = await drive(bot, boat, target, signal, { log: (line) => console.log(line) })
   bot.actionPhase = ''
   signal.throwIfAborted()
   if (!r.landed) return `rode a boat ${r.moved}m toward ${what}; still on the water (${r.why})`
@@ -322,13 +320,19 @@ export const bestWeapon = (bot) => {
   return name ? bot.inventory.items().find((i) => i.name === name) : null
 }
 
+// 相手がいなくなるまで戦う。見失った（FIGHT_LOST_M より離れた）、STUCK_MS の間近づけない・動けないときは
+// やめる（時間では止めない）
 export async function fight (bot, target, signal) {
-  const start = Date.now()
   // 追う目標は一度だけ置く（動く相手には pathfinder が経路を立て直す）。置き直すたびに、歩く
   // 途中の掘り（雪など）が止まる（town4d: 同じ雪を 4 回掘りかけたまま、ゾンビに倒された）
   const follow = new goals.GoalFollow(target, 2)
+  const stuck = stuckWatch(bot, () => target.position.distanceTo(bot.entity.position))
+  let why = ''
   try {
-    while (bot.entities[target.id] && Date.now() - start < FIGHT_TIMEOUT_MS && !signal.aborted) {
+    while (bot.entities[target.id] && !signal.aborted) {
+      const d = target.position.distanceTo(bot.entity.position)
+      if (d > FIGHT_LOST_M) { why = `lost it (${round(d)}m away)`; break }
+      if (d > 3 && stuck()) { why = `could not get to it (${round(d)}m away)`; break }
       if (target.position.distanceTo(bot.entity.position) > 3) {
         if (bot.pathfinder.goal !== follow) bot.pathfinder.setGoal(follow, true)
       } else {
@@ -343,20 +347,39 @@ export async function fight (bot, target, signal) {
   } finally {
     bot.pathfinder.setGoal(null)
   }
-  return bot.entities[target.id] ? `${target.name} still alive` : `${target.name} gone (killed or despawned)`
+  return bot.entities[target.id] ? `${target.name} still alive${why ? `: ${why}` : ''}` : `${target.name} gone (killed or despawned)`
 }
 
+// distance（離れたい距離）まで逃げる。STUCK_MS の間それ以上離れられなければやめる
 export async function flee (bot, h, signal, distance = FLEE_DISTANCE) {
   bot.pathfinder.setGoal(new GoalAwayFrom(h, distance + REPLAN_MOVE), true)
-  const start = Date.now()
+  const stuck = stuckWatch(bot, () => -h.position.distanceTo(bot.entity.position))
   try {
-    while (Date.now() - start < FLEE_TIMEOUT_MS && !signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < distance) {
+    while (!signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < distance && !stuck()) {
       await bot.waitForTicks(5)
     }
   } finally {
     bot.pathfinder.setGoal(null)
   }
   return `now ${round(h.position.distanceTo(bot.entity.position))}m from ${h.name}`
+}
+
+// 動けないかを見る: 呼ぶたびに、score（小さいほどよい: 相手までの距離など）が STUCK_MS の間よくならず、
+// 位置もほとんど変わっていなければ真
+function stuckWatch (bot, score) {
+  let best = score()
+  let pos = bot.entity.position.clone()
+  let since = Date.now()
+  return () => {
+    const now = score()
+    if (now < best - 0.5 || bot.entity.position.distanceTo(pos) > 1) {
+      best = Math.min(best, now)
+      pos = bot.entity.position.clone()
+      since = Date.now()
+      return false
+    }
+    return Date.now() - since > STUCK_MS
+  }
 }
 
 // ボットが何かを拾ったか、ms たったら解決する
@@ -480,7 +503,6 @@ const TOOL_ITEM = /_(pickaxe|axe|shovel|hoe|sword)$|^shears$/
 
 // 階段掘り（docs/design/17_dig_down.md）: 1 マス幅・2 マスの高さで、前に 1、下に 1 ずつ下りる。
 // 真下には掘らない（溶岩に落ちる、出られない穴になる）。階段なら歩いて戻れる
-const STAIR_STEPS = 6 // 1 回の行動で下りる段数（タイムアウトの 45 秒に収まる）
 const FALLING = /(^|_)(sand|gravel)$|concrete_powder$/
 const FLUID = /water|lava/
 const STAIR_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
@@ -660,8 +682,7 @@ export const PRIMITIVES = {
     if (!plan.origin) {
       // 選んだ場所に建てる計画なら、まずそこまで歩く
       if (plan.site) {
-        const leg = await legToward(bot, state, plan.site, 'the site of the house', signal)
-        if (leg) return leg
+        await legToward(bot, state, plan.site, 'the site of the house', signal)
         await goto(bot, new goals.GoalNearXZ(plan.site.x, plan.site.z, 4), signal)
       }
       const origin = findSite(bot, plan.size)
@@ -677,8 +698,7 @@ export const PRIMITIVES = {
     if (!b) return 'the plan is complete'
     if (b.block === 'door') {
       // 家から遠ければ、まずドアへ区間ごとに歩く（遠くから直しに行って毎回時間切れになった）
-      const leg = await legToward(bot, state, plan.worldPos(b), 'the door of the house', signal)
-      if (leg) return leg
+      await legToward(bot, state, plan.worldPos(b), 'the door of the house', signal)
     }
     try {
       await placeOne(bot, plan, b, signal)
@@ -770,8 +790,7 @@ export const PRIMITIVES = {
   },
   async go_home (bot, state, c, signal) {
     try {
-      const leg = await legToward(bot, state, state.home.outside, 'home', signal)
-      if (leg) return leg
+      await legToward(bot, state, state.home.outside, 'home', signal)
       await enterHome(bot, state.home, signal)
     } catch (e) {
       // 行けない家を夜の選択肢に出し続けない（ほかの夜の越し方を選ばせる）
@@ -845,8 +864,7 @@ export const PRIMITIVES = {
   // できたものを取り出し、材料と燃料を入れ、しばらく待ってできたものを取る。
   // 残りは後のステップで取り出す（その間もかまどは動く）
   async smelt (bot, state, c, signal) {
-    const leg = await legToward(bot, state, c.pos, 'the furnace', signal)
-    if (leg) return leg
+    await legToward(bot, state, c.pos, 'the furnace', signal)
     await goNear(bot, c.pos, 2, signal) // 遠いブロックは null になる: 着いてから判定する
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
@@ -871,8 +889,8 @@ export const PRIMITIVES = {
         }
         if (n > 0) await furnace.putInput(bot.registry.itemsByName[c.input].id, null, n)
       }
-      const until = Date.now() + SMELT_WAIT_MS
-      while (Date.now() < until && furnace.inputItem()) {
+      // 全部焼けるまで待つ（1 個 10 秒）。燃料が切れて火が消えたらやめる
+      while (furnace.inputItem() && (furnace.fuelItem() || furnace.fuel > 0)) {
         await bot.waitForTicks(20)
         await take()
       }
@@ -913,14 +931,12 @@ export const PRIMITIVES = {
     return `placed a torch at ${spot.x},${spot.y},${spot.z}`
   },
   async goto_memory (bot, state, c, signal) {
-    const leg = await legToward(bot, state, c.pos, `where ${c.target} was seen`, signal)
-    if (leg) return leg
+    await legToward(bot, state, c.pos, `where ${c.target} was seen`, signal)
     await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3), signal)
     return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
   },
   async survey (bot, state, c, signal) {
-    const leg = await legToward(bot, state, c.pos, `the ${c.target} site`, signal)
-    if (leg) return leg
+    await legToward(bot, state, c.pos, `the ${c.target} site`, signal)
     // 海や崖で中心まで行けなくても、ここまで来ていればまわりのチャンクは読み込まれている
     // （読み込めた割合は loaded_pct に出る）
     try {
@@ -939,7 +955,8 @@ export const PRIMITIVES = {
     const maxDepth = state.goal?.spec?.dig_depth ?? Infinity // 上限なし（溶岩・水・砂利・岩盤で止まる）
     let steps = 0
     let stop = ''
-    for (; steps < STAIR_STEPS; steps++) {
+    // 掘れる所が見えるか、下りられなくなるまで（dig_depth、溶岩・水・砂利・岩盤）下りる
+    for (; ; steps++) {
       signal.throwIfAborted()
       if (digTargets(bot, state, c.target).length) { stop = `${c.target} can be dug now`; break }
       const me = bot.entity.position.floored()
@@ -970,8 +987,7 @@ export const PRIMITIVES = {
   },
   // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
   async goto_pos (bot, state, c, signal) {
-    const leg = await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
-    if (leg) return leg
+    await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
     await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, c.range ?? 1), signal)
     const p = bot.entity.position
     return `arrived near ${c.pos.x},${c.pos.y},${c.pos.z} (now at ${round(p.x)},${round(p.y)},${round(p.z)})`
@@ -1099,9 +1115,8 @@ export const PRIMITIVES = {
     const start = bot.entity.position.clone()
     const go = c.go ?? EXPLORE_DISTANCE
     const target = start.offset(c.dx * go, 0, c.dz * go)
-    // まだ見ていない土地が遠ければ、そこへ区間ごとに進む（1 回 LEG m）。長い水はボートで（近くても）
-    const leg = await legToward(bot, state, target, `the unexplored land ${c.target}`, signal)
-    if (leg) return leg
+    // まだ見ていない土地へ、着くまで区間（LEG m）ごとに進む。長い水はボートで（近くても）
+    await legToward(bot, state, target, `the unexplored land ${c.target}`, signal)
     let error = ''
     try {
       await goto(bot, new goals.GoalNearXZ(target.x, target.z, 3), signal)
@@ -1116,8 +1131,7 @@ export const PRIMITIVES = {
 
 // c.pos のチェストを開けてそのウィンドウで `use` を実行し、そのあとの中身を記録する
 async function withOpenChest (bot, state, c, signal, use) {
-  const leg = await legToward(bot, state, c.pos, 'the chest', signal)
-  if (leg) return leg
+  await legToward(bot, state, c.pos, 'the chest', signal)
   if (state.home && isInside({ entity: { position: c.pos } }, state.home)) await enterHome(bot, state.home, signal)
   await goNear(bot, c.pos, 2, signal)
   const block = bot.blockAt(c.pos)
@@ -1141,14 +1155,12 @@ const withinReach = (bot, p) => bot.entity.position.offset(0, 1.62, 0).distanceT
 
 const SWEEP_MAX = 12 // 1 回の行動で続けて刈る数
 const SWEEP_RADIUS = 5
-const SWEEP_MS = 10000
 const SWEEP_KINDS = (name) => /grass|fern/.test(name) ? ['short_grass', 'tall_grass', 'fern', 'large_fern'] : [name]
 
-// まわりの同じ種類（草なら草とシダ）を、何か落ちるまで（か SWEEP_MAX まで、10 秒まで）刈る
+// まわりの同じ種類（草なら草とシダ）を、何か落ちるまで（か SWEEP_MAX まで）刈る
 async function sweepNearby (bot, state, name, before, signal) {
   const ids = SWEEP_KINDS(name).map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id != null)
-  const start = Date.now()
-  for (let i = 0; i < SWEEP_MAX && Date.now() - start < SWEEP_MS; i++) {
+  for (let i = 0; i < SWEEP_MAX; i++) {
     signal.throwIfAborted()
     if (totalItems(bot) > before || nearbyDrops(bot, state, SWEEP_RADIUS + 2).length) return
     const next = bot.findBlock({ matching: ids, maxDistance: SWEEP_RADIUS, useExtraInfo: (b) => !inHouse(state, b.position) })
@@ -1189,7 +1201,6 @@ function bedSpotHere (bot, state) {
 // 自分でダメージに対処するプリミティブ: ダメージを受けても中断しない
 export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
 
-// 最長は 45 秒: Python クライアントの要求のタイムアウト（minecraft.bridge.timeout_seconds）はこれより長くする
 // 名前付きの建物の次のブロック（空けるマスなら掘る）。家の増築ができたら、家の室内を広げる
 async function placeBuildBlock (bot, state, name, signal) {
   const plan = state.builds?.[name]
@@ -1204,6 +1215,4 @@ async function placeBuildBlock (bot, state, name, signal) {
   return `${b.block === 'air' ? 'cleared a block' : `placed ${b.block}`} (${s.placed}/${s.total}) for ${name}`
 }
 
-export const TIMEOUTS_MS = { ride_boat: 45000, sleep_at: 45000, bed_here: 45000, move_placed: 45000, goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
-export const DEFAULT_TIMEOUT_MS = 20000
 

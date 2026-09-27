@@ -1,17 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
-import { PRIMITIVES, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, LEG } from '../src/primitives.mjs'
+import { PRIMITIVES, LEG } from '../src/primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 
-// 経路探索が、渡された目的地にすぐ着くボット
+// 経路探索が、渡された目的地にすぐ着くボット（行き先を記録する）
 function walker (x, z) {
   const bot = {
     entity: { position: new Vec3(x, 70, z) },
     blockAt: () => null, // 地形は読み込まれていない（水を渡る判定はしない）
+    goals: [],
     pathfinder: {
-      goto: async (goal) => { bot.entity.position = new Vec3(goal.x, 70, goal.z) },
+      goto: async (goal) => { bot.goals.push(goal); bot.entity.position = new Vec3(goal.x, 70, goal.z) },
       setGoal: () => {}
     }
   }
@@ -20,36 +21,21 @@ function walker (x, z) {
 
 const { signal } = new AbortController()
 
-test('遠い帰宅は 1 ステップに 1 区間ずつ歩く（frun5: 270m の帰宅が時間切れより長くかかった）', async () => {
+test('遠い所へは 1 回の行動で、区間（LEG m）ごとに歩いて着く（時間では止めない）', async () => {
   const bot = walker(0, 0)
-  const state = { home: { outside: new Vec3(0, 70, 200) } }
-  const r = await PRIMITIVES.go_home(bot, state, {}, signal)
-  assert.match(r, /^walked 48m toward home \(152m left\)$/)
-  assert.equal(Math.round(bot.entity.position.z), LEG)
-})
-
-test('覚えている遠い場所へは 1 ステップに 1 区間ずつ歩き、やがて着く', async () => {
-  const bot = walker(0, 0)
-  const c = { target: 'sheep', pos: new Vec3(0, 70, 80) }
-  assert.match(await PRIMITIVES.goto_memory(bot, {}, c, signal), /toward where sheep was seen \(32m left\)/)
+  const c = { target: 'sheep', pos: new Vec3(0, 70, 130) }
   assert.match(await PRIMITIVES.goto_memory(bot, {}, c, signal), /^arrived where sheep was seen/)
+  // 48m、96m、最後の区間
+  assert.deepEqual(bot.goals.map((g) => Math.round(g.z)), [LEG, 2 * LEG, 130])
 })
 
-test('遠いチェストやかまどへは 1 ステップに 1 区間ずつ歩く（iron run: 取り出しが 45 秒で時間切れになった）', async () => {
+test('道具の goto も着くまで歩く。止める合図が来たら区間の途中でも止まる', async () => {
   const bot = walker(0, 0)
-  const c = { item: 'porkchop', count: 2, pos: new Vec3(0, 70, 130) }
-  assert.match(await PRIMITIVES.withdraw(bot, { home: null }, c, signal), /^walked 48m toward the chest \(82m left\)$/)
-  assert.match(await PRIMITIVES.deposit(bot, { home: null }, c, signal), /toward the chest \(34m left\)$/)
-  assert.match(await PRIMITIVES.smelt(bot, {}, { pos: new Vec3(0, 70, -60) }, signal), /toward the furnace/)
-})
-
-test('どの行動も、Python クライアントが待つのをやめる（60 秒）前に終わる', () => {
-  assert.ok(Math.max(DEFAULT_TIMEOUT_MS, ...Object.values(TIMEOUTS_MS)) <= 45000)
-})
-
-test('道具の goto も 1 回 1 区間で、区間を歩ける時間の上限を持つ（既定の 20 秒では 48m が切れる）', async () => {
-  const bot = walker(0, 0)
-  const c = { pos: new Vec3(0, 70, 100), range: 1 }
-  assert.match(await PRIMITIVES.goto_pos(bot, {}, c, signal), /^walked 48m toward 0,70,100 \(52m left\)$/)
-  assert.ok(TIMEOUTS_MS.goto_pos > DEFAULT_TIMEOUT_MS)
+  assert.match(await PRIMITIVES.goto_pos(bot, {}, { pos: new Vec3(0, 70, 100), range: 1 }, signal), /^arrived near 0,70,100/)
+  const controller = new AbortController()
+  const slow = walker(0, 0)
+  const goto = slow.pathfinder.goto
+  slow.pathfinder.goto = async (goal) => { await goto(goal); controller.abort(new Error('stopped: it is dusk now')) }
+  await assert.rejects(PRIMITIVES.goto_pos(slow, {}, { pos: new Vec3(0, 70, 300), range: 1 }, controller.signal), /dusk/)
+  assert.equal(slow.goals.length, 1)
 })

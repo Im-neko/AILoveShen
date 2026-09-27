@@ -311,6 +311,26 @@ class TestToolEndpoints:
         assert await client.state() == {"action": None, "mobs": []}
         assert await client.abort("woke up: q") is False
 
+    @pytest.mark.asyncio
+    async def test_running_an_action_waits_for_its_answer_without_a_time_limit(self):
+        """行動（候補・道具・技）は時間で止めないので、返事の読み取りは待ち続ける（38）。"""
+        reads = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            reads[request.url.path] = request.extensions["timeout"]["read"]
+            if request.url.path == "/skills/hunt/run":
+                return httpx.Response(200, json={"ended": "done", "version": 1, "calls": []})
+            return httpx.Response(200, json={"ok": True, "result": "done", "seconds": 600})
+
+        client = _client(handler)
+        await client.act("go home")
+        await client.run_tool("goto", {"x": 1, "y": 70, "z": 2})
+        await client.run_skill("hunt", {})
+        await client.state()
+        assert reads["/act"] is None and reads["/tool"] is None
+        assert reads["/skills/hunt/run"] is None
+        assert reads["/state"] is not None  # ほかはクライアントの既定のまま
+
 
 @pytest.mark.asyncio
 async def test_set_build_puts_the_expanded_blocks_and_a_rejection_carries_the_reason():

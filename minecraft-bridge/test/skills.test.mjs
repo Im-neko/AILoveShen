@@ -73,12 +73,12 @@ test('too many actions stop the skill', async () => {
   assert.equal(d.called.length, 3)
 })
 
-test('the time limit stops the skill and the running tool', async () => {
-  const d = deps({ tool: () => new Promise(() => {}) })
-  const r = await runSkill(skill('await t.goto({ x: 1, y: 2, z: 3 }); return t.done()'), {}, d, { ...LIMITS, seconds: 0.2 })
-  assert.equal(r.ended, 'stopped')
-  assert.match(r.reason, /time limit/)
-  assert.equal(d.aborted.length, 1)
+test('no time limit: a long tool call runs to its end (stops come from the watcher or the needs)', async () => {
+  assert.equal(LIMITS.seconds, undefined)
+  const d = deps({ tool: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, result: 'x', seconds: 0 }), 300)) })
+  // 待っている間は CPU の上限（isolated-vm の timeout）にも数えない
+  const r = await runSkill(skill('await t.goto({ x: 1, y: 2, z: 3 }); return t.done()'), {}, d, { ...LIMITS, cpuMs: 100 })
+  assert.equal(r.ended, 'done')
 })
 
 test('a stop from outside (the watcher) ends the skill', async () => {

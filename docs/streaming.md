@@ -342,7 +342,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 | 読み上げで 422 | `tts.emotion_style_map` にモデルにないスタイル名がある |
 | 音が OBS に入らない | `tts.audio.device` と OBS の音声入力キャプチャのデバイスを確かめる |
 | Ctrl-C で止まらない | 最新のコードにする（`git pull`） |
-| `[skill] … 失敗 time limit` / `too many actions` | 技が上限（180 秒、行動 40 回）に当たった。Gemini が理由を読んで直すか、道具で進める。続くなら配信の後に掃除する |
+| `[skill] … 失敗 too many actions` | 技が上限（行動 40 回、調べもの 200 回）に当たった。Gemini が理由を読んで直すか、道具で進める。続くなら配信の後に掃除する |
 | ブリッジの起動で `isolated-vm` のエラー | `cd minecraft-bridge && npm install`（ビルドツールが要ることがある。準備の 2） |
 | ブラウザソースが空 | 配信が動いているか、`--no-board` にしていないか。動いていれば OBS でソースを再読み込み |
 

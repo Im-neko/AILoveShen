@@ -17,7 +17,7 @@ function targetOf (bot, c) {
   return null
 }
 
-export function startTracking (bot, c, limitMs) {
+export function startTracking (bot, c) {
   const started = Date.now()
   const startPos = bot.entity.position.clone()
   const startItems = totalItems(bot)
@@ -59,7 +59,6 @@ export function startTracking (bot, c, limitMs) {
         verb: c.verb,
         target: c.target ?? null,
         elapsed_s: round((Date.now() - started) / 1000),
-        limit_s: round(limitMs / 1000),
         moved_1s_m: movedSince(1000),
         moved_5s_m: movedSince(WINDOW_MS),
         moved_total_m: round(bot.entity.position.distanceTo(startPos)),

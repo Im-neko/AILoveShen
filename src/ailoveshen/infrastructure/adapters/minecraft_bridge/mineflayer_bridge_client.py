@@ -26,9 +26,6 @@ from ailoveshen.domain.value_objects import (
     TownSite,
 )
 
-# 技の実行はブリッジの上限（180 秒）まで続く。それより少し長く待つ
-SKILL_TIMEOUT = 200.0
-
 
 class MineflayerBridgeClient(IMinecraftBridge):
     """
@@ -46,10 +43,12 @@ class MineflayerBridgeClient(IMinecraftBridge):
         Args:
             host: ブリッジのホスト名
             port: ブリッジの HTTP ポート
-            timeout_seconds: リクエストのタイムアウト。ブリッジの行動のタイムアウトより
-                長くすること
+            timeout_seconds: リクエストのタイムアウト。行動（候補・道具・技）の実行は時間で
+                止めない（止めるのはブリッジ: 夕方・夜、空腹・体力、POST /abort）ので、その返事は
+                読み取りを待ち続ける
         """
         self._client = httpx.AsyncClient(base_url=f"http://{host}:{port}", timeout=timeout_seconds)
+        self._action_timeout = httpx.Timeout(timeout_seconds, read=None)
 
     async def observe(self) -> GameObservation:
         """観測、目標の状態、候補を取得する。"""
@@ -105,7 +104,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
 
     async def act(self, action_id: str) -> ActionResult:
         """ブリッジで候補を 1つ実行する。"""
-        data = await self._request("POST", "/act", json={"id": action_id})
+        data = await self._request("POST", "/act", json={"id": action_id}, action=True)
         return ActionResult(
             action_id=action_id,
             ok=bool(data["ok"]),
@@ -116,7 +115,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
 
     async def run_tool(self, name: str, args: dict[str, Any]) -> tuple[bool, str, float, bool]:
         """道具を 1 つ呼ぶ。調べものの結果（構造）は JSON の文にして返す。"""
-        data = await self._request("POST", "/tool", json={"name": name, "args": args})
+        data = await self._request("POST", "/tool", json={"name": name, "args": args}, action=True)
         result = data["result"]
         text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
         return bool(data["ok"]), text, float(data["seconds"]), bool(data.get("refused", False))
@@ -224,13 +223,13 @@ class MineflayerBridgeClient(IMinecraftBridge):
     async def run_skill(
         self, name: str, args: dict[str, Any], version: int | None = None
     ) -> SkillRun:
-        """技を 1 回実行する（終わるまで待つ。上限はブリッジが持つ）。"""
+        """技を 1 回実行する（終わるまで待つ。行動・調べものの回数などの上限はブリッジが持つ）。"""
         payload: dict[str, Any] = {"args": args}
         if version is not None:
             payload["version"] = version
         try:
             response = await self._client.post(
-                f"/skills/{name}/run", json=payload, timeout=SKILL_TIMEOUT
+                f"/skills/{name}/run", json=payload, timeout=self._action_timeout
             )
         except httpx.RequestError as e:
             raise GameBridgeError(f"Minecraft bridge unreachable (POST /skills/run): {e}") from e
@@ -288,9 +287,12 @@ class MineflayerBridgeClient(IMinecraftBridge):
             "POST", "/judge", json={"id": judge_id, "answer": answer, "confidence": confidence}
         )
 
-    async def _request(self, method: str, path: str, json: Any = None) -> dict[str, Any]:
+    async def _request(
+        self, method: str, path: str, json: Any = None, action: bool = False
+    ) -> dict[str, Any]:
+        timeout = self._action_timeout if action else httpx.USE_CLIENT_DEFAULT
         try:
-            response = await self._client.request(method, path, json=json)
+            response = await self._client.request(method, path, json=json, timeout=timeout)
         except httpx.RequestError as e:
             raise GameBridgeError(f"Minecraft bridge unreachable ({method} {path}): {e}") from e
         if response.status_code != 200:

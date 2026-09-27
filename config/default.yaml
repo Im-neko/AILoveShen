@@ -385,7 +385,7 @@ minecraft:
     # Same variables as the bridge reads (.env at the repository root)
     host: "${BRIDGE_HOST:-localhost}"
     port: "${BRIDGE_PORT:-3000}"
-    # Must exceed the bridge's longest action timeout (45s, TIMEOUTS_MS in primitives.mjs)
+    # For requests other than running an action (actions have no time limit: their answer is awaited)
     timeout_seconds: 60
 
   agent:

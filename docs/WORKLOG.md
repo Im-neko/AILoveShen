@@ -1,11 +1,22 @@
 ## Current Status
 
 **Active Phase**: 設計書 36（ローカル LLM と Gemini の振り分け）を実装した。ユーザーの FreeToken（Qwen3.6）で `tools/llm_probe.py` を測り、`LOCAL_LLM=1` で様子を見る段階。その前に 設計書 35（教訓帳: 指摘と失敗を似た状況で思い出す）を実装した（実機では未確認。`logs/lessons` と `data/lessons.json` を見て点の重みと閾値を直す）。アバターは既定で全身表示（OBS で切り抜く）。その前に設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
-**Last Updated**: 2026-09-26
+**Last Updated**: 2026-09-27
 **Test Status**: `pytest tests/` 735 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 行動を時間で止めない (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー:「20 秒の制限は何のため？なくても良い。移動もそうだけど基本制限は不要。必要になったら野営」。範囲はすべての行動、止めるのは考え直し・空腹と体力・見張り（Jev）・夕方と夜。設計書 `docs/design/38_no_time_limits.md`。
+- ブリッジ `runner.mjs`: タイムアウトと `walkedOnTimeout` を消し、`needNow()`（0.5 秒ごと、始めたときになかった必要だけ: 暗くなった（`NIGHT_VERBS` 以外）、食料 ≤ 6（eat 以外）、体力 ≤ 8（戦う・逃げる以外）、乗っている間は見ない）で `stopped: …` にする。`stopped:` / `rethink:` は失敗に数えない（`NOT_A_FAILURE`）
+- `primitives.mjs`: `legToward` は着くまで区間ごとに歩く（9 か所の呼び出しは途中で返さない）、`ride_boat` は岸まで、smelt は全部焼けるか火が消えるまで、dig_down は段数の上限なし、刈るのは 10 秒の上限なし、attack は見失う（24m）か近づけない（`STUCK_MS`）まで、flee は離れられなくなるまで（`stuckWatch`）。`TIMEOUTS_MS` などの定数を消した。`progress.mjs` の `limit_s`、`boat.mjs` の `drive` の既定の上限、`skills.mjs` の 180 秒も消した
+- Python: `MineflayerBridgeClient` は行動（/act、/tool、技）の返事を待ち続ける（`read=None`。Node の `requestTimeout` は返事を待つ間は切らないことを実測）。`INTERRUPTED_PREFIXES` に `failed: stopped: ` / `failed: rethink: `。`AdvancePlayUseCase._cut_on_rethink`: 行動の間に考え直しを頼まれたら `bridge.abort("rethink: …")`（行動が始まる前なら始まるまで止め続ける）。道具の説明（goto、ride_boat）と技のプロンプトから 48m・20 秒・180 秒を消した
+- テスト: `runner.test.mjs`（時間では止めない、夕方・空腹で止める）、`leg.test.mjs`（1 回で全区間、途中で止める）、`skills.test.mjs`（時間の上限なし、待ちは CPU に数えない）、`test_play_use_cases.py`（行動中の考え直しで止める、始まる前の依頼）、`test_mineflayer_bridge_client.py`（行動のリクエストは読み取りの上限なし）
+- 実機では未確認（長い移動が 1 回で着くか、夕方で止まった後に夜の小目標へ移るか）
 
 ### ボートで水を渡る、アイテムを使う（use_item） (2026-09-27)
 
