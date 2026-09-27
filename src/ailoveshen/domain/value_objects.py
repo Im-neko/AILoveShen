@@ -1091,6 +1091,8 @@ class TownStage:
     why: str
     conditions: tuple[GoalSpec, ...] = ()
     unresolved: tuple[str, ...] = ()
+    # 未解決の部分を最後に書いた・書き直したときの条件の語彙の版（同じ語彙では書き直さない）
+    tried_with: str = ""
 
     def __post_init__(self) -> None:
         """段階を確かめる。"""

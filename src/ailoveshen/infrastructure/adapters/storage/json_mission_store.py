@@ -113,6 +113,7 @@ def _town_dict(town: TownDefinition) -> dict[str, Any]:
                 "why": s.why,
                 "conditions": [c.to_dict() for c in s.conditions],
                 "unresolved": list(s.unresolved),
+                "tried_with": s.tried_with,
             }
             for s in town.stages
         ],
@@ -128,6 +129,7 @@ def _town(data: dict[str, Any]) -> TownDefinition:
                 why=s.get("why", ""),
                 conditions=tuple(_spec(c) for c in s.get("conditions", [])),
                 unresolved=tuple(s.get("unresolved", [])),
+                tried_with=s.get("tried_with", ""),
             )
             for s in data["stages"]
         ),

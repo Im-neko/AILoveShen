@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from string import Template
@@ -647,6 +648,11 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             abilities=ABILITIES,
             previous_error=_retry(previous_error, "書き直してください。"),
         )
+
+    def vocabulary_version(self) -> str:
+        """段階のプロンプトに見せる語彙（条件の一覧と、できること）のハッシュ。"""
+        text = format_conditions() + ABILITIES
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
     def build_goal_system(self) -> str:
         """目標の決定の決まり（毎回同じ文。システム指示に渡す）。"""

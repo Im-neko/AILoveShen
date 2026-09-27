@@ -115,20 +115,32 @@ class TownPlanner:
                 return
             if plan.site.moving:
                 await self._move(session, plan.site, obs)
-            if plan.town is None:
-                await self.prepare(plan)
+            await self.prepare(plan)
         except TextGenerationError as e:
             logger.error(f"街の準備を次の切れ目に持ち越す: {e}")
 
     async def prepare(self, plan: MidGoalPlan) -> None:
         """
-        場所が決まっていれば、街がまだなければ定め、あれば未解決の段階を書き直す。
+        場所が決まっていれば、街がまだなければ定め、あれば今の段階の未解決の部分を書き直す。
         そして保存する。場所が決まるまでは何もしない（街は場所に合わせて定める）。
+
+        書き直すのは今の段階だけ（未解決の段階は終えられないので、先の段階はそれが今になって
+        から）、それも語彙（使える条件と、できること）が前に試したときから変わったときだけ。
+        同じ語彙では同じ答えにしかならない（2026-09-27: 起動のたびに 5 段階を書き直し、ローカルの
+        LLM で 4 分かかっていた）。
         """
         if plan.site is None:
             return
         if plan.town is None:
             town = await self._define(plan, await self._site_facts(plan.site))
+            # 今の語彙で書いた段階は、書き直しを試したのと同じ
+            version = self._prompt_builder.vocabulary_version()
+            town = replace(
+                town,
+                stages=tuple(
+                    s if s.ready else replace(s, tried_with=version) for s in town.stages
+                ),
+            )
             plan.define_town(town)
             self._store.save(plan)
             logger.info(f"街を定めた: {town.text} / {' → '.join(s.title for s in town.stages)}")
@@ -139,15 +151,19 @@ class TownPlanner:
             )
             return
         town = plan.town
+        i = plan.town_stage
+        if i >= len(town.stages):
+            return
+        stage = town.stages[i]
+        version = self._prompt_builder.vocabulary_version()
+        if stage.ready or stage.tried_with == version:
+            return
+        written = replace(await self._resolve(town, stage), tried_with=version)
+        logger.info(f"街の段階 {i + 1} を書き直した: {_describe(written)}")
         stages = list(town.stages)
-        for i in range(plan.town_stage, len(stages)):
-            if stages[i].ready:
-                continue
-            stages[i] = await self._resolve(town, stages[i])
-            logger.info(f"街の段階 {i + 1} を書き直した: {_describe(stages[i])}")
-        if tuple(stages) != town.stages:
-            plan.define_town(replace(town, stages=tuple(stages)))
-            self._store.save(plan)
+        stages[i] = written
+        plan.define_town(replace(town, stages=tuple(stages)))
+        self._store.save(plan)
 
     async def _survey_or_choose(self, plan: MidGoalPlan, obs: GameObservation) -> None:
         if plan.preparing_town:

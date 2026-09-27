@@ -141,6 +141,7 @@ def prompt_builder():
     builder.build_stage_prompt.return_value = "stage prompt"
     builder.build_site_prompt.return_value = "site prompt"
     builder.describe_site.return_value = "site note"
+    builder.vocabulary_version.return_value = "v1"
     return builder
 
 
@@ -203,6 +204,7 @@ class TestTownPlanner:
         assert [s.title for s in plan.town.stages] == ["備蓄", "敷地の安全", "複数の建物"]
         assert plan.town.stages[0].conditions == (FOOD,)
         assert not plan.town.stages[2].ready
+        assert plan.town.stages[2].tried_with == "v1"  # 今の語彙で書いた: 起動で書き直さない
         store.save.assert_called_with(plan)
         [told] = _published(events, TownDefinedEvent)
         assert told.stages == ("備蓄", "敷地の安全", "複数の建物")
@@ -262,7 +264,7 @@ class TestTownPlanner:
     async def test_a_defined_town_only_has_its_unresolved_stages_written_again(
         self, planner, text_generator, prompt_builder, events
     ):
-        """定義は残し、今の段階から後の未解決の段階を書き直させる。"""
+        """定義は残し、今の段階の未解決の部分を書き直させる。"""
         text_generator.generate_json.return_value = {
             "conditions": [LIT.to_dict()],
             "unresolved": [],
@@ -275,7 +277,9 @@ class TestTownPlanner:
         await planner.prepare(plan)
 
         assert plan.town.stages[0] == done
-        assert plan.town.stages[1] == TownStage("複数の建物", "街らしく", conditions=(LIT,))
+        assert plan.town.stages[1] == TownStage(
+            "複数の建物", "街らしく", conditions=(LIT,), tried_with="v1"
+        )
         assert prompt_builder.build_stage_prompt.call_args.args[1] == waiting
         assert not _published(events, TownDefinedEvent)
 
@@ -296,10 +300,35 @@ class TestTownPlanner:
 
         await planner.prepare(plan)
 
-        assert plan.town.stages[0] == waiting
+        assert plan.town.stages[0] == TownStage(
+            "複数の建物", "街らしく", unresolved=("倉庫",), tried_with="v1"
+        )
         error = prompt_builder.build_stage_prompt.call_args.kwargs["previous_error"]
         assert "built() はもう全部そろっている" in error
         assert text_generator.generate_json.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_only_the_current_stage_and_only_when_the_vocabulary_changed(
+        self, planner, text_generator, prompt_builder
+    ):
+        """起動のたびに 5 段階を書き直していた（2026-09-27）: 同じ語彙では書き直さない。"""
+        text_generator.generate_json.return_value = {"conditions": [], "unresolved": ["柵"]}
+        now = TownStage("防壁", "守る", unresolved=("柵",), tried_with="v1")
+        later = TownStage("広場", "街らしく", unresolved=("舗装",), tried_with="v0")
+        plan = MidGoalPlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(now, later), town_stage=0, site=HERE)
+
+        await planner.prepare(plan)
+        text_generator.generate_json.assert_not_awaited()  # 今の段階は同じ語彙で試した
+
+        prompt_builder.vocabulary_version.return_value = "v2"  # 条件が増えた
+        await planner.prepare(plan)
+        assert prompt_builder.build_stage_prompt.call_args.args[1] == now
+        assert plan.town.stages[0].tried_with == "v2"
+        assert plan.town.stages[1] == later  # 先の段階は、今になってから
+        text_generator.generate_json.reset_mock()
+        await planner.prepare(plan)
+        text_generator.generate_json.assert_not_awaited()
 
 
 class TestTownStages:

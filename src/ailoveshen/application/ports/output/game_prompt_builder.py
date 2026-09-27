@@ -152,6 +152,14 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def vocabulary_version(self) -> str:
+        """
+        街の段階を書くときに見せる語彙（使える条件と、できること）の版。変わったときだけ、
+        未解決の段階を書き直す価値がある。
+        """
+        ...
+
+    @abstractmethod
     def build_goal_system(self) -> str:
         """
         目標の決定のシステム指示（決まり、述語の説明の全部、出力の書き方）。状態では変わらない
