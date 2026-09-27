@@ -9,7 +9,7 @@
 
 ### 任意の条件 custom(name): Gemini が判定コードを書く (2026-09-27)
 
-**Commit**: （この後）
+**Commit**: `058a8be`
 
 ユーザー:「目標には任意のものを設定できるようにしたいです」（完了は「Gemini が判定コードを書く」）。設計書 `docs/design/42_custom_conditions.md`。
 - ブリッジ `conditions.mjs`（新規: isolated-vm の同期の判定、読むだけの w、上限、`registerCheck` は今成り立つ判定を断る）、`goals.mjs`（述語 custom、候補なし、壊れた判定は blocked）、`index.mjs`（`PUT/GET /conditions`、/observe の home に door / min / max）、`home.mjs`（保存）、`skills.mjs`（expects）
