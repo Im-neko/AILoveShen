@@ -9,7 +9,7 @@
 
 ### 夜に家とベッドへ「No path」のまま寝られない (2026-09-27)
 
-**Commit**: `TBD`
+**Commit**: `63019a7`
 
 ユーザーのログ: through_night で `go home` / `go_home` / `sleep in the bed nearby` がどれも 0.1 秒で「No path to the goal!」、goto で近くを行き来するだけで一晩中寝られなかった。
 - 原因の見立て: pathfinder は既定でドアを開けない（`canOpenDoors: false`）ので、村の家などドアの向こうのベッドには経路がない。前の家の中のベッドも近くのベッドとして出ていた。家へは `GoalBlock(ドアの外のセル)` だけで、そこに立てない（床が掘られた、物がある）と行けない。行けなかった行き先を何度でも出していた
