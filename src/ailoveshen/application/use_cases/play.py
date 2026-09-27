@@ -943,6 +943,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 logger.info(
                     f"見直し: {decision.review}（中目標の編集 {len(decision.changes)}、"
                     f"手順 {'書き直し' if decision.steps else 'そのまま'}）"
+                    + (f"; 外出ごと: {decision.trips}" if decision.trips else "")
                 )
             await self._mid_goals.commit(plan, decision.changes)
             if decision.steps and plan.current is not None:

@@ -78,6 +78,9 @@ class TestShape:
         assert decision.together == (SAPLING, STONE)
         assert decision.approach.startswith("森へ")
         schema = goal_schema([GoalPredicate.HAVE], ["m1"])
+        # 見直しの次に、残りを外出ごとに分けさせてから手順を書かせる（§9）
+        assert list(schema["properties"])[:2] == ["review", "trips"]
+        assert "trips" in schema["required"]
         assert schema["properties"]["together"]["maxItems"] == 3
         step = schema["properties"]["steps"]["items"]["properties"]
         assert "together" in step and "approach" in step
@@ -91,6 +94,23 @@ class TestShape:
             Goal(LOG, together=(LOG,))
         with pytest.raises(ValueError, match="step 1: together 1"):
             parse_decision({**BUNDLE, "steps": [{**BUNDLE, "together": [{"predicate": "x"}]}]})
+
+    def test_a_bundled_goal_bundles_the_steps_it_was_written_as_apart(self):
+        """実測（2026-09-27）: 小目標は束なのに、手順では石と原木を別々に書いた。"""
+        decision = parse_decision(
+            {
+                **BUNDLE,
+                "together": [{"predicate": "have", "item": "cobblestone", "count": 8}],
+                "steps": [
+                    {"predicate": "have", "item": "log", "count": 16, "reason": "原木"},
+                    {"predicate": "have", "item": "cobblestone", "count": 8, "reason": "石"},
+                    {"predicate": "built", "reason": "建てる"},
+                ],
+            }
+        )
+        assert [s.specs for s in decision.steps] == [(LOG, STONE), (BUILT,)]
+        assert decision.steps[0].approach == decision.approach
+        assert decision.steps[0].reason == "原木"
 
     def test_steps_can_be_bundles_and_are_saved(self, tmp_path):
         decision = parse_decision({**BUNDLE, "steps": [{**BUNDLE, "reason": "森へ"}]})

@@ -174,6 +174,8 @@ class GoalDecision:
     advice: str = ""
     # 毎回: 今の状態で何ができるか、もっと早い・無駄のないやり方はないかの見直し（docs/design/31）
     review: str = ""
+    # 毎回: 残りを外出ごとに分けたもの（手順と小目標の束はこれに従う。docs/design/44 §9）
+    trips: str = ""
     # 失敗の後だけ（任意）: 似た状況で思い出す教訓と、その条件（docs/design/35）
     lesson: str = ""
     lesson_when: dict[str, Any] = field(default_factory=dict)
@@ -325,8 +327,19 @@ def goal_schema(
                 "description": "First, every time: from the state now (what you carry, the "
                 "chests, what is nearby and remembered, the time, which steps are already done "
                 "or impossible), is there a faster or less wasteful way to the mid goals (another "
-                "order, other steps, skipping what is done)? Say what you change, or why the "
-                "plan stays. 1-2 sentences in Japanese",
+                "order, other steps, skipping what is done, bundling what one trip gets: open "
+                "steps and other mid goals' conditions at the same place or on the way into one "
+                "step with together)? Say what you change, or why the plan stays. 1-2 sentences "
+                "in Japanese",
+            },
+            "trips": {
+                "type": "string",
+                "description": "Next, every time: group what is left to get (the open steps of "
+                "the mid goal at the top and the other mid goals' conditions) by trip: what one "
+                "trip or place gets together (the same direction, on the way, the same place), in "
+                "order, e.g. 1) north: have(cobblestone, 48) + have(oak_log, 16) 2) home: built. "
+                "The steps and the small goal follow these groups (one group = one step, "
+                "together)",
             },
             "plan_changes": {
                 "type": "array",
@@ -362,11 +375,12 @@ def goal_schema(
                 "type": "array",
                 "maxItems": MAX_STEPS,
                 "description": "The steps (small goals, in order) to reach the mid goal at the top "
-                "of the list after the edits. Write them when it has no steps yet, they are not "
+                "of the list after the edits, one step per trip or place: what one trip gets goes "
+                "into one step with together (4 conditions at most), even when the review only "
+                "says so. Write them when it has no steps yet, they are not "
                 "working, or the review finds a faster way (a step already done, materials at hand "
                 "or in a chest, a nearer source); otherwise leave empty (the steps stay and the "
-                "fast model picks the next one itself). A step may be a bundle (together): what "
-                "one trip or one place gives goes into one step",
+                "fast model picks the next one itself)",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -378,7 +392,7 @@ def goal_schema(
                 },
             },
         },
-        "required": ["review", "predicate", "serves", "reason"],
+        "required": ["review", "trips", "predicate", "serves", "reason"],
     }
     if not after_failure:
         return schema
@@ -701,16 +715,35 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         reason=str(data.get("reason", "")),
         serves=serves,
         changes=tuple(changes),
-        steps=tuple(steps[:MAX_STEPS]),
+        steps=_steps_with_the_bundle(spec, together, approach, tuple(steps[:MAX_STEPS])),
         diagnosis=str(data.get("diagnosis", "")).strip(),
         remedy=remedy,
         advice=str(data.get("advice", "")).strip(),
         review=str(data.get("review", "")).strip(),
+        trips=str(data.get("trips", "") or "").strip(),
         lesson=str(data.get("lesson", "") or "").strip(),
         lesson_when=dict(data["lesson_when"]) if isinstance(data.get("lesson_when"), dict) else {},
         together=together,
         approach=approach,
     )
+
+
+def _steps_with_the_bundle(
+    spec: GoalSpec, together: tuple[GoalSpec, ...], approach: str, steps: tuple[PlannedStep, ...]
+) -> tuple[PlannedStep, ...]:
+    """
+    小目標を束にしたのに、手順ではその条件を別々に書いたとき、それらを 1 つの束の手順にまとめる
+    （次に Jev が手順から選ぶとき、束がばらけないように。docs/design/44）。
+    """
+    if not together:
+        return steps
+    bundle = {spec, *together}
+    inside = [i for i, s in enumerate(steps) if set(s.specs) <= bundle]
+    if not inside:
+        return steps
+    first = inside[0]
+    merged = PlannedStep(spec, steps[first].reason, together=together, approach=approach)
+    return tuple(merged if i == first else s for i, s in enumerate(steps) if i not in inside[1:])
 
 
 def parse_bundle(data: dict[str, Any]) -> tuple[tuple[GoalSpec, ...], str]:
