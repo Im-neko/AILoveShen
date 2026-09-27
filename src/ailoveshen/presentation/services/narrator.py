@@ -11,6 +11,7 @@ from loguru import logger
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
 from ailoveshen.domain.events import (
     GoalEndedEvent,
+    GoalMemberMetEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     MidGoalAddedEvent,
@@ -78,6 +79,7 @@ class Narrator:
         """目標のイベントを購読する。"""
         bus.subscribe(GoalEndedEvent, self.on_goal_ended)
         bus.subscribe(GoalSetEvent, self.on_goal_set)
+        bus.subscribe(GoalMemberMetEvent, self.on_member_met)
         bus.subscribe(MidGoalAddedEvent, self.on_mid_goal_added)
         bus.subscribe(MidGoalCompletedEvent, self.on_mid_goal_completed)
         bus.subscribe(MidGoalDroppedEvent, self.on_mid_goal_dropped)
@@ -100,6 +102,18 @@ class Narrator:
         """
         serves = f"「{event.mid_goal}」のため" if event.mid_goal else "身を守るため"
         self._pending.append(f"新しい小目標: {event.goal}（{serves}。{event.reason}）")
+        self._boundary()
+
+    async def on_member_met(self, event: GoalMemberMetEvent) -> None:
+        """束の条件が 1 つ済んだ（docs/design/44）。小目標の切れ目と同じく話す。"""
+        left = f"残りは {', '.join(event.left)}" if event.left else ""
+        self._pending.append(
+            f"一緒に追っている {event.goal} のうち {event.member} が済んだ。{left}"
+        )
+        self._boundary()
+
+    def _boundary(self) -> None:
+        """切れ目: 取っておいたことを話す（gate があれば聞いてから）。"""
         quiet = (self._clock() - self._last_spoke) if self._last_spoke is not None else None
         if self._gate is None or self._must_speak or quiet is None or quiet >= self._max_silence:
             events, self._pending = self._pending, []

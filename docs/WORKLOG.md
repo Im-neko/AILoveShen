@@ -7,6 +7,24 @@
 
 ## Completed Work
 
+### 小目標の束（同時に追う複数の条件） (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー:「小目標は複数持てるようにして効率的に全て達成できるように Gemini がプランを練ってほしい」。形は「同時に追う束」、4 個まで、ほかの中目標の条件も可、束の条件が 1 つ済んだら話す。設計書 `docs/design/44_goal_bundles.md`（§8 に実装）。
+- ブリッジ: `goals.mjs`（`together()`、`describeSpec`、`evaluate` が条件ごとに評価してまとめる、`members`）、`candidates.mjs`（候補に `for`）、`index.mjs`（`publicStatus` の `members`）
+- Python: `Goal` / `PlannedStep` の `together` / `approach`、`check_bundle`、`GoalStatus.members`（`BundleMember`）、`GoalMemberMetEvent`、`PlaySession.step_budget` / `newly_met_members`、スキーマ（`_bundle_properties`、`parse_bundle`）、`AdvancePlay`（`set_goal(together=)`、`_also`、`_members_met`、手順の判定は条件ごと）、`GoalChooser`（まだの条件だけ渡す）、`Narrator.on_member_met`、`stream_context`・Jev の状態・ボード、`JsonMissionStore`、目標の決定の決まり（`TestPromptLength` 8000）
+- テスト: `tests/unit/application/test_goal_bundles.py`、`placing.test.mjs` の束。Python 800 passed、ブリッジ 226
+- 本物の Gemini: 森への道に石がある状態で 3 回とも束を使わなかった。次は review で束にできるかを必ず見させる
+
+### 壁に付いた松明を「置けなかった」としていた (2026-09-27)
+
+**Commit**: `c8f7be4`
+
+ユーザー:「壁に松明もうあるのに置こうとして失敗してるみたい」。ログでは失敗なのに残りが 10 → 5 と減っていた。`place_at` が当たり判定で置けたかを見ていた（松明は当たり判定なし、壁では `wall_torch`）。置く前とセルが変わったかで見る。`test/place_at.test.mjs`（古いコードで落ちることを確認）。
+
+未対応（ユーザーの判断待ち）: 同じコメントに返事を 2 回作る。Jev の約束チェックが約束でない返事を拾い、Gemini の約束の判断に「約束ではない」がないので cannot → 書き直し（13:06 は返事なし、13:16 は優先度を理由に cannot）。提案: `none` を足す、cannot は条件で書けないときだけ、書き直しも駄目なら約束なしで話す
+
 ### 行動の途中の一言（10 秒黙ったら話す、繰り返さない） (2026-09-27)
 
 **Commit**: `3f3cda1`

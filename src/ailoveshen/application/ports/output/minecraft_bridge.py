@@ -42,13 +42,19 @@ class IMinecraftBridge(ABC):
 
     @abstractmethod
     async def set_goal(
-        self, spec: GoalSpec, keep: Sequence[GoalSpec] = (), also: Sequence[GoalSpec] = ()
+        self,
+        spec: GoalSpec,
+        keep: Sequence[GoalSpec] = (),
+        also: Sequence[GoalSpec] = (),
+        together: Sequence[GoalSpec] = (),
     ) -> GoalStatus:
         """
         候補を具体化する対象の目標を設定する。
 
         Args:
-            spec: 小目標
+            spec: 小目標（束の先頭）
+            together: 束で一緒に追う条件（docs/design/44_goal_bundles.md）。済んだかは束全体、
+                残りは合計、条件ごとの状態は GoalStatus.members
             keep: 中目標の stored() 条件。チェストがそのために取っておくものは、この目標の
                 ために取り出さない（食料は飢えているときだけ取り出す）
             also: ほかの中目標で集める物（have / stored / planted / farmed）。そばで取れるなら

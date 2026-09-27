@@ -13,6 +13,7 @@ from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, Ski
 from ailoveshen.domain.value_objects import (
     ActionResult,
     BuildDesign,
+    BundleMember,
     Candidate,
     ConditionStatus,
     GameObservation,
@@ -56,7 +57,11 @@ class MineflayerBridgeClient(IMinecraftBridge):
         return _to_observation(data)
 
     async def set_goal(
-        self, spec: GoalSpec, keep: Sequence[GoalSpec] = (), also: Sequence[GoalSpec] = ()
+        self,
+        spec: GoalSpec,
+        keep: Sequence[GoalSpec] = (),
+        also: Sequence[GoalSpec] = (),
+        together: Sequence[GoalSpec] = (),
     ) -> GoalStatus:
         """目標を設定する。ブリッジが返す 400 には、拒否した理由が入っている。"""
         body = {
@@ -64,6 +69,8 @@ class MineflayerBridgeClient(IMinecraftBridge):
             "keep": [{"item": k.item, "count": k.count} for k in keep],
             "also": [a for a in map(_gathered, also) if a],
         }
+        if together:
+            body["together"] = [t.to_dict() for t in together]
         try:
             response = await self._client.put("/goal", json=body)
         except httpx.RequestError as e:
@@ -331,7 +338,23 @@ def _to_status(data: dict[str, Any]) -> GoalStatus:
         remaining=int(data["remaining"]),
         lines=tuple(str(x) for x in data.get("lines", [])),
         blocked=tuple(str(x) for x in data.get("blocked", [])),
+        members=tuple(
+            BundleMember(
+                label=_label(m.get("spec") or {}),
+                met=bool(m.get("met")),
+                remaining=int(m.get("remaining", 0)),
+            )
+            for m in data.get("members") or []
+        ),
     )
+
+
+def _label(spec: dict[str, Any]) -> str:
+    """ブリッジの describeSpec と同じ形（have(log, 16)）。"""
+    args = [
+        spec[k] for k in ("name", "item", "count", "where", "distance") if spec.get(k) is not None
+    ]
+    return f"{spec.get('predicate')}({', '.join(str(a) for a in args)})"
 
 
 def _to_observation(data: dict[str, Any]) -> GameObservation:

@@ -122,7 +122,7 @@ class CommentTriage:
         state: dict[str, Any] = {"viewer": comment.user_name, "comment": comment.message}
         activity = self._activity()
         if activity is not None and activity.goal is not None:
-            state["streamer_is_doing"] = activity.goal.spec.describe()
+            state["streamer_is_doing"] = activity.goal.describe()
             if activity.intent:
                 state["trying_to"] = activity.intent
         return state

@@ -243,7 +243,8 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
 見て、もっと早く・無駄なく進むやり方がないかを探す。例:
 - 済んだ手順・もう持っている物・チェストにある物の手順は飛ばす（集め直さない）
 - 近くにある材料や、同じ場所・同じ外出でまとめてできることを先にする（ほかの中目標の物もそばで
-  取れれば一緒に: 木を見つけたら原木と、葉から苗木。集めた物は 1 個ずつ家に運ばない）
+  取れれば一緒に: 木を見つけたら原木と、葉から苗木。集めた物は 1 個ずつ家に運ばない）。
+  まとめられるものは束（together）にする
 - 先に作ると速くなる道具（石のツルハシなど）は先に作る
 - 今は手に入らない手順は、手に入るようにする手順を前に入れるか、中目標を後ろに回す
 - 近くで見つからない物は育てる: 木がなければ苗木を植える（planted。育つ間は別の作業）、食べ物は畑
@@ -293,6 +294,10 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
   各手順に、なぜそれかを 1 文で付ける（配信の画面と実況に出る）
 - 最後の手順は中目標の完了条件そのものにする（例: 家を建てる → have(log, 12)、have(planks, 40)、built）
 - 小目標（predicate）は手順の中から選ぶ（夜や空腹で身を守るときは survival）
+- 束: 手順と小目標は together で条件を足して同時に追える（4 つまで。全部そろって終わり）。同じ外出・
+  場所・道具で取れるものをまとめる（例: 森へ → have(log, 16) と planted(sapling, 4)、途中の石で
+  have(cobblestone, 8)。ほかの中目標の条件も可）。approach に回り方を 1 文。順番が要るもの（作業台
+  → ツルハシ）は別の手順。束の手順を小目標にするときは together と approach も書く
 
 ## 中目標リストの編集（plan_changes。見直しで変える理由があるときだけ）
 - 順番は合理的に調整しながら進めてよい: 今の場所・持ち物・時間帯・状況で、別の中目標を先に
@@ -768,8 +773,9 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         s = observation.state
         status = observation.goal
         state = {
-            "goal": goal.spec.describe(),
+            "goal": goal.describe(),
             "goal_reason": goal.reason,
+            **({"approach": goal.approach} if goal.approach else {}),
             **({"advice": goal.advice} if goal.advice else {}),
             # 前に似た状況で学んだこと（docs/design/35。確かめていない）
             **({"remember": list(goal.lessons)} if goal.lessons else {}),

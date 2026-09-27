@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.value_objects import (
+    MAX_BUNDLE,
     MAX_NOTE_CHARS,
     PLANNABLE_CONDITIONS,
     SITUATION_VALUES,
@@ -26,6 +27,7 @@ from ailoveshen.domain.value_objects import (
     TownDefinition,
     TownSite,
     TownStage,
+    check_bundle,
 )
 
 MAX_GOAL_COUNT = 64
@@ -174,6 +176,34 @@ class GoalDecision:
     # 失敗の後だけ（任意）: 似た状況で思い出す教訓と、その条件（docs/design/35）
     lesson: str = ""
     lesson_when: dict[str, Any] = field(default_factory=dict)
+    # 小目標の束（docs/design/44）: spec と一緒に追う条件と、進め方
+    together: tuple[GoalSpec, ...] = ()
+    approach: str = ""
+
+
+def _bundle_properties() -> dict[str, Any]:
+    """小目標・手順を束にする欄（docs/design/44）。"""
+    return {
+        "together": {
+            "type": "array",
+            "maxItems": MAX_BUNDLE - 1,
+            "description": "Optional: other conditions to chase at the same time as this one "
+            "(a bundle, 4 in all at most): things got on the same trip, at the same place or with "
+            "the same tools, also for other mid goals. The goal ends when all hold. Only "
+            "conditions judged from the world; night, home and fighting goals and explored are "
+            "chased alone",
+            "items": {
+                "type": "object",
+                "properties": _spec_properties(_CONDITION_ORDER),
+                "required": ["predicate"],
+            },
+        },
+        "approach": {
+            "type": "string",
+            "description": "With together: how to get them all in one go (the route, what "
+            "first, what to pick up on the way), one Japanese sentence",
+        },
+    }
 
 
 def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
@@ -326,6 +356,7 @@ def goal_schema(
                 "edits; survival: to stay alive (the night, home, the door, food)",
             },
             "reason": {"type": "string", "description": "Why this goal now, in one short sentence"},
+            **_bundle_properties(),
             "steps": {
                 "type": "array",
                 "maxItems": MAX_STEPS,
@@ -333,12 +364,14 @@ def goal_schema(
                 "of the list after the edits. Write them when it has no steps yet, they are not "
                 "working, or the review finds a faster way (a step already done, materials at hand "
                 "or in a chest, a nearer source); otherwise leave empty (the steps stay and the "
-                "fast model picks the next one itself)",
+                "fast model picks the next one itself). A step may be a bundle (together): what "
+                "one trip or one place gives goes into one step",
                 "items": {
                     "type": "object",
                     "properties": {
                         **_spec_properties(_CONDITION_ORDER),
                         "reason": {"type": "string", "description": "Why this step, one sentence"},
+                        **_bundle_properties(),
                     },
                     "required": ["predicate", "reason"],
                 },
@@ -632,7 +665,15 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
     steps = []
     for i, raw in enumerate(data.get("steps") or []):
         try:
-            steps.append(PlannedStep(parse_spec(raw), str(raw.get("reason", "")).strip()))
+            together, approach = parse_bundle(raw)
+            steps.append(
+                PlannedStep(
+                    parse_spec(raw),
+                    str(raw.get("reason", "")).strip(),
+                    together=together,
+                    approach=approach,
+                )
+            )
         except ValueError as e:
             raise ValueError(f"step {i + 1}: {e}") from e
     remedy = None
@@ -641,8 +682,11 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
             remedy = Remedy(data["remedy"])
         except ValueError as e:
             raise ValueError(f"remedy must be one of {[r.value for r in Remedy]}") from e
+    spec = parse_spec(data)
+    together, approach = parse_bundle(data)
+    check_bundle(spec, together)
     return GoalDecision(
-        spec=parse_spec(data),
+        spec=spec,
         reason=str(data.get("reason", "")),
         serves=serves,
         changes=tuple(changes),
@@ -653,7 +697,26 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         review=str(data.get("review", "")).strip(),
         lesson=str(data.get("lesson", "") or "").strip(),
         lesson_when=dict(data["lesson_when"]) if isinstance(data.get("lesson_when"), dict) else {},
+        together=together,
+        approach=approach,
     )
+
+
+def parse_bundle(data: dict[str, Any]) -> tuple[tuple[GoalSpec, ...], str]:
+    """
+    束の一緒に追う条件と進め方をパースする（docs/design/44）。
+
+    Raises:
+        ValueError: 条件の形が正しくないとき
+    """
+    together = []
+    for i, raw in enumerate(data.get("together") or []):
+        try:
+            together.append(parse_spec(raw))
+        except ValueError as e:
+            raise ValueError(f"together {i + 1}: {e}") from e
+    approach = str(data.get("approach", "") or "").strip() if together else ""
+    return tuple(together), approach
 
 
 def parse_note_changes(data: dict[str, Any]) -> tuple[NoteChange, ...]:

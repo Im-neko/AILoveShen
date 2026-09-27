@@ -59,6 +59,7 @@ from ailoveshen.domain.entities import Conversation, MidGoalPlan, Notebook, Play
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
     GoalEndedEvent,
+    GoalMemberMetEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
@@ -380,6 +381,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             )
 
         session.track_progress(obs)
+        await self._members_met(session, obs)
         if self._screen is not None:
             # 定期の見直し。「考え直す」なら、下の判定で今の小目標が終わる
             await self._screen.review_if_due(session)
@@ -705,17 +707,24 @@ class AdvancePlayUseCase(IAdvancePlay):
             if isinstance(picked, ChosenGoal):
                 try:
                     status = await self._bridge.set_goal(
-                        picked.spec, _kept(session.plan), _also(session.plan, picked.spec)
+                        picked.spec,
+                        _kept(session.plan),
+                        _also(session.plan, (picked.spec, *picked.together)),
+                        together=picked.together,
                     )
                 except GoalRejectedError as e:
-                    why = f"the bridge rejected {picked.spec.describe()}: {e}"
+                    why = f"the bridge rejected {picked.describe()}: {e}"
                 else:
                     goal = Goal(
-                        spec=picked.spec, reason=picked.reason, mid_goal_id=picked.mid_goal_id
+                        spec=picked.spec,
+                        reason=picked.reason,
+                        mid_goal_id=picked.mid_goal_id,
+                        together=picked.together,
+                        approach=picked.approach,
                     )
                     logger.info(
                         f"小目標は Jev が選んだ（確信度 {picked.confidence:.2f}）: "
-                        f"{picked.spec.describe()}"
+                        f"{picked.describe()}"
                     )
                     await self._start_goal(session, obs, goal, reason, status, seen)
                     return
@@ -727,7 +736,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 situation,
                 _upcoming(session.plan),
                 {
-                    "last_goal": activity.goal.spec.describe() if activity.goal else None,
+                    "last_goal": activity.goal.describe() if activity.goal else None,
                     "ended_because": reason,
                 },
                 moment="decision",
@@ -736,6 +745,18 @@ class AdvancePlayUseCase(IAdvancePlay):
         await self._decide_goal(session, obs, activity, reason, situation, seen)
         self._last_gemini_at = self._clock()
         self._last_plan = tuple(g.id for g in session.plan.pending)
+
+    async def _members_met(self, session: PlaySession, obs: GameObservation) -> None:
+        """束の条件が 1 つ済んだら伝える（束全体はまだ。docs/design/44）。"""
+        met = session.newly_met_members(obs)
+        if not met or session.goal is None or obs.goal is None:
+            return
+        left = tuple(m.label for m in obs.goal.members if not m.met)
+        for member in met:
+            logger.info(f"束の条件が済んだ: {member}（残り {', '.join(left)}）")
+            await self._event_publisher.publish(
+                GoalMemberMetEvent(goal=session.goal.describe(), member=member, left=left)
+            )
 
     def _undesignable_now(self) -> list[str]:
         """さっき設計できなかった建物（UNDESIGNABLE_SECONDS の間は足さない）。"""
@@ -783,7 +804,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         goal = outcome.goal
         await self._event_publisher.publish(
             GoalEndedEvent(
-                goal=goal.spec.describe(),
+                goal=goal.describe(),
                 reason=goal.reason,
                 ended_because=reason,
                 met=met,
@@ -891,7 +912,10 @@ class AdvancePlayUseCase(IAdvancePlay):
                 _serving(decision, self._mid_goals.rehearse(plan, decision.changes))
                 rehearsed = self._mid_goals.rehearse(plan, decision.changes)
                 status = await self._bridge.set_goal(
-                    decision.spec, _kept(rehearsed), _also(rehearsed, decision.spec)
+                    decision.spec,
+                    _kept(rehearsed),
+                    _also(rehearsed, (decision.spec, *decision.together)),
+                    together=decision.together,
                 )
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
@@ -965,7 +989,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         if current is None or not current.plan_steps:
             return ()
         try:
-            return tuple(await self._bridge.check([s.spec for s in current.plan_steps]))
+            # 束の手順は条件ごとに（docs/design/44）
+            specs = [x for s in current.plan_steps for x in s.specs]
+            return tuple(await self._bridge.check(specs))
         except AILoveShenError as e:
             logger.debug(f"手順を判定できなかった: {e}")
             return ()
@@ -1037,12 +1063,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         mid = session.plan.get(goal.mid_goal_id) if goal.mid_goal_id else None
         serves = f"（{mid.describe()} のため）" if mid else "（生存のため）"
         logger.info(
-            f"目標: {goal.spec.describe()}{serves}（{reason}） - {goal.reason}; "
-            f"残り {status.remaining}"
+            f"目標: {goal.describe()}{serves}（{reason}） - {goal.reason}; "
+            f"残り {status.remaining}" + (f"; 進め方: {goal.approach}" if goal.approach else "")
         )
         await self._event_publisher.publish(
             GoalSetEvent(
-                goal=goal.spec.describe(), reason=goal.reason, mid_goal=mid.title if mid else ""
+                goal=goal.describe(), reason=goal.reason, mid_goal=mid.title if mid else ""
             )
         )
 
@@ -1066,9 +1092,9 @@ def _shown_goals(activity: Activity, ended_because: str) -> list[str]:
     目標の決定で番号をつけて示す小目標（lesson の根拠）: これまでの小目標（古い順）と、
     今終わった小目標。番号は stream_context.format_activity(with_ids=True) と同じ。
     """
-    goals = [f"{o.goal.spec.describe()}: {o.ended_because}" for o in activity.recent_goals]
+    goals = [f"{o.goal.describe()}: {o.ended_because}" for o in activity.recent_goals]
     if activity.goal is not None:
-        goals.append(f"{activity.goal.spec.describe()}: {ended_because}")
+        goals.append(f"{activity.goal.describe()}: {ended_because}")
     return goals
 
 
@@ -1088,6 +1114,8 @@ def _goal(decision: GoalDecision, plan: MidGoalPlan) -> Goal:
         diagnosis=decision.diagnosis,
         advice=decision.advice,
         review=decision.review,
+        together=decision.together,
+        approach=decision.approach,
     )
 
 
@@ -1096,7 +1124,7 @@ def _upcoming(plan: MidGoalPlan) -> list[dict[str, str]]:
     current = plan.current
     if current is None:
         return []
-    return [situation_of(step.spec, None) for step in current.plan_steps]
+    return [situation_of(spec, None) for step in current.plan_steps for spec in step.specs]
 
 
 def _no_progress(reason: str) -> bool:
@@ -1136,8 +1164,10 @@ def _without_build(decision: GoalDecision, name: str) -> GoalDecision:
         for c in decision.changes
         if c.proposal is None or not any(builds_it(s) for s in c.proposal.conditions)
     )
-    steps = tuple(s for s in decision.steps if not builds_it(s.spec))
-    return replace(decision, changes=changes, steps=steps)
+    steps = tuple(s for s in decision.steps if not any(builds_it(x) for x in s.specs))
+    together = tuple(s for s in decision.together if not builds_it(s))
+    approach = decision.approach if together else ""
+    return replace(decision, changes=changes, steps=steps, together=together, approach=approach)
 
 
 def _failures_in_a_row(session: PlaySession) -> int:
@@ -1182,17 +1212,18 @@ def _step_line(decision: ActionDecision, result: ActionResult) -> str:
 _GATHERED = (GoalPredicate.HAVE, GoalPredicate.STORED, GoalPredicate.PLANTED, GoalPredicate.FARMED)
 
 
-def _also(plan: MidGoalPlan, spec: GoalSpec) -> tuple[GoalSpec, ...]:
+def _also(plan: MidGoalPlan, bundle: tuple[GoalSpec, ...]) -> tuple[GoalSpec, ...]:
     """
-    ほかの中目標（と今の中目標の手順）で集める物: そばで取れたら一緒に取る。今の小目標と
-    同じ物は除く（木を見つけたら原木と、ついでに葉から苗木）。
+    ほかの中目標（と今の中目標の手順）で集める物: そばで取れたら一緒に取る。今の小目標（束なら
+    その条件すべて）と同じ物は除く（木を見つけたら原木と、ついでに葉から苗木）。
     """
     specs = [c for g in plan.pending for c in g.conditions]
     if plan.current is not None:
-        specs += [s.spec for s in plan.current.plan_steps]
+        specs += [x for s in plan.current.plan_steps for x in s.specs]
+    items = {b.item for b in bundle}
     out: list[GoalSpec] = []
     for s in specs:
-        if s.predicate in _GATHERED and s.item != spec.item and s not in out:
+        if s.predicate in _GATHERED and s.item not in items and s not in out:
             out.append(s)
     return tuple(out)
 

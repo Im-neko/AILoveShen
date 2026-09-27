@@ -39,7 +39,9 @@ export function ground (bot, state, knowledge, world, status) {
   const out = []
   // also の印（ほかの中目標のため、狩りのための剣）は、その葉から出た候補すべてに付ける
   for (const leaf of status?.leaves ?? []) {
-    out.push(...fromLeaf(bot, state, world, leaf).map((c) => leaf.also && !c.also ? { ...c, also: leaf.also } : c))
+    // 束（設計書 44）の葉は、どの条件のためかを for に
+    out.push(...fromLeaf(bot, state, world, leaf).map((c) => leaf.also && !c.also ? { ...c, also: leaf.also } : c)
+      .map((c) => leaf.for && !c.for ? { ...c, for: leaf.for } : c))
   }
   out.push(...forNeeds(bot, state, knowledge))
   const home = state.home

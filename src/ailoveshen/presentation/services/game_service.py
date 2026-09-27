@@ -177,7 +177,7 @@ class GameService:
                 continue
             steps += 1
             if report.result is not None and report.decision is not None:
-                goal = report.goal.spec.describe() if report.goal else "-"
+                goal = report.goal.describe() if report.goal else "-"
                 remaining = report.status.remaining if report.status else "-"
                 logger.info(
                     f"[{steps}] {goal}（残り {remaining}）-> {report.decision.action_id} "

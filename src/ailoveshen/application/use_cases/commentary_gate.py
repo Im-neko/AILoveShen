@@ -59,7 +59,7 @@ class CommentaryGate:
         state: dict[str, Any] = {"events": events, "quiet_for_seconds": round(quiet_seconds)}
         activity = self._activity()
         if activity is not None and activity.goal is not None:
-            state["current_goal"] = activity.goal.spec.describe()
+            state["current_goal"] = activity.goal.describe()
         try:
             verdict = await asyncio.wait_for(self._judge.ask(state, (QUESTION,)), timeout=self._timeout)
         except (AILoveShenError, TimeoutError) as e:

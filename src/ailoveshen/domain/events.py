@@ -135,6 +135,15 @@ class GoalSetEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class GoalMemberMetEvent(DomainEvent):
+    """小目標の束（docs/design/44）の条件が 1 つ済んだ（束全体はまだ）。"""
+
+    goal: str = ""  # 束の形（例: have(log, 16) + have(cobblestone, 8)）
+    member: str = ""  # 済んだ条件
+    left: tuple[str, ...] = ()  # まだの条件
+
+
+@dataclass(frozen=True)
 class GoalEndedEvent(DomainEvent):
     """小目標が終わったときのイベント: 達成したか、あきらめた（進まない、行き詰まった、など）。"""
 

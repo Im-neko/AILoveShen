@@ -102,8 +102,11 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         "goal": None
         if goal is None
         else {
-            "goal": goal.spec.describe(),
-            "label": goal_label(goal.spec),  # 視聴者向けの日本語
+            "goal": goal.describe(),
+            # 視聴者向けの日本語。束（docs/design/44）なら先頭と「ほか N つ」
+            "label": goal_label(goal.spec)
+            + (f"（ほか {len(goal.together)} つ）" if goal.together else ""),
+            "together": [goal_label(s) for s in goal.together],
             "reason": goal.reason,
             "mid_goal": titles.get(goal.mid_goal_id) if goal.mid_goal_id else None,
             "survival": goal.mid_goal_id is None,

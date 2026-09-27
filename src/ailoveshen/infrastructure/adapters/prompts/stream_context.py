@@ -349,7 +349,10 @@ def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
         stage = " [街の準備: やめられない]"
     steps = ""
     if current and goal.plan_steps:
-        steps = " 手順: " + " → ".join(s.spec.describe() for s in goal.plan_steps)
+        # 束の手順（docs/design/44）は [a + b] で 1 つ
+        steps = " 手順: " + " → ".join(
+            f"[{s.describe()}]" if s.together else s.describe() for s in goal.plan_steps
+        )
     return (
         f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}{stage}"
         f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}{steps}"
@@ -371,13 +374,18 @@ def _serves(goal: Goal, titles: dict[str, str]) -> str:
 def _format_goal(goal: Goal | None, obs: GameObservation | None, titles: dict[str, str]) -> str:
     if goal is None:
         return "まだない"
-    lines = [f"{goal.spec.describe()}{_serves(goal, titles)}: {goal.reason}"]
+    lines = [f"{goal.describe()}{_serves(goal, titles)}: {goal.reason}"]
     if goal.diagnosis:
         lines.append(f"  前の小目標がうまくいかなかった理由（自分の分析）: {goal.diagnosis}")
     if goal.advice:
         lines.append(f"  やり方の助言: {goal.advice}")
     if goal.review:
         lines.append(f"  決めたときの見直し: {goal.review}")
+    if goal.together:
+        # 束（docs/design/44）: 条件ごとの状態は下のブリッジの行に出る
+        lines.append(f"  一緒に追う条件 {len(goal.specs)} つ（全部そろったら終わり）")
+        if goal.approach:
+            lines.append(f"  進め方: {goal.approach}")
     if obs is not None and obs.goal is not None:
         lines += [f"  {line}" for line in obs.goal.lines]
         if obs.goal.blocked:
@@ -388,7 +396,7 @@ def _format_goal(goal: Goal | None, obs: GameObservation | None, titles: dict[st
 def _format_outcome(o: GoalOutcome, titles: dict[str, str]) -> str:
     result = "達成" if o.met else "未達成"
     return (
-        f"{o.goal.spec.describe()}{_serves(o.goal, titles)}: {o.goal.reason}"
+        f"{o.goal.describe()}{_serves(o.goal, titles)}: {o.goal.reason}"
         f"（{result}、終了: {o.ended_because}）"
     )
 

@@ -497,6 +497,21 @@ class Goal:
     review: str = ""
     # この小目標で思い出した教訓の文（選択器と道具のプロンプトが読む。docs/design/35）
     lessons: tuple[str, ...] = ()
+    # 小目標の束（docs/design/44）: spec と一緒に追う条件と、進め方
+    together: tuple[GoalSpec, ...] = ()
+    approach: str = ""
+
+    def __post_init__(self) -> None:
+        check_bundle(self.spec, self.together)
+
+    @property
+    def specs(self) -> tuple[GoalSpec, ...]:
+        """束の条件すべて（先頭が spec）。"""
+        return (self.spec, *self.together)
+
+    def describe(self) -> str:
+        """ログとプロンプト用の短い形。束なら + でつなぐ。"""
+        return " + ".join(s.describe() for s in self.specs)
 
 
 @dataclass(frozen=True)
@@ -529,6 +544,32 @@ PLANNABLE_CONDITIONS = CONDITION_PREDICATES - {GoalPredicate.SURVEYED}
 _SURVIVAL_PREDICATES = frozenset(
     {GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME, GoalPredicate.CLEARED}
 )
+
+
+# 小目標の束（docs/design/44）: 一度に追う条件の数の上限
+MAX_BUNDLE = 4
+
+
+def check_bundle(lead: GoalSpec, together: tuple[GoalSpec, ...]) -> None:
+    """
+    束の形を確かめる: 合わせて MAX_BUNDLE まで、すべて世界から判定できる条件、同じ条件は 1 つ。
+
+    Raises:
+        ValueError: 束にできないとき
+    """
+    if not together:
+        return
+    specs = (lead, *together)
+    if len(specs) > MAX_BUNDLE:
+        raise ValueError(f"a bundle holds at most {MAX_BUNDLE} conditions, got {len(specs)}")
+    for spec in specs:
+        if spec.predicate not in CONDITION_PREDICATES:
+            raise ValueError(
+                f"{spec.predicate.value} cannot be in a bundle (only conditions judged from the "
+                "world; survival goals and explored are chased alone)"
+            )
+    if len(set(specs)) != len(specs):
+        raise ValueError("the same condition is twice in the bundle")
 
 
 def is_survival(spec: GoalSpec) -> bool:
@@ -629,6 +670,17 @@ class GoalStatus:
     remaining: int
     lines: tuple[str, ...] = ()
     blocked: tuple[str, ...] = ()
+    # 小目標の束（docs/design/44）のとき、条件ごとの状態（先頭が lead）
+    members: tuple["BundleMember", ...] = ()
+
+
+@dataclass(frozen=True)
+class BundleMember:
+    """小目標の束の条件 1 つの状態（label はブリッジが書いた条件の形。例: have(log, 16)）。"""
+
+    label: str
+    met: bool
+    remaining: int
 
 
 class Side(str, Enum):
@@ -780,13 +832,26 @@ class PlannedStep:
 
     spec: GoalSpec
     reason: str = ""
+    # 小目標の束（docs/design/44）: 一緒に追う条件と、進め方
+    together: tuple[GoalSpec, ...] = ()
+    approach: str = ""
 
     def __post_init__(self) -> None:
-        if self.spec.predicate not in PLANNABLE_CONDITIONS:
-            raise ValueError(
-                f"{self.spec.predicate.value} cannot be a step (steps must be conditions the "
-                "world can judge: have, stored, built, placed, lit)"
-            )
+        for spec in (self.spec, *self.together):
+            if spec.predicate not in PLANNABLE_CONDITIONS:
+                raise ValueError(
+                    f"{spec.predicate.value} cannot be a step (steps must be conditions the "
+                    "world can judge: have, stored, built, placed, lit)"
+                )
+        check_bundle(self.spec, self.together)
+
+    @property
+    def specs(self) -> tuple[GoalSpec, ...]:
+        """束の条件すべて（先頭が spec）。"""
+        return (self.spec, *self.together)
+
+    def describe(self) -> str:
+        return " + ".join(s.describe() for s in self.specs)
 
 
 class ShapeKind(str, Enum):

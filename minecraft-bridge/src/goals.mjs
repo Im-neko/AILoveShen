@@ -76,13 +76,44 @@ export function makeGoal (spec, bot, state, knowledge) {
     if (!Number.isInteger(depth) || depth < 0 || depth > MAX_DIG_DEPTH) throw new Error(`dig_depth must be 0-${MAX_DIG_DEPTH}`)
     goal.spec.dig_depth = depth
   }
-  return {
+  const out = {
     ...goal,
     exploreFrom: { x: p.x, y: p.y, z: p.z },
     surfaceY: Math.floor(p.y),
     keep: validKeep(spec.keep ?? [], knowledge),
     also: validAlso(spec.also ?? [], knowledge)
   }
+  if (spec.together?.length) Object.assign(out, together(spec, out, bot, state, knowledge))
+  return out
+}
+
+// 小目標の束（設計書 44）: 先頭の条件と一緒に追う条件（合わせて MAX_BUNDLE まで）。束に入れられるのは
+// 世界から判定できる条件だけ（夜・家・戦う・探検は 1 つで追う）。まだ判定できない条件（まだない建物・
+// 判定）は外して、その理由を lines に出す
+export const MAX_BUNDLE = 4
+function together (spec, lead, bot, state, knowledge) {
+  if (!Array.isArray(spec.together)) throw new Error('together must be a list of conditions')
+  if (spec.together.length > MAX_BUNDLE - 1) throw new Error(`a bundle holds at most ${MAX_BUNDLE} conditions (the first and ${MAX_BUNDLE - 1} together)`)
+  const members = [spec, ...spec.together]
+  for (const m of members) {
+    if (!CONDITION_PREDICATES.includes(m?.predicate)) throw new Error(`${m?.predicate} cannot be in a bundle; only conditions judged from the world: ${CONDITION_PREDICATES.join(', ')}`)
+  }
+  const out = []
+  const skipped = []
+  for (const m of spec.together) {
+    try {
+      out.push({ ...validGoal(m, bot, state, knowledge), exploreFrom: lead.exploreFrom, surfaceY: lead.surfaceY, keep: lead.keep, also: [] })
+    } catch (e) {
+      if (!(e instanceof NotYetError)) throw e
+      skipped.push(`left out of the bundle: ${describeSpec(m)}: ${e.message}`)
+    }
+  }
+  return { together: out, togetherSkipped: skipped }
+}
+
+export function describeSpec (spec) {
+  const args = [spec.name, spec.item, spec.count, spec.where, spec.distance].filter((v) => v != null)
+  return `${spec.predicate}(${args.join(', ')})`
 }
 
 // also: ほかの中目標のために集めたい物（[{item, count}]）。今の目標の途中で、すぐそばで取れるなら
@@ -232,7 +263,28 @@ function brokenDoor (bot, state) {
   return door
 }
 
+// いまの目標（束なら条件ごとに評価してまとめる: 済んだかは全部、残りは合計、候補は束全体の葉から。
+// 葉には、どの条件のためかを for に付ける）
 export function evaluate (bot, state, knowledge, world) {
+  const goal = state.goal
+  if (!goal.together?.length) return evaluateOne(bot, state, knowledge, world)
+  const parts = [goal, ...goal.together].map((g) => ({ g, r: evaluateOne(bot, { ...state, goal: g }, knowledge, world) }))
+  const out = { spec: goal.spec, met: parts.every(({ r }) => r.met), remaining: 0, lines: [], blocked: [], impossible: [], leaves: [], members: [] }
+  parts.forEach(({ g, r }, i) => {
+    const label = describeSpec(g.spec)
+    out.members.push({ spec: g.spec, met: r.met, remaining: r.remaining, lines: r.lines })
+    out.remaining += r.remaining
+    out.lines.push(`[${i + 1}/${parts.length}] ${label}: ${r.met ? 'done' : `${r.remaining} left`}`, ...r.lines.map((l) => `  ${l}`))
+    if (r.met) return
+    out.blocked.push(...r.blocked)
+    out.impossible.push(...r.impossible)
+    out.leaves.push(...r.leaves.map((l) => l.for ? l : { ...l, for: label }))
+  })
+  out.lines.push(...(goal.togetherSkipped ?? []))
+  return out
+}
+
+function evaluateOne (bot, state, knowledge, world) {
   const goal = state.goal
   const out = { spec: goal.spec, met: false, remaining: 0, lines: [], blocked: [], impossible: [], leaves: [] }
   const addSolved = (needs, w = world) => {

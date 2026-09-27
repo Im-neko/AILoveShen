@@ -562,6 +562,8 @@ class PlaySession(Entity):
     plan: MidGoalPlan = field(kw_only=True)
     notebook: Notebook = field(default_factory=Notebook, kw_only=True)
     max_steps_per_goal: int = 40
+    # 小目標の束（docs/design/44）: 一緒に追う条件 1 つにつき足す歩数
+    steps_per_bundled_goal: int = 20
     max_consecutive_failures: int = 3
     max_stalled_steps: int = 8
     goal_history: int = 5
@@ -571,6 +573,8 @@ class PlaySession(Entity):
     consecutive_failures: int = field(default=0, init=False)
     stalled_steps: int = field(default=0, init=False)
     least_remaining: Optional[int] = field(default=None, init=False)
+    # 束の条件のうち、済んだもの（ブリッジの label。済んだことを 1 回だけ伝える）
+    members_met: frozenset[str] = field(default=frozenset(), init=False)
     completion_announced: bool = field(default=False, init=False)
     last_observation: Optional[GameObservation] = field(default=None, init=False)
     # 道具で操作しているとき、今やろうとしていること（実況と返答も見る。12 の一致）
@@ -663,7 +667,7 @@ class PlaySession(Entity):
         """新しい目標が要る理由。LLM のプロンプトとログに使う（目標が続く間は ""）。"""
         if self.goal is None or obs.goal is None:
             return "no goal yet"
-        name = self.goal.spec.describe()
+        name = self.goal.describe()
         if self.died_since_goal(obs):
             # 場所も持ち物も変わった: 達成より先に見る（リスポーンで状況が一変する）
             return (
@@ -683,11 +687,27 @@ class PlaySession(Entity):
             return f"goal {name} stalled (no progress in {self.stalled_steps} steps)"
         # 夜を越す目標は夕暮れ、夜、明け方にまたがり、朝になると自ら終わる
         spans_the_night = self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
-        if self.steps_in_goal >= self.max_steps_per_goal and not spans_the_night:
+        if self.steps_in_goal >= self.step_budget and not spans_the_night:
             return f"goal {name} ran for {self.steps_in_goal} steps"
         if self.phase_changed(obs) and not spans_the_night:
             return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
         return ""
+
+    @property
+    def step_budget(self) -> int:
+        """今の小目標の歩数の上限（束なら一緒に追う条件の分を足す）。"""
+        extra = len(self.goal.together) if self.goal is not None else 0
+        return self.max_steps_per_goal + self.steps_per_bundled_goal * extra
+
+    def newly_met_members(self, obs: GameObservation) -> tuple[str, ...]:
+        """
+        束の条件のうち、今回初めて済んだもの（束全体が済んだときは返さない: 小目標の終わりで話す）。
+        """
+        if self.goal is None or obs.goal is None or not obs.goal.members or obs.goal.met:
+            return ()
+        met = [m.label for m in obs.goal.members if m.met and m.label not in self.members_met]
+        self.members_met = self.members_met | set(met)
+        return tuple(met)
 
     def died_since_goal(self, obs: GameObservation) -> bool:
         """今の小目標を決めてから死んだか（ブリッジの死んだ回数が増えた）。"""
@@ -715,6 +735,7 @@ class PlaySession(Entity):
         self.consecutive_failures = 0
         self.stalled_steps = 0
         self.least_remaining = None
+        self.members_met = frozenset()
         self.intent = ""
         seen = self._rethink_seq if rethinks_seen is None else rethinks_seen
         self._rethinks = [r for r in self._rethinks if r[0] > seen]

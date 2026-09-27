@@ -129,6 +129,7 @@ class TestGoalsSnapshot:
         assert data["goal"] == {
             "goal": "have(log, 3)",
             "label": "原木を 3 個そろえる",
+            "together": [],
             "reason": "壁の材料",
             "mid_goal": "自分の家を作る",
             "survival": False,

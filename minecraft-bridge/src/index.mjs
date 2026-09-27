@@ -1,6 +1,7 @@
 // Minecraft ブリッジ: Mineflayer のボット + 視点のミラー + Python 側のための HTTP API。
 //
-//   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}], also?: [{item, count}]}
+//   PUT  /goal {predicate, item?, count?, where?, distance?, keep?: [{item, count}], also?: [{item, count}],
+//               together?: [spec…]}（together: 一緒に追う条件。束は 4 つまで、条件の述語だけ。設計書 44）
 //                          -> 目標を設定する（不正なら理由を添えて 400）。目標の状態を返す。
 //                             keep: 中目標のためにチェストに取っておくもの（この目標のために取り出さない）
 //   GET  /observe          -> { busy, observation（survey: 調べた候補地の数字を含む）, needs, goal: {spec, met, remaining, lines, blocked} | null,
@@ -159,7 +160,7 @@ function decisionView () {
   return { status, candidates }
 }
 
-const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)] }
+const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)], ...(s.members ? { members: s.members.map(({ spec, met, remaining }) => ({ spec, met, remaining })) } : {}) }
 
 // 候補を1つ実行する（実行の経路は runner.mjs。道具と同じ）
 const run = createRunner(bot, state, {

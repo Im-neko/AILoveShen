@@ -402,7 +402,7 @@ class TestAdvancePlay:
         await use_case.execute(_session(plan=plan))
 
         # 集める中目標の物は、そばで取れたら一緒に取る（also）
-        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (stock,), (stock,))
+        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (stock,), (stock,), together=())
 
     @pytest.mark.asyncio
     async def test_the_town_advances_after_the_judgement_before_the_decision(
@@ -438,7 +438,7 @@ class TestAdvancePlay:
 
         assert report.goal_changed
         assert session.goal.spec == HAVE_PLANKS
-        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (), ())
+        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (), (), together=())
         assert bridge.observe.await_count == 2  # 小目標を決めたあと、もう一度: その小目標の候補
         state, candidates, instructions = selector.select.call_args.args
         assert state == {"goal": "g"} and instructions == "instructions"
@@ -535,7 +535,7 @@ class TestAdvancePlay:
         ]
         assert "count" in errors[1]
         assert "not one of the goals offered" in errors[2]
-        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (), ())
+        bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (), (), together=())
 
     @pytest.mark.asyncio
     async def test_gives_up_after_max_goal_attempts(self, use_case, text_generator, bridge):

@@ -84,7 +84,7 @@ class StuckCheck:
         self._since = 0
         status = obs.goal
         state = {
-            "goal": goal.spec.describe(),
+            "goal": goal.describe(),
             "progress": list(status.lines) if status else [],
             "remaining": status.remaining if status else None,
             "recent_actions": list(self._steps),

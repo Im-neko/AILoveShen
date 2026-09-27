@@ -77,6 +77,15 @@ class JsonMissionStore(IMissionStore):
         tmp.replace(self._path)
 
 
+def _step_to_dict(step: PlannedStep) -> dict[str, Any]:
+    out: dict[str, Any] = {"spec": step.spec.to_dict(), "reason": step.reason}
+    if step.together:
+        # 小目標の束（docs/design/44）
+        out["together"] = [t.to_dict() for t in step.together]
+        out["approach"] = step.approach
+    return out
+
+
 def _to_dict(goal: MidGoal) -> dict[str, Any]:
     return {
         "id": goal.id,
@@ -88,7 +97,7 @@ def _to_dict(goal: MidGoal) -> dict[str, Any]:
         "ended_because": goal.ended_because,
         "steps": goal.steps,
         "budget": goal.budget,
-        "plan_steps": [{"spec": s.spec.to_dict(), "reason": s.reason} for s in goal.plan_steps],
+        "plan_steps": [_step_to_dict(s) for s in goal.plan_steps],
         "progress": list(goal.progress),
         "stage": goal.stage,
         "prepares_town": goal.prepares_town,
@@ -148,7 +157,13 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
         steps=int(data.get("steps", 0)),
         budget=int(data["budget"]) if data.get("budget") else None,
         plan_steps=tuple(
-            PlannedStep(_spec(s["spec"]), s.get("reason", "")) for s in data.get("plan_steps", [])
+            PlannedStep(
+                _spec(s["spec"]),
+                s.get("reason", ""),
+                together=tuple(_spec(t) for t in s.get("together", [])),
+                approach=s.get("approach", ""),
+            )
+            for s in data.get("plan_steps", [])
         ),
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),

@@ -39,6 +39,12 @@ class Option:
     spec: GoalSpec
     reason: str
     mid_goal_id: Optional[str] = None
+    # 手順が束のとき（docs/design/44）: まだ済んでいない、一緒に追う条件と進め方
+    together: tuple[GoalSpec, ...] = ()
+    approach: str = ""
+
+    def describe(self) -> str:
+        return " + ".join(s.describe() for s in (self.spec, *self.together))
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,11 @@ class ChosenGoal:
     reason: str
     mid_goal_id: Optional[str]
     confidence: float
+    together: tuple[GoalSpec, ...] = ()
+    approach: str = ""
+
+    def describe(self) -> str:
+        return " + ".join(s.describe() for s in (self.spec, *self.together))
 
 
 @dataclass(frozen=True)
@@ -152,26 +163,37 @@ class GoalChooser:
             return self._not("the top mid goal has no steps")
         steps = current.plan_steps
         needed = survival_options(obs)
+        flat = [spec for s in steps for spec in s.specs]
         try:
             # 身を守る小目標も、もう済んでいれば出さない（夕方にもう家の中、など）
-            statuses = await self._bridge.check([s.spec for s in steps] + [o.spec for o in needed])
+            statuses = await self._bridge.check(flat + [o.spec for o in needed])
         except AILoveShenError as e:
             return self._not(f"the steps cannot be judged: {e}")
-        statuses, survival_statuses = statuses[: len(steps)], statuses[len(steps) :]
-        open_steps = [s for s, st in zip(steps, statuses) if not st.met]
+        statuses, survival_statuses = statuses[: len(flat)], statuses[len(flat) :]
+        # 手順ごとに、まだ済んでいない条件（束なら、済んだ条件は外して追う）
+        unmet: list[list[GoalSpec]] = []
+        i = 0
+        for s in steps:
+            judged = statuses[i : i + len(s.specs)]
+            unmet.append([sp for sp, st in zip(s.specs, judged) if not st.met])
+            i += len(s.specs)
         survival = [o for o, st in zip(needed, survival_statuses) if not st.met]
-        if not open_steps and not survival:
+        options = [
+            Option(left[0], s.reason, current.id, tuple(left[1:]), s.approach if left[1:] else "")
+            for s, left in zip(steps, unmet)
+            if left
+        ] + survival
+        if not options:
             return self._not("all the steps are done but the mid goal is not")
-        options = [Option(s.spec, s.reason, current.id) for s in open_steps] + survival
         if avoid is not None:
             options = [o for o in options if not o.spec.same_kind(avoid)]
             if not options:
                 return self._not(f"no other step than {avoid.describe()} after it failed")
-        state = self._state(session, obs, ended_because, steps, statuses)
+        state = self._state(session, obs, ended_because, steps, unmet)
         if len(options) == 1 and avoid is None:
             return self._chosen(state, options, 0, 1.0)
         labels = [chr(ord("A") + i) for i in range(len(options))]
-        criteria = {label: f"{o.spec.describe()}: {o.reason}" for label, o in zip(labels, options)}
+        criteria = {label: f"{o.describe()}: {o.reason}" for label, o in zip(labels, options)}
         instructions = (
             "Which small goal should the streamer work on next? Follow the steps in order "
             "unless another open step is clearly better now (it is nearer, or the inventory "
@@ -219,7 +241,7 @@ class GoalChooser:
     def _chosen(self, state, options: list[Option], index: int, confidence: float) -> ChosenGoal:
         self._record(state, options, chosen=index, confidence=confidence)
         o = options[index]
-        return ChosenGoal(o.spec, o.reason, o.mid_goal_id, confidence)
+        return ChosenGoal(o.spec, o.reason, o.mid_goal_id, confidence, o.together, o.approach)
 
     def _not(self, why: str, state=None, options=()) -> NotChosen:
         if state is not None:
@@ -227,14 +249,21 @@ class GoalChooser:
         return NotChosen(why)
 
     @staticmethod
-    def _state(session, obs, ended_because, steps, statuses) -> dict[str, Any]:
+    def _state(session, obs, ended_because, steps, unmet) -> dict[str, Any]:
         current = session.plan.current
-        last = session.goal.spec.describe() if session.goal else None
+        last = session.goal.describe() if session.goal else None
         return {
             "mid_goal": current.title if current else None,
             "steps": [
-                f"{s.spec.describe()}: {'done' if st.met else 'not yet'}"
-                for s, st in zip(steps, statuses)
+                f"{s.describe()}: "
+                + (
+                    "done"
+                    if not left
+                    else "not yet"
+                    if len(left) == len(s.specs)
+                    else "not yet: " + ", ".join(x.describe() for x in left)
+                )
+                for s, left in zip(steps, unmet)
             ],
             "last_goal": f"{last} ({ended_because})" if last else None,
             "time": obs.time_phase,
@@ -252,8 +281,8 @@ class GoalChooser:
             self._recorder.record(
                 {
                     "state": state,
-                    "options": [o.spec.describe() for o in options],
-                    "chosen": options[chosen].spec.describe() if chosen is not None else None,
+                    "options": [o.describe() for o in options],
+                    "chosen": options[chosen].describe() if chosen is not None else None,
                     "confidence": round(confidence, 3) if confidence is not None else None,
                     "to_gemini": why or None,
                 }

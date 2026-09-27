@@ -154,7 +154,7 @@ class AvatarDirector:
         if activity is None:
             return state
         if activity.goal is not None:
-            state["small_goal"] = activity.goal.spec.describe()
+            state["small_goal"] = activity.goal.describe()
             state["goal_reason"] = activity.goal.reason
         if activity.intent:
             state["trying_to"] = activity.intent

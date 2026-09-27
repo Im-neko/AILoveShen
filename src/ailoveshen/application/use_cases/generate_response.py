@@ -289,7 +289,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         assert self._mid_goals is not None
         mid_goal = await self._mid_goals.accept(session.plan, proposal, requested_by=user_name)
         if proposal.now:
-            was = session.goal.spec.describe() if session.goal else "nothing"
+            was = session.goal.describe() if session.goal else "nothing"
             session.request_rethink(
                 f'you told {user_name} you would do "{mid_goal.title}" now '
                 f"(it is at the top of the mid goals; you were on {was}, go back to it after)"
@@ -402,7 +402,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             return
         if not session.rethink_reason:
             self._last_rethink_at = self._clock()
-        was = session.goal.spec.describe() if session.goal else "nothing"
+        was = session.goal.describe() if session.goal else "nothing"
         session.request_rethink(
             f"{user_name} pointed out in chat: {point.strip()} (you were on {was})"
         )
@@ -418,7 +418,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         if session.goal is not None and session.goal.mid_goal_id == dropped.id:
             session.request_rethink(
                 f'{user_name} withdrew the request "{dropped.title}" (you were on '
-                f"{session.goal.spec.describe()} for it)"
+                f"{session.goal.describe()} for it)"
             )
 
     def _learn_lesson(

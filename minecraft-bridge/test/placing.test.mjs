@@ -82,3 +82,29 @@ test('置けない物、知らない場所は断る', () => {
   assert.deepEqual([...placedNames('oak_sign')].sort(), ['oak_sign', 'oak_wall_sign'])
   assert.equal(parseWhere('10, 64, -3', state).kind, 'point')
 })
+
+test('小目標の束（設計書 44）: 条件ごとに評価して、済んだかは全部、残りは合計、候補は束全体から', () => {
+  const { bot, state } = setup({ items: { torch: 1 }, blocks: { '-1,65,1': 'oak_planks' } })
+  const goal = makeGoal({
+    predicate: 'placed',
+    item: 'torch',
+    where: 'home',
+    together: [
+      { predicate: 'have', item: 'stick', count: 2 },
+      { predicate: 'built', name: 'annex' } // まだない建物は外して理由を出す
+    ]
+  }, bot, state, k)
+  assert.equal(goal.together.length, 1)
+  const r = evaluate(bot, { ...state, goal }, k, WORLD)
+  assert.equal(r.met, false)
+  assert.deepEqual(r.members.map((m) => [m.spec.predicate, m.met]), [['placed', false], ['have', false]])
+  assert.equal(r.remaining, r.members.reduce((n, m) => n + m.remaining, 0))
+  assert.equal(r.lines[0], '[1/2] placed(torch, 1, home): 1 left')
+  assert.ok(r.lines.some((l) => /^left out of the bundle: built\(annex\)/.test(l)))
+  // どの条件のための候補か
+  const c = candidatesFor(bot, { ...state, goal }, r)[0]
+  assert.equal(c.for, 'placed(torch, 1, home)')
+  // 束には条件だけ。4 つまで
+  assert.throws(() => makeGoal({ predicate: 'have', item: 'log', count: 1, together: [{ predicate: 'at_home' }] }, bot, state, k), /at_home cannot be in a bundle/)
+  assert.throws(() => makeGoal({ predicate: 'have', item: 'log', count: 1, together: [1, 2, 3, 4].map(() => ({ predicate: 'have', item: 'log', count: 1 })) }, bot, state, k), /at most 4/)
+})
