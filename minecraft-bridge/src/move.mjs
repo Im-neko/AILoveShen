@@ -16,6 +16,7 @@
 // （guardDigLoops。Movements の除外は configureMovements が isLoopCell で読む）
 
 import pathfinderPkg from 'mineflayer-pathfinder'
+import { doorOpener } from './doors.mjs'
 
 const { GoalNearXZ } = pathfinderPkg.goals
 
@@ -47,22 +48,6 @@ export function isNoPathTo (state, pos, now = Date.now()) {
 
 export const isNoPath = (e) => /no path/i.test(String(e?.message ?? e))
 
-// ドアを開けて通ってよい歩き方で歩く（pathfinder の既定はドアを通らない: 村の家の中のベッドに行けなかった）。
-// 家のドアは enterHome / leaveHome が開け閉めするので、そこには使わない
-export async function walkThroughDoors (bot, goal, signal) {
-  const original = bot.pathfinder.movements
-  if (original) {
-    const m = Object.assign(Object.create(Object.getPrototypeOf(original)), original)
-    m.canOpenDoors = true
-    bot.pathfinder.setMovements(m)
-  }
-  try {
-    await walkOnce(bot, goal, signal, STUCK_MS)
-  } finally {
-    if (original) bot.pathfinder.setMovements(original)
-  }
-}
-
 export function isLoopCell (state, pos, now = Date.now()) {
   const until = state.loopCells?.get(cellKey(pos))
   return !!until && until > now
@@ -88,19 +73,6 @@ export function guardDigLoops (bot, state) {
 }
 
 export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS) {
-  try {
-    return await walkOnce(bot, goal, signal, stuckMs)
-  } catch (e) {
-    const m = bot.pathfinder?.movements
-    if (!isNoPath(e) || !m || m.canOpenDoors || signal.aborted) throw e
-    // 経路がない: ドアを開けて通ってよい歩き方でもう一度（ドアのある建物の中から出られなかった。
-    // pathfinder の既定はドアを通らない）
-    console.log('[move] 経路がない: ドアを通ってよい歩き方でもう一度')
-    return await walkThroughDoors(bot, goal, signal)
-  }
-}
-
-async function walkOnce (bot, goal, signal, stuckMs) {
   signal.throwIfAborted()
   const original = bot.pathfinder.movements
   const tried = []
@@ -123,7 +95,7 @@ async function walkOnce (bot, goal, signal, stuckMs) {
   }
 }
 
-// 目標まで歩く。動けなくなったら止めて真を返す
+// 目標まで歩く（経路の先のドアは開け、通ったら閉める: doors.mjs）。動けなくなったら止めて真を返す
 async function walkWatched (bot, goal, stuckMs) {
   const pos = () => bot.entity?.position
   let last = pos()?.clone?.()
@@ -142,6 +114,7 @@ async function walkWatched (bot, goal, stuckMs) {
       bot.pathfinder.setGoal(null)
     }
   }, CHECK_MS)
+  const doors = doorOpener(bot)
   try {
     await bot.pathfinder.goto(goal)
     return false
@@ -151,6 +124,7 @@ async function walkWatched (bot, goal, stuckMs) {
   } finally {
     if (timer) clearInterval(timer)
     bot.pathfinder.setGoal(null)
+    await doors.stop()
   }
 }
 

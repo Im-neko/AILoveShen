@@ -7,6 +7,17 @@
 
 ## Completed Work
 
+### ドアを通って歩く（pathfinder にドアを教える） (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー: 家以外の建物に一度入ると出られない。選んだ直し方は「pathfinder にドアを教える」（家のドアはコードのまま）。設計書 `docs/design/39_doors.md`。
+- 原因: mineflayer-pathfinder は boundingBox が empty のセルしか通さず、ドアは開いていても 'block'（壊すもの → 壊してよいのは地形と葉だけなので通れない）。`canOpenDoors` はゲートにしか効かない。今までの `walkThroughDoors` はドアに一度も効いていなかった
+- ブリッジ `doors.mjs`（新規）: `teachDoors`（まっすぐ・向きに沿うときだけドアとゲートを通れるセルに。鉄・家・前の家のドアは除く）、`doorOpener`（歩いている間: 経路の先の閉じたドアを開けて開いたのを待つ、通り抜けたら閉める、歩き終わりに届くものを閉める、ドアのノードを床に戻す: pathfinder の postProcessPath が扉の板の上にしていた）。`move.mjs`: `walkWatched` で doorOpener、`walkThroughDoors` と試し直しを消した。`primitives.mjs`: `configureMovements` で teachDoors、`sleep_at` はふつうの歩き
+- テスト: `test/doors.test.mjs`（本物の Movements で。teachDoors なしでは落ちることを確かめた）。`move.test.mjs` の試し直しのテストを消した。ブリッジ 212 件
+- 実機（BoatTest）: 小屋から出て閉める 1.8 秒、入って閉める 1.7 秒、家のドアは通らない
+- **事故**: 最後の実機の試しで BoatTest の移動（tp / spreadplayers）が効かず、スポーン近く（-57,63,-111、家から約 40m、建物とは重ならない）で小屋を RCON の fill で作って消した。7x7 の穴（深さ 2）と、その南の 7x11 が 1 段低い。ユーザーに埋め戻すか確認する。次から試しのスクリプトは、場所を確かめてから fill する
+
 ### 行動を時間で止めない (2026-09-27)
 
 **Commit**: `cc95272`

@@ -16,7 +16,8 @@ import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isIn
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
-import { walkTo as goto, isLoopCell, markNoPath, isNoPath, walkThroughDoors, STUCK_MS } from './move.mjs'
+import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './move.mjs'
+import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting } from './farming.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
@@ -94,6 +95,8 @@ export function configureMovements (bot, state) {
   // 丸石は石の道具とかまどの材料なので足場にしない。土は掘ればいつも手に入る
   m.scafoldingBlocks = [bot.registry.itemsByName.dirt.id]
   m.allow1by1towers = true
+  // ドアと柵のゲートは、向きに沿ってまっすぐなら通れる（歩きながら開け閉めする。家のドアは除く）
+  teachDoors(m, state)
   bot.pathfinder.setMovements(m)
   // 歩きながら掘るときの道具も同じ選び方で（元のものは速い道具がないと持ち物の最初のものを返す）
   bot.pathfinder.bestHarvestTool = (block) => chooseTool(bot, block)
@@ -750,8 +753,8 @@ export const PRIMITIVES = {
   },
   async sleep_at (bot, state, c, signal) {
     try {
-      // 村の家のベッドはドアの向こう: ドアを開けて通ってよい
-      await walkThroughDoors(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 2), signal)
+      // 村の家のベッドはドアの向こう（歩くときはドアを開けて通る: doors.mjs）
+      await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 2), signal)
     } catch (e) {
       if (!isNoPath(e)) throw e
       markNoPath(state, c.pos)
