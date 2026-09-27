@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 画像以外はすべてローカルの LLM (2026-09-27)
+
+**Commit**: (pending)
+
+ユーザー:「ローカルでも 130k までコンテキストを用意してあるので、画像以外は全てローカルに」。設計書 36 §8。
+- `config/default.yaml`: `llm.routes` は `default: local` だけ、`fallback: none`、`context_tokens: 130000`（サーバーは 262144）
+- Gemini に行くのは画像つきの呼び出しと、130000 に入らないプロンプトだけ
+- 見ること: ローカルの goal / reply / promise の schema 崩れ（§7 で多かった）と返答の遅さ
+
 ### 畑を広げる、目の前にあるものを毎回見せる、見直しで効率化 (2026-09-27)
 
 **Commit**: `3608680`

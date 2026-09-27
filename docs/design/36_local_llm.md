@@ -72,3 +72,12 @@ Gemini の支出の上限に達した（403 Spend cap breached）。ユーザー
 - `fallback: gemini`: ローカルが失敗した回だけ Gemini（様子を見る段階は終わった）
 - 見込み: 今日の使い方なら Gemini の入力は約 2 割に減る。道具の 1 手は 2.7 秒から 8〜9 秒に延びる
 - 有効にするのは `.env` の `LOCAL_LLM=1`（ローカルを切れば全部 Gemini に戻る）
+
+## 8. 画像以外はすべてローカル（2026-09-27）
+
+ユーザー:「ローカルでも 130k まではコンテキストウィンドウ用意してあるので、画像以外は全てローカルにしてほしい」。
+- `llm.routes` は `default: local` だけにした（§7 で Gemini に残した goal / goal_after_failure / reply / promise / town / site / house / build_design / skill_write / check_write もローカル）
+- `llm.fallback: none`: ローカルが失敗しても Gemini に回さない（崩れた答えはアダプターが誤りを添えて 1 回聞き直す。それでも駄目ならその呼び出しはエラー）
+- `llm.local.context_tokens: 130000`（サーバーの `/v1/models` は `max_model_len` 262144）
+- Gemini に行くのは、画面の画像つきの呼び出しと、130000 トークンに入らないプロンプト（`RoutingTextGenerator._pick`。ローカルでは受けられないので残した）だけ
+- §7 で測ったとおり、goal / reply / promise はローカルで schema を崩しやすく、返答は遅い（6.6 秒対 1.9 秒）。ローカルでは考える（thinking）のは `thinking_purposes`（skill_write、house、town、site）だけで、目標の決定は考えずに答える。`logs` の `Local … purpose=goal` と、聞き直し・エラーの数を見て、崩れが多ければ goal に thinking を足すか、schema を軽くする

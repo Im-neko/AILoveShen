@@ -95,7 +95,7 @@ llm:
     base_url: "${LOCAL_LLM_URL:-http://127.0.0.1:1919/v1}"
     model: "${LOCAL_LLM_MODEL:-}"        # empty: the first of /v1/models
     api_key: "${LOCAL_LLM_API_KEY:-}"
-    context_tokens: 32768                # per request (the server's max sequence length)
+    context_tokens: 130000               # per request (the server's max sequence length)
     max_output_tokens: 16384             # thinking included; cut to what the context leaves per call
     # auto: also send response_format json_schema (dropped for good if the server refuses it);
     # the schema is always written in the prompt and the answer checked against it
@@ -110,24 +110,13 @@ llm:
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.
-  # Measured 2026-09-27 (a day on the stream, Qwen3.6-35B on FreeToken): tool and tool_after_failure
-  # were ~80% of Gemini's input tokens and the local model kept their function calls right; the
-  # structured decisions (goal, reply, promise) often broke the schema locally and replies were slow
-  # (6.6 s vs 1.9 s). So the many small calls go local, the few that plan or answer viewers stay on
-  # Gemini (docs/design/36 §7)
+  # 2026-09-27: everything but images goes local (the local server has a 130k context); Gemini is
+  # used only for calls with a screenshot (and a prompt too long even for the local context).
+  # Before that (755215d) goal / reply / promise / planning stayed on Gemini because the local model
+  # broke their schemas more often; the local adapter asks once again with the errors (docs/design/36 §7–8)
   routes:
-    default: "local"                     # tool, tool_after_failure, commentary, live
-    goal: "gemini"
-    goal_after_failure: "gemini"
-    reply: "gemini"
-    promise: "gemini"
-    town: "gemini"
-    site: "gemini"
-    house: "gemini"
-    build_design: "gemini"
-    skill_write: "gemini"
-    check_write: "gemini"
-  fallback: "gemini"                     # none | gemini: when the local model fails
+    default: "local"
+  fallback: "none"                       # none | gemini: when the local model fails
 
 gemini:
   api_key: "${GEMINI_API_KEY:-}"
