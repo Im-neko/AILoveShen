@@ -499,7 +499,11 @@ minecraft:
 
   # Showing Gemini the stream screen (docs/design/23; captured from OBS, see obs.game_source)
   vision:
-    enabled: true
+    # 2026-09-27: off. In the log since 2026-09-25 (435 calls with a screenshot) no decision was found
+    # that the screen turned around and that solved a difficulty; the screen misled twice (a tree
+    # "right in front" that was not there; the POV client's disconnect screen). The text state (and
+    # 「目の前のブロック」, design 45) covers what it saw. true: screenshots after failures and look_screen
+    enabled: false
     # periodic check: does the screen match the goal? 0: off (costly; the screen still goes with
     # the goal decision after a failure, and look_screen in tools mode)
     review_interval_seconds: 0
