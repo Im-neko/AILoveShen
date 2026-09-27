@@ -1057,9 +1057,19 @@ export const PRIMITIVES = {
           cut++
           if (++since >= 8) { await collectNearbyDrops(bot, state, signal); since = 0 }
         } else {
-          if (!withinReach(bot, p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH }), signal)
           const below = bot.blockAt(p.offset(0, -1, 0))
           if (below?.boundingBox !== 'block') throw new Error(`nothing to place on below ${p.x},${p.y},${p.z}`)
+          if (bot.entity.position.floored().equals(p) && inventoryCounts(bot).dirt > 0) {
+            // 穴の中に立っている: 1 つ上に立つ所へ行かせると、pathfinder が足元に土を積んで登る
+            // （1x1 の塔。足場は土）。深い穴も下から 1 段ずつ埋まる（2026-09-27: 穴の中から
+            // 埋められず、その列を飛ばして整地が失敗した）
+            await goto(bot, new goals.GoalBlock(p.x, p.y + 1, p.z), signal)
+            if (bot.blockAt(p)?.boundingBox !== 'block') throw new Error('climbed out but the hole is still open')
+            filled++
+            continue
+          }
+          // 丸石しかなければ積めない（足場は土だけ）: 縁に出てから置く（置く所には立たない）
+          if (!withinReach(bot, p) || bot.entity.position.floored().equals(p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH }), signal)
           if (bot.entity.position.floored().equals(p)) throw new Error('standing in the hole')
           await bot.equip(fillItem(bot), 'hand')
           await bot.placeBlock(below, new Vec3(0, 1, 0))

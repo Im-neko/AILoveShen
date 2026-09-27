@@ -145,3 +145,28 @@ test('leveled(where, distance): 出っ張りがあれば level の候補、穴�
   const withPick = evaluate(botOf(world({ '2,64,0': 'stone' }), [['wooden_pickaxe', 1]]), { ...st, goal }, k, worldInfo)
   assert.ok(withPick.leaves.some((l) => l.kind === 'level'))
 })
+
+test('level: 穴の中に立っていたら、足元に土を積んで登って埋める（深い穴も 1 段ずつ）', async () => {
+  const w = world({ '-2,63,0': 'air', '-2,62,0': 'air' })
+  const bot = fakeBot(w, [['dirt', 4]])
+  bot.entity.position = new Vec3(-1.5, 62, 0.5) // 2 段の穴の底
+  const goals = []
+  bot.on = () => {}
+  bot.off = () => {}
+  bot.world = { getBlock: w.blockAt }
+  bot.pathfinder = {
+    setGoal: () => {},
+    // 1 つ上に立つ所へ: 足元（今いるセル）に土を積んで 1 段上がる
+    goto: async (g) => {
+      goals.push(g.constructor.name)
+      const at = bot.entity.position.floored()
+      assert.deepEqual([g.x, g.y, g.z], [at.x, at.y + 1, at.z])
+      await bot.placeBlock(w.blockAt(at.offset(0, -1, 0)), new Vec3(0, 1, 0))
+      bot.entity.position = bot.entity.position.offset(0, 1, 0)
+    }
+  }
+  const r = await PRIMITIVES.level(bot, state(), { where: '0,64,0', radius: 3 }, new AbortController().signal)
+  assert.match(r, /filled 2/)
+  assert.deepEqual(goals, ['GoalBlock', 'GoalBlock'])
+  assert.equal(levelStatus(bot, state(), '0,64,0', 3).off, 0)
+})
