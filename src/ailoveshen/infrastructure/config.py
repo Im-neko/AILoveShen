@@ -533,9 +533,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             backlog=int(response_data.get("backlog", TwitchSettings.backlog)),
             readings_path=str(twitch_data.get("readings_path", TwitchSettings.readings_path)),
-            self_facts_path=str(
-                twitch_data.get("self_facts_path", TwitchSettings.self_facts_path)
-            ),
+            self_facts_path=str(twitch_data.get("self_facts_path", TwitchSettings.self_facts_path)),
             bot_login=str(twitch_data.get("bot_login") or ""),
             ignore_users=[
                 str(u) for u in twitch_data.get("ignore_users", TwitchSettings().ignore_users) or []
