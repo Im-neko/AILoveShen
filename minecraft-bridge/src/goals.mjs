@@ -29,7 +29,8 @@ import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatche
 import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
 import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
-import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
+import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
+import { boatItem, riding } from './boat.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
@@ -567,6 +568,18 @@ export function evaluate (bot, state, knowledge, world) {
         out.lines.push(`a ${u.item} can be crafted from what you carry (better than the ${u.from} ${kind})`)
         break
       }
+    }
+  }
+  // 長い水を泳いで渡った・渡ろうとした（legToward が覚える）: ボートがなければ作る（設計書 37）。
+  // 作るだけでできるときだけ候補に出し、材料からなら行で知らせる
+  const water = state.waterAhead
+  if (!out.met && water && Date.now() - water.at < WATER_AHEAD_MS && !boatItem(bot) && !riding(bot)) {
+    const r = solve(knowledge, world, [{ spec: 'boat', count: 1 }])
+    if (r.leaves.length && r.leaves.every((l) => l.kind === 'craft' || l.kind === 'place')) {
+      out.leaves.push(...r.leaves.map((l) => ({ ...l, also: `a boat to cross the water on the way (${water.length}m)` })))
+      out.lines.push(`${water.length}m of water on the way: a boat can be crafted from what you carry and crosses it far faster than swimming`)
+    } else {
+      out.lines.push(`${water.length}m of water on the way: a boat (5 planks of one wood, at a crafting table) would cross it far faster than swimming`)
     }
   }
   // ついでに取れるもの（ほかの中目標の物）: 昼に、そばにあれば。今の目標の残りには数えない

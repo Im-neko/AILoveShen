@@ -22,7 +22,8 @@ const GROUP_PATTERNS = {
   wool: /_wool$/,
   sword: /_sword$/,
   sapling: /(_sapling|^mangrove_propagule)$/,
-  hoe: /_hoe$/
+  hoe: /_hoe$/,
+  boat: /^(?!.*chest).*(_boat|_raft)$/ // 乗るためのボート（設計書 37）
 }
 // 確率で落ちるもの（設計書 33）: 葉からは苗木だけ（棒とリンゴの数字は当てにならない）、草からは種。
 // 掘っても落ちないことが多い（葉 5%、草 12.5%）ので、掘るのは失敗に数えない（primitives の dig）

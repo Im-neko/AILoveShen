@@ -9,6 +9,7 @@ const { Vec3 } = vec3Pkg
 function walker (x, z) {
   const bot = {
     entity: { position: new Vec3(x, 70, z) },
+    blockAt: () => null, // 地形は読み込まれていない（水を渡る判定はしない）
     pathfinder: {
       goto: async (goal) => { bot.entity.position = new Vec3(goal.x, 70, goal.z) },
       setGoal: () => {}

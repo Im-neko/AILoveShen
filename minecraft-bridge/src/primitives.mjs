@@ -7,6 +7,7 @@
 
 import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
+import vec3Pkg from 'vec3'
 import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
@@ -18,8 +19,10 @@ import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto, isLoopCell, markNoPath, isNoPath, walkThroughDoors } from './move.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting } from './farming.mjs'
+import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
+const { Vec3 } = vec3Pkg
 export const REACH = 4.5 // サバイバルで目からブロックに届く距離
 // 体力がここまで下がったら危険: 欲求として示し、戦いや逃走はここで止める
 export const HEALTH_CRITICAL = 8
@@ -195,7 +198,9 @@ export function torchSpot (bot) {
 // 収まるように終え、次のステップでワールドを見直す（270m 先の家まで 45 秒以上かかった）
 export const LEG = 48
 const SMELT_WAIT_MS = 20000 // 1個 10 秒かかる: スタック全部を待つとタイムアウトを過ぎる
-async function legToward (bot, target, what, signal) {
+async function legToward (bot, state, target, what, signal) {
+  const crossed = await crossWater(bot, state, target, what, signal)
+  if (crossed) return crossed
   const me = bot.entity.position
   const far = Math.hypot(target.x - me.x, target.z - me.z)
   if (far <= LEG) return null
@@ -205,6 +210,105 @@ async function legToward (bot, target, what, signal) {
   bot.actionPhase = ''
   const left = Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z)
   return `walked ${round(far - left)}m toward ${what} (${round(left)}m left)`
+}
+
+// 長い水（設計書 37）: ボートを持っていれば、岸まで歩いて置き、乗って渡る（1 回 RIDE_MS まで。岸に
+// 着いたら降りてボートを拾う）。乗っている途中なら続きを漕ぐ。持っていなければ泳いで歩き、水があった
+// ことを覚える（goals が、材料があればボートを作ることを勧める）
+const RIDE_MS = 20000
+export const WATER_AHEAD_MS = 10 * 60 * 1000
+const BOARD_WITHIN_M = 24 // 水がこれより先から始まるなら、まず歩く（次の区間でまた見る）
+async function crossWater (bot, state, target, what, signal, minWater = undefined) {
+  if (riding(bot)) return await rideBoat(bot, state, target, what, signal)
+  const crossing = waterCrossing(bot, target, undefined, undefined, minWater)
+  if (!crossing) return null
+  if (!boatItem(bot)) {
+    state.waterAhead = { at: Date.now(), length: crossing.length }
+    return null
+  }
+  if (crossing.from > BOARD_WITHIN_M) return null
+  return await rideBoat(bot, state, target, what, signal, crossing)
+}
+
+async function rideBoat (bot, state, target, what, signal, crossing = null) {
+  let boat = bot.vehicle
+  if (!riding(bot)) {
+    // 届く所に水面がなければ（離れている、高い土手の上）、水際まで行く
+    let water = waterToBoard(bot, target)
+    if (!water) {
+      bot.actionPhase = `walking to the water on the way to ${what}`
+      await goto(bot, new goals.GoalNear(crossing.entry.x, crossing.entry.y + 1, crossing.entry.z, 1), signal)
+      bot.actionPhase = ''
+      water = waterToBoard(bot, target)
+    }
+    if (!water) throw new Error(`no open water within reach to put the boat on (toward ${what})`)
+    boat = await placeBoat(bot, water, signal)
+    try {
+      await mountBoat(bot, boat)
+    } catch (e) {
+      await pickUpBoat(bot, state, boat, signal)
+      throw e
+    }
+  }
+  bot.actionPhase = `riding a boat toward ${what}`
+  const r = await drive(bot, boat, target, signal, { maxMs: RIDE_MS, log: (line) => console.log(line) })
+  bot.actionPhase = ''
+  signal.throwIfAborted()
+  if (!r.landed) return `rode a boat ${r.moved}m toward ${what}; still on the water (${r.why})`
+  await leaveBoat(bot)
+  const kept = await pickUpBoat(bot, state, boat, signal)
+  const p = bot.entity.position
+  return `rode a boat ${r.moved}m across the water toward ${what} and got off at ${round(p.x)},${round(p.z)} (${r.why})` +
+    (kept ? '' : '; the boat could not be picked up again')
+}
+
+const RIDE_MIN_WATER = 3 // 道具 ride_boat で渡る水の長さの下限（自動で乗るのは BOAT_MIN_WATER から）
+// 水の上で続きを漕げる行動（legToward を通る）。ほかの行動の前には降りる（runner）
+export const TRAVELS = new Set(['place_plan', 'go_home', 'deposit', 'stash', 'withdraw', 'smelt', 'goto_memory', 'survey', 'goto_pos', 'explore', 'ride_boat'])
+
+// ブロックのどの面を使うか: ボットの目に向いている面
+function faceToward (bot, pos) {
+  const d = bot.entity.position.offset(0, 1.6, 0).minus(pos.offset(0.5, 0.5, 0.5))
+  const axis = ['x', 'y', 'z'].reduce((a, b) => (Math.abs(d[b]) > Math.abs(d[a]) ? b : a))
+  return new Vec3(axis === 'x' ? Math.sign(d.x) : 0, axis === 'y' ? Math.sign(d.y) : 0, axis === 'z' ? Math.sign(d.z) : 0)
+}
+
+// ボートを置く水: target への向きで、届く所の水面。ボート（幅 1.375）がまわりのブロックに当たると置けない
+// ので、まわり 8 マスも水で上が空いている所（岸のすぐ隣は置けなかった: 2026-09-27）
+function waterToBoard (bot, target) {
+  const me = bot.entity.position
+  const far = Math.hypot(target.x - me.x, target.z - me.z)
+  const [ux, uz] = [(target.x - me.x) / far, (target.z - me.z) / far]
+  const open = (cell) => [-1, 0, 1].every((dx) => [-1, 0, 1].every((dz) => {
+    const p = cell.offset(dx, 0, dz)
+    return /^(water|bubble_column|kelp|kelp_plant|seagrass|tall_seagrass)$/.test(bot.blockAt(p)?.name ?? '') &&
+      /^(air|cave_air)$/.test(bot.blockAt(p.offset(0, 1, 0))?.name ?? '')
+  }))
+  for (let d = 1; d <= 5; d += 0.5) {
+    const x = me.x + ux * d
+    const z = me.z + uz * d
+    const s = surfaceAt(bot, x, z, me.y)
+    if (!s?.water) continue
+    const cell = new Vec3(Math.floor(x), s.y, Math.floor(z))
+    if (open(cell) && cell.offset(0.5, 1, 0.5).distanceTo(bot.entity.position.offset(0, 1.6, 0)) <= REACH) return cell
+  }
+  return null
+}
+
+// 降りたボートを壊して拾う。持ち物に戻れば真
+async function pickUpBoat (bot, state, boat, signal) {
+  const had = bot.inventory.items().filter((i) => BOAT.test(i.name)).length
+  const target = bot.entities[boat.id] ?? nearbyBoat(bot)
+  if (target) await breakBoat(bot, target, signal)
+  await collectNearbyDrops(bot, state, signal).catch((e) => { if (signal.aborted) throw e })
+  return bot.inventory.items().filter((i) => BOAT.test(i.name)).length > had
+}
+
+// 行動の前に、乗っているボートから降りる（水の上を移動する行動は crossWater が続きを漕ぐ。runner が使う）
+export async function disembark (bot, state, signal) {
+  const boat = bot.vehicle
+  await leaveBoat(bot)
+  if (boat) await pickUpBoat(bot, state, boat, signal)
 }
 
 // ボットに届く脅威: 閉じた家の中にいる間は外からのものはない
@@ -556,7 +660,7 @@ export const PRIMITIVES = {
     if (!plan.origin) {
       // 選んだ場所に建てる計画なら、まずそこまで歩く
       if (plan.site) {
-        const leg = await legToward(bot, plan.site, 'the site of the house', signal)
+        const leg = await legToward(bot, state, plan.site, 'the site of the house', signal)
         if (leg) return leg
         await goto(bot, new goals.GoalNearXZ(plan.site.x, plan.site.z, 4), signal)
       }
@@ -573,7 +677,7 @@ export const PRIMITIVES = {
     if (!b) return 'the plan is complete'
     if (b.block === 'door') {
       // 家から遠ければ、まずドアへ区間ごとに歩く（遠くから直しに行って毎回時間切れになった）
-      const leg = await legToward(bot, plan.worldPos(b), 'the door of the house', signal)
+      const leg = await legToward(bot, state, plan.worldPos(b), 'the door of the house', signal)
       if (leg) return leg
     }
     try {
@@ -666,7 +770,7 @@ export const PRIMITIVES = {
   },
   async go_home (bot, state, c, signal) {
     try {
-      const leg = await legToward(bot, state.home.outside, 'home', signal)
+      const leg = await legToward(bot, state, state.home.outside, 'home', signal)
       if (leg) return leg
       await enterHome(bot, state.home, signal)
     } catch (e) {
@@ -705,7 +809,7 @@ export const PRIMITIVES = {
     return `placed a chest in the house at ${spot.x},${spot.y},${spot.z}`
   },
   async deposit (bot, state, c, signal) {
-    return useChest(bot, state, c, signal, async (window) => {
+    return withOpenChest(bot, state, c, signal, async (window) => {
       const n = Math.min(c.count, inventoryCounts(bot)[c.item] ?? 0)
       if (!n) throw new Error(`no ${c.item} to put in`)
       await window.deposit(bot.registry.itemsByName[c.item].id, null, n)
@@ -713,7 +817,7 @@ export const PRIMITIVES = {
     })
   },
   async stash (bot, state, c, signal) {
-    return useChest(bot, state, c, signal, async (window) => {
+    return withOpenChest(bot, state, c, signal, async (window) => {
       const put = []
       for (const { item } of c.items) {
         const n = inventoryCounts(bot)[item] ?? 0
@@ -730,7 +834,7 @@ export const PRIMITIVES = {
     })
   },
   async withdraw (bot, state, c, signal) {
-    return useChest(bot, state, c, signal, async (window) => {
+    return withOpenChest(bot, state, c, signal, async (window) => {
       const inside = window.containerItems().filter((i) => i.name === c.item).reduce((s, i) => s + i.count, 0)
       const n = Math.min(c.count, inside)
       if (!n) throw new Error(`no ${c.item} in the chest (the record was wrong)`)
@@ -741,7 +845,7 @@ export const PRIMITIVES = {
   // できたものを取り出し、材料と燃料を入れ、しばらく待ってできたものを取る。
   // 残りは後のステップで取り出す（その間もかまどは動く）
   async smelt (bot, state, c, signal) {
-    const leg = await legToward(bot, c.pos, 'the furnace', signal)
+    const leg = await legToward(bot, state, c.pos, 'the furnace', signal)
     if (leg) return leg
     await goNear(bot, c.pos, 2, signal) // 遠いブロックは null になる: 着いてから判定する
     const block = bot.blockAt(c.pos)
@@ -809,13 +913,13 @@ export const PRIMITIVES = {
     return `placed a torch at ${spot.x},${spot.y},${spot.z}`
   },
   async goto_memory (bot, state, c, signal) {
-    const leg = await legToward(bot, c.pos, `where ${c.target} was seen`, signal)
+    const leg = await legToward(bot, state, c.pos, `where ${c.target} was seen`, signal)
     if (leg) return leg
     await goto(bot, new goals.GoalNearXZ(c.pos.x, c.pos.z, 3), signal)
     return `arrived where ${c.target} was seen (${c.pos.x},${c.pos.z})`
   },
   async survey (bot, state, c, signal) {
-    const leg = await legToward(bot, c.pos, `the ${c.target} site`, signal)
+    const leg = await legToward(bot, state, c.pos, `the ${c.target} site`, signal)
     if (leg) return leg
     // 海や崖で中心まで行けなくても、ここまで来ていればまわりのチャンクは読み込まれている
     // （読み込めた割合は loaded_pct に出る）
@@ -866,7 +970,7 @@ export const PRIMITIVES = {
   },
   // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
   async goto_pos (bot, state, c, signal) {
-    const leg = await legToward(bot, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
+    const leg = await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
     if (leg) return leg
     await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, c.range ?? 1), signal)
     const p = bot.entity.position
@@ -927,15 +1031,77 @@ export const PRIMITIVES = {
     if (crop?.name === 'air') throw new Error(`the ${c.item} was not sown`)
     return `sowed ${c.item} (${crop.name}) at ${c.pos.x},${c.pos.y + 1},${c.pos.z}`
   },
+  // 道具 ride_boat（設計書 37）: c.pos に向かって水の上をボートで進む（短い水でも）。岸に着いたら降りて拾う
+  async ride_boat (bot, state, c, signal) {
+    if (!riding(bot) && !boatItem(bot)) throw new Error('no boat (craft one from 5 planks of one wood at a crafting table)')
+    const crossed = await crossWater(bot, state, c.pos, c.target, signal, RIDE_MIN_WATER)
+    if (!crossed) throw new Error(`no water to cross toward ${c.target} within ${BOARD_WITHIN_M}m (the way there is land)`)
+    return crossed
+  },
+  // 道具 use_item（設計書 37）: 手に持って使う（右クリック）。c.entityId のモブに、c.pos のブロックに
+  // （固いブロックはその面に、水や空気はそこを見て）、どちらもなければ今向いている方へ。c.hold 秒押し続ける
+  async use_item (bot, state, c, signal) {
+    const item = bot.inventory.items().find((i) => i.name === c.item)
+    if (!item) throw new Error(`no ${c.item}`)
+    const before = { items: inventoryCounts(bot), damage: item.durabilityUsed ?? 0 }
+    const drops = new Set(nearbyEntities(bot).filter(({ e }) => e.name === 'item').map(({ e }) => e.id))
+    let on = 'in the air'
+    let blockBefore = null
+    if (c.entityId != null) {
+      const e = bot.entities[c.entityId]
+      if (!e) throw new Error(`the ${c.target} is gone`)
+      if (e.position.distanceTo(bot.entity.position) > 3) await goNear(bot, e.position, 2, signal)
+      await bot.equip(item, 'hand')
+      await bot.lookAt(e.position.offset(0, (e.height ?? 1) / 2, 0), true)
+      bot.useOn(e)
+      on = `on the ${e.name}`
+    } else if (c.pos) {
+      if (!withinReach(bot, c.pos)) await goNear(bot, c.pos, 3, signal)
+      signal.throwIfAborted()
+      const block = bot.blockAt(c.pos)
+      if (!block) throw new Error(`${c.pos.x},${c.pos.y},${c.pos.z} is not loaded`)
+      blockBefore = block.name
+      await bot.equip(item, 'hand')
+      if (block.boundingBox === 'block') {
+        await bot.activateBlock(block, faceToward(bot, c.pos))
+      } else {
+        await bot.lookAt(c.pos.offset(0.5, 0.5, 0.5), true)
+        bot.activateItem()
+      }
+      on = `at ${block.name} ${c.pos.x},${c.pos.y},${c.pos.z}`
+    } else {
+      await bot.equip(item, 'hand')
+      bot.activateItem()
+    }
+    if (c.hold) {
+      await bot.waitForTicks(Math.round(c.hold * 20))
+      bot.deactivateItem()
+    }
+    await bot.waitForTicks(6)
+    const changes = []
+    const after = inventoryCounts(bot)
+    for (const name of new Set([...Object.keys(before.items), ...Object.keys(after)])) {
+      const d = (after[name] ?? 0) - (before.items[name] ?? 0)
+      if (d) changes.push(`${d > 0 ? '+' : ''}${d} ${name}`)
+    }
+    const held = bot.inventory.items().find((i) => i.name === c.item)
+    if (held && (held.durabilityUsed ?? 0) !== before.damage) changes.push(`the ${c.item} wore a little`)
+    if (c.pos) {
+      const now = bot.blockAt(c.pos)?.name
+      if (now && now !== blockBefore) changes.push(`${blockBefore} became ${now}`)
+    }
+    const dropped = nearbyEntities(bot).filter(({ e }) => e.name === 'item' && !drops.has(e.id))
+    if (dropped.length) changes.push(`${dropped.length} item(s) dropped nearby (pickup)`)
+    if (!changes.length) throw new Error(`nothing changed after using ${c.item} ${on}`)
+    return `used ${c.item} ${on}: ${changes.join(', ')}`
+  },
   async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
     const go = c.go ?? EXPLORE_DISTANCE
     const target = start.offset(c.dx * go, 0, c.dz * go)
-    // まだ見ていない土地が遠ければ、そこへ区間ごとに進む（1 回 LEG m）
-    if (go > LEG) {
-      const leg = await legToward(bot, target, `the unexplored land ${c.target}`, signal)
-      if (leg) return leg
-    }
+    // まだ見ていない土地が遠ければ、そこへ区間ごとに進む（1 回 LEG m）。長い水はボートで（近くても）
+    const leg = await legToward(bot, state, target, `the unexplored land ${c.target}`, signal)
+    if (leg) return leg
     let error = ''
     try {
       await goto(bot, new goals.GoalNearXZ(target.x, target.z, 3), signal)
@@ -949,8 +1115,8 @@ export const PRIMITIVES = {
 }
 
 // c.pos のチェストを開けてそのウィンドウで `use` を実行し、そのあとの中身を記録する
-async function useChest (bot, state, c, signal, use) {
-  const leg = await legToward(bot, c.pos, 'the chest', signal)
+async function withOpenChest (bot, state, c, signal, use) {
+  const leg = await legToward(bot, state, c.pos, 'the chest', signal)
   if (leg) return leg
   if (state.home && isInside({ entity: { position: c.pos } }, state.home)) await enterHome(bot, state.home, signal)
   await goNear(bot, c.pos, 2, signal)
@@ -1038,6 +1204,6 @@ async function placeBuildBlock (bot, state, name, signal) {
   return `${b.block === 'air' ? 'cleared a block' : `placed ${b.block}`} (${s.placed}/${s.total}) for ${name}`
 }
 
-export const TIMEOUTS_MS = { sleep_at: 45000, bed_here: 45000, move_placed: 45000, goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
+export const TIMEOUTS_MS = { ride_boat: 45000, sleep_at: 45000, bed_here: 45000, move_placed: 45000, goto_pos: 45000, smelt: 45000, place_chest: 45000, deposit: 45000, withdraw: 45000, goto_memory: 45000, survey: 45000, dig_down: 45000, go_home: 45000, place_bed: 45000, sleep: 45000, explore: 30000, exit_wall: 30000 }
 export const DEFAULT_TIMEOUT_MS = 20000
 

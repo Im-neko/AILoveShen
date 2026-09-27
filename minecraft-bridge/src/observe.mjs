@@ -117,7 +117,8 @@ export function summarize (bot, history, extra = {}) {
       held_item: bot.heldItem ? bot.heldItem.name : null,
       equipment: equipment(bot),
       dark: isDark(bot),
-      in_water: !!bot.entity.isInWater
+      in_water: !!bot.entity.isInWater,
+      riding: bot.vehicle?.name ?? null
     },
     inventory: inventoryCounts(bot),
     mobs,

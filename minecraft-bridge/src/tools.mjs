@@ -16,6 +16,7 @@ import { homeChests, chestWith } from './memory.mjs'
 import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
+import { BOAT, boatItem, riding } from './boat.mjs'
 
 const FURNITURE = new Set(['crafting_table', 'furnace', 'chest'])
 const { Vec3 } = vec3Pkg
@@ -29,9 +30,19 @@ const FIND_SHOWN = 8
 const DROP_RADIUS = 16
 const PLANTS = /^(short_grass|tall_grass|fern|large_fern|wheat|carrots|potatoes|beetroots|sweet_berry_bush|dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony)$|(_sapling|_propagule)$/
 const REPLACEABLE = new Set(['air', 'cave_air', 'water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'dead_bush'])
+// use_item で使わない物（設計書 37）と、専用の道具があるもの
+const NOT_USED = [
+  [/^(flint_and_steel|fire_charge|lava_bucket)$/, 'it starts fires'],
+  [/^(tnt|tnt_minecart|end_crystal)$/, 'it explodes'],
+  [/_spawn_egg$/, 'it is not part of survival play'],
+  [BOAT, 'use ride_boat for boats (goto and other long moves also cross long water by boat on their own)']
+]
+const OWN_TOOL_BLOCKS = /(_bed|chest|barrel|furnace|smoker|shulker_box|crafting_table)$/
+const MAX_HOLD_S = 3
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
-  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait']
+  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait',
+  'use_item', 'ride_boat']
 export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get']
 
 class Refused extends Error {}
@@ -256,6 +267,35 @@ export function createTools (deps) {
       within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
       if (bot.blockAt(pos)?.name !== 'farmland') refuse(`${fmt(pos)} is not farmland (give the farmland block itself)`)
       return { c: { verb: 'sow', target: item, item, pos } }
+    },
+    // 手に持って使う（右クリック。設計書 37）: entity のモブに、x,y,z のブロックに、どちらもなければ向いている方へ
+    use_item (args) {
+      holding(bot, args.item)
+      for (const [re, why] of NOT_USED) if (re.test(args.item)) refuse(`will not use ${args.item}: ${why}`)
+      const hold = Math.max(0, Math.min(MAX_HOLD_S, Number(args.hold ?? 0) || 0))
+      if (args.entity != null) {
+        const e = entity(bot, args)
+        return { c: { verb: 'use_item', target: `${args.item} on ${e.name}`, item: args.item, entityId: e.id, pos: e.position.floored(), hold } }
+      }
+      if (bot.registry.foodsByName[args.item]) refuse(`to eat ${args.item} use eat (use_item with food is for feeding a mob: give entity)`)
+      if (args.x == null) return { c: { verb: 'use_item', target: args.item, item: args.item, hold, inPlace: true } }
+      const pos = position(args)
+      within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+      const block = bot.blockAt(pos)
+      if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
+      if (OWN_TOOL_BLOCKS.test(block.name)) refuse(`${block.name} has its own tools (sleep, deposit, withdraw, craft, smelt, move_furniture)`)
+      const why = protectedReason(state, pos, 0, block)
+      if (why) refuse(`will not use ${args.item} on ${block.name} at ${fmt(pos)}: ${why}`)
+      return { c: { verb: 'use_item', target: `${args.item} on ${block.name}`, item: args.item, pos, hold } }
+    },
+    // ボートで水の上を x,z に向かって進む（設計書 37）。岸に着いたら降りてボートを拾う
+    ride_boat (args) {
+      const [x, z] = [Number(args.x), Number(args.z)]
+      if (![x, z].every(Number.isFinite)) refuse('x and z must be numbers')
+      const pos = new Vec3(Math.floor(x), Math.floor(Number(args.y ?? bot.entity.position.y)), Math.floor(z))
+      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      if (!riding(bot) && !boatItem(bot)) refuse('you have no boat (craft one: 5 planks of one wood at a crafting table)')
+      return { c: { verb: 'ride_boat', target: fmt(pos), pos } }
     },
     wait () {
       const inside = !!state.home && shelterOf(bot, state.home).inside

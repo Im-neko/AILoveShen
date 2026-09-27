@@ -5,6 +5,7 @@
 // 遠くからの矢も）、16 m 以内の敵がこちらに向かってくる。まずコードの規則（戦うか逃げる）で動き始め、
 // state.danger に選択肢を出す。Python の見張り（Jev）が別の選択肢を POST /reflex で選べば、そちらに
 // 切り替える。結果は行動の履歴に入れ、判断する側が何が起きたかを見られるようにする。
+import { riding } from './boat.mjs'
 import { round, bearing, nearbyEntities, isHostile, canSee } from './observe.mjs'
 import { reachableThreats, bestWeapon, fight, flee } from './primitives.mjs'
 import { enterHome, isInside } from './home.mjs'
@@ -83,12 +84,14 @@ export function startReflex (bot, state, hooks) {
   bot.on('physicsTick', () => {
     // Mineflayer は自分では泳がない: 水中で何もしないでいると（ステップの間や、エージェントが
     // 止まっているとき）沈んで溺れた。経路移動中でなければジャンプを押し続けて水面にとどまる。
-    const float = !!bot.entity?.isInWater && !bot.pathfinder.isMoving()
+    // ボートに乗っている間は物理が止まり、isInWater は乗る前のまま（設計書 37）
+    const float = !!bot.entity?.isInWater && !bot.pathfinder.isMoving() && !riding(bot)
     if (float !== floating) {
       bot.setControlState('jump', float)
       floating = float
     }
-    if (++ticks % CHECK_EVERY_TICKS || state.reflex || !bot.entity || bot.health <= 0) return
+    // ボートで水の上にいる間は反射で戦い・逃げない: 漕いで離れる方が速い（ボートは毎秒 7m ほど）
+    if (++ticks % CHECK_EVERY_TICKS || state.reflex || !bot.entity || bot.health <= 0 || riding(bot)) return
     const trigger = triggerNow()
     if (trigger) react(trigger).catch((e) => console.log(`[reflex] エラー: ${e.message}`))
   })

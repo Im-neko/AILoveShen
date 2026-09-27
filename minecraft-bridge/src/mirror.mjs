@@ -238,7 +238,7 @@ export function inventoryPacket (bot, Item) {
 }
 
 // サーバーは、ボット自身が決めたことを送り返さない: 持ち替え（held_item_slot）と、クリックでの持ち物の
-// 移動（window_click: 装備する、クラフトの結果を取る、チェストとのやりとり）。視聴者の手に持つ物と
+// 移動（window_click: 装備する、クラフトの結果を取る、チェストとのやりとり）、ボートの動き（vehicle_move）。視聴者の手に持つ物と
 // 持ち物がサーバーとずれていた。ボットの持ち替えはそのまま、持ち物はクリックの後に今の中身を送る
 export function relayOwnState (bot, viewers, Item, { delayMs = INVENTORY_SYNC_MS } = {}) {
   const client = bot._client
@@ -253,6 +253,8 @@ export function relayOwnState (bot, viewers, Item, { delayMs = INVENTORY_SYNC_MS
   client.write = (name, params) => {
     write(name, params)
     if (name === 'held_item_slot') for (const v of viewers) v.write('held_item_slot', { slot: params.slotId })
+    // ボートの位置は乗っている側が決めて送る（設計書 37）: 視聴者のボートも同じ位置へ
+    if (name === 'vehicle_move') for (const v of viewers) v.write('vehicle_move', { x: params.x, y: params.y, z: params.z, yaw: params.yaw, pitch: params.pitch })
     // Mineflayer はクリックの結果を自分の持ち物に先に反映する。少し待ってまとめて送る
     if (name === 'window_click' && !timer) timer = setTimeout(syncInventory, delayMs)
   }
@@ -327,7 +329,9 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
     if (!bot.entity || viewers.size === 0) return
     camera ??= new Camera(bot)
     const pkt = camera.frame(teleportId++)
-    for (const v of viewers) v.write('position', pkt)
+    // ボートに乗っている間の位置はボートが決める（vehicle_move を中継）: 向きだけ送る
+    if (bot.vehicle) for (const v of viewers) v.write('player_rotation', { yaw: pkt.yaw, pitch: pkt.pitch })
+    else for (const v of viewers) v.write('position', pkt)
   }, CAMERA_INTERVAL_MS)
 
   // サーバーはプレイヤー自身の腕振りや採掘の進み具合を送り返さない: 視聴者のために合成する。

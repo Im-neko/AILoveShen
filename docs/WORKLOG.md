@@ -7,6 +7,18 @@
 
 ## Completed Work
 
+### ボートで水を渡る、アイテムを使う（use_item） (2026-09-27)
+
+**Commit**: （次のコミット）
+
+ユーザー:「ボートって今使えるようになってる？」→「実装して使えるように。長距離水の上を移動する予定の場合は積極的に使いたい。アイテムを使う仕組みで汎用化されてない？」→ use_item も一緒に。設計書 `docs/design/37_boats_and_items.md`。
+- 実測（試験用ボット BoatTest、配信のボットから離れた海）: Mineflayer は乗ると物理を止め入力しか送らない（ボートの位置は乗る側が送る）。自分で `vehicle_move` を毎ティック 0.35 ブロック送ると Paper は修正なしに受け入れた。降りるのはスニークの `entity_action`（Mineflayer の `dismount` はジャンプを送る）。降りても `bot.vehicle` が残る。岸のすぐ隣には置けない
+- ブリッジ `boat.mjs`（waterCrossing、placeBoat、mountBoat、drive: 島をよけ向こう岸で止まる、leaveBoat、breakBoat、watchVehicle）。`primitives.mjs`: `legToward` の最初に `crossWater`（12m 以上の水: ボートがあれば水際まで行って置いて乗り、岸で降りて壊して拾う。なければ `state.waterAhead`）、`ride_boat`、`use_item`、`TRAVELS`、`disembark`、`useChest` → `withOpenChest`（「使う」と紛らわしい）。`runner.mjs`: 乗ったままなら移動以外の前に降りる、乗っている間はダメージで止めない、漕いだ分は時間切れでも失敗にしない。`reflex.mjs`: 乗っている間は動かない。`goals.mjs`: 水があってボートがなく作れるなら `also`。`knowledge.mjs`: グループ `boat`。`observe.mjs`: `self.riding`。`mirror.mjs`: `vehicle_move` を視聴者へ、乗っている間は向きだけ。`tools.mjs`: `ride_boat`、`use_item`（火・爆発・スポーンエッグは使わない、専用の道具があるものは断る、守るブロックには使わない）
+- Python: `tool_catalog` に use_item / ride_boat、`stream_context` のできること（ボート、アイテムを使う。「動物を増やす」をまだできないから外した: 実測で繁殖できた）
+- 実測（本物のコード）: 川 16.4m を渡って拾い直し目的地まで、海 200m（136.8m + 54.9m）、牛 2 頭に小麦で子牛、バケツで水を汲む
+- テスト: `test/boat.test.mjs`（水の判定、岸で止まる、島をよける、1 ティックの速さ、止める合図、道具の断り方、TRAVELS、ミラー）。`test/leg.test.mjs` の偽のボットに blockAt
+- 見つけたが直していない: `PRIMITIVES` に `place_at` が 2 回定義されている（後の方が使われる）
+
 ### rethink の経路の漏れを塞ぐ (2026-09-27)
 
 **Commit**: `075e45e`

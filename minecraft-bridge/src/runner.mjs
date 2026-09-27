@@ -5,7 +5,8 @@
 // 待つので、行動が重なることはない。実行中は state.current を持ち（反射の割り込みと POST /abort が
 // 使う）、進み具合（state.mjs の共通の状態）を記録する。
 import { threats, round } from './observe.mjs'
-import { PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CRITICAL } from './primitives.mjs'
+import { PRIMITIVES, DAMAGE_TOLERANT, TIMEOUTS_MS, DEFAULT_TIMEOUT_MS, HEALTH_CRITICAL, TRAVELS, disembark } from './primitives.mjs'
+import { riding } from './boat.mjs'
 import { needsOutside } from './candidates.mjs'
 import { leaveHome, houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
@@ -42,11 +43,13 @@ export function createRunner (bot, state, deps = {}) {
     let walkedOnTimeout = null // 歩いている間の時間切れ: どれだけ進んだか
     const timer = setTimeout(() => {
       const moved = round(bot.entity.position.distanceTo(startPos))
-      if (/^walking/.test(bot.actionPhase) && moved >= WALK_PROGRESS_M) walkedOnTimeout = `${bot.actionPhase.replace(/^walking/, 'walked')}: ${moved}m this time, not there yet`
+      if (/^(walking|riding)/.test(bot.actionPhase) && moved >= WALK_PROGRESS_M) walkedOnTimeout = `${bot.actionPhase.replace(/^walking/, 'walked').replace(/^riding/, 'rode')}: ${moved}m this time, not there yet`
       abort(bot.actionPhase ? `timeout (while ${bot.actionPhase}; moved ${moved}m)` : `timeout (moved ${moved}m)`)
     }, limit)
     const onHurt = (entity) => {
       if (entity !== bot.entity) return
+      // ボートで水の上を進んでいる: 止まるより進み続けて離れる（設計書 37）
+      if (riding(bot)) return
       if (DAMAGE_TOLERANT.has(c.verb)) {
         // 逃走は体力にかかわらず続ける。戦いはやめる
         if (c.verb === 'attack' && bot.health <= HEALTH_CRITICAL) abort(`stopped: health critical (${round(bot.health)}/20)`)
@@ -62,6 +65,12 @@ export function createRunner (bot, state, deps = {}) {
     const progress = startTracking(bot, c, limit)
     state.current = { id: label, verb: c.verb, abort, progress, done: new Promise((resolve) => { finished = resolve }) }
     try {
+      if (riding(bot) && !TRAVELS.has(c.verb)) {
+        // ボートに乗ったまま: 水の上を進む行動でなければ、先に降りてボートを拾う（設計書 37）
+        bot.actionPhase = 'getting off the boat'
+        await disembark(bot, state, controller.signal)
+        bot.actionPhase = ''
+      }
       const house = houseAround(bot, state)
       if (house && needsOutside(c, house)) {
         bot.actionPhase = 'leaving the house'

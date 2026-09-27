@@ -45,6 +45,7 @@ import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
+import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { mapAround } from './map.mjs'
 import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
@@ -79,6 +80,7 @@ const bot = mineflayer.createBot({
 })
 bot.loadPlugin(pathfinderPkg.pathfinder)
 startMirror(bot)
+watchVehicle(bot) // 降りたのに bot.vehicle が残る Mineflayer の不具合を直す（設計書 37）
 
 const state = {
   plan: null,
