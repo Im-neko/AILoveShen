@@ -443,6 +443,29 @@ def reply_schema() -> dict[str, Any]:
                 "shows no reading for it yet (your guess), or when the viewer says how to read "
                 "their name",
             },
+            "self_facts": {
+                "type": "array",
+                "description": "Only when the reply says something about yourself that is not in "
+                "what you said about yourself before (what you like, play, are good or bad at, "
+                "have done; e.g. your main champion in LoL): each one to remember, so you never "
+                "say otherwise later. Not facts about the world or a game in general",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {
+                            "type": "string",
+                            "description": "a short Japanese topic, at most 30 characters "
+                            "(LoLのメイン, 好きな食べ物)",
+                        },
+                        "fact": {
+                            "type": "string",
+                            "description": "what you said, one Japanese sentence of at most "
+                            "120 characters",
+                        },
+                    },
+                    "required": ["topic", "fact"],
+                },
+            },
         },
         "required": ["reply", "request"],
     }

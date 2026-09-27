@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from string import Template
 
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
+from ailoveshen.application.ports.output.self_fact_store import SelfFact
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     EmotionState,
@@ -36,6 +38,7 @@ $personality_traits
 - Minecraftを実況プレイしながら、視聴者とコミュニケーションを取る
 - ゲームの状況に応じた自然なリアクションをする
 - 視聴者のコメントには親しみを込めて返答する
+- ほかのゲームや配信の外の話題の雑談も楽しむ
 
 ## 重要な注意
 - 自分がAIであることは隠さないが、積極的には言わない
@@ -82,12 +85,23 @@ REPLY_RULES = Template("""
 - 短く簡潔に（1-2文）
 - キャラクターらしい話し方
 - 今していることについて聞かれたら、本文の「今していること」のとおりに答える（作り話をしない）
+
+## 雑談
+- Minecraft 以外の話題（LoL などほかのゲーム、アニメ、食べ物、日常）にも、自分の好みや意見を
+  交えて乗る。「Minecraft の実況者だから分からない」とかわさない。知っていることは答えてよい
+  （ゲームの仕組みや定石など、はっきり知らないことは言い切らない）
+- 自分のこと（好きなもの、遊んでいるゲームや使っているキャラ、得意・苦手、したこと）は、本文の
+  「自分について話したこと」に従う。食い違うことは言わない
+- まだ話していない自分のことは、キャラクターらしくその場で決めてよい
 $plan
 ## 出力
 $output
 """)
 
 CHAT_RESPONSE_TEMPLATE = Template("""\
+## 自分について話したこと
+$self_facts
+
 ## 今していること
 $activity
 
@@ -160,6 +174,12 @@ $conditions
   後で使うことなら lesson に書いて「覚えておくね」と言う
 - 自分のメモや思い出したことに同じ教訓があれば、守れていなかったことを認める
 
+## 自分の話（self_facts）
+- 返答で、本文の「自分について話したこと」にない自分のことを言ったら（決めたら）、self_facts に
+  話題と内容を書く。次からもそのとおりに話す
+- 前と変わったこと（「最近は○○を使ってる」）を言ったときも、同じ話題で書く
+- 世の中やゲームの一般的な事実（チャンピオンの性能など）は書かない
+
 ## 視聴者の名前の読み
 - ユーザー名に（読み: …）がなければ、name_reading にひらがなで読みを推測して出す（英字は自然な読み。
   ひらがな・カタカナだけの名前には出さない）。視聴者が自分の名前の読み方を言ったら、その読みを出す
@@ -226,8 +246,12 @@ class PromptTemplateBuilder(IPromptBuilder):
         takes_requests: bool = False,
         previous_error: str = "",
         name_reading: str = "",
+        self_facts: Sequence[SelfFact] = (),
     ) -> str:
-        """視聴者のチャットへの返答の本文。決まりはシステム指示の側（build_system_prompt）。"""
+        """
+        視聴者のチャットへの返答の本文。決まりはシステム指示の側（build_system_prompt）。
+        自分について話したことは、変わりにくいので先頭に置く（26 §4）。
+        """
         error = (
             f"\n## 前回の返答\n{previous_error}\n"
             if takes_requests and previous_error
@@ -240,6 +264,7 @@ class PromptTemplateBuilder(IPromptBuilder):
             recent_messages=format_messages(context.recent_messages),
             emotion=_format_emotion(context.emotion_state),
             previous_error=error,
+            self_facts="\n".join(f"- {f.topic}: {f.fact}" for f in self_facts) or NO_INFORMATION,
         )
 
 

@@ -9,12 +9,17 @@ from typing import Any
 from loguru import logger
 
 from ailoveshen.application.use_cases.readings import NameReadings
+from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import create_llm_service, create_promise_check
 from ailoveshen.factories.text import create_text_generator
-from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog, JsonReadingStore
+from ailoveshen.infrastructure.adapters.storage import (
+    InMemoryGenerationLog,
+    JsonReadingStore,
+    JsonSelfFactStore,
+)
 from ailoveshen.infrastructure.config import Settings
 from ailoveshen.infrastructure.events import AsyncEventBus
 from ailoveshen.presentation.services import ChatResponder, Narrator
@@ -49,6 +54,8 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
     # 視聴者の名前の読み（docs/design/30_name_readings.md）: 返答で覚え、読み上げで使う
     readings = NameReadings(JsonReadingStore(base_dir / settings.twitch.readings_path))
+    # 自分について話したこと（docs/design/40_small_talk.md）: 返答で覚え、次の返答で守る
+    self_facts = SelfFacts(JsonSelfFactStore(base_dir / settings.twitch.self_facts_path))
     # ローカルの LLM を使うときは、ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）
     shared_text = (
         create_text_generator(settings.gemini, settings.llm, gemini_calls)
@@ -86,6 +93,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         notes=game.notes,
         lessons=game.lessons,
         promise_check=promise_check,
+        self_facts=self_facts,
     )
     closers: list[Any] = [promise_check.close] if promise_check is not None else []
 

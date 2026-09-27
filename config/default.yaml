@@ -51,6 +51,9 @@ twitch:
   # How viewers' names are read aloud (docs/design/30_name_readings.md): learned from `!yomi <reading>`
   # and from replies; used only for the text sent to TTS. Lookup: GET /api/readings on the board
   readings_path: "data/readings.json"
+  # What the streamer said about herself in chat (docs/design/40_small_talk.md): remembered from replies
+  # and shown to every reply so she never says otherwise; kept across world resets
+  self_facts_path: "data/self_facts.json"
 
   # Reconnection settings
   reconnect:

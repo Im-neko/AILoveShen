@@ -25,6 +25,7 @@ from ailoveshen.application.use_cases.lessons import LessonBook, clean_keys, sit
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
+from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
@@ -69,6 +70,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         notes: NoteKeeper | None = None,
         lessons: LessonBook | None = None,
         promise_check: PromiseCheck | None = None,
+        self_facts: SelfFacts | None = None,
         rethink_interval_seconds: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -91,6 +93,8 @@ class GenerateResponseUseCase(IGenerateResponse):
                 似た状況で思い出す。docs/design/35）
             promise_check: 返答が行動を約束しているのに中目標にも考え直しにもならないとき、
                 書き直させる（Jev。docs/design/34 §10。None なら確かめない）
+            self_facts: 自分について話したこと（プロンプトに出して守らせ、返答の self_facts で
+                覚える。docs/design/40。None なら覚えない）
             rethink_interval_seconds: コメントの指摘で小目標を決め直す最短の間（荒らし対策）
             clock: 時計（テストで差し替える）
         """
@@ -106,6 +110,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         self._notes = notes
         self._lessons = lessons
         self._promise_check = promise_check
+        self._self_facts = self_facts
         self._rethink_interval = rethink_interval_seconds
         self._clock = clock
         self._last_rethink_at: float | None = None
@@ -174,6 +179,7 @@ class GenerateResponseUseCase(IGenerateResponse):
     ) -> tuple[str, MidGoal | None]:
         known = self._readings.get(request.user_name) if self._readings else None
         name_reading = known.reading if known else ""
+        self_facts = self._self_facts.all() if self._self_facts else ()
         if session is None or self._mid_goals is None:
             system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply")
             prompt = self._prompt_builder.build_chat_response_prompt(
@@ -181,6 +187,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 message=request.message,
                 context=context,
                 name_reading=name_reading,
+                self_facts=self_facts,
             )
             text = await self._text_generator.generate(
                 prompt=prompt, system_instruction=system_prompt, purpose="reply"
@@ -197,6 +204,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 takes_requests=True,
                 previous_error=error,
                 name_reading=name_reading,
+                self_facts=self_facts,
             )
             data = await self._text_generator.generate_json(
                 prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
@@ -264,8 +272,10 @@ class GenerateResponseUseCase(IGenerateResponse):
     def _learn(
         self, session: PlaySession, request: GenerateResponseRequest, data: dict[str, object]
     ) -> None:
-        """使う返答の名前の読みと教訓を覚える（差し戻した返答からは覚えない）。"""
+        """使う返答の名前の読み、教訓、自分の話を覚える（差し戻した返答からは覚えない）。"""
         self._learn_reading(request, data.get("name_reading"))
+        if self._self_facts is not None:
+            self._self_facts.remember(data.get("self_facts"), request.user_name)
         self._learn_lesson(session, request.user_name, data.get("lesson"), data.get("lesson_when"))
 
     async def _empty_promise(self, comment: str, text: str, handling: str, rethink: object) -> bool:

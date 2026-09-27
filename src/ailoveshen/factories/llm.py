@@ -14,6 +14,7 @@ from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import NameReadings
+from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import CharacterProfile
 from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
@@ -56,6 +57,7 @@ def create_llm_service(
     notes: NoteKeeper | None = None,
     lessons: LessonBook | None = None,
     promise_check: PromiseCheck | None = None,
+    self_facts: SelfFacts | None = None,
 ) -> LLMService:
     """
     依存をすべてつないだ LLM サービスを作る。
@@ -81,6 +83,7 @@ def create_llm_service(
         lessons: 教訓帳（あれば、納得したアドバイスはメモではなくこちらに書く）
         promise_check: 返答が行動を約束しているのに何もしない扱いなら書き直させる
             （create_promise_check。None なら確かめない）
+        self_facts: 自分について話したこと（返答のプロンプトに出し、返答から覚える）
 
     Returns:
         設定済みで、すぐ使える LLMService
@@ -133,6 +136,7 @@ def create_llm_service(
         notes=notes,
         lessons=lessons,
         promise_check=promise_check,
+        self_facts=self_facts,
     )
 
     # プレゼンテーション層のサービスを作る

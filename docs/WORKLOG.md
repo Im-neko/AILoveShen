@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 雑談の幅と、自分について話したことを覚える (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー:「いろんなジャンルの雑談を許容、LoL の話題に答える。自分の話は記憶して一貫性を保つ」。LoL の設定は話しながら決めて覚える、ワールドを作り直しても残す（ユーザーが選んだ）。設計書 `docs/design/40_small_talk.md`。
+- 原因: キャラ設定とシステム指示が Minecraft 実況者の枠だけで、「クレッド対面ってシェンだとどうしてる？」に「Minecraft実況者だから詳しくない」とかわしていた（`logs/promises`）
+- `prompt_template_builder.py`: 返事の規則に「## 雑談」、reply_requests に「## 自分の話（self_facts）」、本文の先頭に「自分について話したこと」、配信スタイルに雑談。`goal_vocabulary.reply_schema` に `self_facts`
+- 新規: `ports/output/self_fact_store.py`（`SelfFact`、`ISelfFactStore`）、`use_cases/self_facts.py`（`SelfFacts`）、`storage/json_self_fact_store.py`。`GenerateResponseUseCase(self_facts=)`、`create_llm_service(self_facts=)`、`factories/stream.py`、config `twitch.self_facts_path`
+- テスト: `test_self_facts.py`、`test_prompt_template_builder.py`。本物の Gemini で LoL・アニメの質問に答え、前に言ったことに合わせることを確かめた
+
 ### ドアを通って歩く（pathfinder にドアを教える） (2026-09-27)
 
 **Commit**: `0e59155`

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
+from ailoveshen.application.ports.output.self_fact_store import SelfFact
 from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext
 
 
@@ -41,6 +43,7 @@ class IPromptBuilder(ABC):
         takes_requests: bool = False,
         previous_error: str = "",
         name_reading: str = "",
+        self_facts: Sequence[SelfFact] = (),
     ) -> str:
         """
         視聴者のチャットへの返答のプロンプトを組み立てる。
@@ -53,5 +56,6 @@ class IPromptBuilder(ABC):
             previous_error: 前回の返答を差し戻した理由と直し方（受けた頼みが使えない、約束だけで
                 何もしない）
             name_reading: 視聴者の名前の読み（覚えていれば。docs/design/30_name_readings.md）
+            self_facts: 自分について前に話したこと（守らせる。docs/design/40_small_talk.md）
         """
         ...

@@ -1,5 +1,6 @@
 """PromptTemplateBuilder アダプタのテスト。"""
 
+from ailoveshen.application.ports.output.self_fact_store import SelfFact
 from ailoveshen.domain.value_objects import (
     Activity,
     Candidate,
@@ -106,6 +107,28 @@ class TestPromptTemplateBuilder:
         assert "ユーザー名: neko" in prompt
         assert "コメント: がんばれ" in prompt
         assert "neutral（強度: 0.5）" in prompt
+
+    def test_chat_response_prompt_shows_what_the_streamer_said_about_herself_first(self):
+        """自分について話したことは本文の先頭（変わりにくい）。雑談を避けず、食い違わせない。"""
+        facts = (SelfFact("LoLのメイン", "シェンをよく使う", "ako", "t"),)
+        prompt = PromptTemplateBuilder().build_chat_response_prompt(
+            user_name="ako", message="LoL やるの？", context=GenerationContext(), self_facts=facts
+        )
+        assert prompt.startswith("## 自分について話したこと\n- LoLのメイン: シェンをよく使う\n")
+        empty = PromptTemplateBuilder().build_chat_response_prompt(
+            user_name="ako", message="LoL やるの？", context=GenerationContext()
+        )
+        assert empty.startswith("## 自分について話したこと\n特になし\n")
+        for purpose in ("reply", "reply_requests"):
+            system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), purpose)
+            assert "とかわさない" in system
+            assert "食い違うことは言わない" in system
+        # 覚えるのは JSON の返答だけ
+        requests = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply_requests")
+        assert "self_facts に" in requests
+        assert "self_facts に" not in PromptTemplateBuilder().build_system_prompt(
+            CharacterProfile(), "reply"
+        )
 
     def test_chat_response_prompt_sees_the_real_goal(self):
         """返答は配信者が実際にしていることを見る（作り話のことはしない）。"""

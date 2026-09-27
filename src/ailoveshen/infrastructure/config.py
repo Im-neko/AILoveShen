@@ -42,6 +42,8 @@ class TwitchSettings:
     backlog: int = 3
     # 視聴者の名前の読みの辞書（docs/design/30_name_readings.md）
     readings_path: str = "data/readings.json"
+    # 配信者が自分について話したこと（docs/design/40_small_talk.md。ワールドを作り直しても残す）
+    self_facts_path: str = "data/self_facts.json"
     # チャットに書き込むアカウントのログイン名（access_token のアカウント。空ならチャンネル名）
     bot_login: str = ""
     # 何にも反応しないボットのアカウント（ログイン名）。配信者自身と bot_login は返事だけしない
@@ -531,6 +533,9 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             backlog=int(response_data.get("backlog", TwitchSettings.backlog)),
             readings_path=str(twitch_data.get("readings_path", TwitchSettings.readings_path)),
+            self_facts_path=str(
+                twitch_data.get("self_facts_path", TwitchSettings.self_facts_path)
+            ),
             bot_login=str(twitch_data.get("bot_login") or ""),
             ignore_users=[
                 str(u) for u in twitch_data.get("ignore_users", TwitchSettings().ignore_users) or []
