@@ -9,7 +9,7 @@
 
 ### 小目標の束（同時に追う複数の条件） (2026-09-27)
 
-**Commit**: (次のコミット)
+**Commit**: `b3cc3cf`
 
 ユーザー:「小目標は複数持てるようにして効率的に全て達成できるように Gemini がプランを練ってほしい」。形は「同時に追う束」、4 個まで、ほかの中目標の条件も可、束の条件が 1 つ済んだら話す。設計書 `docs/design/44_goal_bundles.md`（§8 に実装）。
 - ブリッジ: `goals.mjs`（`together()`、`describeSpec`、`evaluate` が条件ごとに評価してまとめる、`members`）、`candidates.mjs`（候補に `for`）、`index.mjs`（`publicStatus` の `members`）
