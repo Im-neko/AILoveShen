@@ -9,7 +9,7 @@
 
 ### 「家の中に松明を置いて」と約束して何もしない (2026-09-27)
 
-**Commit**: `TBD`
+**Commit**: `44b83c7`
 
 ユーザーのログ: 返事で「松明を置いて明るくしておくね」→ チャットの指摘で考え直し → Gemini は `placed(torch)` の中目標を足そうとしたが、条件なしで差し戻され（`mid goal … needs conditions`）、2 回目は「朝になってから」と夜越しに戻り、そのことを言わなかった。家の中の松明を表す条件がそもそもなかった（`placed` はベッド・作業台・かまど・チェストだけ、`lit` は家の外の地面だけ）。
 - ブリッジ `furniture.mjs`: `HOME_FURNITURE.torch`（torch / wall_torch）。`placed(torch, home)` が条件・小目標になり、なければ作り、`place_in_home` で部屋に置く
