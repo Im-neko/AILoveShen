@@ -41,6 +41,12 @@ twitch:
     triage: "jev"
     skip_min_confidence: 0.7
     triage_record_dir: "logs/chat"   # every comment's triage, skipped ones with their text
+    # After a reply that neither accepts a request nor writes a rethink (docs/design/34 §10): jev = Jev
+    # says whether the reply promises to do something in the game; if so it is written again (accept
+    # it as a mid goal, rethink, or say it without the promise). Unsure or failing Jev: spoken as is.
+    # off = no check
+    promise_check: "jev"
+    promise_record_dir: "logs/promises"   # every check with the comment and the reply
 
   # How viewers' names are read aloud (docs/design/30_name_readings.md): learned from `!yomi <reading>`
   # and from replies; used only for the text sent to TTS. Lookup: GET /api/readings on the board

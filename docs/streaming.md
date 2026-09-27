@@ -308,6 +308,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 | 見張りの記録（道具モード） | `logs/watch/*.jsonl` |
 | 1 手を Jev が選んだか・Gemini に回した理由（設計書 34） | `logs/steps/*.jsonl` |
 | コメントの仕分け（返事をしなかったコメントの文も） | `logs/chat/*.jsonl` |
+| 返事の約束の確かめ（約束だけで何もしない返事は書き直し） | `logs/promises/*.jsonl` |
 | 実況の間合い（話した・取っておいた） | `logs/commentary/*.jsonl` |
 | 行き詰まりの確認（Jev の答え、考え直させたか） | `logs/stuck/*.jsonl` |
 | 教訓を思い出した記録（状況、候補、Jev の答え、出した教訓）。教訓帳そのものは `data/lessons.json` | `logs/lessons/*.jsonl` |

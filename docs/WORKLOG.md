@@ -7,6 +7,20 @@
 
 ## Completed Work
 
+### 返事で「明るくしておくね」と約束して何もしない: Jev で返事の約束を確かめる (2026-09-27)
+
+**Commit**: （次のコミット）
+
+ユーザーのログ:「部屋の中も地下も明るくしとこうね」に「しっかり松明で明るくしておくね！」と返したが、`request: none` で lesson（L17）だけ、rethink なし。何も起きず、食料の小目標を続けた。同じ助言は前に L14 になっていた（教訓帳の表示は `logs/lessons` で 155 回中 18 回、行動に届く経路がない）。ユーザー:「やっぱり言ってることとやることが不一致」→ 案 1・2 を実装。
+- 原因: 「受けるなら accept」「同意するなら rethink」はプロンプトの決まりだけで、返事と扱いの一致を確かめるコードがなかった。lesson の決まりは約束する言い方を止めておらず、条件で書ける助言（`placed(torch, home, n)` はもうある）を accept にする決まりもなかった
+- `application/use_cases/promise_check.py` `PromiseCheck`: none / decline で rethink なしの返事だけ、Jev の YES_NO 1 つで「具体的な行動を約束しているか」。はい（0.6 以上）なら `GenerateResponseUseCase` が理由と直し方を付けて書き直させる（`max_attempts` 2 を頼みの差し戻しと共有、最後まで約束だけなら返事しない）。Jev の失敗・2 秒超・迷いはそのまま話す。`logs/promises/*.jsonl`
+- `GenerateResponseUseCase`: 読みと教訓は使う返事からだけ覚える（差し戻した返事で教訓を二重に強めない）。差し戻しの文（`previous_error`）は理由ごとに use case が書く（プロンプトの「頼みは受けられなかった」の前置きを外した）
+- 返事の決まり（`PLAN_TEMPLATE` の lesson の節、`reply_schema` の lesson の説明）: 結果が条件で書ける助言は accept（部屋を明るく → `placed(torch, home, 2)`、`lit`、`farmed`）、一部だけ書けるなら書ける部分を accept、lesson だけの返事は「覚えておくね」まで
+- 設定 `twitch.response.promise_check: jev|off`、`promise_record_dir`。`factories/llm.py` `create_promise_check`、`factories/stream.py`（チャットがあるとき）、`examples/integration_test_minecraft.py`（台本のコメントがあるとき）
+- 実測（本物の Jev、10 文 × 2 回）: 20/20 正しい。約束 4 文は「はい」0.77〜0.96、約束しない 6 文は「いいえ」0.65〜0.97、150〜320ms
+- テスト: `tests/unit/application/test_promise_check.py`、`test_generate_response_use_case.py` の `TestEmptyPromise`
+- 残り（塞いでいない）: 60 秒以内の 2 回目の rethink は間引かれて何も起きない（返事は同意したまま）。教訓を行動（条件）につなぐこと（案 3、設計の相談から）。反射の最中に 1 手を Gemini / Jev に決めさせて 0.0 秒で断られる
+
 ### 上の格の道具を作る、夜も武器で倒しに出る（持ち物はチェストへ） (2026-09-27)
 
 **Commit**: `65a7df2`

@@ -23,6 +23,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook, clean_keys, situation_of
 from ailoveshen.application.use_cases.notes import NoteKeeper
+from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
 from ailoveshen.domain.entities import Conversation, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent
@@ -67,6 +68,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         readings: NameReadings | None = None,
         notes: NoteKeeper | None = None,
         lessons: LessonBook | None = None,
+        promise_check: PromiseCheck | None = None,
         rethink_interval_seconds: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -87,6 +89,8 @@ class GenerateResponseUseCase(IGenerateResponse):
             notes: 自分のメモ（納得した視聴者のアドバイスを教訓として書く。None なら書かない）
             lessons: 教訓帳（あれば、納得したアドバイスはメモではなく、条件つきでこちらに書く:
                 似た状況で思い出す。docs/design/35）
+            promise_check: 返答が行動を約束しているのに中目標にも考え直しにもならないとき、
+                書き直させる（Jev。docs/design/34 §10。None なら確かめない）
             rethink_interval_seconds: コメントの指摘で小目標を決め直す最短の間（荒らし対策）
             clock: 時計（テストで差し替える）
         """
@@ -101,6 +105,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         self._readings = readings
         self._notes = notes
         self._lessons = lessons
+        self._promise_check = promise_check
         self._rethink_interval = rethink_interval_seconds
         self._clock = clock
         self._last_rethink_at: float | None = None
@@ -196,22 +201,25 @@ class GenerateResponseUseCase(IGenerateResponse):
             data = await self._text_generator.generate_json(
                 prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
             )
-            self._learn_reading(request, data.get("name_reading"))
-            self._learn_lesson(session, request.user_name, data.get("lesson"), data.get("lesson_when"))
             text = str(data.get("reply", "")).strip()
-            if data.get("request") == RequestHandling.WITHDRAW.value:
-                await self._withdraw(session, request.user_name)
-                return text, None
-            if data.get("request") != RequestHandling.ACCEPT.value:
-                self._rethink(session, request.user_name, data.get("rethink"))
-                return text, None
-            try:
-                proposal = parse_proposal(data)
-                mid_goal = await self._mid_goals.accept(
-                    session.plan,
-                    proposal,
-                    requested_by=request.user_name,
-                )
+            handling = data.get("request")
+            if handling == RequestHandling.ACCEPT.value:
+                try:
+                    proposal = parse_proposal(data)
+                    mid_goal = await self._mid_goals.accept(
+                        session.plan,
+                        proposal,
+                        requested_by=request.user_name,
+                    )
+                except (ValueError, GoalRejectedError) as e:
+                    # 返答が、プランに入らないものを受けている: それは決して言わせない
+                    error = (
+                        f"頼みは受けられなかった: {e}\n直せるなら直し、無理なら decline にして"
+                        "返答で理由を言う。"
+                    )
+                    logger.warning(f"返答 {attempt} の頼みが使えない: {data!r}: {e}")
+                    continue
+                self._learn(session, request, data)
                 if proposal.now:
                     # 今の小目標を次のステップで区切り、引き受けた頼みの小目標を決めさせる
                     # （返答で「今やる」と言っている。待っている小目標は夜明けまで切れ目が来ない）
@@ -223,13 +231,40 @@ class GenerateResponseUseCase(IGenerateResponse):
                     )
                 else:
                     self._rethink(session, request.user_name, data.get("rethink"))
-            except (ValueError, GoalRejectedError) as e:
-                # 返答が、プランに入らないものを受けている: それは決して言わせない
-                error = str(e)
-                logger.warning(f"返答 {attempt} の頼みが使えない: {data!r}: {error}")
+                return text, mid_goal
+            if handling == RequestHandling.WITHDRAW.value:
+                self._learn(session, request, data)
+                await self._withdraw(session, request.user_name)
+                return text, None
+            if await self._empty_promise(request.message, text, str(handling), data.get("rethink")):
+                # 返答が行動を約束しているのに、中目標にも考え直しにもならない: それは言わせない
+                error = (
+                    f"返答「{text}」は行動を約束しているが、request は {handling} で rethink もない"
+                    "（何も起きない）。条件で書けるなら accept にして中目標に入れる、今の小目標を"
+                    "考え直すなら rethink を書く、どちらでもなければ約束しない返答にする（覚えて"
+                    "おく、普段からしている、まだできない）。"
+                )
+                logger.warning(f"返答 {attempt} は約束だけで何もしない: {data!r}")
                 continue
-            return text, mid_goal
+            self._learn(session, request, data)
+            self._rethink(session, request.user_name, data.get("rethink"))
+            return text, None
         raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")
+
+    def _learn(
+        self, session: PlaySession, request: GenerateResponseRequest, data: dict[str, object]
+    ) -> None:
+        """使う返答の名前の読みと教訓を覚える（差し戻した返答からは覚えない）。"""
+        self._learn_reading(request, data.get("name_reading"))
+        self._learn_lesson(session, request.user_name, data.get("lesson"), data.get("lesson_when"))
+
+    async def _empty_promise(self, comment: str, text: str, handling: str, rethink: object) -> bool:
+        """中目標にも考え直しにもならない返答（none / decline で rethink なし）が行動を約束しているか。"""
+        if self._promise_check is None or not text:
+            return False
+        if isinstance(rethink, str) and rethink.strip():
+            return False
+        return await self._promise_check.promises(comment, text, handling)
 
     def _learn_reading(self, request: GenerateResponseRequest, reading: object) -> None:
         """返答の name_reading を覚える: 本人が読み方を言ったらその読み、知らない名前なら推測。"""

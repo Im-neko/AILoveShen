@@ -50,7 +50,8 @@ class IPromptBuilder(ABC):
             message: 視聴者のチャットのメッセージ
             context: 配信者が今していることと、最近の会話
             takes_requests: 返答で頼みを中目標として受けてよいか（JSON で出力する）
-            previous_error: 前回の返答で受けた頼みが使えなかった理由
+            previous_error: 前回の返答を差し戻した理由と直し方（受けた頼みが使えない、約束だけで
+                何もしない）
             name_reading: 視聴者の名前の読み（覚えていれば。docs/design/30_name_readings.md）
         """
         ...

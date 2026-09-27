@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
@@ -10,6 +12,7 @@ from ailoveshen.application.use_cases.generate_response import GenerateResponseU
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
+from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import CharacterProfile
@@ -17,7 +20,13 @@ from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
     PromptTemplateBuilder,
 )
 from ailoveshen.factories.text import create_text_generator
-from ailoveshen.infrastructure.config import CharacterSettings, GeminiSettings, LlmSettings
+from ailoveshen.infrastructure.config import (
+    CharacterSettings,
+    GeminiSettings,
+    JevSettings,
+    LlmSettings,
+    TwitchSettings,
+)
 from ailoveshen.presentation.services.llm_service import LLMService
 
 
@@ -46,6 +55,7 @@ def create_llm_service(
     readings: NameReadings | None = None,
     notes: NoteKeeper | None = None,
     lessons: LessonBook | None = None,
+    promise_check: PromiseCheck | None = None,
 ) -> LLMService:
     """
     依存をすべてつないだ LLM サービスを作る。
@@ -69,6 +79,8 @@ def create_llm_service(
         readings: 視聴者の名前の読みの辞書（返答のプロンプトに出し、返答から覚える）
         notes: 自分のメモ（返答が、納得したアドバイスを教訓として書く）
         lessons: 教訓帳（あれば、納得したアドバイスはメモではなくこちらに書く）
+        promise_check: 返答が行動を約束しているのに何もしない扱いなら書き直させる
+            （create_promise_check。None なら確かめない）
 
     Returns:
         設定済みで、すぐ使える LLMService
@@ -120,6 +132,7 @@ def create_llm_service(
         readings=readings,
         notes=notes,
         lessons=lessons,
+        promise_check=promise_check,
     )
 
     # プレゼンテーション層のサービスを作る
@@ -127,4 +140,28 @@ def create_llm_service(
         generate_commentary_use_case=generate_commentary_use_case,
         generate_response_use_case=generate_response_use_case,
         text_generator=text_generator,
+    )
+
+
+def create_promise_check(
+    twitch: TwitchSettings, jev: JevSettings, base_dir: Path
+) -> PromiseCheck | None:
+    """
+    返答の約束を Jev で確かめるもの（docs/design/34 §10）。`twitch.response.promise_check` が jev で
+    TypeSafe のキーがあるときだけ作る（なければ None: 確かめない）。閉じるのは呼び出し側。
+    """
+    if twitch.promise_check != "jev" or not jev.api_key:
+        return None
+    from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
+    from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
+        JsonlWatchRecorder,
+    )
+
+    return PromiseCheck(
+        judge=JevFastJudge(
+            api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+        ),
+        recorder=JsonlWatchRecorder(str(base_dir / twitch.promise_record_dir))
+        if twitch.promise_record_dir
+        else None,
     )

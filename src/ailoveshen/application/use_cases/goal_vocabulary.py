@@ -431,7 +431,10 @@ def reply_schema() -> dict[str, Any]:
                 "description": "Only when the viewer gives advice you agree is right for the "
                 "future too (cook meat before eating it, craft a crafting table where you work): "
                 "the lesson in your own words, one Japanese sentence of at most 80 characters. It "
-                "is kept and recalled in similar situations later",
+                "is kept and recalled in similar situations later. A lesson alone makes nothing "
+                "happen: advice whose result can be written as conditions (light the room: "
+                "placed(torch, home, 2)) is accepted as a mid goal as well, and a reply with only "
+                "a lesson says it will remember, never that it will do something",
             },
             "lesson_when": lesson_when_schema(),
             "name_reading": {

@@ -12,7 +12,7 @@ from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
-from ailoveshen.factories.llm import create_llm_service
+from ailoveshen.factories.llm import create_llm_service, create_promise_check
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog, JsonReadingStore
 from ailoveshen.infrastructure.config import Settings
@@ -67,6 +67,12 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         text_generator=shared_text,
         obs=settings.obs,
     )
+    # 返事が約束だけで何もしないなら書き直させる（設計書 34 §10）。返事はチャットにだけする
+    promise_check = (
+        create_promise_check(settings.twitch, settings.jev, base_dir)
+        if settings.twitch.enabled and settings.twitch.channel.strip()
+        else None
+    )
     llm = create_llm_service(
         gemini=settings.gemini,
         character=settings.character,
@@ -79,8 +85,9 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         readings=readings,
         notes=game.notes,
         lessons=game.lessons,
+        promise_check=promise_check,
     )
-    closers: list[Any] = []
+    closers: list[Any] = [promise_check.close] if promise_check is not None else []
 
     tts = None
     if settings.stream.speak:

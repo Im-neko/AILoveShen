@@ -531,9 +531,194 @@ async def test_with_a_lesson_book_the_advice_is_kept_with_when_it_applies(
         "lesson_when": {"text": "夜になったとき", "time": "night", "place": "moon"},
     }
     await use_case.execute(
-        GenerateResponseRequest(user_name="neko", message="夜は出歩かない方がいいよ", session=_playing())
+        GenerateResponseRequest(
+            user_name="neko", message="夜は出歩かない方がいいよ", session=_playing()
+        )
     )
     notes.learn_from_viewer.assert_not_called()
     text, condition, keys = lessons.learn.call_args.args
-    assert (text, condition, keys) == ("夜は外に出ずに家で寝る", "夜になったとき", {"time": "night"})
+    assert (text, condition, keys) == (
+        "夜は外に出ずに家で寝る",
+        "夜になったとき",
+        {"time": "night"},
+    )
     assert lessons.learn.call_args.kwargs == {"explicit": True, "source": "viewer:neko"}
+
+
+class TestEmptyPromise:
+    """約束だけで何もしない返事は書き直させる（docs/design/34 §10）。"""
+
+    def _use_case(self, generator, builder, events, conversation, bridge, store, promises):
+        check = AsyncMock()
+        check.promises.side_effect = promises
+        lessons = Mock()
+        use_case = GenerateResponseUseCase(
+            text_generator=generator,
+            prompt_builder=builder,
+            event_publisher=events,
+            conversation=conversation,
+            character=CharacterProfile(),
+            mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+            lessons=lessons,
+            promise_check=check,
+        )
+        return use_case, check, lessons
+
+    @pytest.mark.asyncio
+    async def test_a_promise_with_only_a_lesson_is_written_again_as_a_mid_goal(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        use_case, check, lessons = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {
+                "reply": "部屋もしっかり明るくしておくね！",
+                "request": "none",
+                "lesson": "部屋も明るく",
+            },
+            {
+                "reply": "食べ物が集まったら部屋に松明を置くね！",
+                "request": "accept",
+                "title": "部屋を明るく",
+                "conditions": [
+                    {"predicate": "placed", "item": "torch", "where": "home", "count": 2}
+                ],
+                "position": 2,
+                "lesson": "部屋も明るく",
+            },
+        ]
+        session = _playing()
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="明るくしとこうね", session=session)
+        )
+
+        assert response.text == "食べ物が集まったら部屋に松明を置くね！"
+        assert response.mid_goal is not None and response.mid_goal.title == "部屋を明るく"
+        check.promises.assert_awaited_once_with(
+            "明るくしとこうね", "部屋もしっかり明るくしておくね！", "none"
+        )
+        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
+        assert "rethink もない" in error and "accept" in error
+        # 差し戻した返答の教訓は書かない（同じ教訓を 2 回強めない）
+        assert lessons.learn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_reply_that_promises_nothing_is_spoken(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        use_case, check, lessons = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [False],
+        )
+        mock_text_generator.generate_json.return_value = {
+            "reply": "覚えておくね",
+            "request": "none",
+            "lesson": "夜は家で寝る",
+        }
+
+        response = await use_case.execute(
+            GenerateResponseRequest(
+                user_name="neko", message="夜は出歩かないで", session=_playing()
+            )
+        )
+
+        assert response.text == "覚えておくね"
+        assert mock_text_generator.generate_json.await_count == 1
+        lessons.learn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_accept_and_rethink_are_not_checked(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        use_case, check, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True, True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            BED_REQUEST,
+            {
+                "reply": "そうだね、先に木を切るね",
+                "request": "none",
+                "rethink": "a tree is right there",
+            },
+        ]
+        session = _playing()
+        await use_case.execute(self._request(session, "ベッド作って"))
+        await use_case.execute(self._request(session, "そこに木あるよ", user_name="mame"))
+        check.promises.assert_not_awaited()
+        assert "a tree is right there" in session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_no_reply_when_every_attempt_only_promises(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """何度書かせても約束だけなら言わない（受けられない頼みと同じ）。"""
+        use_case, _, lessons = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True, True],
+        )
+        mock_text_generator.generate_json.return_value = {
+            "reply": "明るくしておくね！",
+            "request": "none",
+            "lesson": "部屋も明るく",
+        }
+
+        response = await use_case.execute(
+            GenerateResponseRequest(
+                user_name="neko", message="明るくしとこうね", session=_playing()
+            )
+        )
+
+        assert not response.success
+        lessons.learn.assert_not_called()
+
+    @staticmethod
+    def _request(session, message, user_name="neko"):
+        return GenerateResponseRequest(user_name=user_name, message=message, session=session)

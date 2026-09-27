@@ -50,6 +50,9 @@ class TwitchSettings:
     triage: str = "jev"
     skip_min_confidence: float = 0.7
     triage_record_dir: str = "logs/chat"
+    # 返事が行動を約束しているのに中目標にも考え直しにもならないとき書き直させる（docs/design/34 §10）: jev か off
+    promise_check: str = "jev"
+    promise_record_dir: str = "logs/promises"
 
 
 @dataclass
@@ -538,6 +541,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             triage_record_dir=str(
                 response_data.get("triage_record_dir", TwitchSettings.triage_record_dir)
+            ),
+            promise_check=str(response_data.get("promise_check", TwitchSettings.promise_check)),
+            promise_record_dir=str(
+                response_data.get("promise_record_dir", TwitchSettings.promise_record_dir)
             ),
         )
 

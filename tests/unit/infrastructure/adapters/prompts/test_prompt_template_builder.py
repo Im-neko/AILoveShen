@@ -133,7 +133,7 @@ class TestPromptTemplateBuilder:
             message="ベッド作って",
             context=GenerationContext(activity=BUILDING),
             takes_requests=True,
-            previous_error="neko already has a request in the list",
+            previous_error="頼みは受けられなかった: neko already has a request in the list",
         )
 
         system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply_requests")
@@ -156,7 +156,7 @@ class TestPromptTemplateBuilder:
         assert "頼んだ人の名前は入れない" in system
         assert "JSON" in system
         assert "頼みは受けられなかった: neko already has a request" in prompt
-        assert "decline" in prompt
+        assert "## 前回の返答" in prompt
         assert "視聴者の頼みについて" not in prompt
 
     def test_system_prompts_do_not_change_with_the_state(self):

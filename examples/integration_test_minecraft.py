@@ -58,7 +58,7 @@ from ailoveshen.domain.events import (
 )
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
-from ailoveshen.factories.llm import create_llm_service
+from ailoveshen.factories.llm import create_llm_service, create_promise_check
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
 from ailoveshen.infrastructure.config import load_config_dict, load_settings
@@ -172,6 +172,12 @@ async def run(
         text_generator=shared_text,
         obs=settings.obs,
     )
+    # 台本のコメントへの返事も、約束だけで何もしないなら書き直させる（設計書 34 §10）
+    promise_check = (
+        create_promise_check(settings.twitch, settings.jev, Path(__file__).parent.parent)
+        if comments
+        else None
+    )
     llm = create_llm_service(
         gemini=settings.gemini,
         character=settings.character,
@@ -181,6 +187,7 @@ async def run(
         generation_log=gemini_calls,
         llm=settings.llm,
         text_generator=shared_text,
+        promise_check=promise_check,
     )
 
     def activity():
@@ -218,6 +225,8 @@ async def run(
                 task.cancel()
         await game.close()
         await llm.close()
+        if promise_check is not None:
+            await promise_check.close()
         if avatar is not None:
             await avatar.close()
         if tts is not None:
