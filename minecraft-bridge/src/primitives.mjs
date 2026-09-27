@@ -662,16 +662,6 @@ export const PRIMITIVES = {
     const placed = await PRIMITIVES.place_station(bot, state, { item: c.block, pos: c.to ?? inside }, signal)
     return `${placed} (moved from ${from})`
   },
-  async place_at (bot, state, c, signal) {
-    const item = bot.inventory.items().find((i) => i.name === c.item)
-    if (!item) throw new Error(`no ${c.item}`)
-    if (bot.blockAt(c.pos)?.name !== 'air') throw new Error(`${c.pos.x},${c.pos.y},${c.pos.z} is not free any more`)
-    if (bot.entity.position.distanceTo(c.pos.offset(0.5, 0.5, 0.5)) > 4) await goNear(bot, c.pos, 2, signal)
-    await bot.equip(item, 'hand')
-    await bot.lookAt(c.pos.offset(0.5, 0, 0.5), true)
-    await bot.placeBlock(bot.blockAt(c.pos.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
-    return `placed ${c.item} at ${c.pos}`
-  },
   async place_station (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
@@ -999,7 +989,8 @@ export const PRIMITIVES = {
     const p = bot.entity.position
     return `arrived near ${c.pos.x},${c.pos.y},${c.pos.z} (now at ${round(p.x)},${round(p.y)},${round(p.z)})`
   },
-  // 道具 place（設計書 21）: c.pos の空いたセルに c.item を置く。c.against は面を借りる隣のブロック
+  // c.pos の空いたセルに c.item を置く。c.against は面を借りる隣のブロック（下なら床、横なら壁に付く）。
+  // 道具 place（設計書 21）と placed(item, where) の提案（placing.mjs）が使う
   async place_at (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
@@ -1279,5 +1270,3 @@ async function placeBuildBlock (bot, state, name, signal) {
   }
   return `${b.block === 'air' ? 'cleared a block' : `placed ${b.block}`} (${s.placed}/${s.total}) for ${name}`
 }
-
-

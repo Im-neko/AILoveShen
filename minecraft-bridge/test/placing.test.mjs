@@ -5,6 +5,7 @@ import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
 import { makeGoal, evaluate, checkConditions } from '../src/goals.mjs'
 import { placedNames, parseWhere } from '../src/placing.mjs'
+import { ground } from '../src/candidates.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -28,20 +29,36 @@ function setup ({ blocks = {}, items = {} } = {}) {
   }
   return { bot, state: { home, plan: null } }
 }
+const WORLD = { inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, dig: () => [], hunt: () => [] }
+// 置く葉から出る候補
+const candidatesFor = (bot, state, r) => ground({ ...bot, health: 20, food: 20, entities: {} }, state, k, WORLD, { leaves: r.leaves.filter((l) => l.kind === 'place_at') })
+  .candidates.filter((c) => c.verb === 'place_at')
 const leaves = (bot, state, spec) => {
   const goal = makeGoal(spec, bot, state, k)
   return { goal, r: evaluate(bot, { ...state, goal }, k, { inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, dig: () => [], hunt: () => [] }) }
 }
 
 test('好きな物を好きな場所に: 家の中の松明（壁についた松明も数える）', () => {
-  const { bot, state } = setup({ items: { torch: 4 } })
+  const { bot, state } = setup({ items: { torch: 4 }, blocks: { '-1,65,1': 'oak_planks' } }) // 西の壁の 1 マス
   const { goal, r } = leaves(bot, state, { predicate: 'placed', item: 'torch', where: 'home' })
   assert.deepEqual(goal.spec, { predicate: 'placed', item: 'torch', where: 'home', count: 1 })
   assert.equal(r.met, false)
   const leaf = r.leaves.find((l) => l.kind === 'place_at')
   assert.equal(leaf.item, 'torch')
-  assert.equal(leaf.pos.y, 64) // 部屋の床の高さ
-  assert.ok(!leaf.pos.equals(state.home.inside)) // ドアのすぐ内側は通り道
+  // 松明は壁に付ける: 目の高さ（床 +1）で、壁（家の外の列）を面に借りる
+  assert.deepEqual([leaf.pos, leaf.against], [v(0, 65, 1), v(-1, 65, 1)])
+  assert.ok(leaf.pos.x !== state.home.inside.x || leaf.pos.z !== state.home.inside.z) // ドアのすぐ内側は通り道
+  // 提案は道具と同じ place_at（面つき）で動く（2026-09-27: 同じ名前の 2 つの定義で、提案が落ちていた）
+  const [c] = candidatesFor(bot, state, r)
+  assert.equal(c.verb, 'place_at')
+  assert.match(c.id, /^place torch in the home on the wall at /)
+  assert.deepEqual(c.against, leaf.against)
+
+  // 壁に付けられない物は床に
+  const { r: lanterns } = leaves(setup({ items: { lantern: 1 } }).bot, state, { predicate: 'placed', item: 'lantern', where: 'home' })
+  const floor = lanterns.leaves.find((l) => l.kind === 'place_at')
+  assert.equal(floor.pos.y, 64)
+  assert.equal(floor.against.y, 63)
 
   const lit = setup({ blocks: { '0,65,0': 'wall_torch' } })
   assert.equal(leaves(lit.bot, lit.state, { predicate: 'placed', item: 'torch', where: 'home' }).r.met, true)

@@ -215,17 +215,34 @@ test('まわりの形: 木の葉の下の平らな地面は、同じ高さ（葉
   assert.deepEqual(view.grid, [' 0  0  0', ' 0  @  0', ' 0  0  0'])
 })
 
-test('作業台やチェストは家の中にも置ける（ドアの内側とベッドの場所は残す）。ほかの物は今までどおり断る', async () => {
-  // 家の中（ボットは (2, 70, 2)）、昼、ベッドなし
-  const { callTool, runs } = setup({ items: [['crafting_table', 1], ['dirt', 4]] })
+test('家の部屋の中には何でも置ける（ドアの内側の通り道とベッドの場所は残す）。松明は壁に付ける', async () => {
+  // 家の中（ボットは (2, 70, 2)）、昼、ベッドなし。壁は x 0 / 4、z 0 / 4 の y 70..71
+  const { callTool, runs } = setup({ items: [['crafting_table', 1], ['dirt', 4], ['torch', 4]] })
   assert.equal((await callTool('place', { item: 'crafting_table', x: 1, y: 70, z: 1 })).ok, true)
   assert.equal(runs.at(-1).c.verb, 'place_at')
   assert.match((await callTool('place', { item: 'crafting_table', x: 2, y: 70, z: 3 })).result, /current home/) // ドアの内側
-  assert.match((await callTool('place', { item: 'dirt', x: 1, y: 70, z: 1 })).result, /current home/)
+  assert.match((await callTool('place', { item: 'torch', x: 2, y: 71, z: 3 })).result, /current home/) // その頭の高さも通り道
+  // 松明（2026-09-27: 家の一部として断られ、placed(torch, home) が進まなかった）: 壁に付ける
+  assert.equal((await callTool('place', { item: 'torch', x: 1, y: 71, z: 2 })).ok, true)
+  assert.deepEqual(runs.at(-1).c.against, v(0, 71, 2))
+  // 床に置くこともできる（on: floor）。土も部屋の中なら置ける
+  assert.equal((await callTool('place', { item: 'torch', x: 3, y: 70, z: 1, on: 'floor' })).ok, true)
+  assert.deepEqual(runs.at(-1).c.against, v(3, 69, 1))
+  assert.equal((await callTool('place', { item: 'dirt', x: 1, y: 70, z: 3 })).ok, true)
+  // 家の壁そのものには置けない
+  assert.match((await callTool('place', { item: 'torch', x: 0, y: 70, z: 2 })).result, /taken by oak_planks/)
   // ベッドの場所が残らない置き方は断る: 西と東の列、真ん中の奥がふさがっている
   const cramped = { '1,70,2': 'chest', '1,70,3': 'chest', '3,70,1': 'chest', '3,70,2': 'chest', '3,70,3': 'chest' }
   const { callTool: tight } = setup({ items: [['crafting_table', 1]], extra: cramped })
   assert.match((await tight('place', { item: 'crafting_table', x: 2, y: 70, z: 1 })).result, /current home/)
+})
+
+test('チェストや作業台の面には付けない（置く代わりに開いてしまう）', async () => {
+  // (2, 71, 1) の横は空気と、北の壁の代わりのチェストだけ
+  const { callTool } = setup({ items: [['torch', 4]], extra: { '2,71,0': 'chest' } })
+  const r = await callTool('place', { item: 'torch', x: 2, y: 71, z: 1, on: 'wall' })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /nothing on the wall side 2,71,1/)
 })
 
 test('建築予定地には作業台を仮設できる（土などは今までどおり断る）', async () => {

@@ -9,7 +9,7 @@ import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
 import { CROPS, cropBySeed, farmRefusal, isSaplingItem, plantSpot, sowSpot, tillSpot } from './farming.mjs'
-import { isHomeCell } from './builds.mjs'
+import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
 import { homeChests, chestWith } from './memory.mjs'
@@ -18,8 +18,8 @@ import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { levelTarget, levelStatus, fillItem, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { supportFor } from './placing.mjs'
 
-const FURNITURE = new Set(['crafting_table', 'furnace', 'chest'])
 const { Vec3 } = vec3Pkg
 
 const MAX_TOOL_DISTANCE = 256 // goto は着くまで区間ごとに歩く
@@ -79,12 +79,15 @@ function entity (bot, args) {
 export function createTools (deps) {
   const { bot, state, knowledge } = deps
 
-  // 家の中に置いてよい家具（作業台・かまど・チェスト）: 室内の床の高さの空いたセルで、ドアの内側の
-  // セルでなく、ベッドがまだなければベッドの場所が残るとき。どこに置くかは Gemini が決める
-  const furnishing = (item, pos) => {
+  // 家の部屋の中に置いてよいか（家具も松明・ランタン・花なども）: 室内の空いたセルで、ドアのすぐ内側
+  // （通り道: 足と頭の 2 マス）でなく、ベッドがまだなければ床に置いてもベッドの場所が残るとき。
+  // どこに置くかは Gemini が決める（2026-09-27: 松明が家の一部として断られ、placed(torch, home) が
+  // 進まなかった）
+  const inRoom = (item, pos) => {
     const home = state.home
-    if (!home || !FURNITURE.has(item) || pos.y !== home.min.y || !isHomeCell(home, pos) || pos.equals(home.inside)) return false
-    if (hasBed(bot, home)) return true
+    if (!home || !inHomeRoom(home, pos)) return false
+    if (home.inside && pos.x === home.inside.x && pos.z === home.inside.z && pos.y - home.inside.y <= 1) return false
+    if (pos.y !== home.min.y || hasBed(bot, home)) return true
     const occupied = { ...bot, blockAt: (p) => p.equals(pos) ? { name: item, boundingBox: 'block', position: p } : bot.blockAt(p) }
     return !!bedSpot(occupied, home)
   }
@@ -122,15 +125,16 @@ export function createTools (deps) {
       const cell = bot.blockAt(pos)
       if (!cell) refuse(`${fmt(pos)} is not loaded`)
       if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}`)
-      // 家の中の家具、または建築予定地への仮設（建っているもののまわりでなければ。建てる番が来たら壊す）
+      // 家の部屋の中、または建築予定地への仮設（建っているもののまわりでなければ。建てる番が来たら壊す）
       const temporary = TEMPORARY.test(args.item) && !inStandingBuilding(bot, state, pos, 1)
-      const why = furnishing(args.item, pos) || temporary ? null : protectedReason(state, pos)
+      const why = inRoom(args.item, pos) || temporary ? null : protectedReason(state, pos)
       if (why) refuse(`will not place at ${fmt(pos)}: ${why}`)
       const feet = bot.entity.position.floored()
       if (pos.equals(feet) || pos.equals(feet.offset(0, 1, 0))) refuse(`you are standing in ${fmt(pos)}; move first`)
-      const against = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
-        .map(([x, y, z]) => pos.offset(x, y, z)).find((p) => bot.blockAt(p)?.boundingBox === 'block')
-      if (!against) refuse(`nothing next to ${fmt(pos)} to place against`)
+      // 面を借りる隣: on（floor / wall / ceiling）。省略なら、壁に付けられる物（松明など）は壁を先に
+      const on = ['floor', 'wall', 'ceiling'].includes(args.on) ? args.on : null
+      const against = supportFor(bot, pos, args.item, on)
+      if (!against) refuse(`nothing ${on ? `on the ${on} side` : 'next to'} ${fmt(pos)} to place against (chests, tables, doors and beds would open instead)`)
       return { c: { verb: 'place_at', target: args.item, item: args.item, pos, against } }
     },
     craft (args) {

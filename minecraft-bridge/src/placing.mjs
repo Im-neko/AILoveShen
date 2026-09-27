@@ -29,6 +29,35 @@ export function placedNames (item) {
   return names
 }
 
+// 壁に付けられる物（松明、看板、旗、頭、はしご）。はしごは壁にしか付かない
+export function wallMountable (bot, item) {
+  if (item === 'ladder') return true
+  return [...placedNames(item)].some((n) => n !== item && n.includes('wall') && !!bot.registry?.blocksByName[n])
+}
+
+// 面を借りられないブロック（右クリックで開く・使う: 置く代わりに開いてしまう）
+export const INTERACTIVE = /(chest|barrel|crafting_table|furnace|smoker|_door|_trapdoor|_fence_gate|_bed|anvil|table|lectern|loom|stonecutter|grindstone|hopper|dispenser|dropper|button|lever|shulker_box|note_block|jukebox|bell|beacon|brewing_stand|enchanting_table|cauldron|composter)$/
+
+// 面を借りる隣（against）。on: floor（下）/ wall（横）/ ceiling（上）。省略: 壁に付けられる物は壁を先に
+const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
+export function supportFor (bot, pos, item, on = null) {
+  const order = on === 'floor'
+    ? [[0, -1, 0]]
+    : on === 'wall'
+      ? SIDES
+      : on === 'ceiling'
+        ? [[0, 1, 0]]
+        : item === 'ladder'
+          ? SIDES
+          : wallMountable(bot, item) ? [...SIDES, [0, -1, 0], [0, 1, 0]] : [[0, -1, 0], ...SIDES, [0, 1, 0]]
+  for (const [x, y, z] of order) {
+    const p = pos.offset(x, y, z)
+    const b = bot.blockAt(p)
+    if (b?.boundingBox === 'block' && !INTERACTIVE.test(b.name)) return p
+  }
+  return null
+}
+
 // 置けるアイテムか（ブロックになる物）
 export function isPlaceableItem (bot, item) {
   return !!item && !!bot.registry?.itemsByName[item] && !!bot.registry?.blocksByName[item]
@@ -118,23 +147,36 @@ export function countPlaced (bot, state, whereText, item) {
   return n
 }
 
-// 置ける所（空気で、下が固いブロック。家・建物の壁や屋根の上、家の通り道には置かない）。近い順
-export function placeSpots (bot, state, whereText, limit = 3) {
+// 置ける所 [{ pos, against }]（空気のセルと、面を借りる隣）。壁に付けられる物（松明など）は壁に付ける
+// 所を先に: 家の中なら目の高さ（床 +1）の壁、ほかは横に固いブロックのある所。床に置く所は下が固い
+// ブロック（家の中は床の高さだけ）。家・建物の壁や屋根の上、家のドアのすぐ内側（通り道）には置かない。
+// 同じ種類の中は近い順
+export function placeSpots (bot, state, whereText, limit = 3, item = null) {
   const where = parseWhere(whereText, state)
   const me = bot.entity.position
   const home = state.home
-  const out = []
+  const wall = !!item && wallMountable(bot, item)
+  const walls = []
+  const floors = []
   for (const p of region(state, where)) {
     if (bot.blockAt(p)?.name !== 'air') continue
-    if (bot.blockAt(p.offset(0, -1, 0))?.boundingBox !== 'block') continue
-    if (where.kind === 'home') {
-      // 部屋の床の高さだけ（壁の上の段に浮かせない）。ドアのすぐ内側は通り道
-      if (p.y !== home.min.y || (home.inside && p.equals(home.inside))) continue
-    } else if (inHouse(state, p, 0)) continue
     if (me && p.floored?.().equals(me.floored())) continue
-    out.push(p)
+    if (where.kind === 'home') {
+      if (home.inside && p.x === home.inside.x && p.z === home.inside.z && p.y - home.inside.y <= 1) continue
+    } else if (inHouse(state, p, 0)) continue
+    const onFloor = where.kind !== 'home' || p.y === home.min.y
+    if (wall && (where.kind !== 'home' || p.y === home.min.y + 1)) {
+      const against = supportFor(bot, p, item, 'wall')
+      if (against) walls.push({ pos: p, against })
+    }
+    if (onFloor && item !== 'ladder') {
+      const below = p.offset(0, -1, 0)
+      const b = bot.blockAt(below)
+      if (b?.boundingBox === 'block' && !INTERACTIVE.test(b.name)) floors.push({ pos: p, against: below })
+    }
   }
-  return out.sort((a, b) => a.distanceTo(me) - b.distanceTo(me)).slice(0, limit)
+  const near = (a, b) => a.pos.distanceTo(me) - b.pos.distanceTo(me)
+  return [...walls.sort(near), ...floors.sort(near)].slice(0, limit)
 }
 
 export function describeWhere (whereText, state) {

@@ -308,8 +308,8 @@ export function evaluate (bot, state, knowledge, world) {
         const held = inventoryCounts(bot)[item] ?? 0
         if (held < need) addSolved([{ spec: item, count: need - held }])
         if (held) {
-          const [spot] = placeSpots(bot, state, where, 1)
-          if (spot) out.leaves.push({ kind: 'place_at', item, where, pos: spot })
+          const [spot] = placeSpots(bot, state, where, 1, item)
+          if (spot) out.leaves.push({ kind: 'place_at', item, where, pos: spot.pos, against: spot.against })
           else out.blocked.push(`no free spot to place ${item} ${describeWhere(where, state)}`)
         }
         break

@@ -266,7 +266,7 @@ function homeBox (home) {
   return { min: home.min.offset(-1, -1, -1), max: home.max.offset(1, HOME_HEIGHT, 1) }
 }
 
-function inHomeRoom (home, p) {
+export function inHomeRoom (home, p) {
   return isHomeCell(home, p) && p.y >= home.min.y && p.y < home.min.y + HOME_HEIGHT - 1
 }
 

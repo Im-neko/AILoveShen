@@ -137,3 +137,14 @@ Jev の質問と、Gemini の道具の選択の両方が見る 1 つの書式（
 - 1 ステップあたりの Gemini と Jev の呼び出し回数とトークン（`logs/watch/*.jsonl`）
 - `goto_pos` / `place_at` の実機での動き（穴から土を積んで出られるか）
 
+## 追記: 置く（2026-09-27）
+
+配信で「家の中に松明を置く」が進まなかった。原因は 2 つ。
+- `primitives.mjs` の `PRIMITIVES` に `place_at` が 2 つあった（`placed(item, where)` の提案用と、この道具 `place` 用）。後の定義が勝ち、提案は `against` なしで `Cannot read properties of undefined (reading 'x')` で落ちていた。`standard` の `no-dupe-keys` は検出していたが、`npm test` は lint を走らせない
+- 道具 `place` は家の中に作業台・かまど・チェストしか置かせず、松明は「家の一部」として断っていた
+
+直し:
+- 置く処理は `place_at` 1 つ（面を借りる隣 `against` つき）。提案も `placing.mjs` の `placeSpots` が `{pos, against}` を出す
+- 面の選び方は `supportFor`: 壁に付けられる物（壁の形のブロックがある物: 松明・看板・旗・頭、はしご）は横の壁を先に、ほかは下を先に。チェスト・作業台・かまど・ドア・ベッドなど開く物の面は借りない（置く代わりに開いてしまう）。道具には `on`（floor / wall / ceiling）で指定できる
+- 家の中の提案: 壁に付けられる物は床 +1 の高さの壁に、ほかは床に。ドアのすぐ内側の列（足と頭の 2 マス）は通り道として空ける
+- 道具 `place` は、家の部屋の中（`inHomeRoom`）の空いたセルなら何でも置ける。ドアのすぐ内側の列には置かない。ベッドがなければ、床に置いてもベッドの場所が残るときだけ

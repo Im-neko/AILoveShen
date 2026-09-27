@@ -244,7 +244,7 @@ function fromLeaf (bot, state, world, leaf) {
       return [{ id: `put your items in the home's chest before fighting (keep the weapon)`, verb: 'stash', target: 'chest', pos: leaf.pos, items: leaf.items, distance: dist(bot, leaf.pos) }]
     case 'place_at':
       // 好きな物を好きな場所に置く（placed(item, where, count): placing.mjs）
-      return [{ id: `place ${leaf.item} ${describeWhere(leaf.where, state)} at ${fmt(leaf.pos)}`, verb: 'place_at', target: leaf.item, item: leaf.item, pos: leaf.pos, distance: dist(bot, leaf.pos) }]
+      return [{ id: `place ${leaf.item} ${describeWhere(leaf.where, state)}${leaf.against.y === leaf.pos.y ? ' on the wall' : ''} at ${fmt(leaf.pos)}`, verb: 'place_at', target: leaf.item, item: leaf.item, pos: leaf.pos, against: leaf.against, distance: dist(bot, leaf.pos) }]
     case 'take_placed':
       // 置いてある家具を壊して拾う（ベッドを家に運ぶ）。furniture.mjs
       return [{ id: `take the ${leaf.block} placed at ${fmt(leaf.pos)}`, verb: 'dig', target: leaf.block, block: leaf.block, pos: leaf.pos, distance: dist(bot, leaf.pos) }]

@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 家の中に松明を置けなかった（place_at の二重定義）、壁に付ける (2026-09-27)
+
+**Commit**: （この後）
+
+ユーザーのログ（12:48）: `placed(torch, 2, home)` で、提案は `Cannot read properties of undefined (reading 'x')`、道具 `place` は `it is part of the current home` で断られ続けた。ユーザー:「壁に設置できるアイテムは壁に設置できるようにもしてほしい」。設計書 21 の追記。
+- 原因 1: `PRIMITIVES` の `place_at` が二重定義（提案用 `9f262b5` と道具用 `d1d1721`）で、後の道具用が勝ち、提案は `against` なしで落ちた。テストは候補ができるところまでしか見ていなかった。`standard` は検出していた（`npm test` は lint を走らせない）
+- 原因 2: 道具 `place` は家の中に家具しか置かせなかった
+- `placing.mjs`: `wallMountable`、`INTERACTIVE`、`supportFor`、`placeSpots` が `{pos, against}`（壁を先に、家の中は床 +1）。`goals.mjs` / `candidates.mjs`: 提案も `place_at`（面つき、id に on the wall）。`primitives.mjs`: 提案用の定義を消した。`tools.mjs`: `inRoom`（部屋の中は何でも、ドアの内側の列とベッドの場所は空ける）、`on`。`builds.mjs`: `inHomeRoom` を公開。`tool_catalog.py`: place の説明と `on`
+- テスト: `placing.test.mjs`（壁の松明、提案の形、ランタンは床）、`tools.test.mjs`（部屋の中、壁、床、通り道、開く物の面）。実機ではまだ試していない（配信中のため）
+
 ### 任意の条件 custom(name): Gemini が判定コードを書く (2026-09-27)
 
 **Commit**: `058a8be`
