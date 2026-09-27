@@ -29,3 +29,13 @@ def test_the_farm_and_what_remembered_blocks_give_are_shown():
     text = format_activity(Activity(observation=obs))
     assert "家のまわりの畑: wheat 12 マス（熟した 8、育ち具合 3〜7/7）" in text
     assert "wheat 12（→ wheat・wheat_seeds、" in text
+
+
+def test_dusk_says_how_long_until_night_not_only_until_morning():
+    """「夕方（朝まで約 9 分）」を「夜が明けた」と読まれた（2026-09-27）。"""
+    from ailoveshen.infrastructure.adapters.prompts.stream_context import format_time, format_time_en
+
+    dusk = {"phase": "dusk", "time_of_day": 12600}
+    assert format_time(dusk) == "夕方（暗くなってきた。夜になるまで約 0 分、そのあと朝まで約 9 分）"
+    assert format_time_en(dusk).startswith("dusk (night in 0 minutes")
+    assert format_time({"phase": "night", "time_of_day": 18000}) == "夜（朝まで約 5 分）"

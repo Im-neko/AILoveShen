@@ -92,3 +92,29 @@ async def test_is_idle_only_after_playing_ends():
     await service.wait_until_idle()
     assert service.is_idle()
     await service.stop()
+
+
+class TestStaleLines:
+    """待っている間に古くなった実況は読まない（2026-09-27）。"""
+
+    @pytest.mark.asyncio
+    async def test_commentary_that_waited_too_long_is_dropped_but_replies_are_read(self):
+        played: list[str] = []
+        now = {"t": 0.0}
+        service = TTSService(
+            _slow_use_case(0.05, played),
+            max_age_seconds={"commentary": 20},
+            clock=lambda: now["t"],
+        )
+        await service.start()
+        await service.speak("今話している", source="commentary")
+        await asyncio.sleep(0.01)  # 1 行目を再生中
+        await service.speak("かまどを作るよ", source="commentary")
+        await service.speak("返事だよ", source="chat")
+        now["t"] = 30.0  # 2 行目と 3 行目は 30 秒待った
+
+        await asyncio.wait_for(service.wait_until_idle(), timeout=2.0)
+
+        assert played == ["今話している", "返事だよ"]
+        assert service.is_idle()
+        await service.stop()

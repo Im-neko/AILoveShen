@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Callable, Mapping
 from typing import Optional
 
 from loguru import logger
@@ -22,6 +24,7 @@ class TTSService:
     特徴:
     - キューによる発話の処理
     - 優先度の扱い（割り込みのリクエストはキューを通らない）
+    - 古くなった発話を捨てる（出どころごとの max_age_seconds。実況は待っている間に行動が変わる）
     - 穏やかな停止
     """
 
@@ -29,6 +32,8 @@ class TTSService:
         self,
         speak_text_use_case: ISpeakText,
         max_queue_size: int = 10,
+        max_age_seconds: Optional[Mapping[str, float]] = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """
         TTS サービスを初期化する。
@@ -36,12 +41,17 @@ class TTSService:
         Args:
             speak_text_use_case: テキストを話すユースケース
             max_queue_size: キューに入る最大の数
+            max_age_seconds: 出どころ（source）→ キューで待ってよい秒数。超えたら読まずに捨てる
+                （例: {"commentary": 20}。視聴者への返事は遅れても読むので入れない）
+            clock: 時計（テストで差し替える）
         """
         self._use_case = speak_text_use_case
         self._max_queue_size = max_queue_size
-        self._queue: asyncio.PriorityQueue[tuple[int, SpeakTextRequest]] = asyncio.PriorityQueue(
-            maxsize=max_queue_size
-        )
+        self._max_age = dict(max_age_seconds or {})
+        self._clock = clock
+        self._queue: asyncio.PriorityQueue[
+            tuple[tuple[int, int], float, SpeakTextRequest]
+        ] = asyncio.PriorityQueue(maxsize=max_queue_size)
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._sequence = 0  # 同じ優先度の中で先入れ先出しにするため
@@ -144,7 +154,7 @@ class TTSService:
             self._sequence += 1
             priority_key = (-priority.value, self._sequence)
 
-            self._queue.put_nowait((priority_key, request))
+            self._queue.put_nowait((priority_key, self._clock(), request))
             logger.debug(
                 f"発話をキューに入れた [{priority.name}]: {text[:30]}... "
                 f"（キューの長さ: {self._queue.qsize()}）"
@@ -222,11 +232,22 @@ class TTSService:
             try:
                 # 次のリクエストをタイムアウト付きで待つ
                 try:
-                    _, request = await asyncio.wait_for(
+                    _, queued_at, request = await asyncio.wait_for(
                         self._queue.get(),
                         timeout=1.0,
                     )
                 except asyncio.TimeoutError:
+                    continue
+
+                # 待っている間に古くなった実況は読まない（行動はもう先へ進んでいる。2026-09-27）
+                waited = self._clock() - queued_at
+                limit = self._max_age.get(request.source)
+                if limit is not None and waited > limit:
+                    logger.info(
+                        f"[tts] {waited:.0f} 秒待って古くなったので読まない（{request.source}）: "
+                        f"{request.text[:40]}"
+                    )
+                    self._queue.task_done()
                     continue
 
                 # リクエストを処理する

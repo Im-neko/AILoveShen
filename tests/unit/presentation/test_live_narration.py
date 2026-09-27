@@ -106,6 +106,9 @@ async def test_a_long_action_gets_new_lines_with_what_changed_and_no_repeats():
     assert "行動の結果: dig oak_log → 成功: got" in events
     assert "持ち物の増減: oak_log +4" in events
     assert "森が見えてきた！" in events[-1]  # 直前に話したこととは違う内容に
+    # 直前の実況と食い違わない（2026-09-27:「パンをクラフトするよ」の 30 秒後に「パンは明日作れる」）
+    assert "食い違うことも言わない" in events[-1]
+    assert events[0] == f"今の小目標: {GOAL.describe()}（{GOAL.reason}）"
 
 
 @pytest.mark.asyncio

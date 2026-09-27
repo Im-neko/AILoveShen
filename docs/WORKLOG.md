@@ -7,6 +7,18 @@
 
 ## Completed Work
 
+### 発言と行動を食い違わせない (2026-09-27)
+
+**Commit**: (pending)
+
+ユーザー:「その順で全て進めてほしい」（目標の決定をコードで照らす → 一言を矛盾させない → 古い実況を捨てる）。設計書 46。
+- `play.py`: `set_goal` で済んでいる小目標、後の手順が済んで前が残る手順（`_check_step_order`）、見直しの時間帯の取り違え（`_check_time`）を差し戻す
+- `stream_context.format_time` / `format_time_en`: 夕方は夜までと朝までの両方
+- `live_narration.py`: 今の小目標を渡し、直前に話したことと食い違わない指示
+- `tts_service.py` + `factories/tts.py` + `config/default.yaml`: `tts.queue.max_age_seconds`（commentary 20 秒）
+- テスト: `test_play_use_cases.py` 3 件（自分のテストで「夜が明けたら」の誤検出を見つけて直した）、`test_stream_context.py`、`test_live_narration.py`、`test_tts_service.py`。Python 811
+- 要 Python の再起動（ブリッジは変わっていない）
+
 ### ボートが岸の角でサーバーに戻され続けて止まらない、目標の決定はローカルでも考える (2026-09-27)
 
 **Commit**: `17025ee`

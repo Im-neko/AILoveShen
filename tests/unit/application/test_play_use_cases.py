@@ -538,6 +538,60 @@ class TestAdvancePlay:
         bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (), (), together=())
 
     @pytest.mark.asyncio
+    async def test_a_goal_already_met_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """決めた時点で済んでいる小目標は差し戻す（2026-09-27: かまどを持っているのに have(furnace)）。"""
+        text_generator.generate_json.side_effect = [PLANKS, {**PLANKS, "count": 8}]
+        bridge.set_goal.side_effect = [GoalStatus(True, 0), GoalStatus(False, 4)]
+        session = _session()
+
+        await use_case.execute(session)
+
+        assert session.goal.spec.count == 8
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "have(planks, 4) is already met now" in error
+
+    @pytest.mark.asyncio
+    async def test_steps_before_one_already_met_are_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """手順は順番どおり: 後の手順が済んでいるのに前が残っていれば、前は要らない手順。"""
+        stone = {"predicate": "have", "item": "cobblestone", "count": 8, "reason": "石"}
+        planks = {"predicate": "have", "item": "planks", "count": 4, "reason": "板"}
+        text_generator.generate_json.side_effect = [
+            {**PLANKS, "steps": [stone, planks]},
+            {**PLANKS, "steps": [planks, stone]},
+        ]
+        bridge.check.side_effect = _judged({HAVE_PLANKS})
+        session = _session()
+
+        await use_case.execute(session)
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "step 2 have(planks, 4) is already met now" in error
+        assert "have(cobblestone, 8)" in error
+        assert [s.spec.item for s in session.plan.current.plan_steps] == ["planks", "cobblestone"]
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_mistakes_the_time_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """実測（2026-09-27）: 夕方に「夜が明けたので外に出られる」と書いて外の手順を決めた。"""
+        bridge.observe.return_value = _obs(goal=False, time_phase="dusk")
+        text_generator.generate_json.side_effect = [
+            {**PLANKS, "review": "夜が明けたので外に出られる状態になった。"},
+            {**PLANKS, "review": "夜になる前に、夜が明けたら使う板材を作っておく。"},
+        ]
+        session = _session()
+
+        await use_case.execute(session)
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "the review says '夜が明け', but it is dusk now" in error
+        assert text_generator.generate_json.await_count == 2
+
+    @pytest.mark.asyncio
     async def test_gives_up_after_max_goal_attempts(self, use_case, text_generator, bridge):
         """断られ続けたら、行動せずに TextGenerationError を出す。"""
         text_generator.generate_json.return_value = {

@@ -128,6 +128,7 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
 
 TICKS_PER_MINUTE = 20 * 60
 DUSK_TICK = 12000
+NIGHT_TICK = 13000
 MORNING_TICK = 24000
 PHASE_NAMES = {"day": "昼", "dusk": "夕方", "night": "夜", "dawn": "明け方"}
 DIRECTION_NAMES = {
@@ -233,16 +234,28 @@ def format_messages(messages: tuple[ConversationMessage, ...] | list[Conversatio
     return "\n".join(lines)
 
 
+def _minutes(to_tick: int, tick: float) -> str:
+    return f"{(to_tick - tick) / TICKS_PER_MINUTE:.0f}"
+
+
 def format_time(time: dict) -> str:
-    """日本語の時間帯。日暮れか朝までの分数を付ける。"""
+    """
+    日本語の時間帯。次に変わるまでの分数を付ける。夕方は夜まで（と朝まで）: 前は「夕方（朝まで約 9 分）」
+    とだけ書き、Gemini の代わりのモデルが「夜が明けた」と読んで外の手順を決めた（2026-09-27）。
+    """
     phase = time.get("phase", "")
     name = PHASE_NAMES.get(phase, "不明")
     tick = time.get("time_of_day")
     if tick is None:
         return name
     if phase == "day":
-        return f"{name}（日暮れまで約 {(DUSK_TICK - tick) / TICKS_PER_MINUTE:.0f} 分）"
-    return f"{name}（朝まで約 {(MORNING_TICK - tick) / TICKS_PER_MINUTE:.0f} 分）"
+        return f"{name}（日暮れまで約 {_minutes(DUSK_TICK, tick)} 分）"
+    if phase == "dusk":
+        return (
+            f"{name}（暗くなってきた。夜になるまで約 {_minutes(NIGHT_TICK, tick)} 分、"
+            f"そのあと朝まで約 {_minutes(MORNING_TICK, NIGHT_TICK)} 分）"
+        )
+    return f"{name}（朝まで約 {_minutes(MORNING_TICK, tick)} 分）"
 
 
 def format_time_en(time: dict) -> str:
@@ -252,8 +265,10 @@ def format_time_en(time: dict) -> str:
     if tick is None:
         return phase
     if phase == "day":
-        return f"day ({(DUSK_TICK - tick) / TICKS_PER_MINUTE:.0f} minutes until dusk)"
-    return f"{phase} ({(MORNING_TICK - tick) / TICKS_PER_MINUTE:.0f} minutes until morning)"
+        return f"day ({_minutes(DUSK_TICK, tick)} minutes until dusk)"
+    if phase == "dusk":
+        return f"dusk (night in {_minutes(NIGHT_TICK, tick)} minutes, then morning after {_minutes(MORNING_TICK, NIGHT_TICK)})"
+    return f"{phase} ({_minutes(MORNING_TICK, tick)} minutes until morning)"
 
 
 def _requested(goal: MidGoal) -> str:

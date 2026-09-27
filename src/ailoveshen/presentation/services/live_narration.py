@@ -167,15 +167,23 @@ class LiveNarration:
 
     def _events(self, activity: Activity) -> list[str]:
         """一言に渡すこと: 今の行動、前の一言から変わったこと、直前に話したことと違う内容に。"""
-        events = [f"今の行動: {activity.intent or 'なし'}"]
+        goal = activity.goal
+        events = [f"今の小目標: {goal.describe()}（{goal.reason}）" if goal is not None else "今の小目標: なし"]
+        events.append(f"今の行動: {activity.intent or 'なし'}")
         events += [f"行動の結果: {a}" for a in self._actions]
         events += self._changes(activity)
         said = "」「".join(self._spoken.recent())
         events.append(
             "（行動の途中の一言）今やっていること・考えていること・気づいたこと・次の段取りを"
-            "短い 1 文（40 字くらいまで）で話す。次の段取りは「今していること」の目標と手順から"
+            "短い 1 文（40 字くらいまで）で話す。次の段取りは今の小目標と「今していること」の手順から"
             "（そこにない予定を作らない）。"
-            + (f"直前に話したこと「{said}」と同じ内容・言い換えは言わない。" if said else "")
+            + (
+                f"直前に話したこと「{said}」と同じ内容・言い換えは言わない。それと食い違うことも"
+                "言わない（やると言ったことをやめる・明日に延ばす、済んだと言ったことをまだと言う、"
+                "など。今の小目標と行動の結果が変わったときだけ、変わったと言ってよい）。"
+                if said
+                else ""
+            )
             + "変わったことがなければ、今の様子や気持ちなど別の話題にする"
         )
         return events

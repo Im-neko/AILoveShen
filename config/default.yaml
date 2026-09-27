@@ -229,6 +229,10 @@ tts:
   # Queue settings
   queue:
     max_size: 10
+    # source -> seconds a line may wait in the queue; older ones are dropped unread (the play has
+    # moved on). Commentary only: replies to viewers are read even when late
+    max_age_seconds:
+      commentary: 20
 
   # Audio output settings
   audio:

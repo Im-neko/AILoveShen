@@ -90,6 +90,7 @@ from ailoveshen.domain.value_objects import (
     MessageRole,
     MessageType,
     MidGoal,
+    PlannedStep,
     Screenshot,
     SkillInfo,
     SkillRun,
@@ -896,6 +897,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                     )
                 if failed_goal is not None:
                     _check_remedy(decision, failed_goal, same_failures)
+                _check_time(decision, obs)
+                await self._check_step_order(decision.steps)
                 try:
                     await self._mid_goals.check_new(decision.changes)
                 except BuildNotDesignedError as e:
@@ -917,6 +920,13 @@ class AdvancePlayUseCase(IAdvancePlay):
                     _also(rehearsed, (decision.spec, *decision.together)),
                     together=decision.together,
                 )
+                if status.met:
+                    # 決めた時点でもう済んでいる小目標は、何もせずに終わって次の決定を呼ぶだけ
+                    # （2026-09-27: かまどを持っているのに have(furnace, 1) を決め、その手順の石を掘りに行った）
+                    raise ValueError(
+                        f"the small goal {_bundle_label(decision)} is already met now; choose one "
+                        "that is not met yet (see the steps' state now)"
+                    )
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
                 _serving(decision, preview)
@@ -983,6 +993,32 @@ class AdvancePlayUseCase(IAdvancePlay):
             "while they grow; no food: farmed); explore far in a new direction with explored; or "
             "move this mid goal down or drop it with the reason"
         )
+
+    async def _check_step_order(self, steps: tuple[PlannedStep, ...]) -> None:
+        """
+        手順は順番どおりに進む前提なので、後の手順がもう済んでいるのに前の手順が残っていれば、その前の
+        手順はそこへ行くためのものでしかない（2026-09-27: かまどを持っているのに、手順に「石 8 → かまど」を
+        書き、石を掘りに行った）。判定できなければ確かめない。
+        """
+        if len(steps) < 2:
+            return
+        try:
+            statuses = list(await self._bridge.check([x for s in steps for x in s.specs]))
+        except AILoveShenError as e:
+            logger.debug(f"手順を判定できなかった: {e}")
+            return
+        done = []
+        for step in steps:
+            mine, statuses = statuses[: len(step.specs)], statuses[len(step.specs) :]
+            done.append(all(c.met for c in mine))
+        for j, step in enumerate(steps):
+            before = [steps[i].describe() for i in range(j) if not done[i]]
+            if done[j] and before:
+                raise ValueError(
+                    f"step {j + 1} {step.describe()} is already met now, but the steps before it are "
+                    f"not ({', '.join(before)}): the steps are in order, so those only led to it; "
+                    "drop them, or put the ones still needed after it"
+                )
 
     async def _step_status(self, plan: MidGoalPlan) -> tuple[ConditionStatus, ...]:
         """一番上の中目標の手順を今判定する（見直しの材料。docs/design/31）。判定できなければ空。"""
@@ -1179,6 +1215,32 @@ def _failures_in_a_row(session: PlaySession) -> int:
             break
         n += 1
     return n
+
+
+def _bundle_label(decision: GoalDecision) -> str:
+    return " + ".join(s.describe() for s in (decision.spec, *decision.together))
+
+
+# 見直しの文が、今の時間帯と食い違う言い方（時間帯 → 言ってはいけないこと）。
+# 2026-09-27: 夕方に「夜が明けたので外に出られる」と書いて、外の手順を決めた
+_NOT_MORNING = r"夜が明け(?!たら|る|れば|次第|ても)|朝になった(?!ら)|朝(?:だ|なの)(?:から|ので)"
+_WRONG_TIME = {
+    "day": re.compile(r"夜になった(?!ら)|夜(?:だ|なの)(?:から|ので)"),
+    "dusk": re.compile(_NOT_MORNING),
+    "night": re.compile(_NOT_MORNING + r"|昼間?(?:だ|なの)(?:から|ので)"),
+}
+
+
+def _check_time(decision: GoalDecision, obs: GameObservation) -> None:
+    """見直しが今の時間帯を取り違えていれば差し戻す（読み直させる）。"""
+    phase = obs.time_phase
+    wrong = _WRONG_TIME.get(phase)
+    found = wrong.search(decision.review) if wrong and decision.review else None
+    if found:
+        raise ValueError(
+            f"the review says {found.group(0)!r}, but it is {phase} now: read the time in the "
+            "state again and decide for that time"
+        )
 
 
 def _check_remedy(decision: GoalDecision, failed: GoalSpec, same_failures: int) -> None:

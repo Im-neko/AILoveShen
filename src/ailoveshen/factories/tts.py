@@ -197,6 +197,9 @@ def create_tts_service(
     return TTSService(
         speak_text_use_case=speak_text_use_case,
         max_queue_size=queue_config.get("max_size", 10),
+        max_age_seconds={
+            str(k): float(v) for k, v in (queue_config.get("max_age_seconds") or {}).items()
+        },
     )
 
 
