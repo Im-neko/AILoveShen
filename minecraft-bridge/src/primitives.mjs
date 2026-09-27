@@ -712,6 +712,23 @@ export const PRIMITIVES = {
       return `put ${n} ${c.item} in the chest`
     })
   },
+  async stash (bot, state, c, signal) {
+    return useChest(bot, state, c, signal, async (window) => {
+      const put = []
+      for (const { item } of c.items) {
+        const n = inventoryCounts(bot)[item] ?? 0
+        if (!n) continue
+        try {
+          await window.deposit(bot.registry.itemsByName[item].id, null, n)
+          put.push(`${n} ${item}`)
+        } catch (e) {
+          if (put.length) break // チェストがいっぱい: 入った分だけ
+          throw new Error(`could not put anything in the chest: ${e.message}`)
+        }
+      }
+      return `put ${put.join(', ')} in the chest (kept the weapon, armor, food and torches)`
+    })
+  },
   async withdraw (bot, state, c, signal) {
     return useChest(bot, state, c, signal, async (window) => {
       const inside = window.containerItems().filter((i) => i.name === c.item).reduce((s, i) => s + i.count, 0)

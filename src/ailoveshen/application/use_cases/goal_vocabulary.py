@@ -625,8 +625,8 @@ def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicat
     # 夜は家がなくても越せる（近くのベッド、持っているベッド、地下）
     out.append(GoalPredicate.THROUGH_NIGHT)
     if obs.has_home:
-        if obs.time_phase == "day":
-            out.append(GoalPredicate.CLEARED)
+        # 夜も、武器があれば出て倒せる（ブリッジが武器と体力を確かめ、持ち物を先にチェストへ）
+        out.append(GoalPredicate.CLEARED)
         # ベッドのほか、作業台・かまど・チェストも家の中に置ける（済んでいれば、ブリッジがすぐ達成とする）
         out.append(GoalPredicate.PLACED)
         out.append(GoalPredicate.STORED)

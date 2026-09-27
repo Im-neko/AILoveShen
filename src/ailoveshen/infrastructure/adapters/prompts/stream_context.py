@@ -102,8 +102,8 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "（種は草からときどき）か、持っていれば carrots / potatoes / beetroots。例: farmed(wheat, 9)"
     ),
     GoalPredicate.CLEARED: (
-        "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼だけ。素手でも戦える。"
-        "クリーパーは近くで爆発するので対象外）"
+        "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼は素手でも。夜は剣か斧があり体力 14 以上の"
+        "とき、持ち物を先に家のチェストへ預けてから。敵がいて眠れない夜に。クリーパーは対象外）"
     ),
 }
 

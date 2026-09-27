@@ -307,12 +307,14 @@ export function createTools (deps) {
       const home = state.home
       if (home && needsOutside(c, home)) {
         const { sheltering, day } = shelterOf(bot, home)
-        // 昼にドアの前で待つ敵とは戦ってよい（cleared と同じ）。夜は外に出ない
-        const confront = day && c.verb === 'attack' && c.hostile
+        // 昼にドアの前で待つ敵とは戦ってよい（cleared と同じ）。夜は、今の小目標が cleared（武器を
+        // 持って倒しに出ると決めた）のときだけ
+        const fighting = day || state.goal?.spec?.predicate === 'cleared'
+        const confront = fighting && c.verb === 'attack' && c.hostile
         if (sheltering && !confront) {
           refuse(day
             ? 'staying inside while hostile mobs wait near the door (attack them by day, or wait)'
-            : 'staying inside for the night: actions outside the house wait until morning')
+            : 'staying inside for the night: actions outside the house wait until morning (to fight the hostiles near the house with a weapon, choose the small goal cleared)')
         }
         if (confront) c.confront = true
       }

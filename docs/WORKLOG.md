@@ -7,6 +7,18 @@
 
 ## Completed Work
 
+### 上の格の道具を作る、夜も武器で倒しに出る（持ち物はチェストへ） (2026-09-27)
+
+**Commit**: `TBD`
+
+ユーザー: 「作れる上位の道具があるなら作る（石のつるはしが作れるのに木のつるはしをずっと使っている）。夜の行動の制約を緩めたい: 敵がいて眠れないなら、アイテムをチェストに預けて武器だけ持って倒しに行く等」。
+- ブリッジ `wear.mjs`: `TIERS`、`upgradesToTry`（持っているつるはし・斧・シャベル・剣より上の格、上から）、`KEEP_WHEN_FIGHTING`（武器・防具・盾・食べ物・松明）。`goals.mjs`: 今の持ち物で作れる一番上の格を `also` で出す
+- `goals.mjs` の `cleared`: 夜は剣か斧が要る（なければ断る）、体力 14 未満なら `blocked`、預ける物が 8 個以上で家のチェストがわかっていれば先に `stash`、それから攻撃。`through_night` の家の中で敵がそばにいれば「眠れない。武器があれば cleared も」と出す
+- `candidates.mjs` / `primitives.mjs`: `stash`（チェストに入るだけ）。`tools.mjs`: 夜も今の小目標が `cleared` なら外の敵と戦える
+- Python: `predicates_now` は夜も `cleared`、`GoalChooser.survival_options` は夜・武器あり・近くに敵で `cleared` を出す、`cleared` の説明
+- テスト: `test/upgrade_fight.test.mjs`、`test_play_use_cases`（夜も cleared）
+
+
 ### 「家の中に松明を置いて」と約束して何もしない (2026-09-27)
 
 **Commit**: `44b83c7`, `9f262b5`

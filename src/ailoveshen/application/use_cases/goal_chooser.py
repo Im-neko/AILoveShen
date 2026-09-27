@@ -81,9 +81,32 @@ def survival_options(obs: GameObservation) -> list[Option]:
                 "家が遠ければ、その場で夜を越す（近くのベッドか、持っているベッドで寝る）",
             )
         )
+    # 夜、家のそばに敵がいて眠れないとき: 武器があれば、倒しに出るのも選択肢（持ち物は先にチェストへ。
+    # ブリッジが体力と武器を確かめる。2026-09-27: 夜の行動が制約されすぎ）
+    if obs.has_home and obs.time_phase == "night" and _armed(obs) and _hostiles_near(obs):
+        out.append(
+            Option(
+                GoalSpec(GoalPredicate.CLEARED),
+                "敵が家のそばにいて眠れないので、持ち物をチェストに預け、武器を持って倒しに出る",
+            )
+        )
     if any("hunger" in n for n in obs.needs):
         out.append(Option(FOOD_WHEN_HUNGRY, "お腹が空いたので食べ物を集める"))
     return out
+
+
+def _armed(obs: GameObservation) -> bool:
+    return any(
+        name.endswith(("_sword", "_axe")) and n > 0
+        for name, n in (obs.state.get("inventory") or {}).items()
+    )
+
+
+def _hostiles_near(obs: GameObservation, radius: float = 16) -> bool:
+    return any(
+        m.get("hostile") and (m.get("distance_m") or 99) <= radius
+        for m in obs.state.get("mobs") or []
+    )
 
 
 class GoalChooser:

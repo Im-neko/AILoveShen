@@ -485,13 +485,13 @@ class TestAdvancePlay:
             "explored",
         ]
 
-        # 入口の掃除は昼の小目標。夜は湧き続ける
+        # 夜も入口の掃除を選べる（武器と体力はブリッジが確かめ、持ち物は先にチェストへ。2026-09-27）
         bridge.observe.return_value = _obs(
             goal=False, has_plan=True, house_complete=True, has_home=True, time_phase="night"
         )
         await use_case.execute(_session())
         schema = text_generator.generate_json.call_args.args[1]
-        assert "cleared" not in schema["properties"]["predicate"]["enum"]
+        assert "cleared" in schema["properties"]["predicate"]["enum"]
 
     @pytest.mark.asyncio
     async def test_goal_rejected_by_bridge_is_retried_with_reason(

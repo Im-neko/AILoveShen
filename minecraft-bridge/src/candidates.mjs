@@ -236,6 +236,9 @@ function fromLeaf (bot, state, world, leaf) {
       if (leaf.item === 'chest') return fromLeaf(bot, state, world, { kind: 'place_chest' })
       return placeStation(bot, state, leaf.item).filter((c) => c.id.endsWith('inside the house'))
     }
+    case 'stash':
+      // 夜に戦いに出る前に、持ち物を家のチェストへ（武器・防具・食べ物・松明は持ったまま）
+      return [{ id: `put your items in the home's chest before fighting (keep the weapon)`, verb: 'stash', target: 'chest', pos: leaf.pos, items: leaf.items, distance: dist(bot, leaf.pos) }]
     case 'place_at':
       // 好きな物を好きな場所に置く（placed(item, where, count): placing.mjs）
       return [{ id: `place ${leaf.item} ${describeWhere(leaf.where, state)} at ${fmt(leaf.pos)}`, verb: 'place_at', target: leaf.item, item: leaf.item, pos: leaf.pos, distance: dist(bot, leaf.pos) }]

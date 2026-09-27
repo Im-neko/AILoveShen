@@ -26,7 +26,7 @@ import { cooking } from './cooking.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
-import { toReplace } from './wear.mjs'
+import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
 import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
@@ -187,9 +187,10 @@ function validGoal (spec, bot, state, knowledge) {
     }
     case 'cleared': {
       needHome()
-      // 暗いうちは次々に湧く: 夜は中で明けるのを待つ（through_night）
+      // 夜も、武器があれば出て倒してよい（敵がいて眠れないとき。2026-09-27: 夜の行動が制約されすぎ）。
+      // 暗いうちは次々に湧くので、持ち物は先に家のチェストに預ける（evaluate の stash）
       const phase = dayPhase(bot.time.timeOfDay)
-      if (phase !== 'day') throw new Error(`it is ${phase}: hostile mobs keep spawning in the dark; stay inside until morning`)
+      if (phase !== 'day' && !armed(bot)) throw new Error(`it is ${phase}: without a sword or an axe, stay inside until morning (hostile mobs keep spawning in the dark)`)
       return { spec: { predicate } }
     }
     default:
@@ -356,6 +357,12 @@ export function evaluate (bot, state, knowledge, world) {
       const sleepy = tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping
       if (inside) {
         if (hasBed(bot, state.home) && sleepy) out.leaves.push({ kind: 'sleep' })
+        // 敵がそばにいると眠れない: 武器があれば、出て倒す（cleared。持ち物は先にチェストへ）のも選べる
+        const near = dangerOutside(bot, state.home)
+        if (sleepy && near.length) {
+          out.lines.push(`hostiles near the house (${near.map(({ e }) => e.name).join(', ')}): you cannot sleep while they are close` +
+            (armed(bot) ? '; with your weapon you could go out and fight them (cleared: items go into the chest first)' : ''))
+        }
         break
       }
       // 家に帰るのは選択肢の 1 つ（2026-09-26: 絶対の決まりではない）。近くのベッド（村など）で寝る、
@@ -500,10 +507,24 @@ export function evaluate (bot, state, knowledge, world) {
       out.remaining = danger.length
       out.lines.push(`hostiles near the door: ${danger.length ? danger.map(({ e }) => e.name).join(', ') : 'none'}`)
       if (out.met) break
-      if (phase !== 'day') out.blocked.push(`it is ${phase}: stay inside until morning`)
       // そこでクリーパーと近接で戦うと入口を吹き飛ばされる（M1 で起きた）
-      else if (danger.some(({ e }) => EXPLODES.has(e.name))) out.blocked.push('a creeper is near the door: it explodes when fought in melee; wait for it to leave')
-      else out.leaves.push({ kind: 'clear', mobs: danger.map(({ e }) => e) })
+      if (danger.some(({ e }) => EXPLODES.has(e.name))) {
+        out.blocked.push('a creeper is near the door: it explodes when fought in melee; wait for it to leave')
+        break
+      }
+      if (phase !== 'day') {
+        // 夜: 武器を持ち、体力が十分なときだけ。持ち物は先に家のチェストへ（死んでも失わない）
+        if (!armed(bot)) { out.blocked.push(`it is ${phase}: no sword or axe; stay inside until morning`); break }
+        if (bot.health < NIGHT_FIGHT_HEALTH) { out.blocked.push(`it is ${phase}: health ${bot.health}; heal (eat, wait) before going out to fight`); break }
+        const stash = stashLeaf(bot, state)
+        if (stash) {
+          out.leaves.push(stash)
+          out.lines.push(`before fighting at night: put ${stash.items.length} kinds of items in the home's chest (keep the weapon, armor, food, torches)`)
+          out.remaining += 1
+          break
+        }
+      }
+      out.leaves.push({ kind: 'clear', mobs: danger.map(({ e }) => e) })
       break
     }
   }
@@ -536,6 +557,18 @@ export function evaluate (bot, state, knowledge, world) {
       }
     }
   }
+  // 上の格の道具が今ある材料で作れるなら作る（木のつるはし → 石のつるはし）。種類ごとに一番上だけ
+  if (!out.met) {
+    for (const kind of new Set(upgradesToTry(bot).map((u) => u.kind))) {
+      for (const u of upgradesToTry(bot).filter((u) => u.kind === kind)) {
+        const r = solve(knowledge, world, [{ spec: u.item, count: 1 }])
+        if (!r.leaves.length || !r.leaves.every((l) => l.kind === 'craft' || l.kind === 'place')) continue
+        out.leaves.push(...r.leaves.map((l) => ({ ...l, also: `a better ${kind} (${u.item} instead of the ${u.from} one)` })))
+        out.lines.push(`a ${u.item} can be crafted from what you carry (better than the ${u.from} ${kind})`)
+        break
+      }
+    }
+  }
   // ついでに取れるもの（ほかの中目標の物）: 昼に、そばにあれば。今の目標の残りには数えない
   if (!out.met && phase === 'day' && goal.also?.length) {
     const inv = inventoryCounts(bot)
@@ -549,6 +582,20 @@ export function evaluate (bot, state, knowledge, world) {
     }
   }
   return out
+}
+
+const NIGHT_FIGHT_HEALTH = 14
+const STASH_MIN_ITEMS = 8
+
+export const armed = (bot) => (bot.inventory?.items?.() ?? []).some((i) => /_(sword|axe)$/.test(i.name))
+
+// 夜に戦いに出る前に預ける物（家のチェストがわかっていて、預ける物が STASH_MIN_ITEMS 個以上）
+function stashLeaf (bot, state) {
+  const [chest] = homeChests(state.memory ?? {}, state.home)
+  if (!chest) return null
+  const items = Object.entries(inventoryCounts(bot)).filter(([name, n]) => n > 0 && !KEEP_WHEN_FIGHTING.test(name))
+  if (items.reduce((s, [, n]) => s + n, 0) < STASH_MIN_ITEMS) return null
+  return { kind: 'stash', pos: new Vec3(chest.x, chest.y, chest.z), items: items.map(([item, count]) => ({ item, count })) }
 }
 
 // 家のものでない、近くに置いてあるベッド（村など）の足側
