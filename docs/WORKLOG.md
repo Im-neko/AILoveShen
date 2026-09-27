@@ -9,7 +9,7 @@
 
 ### 画像以外はすべてローカルの LLM (2026-09-27)
 
-**Commit**: (pending)
+**Commit**: `bec2d05`
 
 ユーザー:「ローカルでも 130k までコンテキストを用意してあるので、画像以外は全てローカルに」。設計書 36 §8。
 - `config/default.yaml`: `llm.routes` は `default: local` だけ、`fallback: none`、`context_tokens: 130000`（サーバーは 262144）
