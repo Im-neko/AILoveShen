@@ -89,3 +89,10 @@
 - ソルバー（`gatherOption`）: 作物が見える範囲になく、家の畑にあるとき、熟したものがあれば「家の畑へ行く」だけ（`go to the home farm (N ripe wheat)`、`goto_memory`）。育ち途中なら遠出も探索も出さず、`growing` の葉で理由（植わっている数、育ち具合、家の近くにいる間だけ育つ、その間は家の近くで別の手順を、骨粉を持っていれば使う）を `blocked` と `impossible`（手順の今の状態の「今は手に入らない」）に出す。家の畑にその作物がなければ今までどおり
 - `/observe` の `farm` に育ち具合（`ages`、`mature`、記憶なら `remembered`）。「家のまわりの畑: wheat 9 マス（熟した 0、育ち具合 1〜5/7）」
 - 残ること: 道具モードの Gemini が自分で `goto` して遠くへ行くことは止めていない（理由は見えている）
+
+## 追記: 育つのを待つ間に畑を広げる（2026-09-27）
+
+ユーザー:「畑の拡張も選択肢に入れるようにしたい」。家の畑が育ち途中のとき、ソルバーの `growing` の葉は理由を出すだけで候補がなく、その間にできることが見えなかった。
+- `solver.mjs` の `growing` の葉に `expand`: その作物の種を持っていれば `sow`、クワを持っていれば `till`（どちらも `also: expand the home farm while it grows …`）。`collect` は `growing` を `blocked` / `impossible` に出したうえで、`expand` の葉を候補に足す（`also` 付きなので、Python の `_side_work` は停滞に数えない）。場所は今までどおり `sowSpot` / `tillSpot`（家から 6〜24 m、家や建物の上と隣は除く）
+- 理由の文に「畑を広げる（そばを耕して種をまく。手順 farmed(<作物>, <今の数 + 8>) で大きくなる）」を足した。Gemini は手順で `farmed` の数を上げて広げられる
+- テスト: `crops.test.mjs`（種とクワを持っていれば sow / till が also 付きで出る、blocked に farmed(wheat, 17)）

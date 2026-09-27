@@ -538,6 +538,38 @@ def test_the_landmarks_around_are_shown_with_whose_they_are():
     assert "- 近くにあるもの（24 m 以内）: なし" in _goal_prompt()
 
 
+def test_what_is_right_in_front_is_shown_every_time():
+    """目の前の原木や作物を無視して遠くへ探しに行かないように（2026-09-27）。"""
+    obs = _obs()
+    obs.state["around"] = {
+        "radius": 8,
+        "dy": 2,
+        "blocks": [
+            {
+                "name": "wheat",
+                "count": 6,
+                "ripe": 2,
+                "gives": ["wheat", "wheat_seeds"],
+                "nearest": {"x": 1, "y": 70, "z": 2, "distance_m": 2.1, "direction": "S", "dy": 0},
+            },
+            {
+                "name": "oak_log",
+                "count": 4,
+                "nearest": {"x": 5, "y": 71, "z": 0, "distance_m": 4.6, "direction": "E", "dy": 1},
+            },
+        ],
+        "items": [{"item": "oak_sapling", "count": 3, "distance_m": 2.0, "direction": "W"}],
+    }
+    prompt = _goal_prompt(obs)
+    assert (
+        "- 目の前のブロック（半径 8m、足元の高さ ±2、見えているもの）: "
+        "wheat 6（熟した 2、→ wheat・wheat_seeds、一番近いもの 1,70,2 南 2.1m、高さ +0）、"
+        "oak_log 4（一番近いもの 5,71,0 東 4.6m、高さ +1）" in prompt
+    )
+    assert "- 目の前に落ちている物: oak_sapling 3（西 2.0m）" in prompt
+    assert "目の前のブロック" not in _goal_prompt()
+
+
 class TestPromptLength:
     """代表的な状態のプロンプトの長さ。増えたら気づけるように（26 §4）。"""
 

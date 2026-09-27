@@ -42,6 +42,7 @@
 
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
 import { plantingStatus, cropStatus, cropOf, farmSummary } from './farming.mjs'
+import { aroundMe } from './around.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops } from './move.mjs'
 import http from 'node:http'
@@ -151,6 +152,8 @@ function observation () {
   extra.deaths = state.deaths
   // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
   extra.nearby = landmarks(bot, state)
+  // 目の前にあるもの（半径 8、足元の高さ ±2 の、見えているブロックと落ちているアイテム）
+  extra.around = aroundMe(bot, (name) => knowledge.dropsOf(name))
   extra.underground = isUnderground(bot)
   // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
   const broken = recentBreaks(bot, state)

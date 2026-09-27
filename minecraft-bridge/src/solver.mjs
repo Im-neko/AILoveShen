@@ -16,6 +16,7 @@
 //   掘り下げの深さ。許す深さにあれば、探すより階段で掘り下げるほうが安い（17_dig_down.md）
 
 import { FUELS } from './knowledge.mjs'
+import { CROPS, cropByBlock } from './farming.mjs'
 
 const MAX_DEPTH = 10 // 何もない状態から鉄の剣まで: インゴット、鉄の原石、石のツルハシ、丸石、木のツルハシ、板材、原木
 const EXPLORE_COST = 100 // 見えていない入手元はまず探さないといけない
@@ -235,12 +236,22 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     cost += RECALL_COST
   } else if (farm) {
     const { planted, ages, mature } = farm.f
+    const crop = cropByBlock(farm.s)
+    const seed = CROPS[crop].seed
     const meal = (world.inventory?.bone_meal ?? 0) > 0 ? `; bone meal grows it at once (use_item bone_meal on the ${farm.s} at ${farm.f.pos.x},${farm.f.pos.y},${farm.f.pos.z})` : ''
+    // 育つ間に畑を広げる（次の収穫が増える）: 種があればまく、クワがあれば耕す。ついでの作業（also）
+    const also = `expand the home farm while it grows (more ${farm.s} next harvest)`
+    const expand = [
+      ...((world.inventory?.[seed] ?? 0) > 0 ? [{ kind: 'sow', item: seed, also }] : []),
+      ...(Object.entries(world.inventory ?? {}).some(([n, c]) => n.endsWith('_hoe') && c > 0) ? [{ kind: 'till', also }] : [])
+    ]
     leaf = {
       kind: 'growing',
       item,
+      expand,
       reason: `the home farm's ${farm.s} for ${item} is still growing (${planted} planted, none ripe, age ${ages[0]}-${ages[1]} of ${mature}); ` +
-        `it grows only while you stay near the home: do other steps near the home meanwhile and harvest it when ripe, instead of going far for it${meal}`
+        `it grows only while you stay near the home: do other steps near the home meanwhile and harvest it when ripe, instead of going far for it; ` +
+        `or expand the farm (till and sow ${seed} beside it; a step farmed(${crop}, ${planted + 8}) makes it bigger)${meal}`
     }
     cost += EXPLORE_COST * 2
   } else if (digDown) {
@@ -279,6 +290,7 @@ function collect (node, leaves, blocked, impossible) {
   if (leaf.kind === 'none' || leaf.kind === 'growing') {
     blocked.push(leaf.reason)
     impossible.push(leaf.reason)
+    if (leaf.expand) leaves.push(...leaf.expand)
   } else if (leaf.kind === 'explore') { blocked.push(leaf.reason); leaves.push(leaf) } else if (leaf.kind === 'craft') {
     if (!leaf.ready) return
     if (leaf.unlocked) leaves.push(leaf)

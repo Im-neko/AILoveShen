@@ -75,6 +75,11 @@ test('家の畑の小麦が育ち途中なら遠出しない。熟していれ�
   assert.deepEqual(growing.leaves, [])
   assert.match(growing.blocked.join('\n'), /home farm's wheat for wheat is still growing \(9 planted, none ripe, age 1-5 of 7\).*grows only while you stay near the home/)
 
+  // 育つ間に畑を広げる: 種があればまく、クワがあれば耕す（ついでの作業: 停滞に数えない）
+  const tools = solve(k, { ...world(farm({ ripe: 0 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
+  assert.deepEqual(tools.leaves.map((l) => [l.kind, l.item, !!l.also]), [['sow', 'wheat_seeds', true], ['till', undefined, true]])
+  assert.match(tools.blocked.join('\n'), /expand the farm \(till and sow wheat_seeds beside it; a step farmed\(wheat, 17\) makes it bigger\)/)
+
   const ripe = solve(k, world(farm({ ripe: 3 })), need)
   assert.deepEqual(ripe.leaves.map((l) => [l.kind, l.farm?.ripe]), [['explore', 3]])
 

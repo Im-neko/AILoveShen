@@ -480,6 +480,36 @@ def _format_nearby(nearby: list) -> str:
     return "、".join(one(n) for n in nearby) or "なし"
 
 
+def _format_around(around: dict) -> list[str]:
+    """
+    目の前にあるもの（ブリッジの around: 半径 8m、足元の高さ ±2 の、見えているブロックと
+    落ちているアイテム）。目の前の原木や作物を無視して遠くへ探しに行かないように、毎回見せる。
+    """
+    if not around:
+        return []
+
+    def where(p: dict) -> str:
+        direction = DIRECTION_NAMES.get(p.get("direction"), p.get("direction", ""))
+        dy = p.get("dy", 0)
+        return f"{p['x']},{p['y']},{p['z']} {direction} {p['distance_m']}m、高さ {dy:+d}"
+
+    def block(b: dict) -> str:
+        ripe = f"熟した {b['ripe']}、" if "ripe" in b else ""
+        gives = f"→ {'・'.join(b['gives'])}、" if b.get("gives") else ""
+        return f"{b['name']} {b['count']}（{ripe}{gives}一番近いもの {where(b['nearest'])}）"
+
+    def item(i: dict) -> str:
+        direction = DIRECTION_NAMES.get(i.get("direction"), i.get("direction", ""))
+        return f"{i['item']} {i['count']}（{direction} {i['distance_m']}m）"
+
+    head = f"半径 {around.get('radius')}m、足元の高さ ±{around.get('dy')}"
+    return [
+        f"- 目の前のブロック（{head}、見えているもの）: "
+        + ("、".join(block(b) for b in around.get("blocks", [])) or "なし"),
+        f"- 目の前に落ちている物: {'、'.join(item(i) for i in around.get('items', [])) or 'なし'}",
+    ]
+
+
 def _format_home(obs: GameObservation) -> str:
     if not obs.has_home:
         return "まだない（夜までに建てる必要がある）"
@@ -529,6 +559,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 時間帯: {format_time(s.get('time', {}))}",
         f"- 家: {_format_home(obs)}",
         f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
+        *_format_around(s.get("around") or {}),
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
