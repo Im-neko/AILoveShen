@@ -7,6 +7,17 @@
 
 ## Completed Work
 
+### 整地を条件にする（leveled） (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー:「整地も条件にできるようにしてください」（範囲は場所＋半径、高さは中心の地面）。設計書 `docs/design/41_leveling.md`。
+- 原因: 条件の語彙に整地がなく、中目標にできなかった（返事は「もともと平らだから」と作り話の理由で断っていた）
+- ブリッジ `leveling.mjs`（新規: 列ごとの判定、TERRAIN を共通に）、`goals.mjs`（述語、ツルハシ・土が要るとき）、`candidates.mjs`（level の候補）、`primitives.mjs`（`level`: 1 回の行動で届く列を次々にそろえる）、`tools.mjs`（道具 `level`）、`skills.mjs`（expects）
+- Python: `GoalPredicate.LEVELED`、語彙とスキーマ、説明、できること、道具の一覧、技の expects、目標ボード、返事の例と「本当の理由を言う」
+- テスト: `test/leveling.test.mjs`（7 件）、`test_goal_vocabulary.py`。実機（家から 300m 以上離れたことを確かめてから）: 8 掘って 6 埋めた、石はツルハシがないので飛ばした
+- 別件: 前の実機試験でスポーン近くに開けた穴は、ユーザーの了承を得て y63 の草地に埋め戻した
+
 ### 雑談の幅と、自分について話したことを覚える (2026-09-27)
 
 **Commit**: `2b5d5e8`

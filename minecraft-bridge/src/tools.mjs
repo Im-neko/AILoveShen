@@ -17,11 +17,12 @@ import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
+import { levelTarget, levelStatus, fillItem, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 
 const FURNITURE = new Set(['crafting_table', 'furnace', 'chest'])
 const { Vec3 } = vec3Pkg
 
-const MAX_TOOL_DISTANCE = 256 // goto は 1 回 48m ずつ歩く
+const MAX_TOOL_DISTANCE = 256 // goto は着くまで区間ごとに歩く
 const MAX_BLOCK_DISTANCE = 32 // 掘る・置く対象
 const MAX_ENTITY_DISTANCE = 24
 const MAX_CRAFT_TIMES = 16
@@ -42,7 +43,7 @@ const MAX_HOLD_S = 3
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
   'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait',
-  'use_item', 'ride_boat']
+  'use_item', 'ride_boat', 'level']
 export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get']
 
 class Refused extends Error {}
@@ -267,6 +268,23 @@ export function createTools (deps) {
       within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
       if (bot.blockAt(pos)?.name !== 'farmland') refuse(`${fmt(pos)} is not farmland (give the farmland block itself)`)
       return { c: { verb: 'sow', target: item, item, pos } }
+    },
+    // 整地（設計書 41）: where（home か x,y,z: そこに立つ足の高さ）のまわり半径 radius を、近い列から
+    // 次々にそろえる（1 回の呼び出しで届くところを全部）
+    level (args) {
+      const where = String(args.where ?? 'home')
+      try {
+        levelTarget(state, where)
+      } catch (e) {
+        refuse(e.message)
+      }
+      const radius = Number(args.radius ?? 8)
+      if (!Number.isInteger(radius) || radius < MIN_LEVEL || radius > MAX_LEVEL) refuse(`radius must be ${MIN_LEVEL}-${MAX_LEVEL}`)
+      const s = levelStatus(bot, state, where, radius)
+      if (!s.off) refuse(s.unloaded ? 'part of the ground is out of view: go closer first' : 'the ground there is already level')
+      if (!s.cuts.length && !fillItem(bot)) refuse(`only holes are left (${s.fills.length} blocks to fill) and you have no dirt: dig some first`)
+      within(bot, s.center, MAX_TOOL_DISTANCE, fmt(s.center))
+      return { c: { verb: 'level', target: 'ground', where, radius, pos: s.cuts[0] ?? s.fills[0] } }
     },
     // 手に持って使う（右クリック。設計書 37）: entity のモブに、x,y,z のブロックに、どちらもなければ向いている方へ
     use_item (args) {

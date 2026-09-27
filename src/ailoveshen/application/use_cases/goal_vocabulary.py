@@ -29,7 +29,8 @@ from ailoveshen.domain.value_objects import (
 )
 
 MAX_GOAL_COUNT = 64
-MIN_EXPLORE_DISTANCE = 8
+MIN_EXPLORE_DISTANCE = 8  # explored の下限（lit はブリッジが 8〜32、leveled は 3〜16 を確かめる）
+MIN_DISTANCE = 3
 MAX_EXPLORE_DISTANCE = 128
 MAX_DIG_DEPTH = 384  # minecraft-bridge/src/goals.mjs と同じ（任意の上限。省けば上限なし）
 MAX_CONDITIONS = 3
@@ -170,9 +171,10 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
         "count": {"type": "integer", "minimum": 1, "maximum": MAX_GOAL_COUNT},
         "distance": {
             "type": "integer",
-            "minimum": MIN_EXPLORE_DISTANCE,
+            "minimum": MIN_DISTANCE,
             "maximum": MAX_EXPLORE_DISTANCE,
-            "description": "explored: blocks to go; lit: the radius around the home (8-32)",
+            "description": "explored: blocks to go (8-128); lit: the radius around the home "
+            "(8-32); leveled: the radius to level (3-16)",
         },
         "name": {
             "type": "string",
@@ -180,9 +182,11 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
         },
         "where": {
             "type": "string",
-            "description": "placed: where to place the item: home (inside the home's room), near_home "
-            "(around the home, 3-12 m), build:<name> (at a named build), or x,y,z (within 2 m of a "
-            "spot you know, e.g. from find_blocks). Default home",
+            "description": "placed: where to place the item: home (inside the home's room), "
+            "near_home (around the home, 3-12 m), build:<name> (at a named build), or x,y,z "
+            "(within 2 m of a spot you know, e.g. from find_blocks). Default home. leveled: home "
+            "(the ground around the home at its floor) or x,y,z (the ground around it; y is the "
+            "height you stand at there, the ground is y-1)",
         },
     }
 
@@ -489,10 +493,10 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             if predicate == GoalPredicate.PLACED
             else None,
             where=str(data.get("where") or "home").strip()
-            if predicate == GoalPredicate.PLACED
+            if predicate in (GoalPredicate.PLACED, GoalPredicate.LEVELED)
             else None,
             distance=int(data["distance"])
-            if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT)
+            if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
             else None,
             dig_depth=int(data["dig_depth"]) if data.get("dig_depth") is not None else None,
             name=str(data["name"]).strip().lower() or None
@@ -659,6 +663,8 @@ def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicat
         out.append(GoalPredicate.LIT)
         # 植林と畑（設計書 33）: 家のまわり
         out += [GoalPredicate.PLANTED, GoalPredicate.FARMED]
+        # 整地（設計書 41）: 家のまわりか、x,y,z のまわり
+        out.append(GoalPredicate.LEVELED)
     if obs.has_home and any(
         c.predicate == GoalPredicate.SURVEYED for g in plan.pending for c in g.conditions
     ):

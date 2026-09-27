@@ -144,3 +144,20 @@ def test_placed_takes_any_item_a_place_and_a_count():
     assert spec.describe() == "placed(lantern, 4, near_home)"
     torch = parse_spec({"predicate": "placed", "item": "torch"})
     assert (torch.where, torch.count) == ("home", None)
+
+
+def test_leveled_is_a_condition_around_home_or_a_spot():
+    """整地（設計書 41）: leveled(where, distance)。where を省けば家のまわり。中目標の条件。"""
+    from ailoveshen.domain.value_objects import PLANNABLE_CONDITIONS
+    from ailoveshen.presentation.web.goal_board import goal_label
+
+    spec = parse_spec({"predicate": "leveled", "distance": 8})
+    assert (spec.where, spec.distance) == ("home", 8)
+    assert spec.describe() == "leveled(home, 8)"
+    spot = parse_spec({"predicate": "leveled", "where": "10,64,-3", "distance": 5})
+    assert spot.where == "10,64,-3"
+    assert GoalPredicate.LEVELED in PLANNABLE_CONDITIONS
+    assert GoalPredicate.LEVELED in predicates_now(_obs(), MidGoalPlan(mission=Mission("m")))
+    assert goal_label(spec) == "家のまわり 8m を整地する"
+    with pytest.raises(ValueError):
+        GoalSpec(GoalPredicate.LEVELED, where="home")

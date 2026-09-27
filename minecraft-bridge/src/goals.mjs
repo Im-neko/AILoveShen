@@ -15,6 +15,7 @@
 //   surveyed(count)          街の候補地を `count` か所調べた（docs/design/16_town_site.md）
 //   planted(item, count)     自分が植えた苗木（sapling か種類）が `count` 本ある（育った木も数える。設計書 33）
 //   farmed(item, count)      家のまわりの耕地に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている
+//   leveled(where, distance) where（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている（設計書 41）
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
@@ -22,6 +23,7 @@ import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground } from './ob
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
+import { levelStatus, levelTarget, describeLevel, fillItem, toolsMissing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking } from './cooking.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
@@ -44,10 +46,10 @@ const DAY_TICKS = 24000
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled']
 // ワールドの状態だけから判定するので、中目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled']
 const MAX_PLANTED = 32
 const DEPOSIT_BATCH = 32 // これだけ持ったらチェストに入れに行く
 const NEAR_HOME = 12
@@ -169,6 +171,14 @@ function validGoal (spec, bot, state, knowledge) {
       const distance = Number(spec.distance)
       if (!Number.isInteger(distance) || distance < MIN_LIT || distance > MAX_LIT) throw new Error(`distance (the radius) must be ${MIN_LIT}-${MAX_LIT}`)
       return { spec: { predicate, distance } }
+    }
+    case 'leveled': {
+      const where = String(spec.where ?? 'home')
+      if (where === 'home') needHome()
+      levelTarget(state, where)
+      const distance = Number(spec.distance)
+      if (!Number.isInteger(distance) || distance < MIN_LEVEL || distance > MAX_LEVEL) throw new Error(`distance (the radius) must be ${MIN_LEVEL}-${MAX_LEVEL}`)
+      return { spec: { predicate, where, distance } }
     }
     case 'planted': {
       needHome()
@@ -465,6 +475,31 @@ export function evaluate (bot, state, knowledge, world) {
       const torches = inventoryCounts(bot).torch ?? 0
       if (torches) out.leaves.push({ kind: 'light', pos: dark[0] })
       else addSolved([{ spec: 'torch', count: 4 }])
+      break
+    }
+    case 'leveled': {
+      // 整地（設計書 41）: そろっていない列の数が残り。出っ張りを掘る（土が出る）、穴を埋める。
+      // 1 回の行動（level）で届く範囲を次々にそろえる（1 マスずつでは歩数の予算に収まらない）
+      const { where, distance } = goal.spec
+      const s = levelStatus(bot, state, where, distance)
+      out.met = s.off === 0 && s.unloaded === 0
+      out.remaining = s.off + s.unloaded
+      out.lines.push(describeLevel(s, distance))
+      if (s.unloaded) {
+        out.blocked.push('part of the ground is out of view; go closer to it')
+        if (where === 'home') out.leaves.push({ kind: 'go_home' })
+      }
+      if (out.met || !s.off) break
+      const filler = fillItem(bot)
+      // 石などは道具がないと掘れない（掘っても何も落ちない）: 足りない道具を作る
+      const missing = toolsMissing(bot, s.cuts)
+      const diggable = s.cuts.length - Object.values(missing).reduce((a, b) => a + b, 0)
+      for (const [tool, n] of Object.entries(missing)) {
+        out.lines.push(`${n} blocks to dig need a ${tool} (or better)`)
+        addSolved([{ spec: tool, count: 1 }])
+      }
+      if (diggable || (filler && s.fills.length)) out.leaves.push({ kind: 'level', where, distance, pos: (s.cuts[0] ?? s.fills[0]), off: s.off })
+      if (!diggable && s.fills.length && !filler) addSolved([{ spec: 'dirt', count: Math.min(s.fills.length, 64) }])
       break
     }
     case 'planted': {

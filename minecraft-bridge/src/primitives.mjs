@@ -20,6 +20,7 @@ import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './mo
 import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting } from './farming.mjs'
+import { levelStatus, fillItem, TERRAIN } from './leveling.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -52,8 +53,6 @@ const TIME_UPDATE_TIMEOUT_MS = 3000 // サーバーは毎秒時刻を送る
 const WEAPONS = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword',
   'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe']
 export const isLeaves = (name) => !!name?.endsWith('_leaves')
-// 歩きながら掘ってよい自然の地形。置いた物（丸石、板材、チェストなど）は入れない
-const TERRAIN = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|mycelium|mud|clay|sand|red_sand|gravel|snow|snow_block|stone|granite|diorite|andesite|deepslate|tuff|calcite|dripstone_block|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|netherrack|moss_block|\w+_ore)$/
 
 // 注意: 経路移動の取り消しには setGoal(null) を使う。pathfinder.stop() は次の移動ティックで
 // 消えるフラグを立てるだけで、止まっているときに呼ぶと次の goto() がすぐ失敗する。
@@ -87,6 +86,7 @@ export function configureMovements (bot, state) {
   // プレイヤーのように、歩きながら葉と自然の地形を掘り、土を積んで登る。掘れない・積めないと、
   // 下りられても戻れない穴ができる（town4c: 豚を追って洞窟に下り、出られなくなった）。
   // 家、前の家、建てている家は壊さないし、そこに足場も置かない。
+  // 自然の地形（leveling.mjs の TERRAIN）。置いた物（丸石、板材、チェストなど）は入れない
   m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
   m.exclusionAreasPlace.push((block) => block.position && !inHouse(state, block.position, 1) ? 0 : 100)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
@@ -532,6 +532,10 @@ function stairDanger (bot, state, { cells, floor }) {
   if (!below || below.boundingBox !== 'block') return 'a cave or a drop below the next step'
   return ''
 }
+
+// 整地: 同じ列の掘るセルのいちばん上、埋めるセルのいちばん下
+const topOf = (cells, p) => cells.filter((q) => q.x === p.x && q.z === p.z).reduce((a, b) => (b.y > a.y ? b : a))
+const bottomOf = (cells, p) => cells.filter((q) => q.x === p.x && q.z === p.z).reduce((a, b) => (b.y < a.y ? b : a))
 
 // 実行関数: (bot, state, candidate, signal) -> 結果の文字列。対象は候補が持っている
 export const PRIMITIVES = {
@@ -1008,6 +1012,64 @@ export const PRIMITIVES = {
     const placed = bot.blockAt(c.pos)
     if (!placed || placed.boundingBox === 'empty') throw new Error(`the ${c.item} was not placed`)
     return `placed ${placed.name} at ${c.pos.x},${c.pos.y},${c.pos.z}`
+  },
+  // 整地（設計書 41）: c.where のまわり半径 c.radius を、近い列から次々にそろえる。出っ張りを先に
+  // （土が出る）、埋めるのは持っている土で。行けない・掘れない列は飛ばす。時間では止めない
+  // （夕方・空腹・考え直しでは runner が止める）。そろえた列がなければ失敗
+  async level (bot, state, c, signal) {
+    const skipped = new Map()
+    const tries = new Map() // 同じセルを何度も（掘ったのに残る、置いたのに空く）: 3 回で飛ばす
+    let cut = 0
+    let filled = 0
+    let since = 0 // 落とし物を拾ってからの掘った数
+    for (;;) {
+      signal.throwIfAborted()
+      const s = levelStatus(bot, state, c.where, c.radius)
+      const me = bot.entity.position
+      const near = (p) => p.distanceTo(me)
+      const open = (p) => !skipped.has(`${p.x},${p.z}`)
+      const filler = fillItem(bot)
+      // 列ごとに上から掘る・下から埋める: 近い列のいちばん上 / いちばん下
+      const cuts = s.cuts.filter(open).sort((a, b) => near(a) - near(b) || b.y - a.y)
+      const fills = filler ? s.fills.filter(open).sort((a, b) => near(a) - near(b) || a.y - b.y) : []
+      const next = cuts[0] ? { p: topOf(cuts, cuts[0]), cut: true } : fills[0] ? { p: bottomOf(fills, fills[0]), cut: false } : null
+      if (!next) {
+        if (since) await collectNearbyDrops(bot, state, signal)
+        const left = s.off ? `; ${s.off} columns still off${skipped.size ? ` (could not reach or work ${skipped.size}: ${[...new Set(skipped.values())].slice(0, 2).join('; ')})` : ''}${!filler && s.fills.length ? ` (no dirt to fill ${s.fills.length} blocks)` : ''}` : ''
+        if (!cut && !filled) throw new Error(`could not level any of the ground${left}`)
+        return `leveled the ground: dug ${cut} blocks, filled ${filled}${left}`
+      }
+      const { p } = next
+      const k = `${p.x},${p.y},${p.z}`
+      tries.set(k, (tries.get(k) ?? 0) + 1)
+      bot.actionPhase = `${next.cut ? 'digging' : 'filling'} ${k} to level the ground`
+      try {
+        if (tries.get(k) > 3) throw new Error('tried 3 times and it did not change')
+        if (next.cut) {
+          const block = bot.blockAt(p)
+          if (!TERRAIN.test(block?.name ?? '')) throw new Error(`${block?.name} is not natural ground`)
+          if (!withinReach(bot, p)) await goto(bot, new goals.GoalLookAtBlock(p, bot.world, { reach: REACH }), signal)
+          for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
+          await equipToolFor(bot, state, block)
+          await bot.dig(bot.blockAt(p), true)
+          cut++
+          if (++since >= 8) { await collectNearbyDrops(bot, state, signal); since = 0 }
+        } else {
+          if (!withinReach(bot, p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH }), signal)
+          const below = bot.blockAt(p.offset(0, -1, 0))
+          if (below?.boundingBox !== 'block') throw new Error(`nothing to place on below ${p.x},${p.y},${p.z}`)
+          if (bot.entity.position.floored().equals(p)) throw new Error('standing in the hole')
+          await bot.equip(fillItem(bot), 'hand')
+          await bot.placeBlock(below, new Vec3(0, 1, 0))
+          filled++
+        }
+      } catch (e) {
+        if (signal.aborted) throw e
+        skipped.set(`${p.x},${p.z}`, `${p.x},${p.z}: ${e.message.slice(0, 80)}`)
+      } finally {
+        bot.actionPhase = ''
+      }
+    }
   },
   // 植林と畑（設計書 33）。c.pos: 苗木を置く空いたセル / 耕す土 / 種をまく耕地
   async plant (bot, state, c, signal) {

@@ -182,6 +182,17 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"x": _int("行き先の x"), "z": _int("行き先の z"), "y": _int("行き先の y（省略可）")},
         ["x", "z"],
     ),
+    "level": (
+        "整地する: where のまわり半径 radius の地面を 1 つの高さにそろえる。出っ張った自然の"
+        "土や石を掘り、穴を土で埋める（出っ張りを先に掘るので土が出る）。1 回の呼び出しで、届く"
+        "所を近い順に次々にそろえる。家・建物・木・畑・水・置いた物は触らない。完了条件は "
+        "leveled(where, radius)",
+        {
+            "where": _str("home（家の床の高さ）か x,y,z（そこに立つ高さ。地面は y-1）。省略: home"),
+            "radius": _int("半径 3〜16（省略: 8）"),
+        },
+        [],
+    ),
 }
 
 # 技（docs/design/22_skills.md）。行動の道具と同じく intent と見張りを付け、1 ステップになる

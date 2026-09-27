@@ -373,6 +373,8 @@ class GoalPredicate(str, Enum):
     - SURVEYED: 街の候補地を `count` か所調べた（家を中心に、ブリッジが地形を数字にする）
     - PLANTED: 自分が植えた苗木（item: sapling か種類）が `count` 本ある（育った木も数える）
     - FARMED: 家のまわりの耕地に作物（item: wheat など）が `count` マス植わっている
+    - LEVELED: `where`（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている
+      （整地）
     """
 
     HAVE = "have"
@@ -384,6 +386,7 @@ class GoalPredicate(str, Enum):
     CLEARED = "cleared"
     STORED = "stored"
     LIT = "lit"
+    LEVELED = "leveled"
     SURVEYED = "surveyed"
     PLANTED = "planted"
     FARMED = "farmed"
@@ -430,9 +433,10 @@ class GoalSpec:
             raise ValueError(f"surveyed needs a positive count, got {self.count}")
         if self.predicate == GoalPredicate.PLACED and not (self.item and self.where):
             raise ValueError("placed needs an item and where")
-        if self.predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT) and (
-            self.distance is None or self.distance < 1
-        ):
+        if self.predicate == GoalPredicate.LEVELED and not self.where:
+            raise ValueError("leveled needs where (home or x,y,z)")
+        radius = (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
+        if self.predicate in radius and (self.distance is None or self.distance < 1):
             raise ValueError(
                 f"{self.predicate.value} needs a positive distance, got {self.distance}"
             )
@@ -511,6 +515,7 @@ CONDITION_PREDICATES = frozenset(
         GoalPredicate.SURVEYED,
         GoalPredicate.PLANTED,
         GoalPredicate.FARMED,
+        GoalPredicate.LEVELED,
     }
 )
 # LLM が中目標や街の段階に書ける条件。調査は、街の場所を決める前にコードが足すだけ

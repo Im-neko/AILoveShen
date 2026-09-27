@@ -483,6 +483,7 @@ class TestAdvancePlay:
             "lit",
             "planted",
             "farmed",
+            "leveled",
             "explored",
         ]
 

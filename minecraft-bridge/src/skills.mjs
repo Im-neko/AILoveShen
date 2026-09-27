@@ -23,7 +23,7 @@ export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
 const MAX_CALLS_SHOWN = 30
-const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'progress']
+const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'progress']
 const NAME = /^[a-z][a-z0-9_]{1,39}$/
 // 技から呼べる行動（ソルバーの提案は技からは使わない: 技はソルバーに依存しない手順にする）
 export const SKILL_ACTIONS = ACTION_TOOLS.filter((n) => n !== 'do_suggestion')

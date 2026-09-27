@@ -177,6 +177,9 @@ function fromLeaf (bot, state, world, leaf) {
       // 置ける場所でだけ出す（何も置けない場所で何度も選ばれた）。家の中と外の両方を出し、選ぶ側が
       // 決める（避難中は家の中だけ）
       return placeStation(bot, state, leaf.item)
+    case 'level':
+      // 整地（leveling.mjs）: 1 回で届く範囲を次々にそろえる。pos は最初に手を付ける所（外の作業）
+      return [{ id: `level the ground within ${leaf.distance} of ${leaf.where}`, verb: 'level', target: 'ground', columns_off: leaf.off, where: leaf.where, radius: leaf.distance, pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {
