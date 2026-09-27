@@ -999,9 +999,12 @@ export const PRIMITIVES = {
     const against = bot.blockAt(c.against)
     if (against?.boundingBox !== 'block') throw new Error(`nothing to place against at ${c.against.x},${c.against.y},${c.against.z} any more`)
     await bot.equip(item, 'hand')
+    const before = bot.blockAt(c.pos)?.name
     await bot.placeBlock(against, c.pos.minus(c.against))
+    // 置けたかはセルが変わったかで見る（松明・看板などは当たり判定がなく、名前も wall_torch などに変わる。
+    // 2026-09-27: 当たり判定で見ていて、壁に付いた松明を「置けなかった」としていた）
     const placed = bot.blockAt(c.pos)
-    if (!placed || placed.boundingBox === 'empty') throw new Error(`the ${c.item} was not placed`)
+    if (!placed || placed.name === before) throw new Error(`the ${c.item} was not placed`)
     return `placed ${placed.name} at ${c.pos.x},${c.pos.y},${c.pos.z}`
   },
   // 整地（設計書 41）: c.where のまわり半径 c.radius を、近い列から次々にそろえる。出っ張りを先に
