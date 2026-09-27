@@ -9,7 +9,7 @@
 
 ### 起動のたびに街の段階を書き直さない (2026-09-27)
 
-**Commit**: (次のコミット)
+**Commit**: `af18974`
 
 ユーザー:「起動時に街の段階を毎回書き直していて起動が遅い」。ログ: 起動のたびに 5 段階を書き直し（ローカル 42〜56 秒 × 5、Gemini 約 75 秒）、未解決の部分は同じ語彙では書けないので毎回同じ答え。
 - `TownStage.tried_with`（保存）、`IGamePromptBuilder.vocabulary_version()`（条件の一覧と ABILITIES のハッシュ）。`TownPlanner.prepare` は今の段階だけ、語彙が変わったときだけ書き直す。定めた直後の段階は試し済み。`advance` から毎回 `prepare`（同じ語彙なら何もしない）
