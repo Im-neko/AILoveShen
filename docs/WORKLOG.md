@@ -9,7 +9,7 @@
 
 ### 家の中に松明を置けなかった（place_at の二重定義）、壁に付ける (2026-09-27)
 
-**Commit**: （この後）
+**Commit**: `b0295d9`
 
 ユーザーのログ（12:48）: `placed(torch, 2, home)` で、提案は `Cannot read properties of undefined (reading 'x')`、道具 `place` は `it is part of the current home` で断られ続けた。ユーザー:「壁に設置できるアイテムは壁に設置できるようにもしてほしい」。設計書 21 の追記。
 - 原因 1: `PRIMITIVES` の `place_at` が二重定義（提案用 `9f262b5` と道具用 `d1d1721`）で、後の道具用が勝ち、提案は `against` なしで落ちた。テストは候補ができるところまでしか見ていなかった。`standard` は検出していた（`npm test` は lint を走らせない）
