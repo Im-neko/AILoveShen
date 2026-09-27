@@ -139,6 +139,7 @@ gemini:
     promise: "low"             # how to keep a promise a reply made (docs/design/34 §10)
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
     skill_write: "high"        # writing or fixing a skill (docs/design/22)
+    check_write: "medium"      # writing the check of a custom(name) condition (docs/design/42)
   # Debugging: ask for thought summaries and keep the last calls (purpose, level, thoughts,
   # output, tokens) for GET /api/debug/gemini and /debug/gemini on the goal board (--board-port)
   # Thought summaries cost output tokens on every call: off by default, on with --debug

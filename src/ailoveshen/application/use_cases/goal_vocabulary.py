@@ -45,7 +45,10 @@ BUILD_NAME_DESCRIPTION = (
     "built: the name of a build you design (a-z, 0-9, _; e.g. annex, storehouse, "
     "watchtower). Leave it out for the house. A new name in a mid goal's conditions "
     "means you design that build right after (an extension of the home, a shed, a "
-    "tower, a wall...)"
+    "tower, a wall...). custom: the name of a check (a-z, 0-9, _; 2-40 characters, saying "
+    "what it tests, e.g. sheep_in_pen_3, flowers_by_door) for a result no other predicate "
+    "can say; a new name in a mid goal's conditions means you write the check right after, "
+    "from the mid goal's title and reason (say exactly what must hold)"
 )
 # 条件を示す順番（frozenset には順番がない）
 _CONDITION_ORDER = [p for p in GoalPredicate if p in PLANNABLE_CONDITIONS]
@@ -548,7 +551,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             else None,
             dig_depth=int(data["dig_depth"]) if data.get("dig_depth") is not None else None,
             name=str(data["name"]).strip().lower() or None
-            if predicate == GoalPredicate.BUILT and data.get("name")
+            if predicate in (GoalPredicate.BUILT, GoalPredicate.CUSTOM) and data.get("name")
             else None,
         )
     except (KeyError, TypeError) as e:
@@ -689,10 +692,13 @@ def parse_note_changes(data: dict[str, Any]) -> tuple[NoteChange, ...]:
     return tuple(changes)
 
 
-def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicate]:
+def predicates_now(
+    obs: GameObservation, plan: MidGoalPlan, tools: bool = True
+) -> list[GoalPredicate]:
     """
     今意味のある述語（例: 家ができる前は、家についての述語は出さない）。調査は、それを
     求める中目標があるときだけ（中目標を足した直後の観測には、調査の計画がまだない）。
+    custom は、それを条件に持つ中目標があって、道具で進めるときだけ（ブリッジは候補を出さない）。
     """
     out = []
     if (obs.has_plan and not obs.house_complete) or obs.unfinished_builds:
@@ -717,6 +723,10 @@ def predicates_now(obs: GameObservation, plan: MidGoalPlan) -> list[GoalPredicat
         c.predicate == GoalPredicate.SURVEYED for g in plan.pending for c in g.conditions
     ):
         out.append(GoalPredicate.SURVEYED)
+    if tools and any(
+        c.predicate == GoalPredicate.CUSTOM for g in plan.pending for c in g.conditions
+    ):
+        out.append(GoalPredicate.CUSTOM)
     out.append(GoalPredicate.EXPLORED)
     return out
 

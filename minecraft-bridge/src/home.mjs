@@ -51,7 +51,8 @@ export function saveState (state) {
     formerHomes: (state.formerHomes ?? []).map(homeToJSON),
     survey: state.survey ?? null,
     goal: state.goal,
-    memory: state.memory
+    memory: state.memory,
+    conditions: state.conditions ?? {} // Gemini が書いた判定（conditions.mjs。設計書 42）
   }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true })
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 1))
@@ -67,6 +68,7 @@ export function loadState (state) {
   if (data.survey) state.survey = data.survey
   if (data.goal) state.goal = data.goal
   if (data.memory) state.memory = { ...state.memory, ...data.memory }
+  if (data.conditions) state.conditions = data.conditions
 }
 
 // 完成した計画が家になる: ドアの下半分、そのすぐ内側と外側のセル、内部（敷地から壁を除いた部分）。

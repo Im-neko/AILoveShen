@@ -65,6 +65,14 @@ class BuildNotDesignedError(GoalRejectedError):
         self.name = name
 
 
+class CheckNotWrittenError(GoalRejectedError):
+    """custom(name) の判定が書けなかった（答えない・使える判定が出ない）。`name` はその判定。"""
+
+    def __init__(self, message: str, name: str = "") -> None:
+        super().__init__(message)
+        self.name = name
+
+
 class ActionSelectionError(AILoveShenError):
     """行動選択器（Jev）が決められなかったときに送出する。"""
 

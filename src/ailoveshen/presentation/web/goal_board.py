@@ -190,6 +190,8 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.LEVELED:
         where = "家" if spec.where == "home" else "そこ"
         return f"{where}のまわり {spec.distance}m を整地する"
+    if p == GoalPredicate.CUSTOM:
+        return f"{spec.name} を仕上げる"
     if p == GoalPredicate.SURVEYED:
         return f"街の候補地を {n} か所しらべる"
     if p == GoalPredicate.PLANTED:

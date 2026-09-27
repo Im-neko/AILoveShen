@@ -800,7 +800,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         rethinks_seen: Optional[int] = None,
     ) -> None:
         plan = session.plan
-        predicates = predicates_now(obs, plan)
+        predicates = predicates_now(obs, plan, tools=self._control == "tools")
         messages = _for_goal(self._conversation.recent_messages(self._history_limit))
         goals = _shown_goals(activity, reason)
         viewers = _viewers(messages)

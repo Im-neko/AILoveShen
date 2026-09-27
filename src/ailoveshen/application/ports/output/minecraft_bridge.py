@@ -139,6 +139,25 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def set_condition(self, name: str, description: str, code: str) -> dict[str, Any]:
+        """
+        Gemini が書いた判定（custom(name)）を登録する（docs/design/42_custom_conditions.md）。
+        ブリッジは形を確かめ、1 回動かし、もう成り立っていれば受け取らない。
+
+        Returns:
+            今の判定 {name, met, remaining, lines}
+
+        Raises:
+            GoalRejectedError: 受け取れないとき（メッセージに理由がある。判定を直させる）
+        """
+        ...
+
+    @abstractmethod
+    async def conditions(self) -> list[dict[str, Any]]:
+        """登録した判定: [{name, description}]。"""
+        ...
+
+    @abstractmethod
     async def set_build_plan(self, blueprint: HouseBlueprint, site: TownSite | None = None) -> None:
         """
         建てる家をブリッジに渡す: 置く順に並べたブロックと、設計そのもの。設計は、

@@ -88,6 +88,7 @@ DEFAULT_THINKING_LEVELS = {
     "promise": "low",
     "screen_review": "medium",
     "skill_write": "high",
+    "check_write": "medium",
 }
 
 

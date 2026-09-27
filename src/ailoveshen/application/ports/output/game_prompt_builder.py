@@ -62,6 +62,22 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_check_prompt(
+        self, name: str, brief: str, place_note: str, previous_error: str = ""
+    ) -> str:
+        """
+        custom(name) の完了の判定（JS）を書かせるプロンプトを組み立てる
+        （docs/design/42_custom_conditions.md）。
+
+        Args:
+            name: 判定の名前（中目標の条件の custom(name) の name）
+            brief: 何を確かめるか（中目標の題名と理由、視聴者の頼み）
+            place_note: 家と今の場所（座標の基準）
+            previous_error: 前回の判定が使えなかった理由（あれば）
+        """
+        ...
+
+    @abstractmethod
     def build_house_design_prompt(
         self, character: CharacterProfile, site_note: str = "", previous_error: str = ""
     ) -> str:

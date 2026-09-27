@@ -98,6 +98,45 @@ $map_anchor$previous_error
 指定された JSON だけを出力してください。
 """)
 
+CHECK_TEMPLATE = Template("""\
+Minecraft のサバイバル（1.21.4）で、中目標の完了を世界から判定するコードを書きます。
+判定の名前: $check_name
+
+## 中目標（頼まれたこと）
+$brief
+
+## 今の場所
+$place_note
+
+## 書き方
+JavaScript で `function check(w) { ... }` を 1 つ書く。世界を読んで
+`{ met: true/false, remaining: 数, lines: [文] }` を返す。
+- met: 頼まれたことが世界で成り立っているとき true。見えない所・読めない所は成り立っていないとする
+- remaining: 残りの作業の量（0 以上の数。作業が進むほど減る。met が false なら 1 以上）。
+  例: 花を 4 本 → 4 - 見つけた数
+- lines: 今の状態を英語で 1〜3 文（例: "poppies near the door: 2/4"）。配信者が次に何をするか決めるのに読む
+- 同期で動く（async / await / Promise は使えない）。50 ms、ブロックを読むのは 20000 回まで。
+  require・fetch・時計はない
+- 使えるのは w だけ（読むだけ。世界は変えられない）:
+  - w.block(x, y, z) → { name, solid, props? } か null（読み込まれていない）。name は "oak_log" など
+  - w.find(name, { near?: [x, y, z], max_distance?: 32（64 まで）, count?: 64（256 まで） })
+    → [[x, y, z], ...] 近い順。name は 1 つのブロック名か "*_suffix"（"*_bed" はすべてのベッド）
+  - w.inventory() → { item: 数 }（持ち物）
+  - w.me() → { x, y, z }（足の位置）
+  - w.home() → { door, inside, min, max }（各 { x, y, z }。min と max は家の外壁の両端の角）か null
+  - w.chests() → { item: 数 }（家のチェストの中身。最後に開けたときの記憶）
+  - w.mobs(name?, radius?) → [{ name, x, y, z, hostile }]（半径 64 まで。"sheep" など。空ならすべて）
+  - w.time() → { time_of_day, day }
+- 場所は家（w.home()）か、今の場所の座標を基準にする。ずっと同じ場所を見る（呼ぶたびに
+  w.me() から測ると、歩くたびに判定が変わる）ので、今の場所なら座標をコードに数で書く
+- 頼まれたことが今もう成り立っているような判定は受け取られない（まだしていないことを確かめる）
+- 組み込みの条件（have, stored, placed, built, lit, planted, farmed, leveled）で書けることは
+  ここには来ない。形・並び・場所・数の組み合わせを確かめる
+$previous_error
+## 出力
+指定された JSON だけを出力してください（description: 何を確かめるかの英語 1 文、code: コード）。
+""")
+
 MAP_ANCHOR_NOTE = """\
 - map: 添えた地図の画像のマス目を cell に書く（例: C7）。建物はそのマスのまわりの平らな所に建つ
   - 地図は真上から見たもので、北が上、東が右。1 マスは 4x4 ブロック。家は赤い枠、ほかの建物は橙の枠
@@ -508,6 +547,20 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             max_blocks=max_blocks,
             max_shapes=BuildDesign.MAX_SHAPES,
             previous_error=error,
+        )
+
+    def build_check_prompt(
+        self, name: str, brief: str, place_note: str, previous_error: str = ""
+    ) -> str:
+        """custom(name) の判定のコードを書かせるプロンプト（docs/design/42_custom_conditions.md）。"""
+        error = (
+            f"\n## 前回の判定が使えなかった理由\n{previous_error}\n"
+            "理由を直して書き直してください。\n"
+            if previous_error
+            else ""
+        )
+        return CHECK_TEMPLATE.substitute(
+            check_name=name, brief=brief, place_note=place_note, previous_error=error
         )
 
     def build_house_design_prompt(

@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 任意の条件 custom(name): Gemini が判定コードを書く (2026-09-27)
+
+**Commit**: （この後）
+
+ユーザー:「目標には任意のものを設定できるようにしたいです」（完了は「Gemini が判定コードを書く」）。設計書 `docs/design/42_custom_conditions.md`。
+- ブリッジ `conditions.mjs`（新規: isolated-vm の同期の判定、読むだけの w、上限、`registerCheck` は今成り立つ判定を断る）、`goals.mjs`（述語 custom、候補なし、壊れた判定は blocked）、`index.mjs`（`PUT/GET /conditions`、/observe の home に door / min / max）、`home.mjs`（保存）、`skills.mjs`（expects）
+- Python: `GoalPredicate.CUSTOM`、`parse_spec` の name、`predicates_now(tools=)`、`CheckWriter`（`use_cases/checks.py`）、`CheckNotWrittenError`、`MidGoalKeeper(checker=)`（accept・編集・街の段階）、ブリッジのポートとクライアント（`set_condition` / `conditions`）、`build_check_prompt`、説明・できること・返事の決まり、目標ボード、技の expects、config `check_write: medium`、`TestPromptLength` 7800
+- テスト: `test/conditions.test.mjs`（5）、`test_checks.py`（6）、クライアント。本物の Gemini: 花 4 本・羊 3 匹の判定を書き、サンドボックスで 0/4→4/4、1/3→3/3
+- 配信中の「整地はまだできない」: 動いていたのは 11:54 起動のプロセスで、整地（12:09）が入っていなかった（再起動が要る）
+
 ### 返事の約束を中目標にする（書き直させない） (2026-09-27)
 
 **Commit**: `cc5d432`

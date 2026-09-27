@@ -16,6 +16,9 @@
 //   PUT  /builds/<name>   -> { blocks, size: {width, depth, height}, anchor, purpose } 名前付きの建物を登録する
 //                             （docs/design/25_builds.md。原点はアンカーから決める。守るものに掛かれば 400 と理由）
 //   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
+//   PUT  /conditions/<name> {description, code} -> Gemini が書いた判定を確かめて登録する（設計書 42）:
+//                             { name, met, remaining, lines }。形が違う・動かない・もう成り立っていれば 400 と理由
+//   GET  /conditions       -> [{ name, description }]
 //   GET  /map              -> 家のまわりの真上から見た地図（map.mjs）: { center, radius, base_y, cells, home, builds }
 //   POST /tool {name, args} -> 道具を 1 つ呼ぶ（設計書 21）: { ok, result, seconds, refused? }。行動の道具は /act と同じ経路で
 //                             実行する。断るとき（安全の制約、引数が世界と合わない）は refused: true と理由
@@ -47,6 +50,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
+import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
 import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
@@ -95,6 +99,7 @@ const state = {
   unreachableBlocks: new Set(),
   formerHomes: [], // 引っ越す前の家（壊さない）
   builds: {}, // 名前付きの建物（builds.mjs）
+  conditions: {}, // Gemini が書いた判定 custom(name)（conditions.mjs）
   survey: null, // 街の候補地の調査の計画（survey.mjs）
   memory: newMemory(), // 前に見た場所（memory.mjs）。state.json に保存する
   skill: null, // 実行中の技 { name, version, control }（skills.mjs）
@@ -139,7 +144,8 @@ function observation () {
   // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
   const broken = recentBreaks(bot, state)
   if (broken.length) extra.broken_tools = broken
-  extra.home = state.home ? { name: state.home.name, design: state.home.design, inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
+  const xyz = (v) => v && { x: v.x, y: v.y, z: v.z }
+  extra.home = state.home ? { name: state.home.name, design: state.home.design, door: xyz(state.home.door), min: xyz(state.home.min), max: xyz(state.home.max), inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
 
@@ -347,6 +353,21 @@ async function handle (req, res) {
       if (e instanceof BuildError) return send(res, 400, { error: e.message })
       throw e
     }
+  }
+  const conditionPath = req.url.match(/^\/conditions\/([a-z][a-z0-9_]{1,39})$/)
+  if (req.method === 'PUT' && conditionPath) {
+    try {
+      const r = registerCheck(bot, state, conditionPath[1], await readJson(req))
+      persist()
+      console.log(`[check] ${conditionPath[1]} を登録した: 残り ${r.remaining}`)
+      return send(res, 200, { name: conditionPath[1], ...r })
+    } catch (e) {
+      if (e instanceof CheckError) return send(res, 400, { error: e.message })
+      throw e
+    }
+  }
+  if (req.method === 'GET' && req.url === '/conditions') {
+    return send(res, 200, checksList(state))
   }
   if (req.method === 'GET' && req.url === '/skills') {
     return send(res, 200, skills.list())

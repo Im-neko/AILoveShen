@@ -24,7 +24,7 @@ from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.exceptions import SkillRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import Activity, SkillDraft, SkillInfo, ToolOutcome
 
-EXPECT_PREDICATES = ["have", "stored", "built", "placed", "lit", "leveled", "progress"]
+EXPECT_PREDICATES = ["have", "stored", "built", "placed", "lit", "leveled", "custom", "progress"]
 SKILLS_SHOWN = 12  # 道具の選択と技を書く呼び出しに見せる技の数
 HOUR = 3600.0
 
@@ -54,7 +54,10 @@ def skill_schema() -> dict[str, Any]:
                         "description": 'have / stored: a number, "+N" (N more than before) '
                         'or "$param"',
                     },
-                    "name": {"type": "string", "description": "built: the build's name"},
+                    "name": {
+                        "type": "string",
+                        "description": "built: the build's name; custom: the check's name",
+                    },
                     "where": {
                         "type": "string",
                         "description": "placed: home; leveled: home or x,y,z",

@@ -16,6 +16,7 @@
 //   planted(item, count)     自分が植えた苗木（sapling か種類）が `count` 本ある（育った木も数える。設計書 33）
 //   farmed(item, count)      家のまわりの耕地に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている
 //   leveled(where, distance) where（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている（設計書 41）
+//   custom(name)             Gemini が書いた判定（conditions.mjs）が成り立っている（設計書 42。候補は出さない: 道具で進める）
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
@@ -25,6 +26,7 @@ import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
 import { levelStatus, levelTarget, describeLevel, fillItem, toolsMissing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking } from './cooking.mjs'
+import { runCheck } from './conditions.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
@@ -46,10 +48,10 @@ const DAY_TICKS = 24000
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom']
 // ワールドの状態だけから判定するので、中目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom']
 const MAX_PLANTED = 32
 const DEPOSIT_BATCH = 32 // これだけ持ったらチェストに入れに行く
 const NEAR_HOME = 12
@@ -179,6 +181,12 @@ function validGoal (spec, bot, state, knowledge) {
       const distance = Number(spec.distance)
       if (!Number.isInteger(distance) || distance < MIN_LEVEL || distance > MAX_LEVEL) throw new Error(`distance (the radius) must be ${MIN_LEVEL}-${MAX_LEVEL}`)
       return { spec: { predicate, where, distance } }
+    }
+    case 'custom': {
+      // 判定は Python が先に登録する（PUT /conditions/<name>）。まだない名前は「まだ」
+      const name = String(spec.name ?? '')
+      if (!state.conditions?.[name]) throw new NotYetError(`there is no check named ${name} yet: it is written when the mid goal is added`)
+      return { spec: { predicate, name } }
     }
     case 'planted': {
       needHome()
@@ -500,6 +508,24 @@ export function evaluate (bot, state, knowledge, world) {
       }
       if (diggable || (filler && s.fills.length)) out.leaves.push({ kind: 'level', where, distance, pos: (s.cuts[0] ?? s.fills[0]), off: s.off })
       if (!diggable && s.fills.length && !filler) addSolved([{ spec: 'dirt', count: Math.min(s.fills.length, 64) }])
+      break
+    }
+    case 'custom': {
+      // Gemini が書いた判定（設計書 42）。候補は出さない（何をするかは判定からはわからない）:
+      // 道具モードで Gemini が道具を選んで進める。判定が壊れたら、その理由を blocked に
+      const def = state.conditions?.[goal.spec.name]
+      try {
+        if (!def) throw new Error(`the check ${goal.spec.name} is gone`)
+        const r = runCheck(bot, state, { name: goal.spec.name, code: def.code })
+        out.met = r.met
+        out.remaining = r.remaining
+        out.lines.push(`${def.description}: ${r.met ? 'done' : `${r.remaining} left`}`, ...r.lines)
+        if (!r.met) out.blocked.push('no suggestion for a custom goal: choose the tools that make it true')
+      } catch (e) {
+        out.remaining = 1
+        out.lines.push(`${def?.description ?? goal.spec.name}: the check failed`)
+        out.blocked.push(`the check failed: ${e.message}`)
+      }
       break
     }
     case 'planted': {

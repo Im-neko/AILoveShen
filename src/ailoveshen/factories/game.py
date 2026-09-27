@@ -6,6 +6,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.builds import BuildDesigner
+from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.step_picker import StepPicker
 from ailoveshen.application.use_cases.stuck_check import StuckCheck
@@ -272,8 +273,18 @@ def create_game_service(
         character=profile,
         renderer=PilMapRenderer(),
     )
+    # custom(name) の判定（docs/design/42_custom_conditions.md）: 道具で進めるときだけ（候補は出ない）
+    checker = (
+        CheckWriter(text_generator=text_generator, prompt_builder=prompt_builder, bridge=bridge)
+        if minecraft.control == "tools"
+        else None
+    )
     mid_goals = MidGoalKeeper(
-        bridge=bridge, event_publisher=event_publisher, store=store, builder=builder
+        bridge=bridge,
+        event_publisher=event_publisher,
+        store=store,
+        builder=builder,
+        checker=checker,
     )
     designer = HouseDesigner(
         text_generator=text_generator, prompt_builder=prompt_builder, character=profile

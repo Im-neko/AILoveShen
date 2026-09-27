@@ -12,6 +12,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.use_cases.builds import BuildDesigner
+from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.goal_vocabulary import (
     MidGoalProposal,
     PlanChange,
@@ -56,6 +57,7 @@ class MidGoalKeeper:
         event_publisher: IEventPublisher,
         store: IMissionStore,
         builder: BuildDesigner | None = None,
+        checker: CheckWriter | None = None,
     ) -> None:
         """
         依存を受け取って初期化する（依存性の注入）。
@@ -66,11 +68,14 @@ class MidGoalKeeper:
             store: 再起動をまたいでプランを保つ
             builder: 条件にまだない建物（built(name)）があるとき、先に設計させる
                 （docs/design/25_builds.md）。None なら、ない建物は判定できずに断られる
+            checker: 条件にまだない判定（custom(name)）があるとき、先に判定を書かせる
+                （docs/design/42_custom_conditions.md）。None なら、ない判定は断られる
         """
         self._bridge = bridge
         self._event_publisher = event_publisher
         self._store = store
         self._builder = builder
+        self._checker = checker
         self._design_failures: dict[str, int] = {}  # 街の段階の建物の設計に失敗した回数
 
     async def judge(self, plan: MidGoalPlan) -> None:
@@ -145,7 +150,10 @@ class MidGoalKeeper:
         失敗した名前は MAX_STAGE_DESIGN_TRIES 回まで（毎回の切れ目で呼び続けない）。
         """
         stage = plan.current_stage
-        if self._builder is None or stage is None or plan.site is None or plan.preparing_town:
+        if stage is None or plan.site is None or plan.preparing_town:
+            return
+        await self._write_stage_checks(plan)
+        if self._builder is None:
             return
         names = [
             c.name
@@ -165,6 +173,29 @@ class MidGoalKeeper:
             except GoalRejectedError as e:
                 self._design_failures[name] = self._design_failures.get(name, 0) + 1
                 logger.error(f"街の段階の建物 {name} を設計できない: {e}")
+
+    async def _write_stage_checks(self, plan: MidGoalPlan) -> None:
+        """今の街の段階の条件に、まだない判定（custom(name)）があれば書かせる（失敗は建物と同じく数える）。"""
+        stage = plan.current_stage
+        assert stage is not None
+        pending = [
+            c
+            for c in plan.stage_remaining
+            if c.predicate == GoalPredicate.CUSTOM
+            and c.name is not None
+            and self._design_failures.get(c.name, 0) < MAX_STAGE_DESIGN_TRIES
+        ]
+        if not pending or self._checker is None:
+            return
+        known = await self._checker.known()
+        for c in pending:
+            if c.name in known:
+                continue
+            try:
+                await self._checker.write(c.name, f"{stage.title}: {stage.why}")
+            except GoalRejectedError as e:
+                self._design_failures[c.name] = self._design_failures.get(c.name, 0) + 1
+                logger.error(f"街の段階の判定 {c.name} を書けない: {e}")
 
     async def add_town_goal(
         self,
@@ -204,6 +235,7 @@ class MidGoalKeeper:
         for change in changes:
             if change.proposal is not None:
                 await self._design_builds(change.proposal)
+                await self._write_checks(change.proposal.conditions, _brief(change.proposal))
                 await self._bridge.check(change.proposal.conditions)
 
     def rehearse(self, plan: MidGoalPlan, changes: Sequence[PlanChange]) -> MidGoalPlan:
@@ -246,6 +278,7 @@ class MidGoalKeeper:
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
         blocks = await self._design_builds(proposal, BuildDesign.VIEWER_MAX_BLOCKS)
+        await self._write_checks(proposal.conditions, _brief(proposal))
         await self._bridge.check(proposal.conditions)
         goal = plan.add(
             title=proposal.title,
@@ -301,12 +334,34 @@ class MidGoalKeeper:
                 raise GoalRejectedError(f"no build named {', '.join(missing)} (cannot design here)")
             return 0
         known = await self._builder.known()
-        brief = f"{proposal.title}: {proposal.reason}".strip(": ")
         for name in names:
             if name not in known:
-                await self._builder.design(name, brief, max_blocks)
+                await self._builder.design(name, _brief(proposal), max_blocks)
         totals = {str(b["name"]): int(b.get("total", 0)) for b in await self._bridge.builds()}
         return sum(totals.get(name, 0) for name in names)
+
+    async def _write_checks(self, conditions: Sequence[GoalSpec], brief: str) -> None:
+        """
+        条件の custom(name) のうち、まだない判定を書かせて登録する。
+
+        Raises:
+            GoalRejectedError: 書けなかったとき
+        """
+        names = [
+            c.name for c in conditions if c.predicate == GoalPredicate.CUSTOM and c.name is not None
+        ]
+        if not names:
+            return
+        if self._checker is None:
+            known = {str(c["name"]) for c in await self._bridge.conditions()}
+            missing = [n for n in names if n not in known]
+            if missing:
+                raise GoalRejectedError(f"no check named {', '.join(missing)} (cannot write here)")
+            return
+        known = await self._checker.known()
+        for name in names:
+            if name not in known:
+                await self._checker.write(name, brief)
 
     async def set_steps(
         self, plan: MidGoalPlan, mid_goal_id: str, steps: tuple[PlannedStep, ...]
@@ -347,6 +402,11 @@ def _apply(plan: MidGoalPlan, changes: Sequence[PlanChange]) -> list[DomainEvent
         else:
             events.append(_dropped(plan.drop(change.mid_goal_id, change.reason)))
     return events
+
+
+def _brief(proposal: MidGoalProposal) -> str:
+    """設計や判定を頼むときの、何のための中目標か（題名と理由）。"""
+    return f"{proposal.title}: {proposal.reason}".strip(": ")
 
 
 def _added(plan: MidGoalPlan, goal: MidGoal) -> MidGoalAddedEvent:

@@ -162,6 +162,29 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data: Any = await self._request("GET", "/builds")
         return list(data) if isinstance(data, list) else []
 
+    async def set_condition(self, name: str, description: str, code: str) -> dict[str, Any]:
+        """Gemini が書いた判定を送る。400 には受け取れない理由が入っている。"""
+        try:
+            response = await self._client.put(
+                f"/conditions/{name}", json={"description": description, "code": code}
+            )
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (PUT /conditions): {e}") from e
+        if response.status_code == 400:
+            raise GoalRejectedError(f"check {name} rejected: {response.json()['error']}")
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge PUT /conditions -> {response.status_code}: "
+                f"{response.text[:200]}"
+            )
+        data: dict[str, Any] = response.json()
+        return data
+
+    async def conditions(self) -> list[dict[str, Any]]:
+        """登録した判定の一覧。"""
+        data: Any = await self._request("GET", "/conditions")
+        return list(data) if isinstance(data, list) else []
+
     async def set_build_plan(self, blueprint: HouseBlueprint, site: TownSite | None = None) -> None:
         """設計図のブロックを置く順に、設計と（あれば）建てる場所と一緒に送る。"""
         b = blueprint

@@ -465,3 +465,24 @@ def test_what_other_mid_goals_gather_is_sent_as_also():
         "count": 32,
     }
     assert _gathered(GoalSpec(GoalPredicate.BUILT)) is None
+
+
+@pytest.mark.asyncio
+async def test_set_condition_puts_the_check_and_a_rejection_carries_the_reason():
+    seen = {}
+
+    def handler(request):
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        if seen.get("reject"):
+            return httpx.Response(400, json={"error": "the check is already met now"})
+        return httpx.Response(200, json={"name": "sheep_in_pen_3", "met": False, "remaining": 3})
+
+    client = _client(handler)
+    r = await client.set_condition("sheep_in_pen_3", "three sheep in the pen", "function check")
+    assert seen["path"] == "/conditions/sheep_in_pen_3"
+    assert seen["body"] == {"description": "three sheep in the pen", "code": "function check"}
+    assert r["remaining"] == 3
+    seen["reject"] = True
+    with pytest.raises(GoalRejectedError, match="already met now"):
+        await client.set_condition("sheep_in_pen_3", "d", "c")
