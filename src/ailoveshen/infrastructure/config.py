@@ -122,6 +122,10 @@ class LocalLlmSettings:
     max_output_tokens: int = 16384  # 思考を含む（1 回ごとにコンテキストの残りまでに減らす）
     response_format: str = "auto"  # auto | off
     thinking_param: str = "chat_template_kwargs"  # chat_template_kwargs | none
+    # 思考させる用途（ほかは思考なし）。ふだんの操作の判断（tool / goal と失敗の後）は思考なし
+    thinking_purposes: list[str] = field(
+        default_factory=lambda: ["skill_write", "house", "town", "site"]
+    )
     max_concurrent: int = 2
     timeout_seconds: float = 180.0
 
@@ -600,6 +604,9 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 max_output_tokens=int(local_data.get("max_output_tokens", d.max_output_tokens)),
                 response_format=str(local_data.get("response_format", d.response_format)),
                 thinking_param=str(local_data.get("thinking_param", d.thinking_param)),
+                thinking_purposes=[
+                    str(p) for p in (local_data.get("thinking_purposes", d.thinking_purposes) or [])
+                ],
                 max_concurrent=int(local_data.get("max_concurrent", d.max_concurrent)),
                 timeout_seconds=float(local_data.get("timeout_seconds", d.timeout_seconds)),
             ),

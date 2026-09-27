@@ -231,3 +231,13 @@ async def test_a_shared_router_is_closed_once():
     await router.close()
     await router.close()
     assert local.close.await_count == 1 and gemini.close.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_only_the_listed_purposes_think():
+    """ふだんの操作の判断は、失敗の後でも思考なし（ローカルの思考は遅い）。"""
+    server = _Server(_answer("a"), _answer("b"), _answer("c"))
+    local = _local(server, thinking_purposes=["skill_write"])
+    for purpose in ("tool_after_failure", "goal_after_failure", "skill_write"):
+        await local.generate("x", purpose=purpose)
+    assert [r["chat_template_kwargs"]["enable_thinking"] for r in server.requests] == [False, False, True]

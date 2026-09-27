@@ -88,6 +88,10 @@ llm:
     # chat_template_kwargs: {"enable_thinking": ...} per call (thinking for gemini.thinking_levels
     # medium / high); none: leave it to the server
     thinking_param: "chat_template_kwargs"
+    # Purposes the local model thinks for (all others: no thinking). Thinking is slow locally, so the
+    # everyday decisions (tool, tool_after_failure, goal, goal_after_failure, commentary, reply) do not
+    # think; [] = never think
+    thinking_purposes: ["skill_write", "house", "town", "site"]
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini

@@ -58,6 +58,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         thinking_param: str = "chat_template_kwargs",
         thinking_levels: Optional[Mapping[str, str]] = None,
         default_thinking_level: str = "low",
+        thinking_purposes: Optional[Sequence[str]] = None,
         max_concurrent: int = 2,
         timeout_seconds: float = 180.0,
         generation_log: Optional[IGenerationLog] = None,
@@ -75,6 +76,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
             thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）か "none"
             thinking_levels: 用途ごとの深さ（Gemini の表をそのまま使う）
             default_thinking_level: 表にない用途の深さ
+            thinking_purposes: 思考させる用途（与えれば thinking_levels より優先。ローカルは思考が
+                遅いので、ふだんの操作の判断は思考なしにする）
             max_concurrent: 同時に送る数の上限
             timeout_seconds: 1 回の上限
             generation_log: デバッグの記録の残し先
@@ -91,6 +94,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._tool_choice = "required"
         self._thinking_param = thinking_param
         self._levels = {"default": default_thinking_level, **dict(thinking_levels or {})}
+        self._think_purposes = set(thinking_purposes) if thinking_purposes is not None else None
         self._slots = asyncio.Semaphore(max(1, max_concurrent))
         self._log = generation_log
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -218,6 +222,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
         return max(1024, min(self._max_output, self._context - used))
 
     def _thinking(self, purpose: Optional[str]) -> bool:
+        if self._think_purposes is not None:
+            return (purpose or "default") in self._think_purposes
         return self._levels.get(purpose or "default", self._levels["default"]) in THINKING_ON
 
     async def _chat(

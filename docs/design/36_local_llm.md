@@ -22,7 +22,7 @@ OpenAI 互換の `/v1/chat/completions`（FreeToken、Ollama、llama.cpp、vLLM�
 
 - **JSON**: スキーマ（説明つき）をいつもプロンプトの終わりに書く。`response_format: json_schema` も送る（`response_format: auto`）。サーバーが 400/422 で断ったら以後は送らない。答えからコードで JSON を取り出し、スキーマの主な決まり（型、enum、required、範囲、数）を確かめ、違えば理由をつけて 1 回だけ書き直させる。使えない決定の差し戻し（目標の決定、返事）はその上にある
 - **道具**: `tools` と `tool_choice: required`（断られたら `auto`）。道具を呼ばずに文で答えたら、「道具の名前（enum）と引数」の JSON で選ばせる
-- **考える深さ**: Gemini の `thinking_levels` を使い、`medium` / `high` は思考あり、`low` は思考なし。渡し方は `thinking_param`（`chat_template_kwargs`: `{"enable_thinking": …}`、FreeToken / vLLM / llama.cpp の Qwen、または `none`）。答えに `<think>…</think>` が混ざったら取り除く
+- **考える深さ**: 思考させる用途を `thinking_purposes` で決める（既定 `skill_write` / `house` / `town` / `site`。ほかは思考なし）。ユーザー（2026-09-27）: 「thinking: on だとめちゃ遅いので、普段の操作判断は off に」。道具の 1 手・目標の決定（失敗の後も）・実況・返事は思考なし。渡し方は `thinking_param`（`chat_template_kwargs`: `{"enable_thinking": …}`、FreeToken / vLLM / llama.cpp の Qwen、または `none`）。答えに `<think>…</think>` が混ざったら取り除く
 - 同時に送るのは `max_concurrent`（2）まで（KV キャッシュの取り合いを避ける）。配信ではゲームと返事で 1 つの生成器を共有するので、プロセス全体で 2
 - 思考で出力の上限を使い切って答えが空（`finish_reason: length`）なら、同じ頼み直しはせずに理由つきのエラー（上限を上げるか、その用途の思考を浅く）
 - サーバーが 400/422 を返したら、知らないかもしれない指定（`response_format`、`chat_template_kwargs`、`tool_choice: required`）を 1 つずつ外して試し、通った指定だけを以後送らない
@@ -49,6 +49,7 @@ llm:
     max_output_tokens: 16384  # 思考を含む。1 回ごとにコンテキストの残り（見積もり）までに減らす
     response_format: auto     # auto | off
     thinking_param: chat_template_kwargs   # chat_template_kwargs | none
+    thinking_purposes: [skill_write, house, town, site]   # ほかは思考なし（[] で全部なし）
     max_concurrent: 2
     timeout_seconds: 180
   routes:
