@@ -118,6 +118,18 @@ $previous_error
 コメント: $message
 """)
 
+PROMISE_TEMPLATE = Template("""\
+## 今していること
+$activity
+$previous_error
+## 視聴者からのコメント
+ユーザー名: $user_name
+コメント: $message
+
+## あなたの返答（扱い: $handling）
+$reply
+""")
+
 PLAN_TEMPLATE = Template("""
 ## 視聴者の頼みについて
 配信の大目標と中目標は「今していること」のとおり。頼みを引き受けると中目標リストに入る
@@ -192,8 +204,30 @@ $conditions
 $abilities
 """)
 
+PROMISE_RULES = """
+## 返答の約束を守る
+本文の「あなたの返答」は、ゲームの中で何かをすると言っている。言ったことを必ず行動にするために、
+decision を 1 つ選ぶ。
+- already: 「今していること」の中目標リストに、もう同じ完了条件の中目標がある
+- 生存のための小目標（食べ物を集める、家に帰るなど）でもうしていることでも、中目標リストに
+  なければ already でも cannot でもない。now か later で中目標にする（返答で言ったことを中目標に
+  残し、視聴者から見えるようにする）
+- now: 今の小目標を区切って、すぐやるほうがよい（すぐ終わる、今の場所や持ち物でできる、今やらない
+  と手間が増える、今の目標より大事、待っているだけ）。中目標リストの先頭に入り、終わったら今の
+  中目標に戻る。題名（title）、完了条件（conditions）、理由（reason）を出す
+- later: 今の中目標の後でやる（今の作業を途中でやめると無駄が大きい）。題名、完了条件、位置
+  （position。2 が今の中目標のすぐ後）、理由を出す
+- cannot: 結果が完了条件で書けないときだけ。reason に理由を書く（返答は約束しない形に書き直される）
+- 返答の扱いが decline（断った）のときは now にしない
+- 完了条件は返答で言ったことの結果を、具体的な物で書く（「牛からお肉をもらう」→ have(beef, 3)、
+  「羊を狩る」→ have(mutton, 2)。food のようなまとめた名前より、言った物）
+"""
+
 
 OUTPUT_TEXT = "返答テキストのみを出力してください。"
+OUTPUT_PROMISE = (
+    "約束の守り方（decision）と、中目標にするならその中身を指定の JSON で出力してください。"
+)
 OUTPUT_JSON = (
     "返答（reply）と頼みの扱い（request）、引き受けるならその中目標を指定の JSON で"
     "出力してください。"
@@ -220,6 +254,9 @@ class PromptTemplateBuilder(IPromptBuilder):
         )
         if purpose == "commentary":
             return base + COMMENTARY_RULES
+        if purpose == "promise":
+            plan = PLAN_TEMPLATE.substitute(conditions=format_conditions(), abilities=ABILITIES)
+            return base + plan + PROMISE_RULES + f"\n## 出力\n{OUTPUT_PROMISE}\n"
         if purpose in ("reply", "reply_requests"):
             takes_requests = purpose == "reply_requests"
             plan = (
@@ -268,6 +305,25 @@ class PromptTemplateBuilder(IPromptBuilder):
             emotion=_format_emotion(context.emotion_state),
             previous_error=error,
             self_facts="\n".join(f"- {f.topic}: {f.fact}" for f in self_facts) or NO_INFORMATION,
+        )
+
+    def build_promise_prompt(
+        self,
+        user_name: str,
+        message: str,
+        reply: str,
+        handling: str,
+        context: GenerationContext,
+        previous_error: str = "",
+    ) -> str:
+        """約束している返答の約束をどう守るかの本文。決まりはシステム指示の側（purpose=promise）。"""
+        return PROMISE_TEMPLATE.substitute(
+            activity=format_activity(context.activity),
+            previous_error=f"\n## 前回の決定\n{previous_error}\n" if previous_error else "",
+            user_name=user_name,
+            message=message,
+            reply=reply,
+            handling=handling,
         )
 
 

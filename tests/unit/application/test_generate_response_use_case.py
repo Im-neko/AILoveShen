@@ -627,7 +627,7 @@ class TestEmptyPromise:
         return use_case, check, lessons
 
     @pytest.mark.asyncio
-    async def test_a_promise_with_only_a_lesson_is_written_again_as_a_mid_goal(
+    async def test_a_promise_becomes_a_mid_goal_done_now(
         self,
         mock_text_generator,
         mock_prompt_builder,
@@ -636,6 +636,8 @@ class TestEmptyPromise:
         bridge,
         store,
     ):
+        """実例（2026-09-27 12:17）: 「目の前の牛さんからお肉を分けてもらうね」は、生存の小目標で
+        していても中目標にし、今やるなら今の小目標を区切る。返答はそのまま話す。"""
         use_case, check, lessons = self._use_case(
             mock_text_generator,
             mock_prompt_builder,
@@ -647,36 +649,232 @@ class TestEmptyPromise:
         )
         mock_text_generator.generate_json.side_effect = [
             {
-                "reply": "部屋もしっかり明るくしておくね！",
+                "reply": "今はまず目の前の牛さんからお肉を分けてもらうね！",
                 "request": "none",
-                "lesson": "部屋も明るく",
+                "lesson": "お腹が空いたら動物から肉",
             },
             {
-                "reply": "食べ物が集まったら部屋に松明を置くね！",
-                "request": "accept",
-                "title": "部屋を明るく",
-                "conditions": [
-                    {"predicate": "placed", "item": "torch", "where": "home", "count": 2}
-                ],
-                "position": 2,
-                "lesson": "部屋も明るく",
+                "decision": "now",
+                "title": "牛からお肉をもらう",
+                "conditions": [{"predicate": "have", "item": "beef", "count": 3}],
+                "reason": "牛が目の前にいて、お腹が空いている",
             },
         ]
         session = _playing()
 
         response = await use_case.execute(
-            GenerateResponseRequest(user_name="neko", message="明るくしとこうね", session=session)
+            GenerateResponseRequest(user_name="neko", message="牛いるよ", session=session)
         )
 
-        assert response.text == "食べ物が集まったら部屋に松明を置くね！"
-        assert response.mid_goal is not None and response.mid_goal.title == "部屋を明るく"
+        assert response.text == "今はまず目の前の牛さんからお肉を分けてもらうね！"
+        assert response.mid_goal is not None and response.mid_goal.title == "牛からお肉をもらう"
+        assert session.plan.current.title == "牛からお肉をもらう"
+        assert session.plan.current.requested_by == "neko"
+        assert 'you told neko you would do "牛からお肉をもらう" now' in session.rethink_reason
         check.promises.assert_awaited_once_with(
-            "明るくしとこうね", "部屋もしっかり明るくしておくね！", "none"
+            "牛いるよ", "今はまず目の前の牛さんからお肉を分けてもらうね！", "none"
         )
-        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
-        assert "rethink もない" in error and "accept" in error
-        # 差し戻した返答の教訓は書かない（同じ教訓を 2 回強めない）
+        _, schema = mock_text_generator.generate_json.await_args_list[1].args
+        assert schema["properties"]["decision"]["enum"] == ["already", "now", "later", "cannot"]
+        assert mock_text_generator.generate_json.await_args_list[1].kwargs["purpose"] == "promise"
+        mock_prompt_builder.build_system_prompt.assert_any_call(CharacterProfile(), "promise")
         assert lessons.learn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_promise_for_later_goes_behind_the_current_mid_goal(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """断った返答（「落ち着いたらチャレンジするね」）の約束は、今やらず後ろに入れる。"""
+        use_case, _, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {
+                "reply": "今は小麦が足りないから、落ち着いたら牛さんを増やしてみるね！",
+                "request": "decline",
+            },
+            {
+                "decision": "later",
+                "title": "牛を増やす",
+                "conditions": [{"predicate": "have", "item": "wheat", "count": 4}],
+                "position": 2,
+                "reason": "エサの小麦から",
+            },
+        ]
+        session = _playing()
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="牛増やそう", session=session)
+        )
+
+        assert response.mid_goal is not None and response.mid_goal.title == "牛を増やす"
+        assert [g.title for g in session.plan.pending][:2] == ["剣を持つ", "牛を増やす"]
+        assert session.rethink_reason == ""
+        _, schema = mock_text_generator.generate_json.await_args_list[1].args
+        assert "now" not in schema["properties"]["decision"]["enum"]
+
+    @pytest.mark.asyncio
+    async def test_a_promise_a_mid_goal_already_keeps_is_spoken_as_it_is(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        use_case, _, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "剣を作るために木を切ってくるね！", "request": "none"},
+            {"decision": "already", "reason": "剣を持つが先頭にある"},
+        ]
+        session = _playing()
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="剣は？", session=session)
+        )
+
+        assert response.text == "剣を作るために木を切ってくるね！"
+        assert response.mid_goal is None
+        assert len(session.plan.pending) == 2 and session.rethink_reason == ""
+
+    @pytest.mark.asyncio
+    async def test_a_promise_that_cannot_be_kept_is_written_again_without_it(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        use_case, _, lessons = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True, False],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ダンスしてみるね！", "request": "none", "lesson": "踊る"},
+            {"decision": "cannot", "reason": "dancing is not a condition"},
+            {"reply": "ダンスはまだできないんだ、ごめんね！", "request": "decline"},
+        ]
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="踊って", session=_playing())
+        )
+
+        assert response.text == "ダンスはまだできないんだ、ごめんね！"
+        error = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"]
+        assert "dancing is not a condition" in error and "約束しない" in error
+        lessons.learn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_mid_goal_the_plan_refuses_is_decided_again(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """中目標に入らない守り方（条件の形が違う）は、理由をつけてもう一度決めさせる。"""
+        use_case, _, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "松明を置いておくね！", "request": "none"},
+            {"decision": "later", "title": "明るく", "conditions": [], "reason": "r"},
+            {
+                "decision": "later",
+                "title": "明るく",
+                "conditions": [{"predicate": "placed", "item": "torch", "count": 2}],
+                "reason": "r",
+            },
+        ]
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="暗いね", session=_playing())
+        )
+
+        assert response.mid_goal is not None and response.mid_goal.title == "明るく"
+        error = mock_prompt_builder.build_promise_prompt.call_args.kwargs["previous_error"]
+        assert "needs conditions" in error
+
+    @pytest.mark.asyncio
+    async def test_now_right_after_a_chat_rethink_waits_behind(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """チャットで小目標を切ったばかりなら、今やる約束も後ろに入れる（小目標をばたつかせない）。"""
+        use_case, _, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True, True],
+        )
+        beef = [{"predicate": "have", "item": "beef", "count": 3}]
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "牛さん倒してくるね！", "request": "none"},
+            {"decision": "now", "title": "牛", "conditions": beef, "reason": "r"},
+            {"reply": "羊さんも倒してくるね！", "request": "none"},
+            {
+                "decision": "now",
+                "title": "羊",
+                "conditions": [{"predicate": "have", "item": "mutton", "count": 3}],
+                "reason": "r",
+            },
+        ]
+        session = _playing()
+        await use_case.execute(self._request(session, "牛いるよ"))
+        # 次の切れ目で小目標を決め直した（考え直しは使われた）
+        session.set_goal(
+            Goal(SWORD, "剣", mid_goal_id="m1"), "day", rethinks_seen=session.rethink_mark
+        )
+
+        response = await use_case.execute(self._request(session, "羊もいるよ", user_name="mame"))
+
+        assert response.mid_goal is not None and response.mid_goal.title == "羊"
+        assert session.rethink_reason == ""
+        assert session.plan.current.title == "牛"
 
     @pytest.mark.asyncio
     async def test_a_reply_that_promises_nothing_is_spoken(
@@ -747,7 +945,7 @@ class TestEmptyPromise:
         assert "a tree is right there" in session.rethink_reason
 
     @pytest.mark.asyncio
-    async def test_no_reply_when_every_attempt_only_promises(
+    async def test_no_reply_when_no_attempt_keeps_its_promise(
         self,
         mock_text_generator,
         mock_prompt_builder,
@@ -756,7 +954,7 @@ class TestEmptyPromise:
         bridge,
         store,
     ):
-        """何度書かせても約束だけなら言わない（受けられない頼みと同じ）。"""
+        """何度書かせても守れない約束なら言わない（受けられない頼みと同じ）。"""
         use_case, _, lessons = self._use_case(
             mock_text_generator,
             mock_prompt_builder,
@@ -766,16 +964,15 @@ class TestEmptyPromise:
             store,
             [True, True],
         )
-        mock_text_generator.generate_json.return_value = {
-            "reply": "明るくしておくね！",
-            "request": "none",
-            "lesson": "部屋も明るく",
-        }
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "踊るね！", "request": "none", "lesson": "踊る"},
+            {"decision": "cannot", "reason": "no"},
+            {"reply": "踊るね！", "request": "none", "lesson": "踊る"},
+            {"decision": "cannot", "reason": "no"},
+        ]
 
         response = await use_case.execute(
-            GenerateResponseRequest(
-                user_name="neko", message="明るくしとこうね", session=_playing()
-            )
+            GenerateResponseRequest(user_name="neko", message="踊って", session=_playing())
         )
 
         assert not response.success

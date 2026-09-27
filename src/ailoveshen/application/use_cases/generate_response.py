@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from loguru import logger
 
@@ -16,8 +17,11 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_vocabulary import (
+    MidGoalProposal,
+    PromiseHandling,
     RequestHandling,
     parse_proposal,
+    promise_schema,
     reply_schema,
 )
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
@@ -35,6 +39,14 @@ from ailoveshen.domain.value_objects import (
     MessageType,
     MidGoal,
 )
+
+
+@dataclass(frozen=True)
+class KeptPromise:
+    """返答の約束から足した中目標（now: 今の小目標を区切って今やる）。"""
+
+    mid_goal: MidGoal
+    now: bool
 
 
 class GenerateResponseUseCase(IGenerateResponse):
@@ -91,8 +103,9 @@ class GenerateResponseUseCase(IGenerateResponse):
             notes: 自分のメモ（納得した視聴者のアドバイスを教訓として書く。None なら書かない）
             lessons: 教訓帳（あれば、納得したアドバイスはメモではなく、条件つきでこちらに書く:
                 似た状況で思い出す。docs/design/35）
-            promise_check: 返答が行動を約束しているのに中目標にも考え直しにもならないとき、
-                書き直させる（Jev。docs/design/34 §10。None なら確かめない）
+            promise_check: 返答が行動を約束しているのに中目標にも考え直しにもならないかを
+                確かめる（Jev）。約束していれば Gemini が守り方（今やる / 後でやる）を決めて
+                中目標にし、できなければ書き直させる（docs/design/34 §10。None なら確かめない）
             self_facts: 自分について話したこと（プロンプトに出して守らせ、返答の self_facts で
                 覚える。docs/design/40。None なら覚えない）
             rethink_interval_seconds: コメントの指摘で小目標を決め直す最短の間（荒らし対策）
@@ -224,11 +237,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             if handling == RequestHandling.ACCEPT.value:
                 try:
                     proposal = parse_proposal(data)
-                    mid_goal = await self._mid_goals.accept(
-                        session.plan,
-                        proposal,
-                        requested_by=request.user_name,
-                    )
+                    mid_goal = await self._accept(session, request.user_name, proposal)
                 except (ValueError, GoalRejectedError) as e:
                     # 返答が、プランに入らないものを受けている: それは決して言わせない
                     error = (
@@ -238,16 +247,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                     logger.warning(f"返答 {attempt} の頼みが使えない: {data!r}: {e}")
                     continue
                 self._learn(session, request, data)
-                if proposal.now:
-                    # 今の小目標を次のステップで区切り、引き受けた頼みの小目標を決めさせる
-                    # （返答で「今やる」と言っている。待っている小目標は夜明けまで切れ目が来ない）
-                    was = session.goal.spec.describe() if session.goal else "nothing"
-                    session.request_rethink(
-                        f'you told {request.user_name} you would do "{mid_goal.title}" now '
-                        f"(it is at the top of the mid goals; you were on {was}, go back to it "
-                        "after)"
-                    )
-                else:
+                if not proposal.now:
                     self._rethink(session, request.user_name, data.get("rethink"))
                 return text, mid_goal
             if handling == RequestHandling.WITHDRAW.value:
@@ -255,19 +255,104 @@ class GenerateResponseUseCase(IGenerateResponse):
                 await self._withdraw(session, request.user_name)
                 return text, None
             if await self._empty_promise(request.message, text, str(handling), data.get("rethink")):
-                # 返答が行動を約束しているのに、中目標にも考え直しにもならない: それは言わせない
-                error = (
-                    f"返答「{text}」は行動を約束しているが、request は {handling} で rethink もない"
-                    "（何も起きない）。条件で書けるなら accept にして中目標に入れる、今の小目標を"
-                    "考え直すなら rethink を書く、どちらでもなければ約束しない返答にする（覚えて"
-                    "おく、普段からしている、まだできない）。"
-                )
-                logger.warning(f"返答 {attempt} は約束だけで何もしない: {data!r}")
-                continue
+                # 返答が行動を約束しているのに、中目標にも考え直しにもならない: 約束を中目標に
+                # する（今やるか後でやるかは Gemini が決める）。できなければ言わせない
+                logger.info(f"返答 {attempt} は約束している。守り方を決める: {data!r}")
+                kept = await self._keep_promise(request, context, session, text, str(handling))
+                if isinstance(kept, str):
+                    error = (
+                        f"返答「{text}」は行動を約束しているが、中目標にできない（{kept}）。"
+                        "約束しない返答にする（覚えておく、普段からしている、まだできない）。"
+                    )
+                    logger.warning(f"返答 {attempt} の約束は守れない: {kept}")
+                    continue
+                self._learn(session, request, data)
+                if kept is None or not kept.now:
+                    self._rethink(session, request.user_name, data.get("rethink"))
+                return text, kept.mid_goal if kept is not None else None
             self._learn(session, request, data)
             self._rethink(session, request.user_name, data.get("rethink"))
             return text, None
         raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")
+
+    async def _accept(
+        self, session: PlaySession, user_name: str, proposal: MidGoalProposal
+    ) -> MidGoal:
+        """
+        頼みを中目標に足す。今やる（now）なら、今の小目標を次のステップで区切り、その中目標の
+        小目標を決めさせる（返答で「今やる」と言っている。待っている小目標は夜明けまで切れ目が
+        来ない）。
+
+        Raises:
+            GoalRejectedError: プランに入らないとき
+        """
+        assert self._mid_goals is not None
+        mid_goal = await self._mid_goals.accept(session.plan, proposal, requested_by=user_name)
+        if proposal.now:
+            was = session.goal.spec.describe() if session.goal else "nothing"
+            session.request_rethink(
+                f'you told {user_name} you would do "{mid_goal.title}" now '
+                f"(it is at the top of the mid goals; you were on {was}, go back to it after)"
+            )
+        return mid_goal
+
+    async def _keep_promise(
+        self,
+        request: GenerateResponseRequest,
+        context: GenerationContext,
+        session: PlaySession,
+        reply: str,
+        handling: str,
+    ) -> KeptPromise | None | str:
+        """
+        約束している返答の約束を中目標にする（docs/design/34 §10）。Gemini が今やる（小目標を
+        区切る）か後でやるかを決める。リストの中目標がもうしているなら何も足さない（None）。
+        中目標にできなければ、その理由（str: 返答を約束しない形に書き直させる）。
+        今やるでも、チャットの指摘で小目標を切ったばかりなら後でやる（小目標をばたつかせない）。
+        """
+        system_prompt = self._prompt_builder.build_system_prompt(self._character, "promise")
+        schema = promise_schema(allow_now=handling != RequestHandling.DECLINE.value)
+        error = ""
+        for attempt in range(1, self._max_attempts + 1):
+            prompt = self._prompt_builder.build_promise_prompt(
+                user_name=request.user_name,
+                message=request.message,
+                reply=reply,
+                handling=handling,
+                context=context,
+                previous_error=error,
+            )
+            try:
+                data = await self._text_generator.generate_json(
+                    prompt, schema, system_instruction=system_prompt, purpose="promise"
+                )
+            except TextGenerationError as e:
+                return f"the decision failed: {e}"
+            decision = data.get("decision")
+            reason = str(data.get("reason", "")).strip()
+            logger.info(f"約束の守り方 {attempt}: {decision}（{reason}）")
+            if decision == PromiseHandling.ALREADY.value:
+                return None
+            if decision not in (PromiseHandling.NOW.value, PromiseHandling.LATER.value):
+                return reason or "it cannot be written as conditions"
+            if handling == RequestHandling.DECLINE.value:
+                decision = PromiseHandling.LATER.value  # 断った返答では今やらない
+            now = decision == PromiseHandling.NOW.value
+            wait = self._rethink_wait(session, "now") if now else 0.0
+            if wait:
+                logger.info(f"{wait:.0f} 秒前に小目標を切ったばかりなので、約束は後でやる")
+            pending = bool(session.rethink_reason)
+            try:
+                proposal = parse_proposal({**data, "when": "now" if now and not wait else "next"})
+                mid_goal = await self._accept(session, request.user_name, proposal)
+            except (ValueError, GoalRejectedError) as e:
+                error = f"中目標にできなかった: {e}\n直せるなら直し、無理なら cannot にする。"
+                logger.warning(f"約束の中目標が使えない: {data!r}: {e}")
+                continue
+            if proposal.now and not pending:
+                self._last_rethink_at = self._clock()
+            return KeptPromise(mid_goal, proposal.now)
+        return error or "it could not become a mid goal"
 
     def _learn(
         self, session: PlaySession, request: GenerateResponseRequest, data: dict[str, object]

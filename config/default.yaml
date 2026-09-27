@@ -42,8 +42,9 @@ twitch:
     skip_min_confidence: 0.7
     triage_record_dir: "logs/chat"   # every comment's triage, skipped ones with their text
     # After a reply that neither accepts a request nor writes a rethink (docs/design/34 §10): jev = Jev
-    # says whether the reply promises to do something in the game; if so it is written again (accept
-    # it as a mid goal, rethink, or say it without the promise). Unsure or failing Jev: spoken as is.
+    # says whether the reply promises to do something in the game; if so Gemini (purpose promise)
+    # turns the promise into a mid goal, now (cutting the small goal) or after the current one, or
+    # the reply is written again without the promise. Unsure or failing Jev: spoken as is.
     # off = no check
     promise_check: "jev"
     promise_record_dir: "logs/promises"   # every check with the comment and the reply
@@ -135,6 +136,7 @@ gemini:
     tool_after_failure: "medium"
     commentary: "low"
     reply: "low"               # a viewer is waiting
+    promise: "low"             # how to keep a promise a reply made (docs/design/34 §10)
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
     skill_write: "high"        # writing or fixing a skill (docs/design/22)
   # Debugging: ask for thought summaries and keep the last calls (purpose, level, thoughts,

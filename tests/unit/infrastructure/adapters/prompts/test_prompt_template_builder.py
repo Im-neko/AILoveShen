@@ -182,10 +182,31 @@ class TestPromptTemplateBuilder:
         assert "## 前回の返答" in prompt
         assert "視聴者の頼みについて" not in prompt
 
+    def test_promise_prompt_asks_how_to_keep_what_the_reply_said(self):
+        """約束している返答は、今していることと返答から守り方を決めさせる（34 §10）。"""
+        builder = PromptTemplateBuilder()
+        prompt = builder.build_promise_prompt(
+            user_name="neko",
+            message="牛いるよ",
+            reply="牛さんからお肉をもらうね！",
+            handling="none",
+            context=GenerationContext(activity=BUILDING),
+            previous_error="中目標にできなかった: x",
+        )
+        system = builder.build_system_prompt(CharacterProfile(), "promise")
+
+        assert "1. 自分の家を作る [取り組み中]" in prompt
+        assert "## 前回の決定\n中目標にできなかった: x" in prompt
+        assert prompt.rstrip().endswith("牛さんからお肉をもらうね！")
+        assert "扱い: none" in prompt
+        assert "## 返答の約束を守る" in system and "have(item, count)" in system
+        assert "already でも cannot でもない。now か later で中目標にする" in system
+        assert "decline（断った）のときは now にしない" in system
+
     def test_system_prompts_do_not_change_with_the_state(self):
         """用途ごとのシステム指示は状態を含まない（暗黙のキャッシュが効く）。"""
         builder = PromptTemplateBuilder()
-        for purpose in ("commentary", "reply", "reply_requests"):
+        for purpose in ("commentary", "reply", "reply_requests", "promise"):
             system = builder.build_system_prompt(CharacterProfile(), purpose)
             assert "$" not in system
             assert system.startswith(builder.build_system_prompt(CharacterProfile()))

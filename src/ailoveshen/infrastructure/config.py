@@ -85,6 +85,7 @@ DEFAULT_THINKING_LEVELS = {
     "tool_after_failure": "medium",
     "commentary": "low",
     "reply": "low",
+    "promise": "low",
     "screen_review": "medium",
     "skill_write": "high",
 }

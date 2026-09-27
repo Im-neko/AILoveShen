@@ -2,10 +2,21 @@
 
 **Active Phase**: 設計書 36（ローカル LLM と Gemini の振り分け）を実装した。ユーザーの FreeToken（Qwen3.6）で `tools/llm_probe.py` を測り、`LOCAL_LLM=1` で様子を見る段階。その前に 設計書 35（教訓帳: 指摘と失敗を似た状況で思い出す）を実装した（実機では未確認。`logs/lessons` と `data/lessons.json` を見て点の重みと閾値を直す）。アバターは既定で全身表示（OBS で切り抜く）。その前に設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-27
-**Test Status**: `pytest tests/` 735 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
+**Test Status**: `pytest tests/unit` 778 passed（`test_stream_factory` の 1 件は配信中でポート 8765 が使われているため）; 前回 `pytest tests/` 735 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 返事の約束を中目標にする（書き直させない） (2026-09-27)
+
+**Commit**: （この後）
+
+ユーザーのログ: 12:10「そこらに豚、牛いるから倒してきて」への返事（「ボートを作って水辺を渡って探しに行ってくるね！」、`request: none`）が 2 回とも約束だけと差し戻され、返事が出なかった。12:17 にも同じ差し戻し。ユーザー:「今ぱっとやってしまったほうが良いか確認して良ければ割り込み処理にしてちゃんと実行」「こういうのちゃんと中目標に追加してほしい」。設計書 34 §10.2。
+- 原因: Jev の約束チェックの状態は `{comment, reply, handling}` だけで、今の作業（生存の小目標 `have(food, 4)`、ボートを作ったところ）を知らない。書き直しの指示には「今している」の逃げ道がなく、Gemini は同じ正しい返事を 2 回書いた
+- `generate_response.py`: 約束していたら `_keep_promise`（Gemini `purpose=promise`: already / now / later / cannot）。now / later は返事の accept と同じ `_accept`（先頭に足して `request_rethink`）。cannot（条件で書けない）だけ前の書き直し。decline では now なし。チャットの指摘で切って 60 秒以内の now は later
+- `goal_vocabulary.py`: `PromiseHandling`、`promise_schema`。`reply_schema` の `when` の説明をプロンプトの決まり（13 §14、今やるほうが合理的なら）にそろえた（「夜の家の中だけ」のまま残っていた）
+- `prompt_template_builder.py` / `IPromptBuilder`: `build_system_prompt(purpose="promise")`、`build_promise_prompt`。config `gemini.thinking_levels.promise: low`
+- テスト: `test_generate_response_use_case.py`（今やる、後で、already、cannot、決め直し、間引き、最後まで守れない）、`test_prompt_template_builder.py`。本物の Gemini（実際の中目標リスト）: 12:10 と 12:17 の返事は now → `have(beef, 3)`、繁殖の decline は cannot。最初の決まりでは 12:17 が「生存の小目標でしているから」と cannot になったので決まりを足した
 
 ### 整地を条件にする（leveled） (2026-09-27)
 

@@ -24,8 +24,8 @@ class IPromptBuilder(ABC):
 
         Args:
             character: 配信者
-            purpose: "commentary"（実況）、"reply"（返答）、"reply_requests"（頼みも受ける返答）。
-                空ならキャラクターだけ
+            purpose: "commentary"（実況）、"reply"（返答）、"reply_requests"（頼みも受ける返答）、
+                "promise"（約束している返答の約束をどう守るか）。空ならキャラクターだけ
         """
         ...
 
@@ -57,5 +57,29 @@ class IPromptBuilder(ABC):
                 何もしない）
             name_reading: 視聴者の名前の読み（覚えていれば。docs/design/30_name_readings.md）
             self_facts: 自分について前に話したこと（守らせる。docs/design/40_small_talk.md）
+        """
+        ...
+
+    @abstractmethod
+    def build_promise_prompt(
+        self,
+        user_name: str,
+        message: str,
+        reply: str,
+        handling: str,
+        context: GenerationContext,
+        previous_error: str = "",
+    ) -> str:
+        """
+        約束している返答の約束を、どう守るか（既にしている / 今やる / 後でやる / できない）を
+        決めさせるプロンプト（docs/design/34 §10）。
+
+        Args:
+            user_name: 視聴者
+            message: 視聴者のコメント
+            reply: 約束している返答
+            handling: 返答の扱い（none / decline）
+            context: 配信者が今していること
+            previous_error: 前回の決定を差し戻した理由（中目標に入らなかった）
         """
         ...

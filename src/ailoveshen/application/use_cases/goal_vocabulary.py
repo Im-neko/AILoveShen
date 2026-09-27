@@ -97,6 +97,15 @@ class RequestHandling(str, Enum):
     WITHDRAW = "withdraw"  # 本人が自分の頼みを取り下げた（「もういいよ」）: その中目標をやめる
 
 
+class PromiseHandling(str, Enum):
+    """約束している返答の約束を、どう守るか（docs/design/34 §10）。"""
+
+    ALREADY = "already"  # リストの中目標がもうそれをしている: そのまま話す
+    NOW = "now"  # 今の小目標を区切って今やる（中目標の先頭）
+    LATER = "later"  # 今の中目標の後でやる
+    CANNOT = "cannot"  # 条件で書けない・受けられない: 約束しない返答に書き直す
+
+
 @dataclass(frozen=True)
 class MidGoalProposal:
     """足す中目標: `position` は未完了のものの中での 0 始まりの位置（None: 最後）。"""
@@ -419,9 +428,10 @@ def reply_schema() -> dict[str, Any]:
             "when": {
                 "type": "string",
                 "enum": ["now", "next"],
-                "description": "accept: now = do it right away because you are only waiting "
-                "(the night inside the home) and it can be done where you are; next = after "
-                "the mid goal worked on now (default)",
+                "description": "accept: now = cut the current small goal and do it right away "
+                "because that is better (it is quick, can be done with what is here, gets harder "
+                "later or matters more than the current goal; or you are only waiting, e.g. the "
+                "night inside the home); next = after the mid goal worked on now (default)",
             },
             "rethink": {
                 "type": "string",
@@ -472,6 +482,44 @@ def reply_schema() -> dict[str, Any]:
             },
         },
         "required": ["reply", "request"],
+    }
+
+
+def promise_schema(allow_now: bool = True) -> dict[str, Any]:
+    """
+    約束している返答の約束をどう守るかの JSON スキーマ（docs/design/34 §10）。
+
+    allow_now: 断った返答（decline）では今やらない（話と行動が食い違う）ので now を出さない。
+    """
+    decisions = [
+        d.value for d in PromiseHandling if allow_now or d is not PromiseHandling.NOW
+    ]
+    return {
+        "type": "object",
+        "properties": {
+            "decision": {
+                "type": "string",
+                "enum": decisions,
+                "description": "already: a mid goal in the list already has these conditions "
+                "(what only a survival small goal is doing does not count: make it a mid goal); "
+                "now: cut the current small goal and do it right away; later: after the mid goal "
+                "worked on now; cannot: only when its result cannot be written as conditions",
+            },
+            "title": {"type": "string", "description": "now / later: the mid goal's title"},
+            "conditions": _conditions_schema(),
+            "position": {
+                "type": "integer",
+                "minimum": 2,
+                "description": "later: its place in the list (2 = right after the one worked "
+                "on now)",
+            },
+            "reason": {
+                "type": "string",
+                "description": "why it helps (now / later: and why now or later), or why it "
+                "cannot be done, in one sentence",
+            },
+        },
+        "required": ["decision", "reason"],
     }
 
 
