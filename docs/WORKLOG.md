@@ -7,6 +7,17 @@
 
 ## Completed Work
 
+### ボートが岸の角でサーバーに戻され続けて止まらない、目標の決定はローカルでも考える (2026-09-27)
+
+**Commit**: (pending)
+
+ユーザー:「ボートに乗ると何の行動選択もしなくなる」「目標の決定は多少考えて良い」。設計書 37 の追記、設計書 36 §8。
+- 実機: `go_home` のボートが (21.8, -177.5) で 5 分以上。Paper 1.21.4 を逆アセンブルし、`hasNewCollision`（動いた後の箱に新しい当たり → ログなしで戻す）と特定。箱の北西の角が水面の高さの草ブロック (20, 62, -179) にかかっていた（RCON）
+- `boat.mjs`: `boxFree`（1.375 x 0.5625 の箱）で `clearAhead`、20 ティック続けて戻されたら止まる。`primitives.mjs` の `legToward`: 水の上で止まったら行動を失敗にする（乗ったまま歩かない）
+- `config/default.yaml`: `thinking_purposes` に goal、goal_after_failure
+- テスト: `boat.test.mjs` 2 件。ブリッジ 236、Python 806
+- 要ブリッジ再起動。今止まっているボットは再起動か `POST /abort` で抜ける
+
 ### 画像以外はすべてローカルの LLM (2026-09-27)
 
 **Commit**: `bec2d05`

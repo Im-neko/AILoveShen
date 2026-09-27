@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { waterCrossing, surfaceAt, drive, BOAT, BOAT_MIN_WATER } from '../src/boat.mjs'
+import { waterCrossing, surfaceAt, drive, boxFree, BOAT, BOAT_MIN_WATER } from '../src/boat.mjs'
 import { createTools } from '../src/tools.mjs'
 import { relayOwnState } from '../src/mirror.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
@@ -89,6 +89,34 @@ test('前の陸の向こうにまた水があれば島: よけて進み、向こ
   const moves = sent.filter((s) => s.name === 'vehicle_move').map((s) => s.params)
   assert.ok(moves.some((m) => Math.abs(m.z - 0.5) > 1.5), 'turned aside')
   assert.ok(moves.at(-1).x > 36)
+})
+
+test('斜めに進むときも、ボートの箱（1.375 の正方形）の角を岸のブロックに当てない', async () => {
+  // 実測（2026-09-27）: 西南西へ進むボートの箱の北西の角が、水面の高さの草ブロック (20, 62, -179) に
+  // かかり、サーバーが毎ティック位置を戻した
+  const water = (p) => p.y === 62 ? { name: 'water', boundingBox: 'empty' } : p.y < 62 ? { name: 'sand', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }
+  const blockAt = (p) => (p.x === 20 && p.y === 62 && p.z === -179 ? { name: 'grass_block', boundingBox: 'block' } : water(p))
+  const { bot, boat, sent } = rider(v(21.8, 62.889, -177.51))
+  bot.blockAt = blockAt
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(new Error('enough')), 300)
+  await drive(bot, boat, v(-76, 65, -151), controller.signal)
+  const moves = sent.filter((s) => s.name === 'vehicle_move').map((s) => s.params)
+  assert.ok(moves.length > 3)
+  for (const m of moves) assert.equal(boxFree(bot, m.x, m.y, m.z), true, `the box hits the shore at ${m.x},${m.z}`)
+  // 前のやり方（進む向きに垂直な線の上だけ見る）では当たっていた一歩目
+  assert.equal(boxFree(bot, 21.8 - 0.338, 62.889, -177.51 + 0.092), false)
+})
+
+test('サーバーに戻され続けたら、漕ぎ続けずに理由を付けて止まる', async () => {
+  const { bot, boat } = rider(v(12.5, 62.52, 0.5))
+  const listeners = {}
+  bot._client.on = (e, f) => { listeners[e] = f }
+  bot._client.off = (e) => { delete listeners[e] }
+  bot._client.write = (name) => { if (name === 'vehicle_move') listeners.vehicle_move?.({ x: 12.5, y: 62.52, z: 0.5 }) }
+  const r = await drive(bot, boat, v(60, 64, 0.5), new AbortController().signal)
+  assert.equal(r.landed, false)
+  assert.match(r.why, /^the server kept pushing the boat back at 12.5,0.5/)
 })
 
 test('止める合図が来たら、乗ったまま止まる（続きは次の行動が漕ぐ）', async () => {

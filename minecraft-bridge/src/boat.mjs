@@ -22,7 +22,12 @@ export const CROSSING_LOOK_M = 96 // 水を探す道のりの長さ（読み込�
 const SPEED = 0.35 // 1 ティックに進むブロック
 const TICK_MS = 50
 const PASSENGER_Y = -0.4125 // 乗っている人の足の高さ（ボートの位置から）
-const HALF_WIDTH = 0.7 // ボートの幅の半分（1.375）
+// ボートの当たり判定: 軸にそろった箱（幅 1.375、高さ 0.5625）。向きで回らないので、斜めに進むと角が
+// 前に出る。サーバー（Paper の hasNewCollision）は、動いた後の箱に前はなかった当たりがあると、ログなしで
+// 位置を戻す（2026-09-27: 岸の草ブロックに箱の角がかかり、毎ティック戻されて 5 分以上その場で漕ぎ続けた）
+const BOX_HALF = 0.6875
+const BOX_HEIGHT = 0.5625
+const PUSHED_BACK_TICKS = 20 // 続けてこれだけ戻されたら、進めないとして止まる（1 秒）
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90] // 前が塞がっていたら、この角度の向きを順に試す
 const OBSTACLE_LOOK_M = 24 // 前の陸の向こうにまた水があれば、島（よけて進む）
 const UNLOADED_WAIT_MS = 3000
@@ -30,7 +35,7 @@ const PLACE_REACH = 4
 const BREAK_HITS = 10
 
 const isWater = (name) => /^(water|bubble_column|kelp|kelp_plant|seagrass|tall_seagrass)$/.test(name ?? '')
-const CLEAR = /^(air|cave_air|lily_pad)$/ // 水の上にあってもボートが通れる（睡蓮は壊して進む）
+const CLEAR = /^(air|cave_air|lily_pad)$/ // 水面を探すときに飛ばすもの（睡蓮は当たり判定があるので boxFree が止まる）
 const SOFT = /^(short_grass|tall_grass|fern|large_fern|dead_bush|snow|vine|.*_carpet|.*_flower|dandelion|poppy)$/
 
 export const boatItem = (bot) => (bot.inventory?.items?.() ?? []).find((i) => BOAT.test(i.name)) ?? null
@@ -92,15 +97,31 @@ function navigable (bot, x, z, waterY) {
   return isWater(cell.name) && CLEAR.test(above.name)
 }
 
-// 向き (ux, uz) に ahead m 先まで、ボートの幅で通れるか（読み込まれていなければ null）
-function clearAhead (bot, pos, ux, uz, waterY, ahead = 2.5) {
-  for (let d = 0.8; d <= ahead; d += 0.6) {
-    for (const side of [-HALF_WIDTH, 0, HALF_WIDTH]) {
-      const x = pos.x + ux * d - uz * side
-      const z = pos.z + uz * d + ux * side
-      const ok = navigable(bot, x, z, waterY)
-      if (ok !== true) return ok
+// ボートの箱を (x, y, z) に置けるか: 箱にかかるブロックに当たり判定のあるものがない（読み込まれていなければ null）
+const EPS = 1e-5
+export function boxFree (bot, x, y, z) {
+  for (let bx = Math.floor(x - BOX_HALF + EPS); bx <= Math.floor(x + BOX_HALF - EPS); bx++) {
+    for (let bz = Math.floor(z - BOX_HALF + EPS); bz <= Math.floor(z + BOX_HALF - EPS); bz++) {
+      for (let by = Math.floor(y + EPS); by <= Math.floor(y + BOX_HEIGHT - EPS); by++) {
+        const b = bot.blockAt(new Vec3(bx, by, bz))
+        if (!b) return null
+        if (b.boundingBox === 'block') return false
+      }
     }
+  }
+  return true
+}
+
+// 向き (ux, uz) に ahead m 先まで、1 ティックの歩みごとに、真ん中の下が水で、ボートの箱が何にも当たらないか
+// （読み込まれていなければ null）
+function clearAhead (bot, pos, ux, uz, waterY, ahead = 2.5) {
+  for (let d = SPEED; d <= ahead + EPS; d += SPEED) {
+    const x = pos.x + ux * d
+    const z = pos.z + uz * d
+    const water = navigable(bot, x, z, waterY)
+    if (water !== true) return water
+    const free = boxFree(bot, x, pos.y, z)
+    if (free !== true) return free
   }
   return true
 }
@@ -145,6 +166,8 @@ export async function drive (bot, boat, target, signal, { maxMs = Infinity, log 
   let landed = false
   let waitedSince = null
   let corrected = 0
+  let pushedBack = 0 // 続けて戻されたティック数
+  let seen = 0
   const onCorrect = (p) => { corrected++; pos = new Vec3(p.x, p.y, p.z) }
   bot._client.on('vehicle_move', onCorrect)
   try {
@@ -152,6 +175,12 @@ export async function drive (bot, boat, target, signal, { maxMs = Infinity, log 
       if (signal.aborted) { why = `stopped: ${signal.reason?.message ?? 'aborted'}`; break }
       if (bot.vehicle?.id !== boat.id) { why = 'no longer in the boat'; break }
       if (Date.now() - t0 > maxMs) { why = 'time is up for this stretch'; break }
+      pushedBack = corrected > seen ? pushedBack + 1 : 0
+      seen = corrected
+      if (pushedBack >= PUSHED_BACK_TICKS) {
+        why = `the server kept pushing the boat back at ${round(pos.x)},${round(pos.z)} (something is in the way)`
+        break
+      }
       const dx = target.x - pos.x
       const dz = target.z - pos.z
       const left = Math.hypot(dx, dz)

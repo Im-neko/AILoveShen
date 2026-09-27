@@ -80,4 +80,4 @@ Gemini の支出の上限に達した（403 Spend cap breached）。ユーザー
 - `llm.fallback: none`: ローカルが失敗しても Gemini に回さない（崩れた答えはアダプターが誤りを添えて 1 回聞き直す。それでも駄目ならその呼び出しはエラー）
 - `llm.local.context_tokens: 130000`（サーバーの `/v1/models` は `max_model_len` 262144）
 - Gemini に行くのは、画面の画像つきの呼び出しと、130000 トークンに入らないプロンプト（`RoutingTextGenerator._pick`。ローカルでは受けられないので残した）だけ
-- §7 で測ったとおり、goal / reply / promise はローカルで schema を崩しやすく、返答は遅い（6.6 秒対 1.9 秒）。ローカルでは考える（thinking）のは `thinking_purposes`（skill_write、house、town、site）だけで、目標の決定は考えずに答える。`logs` の `Local … purpose=goal` と、聞き直し・エラーの数を見て、崩れが多ければ goal に thinking を足すか、schema を軽くする
+- §7 で測ったとおり、goal / reply / promise はローカルで schema を崩しやすく、返答は遅い（6.6 秒対 1.9 秒）。ローカルで考える（thinking）のは `thinking_purposes`: 目標の決定（goal、goal_after_failure。ユーザー「目標の決定は多少考えて良い」）と skill_write、house、town、site。道具・実況・返答は考えずに答える

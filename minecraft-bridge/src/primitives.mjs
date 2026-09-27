@@ -203,7 +203,10 @@ export const LEG = 48
 async function legToward (bot, state, target, what, signal) {
   for (;;) {
     signal.throwIfAborted()
-    await crossWater(bot, state, target, what, signal)
+    const crossed = await crossWater(bot, state, target, what, signal)
+    // 岸に着かずにボートの上で止まった（進めない、先が読み込まれていない）: 乗ったままでは歩けない
+    // （pathfinder は乗っている間に動かない）ので、理由を返して次の手に任せる
+    if (riding(bot)) throw new Error(crossed ?? `still in the boat on the way to ${what}`)
     const me = bot.entity.position
     const far = Math.hypot(target.x - me.x, target.z - me.z)
     if (far <= LEG) return null
