@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum, IntEnum
@@ -1072,6 +1073,16 @@ class GameObservation:
     day: Optional[int] = None
     # 地下にいる（頭の上がふさがっていて海面より下）: 夜でも家に帰らなくてよい
     underground: bool = False
+
+    @property
+    def home_distance_m(self) -> Optional[int]:
+        """家の扉までの水平の距離（m）。家か位置が分からなければ None。"""
+        door = (self.state.get("home") or {}).get("door") or {}
+        me = (self.state.get("self") or {}).get("position") or {}
+        try:
+            return round(math.hypot(door["x"] - me["x"], door["z"] - me["z"]))
+        except (KeyError, TypeError):
+            return None
 
 
 @dataclass(frozen=True)

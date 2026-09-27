@@ -101,7 +101,13 @@ class Narrator:
         （イベントの発行はハンドラーを待つので、プレイのループを止めない）。「今はいい」なら取っておく。
         """
         serves = f"「{event.mid_goal}」のため" if event.mid_goal else "身を守るため"
-        self._pending.append(f"新しい小目標: {event.goal}（{serves}。{event.reason}）")
+        # これからやること（まだ済んでいない）と、今いる場所を添える: 前は
+        # 「新しい小目標: at_home()」だけで、家から 390m 離れているのに「無事に家の中に入った」
+        # と話した（2026-09-27）
+        self._pending.append(
+            f"新しい小目標（これからやること。まだ済んでいない）: {event.goal}（{serves}。"
+            f"{event.reason}）{_place(self._activity())}"
+        )
         self._boundary()
 
     async def on_member_met(self, event: GoalMemberMetEvent) -> None:
@@ -216,6 +222,19 @@ class Narrator:
                 await self._say(text)
         except Exception as e:
             logger.error(f"目標の変化の実況に失敗した: {e}")
+
+
+def _place(activity: Activity | None) -> str:
+    """今いる場所（家があるときだけ）: 家の中か、家の外と家までの距離。"""
+    obs = activity.observation if activity is not None else None
+    if obs is None or not obs.has_home:
+        return ""
+    if obs.inside_home:
+        return "。今いる場所: 家の中"
+    distance = obs.home_distance_m
+    if distance is None:
+        return "。今いる場所: 家の外"
+    return f"。今いる場所: 家の外（家まで {distance}m）"
 
 
 def _requested(user_name: str) -> str:

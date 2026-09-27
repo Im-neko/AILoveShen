@@ -17,10 +17,11 @@ from ailoveshen.domain.events import (
     TownDefinedEvent,
     TownSiteChosenEvent,
 )
-from ailoveshen.domain.value_objects import Activity
+from ailoveshen.domain.value_objects import Activity, GameObservation
 from ailoveshen.presentation.services.narrator import Narrator
 
 ACTIVITY = Activity()
+NEW = "新しい小目標（これからやること。まだ済んでいない）: "
 
 
 @pytest.fixture
@@ -69,7 +70,7 @@ class TestNarrator:
         assert _events(llm) == [
             [
                 "小目標 placed(bed, home) が未達成でやめた（stalled）",
-                "新しい小目標: through_night()（身を守るため。日が暮れる）",
+                NEW + "through_night()（身を守るため。日が暮れる）",
             ]
         ]
         assert llm.generate_commentary.call_args.kwargs["activity"] is ACTIVITY
@@ -84,7 +85,36 @@ class TestNarrator:
         await narrator.drain()
 
         assert _events(llm) == [
-            ["新しい小目標: have(log, 3)（「身を守る道具を持つ」のため。剣の材料）"]
+            [NEW + "have(log, 3)（「身を守る道具を持つ」のため。剣の材料）"]
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_new_goal_says_where_she_is_now(self, narrator, llm):
+        """実測（2026-09-27）: 家から 390m 離れているのに、at_home を決めただけで「家に入った」。"""
+        obs = GameObservation(
+            state={
+                "home": {"door": {"x": -76, "y": 65, "z": -151}},
+                "self": {"position": {"x": -73.3, "y": 63, "z": -414.3}},
+            },
+            candidates=(),
+            health=20.0,
+            food=20,
+            has_home=True,
+        )
+        current[0] = Activity(observation=obs)
+        try:
+            await narrator.on_goal_set(
+                GoalSetEvent(goal="at_home()", reason="夜は危ない", mid_goal="")
+            )
+            await narrator.drain()
+        finally:
+            current[0] = ACTIVITY
+
+        assert _events(llm) == [
+            [
+                NEW + "at_home()（身を守るため。"
+                "夜は危ない）。今いる場所: 家の外（家まで 263m）"
+            ]
         ]
 
     @pytest.mark.asyncio
@@ -154,7 +184,7 @@ class TestNarrator:
             [
                 "家「ぽかぽか」が完成した",
                 "小目標 built() が達成（met）",
-                "新しい小目標: have(wooden_sword, 1)（「剣」のため。身を守る）",
+                NEW + "have(wooden_sword, 1)（「剣」のため。身を守る）",
             ]
         ]
 

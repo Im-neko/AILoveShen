@@ -526,13 +526,24 @@ def _format_around(around: dict) -> list[str]:
 
 
 def _format_home(obs: GameObservation) -> str:
+    """
+    家そのもの（建ててあるか、ベッド、チェスト）。今いる場所は別の行（_format_place）: 前は同じ行に
+    「完成している（外にいる）」と書き、小目標 at_home のときに家に着いたと読まれた（2026-09-27）。
+    """
     if not obs.has_home:
         return "まだない（夜までに建てる必要がある）"
     name = (obs.state.get("home") or {}).get("name")
-    where = "家の中にいる" if obs.inside_home else "完成している（外にいる）"
     bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
     chests = len((obs.state.get("memory") or {}).get("chests", []))
-    return f"{f'{name}、' if name else ''}{where}、{bed}、チェスト {chests}"
+    return f"{f'{name}（建ててある）' if name else '建ててある'}、{bed}、チェスト {chests}"
+
+
+def format_place(obs: GameObservation) -> str:
+    """今いる場所: 家の中か、家の外と家までの距離。"""
+    if obs.inside_home:
+        return "家の中"
+    distance = obs.home_distance_m
+    return f"家の外（家まで {distance}m）" if distance is not None else "家の外"
 
 
 def _format_broken(broken: list) -> list[str]:
@@ -573,6 +584,7 @@ def _format_situation(obs: GameObservation) -> str:
     lines = [
         f"- 時間帯: {format_time(s.get('time', {}))}",
         f"- 家: {_format_home(obs)}",
+        *([f"- 今いる場所: {format_place(obs)}"] if obs.has_home else []),
         f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
         *_format_around(s.get("around") or {}),
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",

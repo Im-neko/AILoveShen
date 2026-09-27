@@ -208,7 +208,7 @@ class TestGamePromptTemplateBuilder:
         prompt = _goal_prompt(obs)
 
         assert "時間帯: 夜（朝まで約 5 分）" in prompt
-        assert "家: 家の中にいる、ベッドあり、チェスト 0" in prompt
+        assert "家: 建ててある、ベッドあり、チェスト 0\n- 今いる場所: 家の中\n" in prompt
         assert "チェストの中身: なし" in prompt
 
     def test_goal_prompt_home_name_and_chests(self):
@@ -227,7 +227,13 @@ class TestGamePromptTemplateBuilder:
 
         prompt = _goal_prompt(obs)
 
-        assert "家: ぽかぽかログハウス、完成している（外にいる）、ベッドなし、チェスト 2" in prompt
+        assert "家: ぽかぽかログハウス（建ててある）、ベッドなし、チェスト 2" in prompt
+        # 今いる場所は別の行で、家までの距離つき
+        # （「完成している（外にいる）」を家に着いたと読まれた）
+        assert "- 今いる場所: 家の外\n" in prompt
+        obs.state["home"]["door"] = {"x": -76, "y": 65, "z": -151}
+        obs.state["self"] = {"position": {"x": -73.3, "y": 63, "z": -414.3}}
+        assert "- 今いる場所: 家の外（家まで 263m）\n" in _goal_prompt(obs)
         # 空のチェストは出さない（数は家の行にある。26 §4）
         assert "- チェストの中身: oak_log 20、cobblestone 14（2 分前）\n" in prompt
 
