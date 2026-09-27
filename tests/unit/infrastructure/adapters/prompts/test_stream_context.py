@@ -8,7 +8,7 @@ def test_the_farm_and_what_remembered_blocks_give_are_shown():
     """畑の小麦に気づかなかった（2026-09-27）: 畑と、覚えている場所で取れる物を出す。"""
     obs = GameObservation(
         state={
-            "farm": {"wheat": {"planted": 12, "ripe": 8}},
+            "farm": {"wheat": {"planted": 12, "ripe": 8, "ages": [3, 7], "mature": 7}},
             "memory": {
                 "places": [
                     {
@@ -27,5 +27,5 @@ def test_the_farm_and_what_remembered_blocks_give_are_shown():
         food=20,
     )
     text = format_activity(Activity(observation=obs))
-    assert "家のまわりの畑: wheat 12 マス（熟した 8）" in text
+    assert "家のまわりの畑: wheat 12 マス（熟した 8、育ち具合 3〜7/7）" in text
     assert "wheat 12（→ wheat・wheat_seeds、" in text

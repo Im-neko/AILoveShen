@@ -79,12 +79,37 @@ export function cropStatus (bot, state, crop) {
   return { planted: found.length, mature: mature.length, positions: found, maturePositions: mature }
 }
 
-// 家のまわりの畑: { wheat: { planted, ripe } }（植わっている作物だけ）
+// 家のまわりの畑の、その作物: { planted, ripe, ages: [最小, 最大], mature, pos, remembered }。
+// 見えていれば数えて記憶（state.memory.farm）に残し、畑のチャンクが読み込まれていなければ（遠出中）
+// 記憶を返す。作物はプレイヤーの近くでしか育たないので、記憶のときの育ち具合のまま。なければ null
+export function homeFarm (bot, state, crop) {
+  const home = state.home
+  if (!home || !CROPS[crop]) return null
+  const farms = state.memory ? (state.memory.farm ??= {}) : {}
+  if (!bot.blockAt(home.inside)) return farms[crop] ? { ...farms[crop], remembered: true } : null
+  const s = cropStatus(bot, state, crop)
+  if (!s.planted) {
+    delete farms[crop]
+    return null
+  }
+  const ages = s.positions.map((p) => ageOf(bot.blockAt(p)))
+  const ripe = s.maturePositions[0] ?? s.positions[0]
+  farms[crop] = {
+    planted: s.planted,
+    ripe: s.mature,
+    ages: [Math.min(...ages), Math.max(...ages)],
+    mature: CROPS[crop].mature,
+    pos: { x: ripe.x, y: ripe.y, z: ripe.z }
+  }
+  return { ...farms[crop], remembered: false }
+}
+
+// 家のまわりの畑: { wheat: { planted, ripe, ages, mature } }（植わっている作物だけ）
 export function farmSummary (bot, state) {
   const out = {}
   for (const crop of Object.keys(CROPS)) {
-    const s = cropStatus(bot, state, crop)
-    if (s.planted) out[crop] = { planted: s.planted, ripe: s.mature }
+    const f = homeFarm(bot, state, crop)
+    if (f) out[crop] = { planted: f.planted, ripe: f.ripe, ages: f.ages, mature: f.mature, ...(f.remembered ? { remembered: true } : {}) }
   }
   return out
 }

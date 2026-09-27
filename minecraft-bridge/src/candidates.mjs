@@ -137,6 +137,11 @@ function fromLeaf (bot, state, world, leaf) {
       return [{ id: `dig stairs down toward ${name} at ${fmt(t.pos)}`, verb: 'dig_down', target: name, pos: t.pos, distance: dist(bot, t.pos), depth: t.depth }]
     }
     case 'explore': {
+      if (leaf.farm) {
+        const p = new Vec3(leaf.farm.pos.x, leaf.farm.pos.y, leaf.farm.pos.z)
+        const [name] = leaf.sources
+        return [{ id: `go to the home farm (${leaf.farm.ripe} ripe ${name})`, verb: 'goto_memory', target: name, pos: p, distance: dist(bot, p) }]
+      }
       const lookingFor = leaf.sources.length ? leaf.sources.join('/') : leaf.item
       const me = bot.entity.position
       // 前に見た場所を先に出す。次に方角を、すでに行った場所には印をつけて出す

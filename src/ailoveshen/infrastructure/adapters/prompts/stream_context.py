@@ -503,11 +503,24 @@ def _format_broken(broken: list) -> list[str]:
 
 
 def _format_farm(farm: dict) -> list[str]:
-    """家のまわりの畑: 作物ごとの植わっている数と熟した数（熟したものは掘ると取れて、植え直す）。"""
+    """
+    家のまわりの畑: 作物ごとの植わっている数、熟した数、育ち具合（熟したものは掘ると取れて、
+    植え直す。作物は家の近くにいる間だけ育つ）。
+    """
     if not farm:
         return []
-    parts = [f"{crop} {f['planted']} マス（熟した {f['ripe']}）" for crop, f in farm.items()]
-    return [f"- 家のまわりの畑: {'、'.join(parts)}（熟したものを掘ると収穫して植え直す）"]
+
+    def one(crop: str, f: dict) -> str:
+        ages = f.get("ages")
+        grow = f"、育ち具合 {ages[0]}〜{ages[1]}/{f.get('mature')}" if ages else ""
+        seen = "、前に見たとき" if f.get("remembered") else ""
+        return f"{crop} {f['planted']} マス（熟した {f['ripe']}{grow}{seen}）"
+
+    parts = [one(crop, f) for crop, f in farm.items()]
+    return [
+        f"- 家のまわりの畑: {'、'.join(parts)}（熟したものを掘ると収穫して植え直す。"
+        "家の近くにいる間だけ育つ）"
+    ]
 
 
 def _format_situation(obs: GameObservation) -> str:

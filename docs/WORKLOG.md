@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 家の畑が育ち途中なら遠出しない (2026-09-27)
+
+**Commit**: (次のコミット)
+
+ユーザー:「畑を畑と認識できない」→「自分の畑を使わず遠くへ行く」。設計書 33 の追記。
+- 事実: 家の畑の小麦 9 本は age 1〜5（RCON で確認）、ブリッジの判定は正しい。熟していないので、ソルバーが 261 m 先の小麦への移動だけを出していた。作物は近くにいないと育たない
+- `farming.mjs` の `homeFarm`（`state.memory.farm` に記憶）、`farmSummary` に ages、`world.mjs` の `farm`、`solver.mjs`（熟していれば家の畑へ、育ち途中は `growing` で遠出なし）、`candidates.mjs`（`go to the home farm`）、`stream_context`（育ち具合）
+- テスト: `crops.test.mjs`（育ち途中・熟した・畑なし）、`test_stream_context.py`。ブリッジ 232、Python 805
+
 ### 整地: 穴の中から積んで埋める (2026-09-27)
 
 **Commit**: `e00840c`

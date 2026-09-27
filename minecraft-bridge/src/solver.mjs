@@ -222,9 +222,27 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     : null
   const digDown = buried && buried.t.depth <= (world.digDepth ?? 0) &&
     DIG_DOWN_COST + buried.t.depth < (known.length ? RECALL_COST : EXPLORE_COST)
+  // 家の畑にある作物: 熟していれば畑へ戻る。育ち途中なら遠出しない（作物はプレイヤーの近くでしか
+  // 育たない。2026-09-27: 家の小麦が育ち途中のまま、261 m 先の小麦へ遠征しようとした）
+  const farm = kind === 'dig' && !inSight.length
+    ? sources.map((s) => ({ s, f: world.farm?.(s) })).find((x) => x.f)
+    : null
   let leaf
   if (inSight.length) {
     leaf = { kind, item, count: n, sources: inSight }
+  } else if (farm && farm.f.ripe > 0) {
+    leaf = { kind: 'explore', item, sources: [farm.s], farm: farm.f, reason: `the home farm has ${farm.f.ripe} ripe ${farm.s} for ${item}: go there and harvest` }
+    cost += RECALL_COST
+  } else if (farm) {
+    const { planted, ages, mature } = farm.f
+    const meal = (world.inventory?.bone_meal ?? 0) > 0 ? `; bone meal grows it at once (use_item bone_meal on the ${farm.s} at ${farm.f.pos.x},${farm.f.pos.y},${farm.f.pos.z})` : ''
+    leaf = {
+      kind: 'growing',
+      item,
+      reason: `the home farm's ${farm.s} for ${item} is still growing (${planted} planted, none ripe, age ${ages[0]}-${ages[1]} of ${mature}); ` +
+        `it grows only while you stay near the home: do other steps near the home meanwhile and harvest it when ripe, instead of going far for it${meal}`
+    }
+    cost += EXPLORE_COST * 2
   } else if (digDown) {
     leaf = { kind: 'dig_down', item, sources: [buried.s], depth: buried.t.depth }
     cost += DIG_DOWN_COST + buried.t.depth
@@ -258,7 +276,7 @@ function collect (node, leaves, blocked, impossible) {
   for (const c of node.children) collect(c, leaves, blocked, impossible)
   const leaf = node.leaf
   if (!leaf) return
-  if (leaf.kind === 'none') {
+  if (leaf.kind === 'none' || leaf.kind === 'growing') {
     blocked.push(leaf.reason)
     impossible.push(leaf.reason)
   } else if (leaf.kind === 'explore') { blocked.push(leaf.reason); leaves.push(leaf) } else if (leaf.kind === 'craft') {
