@@ -9,7 +9,7 @@
 
 ### ドアを通って歩く（pathfinder にドアを教える） (2026-09-27)
 
-**Commit**: (次のコミット)
+**Commit**: `0e59155`
 
 ユーザー: 家以外の建物に一度入ると出られない。選んだ直し方は「pathfinder にドアを教える」（家のドアはコードのまま）。設計書 `docs/design/39_doors.md`。
 - 原因: mineflayer-pathfinder は boundingBox が empty のセルしか通さず、ドアは開いていても 'block'（壊すもの → 壊してよいのは地形と葉だけなので通れない）。`canOpenDoors` はゲートにしか効かない。今までの `walkThroughDoors` はドアに一度も効いていなかった
