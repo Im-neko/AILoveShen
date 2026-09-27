@@ -57,7 +57,7 @@ export async function walkThroughDoors (bot, goal, signal) {
     bot.pathfinder.setMovements(m)
   }
   try {
-    await walkTo(bot, goal, signal)
+    await walkOnce(bot, goal, signal, STUCK_MS)
   } finally {
     if (original) bot.pathfinder.setMovements(original)
   }
@@ -88,6 +88,19 @@ export function guardDigLoops (bot, state) {
 }
 
 export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS) {
+  try {
+    return await walkOnce(bot, goal, signal, stuckMs)
+  } catch (e) {
+    const m = bot.pathfinder?.movements
+    if (!isNoPath(e) || !m || m.canOpenDoors || signal.aborted) throw e
+    // 経路がない: ドアを開けて通ってよい歩き方でもう一度（ドアのある建物の中から出られなかった。
+    // pathfinder の既定はドアを通らない）
+    console.log('[move] 経路がない: ドアを通ってよい歩き方でもう一度')
+    return await walkThroughDoors(bot, goal, signal)
+  }
+}
+
+async function walkOnce (bot, goal, signal, stuckMs) {
   signal.throwIfAborted()
   const original = bot.pathfinder.movements
   const tried = []

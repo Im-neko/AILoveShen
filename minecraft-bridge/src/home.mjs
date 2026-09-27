@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import vec3Pkg from 'vec3'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
-import { buildAllowsDig, inBuilds, isHomeCell, buildBox } from './builds.mjs'
+import { buildAllowsDig, onBuildCell, isHomeCell, buildBox } from './builds.mjs'
 import { walkTo } from './move.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase } from './observe.mjs'
 
@@ -213,7 +213,7 @@ const inHome = (home, p) => isHomeCell(home, p)
 const HOME_HEIGHT = 5 // 壁は高さ 4 まで、その上に屋根
 export function inHouse (state, p, margin = 0) {
   if ([state.home, ...(state.formerHomes ?? [])].some((h) => h && inBuilt(h, p, margin))) return true
-  if (inBuilds(state, p, margin)) return true
+  if (onBuildCell(state, p, margin)) return true
   const o = state.plan?.origin
   if (!o) return false
   const { width, depth, height } = state.plan.size
@@ -243,7 +243,7 @@ export function protectedReason (state, p, margin = 0, block = null) {
   // 建物が「空ける」と書いた家の壁は掘ってよい（docs/design/25_builds.md）
   if (block && buildAllowsDig(state, p, block)) return null
   if (state.home && inBuilt(state.home, p, margin)) return 'it is part of the current home'
-  if (inBuilds(state, p, margin)) return 'it is part of a build (use build_next for it)'
+  if (onBuildCell(state, p, margin)) return 'it is part of a build (use build_next for it)'
   const o = state.plan?.origin
   if (!o) return null
   const { width, depth, height } = state.plan.size

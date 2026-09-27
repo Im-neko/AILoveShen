@@ -166,7 +166,38 @@ export function buildAllowsDig (state, p, block) {
   return Object.values(state.builds ?? {}).some((plan) => plan.origin && plan.blocks.some((b) => b.block === 'air' && plan.worldPos(b).equals(p)))
 }
 
-// p が建物（どれか）の範囲か: 採掘や足場の対象から外す
+// 建物の設計のセル（置くブロックと空けるマス）の集合。計画ごとに一度だけ作る
+const cellCache = new WeakMap()
+const cellKey = (p) => `${p.x},${p.y},${p.z}`
+function planCells (plan) {
+  const at = cellKey(plan.origin)
+  let c = cellCache.get(plan)
+  if (!c || c.at !== at || c.count !== plan.blocks.length) {
+    c = { at, count: plan.blocks.length, cells: new Set(plan.blocks.map((b) => cellKey(plan.worldPos(b)))), box: buildBox(plan) }
+    cellCache.set(plan, c)
+  }
+  return c
+}
+
+// p が建物（どれか）の設計のセルか（margin: 横にそれだけ離れたセルまで）: 採掘や足場の対象から外す。
+// 箱全体ではない: 大きな建物（壁、街）の箱の中の木や地面まで掘れず、足場も置けず、中に入った
+// ボットがどこへも行けなくなった（2026-09-27: 一晩中「No path」、木も切れなかった）
+export function onBuildCell (state, p, margin = 0) {
+  return Object.values(state.builds ?? {}).some((plan) => {
+    if (!plan.origin) return false
+    const { cells, box } = planCells(plan)
+    if (p.x < box.min.x - margin || p.x > box.max.x + margin || p.z < box.min.z - margin || p.z > box.max.z + margin ||
+      p.y < box.min.y || p.y > box.max.y) return false
+    for (let dx = -margin; dx <= margin; dx++) {
+      for (let dz = -margin; dz <= margin; dz++) {
+        if (cells.has(`${p.x + dx},${p.y},${p.z + dz}`)) return true
+      }
+    }
+    return false
+  })
+}
+
+// p が建物（どれか）の箱の範囲か（場所選びなど。採掘・足場の保護は onBuildCell）
 export function inBuilds (state, p, margin = 0) {
   return Object.values(state.builds ?? {}).some((plan) => {
     if (!plan.origin) return false

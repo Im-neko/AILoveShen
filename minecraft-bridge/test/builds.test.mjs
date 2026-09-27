@@ -71,8 +71,14 @@ test('東の増築を登録すると、家の壁の入口だけ掘ってよく�
   // 入口でない家の壁は守る
   const wall = v(104, 70, 1)
   assert.match(protectedReason(state, wall, 0, bot.blockAt(wall)), /current home/)
-  // 建物の範囲は採掘の対象から外す
-  assert.equal(inHouse(state, v(107, 71, 2)), true)
+  // 建物の設計のセル（壁、床）は採掘の対象から外す。箱の中の空いた所は外さない（大きな建物の箱の中で
+  // 木も地面も掘れず、どこへも行けなくなった）
+  assert.equal(inHouse(state, v(108, 71, 2)), true)
+  assert.equal(inHouse(state, v(106, 69, 2)), true)
+  assert.equal(inHouse(state, v(107, 71, 2)), false)
+  // 足場は壁の隣にも置かない
+  assert.equal(inHouse(state, v(109, 71, 2), 1), true)
+  assert.equal(inHouse(state, v(110, 71, 2), 1), false)
   // 空けるマスの判定: 壁があるうちは済んでいない
   assert.equal(plan.isPlaced(bot, plan.blocks.find((b) => b.block === 'air')), false)
   assert.equal(plan.materialsNeeded(bot).air, undefined)

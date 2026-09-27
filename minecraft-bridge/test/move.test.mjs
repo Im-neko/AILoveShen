@@ -94,3 +94,22 @@ test('同じブロックを 1 分に 3 回掘ったら、しばらくそこは�
   assert.equal(isLoopCell(state, new Vec3(0, 39, 0)), false)
   assert.equal(replans, 1)
 })
+
+test('経路がなければ、ドアを開けて通ってよい歩き方でもう一度試し、元の歩き方に戻す', async () => {
+  const movements = { canOpenDoors: false }
+  const used = []
+  const bot = {
+    pathfinder: {
+      movements,
+      setMovements (m) { this.movements = m },
+      setGoal: () => {},
+      goto: async function () {
+        used.push(this.movements.canOpenDoors)
+        if (!this.movements.canOpenDoors) throw new Error('No path to the goal!')
+      }
+    }
+  }
+  await walkTo(bot, 'out', new AbortController().signal)
+  assert.deepEqual(used, [false, true])
+  assert.equal(bot.pathfinder.movements, movements)
+})
