@@ -37,3 +37,18 @@ test('夜は家がなくても越せる: 近くのベッドで寝る、持って
   const home = { door: new Vec3(40, 64, 40), inside: new Vec3(40, 64, 39), outside: new Vec3(40, 64, 41), min: new Vec3(39, 64, 38), max: new Vec3(41, 64, 39), bed: null, breach: [] }
   assert.deepEqual(kinds(night({ items: { white_bed: 1 } }), { home, plan: null }), ['go_home', 'bed_here'])
 })
+
+test('行けなかったベッドと家はしばらく出さず、持っているベッドは近くのベッドがあっても選べる', async () => {
+  const { markNoPath } = await import('../src/move.mjs')
+  const bed = new Vec3(10, 64, 3)
+  const home = { door: new Vec3(40, 64, 40), inside: new Vec3(40, 64, 39), outside: new Vec3(40, 64, 41), min: new Vec3(39, 64, 38), max: new Vec3(41, 64, 39), bed: null, breach: [] }
+  const state = { home, plan: null }
+  const bot = night({ bed, items: { white_bed: 1 } })
+  assert.deepEqual(kinds(bot, state), ['go_home', 'sleep_at', 'bed_here'])
+  markNoPath(state, bed)
+  markNoPath(state, home.outside)
+  assert.deepEqual(kinds(bot, state), ['bed_here'])
+  // 前の家の中のベッドは出さない（閉じていて入れないことがある）
+  const former = { ...home, min: new Vec3(9, 64, 2), max: new Vec3(11, 64, 4) }
+  assert.deepEqual(kinds(night({ bed }), { home: null, formerHomes: [former], plan: null }), [])
+})

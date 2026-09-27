@@ -31,6 +31,38 @@ const LOOP_BLOCK_MS = 3 * 60 * 1000
 
 const cellKey = (p) => `${p.x},${p.y},${p.z}`
 
+// 経路が見つからなかった行き先（ベッド、家の前）: しばらく候補に出さない（2026-09-27: 閉じた建物の中の
+// ベッドと家の前に「No path」で失敗し続け、一晩中寝られなかった）
+export const NO_PATH_MS = 5 * 60 * 1000
+
+export function markNoPath (state, pos, ms = NO_PATH_MS, now = Date.now()) {
+  state.noPath ??= new Map()
+  state.noPath.set(cellKey(pos), now + ms)
+}
+
+export function isNoPathTo (state, pos, now = Date.now()) {
+  const until = state.noPath?.get(cellKey(pos))
+  return !!until && until > now
+}
+
+export const isNoPath = (e) => /no path/i.test(String(e?.message ?? e))
+
+// ドアを開けて通ってよい歩き方で歩く（pathfinder の既定はドアを通らない: 村の家の中のベッドに行けなかった）。
+// 家のドアは enterHome / leaveHome が開け閉めするので、そこには使わない
+export async function walkThroughDoors (bot, goal, signal) {
+  const original = bot.pathfinder.movements
+  if (original) {
+    const m = Object.assign(Object.create(Object.getPrototypeOf(original)), original)
+    m.canOpenDoors = true
+    bot.pathfinder.setMovements(m)
+  }
+  try {
+    await walkTo(bot, goal, signal)
+  } finally {
+    if (original) bot.pathfinder.setMovements(original)
+  }
+}
+
 export function isLoopCell (state, pos, now = Date.now()) {
   const until = state.loopCells?.get(cellKey(pos))
   return !!until && until > now

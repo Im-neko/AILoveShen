@@ -27,6 +27,7 @@ import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem }
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
 import { toReplace } from './wear.mjs'
+import { isNoPathTo } from './move.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -338,11 +339,15 @@ export function evaluate (bot, state, knowledge, world) {
       }
       // 家に帰るのは選択肢の 1 つ（2026-09-26: 絶対の決まりではない）。近くのベッド（村など）で寝る、
       // 持っているベッドをここに置いて寝る、地下ならそのまま（地下は夜も昼も同じ）
-      if (state.home) out.leaves.push({ kind: 'go_home' })
+      // さっき行けなかった家とベッドはしばらく出さない（ほかの越し方を選ばせる: 2026-09-27 一晩中「No path」）
+      const homeCut = state.home && isNoPathTo(state, state.home.outside)
+      if (state.home && !homeCut) out.leaves.push({ kind: 'go_home' })
+      if (homeCut) out.blocked.push('home: no path to its door a moment ago (see the last result); try another way through the night')
       if (sleepy) {
         const bed = nearbyBed(bot, state)
         if (bed) out.leaves.push({ kind: 'sleep_at', pos: bed })
-        else if (Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))) out.leaves.push({ kind: 'bed_here' })
+        // 近くのベッドがあっても、持っているベッドを置いて寝るのは別の選択肢
+        if (Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))) out.leaves.push({ kind: 'bed_here' })
       }
       if (isUnderground(bot)) out.leaves.push({ kind: 'stay_underground' })
       break
@@ -531,7 +536,9 @@ function nearbyBed (bot, state) {
   const ids = Object.values(bot.registry.blocksByName).filter((b) => b.name.endsWith('_bed')).map((b) => b.id)
   const me = bot.entity.position
   return bot.findBlocks({ matching: ids, maxDistance: BED_SEARCH, count: 16 })
-    .filter((p) => !state.home || !isInside({ entity: { position: p } }, state.home))
+    // 家と前の家のベッドは出さない（前の家は閉じていて、中に入れないことがある）、さっき行けなかったものも
+    .filter((p) => ![state.home, ...(state.formerHomes ?? [])].some((h) => h && isInside({ entity: { position: p } }, h)))
+    .filter((p) => !isNoPathTo(state, p))
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
 }
 

@@ -15,7 +15,7 @@ import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isIn
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
-import { walkTo as goto, isLoopCell } from './move.mjs'
+import { walkTo as goto, isLoopCell, markNoPath, isNoPath, walkThroughDoors } from './move.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting } from './farming.mjs'
 
@@ -615,7 +615,14 @@ export const PRIMITIVES = {
     return `slept through the night; time ${tod}`
   },
   async sleep_at (bot, state, c, signal) {
-    await goNear(bot, c.pos, 2, signal)
+    try {
+      // 村の家のベッドはドアの向こう: ドアを開けて通ってよい
+      await walkThroughDoors(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 2), signal)
+    } catch (e) {
+      if (!isNoPath(e)) throw e
+      markNoPath(state, c.pos)
+      throw new Error(`No path to the bed at ${c.pos.x},${c.pos.y},${c.pos.z} (closed in or cut off): it is not offered for a while`)
+    }
     const bed = bot.blockAt(c.pos)
     if (!bed?.name.endsWith('_bed')) throw new Error(`no bed at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
     return sleepIn(bot, bed, signal)
@@ -648,9 +655,15 @@ export const PRIMITIVES = {
     return 'the house wall is closed again'
   },
   async go_home (bot, state, c, signal) {
-    const leg = await legToward(bot, state.home.outside, 'home', signal)
-    if (leg) return leg
-    await enterHome(bot, state.home, signal)
+    try {
+      const leg = await legToward(bot, state.home.outside, 'home', signal)
+      if (leg) return leg
+      await enterHome(bot, state.home, signal)
+    } catch (e) {
+      // 行けない家を夜の選択肢に出し続けない（ほかの夜の越し方を選ばせる）
+      if (isNoPath(e)) markNoPath(state, state.home.outside)
+      throw e
+    }
     return 'inside the house with the door closed'
   },
   async wait (bot, state, c, signal) {

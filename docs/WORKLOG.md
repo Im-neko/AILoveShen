@@ -7,6 +7,19 @@
 
 ## Completed Work
 
+### 夜に家とベッドへ「No path」のまま寝られない (2026-09-27)
+
+**Commit**: `TBD`
+
+ユーザーのログ: through_night で `go home` / `go_home` / `sleep in the bed nearby` がどれも 0.1 秒で「No path to the goal!」、goto で近くを行き来するだけで一晩中寝られなかった。
+- 原因の見立て: pathfinder は既定でドアを開けない（`canOpenDoors: false`）ので、村の家などドアの向こうのベッドには経路がない。前の家の中のベッドも近くのベッドとして出ていた。家へは `GoalBlock(ドアの外のセル)` だけで、そこに立てない（床が掘られた、物がある）と行けない。行けなかった行き先を何度でも出していた
+- `move.mjs`: `markNoPath` / `isNoPathTo`（5 分）、`isNoPath`、`walkThroughDoors`（ドアを開けてよい歩き方。家のドアには使わない）
+- `primitives.mjs`: `sleep_at` はドアを通って歩き、行けなければ記録して理由つきで失敗。`go_home` も行けなければ記録
+- `home.mjs`: `enterHome` はドアの前に立てなければ隣まで行く。それでも行けなければ `describeDoorstep`（ドアの開閉、床・足・頭のブロック）を添える
+- `goals.mjs`: 夜の選択肢から、さっき行けなかった家（`blocked` に理由）とベッド、家と前の家のベッドを外す。`bed_here` は近くのベッドがあっても出す
+- テスト: `test/night.test.mjs`
+
+
 ### ローカル LLM（FreeToken / Ollama）と Gemini の振り分け (2026-09-26)
 
 **Commit**: `4a85c53`, `4f697eb`

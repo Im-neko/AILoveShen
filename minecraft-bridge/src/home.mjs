@@ -161,9 +161,28 @@ async function walkInto (bot, cell) {
   }
 }
 
+// 家の前のセルの様子（行けないときの理由に添える）
+export function describeDoorstep (bot, home) {
+  const name = (p) => bot.blockAt(p)?.name ?? 'unloaded'
+  const o = home.outside
+  const door = isDoorOpen(bot, home) ? 'open' : 'closed'
+  return `door ${door}; in front of the door: floor ${name(o.offset(0, -1, 0))}, feet ${name(o)}, head ${name(o.offset(0, 1, 0))}`
+}
+
 export async function enterHome (bot, home, signal) {
   if (!isInside(bot, home)) {
-    await walkTo(bot, new goals.GoalBlock(home.outside.x, home.outside.y, home.outside.z), signal)
+    try {
+      await walkTo(bot, new goals.GoalBlock(home.outside.x, home.outside.y, home.outside.z), signal)
+    } catch (e) {
+      if (!/no path/i.test(String(e?.message))) throw e
+      // ドアの真ん前に立てない（床が掘られた、何か置いてある）: その隣まで行き、そこからドアへ歩く
+      try {
+        await walkTo(bot, new goals.GoalNear(home.outside.x, home.outside.y, home.outside.z, 1), signal)
+      } catch (e2) {
+        if (!/no path/i.test(String(e2?.message))) throw e2
+        throw new Error(`No path to the home's door (${describeDoorstep(bot, home)})`)
+      }
+    }
     await setDoor(bot, home, true)
     await walkInto(bot, home.door)
     await walkInto(bot, home.inside)
