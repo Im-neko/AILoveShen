@@ -162,12 +162,23 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         reactions.remember(text, reaction)
         return voice_emotion(reaction)
 
+    # 直前に話した行: 実況は同じ内容を繰り返さない（設計書 43）
+    from ailoveshen.presentation.services.live_narration import LiveNarration, SpokenLines
+
+    spoken = SpokenLines()
+
     async def say(text: str) -> None:
+        same = spoken.repeats(text)
+        if same is not None:
+            logger.info(f"[say] 直前と同じ内容なので言わない: {text}（前: {same}）")
+            return
+        spoken.remember(text)
         logger.info(f"[say] {text}")
         if tts is not None:
             await tts.speak(text, emotion=await voiced(text), source="commentary")
 
     async def say_reply(text: str) -> None:
+        spoken.remember(text)
         if tts is not None:
             # 視聴者への返事は実況より先に読む
             await tts.speak(
@@ -202,6 +213,19 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         gate=gate.worth_speaking if gate is not None else None,
         max_silence_seconds=settings.stream.max_silence_seconds,
     ).subscribe(bus)
+
+    live = None
+    if settings.stream.live_interval_seconds > 0:
+        live = LiveNarration(
+            llm,
+            activity=activity,
+            say=say,
+            spoken=spoken,
+            is_idle=tts.is_idle if tts is not None else (lambda: True),
+            interval_seconds=settings.stream.live_interval_seconds,
+        )
+        live.subscribe(bus)
+        logger.info(f"[live] {settings.stream.live_interval_seconds:.0f} 秒黙っていたら一言話す")
 
     board = None
     if settings.stream.board_port:
@@ -283,6 +307,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         chat=chat,
         responder=responder,
         closers=tuple(closers),
+        live=live,
     )
     stream.subscribe(bus)
     logger.info(f"[control] {settings.minecraft.control}")

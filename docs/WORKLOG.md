@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 行動の途中の一言（10 秒黙ったら話す、繰り返さない） (2026-09-27)
+
+**Commit**: （この後）
+
+ユーザー:「ローカル LLM 使う時は頻繁に考えてること、やろうとしていることを喋るように」「10 秒間隔くらい。同じ内容の繰り返しにはならないように」。設計書 `docs/design/43_live_narration.md`。
+- 原因: 実況は小目標の切れ目だけ。max_silence も切れ目で見るだけ。時間で止めない行動の間は何分も黙っていた
+- 新規 `presentation/services/live_narration.py`（`LiveNarration`、`SpokenLines`、`similarity`）。`TTSService.is_idle()`（合成・再生中を数える）。`GenerateCommentaryRequest` / `LLMService.generate_commentary` に `purpose` と `record`。`factories/stream.py`: `say` で直前と同じ内容を捨てる、返事も覚える、`LiveNarration` の配線。`Stream(live=)` の裏のタスク。config `stream.live_interval_seconds: 10`、`thinking_levels.live: low`。道具の intent の説明を「そのまま読み上げる口調の 1 文」に
+- テスト: `test_live_narration.py`（再生の終わりから測る、60 秒の行動で繰り返さない、作っている間の発話で捨てる、プレイ外・Jev の id）、`test_tts_service.py`。本物の Gemini で 60 秒の行動を流し、繰り返しなし・1〜2 秒
+- 未確認: ローカルの LLM の枠を取り合って道具の判断が遅れるか（入れた後に 1 手の秒数を比べる）
+
 ### 家の中に松明を置けなかった（place_at の二重定義）、壁に付ける (2026-09-27)
 
 **Commit**: `b0295d9`

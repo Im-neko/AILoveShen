@@ -22,6 +22,7 @@ from ailoveshen.domain.events import (
 )
 from ailoveshen.presentation.services.chat_responder import ChatResponder
 from ailoveshen.presentation.services.game_service import GameService
+from ailoveshen.presentation.services.live_narration import LiveNarration
 from ailoveshen.presentation.services.llm_service import LLMService
 
 
@@ -47,6 +48,7 @@ class Stream:
         chat: IChatSource | None = None,
         responder: ChatResponder | None = None,
         closers: tuple[Callable[[], Awaitable[Any]], ...] = (),
+        live: LiveNarration | None = None,
     ) -> None:
         """
         Args:
@@ -57,6 +59,7 @@ class Stream:
             chat: 配信のチャット。None なら読まない
             responder: チャットへの返事（chat と組で渡す）
             closers: 止めるときに呼ぶもの（アバターの close、TTS の stop など）
+            live: 行動の途中の一言（docs/design/43）。None なら話さない
         """
         if (chat is None) != (responder is None):
             raise ValueError("chat and responder go together")
@@ -67,6 +70,7 @@ class Stream:
         self._chat = chat
         self._responder = responder
         self._closers = closers
+        self._live = live
 
     def subscribe(self, bus: IEventSubscriber) -> None:
         """目標の変化をログに出す（配信の画面の外で、何が起きているかを追うため）。"""
@@ -122,6 +126,10 @@ class Stream:
                 chat = asyncio.create_task(self._responder.run(self._chat))
                 chat.add_done_callback(_report_end("チャットへの返事"))
                 tasks.append(chat)
+            if self._live is not None:
+                live = asyncio.create_task(self._live.run())
+                live.add_done_callback(_report_end("行動の途中の一言"))
+                tasks.append(live)
             await self._game.play(max_steps=None, keep_going=True)
         finally:
             for task in tasks:

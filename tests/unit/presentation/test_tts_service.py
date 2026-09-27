@@ -77,3 +77,18 @@ class TestTTSServiceWaitUntilIdle:
         await service.stop()
 
         await asyncio.wait_for(service.wait_until_idle(), timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_is_idle_only_after_playing_ends():
+    """キューが空でも、合成中・再生中は空いていない（黙っている時間を再生の終わりから測る）。"""
+    played: list[str] = []
+    service = TTSService(_slow_use_case(0.2, played))
+    await service.start()
+    assert service.is_idle()
+    await service.speak("one")
+    await asyncio.sleep(0.05)  # 取り出して再生中（キューは空）
+    assert service.get_queue_size() == 0 and not service.is_idle()
+    await service.wait_until_idle()
+    assert service.is_idle()
+    await service.stop()

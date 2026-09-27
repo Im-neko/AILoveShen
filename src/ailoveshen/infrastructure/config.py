@@ -85,6 +85,7 @@ DEFAULT_THINKING_LEVELS = {
     "tool_after_failure": "medium",
     "commentary": "low",
     "reply": "low",
+    "live": "low",
     "promise": "low",
     "screen_review": "medium",
     "skill_write": "high",
@@ -382,6 +383,8 @@ class StreamSettings:
     commentary_judge: str = "jev"
     max_silence_seconds: float = 60.0
     commentary_record_dir: str = "logs/commentary"
+    # 行動の途中の一言（docs/design/43）: 読み上げが終わってからこれだけ黙っていたら話す。0 なら話さない
+    live_interval_seconds: float = 10.0
 
 
 @dataclass
@@ -566,6 +569,9 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             ),
             commentary_record_dir=str(
                 stream_data.get("commentary_record_dir", StreamSettings.commentary_record_dir)
+            ),
+            live_interval_seconds=float(
+                stream_data.get("live_interval_seconds", StreamSettings.live_interval_seconds)
             ),
         )
 

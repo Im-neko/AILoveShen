@@ -16,11 +16,15 @@ class GenerateCommentaryRequest:
 
     `recent_events` は直前に起きたこと（最新のものが話す題材）、
     `activity` は配信者が今していることとその理由（プレイしていない間は None）。
+    `purpose` は生成の用途（振り分けと思考の深さ、費用の集計）、`record` は会話の履歴に残すか
+    （行動の途中の一言は残さない: 返事の文脈から視聴者のコメントを押し出さない。設計書 43）。
     """
 
     emotion_state: EmotionState = field(default_factory=EmotionState)
     recent_events: list[str] = field(default_factory=list)
     activity: Optional[Activity] = None
+    purpose: str = "commentary"
+    record: bool = True
 
 
 @dataclass

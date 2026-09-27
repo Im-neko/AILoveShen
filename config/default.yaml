@@ -14,6 +14,11 @@ stream:
   commentary_judge: "jev"
   max_silence_seconds: 60
   commentary_record_dir: "logs/commentary"
+  # A line in the middle of an action (docs/design/43): after this many seconds of quiet (from the
+  # end of the last spoken line) say the tool's new intent, or a new line (purpose live, not kept in
+  # the conversation). Lines like the last few are never spoken. 0: off. With Gemini (no local LLM)
+  # this is up to 360 calls an hour
+  live_interval_seconds: 10
 
 # Twitch Integration
 twitch:
@@ -136,6 +141,7 @@ gemini:
     tool_after_failure: "medium"
     commentary: "low"
     reply: "low"               # a viewer is waiting
+    live: "low"                # a line in the middle of an action (docs/design/43)
     promise: "low"             # how to keep a promise a reply made (docs/design/34 §10)
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
     skill_write: "high"        # writing or fixing a skill (docs/design/22)

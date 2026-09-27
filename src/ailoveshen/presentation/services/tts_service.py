@@ -45,6 +45,7 @@ class TTSService:
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._sequence = 0  # 同じ優先度の中で先入れ先出しにするため
+        self._active = 0  # 合成中か再生中の発話の数（割り込みも数える）
 
     async def start(self) -> None:
         """
@@ -130,7 +131,11 @@ class TTSService:
         # 割り込みの優先度: すぐに処理する
         if priority >= SpeechPriority.INTERRUPT:
             logger.debug(f"割り込みの発話を処理する: {text[:30]}...")
-            return await self._use_case.execute(request)
+            self._active += 1
+            try:
+                return await self._use_case.execute(request)
+            finally:
+                self._active -= 1
 
         # 通常の処理のためにキューに入れる
         try:
@@ -197,6 +202,10 @@ class TTSService:
         """
         await self._queue.join()
 
+    def is_idle(self) -> bool:
+        """キューが空で、合成も再生もしていないか（黙っている時間を再生の終わりから測る）。"""
+        return self._queue.qsize() == 0 and self._active == 0
+
     def is_running(self) -> bool:
         """サービスが動いているかを返す。"""
         return self._running
@@ -222,9 +231,11 @@ class TTSService:
 
                 # リクエストを処理する
                 logger.debug(f"キューの発話を処理する: {request.text[:30]}...")
+                self._active += 1
                 try:
                     await self._use_case.execute(request)
                 finally:
+                    self._active -= 1
                     self._queue.task_done()
 
             except asyncio.CancelledError:

@@ -181,6 +181,7 @@ Twitch のチャット #<チャンネル> を読み始めた
 - Gemini・Jev・ブリッジが失敗しても止まらない。「… 秒待ってやり直す」と出して 5 秒から倍々（最長 60 秒）に待ち、やり直す。ブリッジを再起動しても配信はそのまま続く
 - TTS サーバーにつながらなければ始めない（黙った配信を防ぐ）。直し方が出る
 - チャットのコメントには 1 つずつ声で返事をする。返事の間は 5 秒以上。作っている間に来たコメントは新しい 3 件だけ取っておく（`twitch.response`）。`!` で始まるコメントには返事をしない。コマンドは `!yomi よみ`（その人の名前の読みを覚える）と `!commands`（`!help` / `!コマンド`。使えるコマンドの一覧をチャットに書く。書けなければ声で。30 秒に 1 回まで）。配信者自身（チャンネルのアカウント）と `TWITCH_BOT_LOGIN` のコメントには返事をしない（コマンドは使える）。ボット（`twitch.ignore_users`、既定 `[streamelements]`）には何も反応しない。頼みごとは中目標に足すことがある。視聴者の名前の読み（`data/readings.json`、設計書 30）は、返答のときに Gemini が推測するか本人の `!yomi` で覚え、読み上げのときだけ名前を置き換える。辞書は `http://127.0.0.1:8765/api/readings`（`?name=` で 1 人）
+- 行動の途中でも、読み上げが終わってから 10 秒黙っていたら一言話す（`stream.live_interval_seconds`、0 で話さない。設計書 43）。道具に添えた新しい「今やろうとしていること」はそのまま読み、なければ変わったこと（行動の結果、持ち物の増減、動いた距離）から一言を作る（purpose `live`）。直前の数行と似た実況は読まない（ログに `[say] 直前と同じ内容なので言わない`）。ローカルの LLM がなければ Gemini で 1 時間に最大 360 回呼ぶ
 - ほかのゲーム（LoL など）やゲームの外の雑談にも乗る。自分のこと（使っているキャラ、好きなもの）をその場で決めたら `data/self_facts.json` に覚え、次からの返事はそれに合わせる（設計書 40。手で直してもよい。ワールドを作り直しても残る）
 - 画面のログ（`[say]` 実況、`[chat]`、`[reply]`、`[goal]` 小目標、`[mid+]` / `[mid✓]` / `[mid×]` 中目標）は、設定の `logging.file` のファイルにも残る（`.env` の `APP_ENV=development` なら `data/logs/ailoveshen-dev.log`）。ログは INFO まで（`--debug` で DEBUG も）
 
@@ -354,4 +355,5 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 - 技（Gemini が書いて覚える手順）: `docs/design/22_skills.md`
 - 画面を Gemini に見せる: `docs/design/23_screen_vision.md`
 - アバター: `docs/design/24_avatar.md`
+- 行動の途中の一言: `docs/design/43_live_narration.md`
 - TTS サーバー（Docker）: `docker/README.md`、`docs/setup/docker.md`

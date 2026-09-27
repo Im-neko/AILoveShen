@@ -47,6 +47,8 @@ class LLMService:
         self,
         recent_events: Optional[list[str]] = None,
         activity: Optional[Activity] = None,
+        purpose: str = "commentary",
+        record: bool = True,
     ) -> str:
         """
         ゲーム実況を生成する。
@@ -54,6 +56,8 @@ class LLMService:
         Args:
             recent_events: 最近のゲーム内の出来事の説明（最後が最新で、話す内容）
             activity: 配信者が何をしていて、なぜか（PlaySession.activity()）
+            purpose: 生成の用途（行動の途中の一言は "live"。設計書 43）
+            record: 会話の履歴に残すか
 
         Returns:
             生成した実況。失敗したときは空文字列
@@ -63,6 +67,8 @@ class LLMService:
                 emotion_state=self._current_emotion,
                 recent_events=recent_events or [],
                 activity=activity,
+                purpose=purpose,
+                record=record,
             )
         )
         return response.text if response.success else ""

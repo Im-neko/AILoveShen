@@ -272,7 +272,10 @@ def tool_specs(can_look: bool = False, skills: bool = False) -> list[ToolSpec]:
                 parameters={
                     "type": "object",
                     "properties": {
-                        "intent": _str("今やろうとしていること（1 文、日本語。配信で見える）"),
+                        "intent": _str(
+                            "今やろうとしていること（配信者の口調の 1 文、日本語。配信で見え、"
+                            "そのまま読み上げる。例: 北の森で原木を集めてくるね）"
+                        ),
                         **props,
                         "watch": _WATCH,
                     },

@@ -83,11 +83,12 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
             text = await self._text_generator.generate(
                 prompt=prompt,
                 system_instruction=system_prompt,
-                purpose="commentary",
+                purpose=request.purpose,
             )
 
-            if text:
+            if text and request.record:
                 self._conversation.add_streamer_message(text, MessageType.COMMENTARY)
+            if text:
                 await self._event_publisher.publish(CommentaryGeneratedEvent(text=text))
 
             return GenerateCommentaryResponse.ok(text)
