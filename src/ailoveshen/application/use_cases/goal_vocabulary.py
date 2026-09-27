@@ -477,7 +477,10 @@ def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
         raise ValueError("a mid goal needs a title")
     raw = data.get("conditions") or []
     if not raw:
-        raise ValueError(f"mid goal {title} needs conditions")
+        raise ValueError(
+            f"mid goal {title} needs conditions: the world states that mean it is done, e.g. "
+            "[{\"predicate\": \"placed\", \"item\": \"torch\"}] for a torch in the home"
+        )
     conditions = tuple(parse_spec(c) for c in raw)
     for c in conditions:
         if c.predicate not in PLANNABLE_CONDITIONS:

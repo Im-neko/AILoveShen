@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### 「家の中に松明を置いて」と約束して何もしない (2026-09-27)
+
+**Commit**: `TBD`
+
+ユーザーのログ: 返事で「松明を置いて明るくしておくね」→ チャットの指摘で考え直し → Gemini は `placed(torch)` の中目標を足そうとしたが、条件なしで差し戻され（`mid goal … needs conditions`）、2 回目は「朝になってから」と夜越しに戻り、そのことを言わなかった。家の中の松明を表す条件がそもそもなかった（`placed` はベッド・作業台・かまど・チェストだけ、`lit` は家の外の地面だけ）。
+- ブリッジ `furniture.mjs`: `HOME_FURNITURE.torch`（torch / wall_torch）。`placed(torch, home)` が条件・小目標になり、なければ作り、`place_in_home` で部屋に置く
+- `stream_context` の placed の説明に torch、`goal_vocabulary` の条件なしのエラーに例、目標の決定の決まりに「視聴者の指摘で考え直すときは、今やるか中目標に足す（条件つき）、どちらもしないなら reason に理由。黙って戻らない」
+- テスト: `test/furniture.test.mjs`、`test/check.test.mjs`
+
+
 ### 建物の箱の中で閉じ込められる: 保護を設計のセルだけに、経路がなければドアを通って (2026-09-27)
 
 **Commit**: `f8d6cb1`

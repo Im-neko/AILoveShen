@@ -35,3 +35,14 @@ test('家の中の作業台・かまど・チェストを見つける（床と�
   assert.equal(furnitureInHome(b, home, 'chest'), null)
   assert.equal(furnitureInHome(b, { ...home, cells: [{ x: 1, z: 1 }] }, 'crafting_table'), null) // 部屋のセルだけ見る
 })
+
+test('家の中の松明も placed の条件になる（床にも壁にも）', async () => {
+  const { furnitureInHome, isHomeFurnitureItem } = await import('../src/furniture.mjs')
+  const vec = (await import('vec3')).default
+  const home = { min: new vec.Vec3(0, 64, 0), max: new vec.Vec3(2, 64, 2), cells: [{ x: 1, z: 1 }] }
+  const botWith = (name) => ({ blockAt: (p) => ({ name: p.x === 1 && p.z === 1 && p.y === 65 ? name : 'air' }) })
+  assert.equal(isHomeFurnitureItem('torch'), true)
+  assert.ok(furnitureInHome(botWith('wall_torch'), home, 'torch'))
+  assert.ok(furnitureInHome(botWith('torch'), home, 'torch'))
+  assert.equal(furnitureInHome(botWith('air'), home, 'torch'), null)
+})

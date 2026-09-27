@@ -133,7 +133,7 @@ function validGoal (spec, bot, state, knowledge) {
       if (!state.plan) throw new NotYetError('there is no house plan')
       return { spec: { predicate } }
     case 'placed':
-      // 家の中に置く家具（furniture.mjs の HOME_FURNITURE）: ベッド、作業台、かまど、チェスト
+      // 家の中に置く物（furniture.mjs の HOME_FURNITURE）: ベッド、作業台、かまど、チェスト、松明
       if (!isHomeFurnitureItem(spec.item) || spec.where !== 'home' || (spec.item.endsWith('_bed') && !bot.registry.itemsByName[spec.item])) {
         throw new Error(`placed supports ${Object.keys(HOME_FURNITURE).join(', ')} (or a colored bed like blue_bed) in the home, e.g. placed(crafting_table, home)`)
       }
@@ -291,7 +291,7 @@ export function evaluate (bot, state, knowledge, world) {
         break
       }
       if (goal.spec.item !== 'bed') {
-        // 作業台・かまど・チェストを家の中に置く
+        // 作業台・かまど・チェスト・松明を家の中に置く
         const item = goal.spec.item
         const at = furnitureInHome(bot, state.home, item)
         out.met = !!at
