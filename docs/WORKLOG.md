@@ -9,7 +9,7 @@
 
 ### ローカル LLM と Gemini の振り分けを見直す (2026-09-27)
 
-**Commit**: (次のコミット)
+**Commit**: `755215d`
 
 Gemini が 403 Spend cap breached。ユーザー:「振り分けを見直してほしい」。設計書 36 §7。
 - 今日の Gemini の入力の約 8 割が `tool` / `tool_after_failure`。ローカルで崩れた JSON は goal / reply / promise に集中、tool には出ていない
