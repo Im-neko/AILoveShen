@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -373,6 +373,11 @@ class MidGoalPlan(Entity):
         self._next_id += 1
         self.updated_at = _utc_now()
         return goal
+
+    def same_as(self, conditions: Sequence[GoalSpec]) -> Optional[MidGoal]:
+        """未完了の中目標のうち、完了条件が同じもの（順番は問わない）。なければ None。"""
+        want = {c.describe() for c in conditions}
+        return next((g for g in self.pending if {c.describe() for c in g.conditions} == want), None)
 
     def move(self, mid_goal_id: str, position: int) -> MidGoal:
         """

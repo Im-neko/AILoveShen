@@ -316,6 +316,17 @@ class MidGoalKeeper:
             GoalRejectedError: 条件を判定できないとき
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
+        what = "の助言" if advice else "の頼み"
+        same = plan.same_as(proposal.conditions)
+        if same is not None:
+            # もう同じ完了条件の中目標がある: 足さない（2026-09-28: 同じ整地が 2 つ並んだ）。今やるなら
+            # それを先頭に（呼び出し側が今の小目標を区切る）
+            if proposal.now:
+                plan.move(same.id, 0)
+                self._store.save(plan)
+            where = "先頭に移した" if proposal.now else "そのまま"
+            logger.info(f"{requested_by} {what}は中目標 {same.id} と同じ完了条件: 足さずに{where}")
+            return same
         viewer = None if advice else requested_by
         plan.check_room(viewer)  # 設計（建物・施設の登録）の前に: 上限で断るなら何も残さない
         blocks = await self._design_builds(
@@ -335,8 +346,7 @@ class MidGoalKeeper:
             budget=max(plan.viewer_budget, 2 * blocks + 40) if blocks and not advice else None,
             now=proposal.now,
         )
-        what = "の助言を中目標" if advice else "の頼みを中目標"
-        logger.info(f"{requested_by} {what} {goal.id} にした: {goal.describe()}")
+        logger.info(f"{requested_by} {what}を中目標 {goal.id} にした: {goal.describe()}")
         self._store.save(plan)
         await self._publish([_added(plan, goal)])
         return goal

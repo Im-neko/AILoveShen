@@ -1113,6 +1113,54 @@ class TestSuggestionsAreNotBrushedOff:
         assert response.mid_goal.requested_by is None
 
     @pytest.mark.asyncio
+    async def test_the_same_conditions_are_not_added_twice(self, use_case, mock_text_generator):
+        """同じ整地が 2 つ並んだ（2026-09-28）: 同じ完了条件の中目標があれば、それを返す。"""
+        mock_text_generator.generate_json.side_effect = [self.FARM, {**self.FARM, "when": "now"}]
+        session = _playing()
+        first = await use_case.execute(self._request(session, "畑広げない？", "advice"))
+        second = await use_case.execute(self._request(session, "畑を広げようよ", "advice", "inu"))
+
+        assert second.mid_goal is not None and first.mid_goal is not None
+        assert second.mid_goal.id == first.mid_goal.id
+        assert [g.title for g in session.plan.pending].count("畑を広げる") == 1
+        assert session.plan.current.id == first.mid_goal.id  # 今やる: 先頭に
+        assert session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_advice_put_off_while_the_small_goal_fails_is_asked_once(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        """家に入れない理由の指摘（家の前の穴）を後回しにして、入る失敗を続けた（2026-09-28）。"""
+        mock_text_generator.generate_json.side_effect = [
+            self.FARM,
+            {**self.FARM, "when": "now", "rethink": "the hole blocks the door"},
+        ]
+        session = _playing()
+        session.consecutive_failures = 3
+
+        response = await use_case.execute(self._request(session, "家の前の穴を埋めて", "advice"))
+
+        assert session.plan.current.id == response.mid_goal.id
+        assert session.rethink_reason
+        errors = [
+            c.kwargs["previous_error"]
+            for c in mock_prompt_builder.build_chat_response_prompt.call_args_list
+        ]
+        assert "3 回続けて失敗" in errors[1]
+
+    @pytest.mark.asyncio
+    async def test_unrelated_advice_may_still_wait(self, use_case, mock_text_generator):
+        mock_text_generator.generate_json.side_effect = [self.FARM, self.FARM]
+        session = _playing()
+        session.consecutive_failures = 3
+
+        response = await use_case.execute(self._request(session, "畑広げない？", "advice"))
+
+        assert response.mid_goal is not None
+        assert session.plan.current.id == "m1"
+        assert mock_text_generator.generate_json.await_count == 2
+
+    @pytest.mark.asyncio
     async def test_brushing_off_advice_is_sent_back(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):

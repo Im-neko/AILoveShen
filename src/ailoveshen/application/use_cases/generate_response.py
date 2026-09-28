@@ -45,6 +45,10 @@ from ailoveshen.domain.value_objects import (
 # 返事の前の仕分けで、答えを必ず行動か理由にする種類（頼み・助言）
 ACTIONABLE = ("request", "advice")
 ACTIONABLE_ATTEMPTS = 3  # これらは差し戻しが増えるので、試す回数を増やす（最後は黙らずに話す）
+# 今の小目標の行動がこの回数続けて失敗しているときに「後で」と採った助言は、失敗の理由の指摘ではないか
+# 1 度だけ聞き直す（2026-09-28: 家に入れない理由の「家の前の穴を埋めて」を 3 番目の中目標にし、
+# 家に入る失敗を続けた）
+FAILING_ACTIONS = 2
 
 
 def unanswered(kind: str | None, data: dict[str, object]) -> str:
@@ -261,6 +265,7 @@ class GenerateResponseUseCase(IGenerateResponse):
 
         system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply_requests")
         error = ""
+        asked_now = False
         kind = request.kind
         advice = kind == "advice"
         attempts = (
@@ -305,6 +310,24 @@ class GenerateResponseUseCase(IGenerateResponse):
                     # 助言か: 仕分けの答えか、返答自身の見立て（Jev の仕分けは頼み・質問・助言の
                     # 境目で迷う: 「畑広げない？」が頼み、「畑拡張は？」が質問だった。2026-09-28）
                     suggestion = advice or data.get("suggestion") is True
+                    failing = session.consecutive_failures if session.goal else 0
+                    if (
+                        suggestion
+                        and not proposal.now
+                        and not asked_now
+                        and failing >= FAILING_ACTIONS
+                        and attempt < attempts
+                    ):
+                        asked_now = True
+                        assert session.goal is not None
+                        error = (
+                            f"今の小目標 {session.goal.describe()} は、行動が {failing} 回続けて失敗して"
+                            "いる。この助言がその失敗の理由や解き方の指摘なら、後回しにしない: when=now に"
+                            "して rethink も書く（返答でも今やると言う）。関係のない助言なら、同じ答えで"
+                            "よい。"
+                        )
+                        logger.warning(f"返答 {attempt} は失敗中に助言を後回しにした: {data!r}")
+                        continue
                     mid_goal = await self._accept(
                         session, request.user_name, proposal, suggestion
                     )
