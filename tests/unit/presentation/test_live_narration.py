@@ -49,7 +49,7 @@ def _setup(lines=(), intent="北の森で原木を集めてくるね", obs=None)
 
     llm = AsyncMock()
     llm.generate_commentary.side_effect = list(lines)
-    state = {"activity": Activity(goal=GOAL, intent=intent, observation=obs or _obs({}))}
+    state = {"activity": Activity(acting=True, goal=GOAL, intent=intent, observation=obs or _obs({}))}
     live = LiveNarration(
         llm,
         activity=lambda: state["activity"],
@@ -92,6 +92,7 @@ async def test_jev_semantic_duplicate_is_blocked():
     assert llm.generate_commentary.await_count == 0
 
     state["activity"] = Activity(
+        acting=True,
         goal=GOAL,
         intent="目の前にベッドがあるのに、なぜか家に戻ろうとして拒否されちゃう……！",
         observation=_obs({}),
@@ -128,6 +129,7 @@ async def test_a_long_action_gets_new_lines_with_what_changed_and_no_repeats():
     await live.on_action(GameActionExecutedEvent(action_id="dig oak_log", ok=True, result="got"))
     for t, logs, x in [(10, 0, 0), (20, 0, 0), (30, 0, 12), (40, 4, 12)]:
         state["activity"] = Activity(
+            acting=True,
             goal=GOAL, intent="北の森で原木を集めてくるね", observation=_obs({"oak_log": logs}, x)
         )
         clock.now = t
@@ -174,7 +176,19 @@ async def test_nothing_while_not_playing_and_the_english_ids_of_jev_are_not_read
     clock.now = 10
     await live.tick()
     assert said == []
-    state["activity"] = Activity(goal=GOAL, intent="dig oak_log at 1,2,3", observation=_obs({}))
+    state["activity"] = Activity(acting=True, goal=GOAL, intent="dig oak_log at 1,2,3", observation=_obs({}))
     clock.now = 20
     await live.tick()
     assert said == ["よし、掘るよ！"]  # id はそのまま読まず、一言を作らせる
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_said_while_the_next_action_is_being_chosen():
+    """目標の決定を 4 分待つ間、終わった行動から「パンにするね」を何度も話した（2026-09-28）。"""
+    live, clock, said, _, llm, state = _setup(lines=["パンにして空腹を満たすね"])
+    state["activity"] = Activity(goal=GOAL, intent="", observation=_obs({}))
+    for t in (10, 20, 30, 40):
+        clock.now = t
+        await live.tick()
+    assert said == []
+    llm.generate_commentary.assert_not_awaited()

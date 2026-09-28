@@ -410,8 +410,11 @@ class AdvancePlayUseCase(IAdvancePlay):
         if self._control == "tools":
             acting = self._act_with_tools(session, obs)
         else:
-            acting = self._act_on_candidate(goal, obs)
-        decision, result = await self._cut_on_rethink(session, acting)
+            acting = self._act_on_candidate(session, goal, obs)
+        try:
+            decision, result = await self._cut_on_rethink(session, acting)
+        finally:
+            session.end_action()
         await self._mid_goals.step_counted(session.plan, session.record(result))
         if self._side_work(obs, decision):
             # ついでの作業（そばの葉から苗木など）は、今の小目標の「進まない」に数えない
@@ -468,7 +471,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 task.cancel()
 
     async def _act_on_candidate(
-        self, goal: Goal, obs: GameObservation
+        self, session: PlaySession, goal: Goal, obs: GameObservation
     ) -> tuple[ActionDecision, ActionResult]:
         """選択器（Jev）がブリッジの候補から 1 つ選び、ブリッジが実行する。"""
         candidates = obs.candidates
@@ -480,6 +483,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 f"候補（{len(candidates)}）: " + " | ".join(c.action_id for c in candidates)
             )
             decision = await self._action_selector.select(state, candidates, instructions)
+        session.start_action()
         return decision, await self._bridge.act(decision.action_id)
 
     @staticmethod
@@ -569,7 +573,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 )
                 logger.info(f"調べた: {call.describe()} -> {result[:200]}")
                 continue
-            session.set_intent(call.intent)
+            session.start_action(call.intent)
             logger.info(
                 f"道具: {call.describe()}「{call.intent}」"
                 + (f" 見張り: {[w.question for w in call.watch]}" if call.watch else "")
@@ -604,7 +608,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             logger.info(f"1 手は Gemini が決める: {picked.why}")
             return None
         call = picked.call
-        session.set_intent(call.intent)
+        session.start_action(call.intent)
         logger.info(f"1 手は Jev が選んだ（確信度 {picked.confidence:.2f}）: {call.describe()}")
         assert self._watcher is not None
         if picked.skill is not None:

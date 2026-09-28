@@ -1,6 +1,7 @@
 """
 行動の途中の一言: 黙っている時間が続いたら、今やろうとしていることや考えていることを話す
-（docs/design/43_live_narration.md）。
+（docs/design/43_live_narration.md）。話すのは行動を実行している間だけ（`Activity.acting`）:
+次の行動や目標を選んでいる間は、選ばれていない行動を言わない。
 
 小目標の切れ目の実況（Narrator）だけでは、時間で止めない長い行動（歩く、漕ぐ、焼くのを待つ）の
 間、何分も黙っていた。読み上げが終わってから `interval_seconds` 黙っていたら 1 行話す:
@@ -185,7 +186,9 @@ class LiveNarration:
         if now - quiet_from < self._interval:
             return
         activity = self._activity()
-        if activity is None or activity.goal is None:
+        if activity is None or activity.goal is None or not activity.acting:
+            # 行動を実行している間だけ話す。次の行動や目標を選んでいる間は黙る（2026-09-28: 目標の
+            # 決定を 4 分待つ間、終わった行動の結果から「パンにするね」を何度も作って話した）
             return
         line = self._new_intent(activity)
         source = "intent"

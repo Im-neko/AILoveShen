@@ -275,7 +275,7 @@ def test_the_vtuber_overlay_reads_the_label_and_the_intent():
     session.set_goal(
         Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), reason="壁の材料"), "day"
     )
-    session.set_intent("近くの木を切りにいく")
+    session.start_action("近くの木を切りにいく")
     client = TestClient(GoalBoard(session.activity).app)
 
     goals = client.get("/api/goals").json()

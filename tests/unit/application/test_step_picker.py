@@ -160,6 +160,14 @@ class TestJevFirstStep:
         use_case, selector, text_generator, watcher = parts
         selector.select.return_value = ActionDecision("dig oak_log at 1,70,2", 0.9)
         session = _session(HAVE_PLANKS)
+        during = []
+        run = watcher.run.side_effect
+
+        async def watched(call):
+            during.append(session.intent)
+            return run(call)
+
+        watcher.run.side_effect = watched
 
         report = await use_case.execute(session)
 
@@ -167,7 +175,8 @@ class TestJevFirstStep:
         call = watcher.run.await_args.args[0]
         assert call.name == "do_suggestion" and call.args == {"id": "dig oak_log at 1,70,2"}
         assert report.decision.action_id == "dig oak_log at 1,70,2" and report.result.ok
-        assert session.intent == "dig oak_log at 1,70,2"
+        assert during == ["dig oak_log at 1,70,2"]
+        assert session.intent == ""
 
     @pytest.mark.asyncio
     async def test_when_jev_asks_gemini_the_step_goes_to_gemini(self, parts):

@@ -609,6 +609,8 @@ class PlaySession(Entity):
     last_observation: Optional[GameObservation] = field(default=None, init=False)
     # 道具で操作しているとき、今やろうとしていること（実況と返答も見る。12 の一致）
     intent: str = field(default="", init=False)
+    # 行動を実行している間だけ真（選んでいる間・目標を決めている間は偽）。一言の実況はこの間だけ話す
+    acting: bool = field(default=False, init=False)
     # 定期の見直しで画面について書いたこと（確かめていない。docs/design/23）
     screen_note: Optional[ScreenNote] = field(default=None, init=False)
     # 次の切れ目で今の小目標を終わらせる理由（コメントの指摘、画面の見直し、行き詰まりの確認）。
@@ -653,6 +655,7 @@ class PlaySession(Entity):
             recent_goals=self.recent_goals,
             notes=self.notebook.notes,
             intent=self.intent,
+            acting=self.acting,
             screen_note=self.screen_note,
             lessons=self.lessons,
             town_map=self.plan.town_map,
@@ -799,9 +802,22 @@ class PlaySession(Entity):
         self.screen_note = note
         self.updated_at = _utc_now()
 
-    def set_intent(self, intent: str) -> None:
-        """道具を呼ぶときに配信者が書いた、今やろうとしていることを持つ。"""
+    def start_action(self, intent: str = "") -> None:
+        """
+        行動を実行し始める。道具を呼ぶときに配信者が書いた、今やろうとしていること（intent）を
+        持つ。
+        """
+        self.acting = True
         self.intent = intent.strip()
+        self.updated_at = _utc_now()
+
+    def end_action(self) -> None:
+        """
+        行動が終わった: 今やろうとしていることを消す（2026-09-28: 終わった・断られた行動の intent が
+        残り、次の行動を決めている間の一言が「〜するね」と何度も言った）。
+        """
+        self.acting = False
+        self.intent = ""
         self.updated_at = _utc_now()
 
     def skip_stall_once(self) -> None:

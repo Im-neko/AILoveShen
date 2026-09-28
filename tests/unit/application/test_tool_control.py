@@ -288,6 +288,15 @@ class TestToolStep:
             ToolChoice("dig", {"x": 1, "y": 70, "z": 2, "intent": "原木を掘る"}),
         ]
         session = _session(HAVE_PLANKS)
+        during = []
+        run = watcher.run.side_effect
+
+        async def watched(call):
+            a = session.activity()  # 実況と返答も同じものを見る
+            during.append((a.intent, a.acting))
+            return run(call)
+
+        watcher.run.side_effect = watched
 
         report = await use_case.execute(session)
 
@@ -295,8 +304,9 @@ class TestToolStep:
         assert watcher.run.await_args.args[0].name == "dig"
         assert report.decision.action_id == "dig(x=1, y=70, z=2)"
         assert report.result.ok
-        assert session.intent == "原木を掘る"
-        assert session.activity().intent == "原木を掘る"  # 実況と返答も同じものを見る
+        assert during == [("原木を掘る", True)]
+        # 終わったら消す（次を選んでいる間に、終わった行動を「これからする」と言わない）
+        assert session.intent == "" and not session.activity().acting
         # 2 回目のプロンプトは調べた結果を見る
         recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
         assert [o.call.name for o in recent] == ["recipe_of"]
