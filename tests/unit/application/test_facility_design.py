@@ -208,3 +208,15 @@ def test_the_decision_without_the_facility_keeps_the_rest():
     )
     kept = _without_build(decision, "wheat_farm")
     assert kept.changes == () and [s.spec.predicate.value for s in kept.steps] == ["have"]
+
+
+@pytest.mark.asyncio
+async def test_a_mine_is_designed_with_its_depth_and_tunnels():
+    mine = {"kind": "mine", "zones": ["B2"], "bottom_y": 16, "tunnels": 2, "reason": "鉄"}
+    designer, plan, bridge, text_generator, _ = _designer([{**mine, "bottom_y": None}, mine])
+    await designer.design("iron_mine", "鉄を掘る")
+    assert "a mine needs bottom_y" in text_generator.generate_json.call_args.args[0]
+    assert "mine（採掘場）" in text_generator.generate_json.call_args.args[0]
+    body = bridge.set_facility.call_args.args[1]
+    assert body["design"] == {"bottom_y": 16, "tunnels": 2, "tunnel_length": 16}
+    assert plan.town_map.zone("B2").use == "mine"

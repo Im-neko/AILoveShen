@@ -77,11 +77,28 @@
     （item_info {query: raw_iron} で要る道具と、どのブロックから取れるかが分かる）
     1. 目の前や find_blocks で見える鉱石を dig
     2. search_memory（例: iron_ore、鉄）で前に見た鉱石へ goto
-    3. 地下の鉱石はソルバーの提案（do_suggestion の dig down …）で階段を掘って下りる
-    鉄鉱石は raw_iron になり、かまどで iron_ingot に焼く
+    3. 地下の鉱石はソルバーの提案（do_suggestion の dig down …）で階段を掘って下りる。
+       完成した採掘場があれば、深いものは提案 go down the mine … でそこから下りる
+    鉄鉱石は raw_iron になり、かまどで iron_ingot に焼く。何度も鉄が要るなら採掘場を作る（make_mine）
   tools: [dig, find_blocks, search_memory, goto, do_suggestion, item_info]
-  see: [smelt, upgrade_tools]
+  see: [smelt, upgrade_tools, make_mine]
 
+- key: make_mine
+  title: 採掘場を作る
+  words: mine shaft stairs tunnel branch mining iron diamond deep facility 採掘場
+  when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき
+  how: |
+    採掘場は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の
+    施設名。なければ新しい名前）。そのとき区画・底の高さ（鉄は y 16 あたり）・坑道の本数と長さを
+    決める。溶岩や水に当たる深さは断られ、届く一番深い y が返る
+    1. ツルハシを持つ（なければ craft。材料は recipe_of）
+    2. 小目標 facility(name) の間、提案 dig the mine … を do_suggestion で選ぶと、らせん階段を
+       底まで掘り、部屋と坑道を掘る（1 回で危ないものに当たるまで続ける）。溶岩や水に当たると、
+       そこで採掘場は終わりになり理由が残る
+    3. 完成した採掘場は、深い石・鉱石が要るとき提案 go down the mine … でそこから下りる
+    採掘場の場所・深さ・掘った数は search_facility（例: 採掘場、mine）
+  tools: [do_suggestion, craft, recipe_of, search_facility]
+  see: [mine_ores]
 - key: smelt
   title: かまどで焼く・精錬する
   words: smelt furnace cook ingot iron glass charcoal stone fuel

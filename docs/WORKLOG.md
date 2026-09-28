@@ -7,6 +7,18 @@
 
 ## Completed Work
 
+### 採掘場（設計書 47 段階 5） (2026-09-28)
+
+**Commit**: (後で記入)
+
+設計書 47 §16。
+- ブリッジ `facilities.mjs`: `mineLayout`（4 x 4 の輪のらせん階段、底の部屋、坑道。設計のときに予定のマスとまわりを全部読んで、溶岩・水・岩盤・落ちる砂利・洞窟を避ける。届かなければ一番深く安全な y を返す）、`mineStatus`、`mineDanger`、`stopMine`、`onMineCell`、`finishedMine`。`registerFacility` / `updateStatus` / 中身が mine を扱う
+- `goals.mjs` の facility に採掘場（ツルハシがなければ作る、`dig_mine` の葉）、`candidates.mjs`（`dig the mine`、`go down the mine`）、`primitives.mjs` の `dig_mine`（順に空ける、危ないものに当たったら先を外して理由を残す）と、採掘場のマスに足場を置かない、`leveling.mjs`（採掘場の列を触らない）、`solver.mjs` / `world.mjs`（下りきった採掘場から深い石・鉱石へ）
+- Python: `FacilityDesigner` に mine（bottom_y、tunnels、tunnel_length）、`FACILITY_TEMPLATE`、`PREDICATE_DESCRIPTIONS`、帳 `make_mine` と `mine_ores`
+- テスト: `mine.test.mjs` 6 件（形、溶岩を避ける・一番深い y、済み・次のセル、途中の水で止める、整地、ソルバー）、`test_facility_design.py` に採掘場。Python 860、ブリッジ 257
+- まだ: 坑道を延ばす、階段の松明、底で見つけた鉱石と採掘場の結びつけ。囲い・トラップ（§8、別の設計書）
+- 事故: `node -e "import('./src/index.mjs')"` で読み込みを確かめようとして、ブリッジを本当に起動してしまった（20:10:48〜20:11 頃、ポート 3000 と 25578、サーバーにつながった）。止めた。止めるときの保存で `minecraft-bridge/data/state.json` が 20:11:02 に書かれた（読んで保存しただけ。ふつうの再起動と同じ経路）
+
 ### 施設は広げられないと言う、進める手のない小目標を差し戻す (2026-09-28)
 
 **Commit**: `60d527d`
@@ -1781,7 +1793,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 設計書 47 の残り（2026-09-28 時点）
 
-段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（`2391ee3`）、4B（作物と植林は施設で数える）は済み。残りは 5（採掘場）、6（囲い・トラップ、別の設計書）
+段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（`2391ee3`）、4B（`a281fb2`）、5（採掘場）は済み。残りは 6（囲い・トラップ、別の設計書: 柵と門、動物を連れて来る、水、ホッパー）と、採掘場の坑道を延ばす・松明、畑に水を置く
 
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 

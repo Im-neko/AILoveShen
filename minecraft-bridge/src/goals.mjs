@@ -32,7 +32,7 @@ import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem }
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, plantingStatus, isSaplingItem, saplingMatches } from './farming.mjs'
 import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
-import { layoutStatus, updateStatus, cropFarms, designedFarms, designedTreeFarms, workCell, HOME_FARM } from './facilities.mjs'
+import { layoutStatus, updateStatus, mineStatus, cropFarms, designedFarms, designedTreeFarms, workCell, HOME_FARM } from './facilities.mjs'
 import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
@@ -591,8 +591,24 @@ function evaluateOne (bot, state, knowledge, world) {
       break
     }
     case 'facility': {
-      // 設計した施設のマス（設計書 47 §7）: 畑は耕してまく、植林場は苗木を植える
+      // 設計した施設のマス（設計書 47 §7）: 畑は耕してまく、植林場は苗木を植える、採掘場は掘る（§16）
       const fac = state.facilities[goal.spec.name]
+      if (fac.kind === 'mine') {
+        const m = mineStatus(bot, fac)
+        updateStatus(bot, fac)
+        out.met = m.done === m.total
+        out.remaining = m.total - m.done
+        const bottom = fac.layout.cells.filter((c) => c.part === 'stairs').at(-1)?.y
+        const tunnels = fac.layout.tunnels?.length ? `, tunnels ${fac.layout.tunnels.join('/')}` : ''
+        const stopped = fac.layout.stopped ? `; stopped at y ${fac.layout.stopped.y}: ${fac.layout.stopped.reason}` : ''
+        out.lines.push(`mine ${fac.name} (stairs down to y ${bottom}${tunnels}): ${m.done}/${m.total} cells dug${m.unseen ? `, out of view ${m.unseen}` : ''}${stopped}`)
+        if (out.met) break
+        if (!m.next) { out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance }); break }
+        const inv = inventoryCounts(bot)
+        if (!Object.keys(inv).some((n) => n.endsWith('_pickaxe') && inv[n] > 0)) { addSolved([{ spec: 'wooden_pickaxe', count: 1 }]); break }
+        out.leaves.push({ kind: 'dig_mine', facility: fac.name })
+        break
+      }
       const f = layoutStatus(bot, fac)
       updateStatus(bot, fac)
       out.met = f.done === f.total

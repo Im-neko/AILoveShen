@@ -21,6 +21,7 @@ import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
 import { levelStatus, fillItem, TERRAIN } from './leveling.mjs'
+import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell } from './facilities.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -89,6 +90,8 @@ export function configureMovements (bot, state) {
   // 自然の地形（leveling.mjs の TERRAIN）。置いた物（丸石、板材、チェストなど）は入れない
   m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
   m.exclusionAreasPlace.push((block) => block.position && !inHouse(state, block.position, 1) ? 0 : 100)
+  // 採掘場の空ける所には足場を置かない（階段や坑道を埋めない。設計書 47 §16）
+  m.exclusionAreasPlace.push((block) => block.position && onMineCell(state, block.position) ? 100 : 0)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
   m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
@@ -992,6 +995,45 @@ export const PRIMITIVES = {
     await collectNearbyDrops(bot, state, signal)
     const depth = surfaceY - Math.floor(bot.entity.position.y)
     return `dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${stop ? `; stopped: ${stop}` : ''}`
+  },
+  // 採掘場を設計どおりに掘る（設計書 47 §16）: 並びの次のセルから順に、隣の空いたセル（前の段）に立って
+  // 上から空ける。時間では止めない（設計書 38）。危ないもの（溶岩・水・落ちる砂利・洞窟）に当たったら、
+  // そこから先を設計から外して理由を残す（黙って浅くしない）
+  async dig_mine (bot, state, c, signal) {
+    const fac = state.facilities?.[c.facility]
+    if (!fac?.layout || fac.kind !== 'mine') throw new Error(`there is no mine named ${c.facility}`)
+    let dug = 0
+    let last = -1
+    for (;;) {
+      signal.throwIfAborted()
+      const m = mineStatus(bot, fac)
+      if (!m.next) break
+      if (m.index === last) throw new Error(`could not clear ${m.next.x},${m.next.y},${m.next.z} of the mine ${fac.name} (dug ${dug} cells)`)
+      last = m.index
+      const cells = fac.layout.cells
+      const cell = m.next
+      const adjacent = (a) => Math.abs(a.x - cell.x) + Math.abs(a.z - cell.z) === 1 && a.y - cell.y >= 0 && a.y - cell.y <= 1
+      const stand = cells.slice(0, m.index).reverse().find((a) => adjacent(a) && mineBlocks(a).slice(0, 2).every((p) => bot.blockAt(p)?.boundingBox === 'empty'))
+      await goto(bot, stand ? new goals.GoalBlock(stand.x, stand.y, stand.z) : new goals.GoalNear(cell.x, cell.y, cell.z, 1), signal)
+      signal.throwIfAborted()
+      const why = mineDanger(bot, cell, plannedBlocks(cells))
+      if (why) {
+        stopMine(fac, m.index, why)
+        updateStatus(bot, fac)
+        return `dug ${dug} cells of the mine ${fac.name}; stopped at ${cell.x},${cell.y},${cell.z}: ${why} (the mine now ends before it)`
+      }
+      for (const p of mineBlocks(cell).reverse()) {
+        const block = bot.blockAt(p)
+        if (!block || block.boundingBox === 'empty') continue
+        await equipToolFor(bot, state, block)
+        await bot.dig(block, true)
+        signal.throwIfAborted()
+      }
+      dug++
+    }
+    updateStatus(bot, fac)
+    await collectNearbyDrops(bot, state, signal)
+    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}`
   },
   // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
   async goto_pos (bot, state, c, signal) {

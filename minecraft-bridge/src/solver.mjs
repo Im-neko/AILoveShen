@@ -22,6 +22,9 @@ const MAX_DEPTH = 10 // 何もない状態から鉄の剣まで: インゴット
 const EXPLORE_COST = 100 // 見えていない入手元はまず探さないといけない
 const RECALL_COST = 50 // 前に見たもの: あった場所まで戻る
 const DIG_DOWN_COST = 30 // 埋まったもの: 階段で掘り下げる（深さ 1 段ごとに 1 足す）
+const MINE_COST = 40 // 採掘場を下りる（前に見た場所へ戻るより少し安く、掘り下げるよりは高い）
+const MINE_DEPTH = 8 // これより深いものは、採掘場があればそこから
+const UNDERGROUND = /^(stone|deepslate|tuff|granite|diorite|andesite)$|_ore$/
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
 const WITHDRAW_COST = 0.5
@@ -223,6 +226,12 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     : null
   const digDown = buried && buried.t.depth <= (world.digDepth ?? 0) &&
     DIG_DOWN_COST + buried.t.depth < (known.length ? RECALL_COST : EXPLORE_COST)
+  // 下りきった採掘場があれば、深いもの（MINE_DEPTH 段より下）や見えないものはそこから下りて探す（設計書 47 §16）。
+  // 浅い石は今までどおりその場で掘り下げる
+  const mine = kind === 'dig' && !inSight.length && world.mine?.above && sources.some((s) => UNDERGROUND.test(s)) &&
+    (!digDown || buried.t.depth > MINE_DEPTH)
+    ? world.mine
+    : null
   // 畑にある作物: 熟していれば畑へ戻る。育ち途中なら遠出しない（作物はプレイヤーの近くでしか
   // 育たない。2026-09-27: 家の小麦が育ち途中のまま、261 m 先の小麦へ遠征しようとした）
   const farm = kind === 'dig' && !inSight.length
@@ -260,6 +269,9 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
         `${more}${meal}`
     }
     cost += EXPLORE_COST * 2
+  } else if (mine) {
+    leaf = { kind: 'go_mine', item, mine, sources }
+    cost += MINE_COST
   } else if (digDown) {
     leaf = { kind: 'dig_down', item, sources: [buried.s], depth: buried.t.depth }
     cost += DIG_DOWN_COST + buried.t.depth
@@ -323,6 +335,7 @@ function describe (leaf, method) {
     case 'kill': return `hunt ${leaf.sources.join('/')}`
     case 'explore': return `find ${leaf.sources.join('/')}`
     case 'dig_down': return `dig stairs down to ${leaf.sources.join('/')} (${leaf.depth} blocks down)`
+    case 'go_mine': return `go down the mine ${leaf.mine.name} (bottom y ${leaf.mine.bottom.y}) for ${leaf.sources.join('/')}`
     case 'place': return `place ${leaf.item}`
     case 'withdraw': return 'take it out of the chest'
     case 'smelt': return leaf.count ? `smelt ${leaf.input} in a furnace` : 'take it out of the furnace'

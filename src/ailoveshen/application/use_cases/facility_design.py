@@ -1,10 +1,10 @@
 """
-施設の設計（docs/design/47 §7）: 畑と植林場は、作る前に配置を決める。
+施設の設計（docs/design/47 §7、§16）: 畑・植林場・採掘場は、作る前に配置を決める。
 
 まだない名前の `facility(name)` を中目標に足すとき、`MidGoalKeeper` が呼ぶ。街の理想図に
 その名前の予定の区画があればそこに、なければ空いた区画から LLM が選ぶ（理想図がまだなければ
-家のまわり）。LLM が決めるのは種類・区画・大きさ・作物か苗木。実際のマス（耕せる・植えられる
-地面）はブリッジが区画の中から選んで登録する。登録したら、理想図のその区画に施設を書き込む。
+家のまわり）。LLM が決めるのは種類・区画・大きさ・作物か苗木・採掘場の深さと坑道。実際のマス
+（耕せる・植えられる地面、安全に下りられる階段）はブリッジが区画の中から選んで登録する。登録したら、理想図のその区画に施設を書き込む。
 """
 
 from __future__ import annotations
@@ -28,11 +28,14 @@ from ailoveshen.domain.exceptions import (
 )
 from ailoveshen.domain.value_objects import TownMap, Zone
 
-KINDS = ("farm", "tree_farm")
+KINDS = ("farm", "tree_farm", "mine")
 CROPS = ("wheat", "carrots", "potatoes", "beetroots")
 FARM_SIDE = (1, 16)  # minecraft-bridge/src/facilities.mjs の FARM_SIDE
 TREES = (1, 32)
 SPACING = (4, 6)  # 苗木どうしの間（ブリッジの植える規則 TREE_GAP 以上）
+MINE_BOTTOM = (-58, 100)  # 採掘場の底の y（1.21.4 の岩盤は y -64〜-60）
+TUNNELS = (0, 4)
+TUNNEL_LENGTH = (4, 32)
 MAX_ZONES = 4
 MAX_NOTE = 60
 
@@ -70,6 +73,25 @@ def facility_schema(zone_ids: list[str]) -> dict[str, Any]:
             "maximum": SPACING[1],
             "description": "tree_farm: blocks between saplings",
         },
+        "bottom_y": {
+            "type": "integer",
+            "minimum": MINE_BOTTOM[0],
+            "maximum": MINE_BOTTOM[1],
+            "description": "mine: the y of the bottom (iron is most common around y 16, "
+            "diamonds below y 0, coal and copper higher)",
+        },
+        "tunnels": {
+            "type": "integer",
+            "minimum": TUNNELS[0],
+            "maximum": TUNNELS[1],
+            "description": "mine: straight tunnels out from the bottom room (they show ores)",
+        },
+        "tunnel_length": {
+            "type": "integer",
+            "minimum": TUNNEL_LENGTH[0],
+            "maximum": TUNNEL_LENGTH[1],
+            "description": "mine: blocks per tunnel",
+        },
         "reason": {
             "type": "string",
             "description": "Why this place and size, one Japanese sentence",
@@ -102,6 +124,14 @@ def _design(data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             "width": int(data["width"]),
             "depth": int(data["depth"]),
         }
+    if kind == "mine":
+        if data.get("bottom_y") is None:
+            raise ValueError("a mine needs bottom_y")
+        tunnels = int(data.get("tunnels") or 0)
+        design = {"bottom_y": int(data["bottom_y"]), "tunnels": tunnels}
+        if tunnels:
+            design["tunnel_length"] = int(data.get("tunnel_length") or 16)
+        return kind, design
     if data.get("count") is None:
         raise ValueError("a tree_farm needs count")
     return kind, {
@@ -136,7 +166,7 @@ def _rectangle(zones: list[Zone], chosen: list[str], name: str) -> list[Zone]:
 
 
 class FacilityDesigner:
-    """施設（畑・植林場）を設計して登録し、理想図に書き込む。"""
+    """施設（畑・植林場・採掘場）を設計して登録し、理想図に書き込む。"""
 
     def __init__(
         self,

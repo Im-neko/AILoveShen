@@ -11,7 +11,7 @@
 // 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
-import { workCell, HOME_FARM } from './facilities.mjs'
+import { workCell, mineStatus, HOME_FARM } from './facilities.mjs'
 import { cropBySeed } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
@@ -293,6 +293,18 @@ function fromLeaf (bot, state, world, leaf) {
         : leaf.kind === 'till' ? `till the ground of ${where} with a hoe` : `sow ${leaf.item} on ${where}`
       const target = leaf.kind === 'till' ? 'farmland' : leaf.item
       return [{ id, verb: leaf.kind, target, ...(leaf.kind === 'till' ? {} : { item: leaf.item }), pos: cell.pos, distance: dist(bot, cell.pos) }]
+    }
+    case 'dig_mine': {
+      // 採掘場を設計どおりに掘る（設計書 47 §16）: 1 回の行動で、並びの次のセルから危ないものに当たるまで
+      const fac = state.facilities?.[leaf.facility]
+      const m = fac ? mineStatus(bot, fac) : null
+      if (!m?.next) return []
+      const p = new Vec3(m.next.x, m.next.y, m.next.z)
+      return [{ id: `dig the mine ${fac.name} (${m.done}/${m.total} cells dug)`, verb: 'dig_mine', target: fac.name, facility: fac.name, pos: p, distance: dist(bot, p) }]
+    }
+    case 'go_mine': {
+      const p = new Vec3(leaf.mine.bottom.x, leaf.mine.bottom.y, leaf.mine.bottom.z)
+      return [{ id: `go down the mine ${leaf.mine.name} (bottom y ${p.y}) for ${leaf.item}`, verb: 'goto_pos', target: leaf.mine.name, pos: p, distance: dist(bot, p) }]
     }
     case 'go_facility': {
       const p = new Vec3(leaf.pos.x, leaf.pos.y, leaf.pos.z)

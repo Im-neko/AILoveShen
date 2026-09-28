@@ -6,7 +6,7 @@ import { inHouse } from './home.mjs'
 import { findTable, findFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms } from './facilities.mjs'
+import { cropFarms, finishedMine } from './facilities.mjs'
 import { REMEMBERED_BLOCK, REMEMBERED_STONE, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
 const DIG_RADIUS = 32
@@ -139,6 +139,8 @@ export function snapshot (bot, state) {
       const f = crop ? cropFarms(bot, state, crop) : null
       return f?.planted ? f : null
     },
+    // 下りきった採掘場（設計書 47 §16）: 埋まった石・鉱石はそこから下りて探す
+    mine: finishedMine(bot, state),
     // 深さの上限は付けない（安全の決まりは掘るときに見る）。dig_depth があればそこまで
     digDepth: state.goal?.spec?.dig_depth ?? Infinity
   }

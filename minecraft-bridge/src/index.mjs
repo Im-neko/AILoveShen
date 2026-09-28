@@ -19,7 +19,7 @@
 //   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
 //   GET  /facilities       -> 施設（設計書 47 §5）: [{ name, kind, status, box, entrance?, center, distance_m, direction, contents }]
 //                             （今ある家・建物・畑・植えた苗木を先に取り込む）
-//   PUT  /facilities/<name> {kind, zones, boxes, purpose, design} -> 施設を設計どおりに登録する（畑: crop, width, depth、植林場: sapling, count, spacing）。
+//   PUT  /facilities/<name> {kind, zones, boxes, purpose, design} -> 施設を設計どおりに登録する（畑: crop, width, depth、植林場: sapling, count, spacing、採掘場: bottom_y, tunnels, tunnel_length。設計書 47 §16）。
 //                             実際のマスはブリッジが区画の中から選ぶ。直せる理由は 400、読み込まれていない区画は 409
 //   GET  /memory           -> 覚えている場所を座標つきで: { places（種類ごと）, chests, furnaces, deaths }（search_memory）
 //   GET  /zones?x=&z=[&cells=&size=] -> 街の理想図の区画の地形（zones.mjs、設計書 47 §6）: [{ id, min_x.., seen, water, lava, trees, built, stone, flat, height, facilities }]
