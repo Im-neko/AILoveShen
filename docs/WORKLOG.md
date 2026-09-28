@@ -7,6 +7,22 @@
 
 ## Completed Work
 
+### 施設の登録と検索の道具（設計書 47 段階 1） (2026-09-28)
+
+**Commit**: (次のコミット)
+
+ユーザー:「施設を作る前に配置図・設計図、街の理想図をマスターデータに」「search_facility でリストとLLMの検索語を Jev に渡してキーを選ばせる」「プレイするのは Qwen3.6。できることをどんどん検索可能にして動的に教える」。設計書 47 §10 の段階 1。
+- ブリッジ `facilities.mjs`（新規）: `state.facilities`（kind home/build/farm/tree_farm/mine/pen/trap、box、entrance、status）。今ある物を取り込む（`adoptExisting`: 家、`state.builds`、家のまわりの耕地 → `home_farm`、植えた苗木のかたまり → `tree_farm_N`）。`GET /facilities`（近い順、中身: 作物ごとの planted/ripe、苗木/木/空き、建物の進み）
+- ブリッジ `memory.mjs` `memoryList` + `GET /memory`: 覚えた場所を座標つきで（種類ごとに近い 5 件、チェストの中身、かまど、死んだ場所）
+- ブリッジ `home.mjs`: `plantings`（植えた苗木）が保存されていなかったのを直した（再起動で planted の数が 0 に戻っていた）。`facilities` も保存
+- Python `application/use_cases/search.py`（新規）: `KeySearch`（語の重なり（英語の語、日本語の 2-gram）で 16 件に絞り、Jev の CHOICE で A.. か none。確信度 0.5 未満・答えない → 語の上位 3 件を「確かではない候補」。`logs/search`）、`WorldSearch`（`search_facility` / `search_memory` を一覧から）
+- `tool_catalog.py`: `search_facility {query}`、`search_memory {query}`（Python が扱う、ブリッジには送らない）。`play.py`: 調べものは 1 ステップ 5 回まで（3 → 5）。道具のプロンプトに使いどころの決まり
+- 設定 `minecraft.agent.search_min_confidence` / `search_timeout_seconds` / `search_record_dir`
+- テスト: `test_search.py` 11 件、`test_tool_control.py` 1 件、ブリッジ `facilities.test.mjs` 3 件（ブリッジ 239）
+- 要 ブリッジと Python の再起動
+- 未コミットのユーザーの変更（`config/development.yaml`、目標のシステム指示の見直し・小目標の決め方の書き換え、`thinking_purposes` の tool、一言の Jev）は含めていない。目標のシステム指示が 8024 字になり `TestPromptLength::test_goal_system_length`（< 8000）が落ちる
+- 前のコミットで設計書 47 にユーザーの未コミットの変更（`config/development.yaml`、目標のシステム指示）を混ぜてしまったので、プッシュ前に設計書だけのコミット（`870a6e6`）に作り直した
+
 ### 画面を見るのをやめる (2026-09-27)
 
 **Commit**: `fc108e5`

@@ -169,6 +169,16 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data: Any = await self._request("GET", "/builds")
         return list(data) if isinstance(data, list) else []
 
+    async def facilities(self) -> list[dict[str, Any]]:
+        """施設の一覧（minecraft-bridge/src/facilities.mjs）。"""
+        data: Any = await self._request("GET", "/facilities")
+        return list(data) if isinstance(data, list) else []
+
+    async def memory(self) -> dict[str, Any]:
+        """覚えている場所を座標つきで（minecraft-bridge/src/memory.mjs の memoryList）。"""
+        data: Any = await self._request("GET", "/memory")
+        return dict(data) if isinstance(data, dict) else {}
+
     async def set_condition(self, name: str, description: str, code: str) -> dict[str, Any]:
         """Gemini が書いた判定を送る。400 には受け取れない理由が入っている。"""
         try:

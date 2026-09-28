@@ -457,6 +457,12 @@ minecraft:
     lesson_min_confidence: 0.6
     lesson_timeout_seconds: 2.0
     max_lessons: 200
+    # Search tools (docs/design/47 §3): search_facility / search_memory. Code narrows the list by
+    # word overlap to 16, Jev picks the entry matching the query (or none); below
+    # search_min_confidence or no answer → the 3 closest by words are returned as unsure
+    search_min_confidence: 0.5
+    search_timeout_seconds: 3.0
+    search_record_dir: "logs/search"
     # How small goals are chosen (docs/design/26_steps_and_context.md):
     #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
     #        at each boundary. Gemini is asked again after a failure, when the steps run out, when

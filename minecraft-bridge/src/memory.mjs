@@ -174,6 +174,26 @@ export function frontierDistance (memory, from, dx, dz, max = FRONTIER_MAX) {
 }
 
 // 判断する側が見るもの: 種類ごとの一番近い場所と、ボットが死んだ場所
+// GET /memory（設計書 47 §4 search_memory）: 覚えている場所を座標つきで。種類ごとに近い順 MEMORY_PER_KIND 件、
+// チェスト（中身）、焼いている途中のかまど、死んだ場所。dropsOf(kind) はそのブロックから取れる物
+export const MEMORY_PER_KIND = 5
+export function memoryList (memory, me, now, bearing, dropsOf = () => []) {
+  const where = (p) => ({ x: p.x, y: p.y, z: p.z, distance_m: Math.round(flatDistance(p, me)), direction: bearing(me, p), minutes_ago: Math.round((now - p.seen) / TICKS_PER_MINUTE) })
+  const places = Object.entries(memory.places).flatMap(([kind, list]) => {
+    const gives = dropsOf(kind)
+    return list.filter((p) => !stale(kind, p, now))
+      .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))
+      .slice(0, MEMORY_PER_KIND)
+      .map((p) => ({ kind, count: p.count, ...where(p), ...(gives.length ? { gives } : {}) }))
+  })
+  return {
+    places,
+    chests: chests(memory).map((c) => ({ ...where(c), contents: c.contents })),
+    furnaces: Object.values(memory.furnaces ?? {}).map((f) => ({ ...where(f), making: f.making })),
+    deaths: memory.deaths.map(where)
+  }
+}
+
 export function summarizeMemory (memory, me, now, bearing) {
   const places = Object.entries(memory.places).flatMap(([kind, list]) => {
     const fresh = list.filter((p) => !stale(kind, p, now))

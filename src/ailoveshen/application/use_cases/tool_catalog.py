@@ -24,6 +24,9 @@ from ailoveshen.domain.value_objects import (
 )
 
 LOOK_SCREEN = "look_screen"
+SEARCH_FACILITY = "search_facility"
+SEARCH_MEMORY = "search_memory"
+SEARCH_TOOLS = (SEARCH_FACILITY, SEARCH_MEMORY)
 RUN_SKILL = "run_skill"
 WRITE_SKILL = "write_skill"
 SKILL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
@@ -250,7 +253,21 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"item": _str("アイテムかグループ（log、planks、food など）"), "count": _int("個数")},
         ["item"],
     ),
-    # Python が扱う（ブリッジには送らない）。画面を撮れるときだけ出す（docs/design/23）
+    # ここから下は Python が扱う（ブリッジには送らない）。検索は docs/design/47 §4
+    SEARCH_FACILITY: (
+        "自分の施設（家、建物、畑、植林場など）を探す。名前でも目的でもよい（例: 小麦の畑、"
+        "原木が取れる所、home）。場所（box、入口、中心、距離と方角）と今の中身が返る（すぐ返る）。"
+        "施設へ行く前、施設に何があるかを知りたいときに使う",
+        {"query": _str("探すもの（日本語か英語。施設の名前、目的、欲しい物）")},
+        ["query"],
+    ),
+    SEARCH_MEMORY: (
+        "覚えている場所（前に見た鉱石、木、動物、作物、チェストの中身、かまど、死んだ場所）を"
+        "探す。座標と、何分前に見たかが返る（すぐ返る）。遠くへ探しに行く前に使う",
+        {"query": _str("探すもの（日本語か英語。例: iron_ore、鉄、羊、小麦が入ったチェスト）")},
+        ["query"],
+    ),
+    # 画面を撮れるときだけ出す（docs/design/23）
     LOOK_SCREEN: (
         "配信の画面（自分の視点）を撮り、次の選択に画像として添える（すぐ返る）。"
         "文字の状態では分からないとき（地形、何が起きているか）に使う",

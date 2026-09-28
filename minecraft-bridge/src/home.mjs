@@ -52,7 +52,10 @@ export function saveState (state) {
     survey: state.survey ?? null,
     goal: state.goal,
     memory: state.memory,
-    conditions: state.conditions ?? {} // Gemini が書いた判定（conditions.mjs。設計書 42）
+    conditions: state.conditions ?? {}, // Gemini が書いた判定（conditions.mjs。設計書 42）
+    // 植えた場所（設計書 33）。前は保存しておらず、再起動で planted が 0 から数え直しになった
+    plantings: state.plantings ?? [],
+    facilities: state.facilities ?? {} // 施設（facilities.mjs。設計書 47）
   }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true })
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 1))
@@ -69,6 +72,8 @@ export function loadState (state) {
   if (data.goal) state.goal = data.goal
   if (data.memory) state.memory = { ...state.memory, ...data.memory }
   if (data.conditions) state.conditions = data.conditions
+  if (data.plantings) state.plantings = data.plantings
+  if (data.facilities) state.facilities = data.facilities
 }
 
 // 完成した計画が家になる: ドアの下半分、そのすぐ内側と外側のセル、内部（敷地から壁を除いた部分）。

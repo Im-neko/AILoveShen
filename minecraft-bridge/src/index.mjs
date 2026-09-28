@@ -17,6 +17,9 @@
 //   PUT  /builds/<name>   -> { blocks, size: {width, depth, height}, anchor, purpose } 名前付きの建物を登録する
 //                             （docs/design/25_builds.md。原点はアンカーから決める。守るものに掛かれば 400 と理由）
 //   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
+//   GET  /facilities       -> 施設（設計書 47 §5）: [{ name, kind, status, box, entrance?, center, distance_m, direction, contents }]
+//                             （今ある家・建物・畑・植えた苗木を先に取り込む）
+//   GET  /memory           -> 覚えている場所を座標つきで: { places, chests, furnaces, deaths }（search_memory）
 //   PUT  /conditions/<name> {description, code} -> Gemini が書いた判定を確かめて登録する（設計書 42）:
 //                             { name, met, remaining, lines }。形が違う・動かない・もう成り立っていれば 400 と理由
 //   GET  /conditions       -> [{ name, description }]
@@ -52,6 +55,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
+import { adoptExisting, facilitiesStatus } from './facilities.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
 import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
@@ -68,7 +72,7 @@ import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed } from './home.mjs'
 import { startReflex, steerReflex, dangerView } from './reflex.mjs'
-import { newMemory, remember, rememberDeath, summarizeMemory, homeChests } from './memory.mjs'
+import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
 import { landmarks, adoptFoundBase } from './landmarks.mjs'
 import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
@@ -429,6 +433,13 @@ async function handle (req, res) {
   }
   if (req.method === 'GET' && req.url === '/builds') {
     return send(res, 200, buildsStatus(bot, state))
+  }
+  if (req.method === 'GET' && req.url === '/facilities') {
+    if (adoptExisting(bot, state)) saveState(state)
+    return send(res, 200, facilitiesStatus(bot, state))
+  }
+  if (req.method === 'GET' && req.url === '/memory') {
+    return send(res, 200, memoryList(state.memory, bot.entity.position, worldAge(), bearing, (k) => knowledge.dropsOf(k)))
   }
   if (req.method === 'GET' && req.url === '/build-plan') {
     return send(res, state.plan ? 200 : 404, state.plan ? state.plan.status(bot) : { error: 'no plan' })

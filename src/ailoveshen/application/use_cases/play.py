@@ -41,10 +41,12 @@ from ailoveshen.application.use_cases.lessons import (
     situation_of,
 )
 from ailoveshen.application.use_cases.notes import NoteKeeper
+from ailoveshen.application.use_cases.search import KeySearch, WorldSearch
 from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
 from ailoveshen.application.use_cases.tool_catalog import (
     ACTION_TOOLS,
     LOOK_SCREEN,
+    SEARCH_TOOLS,
     WRITE_SKILL,
     ToolCallError,
     is_query,
@@ -100,7 +102,7 @@ from ailoveshen.domain.value_objects import (
 )
 
 CONTROLS = ("candidates", "tools")
-MAX_QUERIES_PER_STEP = 3  # 1 ステップの中で調べものをしてよい回数
+MAX_QUERIES_PER_STEP = 5  # 1 ステップの中で調べものをしてよい回数
 SUGGESTIONS_SHOWN = 12  # 道具の選択に見せるソルバーの提案の数
 RECENT_TOOLS = 8  # 道具の選択に見せる直近の呼び出しの数
 GOAL_STEPS_SHOWN = 12  # 失敗の分析に見せる、その小目標の行動の数（docs/design/27）
@@ -281,6 +283,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         failure_routing: str = "gemini",
         stuck_check: Optional[StuckCheck] = None,
         lessons: Optional[LessonBook] = None,
+        search: Optional[KeySearch] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -361,6 +364,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._last_ended = ""  # 前の小目標の終わり方（stuck / stalled / died / met / other）
         self._undesignable: dict[str, float] = {}  # 設計できなかった建物 → また試してよい時刻
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
+        # 検索の道具（docs/design/47 §4）。Jev がなければ語の重なりの上位を返す
+        self._search = WorldSearch(bridge, search or KeySearch(None))
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""
@@ -542,6 +547,14 @@ class AdvancePlayUseCase(IAdvancePlay):
                 self._recent_tools.append(
                     ToolOutcome(call=call, ok=shot is not None, result=result, seconds=0.0)
                 )
+                continue
+            if call.name in SEARCH_TOOLS:
+                started = self._clock()
+                ok, result = await self._search.run(call.name, call.args)
+                self._recent_tools.append(
+                    ToolOutcome(call=call, ok=ok, result=result, seconds=self._clock() - started)
+                )
+                logger.info(f"検索した: {call.describe()} -> {result[:200]}")
                 continue
             if is_query(call.name):
                 ok, result, seconds, refused = await self._bridge.run_tool(call.name, call.args)

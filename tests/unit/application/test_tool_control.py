@@ -8,7 +8,7 @@ import pytest
 from ailoveshen.application.ports.output.text_generator import ToolChoice
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
-from ailoveshen.application.use_cases.play import AdvancePlayUseCase
+from ailoveshen.application.use_cases.play import MAX_QUERIES_PER_STEP, AdvancePlayUseCase
 from ailoveshen.application.use_cases.tool_catalog import (
     ToolCallError,
     parse_tool_call,
@@ -311,9 +311,7 @@ class TestToolStep:
     @pytest.mark.asyncio
     async def test_after_too_many_lookups_only_actions_are_offered(self, use_case, watcher):
         self.text_generator.choose_tool.side_effect = [
-            ToolChoice("recipe_of", {"item": "stick"}),
-            ToolChoice("recipe_of", {"item": "stick"}),
-            ToolChoice("recipe_of", {"item": "stick"}),
+            *[ToolChoice("recipe_of", {"item": "stick"})] * MAX_QUERIES_PER_STEP,
             ToolChoice("wait", {"intent": "待つ"}),
         ]
         await use_case.execute(_session(HAVE_PLANKS))
@@ -321,7 +319,28 @@ class TestToolStep:
         offered = [
             {t.name for t in c.args[1]} for c in self.text_generator.choose_tool.call_args_list
         ]
-        assert "recipe_of" in offered[0] and "recipe_of" not in offered[3]
+        assert "recipe_of" in offered[0] and "recipe_of" not in offered[MAX_QUERIES_PER_STEP]
+        assert watcher.run.await_args.args[0].name == "wait"
+
+    @pytest.mark.asyncio
+    async def test_a_search_is_answered_in_python_from_the_bridges_list(
+        self, use_case, bridge, watcher
+    ):
+        """search_facility はブリッジの道具に送らず、施設の一覧から選んで返す（docs/design/47 §4）。"""
+        bridge.facilities.return_value = [
+            {"name": "home_farm", "kind": "farm", "status": "done", "distance_m": 12,
+             "direction": "north", "contents": {"crops": {"wheat": {"planted": 9, "ripe": 3}}}},
+        ]
+        self.text_generator.choose_tool.side_effect = [
+            ToolChoice("search_facility", {"query": "wheat farm"}),
+            ToolChoice("wait", {"intent": "待つ"}),
+        ]
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        bridge.run_tool.assert_not_awaited()
+        recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
+        assert recent[0].call.name == "search_facility" and recent[0].ok
+        assert "home_farm" in recent[0].result
         assert watcher.run.await_args.args[0].name == "wait"
 
     @pytest.mark.asyncio

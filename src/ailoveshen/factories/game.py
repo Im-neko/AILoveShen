@@ -17,6 +17,7 @@ from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
+from ailoveshen.application.use_cases.search import KeySearch
 from ailoveshen.application.use_cases.skills import SkillWriter
 from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.application.use_cases.vision import ScreenReviewer, VisionPolicy
@@ -263,6 +264,17 @@ def create_game_service(
             else None,
         )
         lessons.load()
+    # 検索の道具: 一覧から検索語に合うキーを Jev が選ぶ（設計書 47 §3）
+    search = None
+    if minecraft.control == "tools":
+        search = KeySearch(
+            judge=fast_judge if jev.api_key else None,
+            recorder=JsonlWatchRecorder(minecraft.search_record_dir)
+            if minecraft.search_record_dir
+            else None,
+            timeout_seconds=minecraft.search_timeout_seconds,
+            min_confidence=minecraft.search_min_confidence,
+        )
     store = JsonMissionStore(minecraft.mission.store_path)
     notes = NoteKeeper(JsonNoteStore(minecraft.notes_path))
     profile = create_character_profile(character)
@@ -332,6 +344,7 @@ def create_game_service(
         failure_routing=minecraft.failure_routing,
         stuck_check=stuck_check,
         lessons=lessons,
+        search=search,
         skills=(
             SkillWriter(
                 text_generator,

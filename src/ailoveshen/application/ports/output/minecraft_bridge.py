@@ -145,6 +145,19 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def facilities(self) -> list[dict[str, Any]]:
+        """
+        施設の一覧（docs/design/47 §5。近い順）: [{name, kind, status, box, entrance?, center,
+        distance_m, direction, contents}]。今ある家・建物・畑・植えた苗木はブリッジが取り込む。
+        """
+        ...
+
+    @abstractmethod
+    async def memory(self) -> dict[str, Any]:
+        """覚えている場所を座標つきで: {places, chests, furnaces, deaths}（docs/design/47 §4）。"""
+        ...
+
+    @abstractmethod
     async def set_condition(self, name: str, description: str, code: str) -> dict[str, Any]:
         """
         Gemini が書いた判定（custom(name)）を登録する（docs/design/42_custom_conditions.md）。

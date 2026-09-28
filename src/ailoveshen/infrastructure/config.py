@@ -276,6 +276,10 @@ class MinecraftSettings:
     lesson_min_confidence: float = 0.6
     lesson_timeout_seconds: float = 2.0
     max_lessons: int = 200
+    # 検索の道具（docs/design/47 §3）: 一覧から検索語に合うキーを Jev が選ぶ
+    search_min_confidence: float = 0.5
+    search_timeout_seconds: float = 3.0
+    search_record_dir: str = "logs/search"
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
     # 一番上の中目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
@@ -722,6 +726,13 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("lesson_timeout_seconds", defaults.lesson_timeout_seconds)
             ),
             max_lessons=int(agent_data.get("max_lessons", defaults.max_lessons)),
+            search_min_confidence=float(
+                agent_data.get("search_min_confidence", defaults.search_min_confidence)
+            ),
+            search_timeout_seconds=float(
+                agent_data.get("search_timeout_seconds", defaults.search_timeout_seconds)
+            ),
+            search_record_dir=agent_data.get("search_record_dir", defaults.search_record_dir),
             jev_goal_min_confidence=float(
                 agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
             ),
