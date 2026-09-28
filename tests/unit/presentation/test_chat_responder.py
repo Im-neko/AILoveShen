@@ -27,7 +27,7 @@ def _responder(llm, said, clock=None, **kwargs):
 @pytest.mark.asyncio
 async def test_replies_one_at_a_time_with_the_session():
     llm = AsyncMock()
-    llm.generate_response.side_effect = lambda user, msg, user_id=None, session=None: (
+    llm.generate_response.side_effect = lambda user, msg, user_id=None, session=None, kind=None: (
         f"{user}:{msg}"
     )
     said = []
@@ -36,7 +36,7 @@ async def test_replies_one_at_a_time_with_the_session():
     assert await responder.answer_next()
     assert said == ["まめ:ベッド作って！"]
     llm.generate_response.assert_awaited_with(
-        "まめ", "ベッド作って！", user_id="1", session="SESSION"
+        "まめ", "ベッド作って！", user_id="1", session="SESSION", kind=None
     )
     assert not await responder.answer_next()
 
@@ -221,6 +221,8 @@ async def test_triage_skips_what_needs_no_reply_and_answers_urgent_ones_first():
         pass
     assert said == ["re:やっぱりいいや", "re:草"]
     assert responder.skipped == 1
+    # 仕分けの種類は返事の生成に渡る（頼み・助言を流さないように確かめる）
+    assert [c.kwargs["kind"] for c in llm.generate_response.await_args_list] == ["withdraw", "chat"]
 
 
 @pytest.mark.asyncio

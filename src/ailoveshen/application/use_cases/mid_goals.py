@@ -116,7 +116,11 @@ class MidGoalKeeper:
                 done = plan.complete(goal.id)
                 logger.info(f"中目標を達成した: {done.describe()}")
                 events.append(
-                    MidGoalCompletedEvent(title=done.title, requested_by=done.requested_by or "")
+                    MidGoalCompletedEvent(
+                        title=done.title,
+                        requested_by=done.requested_by or "",
+                        suggested_by=done.suggested_by or "",
+                    )
                 )
         await self._design_stage_builds(plan)
         events.extend(self._next_stage(plan))
@@ -298,16 +302,25 @@ class MidGoalKeeper:
         plan: MidGoalPlan,
         proposal: MidGoalProposal,
         requested_by: str,
+        advice: bool = False,
     ) -> MidGoal:
         """
         視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。`proposal.now`
         （配信者が今やると判断した）なら先頭に。呼び出し側が今の小目標を区切る。
 
+        `advice`: 視聴者の助言を配信者が納得して採った。配信者自身の中目標にし（提案者は
+        `suggested_by`）、視聴者の頼みの上限と予算に数えない（2026-09-28: 助言をくれる人が
+        1 人 1 つの上限に当たり、もっともな助言を「後で」と流していた）。
+
         Raises:
             GoalRejectedError: 条件を判定できないとき
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
-        blocks = await self._design_builds(proposal, BuildDesign.VIEWER_MAX_BLOCKS)
+        viewer = None if advice else requested_by
+        plan.check_room(viewer)  # 設計（建物・施設の登録）の前に: 上限で断るなら何も残さない
+        blocks = await self._design_builds(
+            proposal, BuildDesign.MAX_BLOCKS if advice else BuildDesign.VIEWER_MAX_BLOCKS
+        )
         await self._design_facilities(proposal.conditions, _brief(proposal))
         await self._write_checks(proposal.conditions, _brief(proposal))
         await self._bridge.check(proposal.conditions)
@@ -315,15 +328,15 @@ class MidGoalKeeper:
             title=proposal.title,
             conditions=proposal.conditions,
             reason=proposal.reason,
-            requested_by=requested_by,
+            requested_by=viewer,
+            suggested_by=requested_by if advice else None,
             position=0 if proposal.now else proposal.position,
             # 建物は大きさに合わせて予算を広げる（1 ブロック 2 ステップと、材料集め）
-            budget=max(plan.viewer_budget, 2 * blocks + 40) if blocks else None,
+            budget=max(plan.viewer_budget, 2 * blocks + 40) if blocks and not advice else None,
             now=proposal.now,
         )
-        logger.info(
-            f"視聴者の頼みを中目標 {goal.id} として受けた: {goal.describe()}（{requested_by}）"
-        )
+        what = "の助言を中目標" if advice else "の頼みを中目標"
+        logger.info(f"{requested_by} {what} {goal.id} にした: {goal.describe()}")
         self._store.save(plan)
         await self._publish([_added(plan, goal)])
         return goal
@@ -474,10 +487,14 @@ def _added(plan: MidGoalPlan, goal: MidGoal) -> MidGoalAddedEvent:
         reason=goal.reason,
         requested_by=goal.requested_by or "",
         position=position,
+        suggested_by=goal.suggested_by or "",
     )
 
 
 def _dropped(goal: MidGoal) -> MidGoalDroppedEvent:
     return MidGoalDroppedEvent(
-        title=goal.title, reason=goal.ended_because, requested_by=goal.requested_by or ""
+        title=goal.title,
+        reason=goal.ended_because,
+        requested_by=goal.requested_by or "",
+        suggested_by=goal.suggested_by or "",
     )

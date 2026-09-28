@@ -68,10 +68,10 @@
       li.className = g.state;
       const mark = g.state === 'done' ? '✓ ' : g.state === 'dropped' ? '× ' : '';
       li.textContent = mark + g.title;
-      if (g.requested_by) {
+      if (g.requested_by || g.suggested_by) {
         const by = document.createElement('span');
         by.className = 'by';
-        by.textContent = `（${g.requested_by}さんの頼み）`;
+        by.textContent = g.requested_by ? `（${g.requested_by}さんの頼み）` : `（${g.suggested_by}さんの提案）`;
         li.append(by);
       }
       if (g.state === 'current' && g.summary.length) {

@@ -258,6 +258,7 @@ def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
         "title": goal.title,
         "state": state,  # current / pending / done / dropped
         "requested_by": goal.requested_by,
+        "suggested_by": goal.suggested_by,  # 採った助言をくれた視聴者（頼みではない）
         "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None
         "prepares_town": goal.prepares_town,  # 街の準備（候補地の調査、引っ越し）
         "conditions": [c.describe() for c in goal.conditions],

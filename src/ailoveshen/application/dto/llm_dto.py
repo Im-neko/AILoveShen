@@ -60,6 +60,8 @@ class GenerateResponseRequest:
     user_id: Optional[str] = None
     emotion_state: EmotionState = field(default_factory=EmotionState)
     session: Optional[PlaySession] = None
+    # 返事の前の仕分け（Jev）が答えたコメントの種類（request / advice / ...）。None: 分からない
+    kind: Optional[str] = None
 
 
 @dataclass

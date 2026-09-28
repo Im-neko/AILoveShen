@@ -104,6 +104,20 @@ class RequestHandling(str, Enum):
     WITHDRAW = "withdraw"  # 本人が自分の頼みを取り下げた（「もういいよ」）: その中目標をやめる
 
 
+class DeclineReason(str, Enum):
+    """
+    断る理由（決まったものだけ）。「今は別のことをしている」「今の目標が先」は理由にならない:
+    やる価値があるなら accept の when=next で後ろに入れる（2026-09-28: もっともな指摘を「今は
+    ○○中だから後で」と断り、何も残らなかった）。
+    """
+
+    CANNOT = "cannot"  # 完了条件でも custom(名前) でも書けない、まだできない
+    WRONG = "wrong"  # 今の状態から見て、指摘・助言が当たっていない（もうある、事実と違う）
+    UNSAFE = "unsafe"  # 死ぬ・家や持ち物を失うおそれ
+    OFF_MISSION = "off_mission"  # 頼みだけ: 大目標に関係なく、後の作業も楽にならない
+    LIMIT = "limit"  # 視聴者の頼みの上限、中目標のリストがいっぱい
+
+
 class PromiseHandling(str, Enum):
     """約束している返答の約束を、どう守るか（docs/design/34 §10）。"""
 
@@ -468,6 +482,16 @@ def reply_schema() -> dict[str, Any]:
                 "description": "none: chat or a question; accept: add the request to the mid "
                 "goals; decline: not taken (the reply says why); withdraw: the viewer calls off "
                 "their own request in the list (e.g. never mind, no need any more)",
+            },
+            "decline_reason": {
+                "type": "string",
+                "enum": [r.value for r in DeclineReason],
+                "description": "decline only (required then): cannot = no condition (not even "
+                "custom(name)) can express it; wrong = the point does not hold in the state now; "
+                "unsafe = it risks death or losing the home or items; off_mission = a request "
+                "that has nothing to do with the mission and makes nothing easier later (never for "
+                "advice); limit = the viewers' limit or a full list. Being busy with something "
+                "else is never a reason: accept it with when=next instead",
             },
             "title": {"type": "string", "description": "accept: the mid goal's title"},
             "conditions": _conditions_schema(),

@@ -607,6 +607,8 @@ class MidGoal:
     中目標: 大目標への一歩。条件がすべて世界で満たされたら完了する。
 
     `requested_by` は頼んだ視聴者（None: 配信者自身のもの）。
+    `suggested_by` は、配信者が納得して自分の中目標にした助言をくれた視聴者（頼みではないので、
+    視聴者の上限と予算には数えない）。
     `stage` は、それが表す街の段階（None: 段階ではない）。
     `prepares_town` は、街の段階の前にやる準備（候補地の調査、選んだ場所への引っ越し）。
     段階と同じく、やめられない。
@@ -622,6 +624,7 @@ class MidGoal:
     reason: str = ""
     requested_by: Optional[str] = None
     state: MidGoalState = MidGoalState.PENDING
+    suggested_by: Optional[str] = None
     ended_because: str = ""
     steps: int = 0
     progress: tuple[str, ...] = ()  # 最後に判定したときの、条件の進み具合

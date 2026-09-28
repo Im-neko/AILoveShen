@@ -148,8 +148,8 @@ class Narrator:
         await self._generate(events, self._activity())
 
     async def on_mid_goal_added(self, event: MidGoalAddedEvent) -> None:
-        """配信者が自分で加えた中目標は次の目標と一緒に話す。視聴者のものは返答で話している。"""
-        if event.requested_by:
+        """配信者が自分で加えた中目標は次の目標と一緒に話す。視聴者のもの・採った助言は返答で話している。"""
+        if event.requested_by or event.suggested_by:
             return
         self._pending.append(
             f"中目標「{event.title}」をリストの {event.position} 番目に足した（{event.reason}）"
@@ -157,13 +157,16 @@ class Narrator:
 
     async def on_mid_goal_completed(self, event: MidGoalCompletedEvent) -> None:
         """完了した中目標を取っておき、次の目標と一緒に話す。"""
-        self._pending.append(f"中目標「{event.title}」{_requested(event.requested_by)}が完了した")
+        self._pending.append(
+            f"中目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}が完了した"
+        )
         self._must_speak = True
 
     async def on_mid_goal_dropped(self, event: MidGoalDroppedEvent) -> None:
         """やめた中目標を取っておき、次の目標と一緒に話す（黙ってやめない）。"""
         self._pending.append(
-            f"中目標「{event.title}」{_requested(event.requested_by)}をやめた（{event.reason}）"
+            f"中目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}"
+            f"をやめた（{event.reason}）"
         )
         self._must_speak = True
 
@@ -244,5 +247,7 @@ def _place(activity: Activity | None) -> str:
     return f"。今いる場所: 家の外（家まで {distance}m）"
 
 
-def _requested(user_name: str) -> str:
-    return f"（{user_name}さんの頼み）" if user_name else ""
+def _requested(user_name: str, suggested_by: str = "") -> str:
+    if user_name:
+        return f"（{user_name}さんの頼み）"
+    return f"（{suggested_by}さんの提案）" if suggested_by else ""

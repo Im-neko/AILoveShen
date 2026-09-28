@@ -158,13 +158,14 @@ class MidGoalAddedEvent(DomainEvent):
     """
     中目標がリストに加わったときのイベント（`position` は 1 始まり）。
 
-    視聴者の中目標（`requested_by`）は、返答でもう伝えてある。
+    視聴者の中目標（`requested_by`）と採った助言（`suggested_by`）は、返答でもう伝えてある。
     """
 
     title: str = ""
     reason: str = ""
     requested_by: str = ""
     position: int = 0
+    suggested_by: str = ""
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,7 @@ class MidGoalCompletedEvent(DomainEvent):
 
     title: str = ""
     requested_by: str = ""
+    suggested_by: str = ""
 
 
 @dataclass(frozen=True)
@@ -182,6 +184,7 @@ class MidGoalDroppedEvent(DomainEvent):
     title: str = ""
     reason: str = ""
     requested_by: str = ""
+    suggested_by: str = ""
 
 
 @dataclass(frozen=True)

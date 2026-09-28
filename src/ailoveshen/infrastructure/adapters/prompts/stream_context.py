@@ -282,7 +282,9 @@ def format_time_en(time: dict) -> str:
 
 
 def _requested(goal: MidGoal) -> str:
-    return f"（{goal.requested_by}さんの頼み）" if goal.requested_by else ""
+    if goal.requested_by:
+        return f"（{goal.requested_by}さんの頼み）"
+    return f"（{goal.suggested_by}さんの提案）" if goal.suggested_by else ""
 
 
 def _format_memory(memory: dict) -> str:

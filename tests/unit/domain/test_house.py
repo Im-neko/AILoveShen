@@ -399,6 +399,22 @@ class TestMidGoalPlan:
         with pytest.raises(ValueError, match="2 viewers' requests"):
             plan.add("ベッド", (BED,), requested_by="tori")
 
+    def test_adopted_advice_is_her_own_goal(self):
+        """採った助言は提案者を残すが、視聴者の上限にも予算にも数えない。"""
+        plan = _plan(max_viewer_goals=1, viewer_budget=1)
+        plan.add("剣", (SWORD,), requested_by="neko")
+        goal = plan.add("板", (PLANKS,), suggested_by="neko")
+        assert goal.suggested_by == "neko" and goal.requested_by is None
+        assert plan.charge(goal.id) is None
+        assert plan.charge(goal.id) is None
+
+    def test_room_is_checked_before_adding(self):
+        plan = _plan()
+        plan.add("剣", (SWORD,), requested_by="neko")
+        plan.check_room(None)
+        with pytest.raises(ValueError, match="neko already has a request"):
+            plan.check_room("neko")
+
     def test_the_list_is_limited(self):
         plan = _plan(max_goals=3)
         plan.add("剣", (SWORD,))

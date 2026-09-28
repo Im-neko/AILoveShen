@@ -317,6 +317,22 @@ class MidGoalPlan(Entity):
         """id で指した未完了の中目標。"""
         return next((g for g in self._goals if g.id == mid_goal_id), None)
 
+    def check_room(self, requested_by: Optional[str] = None) -> None:
+        """
+        中目標をもう 1 つ足せるか（設計などの前に確かめる）。
+
+        Raises:
+            ValueError: リストがいっぱい、その視聴者の頼みがもうある、視聴者の頼みが上限のとき
+        """
+        if len(self._goals) >= self.max_goals:
+            raise ValueError(f"the mid goal list is full ({self.max_goals})")
+        if requested_by is not None:
+            viewers = [g for g in self._goals if g.requested_by is not None]
+            if any(g.requested_by == requested_by for g in viewers):
+                raise ValueError(f"{requested_by} already has a request in the list")
+            if len(viewers) >= self.max_viewer_goals:
+                raise ValueError(f"the list already has {self.max_viewer_goals} viewers' requests")
+
     def add(
         self,
         title: str,
@@ -328,21 +344,16 @@ class MidGoalPlan(Entity):
         prepares_town: bool = False,
         budget: Optional[int] = None,
         now: bool = False,
+        suggested_by: Optional[str] = None,
     ) -> MidGoal:
         """
         `position`（未完了のものの中で 0 始まり。None: 最後）に中目標を足す。
 
         視聴者の中目標は、position が何でも、取り組んでいるものの後ろに入る。ただし `now`
-        （配信者が待っている間に今やると引き受けた頼み）は先頭にも入れる。
+        （配信者が待っている間に今やると引き受けた頼み）は先頭にも入れる。`suggested_by`
+        （納得して採った助言）は配信者自身の中目標なので、視聴者の上限に数えない。
         """
-        if len(self._goals) >= self.max_goals:
-            raise ValueError(f"the mid goal list is full ({self.max_goals})")
-        if requested_by is not None:
-            viewers = [g for g in self._goals if g.requested_by is not None]
-            if any(g.requested_by == requested_by for g in viewers):
-                raise ValueError(f"{requested_by} already has a request in the list")
-            if len(viewers) >= self.max_viewer_goals:
-                raise ValueError(f"the list already has {self.max_viewer_goals} viewers' requests")
+        self.check_room(requested_by)
         goal = MidGoal(
             id=f"m{self._next_id}",
             title=title,
@@ -352,6 +363,7 @@ class MidGoalPlan(Entity):
             stage=stage,
             prepares_town=prepares_town,
             budget=budget,
+            suggested_by=suggested_by,
         )
         earliest = 1 if requested_by is not None and self._goals and not now else 0
         at = (

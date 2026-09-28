@@ -183,14 +183,19 @@ class ChatResponder:
             wait = self._last_reply_at + self._interval - self._clock()
             if wait > 0:
                 await asyncio.sleep(wait)
-        comment = await self._next_comment()
-        if comment is None:
+        picked = await self._next_comment()
+        if picked is None:
             return True
+        comment, kind = picked
         started = self._clock()
         if self._refresh is not None:
             await self._refresh()
         reply = await self._llm.generate_response(
-            comment.user_name, comment.message, user_id=comment.user_id, session=self._session()
+            comment.user_name,
+            comment.message,
+            user_id=comment.user_id,
+            session=self._session(),
+            kind=kind,
         )
         self._last_reply_at = self._clock()
         if not reply:
@@ -200,13 +205,14 @@ class ChatResponder:
         await self._say(reply)
         return True
 
-    async def _next_comment(self) -> ChatComment | None:
+    async def _next_comment(self) -> tuple[ChatComment, str | None] | None:
         """
-        次に返事をするコメント（仕分けがあれば、取り下げと頼みを先に）。返事の要らないものだった
-        ときは None（そのコメントは捨てる）。
+        次に返事をするコメントと、その種類（仕分けがあれば、取り下げと頼みを先に。Jev が答えられ
+        なかったときと仕分けがないときの種類は None）。返事の要らないものだったときは None
+        （そのコメントは捨てる）。
         """
         if self._triage is None:
-            return self._queue.popleft()
+            return self._queue.popleft(), None
         # 仕分けを待つ間にもコメントは届く（古いものは押し出される）: 仕分けていないものがなくなるまで
         while True:
             fresh = next((c for c in self._queue if id(c) not in self._triaged), None)
@@ -228,7 +234,7 @@ class ChatResponder:
                 f"{comment.user_name}: {comment.message}"
             )
             return None
-        return comment
+        return comment, result.kind if result.source == "jev" else None
 
     async def _answer_forever(self) -> None:
         while True:

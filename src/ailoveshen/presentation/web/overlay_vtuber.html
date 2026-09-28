@@ -222,6 +222,7 @@
     for (const g of [...current, ...pending, ...done]) {
       const li = el('li', g.state, g.title)
       if (g.requested_by) li.append(el('span', 'req', `💌 ${g.requested_by}さんのおねがい`))
+      else if (g.suggested_by) li.append(el('span', 'req', `💡 ${g.suggested_by}さんの提案`))
       if (g.state === 'current') {
         const f = fraction(g.progress, false)
         if (f) {
@@ -270,6 +271,7 @@
     for (const g of after.mid_goals) {
       if (g.state === 'done' && was[g.id] && was[g.id] !== 'done') return toast('中目標クリア！', g.title, true)
       if (!was[g.id] && g.requested_by) return toast(`💌 ${g.requested_by}さんのおねがい`, `「${g.title}」を受けたよ`, false)
+      if (!was[g.id] && g.suggested_by) return toast(`💡 ${g.suggested_by}さんの提案`, `「${g.title}」をやるよ`, false)
     }
     if (after.town && after.town.complete && !(before.town && before.town.complete)) toast('街がかんせい！', after.site ? after.site.name : '', true)
   }

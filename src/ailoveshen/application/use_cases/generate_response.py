@@ -17,6 +17,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_vocabulary import (
+    DeclineReason,
     MidGoalProposal,
     PromiseHandling,
     RequestHandling,
@@ -39,6 +40,49 @@ from ailoveshen.domain.value_objects import (
     MessageType,
     MidGoal,
 )
+
+
+# 返事の前の仕分けで、答えを必ず行動か理由にする種類（頼み・助言）
+ACTIONABLE = ("request", "advice")
+ACTIONABLE_ATTEMPTS = 3  # これらは差し戻しが増えるので、試す回数を増やす（最後は黙らずに話す）
+
+
+def unanswered(kind: str | None, data: dict[str, object]) -> str:
+    """
+    頼み・助言への答えが、何も残さずに流しているか（2026-09-28: 「今は○○中だから後で」と
+    none / decline にして、中目標にも考え直しにも教訓にもならなかった）。差し戻す理由か空文字列。
+    """
+    if kind not in ACTIONABLE:
+        return ""  # 仕分けがない・Jev が答えなかった: 今までどおり（約束の確かめが後ろで拾う）
+    handling = data.get("request")
+    if handling == RequestHandling.DECLINE.value:
+        reason = data.get("decline_reason")
+        allowed = [r.value for r in DeclineReason]
+        if reason not in allowed:
+            return (
+                f"decline には decline_reason（{' / '.join(allowed)}）が要る。今は別のことを"
+                "している・今の目標が先、は理由にならない: やる価値があるなら accept の when=next で"
+                "中目標の後ろに入れる（返答でもそう言う）。"
+            )
+        if kind == "advice" and reason == DeclineReason.OFF_MISSION.value:
+            return (
+                "助言は off_mission で断らない: 後の作業が楽になる・安全になるなら accept（when=next "
+                "で後ろに）、当たっていなければ wrong。"
+            )
+        return ""
+    if handling != RequestHandling.NONE.value:
+        return ""
+    for key in ("rethink", "lesson"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return ""
+    what = "助言" if kind == "advice" else "頼み"
+    return (
+        f"このコメントは視聴者の{what}。none で答えると何も残らない。次のどれかにする: やる価値が"
+        "あれば accept（今やるほうがよければ when=now、そうでなければ when=next で後ろに入れ、返答で"
+        "いつやるか言う）、今の小目標や計画の問題の指摘に納得したら rethink、これからのやり方の助言なら"
+        " lesson、できない・当たっていない・危ないなら decline（decline_reason つき）。"
+    )
 
 
 @dataclass(frozen=True)
@@ -217,7 +261,12 @@ class GenerateResponseUseCase(IGenerateResponse):
 
         system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply_requests")
         error = ""
-        for attempt in range(1, self._max_attempts + 1):
+        kind = request.kind
+        advice = kind == "advice"
+        attempts = (
+            max(self._max_attempts, ACTIONABLE_ATTEMPTS) if kind in ACTIONABLE else self._max_attempts
+        )
+        for attempt in range(1, attempts + 1):
             prompt = self._prompt_builder.build_chat_response_prompt(
                 user_name=request.user_name,
                 message=request.message,
@@ -242,10 +291,18 @@ class GenerateResponseUseCase(IGenerateResponse):
                 )
                 logger.warning(f"返答 {attempt} の rethink は間が短くて使えない: {data!r}")
                 continue
+            problem = unanswered(kind, data)
+            if problem and attempt < attempts:
+                error = problem
+                logger.warning(f"返答 {attempt} は{kind}を流している: {data!r}")
+                continue
+            if problem:
+                # 最後の試しでも直らない: 黙るよりは話す（流したことは記録に残す）
+                logger.warning(f"返答は{kind}を流したまま話す（{attempts} 回直らなかった）: {data!r}")
             if handling == RequestHandling.ACCEPT.value:
                 try:
                     proposal = parse_proposal(data)
-                    mid_goal = await self._accept(session, request.user_name, proposal)
+                    mid_goal = await self._accept(session, request.user_name, proposal, advice)
                 except (ValueError, GoalRejectedError) as e:
                     # 返答が、プランに入らないものを受けている: それは決して言わせない
                     error = (
@@ -266,7 +323,9 @@ class GenerateResponseUseCase(IGenerateResponse):
                 # 返答が行動を約束しているのに、中目標にも考え直しにもならない: 約束を中目標に
                 # する（今やるか後でやるかは Gemini が決める）。できなければ言わせない
                 logger.info(f"返答 {attempt} は約束している。守り方を決める: {data!r}")
-                kept = await self._keep_promise(request, context, session, text, str(handling))
+                kept = await self._keep_promise(
+                    request, context, session, text, str(handling), advice
+                )
                 if isinstance(kept, UnkeptPromise):
                     if kept.reply:
                         # 同じ判断で書き直した返答を使う（返答を作り直さない: 同じコメントに 2 回
@@ -290,21 +349,24 @@ class GenerateResponseUseCase(IGenerateResponse):
             self._learn(session, request, data)
             self._rethink(session, request.user_name, data.get("rethink"))
             return text, None
-        raise TextGenerationError(f"no usable reply after {self._max_attempts} attempts: {error}")
+        raise TextGenerationError(f"no usable reply after {attempts} attempts: {error}")
 
     async def _accept(
-        self, session: PlaySession, user_name: str, proposal: MidGoalProposal
+        self, session: PlaySession, user_name: str, proposal: MidGoalProposal, advice: bool = False
     ) -> MidGoal:
         """
         頼みを中目標に足す。今やる（now）なら、今の小目標を次のステップで区切り、その中目標の
         小目標を決めさせる（返答で「今やる」と言っている。待っている小目標は夜明けまで切れ目が
-        来ない）。
+        来ない）。`advice`: 仕分けが助言と答えたコメント。配信者自身の中目標にする（提案者を
+        残す。視聴者の頼みの上限に数えない）。
 
         Raises:
             GoalRejectedError: プランに入らないとき
         """
         assert self._mid_goals is not None
-        mid_goal = await self._mid_goals.accept(session.plan, proposal, requested_by=user_name)
+        mid_goal = await self._mid_goals.accept(
+            session.plan, proposal, requested_by=user_name, advice=advice
+        )
         if proposal.now:
             was = session.goal.describe() if session.goal else "nothing"
             session.request_rethink(
@@ -320,6 +382,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         session: PlaySession,
         reply: str,
         handling: str,
+        advice: bool = False,
     ) -> KeptPromise | None | UnkeptPromise:
         """
         約束している返答の約束を中目標にする（docs/design/34 §10）。Gemini が今やる（小目標を
@@ -365,7 +428,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             pending = bool(session.rethink_reason)
             try:
                 proposal = parse_proposal({**data, "when": "now" if now and not wait else "next"})
-                mid_goal = await self._accept(session, request.user_name, proposal)
+                mid_goal = await self._accept(session, request.user_name, proposal, advice)
             except (ValueError, GoalRejectedError) as e:
                 error = f"中目標にできなかった: {e}\n直せるなら直し、無理なら cannot にする。"
                 logger.warning(f"約束の中目標が使えない: {data!r}: {e}")

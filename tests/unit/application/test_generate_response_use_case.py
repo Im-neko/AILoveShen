@@ -1054,3 +1054,100 @@ class TestEmptyPromise:
     @staticmethod
     def _request(session, message, user_name="neko"):
         return GenerateResponseRequest(user_name=user_name, message=message, session=session)
+
+
+class TestSuggestionsAreNotBrushedOff:
+    """
+    頼み・助言を「今は○○中だから後で」と流さない（2026-09-28: 受けようとして視聴者の上限に当たり、
+    none / decline で流して何も残らなかった）。
+    """
+
+    FARM = {
+        "reply": "たしかに！ 今の鉄集めが済んだら畑を広げるね",
+        "request": "accept",
+        "title": "畑を広げる",
+        "conditions": [{"predicate": "farmed", "item": "wheat", "count": 16}],
+        "position": 2,
+        "reason": "食べ物が安定する",
+        "when": "next",
+    }
+
+    @staticmethod
+    def _request(session, message, kind, user_name="neko"):
+        return GenerateResponseRequest(
+            user_name=user_name, message=message, session=session, kind=kind
+        )
+
+    @pytest.mark.asyncio
+    async def test_advice_becomes_her_own_mid_goal_beyond_the_viewer_limit(
+        self, use_case, mock_text_generator
+    ):
+        """採った助言は配信者の中目標（提案者つき）。同じ人が頼みを持っていても入る。"""
+        mock_text_generator.generate_json.side_effect = [BED_REQUEST, self.FARM]
+        session = _playing()
+        await use_case.execute(self._request(session, "ベッド作って！", "request"))
+
+        response = await use_case.execute(self._request(session, "畑広げない？", "advice"))
+
+        assert response.mid_goal is not None
+        assert response.mid_goal.suggested_by == "neko"
+        assert response.mid_goal.requested_by is None
+        assert "畑を広げる" in [g.title for g in session.plan.pending]
+
+    @pytest.mark.asyncio
+    async def test_brushing_off_advice_is_sent_back(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        busy = {"reply": "今は鉄を掘ってるから、畑は後だね", "request": "none"}
+        declined = {"reply": "今は忙しいからまた今度", "request": "decline"}
+        mock_text_generator.generate_json.side_effect = [busy, declined, self.FARM]
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "畑拡張は？", "advice"))
+
+        assert response.mid_goal is not None and response.mid_goal.title == "畑を広げる"
+        errors = [
+            c.kwargs["previous_error"]
+            for c in mock_prompt_builder.build_chat_response_prompt.call_args_list
+        ]
+        assert "none で答えると何も残らない" in errors[1]
+        assert "decline には decline_reason" in errors[2]
+
+    @pytest.mark.asyncio
+    async def test_an_honest_decline_or_a_lesson_is_kept(self, use_case, mock_text_generator):
+        wrong = {
+            "reply": "チェストを見たら、もう苗木は入ってたよ！",
+            "request": "decline",
+            "decline_reason": "wrong",
+        }
+        mock_text_generator.generate_json.side_effect = [wrong]
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "苗木集めたら？", "advice"))
+
+        assert response.text == "チェストを見たら、もう苗木は入ってたよ！"
+        assert mock_text_generator.generate_json.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_the_last_try_is_spoken_rather_than_staying_silent(
+        self, use_case, mock_text_generator
+    ):
+        busy = {"reply": "今は鉄を掘ってるから、畑は後だね", "request": "none"}
+        mock_text_generator.generate_json.side_effect = [busy, busy, busy]
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "畑拡張は？", "advice"))
+
+        assert response.text == "今は鉄を掘ってるから、畑は後だね"
+        assert mock_text_generator.generate_json.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_chat_and_unknown_kinds_are_not_checked(self, use_case, mock_text_generator):
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ありがとう！", "request": "none"},
+            {"reply": "ねこも好き！", "request": "none"},
+        ]
+        session = _playing()
+        await use_case.execute(self._request(session, "がんばれ", "chat"))
+        await use_case.execute(self._request(session, "ねこ好き？", None))
+        assert mock_text_generator.generate_json.await_count == 2

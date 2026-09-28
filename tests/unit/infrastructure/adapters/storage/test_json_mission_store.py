@@ -29,7 +29,7 @@ class TestJsonMissionStore:
         plan = MidGoalPlan(mission=Mission("街にしていく"))
         plan.add("家", (BUILT,))
         request = plan.add("ベッド", (BED,), reason="頼まれた", requested_by="neko")
-        plan.add("剣", (SWORD,))
+        plan.add("剣", (SWORD,), suggested_by="inu")
         plan.charge(request.id)
         plan.judged(request.id, ("a bed in the house: no",))
         plan.complete("m1")
