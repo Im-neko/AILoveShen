@@ -7,6 +7,15 @@
 
 ## Completed Work
 
+### 目標の決定は効率を先に、システム指示を整理 (2026-09-28)
+
+**Commit**: (次のコミット)
+
+ユーザー:「肥大化もしてきたので整理も。目標の決定は大目標に関連しないものも効率化に必要なら積極的に取り入れたい」「変更内容はコミットしていっていい」。設計書 31 の追記。
+- 先にユーザーの未コミットの変更をコミット（`228573a`: 一言の Jev の意味判定、`thinking_purposes` に tool、`development.yaml` の感情スタイル。`Neautral` の綴りは `Neutral` に直した）
+- `game_prompt_template_builder.py` `GOAL_SYSTEM_TEMPLATE`: 「方針: 効率を先に」、中目標は大目標への段階と基盤、小目標は一番上の中目標（コードどおり。ほかは move / together）、重複をまとめ画面の話を消す。8024 → 6845 字。`TestPromptLength` が通る
+- CLAUDE.md に Efficiency first
+
 ### 検索の道具を増やす: item_info、uses_of、search_abilities（設計書 47 段階 2） (2026-09-28)
 
 **Commit**: `b38cc1c`
