@@ -5,7 +5,7 @@
 // 制約はここで守り、断るときは理由を返す: 家に避難している間（夜、ドアの前の敵）は外に出る道具を
 // 断る、今の家と建てている家は掘らない・置かない。調べものの道具はすぐ返り、履歴に残さない。
 import vec3Pkg from 'vec3'
-import { round, inventoryCounts, isHostile, bearing, blockProps } from './observe.mjs'
+import { round, inventoryCounts, isHostile, bearing, blockProps, fillItem } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
 import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
@@ -19,7 +19,7 @@ import { describeRecipe } from './recipes.mjs'
 import { usesOf } from './items.mjs'
 import { workCell, layoutAt } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
-import { levelTarget, levelStatus, fillItem, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { levelTarget, levelStatus, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
 
 const { Vec3 } = vec3Pkg

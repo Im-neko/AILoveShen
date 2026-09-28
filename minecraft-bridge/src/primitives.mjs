@@ -8,11 +8,11 @@
 import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
-import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile } from './observe.mjs'
+import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
+import { shelteredFrom, enterHome, isDoorstepFloor, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -20,7 +20,7 @@ import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './mo
 import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
-import { levelStatus, fillItem, TERRAIN } from './leveling.mjs'
+import { levelStatus, TERRAIN } from './leveling.mjs'
 import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody } from './facilities.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
@@ -57,6 +57,19 @@ export const isLeaves = (name) => !!name?.endsWith('_leaves')
 
 // 注意: 経路移動の取り消しには setGoal(null) を使う。pathfinder.stop() は次の移動ティックで
 // 消えるフラグを立てるだけで、止まっているときに呼ぶと次の goto() がすぐ失敗する。
+// 着いたかを、歩いた後の実際の位置で言う（2026-09-28: 家の前の穴の中で動かないまま「arrived near」を
+// 返し、着いたのに入れないと読まれた）。着いていなければ失敗にする
+export function arrivalReport (bot, goal, target) {
+  const p = bot.entity.position
+  const at = `${round(p.x)},${round(p.y)},${round(p.z)}`
+  const f = p.floored()
+  if (!goal.isEnd(f)) {
+    throw new Error(`did not reach ${target.x},${target.y},${target.z}: stopped at ${at} ` +
+      `(${round(Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z))} m away horizontally, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`)
+  }
+  return `arrived near ${target.x},${target.y},${target.z} (now at ${at}, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`
+}
+
 export function configureMovements (bot, state) {
   const m = new Movements(bot)
   // まだ読み込まれていないチャンクでは、pathfinder は位置のない代わりのブロックを渡す（歩けることは
@@ -89,7 +102,8 @@ export function configureMovements (bot, state) {
   // 家、前の家、建てている家は壊さないし、そこに足場も置かない。
   // 自然の地形（leveling.mjs の TERRAIN）。置いた物（丸石、板材、チェストなど）は入れない
   m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
-  m.exclusionAreasPlace.push((block) => block.position && !inHouse(state, block.position, 1) ? 0 : 100)
+  // ただしドアの前の床の穴は埋めてよい（その上に立ってドアへ入る。home.mjs の isDoorstepFloor）
+  m.exclusionAreasPlace.push((block) => block.position && (!inHouse(state, block.position, 1) || isDoorstepFloor(state, block.position)) ? 0 : 100)
   // 採掘場の空ける所には足場を置かない（階段や坑道を埋めない。設計書 47 §16）
   m.exclusionAreasPlace.push((block) => block.position && onMineCell(state, block.position) ? 100 : 0)
   // らせん階段の柱と段の床は壊さない（経路探しが近道に掘ると階段が崩れる）
@@ -1040,9 +1054,9 @@ export const PRIMITIVES = {
   // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
   async goto_pos (bot, state, c, signal) {
     await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
-    await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, c.range ?? 1), signal)
-    const p = bot.entity.position
-    return `arrived near ${c.pos.x},${c.pos.y},${c.pos.z} (now at ${round(p.x)},${round(p.y)},${round(p.z)})`
+    const goal = new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, c.range ?? 1)
+    await goto(bot, goal, signal)
+    return arrivalReport(bot, goal, c.pos)
   },
   // c.pos の空いたセルに c.item を置く。c.against は面を借りる隣のブロック（下なら床、横なら壁に付く）。
   // 道具 place（設計書 21）と placed(item, where) の提案（placing.mjs）が使う

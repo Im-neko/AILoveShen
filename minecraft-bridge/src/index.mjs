@@ -52,7 +52,7 @@ import './env.mjs' // 最初に: 他のモジュールが読み込み時に使�
 import { plantingStatus, cropOf } from './farming.mjs'
 import { aroundMe } from './around.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
-import { guardDigLoops } from './move.mjs'
+import { guardDigLoops, installAutoJump } from './move.mjs'
 import http from 'node:http'
 import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
@@ -511,6 +511,7 @@ bot.once('spawn', () => {
   configureMovements(bot, state)
   watchWear(bot, state)
   guardDigLoops(bot, state)
+  installAutoJump(bot)
   console.log(`[bot] ${bot.entity.position} にスポーンした`)
 })
 // 採掘の開始をすべて記録する。pathfinder が道を開けるために掘るものも含む

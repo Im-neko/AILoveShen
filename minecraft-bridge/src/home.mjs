@@ -14,13 +14,16 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
 import { buildAllowsDig, onBuildCell, isHomeCell, buildBox } from './builds.mjs'
 import { walkTo } from './move.mjs'
-import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase } from './observe.mjs'
+import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const { goals } = pathfinderPkg
 const DATA_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'state.json')
 const DOOR_TOGGLE_TIMEOUT_MS = 2000
 const WALK_THROUGH_TIMEOUT_MS = 3000
+const DOORSTEP_DEPTH = 3 // ドアの前の床の穴は、ここまでの深さなら下から埋める
+const PLACE_REACH = 4
+const JUMP_OUT_MS = 1500
 // ドアにここまで近い敵対モブがいたらボットは中にとどまる: クリーパーが家までついて来てドアの前で
 // 待ち、朝ボットが外に出たところで入口（と家の角）を吹き飛ばした。
 const DOOR_DANGER_RADIUS = 8
@@ -168,31 +171,108 @@ async function walkInto (bot, cell) {
   }
 }
 
-// 家の前のセルの様子（行けないときの理由に添える）
+// 家の前のセルの様子（行けないときの理由に添える）。ボットの足の高さも（ドアの前の床が抜けていると
+// 1 段下に立ち、ドアへ登れない）
 export function describeDoorstep (bot, home) {
   const name = (p) => bot.blockAt(p)?.name ?? 'unloaded'
   const o = home.outside
   const door = isDoorOpen(bot, home) ? 'open' : 'closed'
-  return `door ${door}; in front of the door: floor ${name(o.offset(0, -1, 0))}, feet ${name(o)}, head ${name(o.offset(0, 1, 0))}`
+  const me = bot.entity.position.floored()
+  return `door ${door}; in front of the door: floor ${name(o.offset(0, -1, 0))}, feet ${name(o)}, head ${name(o.offset(0, 1, 0))}; ` +
+    `you stand at ${me.x},${me.y},${me.z} (the doorstep is ${o.x},${o.y},${o.z})`
+}
+
+// 今の家のドアの前の床の列（外に立つセルの真下から DOORSTEP_DEPTH まで）。ここだけは家のまわりでも
+// ブロックを置いてよい（足と頭のセルは置かない: ドアがふさがる）
+export function isDoorstepFloor (state, p) {
+  const o = state.home?.outside
+  return !!o && p.x === o.x && p.z === o.z && p.y < o.y && p.y >= o.y - DOORSTEP_DEPTH
+}
+
+// ドアの前の床の抜けたセル（下から順）。空なら床はある
+export function doorstepHoles (bot, home) {
+  const holes = []
+  for (let dy = 1; dy <= DOORSTEP_DEPTH; dy++) {
+    const p = toVec(home.outside).offset(0, -dy, 0)
+    const b = bot.blockAt(p)
+    if (!b || b.boundingBox === 'block') break
+    holes.unshift(p)
+  }
+  return holes
+}
+
+// 跳んで、今立っているセルに足場を置く（穴の中から 1 段上がる）
+async function jumpAndPlace (bot, cell, item) {
+  await bot.equip(item, 'hand')
+  await bot.look(bot.entity.yaw, -Math.PI / 2, true)
+  bot.setControlState('jump', true)
+  try {
+    const start = Date.now()
+    while (bot.entity.position.y < cell.y + 1) {
+      if (Date.now() - start > JUMP_OUT_MS) throw new Error(`could not jump up from the hole at ${cell}`)
+      await bot.waitForTicks(1)
+    }
+    await bot.placeBlock(bot.blockAt(cell.offset(0, -1, 0)), new Vec3(0, 1, 0))
+  } finally {
+    bot.setControlState('jump', false)
+  }
+}
+
+// ドアの前の床の穴を下から埋める（2026-09-28: 床が 1 つ抜けて、穴の中からドアへ登れず、家に入れな
+// かった。穴の中は「ドアの近く」に数えられていて、失敗の理由も出なかった）
+async function fillDoorstep (bot, home, signal) {
+  const holes = doorstepHoles(bot, home)
+  if (!holes.length) return
+  if (bot.blockAt(holes[0].offset(0, -1, 0))?.boundingBox !== 'block') {
+    throw new Error(`the floor in front of the door is a hole deeper than ${DOORSTEP_DEPTH} blocks (${describeDoorstep(bot, home)})`)
+  }
+  for (const cell of holes) {
+    const item = fillItem(bot)
+    if (!item) {
+      throw new Error(`the floor in front of the door is missing at ${cell.x},${cell.y},${cell.z} and you carry nothing to fill it (dirt or cobblestone) (${describeDoorstep(bot, home)})`)
+    }
+    if (!bot.entity.position.floored().equals(cell) && bot.entity.position.distanceTo(cell.offset(0.5, 0.5, 0.5)) > PLACE_REACH) {
+      await walkTo(bot, new goals.GoalNear(cell.x, cell.y, cell.z, 2), signal)
+    }
+    if (bot.entity.position.floored().equals(cell)) await jumpAndPlace(bot, cell, item)
+    else {
+      await bot.equip(item, 'hand')
+      await bot.placeBlock(bot.blockAt(cell.offset(0, -1, 0)), new Vec3(0, 1, 0))
+    }
+    signal?.throwIfAborted()
+    if (bot.blockAt(cell)?.boundingBox !== 'block') throw new Error(`could not fill the hole in front of the door at ${cell.x},${cell.y},${cell.z}`)
+  }
+}
+
+// ドアの前（外のセル）の高さに立っているか（1 段下の穴の中は、近くても前ではない）
+const onDoorstepLevel = (bot, home) => {
+  const p = bot.entity.position.floored()
+  return p.y === home.outside.y && Math.abs(p.x - home.outside.x) + Math.abs(p.z - home.outside.z) <= 1
 }
 
 export async function enterHome (bot, home, signal) {
   if (!isInside(bot, home)) {
+    await fillDoorstep(bot, home, signal)
     try {
       await walkTo(bot, new goals.GoalBlock(home.outside.x, home.outside.y, home.outside.z), signal)
     } catch (e) {
-      if (!/no path/i.test(String(e?.message))) throw e
-      // ドアの真ん前に立てない（床が掘られた、何か置いてある）: その隣まで行き、そこからドアへ歩く
+      if (!/no path|too long/i.test(String(e?.message))) throw e
+      // ドアの真ん前に立てない（何か置いてある）: その隣まで行き、そこからドアへ歩く
       try {
         await walkTo(bot, new goals.GoalNear(home.outside.x, home.outside.y, home.outside.z, 1), signal)
       } catch (e2) {
-        if (!/no path/i.test(String(e2?.message))) throw e2
+        if (!/no path|too long/i.test(String(e2?.message))) throw e2
         throw new Error(`No path to the home's door (${describeDoorstep(bot, home)})`)
       }
+      if (!onDoorstepLevel(bot, home)) throw new Error(`could not stand in front of the door (${describeDoorstep(bot, home)})`)
     }
     await setDoor(bot, home, true)
-    await walkInto(bot, home.door)
-    await walkInto(bot, home.inside)
+    try {
+      await walkInto(bot, home.door)
+      await walkInto(bot, home.inside)
+    } catch (e) {
+      throw new Error(`${e.message} (${describeDoorstep(bot, home)})`)
+    }
   }
   await setDoor(bot, home, false)
 }

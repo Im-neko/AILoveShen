@@ -31,6 +31,9 @@ const LOOP_WINDOW_MS = 60 * 1000
 const LOOP_BLOCK_MS = 3 * 60 * 1000
 
 const cellKey = (p) => `${p.x},${p.y},${p.z}`
+const AHEAD_M = 0.8 // 足元のこの先に 1 段の段差があれば跳ぶ
+// 跳んで乗らない物: 開け閉めする物、柵や塀（1.5 段で越えられない）、足場にならない物
+const NO_JUMP = /(_door|_trapdoor|_fence|_fence_gate|_wall|_bed|chest|barrel|furnace|crafting_table|_sign|_banner)$/
 
 // 経路が見つからなかった行き先（ベッド、家の前）: しばらく候補に出さない（2026-09-27: 閉じた建物の中の
 // ベッドと家の前に「No path」で失敗し続け、一晩中寝られなかった）
@@ -51,6 +54,39 @@ export const isNoPath = (e) => /no path/i.test(String(e?.message ?? e))
 export function isLoopCell (state, pos, now = Date.now()) {
   const until = state.loopCells?.get(cellKey(pos))
   return !!until && until > now
+}
+
+// オートジャンプ（Minecraft のは画面側の設定で、サーバーにもボットにもない）: 前へ歩くキーを押して
+// いて、pathfinder が動かしていない（pathfinder は自分で跳ぶ）とき、進む先の足の高さに 1 段の完全な
+// ブロックがあり、その上に 2 マス空いていれば跳ぶ。自分で押した跳ぶキーだけを離す
+// （2026-09-28: ドアの前の穴から前へ歩き続けて、1 段登れずに家に入れなかった）
+export function installAutoJump (bot) {
+  let pressed = false
+  bot.on('physicsTick', () => {
+    const want = shouldAutoJump(bot)
+    if (want && !bot.controlState.jump) { bot.setControlState('jump', true); pressed = true } else if (!want && pressed) {
+      bot.setControlState('jump', false)
+      pressed = false
+    }
+  })
+}
+
+export function shouldAutoJump (bot) {
+  const e = bot.entity
+  if (!e?.onGround || !bot.controlState?.forward || bot.pathfinder?.isMoving?.()) return false
+  const feet = e.position.floored()
+  const ahead = e.position.offset(-Math.sin(e.yaw) * AHEAD_M, 0, -Math.cos(e.yaw) * AHEAD_M).floored()
+  if (ahead.x === feet.x && ahead.z === feet.z) return false
+  const step = bot.blockAt(ahead)
+  if (!step || step.boundingBox !== 'block' || NO_JUMP.test(step.name) || !isFullCube(step)) return false
+  const free = (p) => bot.blockAt(p)?.boundingBox === 'empty'
+  return free(ahead.offset(0, 1, 0)) && free(ahead.offset(0, 2, 0)) && free(feet.offset(0, 2, 0))
+}
+
+function isFullCube (block) {
+  const shapes = block.shapes
+  if (!Array.isArray(shapes)) return true
+  return shapes.length === 1 && shapes[0][1] === 0 && shapes[0][4] === 1
 }
 
 export function guardDigLoops (bot, state) {

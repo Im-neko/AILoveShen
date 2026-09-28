@@ -44,6 +44,17 @@ export function dayPhase (timeOfDay) {
 }
 
 export const isLog = (name) => name.endsWith('_log')
+// 穴を埋めるのに使うブロック（持っているもの）: 土を先に（整地、家のドアの前の穴）
+export const FILL_ITEMS = ['dirt', 'coarse_dirt', 'cobblestone', 'cobbled_deepslate']
+export function fillItem (bot) {
+  const items = bot.inventory.items()
+  for (const name of FILL_ITEMS) {
+    const item = items.find((i) => i.name === name)
+    if (item) return item
+  }
+  return null
+}
+
 // ブロックの状態（耕地の moisture 0–7、作物の age、ドアの open など）。なければ null
 export function blockProps (block) {
   const props = block?.getProperties?.() ?? {}

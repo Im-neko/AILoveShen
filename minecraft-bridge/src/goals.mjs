@@ -21,11 +21,11 @@
 
 import vec3Pkg from 'vec3'
 import { solve } from './solver.mjs'
-import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground } from './observe.mjs'
+import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillItem } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
-import { levelStatus, levelTarget, describeLevel, fillItem, toolsMissing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { levelStatus, levelTarget, describeLevel, toolsMissing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'

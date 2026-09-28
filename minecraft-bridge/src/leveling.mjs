@@ -10,7 +10,7 @@
 // 見えていない列はそろっていないと数える（lit と同じ: 見えない所をそろったとはみなさない）。
 
 import vec3Pkg from 'vec3'
-import { inHouse } from './home.mjs'
+import { inHouse, isDoorstepFloor } from './home.mjs'
 import { onMineCell } from './facilities.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -24,8 +24,6 @@ export const TERRAIN = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|myceli
 const TREE = /_(log|leaves|wood)$|^(mangrove_roots|bamboo)$/
 const FLUID = /water|lava|bubble_column/
 const FARM = /^farmland$/
-// 埋めるのに使うブロック（持っているもの）: 土を先に
-export const FILL_ITEMS = ['dirt', 'coarse_dirt', 'cobblestone', 'cobbled_deepslate']
 const UNLOADED = 'unloaded'
 
 // 中心と、足の高さ。where: 'home' か 'x,y,z'
@@ -46,7 +44,9 @@ const isPlant = (b) => b.boundingBox === 'empty' && !FLUID.test(b.name)
 // 1 列を見る → { off: bool, cuts: [Vec3], fills: [Vec3] } か、触らない理由の文字列か UNLOADED
 export function columnWork (bot, state, x, z, y) {
   const floor = y - 1
-  for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), 1)) return 'house or build'
+  // ドアの前の床は、同じ高さに整地するなら普通の列（穴を埋める。家のブロックは TERRAIN でないので削らない）
+  const doorstep = isDoorstepFloor(state, new Vec3(x, floor, z)) && floor === state.home.outside.y - 1
+  if (!doorstep) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), 1)) return 'house or build'
   if ((state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
   let top = null
@@ -119,13 +119,4 @@ export function toolsMissing (bot, cuts) {
     out[cheapest] = (out[cheapest] ?? 0) + 1
   }
   return out
-}
-
-export function fillItem (bot) {
-  const items = bot.inventory.items()
-  for (const name of FILL_ITEMS) {
-    const item = items.find((i) => i.name === name)
-    if (item) return item
-  }
-  return null
 }
