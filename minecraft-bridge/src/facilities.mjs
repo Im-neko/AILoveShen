@@ -6,14 +6,14 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, isLog } from './observe.mjs'
 import { buildBox } from './builds.mjs'
-import { CROPS, cropByBlock, cropOf, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
+import { CROPS, cropByBlock, cropOf, cropStatus, ageOf, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
 
 const { Vec3 } = vec3Pkg
 
 export const FACILITY_KINDS = ['home', 'build', 'farm', 'tree_farm', 'mine', 'pen', 'trap']
 const GROUP_GAP = 8 // 植えた苗木がこの距離より離れていれば、別の植林場
 const FARM_SEARCH = PLANT_RING.max + 8 // 家から、耕地を探す範囲
-const HOME_FARM = 'home_farm'
+export const HOME_FARM = 'home_farm'
 
 const xyz = (v) => ({ x: v.x, y: v.y, z: v.z })
 const boxOf = (points, pad = 0) => ({
@@ -269,7 +269,7 @@ export function registerFacility (bot, state, name, body) {
   if (state.facilities[name]) throw new FacilityError(`there is already a facility named ${name}`)
   const kind = String(body?.kind ?? '')
   if (!DESIGNABLE.includes(kind)) throw new FacilityError(`kind must be one of ${DESIGNABLE.join(', ')}`)
-  // 理想図がまだなければ（街が決まる前）、家のまわり（6〜24 m）から選ぶ
+  // 理想図がまだなければ（街が決まる前）、家のまわり（24 m まで。家に近すぎる所は farmRefusal で除く）から選ぶ
   const around = PLANT_RING.max
   const area = body.near_home && state.home
     ? { min_x: state.home.inside.x - around, min_z: state.home.inside.z - around, max_x: state.home.inside.x + around, max_z: state.home.inside.z + around }
@@ -345,4 +345,130 @@ export function updateStatus (bot, fac) {
 export function nextCell (bot, fac, kind) {
   const me = bot.entity.position
   return layoutStatus(bot, fac)[kind].sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
+}
+
+// ---- 作物と植林は施設で数える（設計書 47 §14） ----
+// 数えるのは、その作物の設計した畑（設計のマス）と、家のまわりの設計でない耕地（home_farm: 前から
+// ある畑）の合計。ボットの位置によらない（近い畑だけを数えると、歩くたびに残りが変わる）。畑が
+// 読み込まれていなければ、最後に見た数（state.memory.farms[施設][作物]）。新しく耕す・植えるのは
+// 設計した施設のマスだけ
+
+// 設計した畑（crop を省くと全部）
+export function designedFarms (state, crop = null) {
+  return Object.values(state.facilities ?? {}).filter((f) => f.layout && f.kind === 'farm' && (!crop || f.layout.crop === crop))
+}
+
+// その苗木を植えられる、設計した植林場（sapling はグループか 1 種類）
+export function designedTreeFarms (state, sapling = 'sapling') {
+  return Object.values(state.facilities ?? {}).filter((f) => f.layout && f.kind === 'tree_farm' &&
+    (sapling === 'sapling' || f.layout.sapling === 'sapling' || f.layout.sapling === sapling))
+}
+
+const sameCell = (c, p) => c.x === p.x && c.y === p.y && c.z === p.z
+
+// 設計した施設のうち、そのマスを持つもの（耕すマスは地面、植えるマスは地面の上）
+export function layoutAt (state, kind, pos) {
+  return Object.values(state.facilities ?? {}).find((f) => f.layout && f.kind === kind && f.layout.cells.some((c) => sameCell(c, pos))) ?? null
+}
+
+// 家のまわりの、設計した畑の外の、上が空いた耕地（前からある畑の空き）
+function homeFreeFarmland (bot, state) {
+  const home = state.home
+  const id = bot.registry?.blocksByName?.farmland?.id
+  if (!home || id == null || !bot.blockAt(home.inside)) return []
+  const designed = designedFarms(state)
+  return bot.findBlocks({ point: home.inside, matching: id, maxDistance: FARM_SEARCH, count: 256 })
+    .filter((p) => bot.blockAt(p.offset(0, 1, 0))?.name === 'air' && !designed.some((d) => inBox(d.box, p)))
+}
+
+// 1 つの畑の、その作物: 植わった位置（作物のブロック）から { planted, ripe, ages, pos, free }
+function measureCrops (bot, crop, positions, free) {
+  const mature = CROPS[crop].mature
+  const ages = positions.map((p) => ageOf(bot.blockAt(p)))
+  const ripe = positions.filter((_, i) => ages[i] >= mature)
+  const pos = ripe[0] ?? positions[0]
+  return {
+    planted: positions.length,
+    ripe: ripe.length,
+    ages: ages.length ? [Math.min(...ages), Math.max(...ages)] : null,
+    free,
+    pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : null
+  }
+}
+
+// その作物の畑の合計: { planted, ripe, ages, mature, free, pos, remembered, farms: [{ name, planted, ripe,
+// free, remembered }] }。free は、まだまける・耕せるマス（設計した畑の残りと、家の畑の空いた耕地）。
+// pos は熟したもの（なければ植わったもの）がある、ボットに一番近い畑の 1 マス
+export function cropFarms (bot, state, crop) {
+  const memory = state.memory ? (state.memory.farms ??= {}) : {}
+  const farms = []
+  const keep = (name, m) => {
+    memory[name] ??= {}
+    if (m.planted || m.free) memory[name][crop] = m
+    else delete memory[name][crop]
+    if (m.planted || m.free) farms.push({ name, ...m, remembered: false })
+  }
+  const recall = (name) => {
+    const m = memory[name]?.[crop]
+    if (m) farms.push({ name, ...m, remembered: true })
+  }
+  for (const fac of designedFarms(state, crop)) {
+    const s = layoutStatus(bot, fac)
+    if (s.unseen === s.total) { recall(fac.name); continue }
+    const positions = fac.layout.cells.map((c) => new Vec3(c.x, c.y + 1, c.z))
+      .filter((p) => bot.blockAt(p.offset(0, -1, 0))?.name === 'farmland' && cropByBlock(bot.blockAt(p)?.name) === crop)
+    keep(fac.name, measureCrops(bot, crop, positions, s.till.length + s.sow.length))
+  }
+  if (state.home) {
+    if (!bot.blockAt(state.home.inside)) recall(HOME_FARM)
+    else {
+      const designed = designedFarms(state)
+      const positions = cropStatus(bot, state, crop).positions.filter((p) => !designed.some((d) => inBox(d.box, p)))
+      keep(HOME_FARM, measureCrops(bot, crop, positions, homeFreeFarmland(bot, state).length))
+    }
+  }
+  const me = bot.entity.position
+  const planted = farms.filter((f) => f.planted)
+  const near = (list) => list.filter((f) => f.pos).sort((a, b) => Math.hypot(a.pos.x - me.x, a.pos.z - me.z) - Math.hypot(b.pos.x - me.x, b.pos.z - me.z))[0]
+  const at = near(planted.filter((f) => f.ripe)) ?? near(planted)
+  return {
+    planted: farms.reduce((n, f) => n + f.planted, 0),
+    ripe: farms.reduce((n, f) => n + f.ripe, 0),
+    ages: planted.length ? [Math.min(...planted.map((f) => f.ages[0])), Math.max(...planted.map((f) => f.ages[1]))] : null,
+    mature: CROPS[crop].mature,
+    free: farms.reduce((n, f) => n + f.free, 0),
+    pos: at?.pos ?? null,
+    remembered: farms.length > 0 && farms.every((f) => f.remembered),
+    farms: farms.map(({ name, planted, ripe, free, remembered }) => ({ name, planted, ripe, free, ...(remembered ? { remembered } : {}) }))
+  }
+}
+
+// 畑の作物ごとのまとめ（観測の farm）: { wheat: { planted, ripe, ages, mature, free, farms } }（植わっているか、
+// 設計した畑がある作物だけ）
+export function farmSummary (bot, state) {
+  const out = {}
+  for (const crop of Object.keys(CROPS)) {
+    const f = cropFarms(bot, state, crop)
+    if (!f.planted && !designedFarms(state, crop).length) continue
+    out[crop] = { planted: f.planted, ripe: f.ripe, ages: f.ages, mature: f.mature, free: f.free, farms: f.farms.map((x) => x.name), ...(f.remembered ? { remembered: true } : {}) }
+  }
+  return out
+}
+
+// 耕す・まく・植える次のマス（ボットに近い順）: { pos, facility } か null。
+//   facility: その施設だけ。なければ、till はその作物（省けば全部）の設計した畑、sow はそれに家の畑の空いた
+//   耕地も、plant はその苗木を植えられる設計した植林場
+export function workCell (bot, state, kind, { facility = null, crop = null, sapling = 'sapling' } = {}) {
+  const me = bot.entity.position
+  const cells = []
+  const facs = facility
+    ? [state.facilities?.[facility]].filter((f) => f?.layout)
+    : kind === 'plant' ? designedTreeFarms(state, sapling) : designedFarms(state, crop)
+  for (const fac of facs) {
+    for (const p of layoutStatus(bot, fac)[kind] ?? []) cells.push({ pos: p, facility: fac.name })
+  }
+  if (kind === 'sow' && !facility) {
+    for (const p of homeFreeFarmland(bot, state)) cells.push({ pos: p, facility: HOME_FARM })
+  }
+  return cells.sort((a, b) => a.pos.distanceTo(me) - b.pos.distanceTo(me))[0] ?? null
 }

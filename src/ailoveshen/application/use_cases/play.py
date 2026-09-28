@@ -1004,8 +1004,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             f"the mid goal {top.title} {MID_STALLED} in {steps} actions for it "
             f"({'; '.join(top.summary()) or 'no progress shown'}). Do not try the same way again: "
             "change the approach: another source or method; grow what cannot be found (no trees "
-            "nearby: plant saplings with planted so trees grow near the home, and do other work "
-            "while they grow; no food: farmed); explore far in a new direction with explored; or "
+            "nearby: a tree farm with facility(<name>) and planted, and do other work while they "
+            "grow; no food: a farm with facility(<name>) and farmed); explore far in a new "
+            "direction with explored; or "
             "move this mid goal down or drop it with the reason"
         )
 

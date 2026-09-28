@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { plantingStatus, recordPlanting, cropStatus, plantSpot, tillSpot, sowSpot, farmRefusal, cropOf } from '../src/farming.mjs'
+import { plantingStatus, recordPlanting, cropStatus, farmRefusal, cropOf } from '../src/farming.mjs'
+import { workCell } from '../src/facilities.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -52,16 +53,12 @@ test('畑の作物は耕地の上のものだけ、育ちきったものを分�
   assert.equal(cropOf('carrot'), 'carrots')
 })
 
-test('植える・耕す場所: 家から 6 m 以上、木から離れた所、畑は今の畑の隣を先に', () => {
+test('植える・耕す場所は設計した施設のマスだけ。まくのは家の畑の空いた耕地も（設計書 47 §14）', () => {
   const s = state()
   const bot = world({ '7,63,0': 'farmland', '20,64,0': 'oak_log' })
-  const p = plantSpot(bot, s)
-  assert.ok(Math.hypot(p.x, p.z) >= 6)
-  assert.equal(p.y, 64)
-  const t = tillSpot(bot, s)
-  assert.equal(t.y, 63)
-  assert.equal(Math.abs(t.x - 7) + Math.abs(t.z), 1) // 耕地の隣
-  assert.deepEqual(sowSpot(bot, s), new Vec3(7, 63, 0))
+  assert.equal(workCell(bot, s, 'plant'), null)
+  assert.equal(workCell(bot, s, 'till'), null)
+  assert.deepEqual(workCell(bot, s, 'sow', { crop: 'wheat' }), { pos: new Vec3(7, 63, 0), facility: 'home_farm' })
   assert.match(farmRefusal(s, new Vec3(1, 64, 2)), /home/)
   assert.equal(farmRefusal(s, new Vec3(10, 64, 0)), null)
 })

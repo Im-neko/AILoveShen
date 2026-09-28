@@ -96,3 +96,7 @@
 - `solver.mjs` の `growing` の葉に `expand`: その作物の種を持っていれば `sow`、クワを持っていれば `till`（どちらも `also: expand the home farm while it grows …`）。`collect` は `growing` を `blocked` / `impossible` に出したうえで、`expand` の葉を候補に足す（`also` 付きなので、Python の `_side_work` は停滞に数えない）。場所は今までどおり `sowSpot` / `tillSpot`（家から 6〜24 m、家や建物の上と隣は除く）
 - 理由の文に「畑を広げる（そばを耕して種をまく。手順 farmed(<作物>, <今の数 + 8>) で大きくなる）」を足した。Gemini は手順で `farmed` の数を上げて広げられる
 - テスト: `crops.test.mjs`（種とクワを持っていれば sow / till が also 付きで出る、blocked に farmed(wheat, 17)）
+
+## 追記（2026-09-28）: 場所は施設のマスに（設計書 47 §14）
+
+家から 6〜24 m の輪（`plantSpot` / `tillSpot` / `sowSpot`）はやめた。新しく耕す・植えるのは、`facility(name)` で設計した畑・植林場のマスだけ（道具はほかのマスを断る）。`farmed` は設計したその作物の畑と家の畑（前からある耕地）の合計、`planted` は今までどおり植えた場所の合計。畑も植林場もないか空きが足りなければ、目標が facility で作る・広げるように言う。`/observe` の `farm` は「畑」（空きのマスと畑の名前つき）、ソルバーの `growing` は空きを埋める（`farmed(crop, 植わった数 + 空き)`）か、畑を足す・広げるよう言う

@@ -14,7 +14,7 @@
 //   lit(distance)            家のまわり半径 `distance` の地面に暗い所がない
 //   surveyed(count)          街の候補地を `count` か所調べた（docs/design/16_town_site.md）
 //   planted(item, count)     自分が植えた苗木（sapling か種類）が `count` 本ある（育った木も数える。設計書 33）
-//   farmed(item, count)      家のまわりの耕地に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている
+//   farmed(item, count)      畑（設計した畑と家の畑）に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている（設計書 47 §14）
 //   leveled(where, distance) where（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている（設計書 41）
 //   facility(name)           設計した施設（畑・植林場: facilities.mjs）のマスがすべて済んでいる（耕してまいた、植えた。設計書 47 §7）
 //   custom(name)             Gemini が書いた判定（conditions.mjs）が成り立っている（設計書 42。候補は出さない: 道具で進める）
@@ -30,9 +30,9 @@ import { cooking } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
 import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
-import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
+import { CROPS, cropOf, plantingStatus, isSaplingItem, saplingMatches } from './farming.mjs'
 import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
-import { layoutStatus, updateStatus } from './facilities.mjs'
+import { layoutStatus, updateStatus, cropFarms, designedFarms, designedTreeFarms, workCell, HOME_FARM } from './facilities.mjs'
 import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
@@ -620,7 +620,7 @@ function evaluateOne (bot, state, knowledge, world) {
       break
     }
     case 'planted': {
-      // 植えた場所に苗木か育った木（設計書 33）。足りなければ、持っている苗木を植える
+      // 植えた場所に苗木か育った木（設計書 33）。足りなければ、設計した植林場の空いたマスに植える（設計書 47 §14）
       const { item, count } = goal.spec
       const t = plantingStatus(bot, state, item)
       const have = t.saplings + t.trees + t.unseen
@@ -628,30 +628,70 @@ function evaluateOne (bot, state, knowledge, world) {
       out.remaining = Math.max(0, count - have)
       out.lines.push(`trees you planted (${item}): ${have}/${count} (saplings ${t.saplings}, grown ${t.trees}${t.unseen ? `, out of view ${t.unseen}` : ''}${t.gone ? `, gone ${t.gone}` : ''})`)
       if (out.met) break
+      const farms = designedTreeFarms(state, item)
+      if (!farms.length) {
+        const why = `there is no tree farm for ${item} to plant in: add facility(<name>) (a tree farm) to a mid goal first; it is designed on the town map`
+        out.blocked.push(why)
+        out.impossible.push(why)
+        break
+      }
       const held = Object.entries(inventoryCounts(bot)).find(([n, c]) => c > 0 && saplingMatches(item, n))
+      const cell = held ? workCell(bot, state, 'plant', { sapling: held[0] }) : workCell(bot, state, 'plant', { sapling: item })
+      const away = farms.find((fac) => layoutStatus(bot, fac).unseen)
+      if (!cell && away) {
+        out.leaves.push({ kind: 'go_facility', name: away.name, pos: away.entrance })
+        break
+      }
+      if (!cell) {
+        const why = `the tree farms (${farms.map((f) => f.name).join(', ')}) have no free cell for ${held?.[0] ?? item}: add or enlarge a tree farm with facility(<name>)`
+        out.blocked.push(why)
+        out.impossible.push(why)
+        break
+      }
       if (!held) addSolved([{ spec: item, count: out.remaining }])
-      else if (plantSpot(bot, state)) out.leaves.push({ kind: 'plant', item: held[0] })
-      else out.blocked.push('no free ground to plant a sapling 6-24m from the home')
+      else out.leaves.push({ kind: 'plant', item: held[0], facility: cell.facility })
       break
     }
     case 'farmed': {
-      // 家のまわりの耕地の作物。種がなければ集める、空いた耕地があればまく、なければ耕す（クワ）
+      // 畑の作物（設計書 47 §14）。種がなければ集める、空いた耕地があればまく、なければ設計した畑を耕す（クワ）
       const { item: crop, count } = goal.spec
       const info = CROPS[crop]
-      const c = cropStatus(bot, state, crop)
-      out.met = c.planted >= count
-      out.remaining = Math.max(0, count - c.planted)
-      out.lines.push(`${crop} planted on farmland near the home: ${c.planted}/${count} (ripe ${c.mature})`)
+      const f = cropFarms(bot, state, crop)
+      out.met = f.planted >= count
+      out.remaining = Math.max(0, count - f.planted)
+      const where = f.farms.map((x) => `${x.name} ${x.planted}${x.remembered ? ' (last seen)' : ''}`).join(', ')
+      out.lines.push(`${crop} planted on the farms: ${f.planted}/${count} (ripe ${f.ripe}, free cells ${f.free}${where ? `; ${where}` : ''})`)
       if (out.met) break
+      if (!f.farms.length && !designedFarms(state, crop).length) {
+        const why = `there is no farm for ${crop}: add facility(<name>) (a ${crop} farm) to a mid goal first; it is designed on the town map`
+        out.blocked.push(why)
+        out.impossible.push(why)
+        break
+      }
+      if (f.planted + f.free < count) {
+        const why = `the ${crop} farms have room for ${f.planted + f.free} (asked ${count}): add or enlarge a farm with facility(<name>) for more`
+        out.blocked.push(why)
+        if (!f.free) { out.impossible.push(why); break }
+      }
       const inv = inventoryCounts(bot)
       if (!(inv[info.seed] > 0)) {
         addSolved([{ spec: info.seed, count: Math.min(out.remaining, 16) }])
         break
       }
-      if (sowSpot(bot, state)) { out.leaves.push({ kind: 'sow', item: info.seed }); break }
+      const sow = workCell(bot, state, 'sow', { crop })
+      if (sow) { out.leaves.push({ kind: 'sow', item: info.seed, facility: sow.facility }); break }
+      const till = workCell(bot, state, 'till', { crop })
+      if (!till) {
+        // 空きは最後に見た数: 畑が読み込まれていない。そこへ行く
+        const away = f.farms.find((x) => x.remembered && x.free)
+        const fac = away && state.facilities?.[away.name]
+        const pos = fac?.entrance ?? (away?.name === HOME_FARM ? state.home?.outside : null)
+        if (pos) out.leaves.push({ kind: 'go_facility', name: away.name, pos })
+        else out.blocked.push(`no free cell in the ${crop} farms in view`)
+        break
+      }
       if (!Object.keys(inv).some((n) => n.endsWith('_hoe'))) { addSolved([{ spec: 'hoe', count: 1 }]); break }
-      if (tillSpot(bot, state)) out.leaves.push({ kind: 'till' })
-      else out.blocked.push('no dirt or grass to till 6-24m from the home')
+      out.leaves.push({ kind: 'till', facility: till.facility })
       break
     }
     case 'cleared': {

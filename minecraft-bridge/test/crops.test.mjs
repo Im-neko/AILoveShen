@@ -64,21 +64,25 @@ test('熟した小麦は、まわりの熟したものも続けて収穫し、�
   assert.equal(bot.cells.get('3,64,0').age, 2) // 育ち途中はそのまま
 })
 
-test('家の畑の小麦が育ち途中なら遠出しない。熟していれば家の畑へ戻る。畑がなければ今までどおり探す', async () => {
+test('畑の小麦が育ち途中なら遠出しない。熟していれば畑へ戻る。畑がなければ今までどおり探す', async () => {
   const { solve } = await import('../src/solver.mjs')
-  const farm = (f) => (block) => block === 'wheat' ? { planted: 9, ages: [1, 5], mature: 7, pos: { x: -67, y: 65, z: -152 }, ...f } : null
+  const farm = (f) => (block) => block === 'wheat' ? { planted: 9, ages: [1, 5], mature: 7, free: 0, pos: { x: -67, y: 65, z: -152 }, ...f } : null
   const world = (f) => ({ inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set(['wheat']), farm: f })
   const need = [{ spec: 'wheat', count: 6 }]
 
   // 2026-09-27: 家の小麦が age 1〜5 のまま、261 m 先の小麦へ遠征しようとした
   const growing = solve(k, world(farm({ ripe: 0 })), need)
   assert.deepEqual(growing.leaves, [])
-  assert.match(growing.blocked.join('\n'), /home farm's wheat for wheat is still growing \(9 planted, none ripe, age 1-5 of 7\).*grows only while you stay near the home/)
+  assert.match(growing.blocked.join('\n'), /wheat on the farms for wheat is still growing \(9 planted, none ripe, age 1-5 of 7\).*grows only while you stay near it/)
+  // 空きがなければ、畑を足す・広げる（設計してから。設計書 47 §14）
+  assert.match(growing.blocked.join('\n'), /add or enlarge a wheat farm \(facility\(<name>\)/)
 
-  // 育つ間に畑を広げる: 種があればまく、クワがあれば耕す（ついでの作業: 停滞に数えない）
-  const tools = solve(k, { ...world(farm({ ripe: 0 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
-  assert.deepEqual(tools.leaves.map((l) => [l.kind, l.item, !!l.also]), [['sow', 'wheat_seeds', true], ['till', undefined, true]])
-  assert.match(tools.blocked.join('\n'), /expand the farm \(till and sow wheat_seeds beside it; a step farmed\(wheat, 17\) makes it bigger\)/)
+  // 空きがあれば、育つ間に埋める: 種があればまく、クワがあれば耕す（ついでの作業: 停滞に数えない）
+  const tools = solve(k, { ...world(farm({ ripe: 0, free: 7 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
+  assert.deepEqual(tools.leaves.map((l) => [l.kind, l.item, l.crop, !!l.also]), [['sow', 'wheat_seeds', 'wheat', true], ['till', undefined, 'wheat', true]])
+  assert.match(tools.blocked.join('\n'), /fill the farms' 7 free cells \(till and sow wheat_seeds; a step farmed\(wheat, 16\)\)/)
+  const full = solve(k, { ...world(farm({ ripe: 0 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
+  assert.deepEqual(full.leaves, [])
 
   const ripe = solve(k, world(farm({ ripe: 3 })), need)
   assert.deepEqual(ripe.leaves.map((l) => [l.kind, l.farm?.ripe]), [['explore', 3]])

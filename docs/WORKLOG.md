@@ -7,6 +7,19 @@
 
 ## Completed Work
 
+### 作物と植林は施設で数える（設計書 47 段階 4B） (2026-09-28)
+
+**Commit**: (後で記入)
+
+設計書 47 §15、設計書 33 の追記。
+- ブリッジ `facilities.mjs`: `cropFarms`（設計した畑 + 家の畑の合計、最後に見た数 `state.memory.farms`）、`farmSummary`（`farming.mjs` から移動）、`workCell`、`layoutAt`、`designedFarms` / `designedTreeFarms`。`farming.mjs` から `homeFarm` / `plantSpot` / `tillSpot` / `sowSpot` / 輪を消した
+- `goals.mjs` の `planted` / `farmed`（施設がない・空きがないときの理由、見えない畑へ行く）、`candidates.mjs`（plant / till / sow を 1 つに）、`tools.mjs`（施設のマス以外を断る）、`solver.mjs` の `growing`、`world.mjs` の `farm`、`index.mjs` の数の起点と観測
+- Python: `PREDICATE_DESCRIPTIONS`（planted / farmed / facility）、`_format_farm`（「畑」、空き、畑の名前）、道具の説明、見直しの確かめること、中目標が進まないときの別のやり方、`abilities.yaml`
+- 4A の見落としを直した: `FacilityDesigner` がブリッジにつながらないとき（`GameBridgeError`）を設計できないとする
+- テスト: `crops.test.mjs`（growing）、`farming.test.mjs`（輪の代わりに workCell）、`facility-design.test.mjs`（家から 56 m の畑を数える、見えなくても数が変わらない、施設がなければ設計を促す）、`test_stream_context.py`、`test_facility_design.py`。Python 858、ブリッジ 251
+- 注意: 設計できたあとで決定が差し戻されると、施設は planned のまま区画を持つ（建物も同じ）。前からある `state.memory.farm`（作物ごと）はもう読まない
+- 要 ブリッジと Python の再起動。今の保存に設計した施設がなければ、植林・新しい畑は facility の中目標から始まる（前からある耕地にまくのはそのまま）
+
 ### 施設の設計と facility(name)（設計書 47 段階 4A） (2026-09-28)
 
 **Commit**: `2391ee3`
@@ -1760,7 +1773,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 設計書 47 の残り（2026-09-28 時点）
 
-段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（施設の設計と `facility(name)`）は済み。残りは 4B（`farmed` / `planted` を施設の中で数える、施設の外の畑を断る、育つのを待つ間に広げる提案）、5（採掘場）、6（囲い・トラップ、別の設計書）
+段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（`2391ee3`）、4B（作物と植林は施設で数える）は済み。残りは 5（採掘場）、6（囲い・トラップ、別の設計書）
 
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 

@@ -12,8 +12,8 @@
     畑は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の施設名。
     なければ新しい名前）。そのとき区画・作物・大きさを決め、耕すマスが決まる
     1. クワを持つ（なければ craft で wooden_hoe など。材料は recipe_of）
-    2. 小目標 facility(name) の間は、till と sow の x,y,z を省くとその畑の次のマスを選ぶ
-       （草が生えていれば刈ってから耕す）。全部のマスを耕して種をまくと完成
+    2. till と sow の x,y,z を省くと、畑の次のマスを選ぶ（小目標 facility(name) ならその畑、
+       farmed ならその作物の畑。草が生えていれば刈ってから耕す）。畑のマスの外は耕せない
     3. sow {item} で耕地に種をまく（wheat_seeds / carrot / potato / beetroot_seeds）
     畑の場所・作物・残りのマスは search_facility（例: 畑、wheat farm）
   tools: [till, sow, craft, recipe_of, search_facility]
@@ -51,8 +51,8 @@
     植林場は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の
     施設名。なければ新しい名前）。そのとき区画・苗木の種類・本数・間隔を決め、植えるマスが決まる
     1. 苗木は葉（*_leaves）を dig するとときどき（5%）落ちる。原木を取るときに葉も掘る
-    2. 小目標 facility(name) の間は、plant {item} の x,y,z を省くとその植林場の次のマスを選ぶ。
-       全部のマスに植えると完成
+    2. plant {item} の x,y,z を省くと、植林場の次のマスを選ぶ（小目標 facility(name) ならその
+       植林場）。植林場のマスの外には植えない。全部のマスに植えると施設が完成
     植えた木と植林場は search_facility（例: 植林場、tree farm）で見られる
   tools: [dig, plant, search_facility]
   see: [gather_wood, make_farm]

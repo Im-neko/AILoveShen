@@ -8,7 +8,7 @@ import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
-import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem, plantSpot, sowSpot, tillSpot } from './farming.mjs'
+import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
@@ -17,7 +17,7 @@ import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
 import { usesOf } from './items.mjs'
-import { nextCell } from './facilities.mjs'
+import { workCell, layoutAt } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { levelTarget, levelStatus, fillItem, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
@@ -94,12 +94,14 @@ export function createTools (deps) {
     return !!bedSpot(occupied, home)
   }
 
-  // 今の小目標が設計した施設なら、その次のマス（till / sow / plant）
-  const goalCell = (kind) => {
+  // 場所を省いたときの次のマス（till / sow / plant。設計書 47 §14）: 今の小目標が設計した施設ならそこ、
+  // でなければその作物・苗木の設計した施設（まくのは家の畑の空いた耕地も）
+  const defaultCell = (kind, { crop = null, sapling = 'sapling' } = {}) => {
     const spec = state.goal?.spec
-    const fac = spec?.predicate === 'facility' ? state.facilities?.[spec.name] : null
-    return fac?.layout ? nextCell(bot, fac, kind) : null
+    const facility = spec?.predicate === 'facility' && state.facilities?.[spec.name]?.layout ? spec.name : null
+    return workCell(bot, state, kind, facility ? { facility } : { crop, sapling })?.pos ?? null
   }
+  const NO_FACILITY = 'new farmland and saplings go only in the cells of a designed farm or tree farm (add facility(<name>) to a mid goal to design one; search_facility shows them)'
 
   // 行動の道具の引数から、実行するもの（PRIMITIVES の c）を作る
   const build = {
@@ -249,15 +251,18 @@ export function createTools (deps) {
       }
       return { c: { verb: 'move_placed', target: block.name, block: block.name, pos, ...(to ? { to } : {}) } }
     },
-    // 植林と畑（設計書 33）。場所を省くと、今の小目標が設計した施設（facility(name)）ならその次のマス、
-    // でなければブリッジが家から 6〜24 m の所を選ぶ
+    // 植林と畑（設計書 33）。耕す・植えるのは設計した施設のマスだけ（設計書 47 §14）。場所を省くと、今の
+    // 小目標の施設（facility(name)）か、その作物・苗木の施設の次のマス
     plant (args) {
       const item = args.item ?? Object.keys(inventoryCounts(bot)).find(isSaplingItem)
       if (!item || !isSaplingItem(item)) refuse('item must be a sapling you have (e.g. oak_sapling)')
       holding(bot, item)
-      const pos = args.x != null ? position(args) : goalCell('plant') ?? plantSpot(bot, state)
-      if (!pos) refuse('no free ground to plant a sapling 6-24m from the home')
+      const pos = args.x != null ? position(args) : defaultCell('plant', { sapling: item })
+      if (!pos) refuse(`no free cell for ${item} in the tree farms in view: ${NO_FACILITY}`)
       within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const fac = layoutAt(state, 'tree_farm', pos)
+      if (!fac) refuse(`will not plant at ${fmt(pos)}: ${NO_FACILITY}`)
+      if (fac.layout.sapling !== 'sapling' && fac.layout.sapling !== item) refuse(`the tree farm ${fac.name} is for ${fac.layout.sapling}, not ${item}`)
       const why = farmRefusal(state, pos)
       if (why) refuse(`will not plant at ${fmt(pos)}: ${why}`)
       if (bot.blockAt(pos)?.name !== 'air' || bot.blockAt(pos.offset(0, -1, 0))?.boundingBox !== 'block') refuse(`${fmt(pos)} is not free ground (give the air cell above dirt or grass)`)
@@ -265,9 +270,10 @@ export function createTools (deps) {
     },
     till (args) {
       if (!Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_hoe'))) refuse('you have no hoe (craft one: 2 sticks + 2 planks or cobblestone)')
-      const pos = args.x != null ? position(args) : goalCell('till') ?? tillSpot(bot, state)
-      if (!pos) refuse('no dirt or grass to till 6-24m from the home')
+      const pos = args.x != null ? position(args) : defaultCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
+      if (!pos) refuse(`no cell left to till in the farms in view: ${NO_FACILITY}`)
       within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      if (!layoutAt(state, 'farm', pos)) refuse(`will not till at ${fmt(pos)}: ${NO_FACILITY}`)
       const why = farmRefusal(state, pos)
       if (why) refuse(`will not till at ${fmt(pos)}: ${why}`)
       if (!/^(dirt|grass_block|dirt_path)$/.test(bot.blockAt(pos)?.name ?? '')) refuse(`${fmt(pos)} is not dirt or grass (give the ground block itself)`)
@@ -278,10 +284,13 @@ export function createTools (deps) {
       const item = args.item ?? Object.values(CROPS).map((c) => c.seed).find((s) => inv[s] > 0)
       if (!item || !cropBySeed(item)) refuse(`item must be seeds you have: ${Object.values(CROPS).map((c) => c.seed).join(', ')}`)
       holding(bot, item)
-      const pos = args.x != null ? position(args) : goalCell('sow') ?? sowSpot(bot, state)
-      if (!pos) refuse('no free farmland near the home (till some first)')
+      const crop = cropBySeed(item)
+      const pos = args.x != null ? position(args) : defaultCell('sow', { crop })
+      if (!pos) refuse(`no free farmland for ${item} in the farms in view (till the farm's cells first)`)
       within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
       if (bot.blockAt(pos)?.name !== 'farmland') refuse(`${fmt(pos)} is not farmland (give the farmland block itself)`)
+      const fac = layoutAt(state, 'farm', pos)
+      if (fac && fac.layout.crop !== crop) refuse(`the farm ${fac.name} is for ${fac.layout.crop}, not ${crop}`)
       return { c: { verb: 'sow', target: item, item, pos } }
     },
     // 整地（設計書 41）: where（home か x,y,z: そこに立つ足の高さ）のまわり半径 radius を、近い列から

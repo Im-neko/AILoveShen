@@ -113,17 +113,20 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "surveyed(count): 街の候補地を count か所見て回る（1 か所ずつ歩いて行き、地形を数える）"
     ),
     GoalPredicate.PLANTED: (
-        "planted(item, count): 家から 6〜24 m に苗木を植え、植えた木を count 本にする（育った木も数える）。"
-        "item は sapling か oak_sapling など。苗木は葉を壊すとときどき落ちる。例: planted(sapling, 4)"
+        "planted(item, count): 植林場（facility で設計したもの）に苗木を植え、植えた木を count 本に"
+        "する（育った木も数える）。item は sapling か oak_sapling など。苗木は葉を壊すとときどき落ちる。"
+        "植林場がないか空きがなければ、先に facility で作る・広げる。例: planted(sapling, 4)"
     ),
     GoalPredicate.FARMED: (
-        "farmed(item, count): 家のまわりの畑に作物を count マス植える（クワで耕す）。item は wheat"
-        "（種は草からときどき）か、持っていれば carrots / potatoes / beetroots。例: farmed(wheat, 9)"
+        "farmed(item, count): 畑（facility で設計した畑と前からの家の畑の合計）に作物を count マス"
+        "植える（クワで耕す）。item は wheat（種は草からときどき）か、持っていれば carrots / potatoes /"
+        " beetroots。畑がないか空きがなければ、先に facility で作る・広げる。例: farmed(wheat, 9)"
     ),
     GoalPredicate.FACILITY: (
         "facility(name): 施設（畑か植林場）を設計どおりに作る（畑は全部耕してまく、植林場は全部植える）。"
-        "畑や植林場を作る・広げるときは、先にこれを中目標の条件にする（新しい name を書くと、街の理想図の"
-        "区画に配置を設計してから作る。理想図に予定の施設があればその名前で）。例: facility(wheat_farm)"
+        "新しく耕す・植えるのは施設のマスだけなので、畑や植林場を作る・広げるときは先にこれを中目標の"
+        "条件にする（新しい name を書くと、街の理想図の区画に配置を設計してから作る。理想図に予定の施設が"
+        "あればその名前で）。例: facility(wheat_farm)"
     ),
     GoalPredicate.CLEARED: (
         "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼は素手でも。夜は剣か斧があり体力 14 以上の"
@@ -565,8 +568,8 @@ def _format_broken(broken: list) -> list[str]:
 
 def _format_farm(farm: dict) -> list[str]:
     """
-    家のまわりの畑: 作物ごとの植わっている数、熟した数、育ち具合（熟したものは掘ると取れて、
-    植え直す。作物は家の近くにいる間だけ育つ）。
+    畑（設計した畑と家の畑の合計）: 作物ごとの植わっている数、熟した数、育ち具合、空いたマス、
+    畑の名前（熟したものは掘ると取れて、植え直す。作物は近くにいる間だけ育つ）。
     """
     if not farm:
         return []
@@ -574,13 +577,15 @@ def _format_farm(farm: dict) -> list[str]:
     def one(crop: str, f: dict) -> str:
         ages = f.get("ages")
         grow = f"、育ち具合 {ages[0]}〜{ages[1]}/{f.get('mature')}" if ages else ""
+        free = f"、空き {f['free']}" if f.get("free") else ""
         seen = "、前に見たとき" if f.get("remembered") else ""
-        return f"{crop} {f['planted']} マス（熟した {f['ripe']}{grow}{seen}）"
+        where = f" {'・'.join(f['farms'])}" if f.get("farms") else ""
+        return f"{crop}{where} {f['planted']} マス（熟した {f['ripe']}{grow}{free}{seen}）"
 
     parts = [one(crop, f) for crop, f in farm.items()]
     return [
-        f"- 家のまわりの畑: {'、'.join(parts)}（熟したものを掘ると収穫して植え直す。"
-        "家の近くにいる間だけ育つ）"
+        f"- 畑: {'、'.join(parts)}（熟したものを掘ると収穫して植え直す。"
+        "近くにいる間だけ育つ）"
     ]
 
 

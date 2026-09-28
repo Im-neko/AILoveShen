@@ -5,7 +5,8 @@ import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
 import { findTable, findFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
-import { isRipe, homeFarm, cropByBlock } from './farming.mjs'
+import { isRipe, cropByBlock } from './farming.mjs'
+import { cropFarms } from './facilities.mjs'
 import { REMEMBERED_BLOCK, REMEMBERED_STONE, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
 
 const DIG_RADIUS = 32
@@ -132,8 +133,12 @@ export function snapshot (bot, state) {
     dig,
     hunt,
     buried,
-    // 家の畑のその作物（ブロック名で）。作物でなければ null
-    farm: (block) => cropByBlock(block) ? homeFarm(bot, state, cropByBlock(block)) : null,
+    // 畑（設計した畑と家の畑）のその作物（ブロック名で）。作物でないか、植わっていなければ null
+    farm: (block) => {
+      const crop = cropByBlock(block)
+      const f = crop ? cropFarms(bot, state, crop) : null
+      return f?.planted ? f : null
+    },
     // 深さの上限は付けない（安全の決まりは掘るときに見る）。dig_depth があればそこまで
     digDepth: state.goal?.spec?.dig_depth ?? Infinity
   }

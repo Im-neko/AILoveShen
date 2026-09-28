@@ -22,6 +22,7 @@ from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.exceptions import (
     FacilityAreaNotReadyError,
     FacilityNotDesignedError,
+    GameBridgeError,
     GoalRejectedError,
     TextGenerationError,
 )
@@ -171,14 +172,15 @@ class FacilityDesigner:
         施設を設計して登録する。登録した施設（ブリッジの形）を返す。
 
         Raises:
-            FacilityNotDesignedError: 使える設計が出なかった、区画が読み込まれていない
+            FacilityNotDesignedError: 使える設計が出なかった、区画が読み込まれていない、
+                ブリッジにつながらない
         """
         town_map = self._plan.town_map
         rows: list[dict[str, Any]] = []
         if town_map is not None:
             try:
                 rows = await self._bridge.zones(town_map.center_x, town_map.center_z)
-            except GoalRejectedError as e:
+            except GameBridgeError as e:
                 raise FacilityNotDesignedError(str(e), name=name) from e
         planned = [z.id for z in town_map.zones if z.facility == name] if town_map else []
         choices = (
@@ -219,6 +221,8 @@ class FacilityDesigner:
                 error = str(e)
                 logger.warning(f"施設 {name} の設計の試行 {attempt} を差し戻した: {error}")
                 continue
+            except GameBridgeError as e:  # ブリッジにつながらない: やり直しても同じ
+                raise FacilityNotDesignedError(str(e), name=name) from e
             logger.info(f"施設 {name} を設計した: {kind} {design}（{data.get('reason', '')}）")
             if town_map is not None:
                 self._write_map(town_map, name, kind, zones, str(data.get("reason") or brief))

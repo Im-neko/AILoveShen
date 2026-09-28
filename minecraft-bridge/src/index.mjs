@@ -49,7 +49,7 @@
 //   リポジトリ直下の .env にも書ける（env.mjs。シェルの環境変数が優先）
 
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
-import { plantingStatus, cropStatus, cropOf, farmSummary } from './farming.mjs'
+import { plantingStatus, cropOf } from './farming.mjs'
 import { aroundMe } from './around.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops } from './move.mjs'
@@ -60,7 +60,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
-import { adoptExisting, facilitiesStatus, registerFacility, updateStatus, FacilityError } from './facilities.mjs'
+import { adoptExisting, facilitiesStatus, registerFacility, updateStatus, FacilityError, cropFarms, farmSummary } from './facilities.mjs'
 import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
@@ -155,7 +155,7 @@ function observation () {
     const gives = knowledge.dropsOf(p.kind)
     if (gives.length) p.gives = gives
   }
-  // 家のまわりの畑（作物ごとの植わっている数と熟した数）
+  // 畑（設計した畑と家の畑。作物ごとの植わっている数、熟した数、空いたマス。設計書 47 §14）
   if (state.home) {
     const farm = farmSummary(bot, state)
     if (Object.keys(farm).length) extra.farm = farm
@@ -235,7 +235,7 @@ const skillDeps = {
   count (predicate, item) {
     // 植林と畑の「+N」の起点（設計書 33）
     if (predicate === 'planted') { const t = plantingStatus(bot, state, item); return t.saplings + t.trees + t.unseen }
-    if (predicate === 'farmed') return cropStatus(bot, state, cropOf(item)).planted
+    if (predicate === 'farmed') return cropFarms(bot, state, cropOf(item)).planted
     const { members } = knowledge.resolve(item)
     if (predicate === 'stored') {
       return homeChests(state.memory ?? {}, state.home).reduce((n, c) => n + members.reduce((m, x) => m + (c.contents?.[x] ?? 0), 0), 0)

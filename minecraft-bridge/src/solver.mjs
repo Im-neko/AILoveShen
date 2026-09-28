@@ -223,7 +223,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     : null
   const digDown = buried && buried.t.depth <= (world.digDepth ?? 0) &&
     DIG_DOWN_COST + buried.t.depth < (known.length ? RECALL_COST : EXPLORE_COST)
-  // 家の畑にある作物: 熟していれば畑へ戻る。育ち途中なら遠出しない（作物はプレイヤーの近くでしか
+  // 畑にある作物: 熟していれば畑へ戻る。育ち途中なら遠出しない（作物はプレイヤーの近くでしか
   // 育たない。2026-09-27: 家の小麦が育ち途中のまま、261 m 先の小麦へ遠征しようとした）
   const farm = kind === 'dig' && !inSight.length
     ? sources.map((s) => ({ s, f: world.farm?.(s) })).find((x) => x.f)
@@ -232,26 +232,32 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   if (inSight.length) {
     leaf = { kind, item, count: n, sources: inSight }
   } else if (farm && farm.f.ripe > 0) {
-    leaf = { kind: 'explore', item, sources: [farm.s], farm: farm.f, reason: `the home farm has ${farm.f.ripe} ripe ${farm.s} for ${item}: go there and harvest` }
+    leaf = { kind: 'explore', item, sources: [farm.s], farm: farm.f, reason: `the farms have ${farm.f.ripe} ripe ${farm.s} for ${item}: go there and harvest` }
     cost += RECALL_COST
   } else if (farm) {
-    const { planted, ages, mature } = farm.f
+    const { planted, ages, mature, free } = farm.f
     const crop = cropByBlock(farm.s)
     const seed = CROPS[crop].seed
-    const meal = (world.inventory?.bone_meal ?? 0) > 0 ? `; bone meal grows it at once (use_item bone_meal on the ${farm.s} at ${farm.f.pos.x},${farm.f.pos.y},${farm.f.pos.z})` : ''
-    // 育つ間に畑を広げる（次の収穫が増える）: 種があればまく、クワがあれば耕す。ついでの作業（also）
-    const also = `expand the home farm while it grows (more ${farm.s} next harvest)`
-    const expand = [
-      ...((world.inventory?.[seed] ?? 0) > 0 ? [{ kind: 'sow', item: seed, also }] : []),
-      ...(Object.entries(world.inventory ?? {}).some(([n, c]) => n.endsWith('_hoe') && c > 0) ? [{ kind: 'till', also }] : [])
-    ]
+    const meal = (world.inventory?.bone_meal ?? 0) > 0 && farm.f.pos ? `; bone meal grows it at once (use_item bone_meal on the ${farm.s} at ${farm.f.pos.x},${farm.f.pos.y},${farm.f.pos.z})` : ''
+    // 育つ間に畑の空いたマスを埋める（次の収穫が増える）: 種があればまく、クワがあれば耕す。ついでの作業（also）。
+    // 空きがなければ、畑を足す・広げる（設計してから: 設計書 47 §14）
+    const also = `fill the ${crop} farms while it grows (more ${farm.s} next harvest)`
+    const expand = free > 0
+      ? [
+          ...((world.inventory?.[seed] ?? 0) > 0 ? [{ kind: 'sow', item: seed, crop, also }] : []),
+          ...(Object.entries(world.inventory ?? {}).some(([n, c]) => n.endsWith('_hoe') && c > 0) ? [{ kind: 'till', crop, also }] : [])
+        ]
+      : []
+    const more = free > 0
+      ? `or fill the farms' ${free} free cells (till and sow ${seed}; a step farmed(${crop}, ${planted + free}))`
+      : `or, for more, add or enlarge a ${crop} farm (facility(<name>) in a mid goal: it is designed on the town map first)`
     leaf = {
       kind: 'growing',
       item,
       expand,
-      reason: `the home farm's ${farm.s} for ${item} is still growing (${planted} planted, none ripe, age ${ages[0]}-${ages[1]} of ${mature}); ` +
-        `it grows only while you stay near the home: do other steps near the home meanwhile and harvest it when ripe, instead of going far for it; ` +
-        `or expand the farm (till and sow ${seed} beside it; a step farmed(${crop}, ${planted + 8}) makes it bigger)${meal}`
+      reason: `the ${farm.s} on the farms for ${item} is still growing (${planted} planted, none ripe, age ${ages[0]}-${ages[1]} of ${mature}); ` +
+        `it grows only while you stay near it: do other steps near the farms meanwhile and harvest it when ripe, instead of going far for it; ` +
+        `${more}${meal}`
     }
     cost += EXPLORE_COST * 2
   } else if (digDown) {

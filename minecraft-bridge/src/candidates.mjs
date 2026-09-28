@@ -11,8 +11,8 @@
 // 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
-import { nextCell } from './facilities.mjs'
-import { plantSpot, tillSpot, sowSpot } from './farming.mjs'
+import { workCell, HOME_FARM } from './facilities.mjs'
+import { cropBySeed } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
 import { isInside, exitSpots, shelterOf } from './home.mjs'
@@ -141,7 +141,7 @@ function fromLeaf (bot, state, world, leaf) {
       if (leaf.farm) {
         const p = new Vec3(leaf.farm.pos.x, leaf.farm.pos.y, leaf.farm.pos.z)
         const [name] = leaf.sources
-        return [{ id: `go to the home farm (${leaf.farm.ripe} ripe ${name})`, verb: 'goto_memory', target: name, pos: p, distance: dist(bot, p) }]
+        return [{ id: `go to the farm (${leaf.farm.ripe} ripe ${name})`, verb: 'goto_memory', target: name, pos: p, distance: dist(bot, p) }]
       }
       const lookingFor = leaf.sources.length ? leaf.sources.join('/') : leaf.item
       const me = bot.entity.position
@@ -278,25 +278,21 @@ function fromLeaf (bot, state, world, leaf) {
       return [{ id: 'place your bed here and sleep', verb: 'bed_here', target: 'bed', inPlace: true, effect: 'skips the night; sets the respawn point here; pick the bed up in the morning' }]
     case 'stay_underground':
       return [{ id: 'keep working underground through the night', verb: 'wait', target: 'here', inPlace: true, seconds: 10, purpose: 'underground it is as dark by day as by night: the night outside does not matter here' }]
-    case 'plant': {
-      // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面。設計した植林場なら、そのマス（設計書 47 §7）。
-      // id に場所は入れない（/act は候補を作り直して id で探す: 場所の選び直しで id が変わると動かない）
-      const fac = leaf.facility ? state.facilities?.[leaf.facility] : null
-      const p = fac ? nextCell(bot, fac, 'plant') : plantSpot(bot, state)
-      const id = fac ? `plant ${leaf.item} in the tree farm ${fac.name}` : `plant ${leaf.item} near the home`
-      return p ? [{ id, verb: 'plant', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
-    }
-    case 'till': {
-      const fac = leaf.facility ? state.facilities?.[leaf.facility] : null
-      const p = fac ? nextCell(bot, fac, 'till') : tillSpot(bot, state)
-      const id = fac ? `till the ground of the farm ${fac.name} with a hoe` : 'till the ground near the home with a hoe'
-      return p ? [{ id, verb: 'till', target: 'farmland', pos: p, distance: dist(bot, p) }] : []
-    }
+    case 'plant':
+    case 'till':
     case 'sow': {
-      const fac = leaf.facility ? state.facilities?.[leaf.facility] : null
-      const p = fac ? nextCell(bot, fac, 'sow') : sowSpot(bot, state)
-      const id = fac ? `sow ${leaf.item} on the farm ${fac.name}` : `sow ${leaf.item} on the farmland near the home`
-      return p ? [{ id, verb: 'sow', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+      // 植林と畑（設計書 33）: 設計した施設の次のマス（設計書 47 §14）。まくのは家の畑の空いた耕地も。
+      // id に場所は入れない（/act は候補を作り直して id で探す: 場所の選び直しで id が変わると動かない）
+      const only = leaf.facility && leaf.facility !== HOME_FARM ? { facility: leaf.facility } : {}
+      const crop = leaf.crop ?? (leaf.kind === 'sow' ? cropBySeed(leaf.item) : null)
+      const cell = workCell(bot, state, leaf.kind, { ...only, crop, sapling: leaf.item ?? 'sapling' })
+      if (!cell) return []
+      const where = cell.facility === HOME_FARM ? 'the home farm' : `${leaf.kind === 'plant' ? 'the tree farm' : 'the farm'} ${cell.facility}`
+      const id = leaf.kind === 'plant'
+        ? `plant ${leaf.item} in ${where}`
+        : leaf.kind === 'till' ? `till the ground of ${where} with a hoe` : `sow ${leaf.item} on ${where}`
+      const target = leaf.kind === 'till' ? 'farmland' : leaf.item
+      return [{ id, verb: leaf.kind, target, ...(leaf.kind === 'till' ? {} : { item: leaf.item }), pos: cell.pos, distance: dist(bot, cell.pos) }]
     }
     case 'go_facility': {
       const p = new Vec3(leaf.pos.x, leaf.pos.y, leaf.pos.z)

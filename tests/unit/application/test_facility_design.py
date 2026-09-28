@@ -18,6 +18,7 @@ from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.exceptions import (
     FacilityAreaNotReadyError,
     FacilityNotDesignedError,
+    GameBridgeError,
     GoalRejectedError,
 )
 from ailoveshen.domain.value_objects import GoalPredicate, GoalSpec, Mission
@@ -135,6 +136,13 @@ async def test_the_bridge_refusal_is_retried_but_an_unloaded_area_is_not():
     with pytest.raises(FacilityNotDesignedError) as e:
         await designer.design("wheat_farm", "b")
     assert e.value.name == "wheat_farm" and text_generator.generate_json.await_count == 1
+
+    def down(name, body):
+        raise GameBridgeError("connection refused")
+
+    designer, *_ = _designer([FARM], set_facility=down)
+    with pytest.raises(FacilityNotDesignedError, match="connection refused"):
+        await designer.design("wheat_farm", "b")
 
 
 @pytest.mark.asyncio
