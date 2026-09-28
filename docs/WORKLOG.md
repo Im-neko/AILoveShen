@@ -2,10 +2,21 @@
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-28
-**Test Status**: `python -m pytest tests/` 860 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 259 件
+**Test Status**: `python -m pytest tests/` 868 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 262 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 視聴者の助言を流さない、ブロックの状態を渡す（設計書 49） (2026-09-28)
+
+**Commit**: 5f3478b（助言）、この後のコミット（ブロックの状態）
+
+ユーザーの依頼「コメントで指摘があっても今の目標に沿わないと『今別のことをしてるから』『後でやる』で無視する。改善したい」と「湿り具合などもブロックの情報として渡したい」「畑に水を引けるように」。
+- 原因（`data/logs/ailoveshen-dev.log`）: 引き受けの失敗 26 回のうち 23 回がコードの視聴者の上限（同じ人 1 つ、同時 2 人）。書き直した返答が「後で」の none / decline になり、何も残らなかった。仕分けの種類は返答に渡っていなかった
+- 助言は配信者の中目標（`MidGoal.suggested_by`、上限・予算に数えない）、上限の確かめを設計の前に（`check_room`）、流す返答の差し戻し（`unanswered`、`DeclineReason`）、返答の決まりを効率優先に合わせた。盤面・オーバーレイ・実況に「〜さんの提案」
+- ブロックの状態: `t.block_at` / `find_blocks` に `props`、畑の状態と施設の中身に `dry`（知らせるだけ）、技・条件を書く決まりに props の読み方、やり方の帳に `water_farm`。ブリッジの devDependency に prismarine-block（本物の状態 id で moisture を確かめるテスト）
+- 確かめる台本 `examples/comments_advice.json`（各コメントに合否の基準 `pass`、台本は `kind` を書ける）。`integration_test_minecraft.py` は返事のあとに足された中目標と考え直しを表示する
+- 未確認: 実機（ローカルの LLM が decline_reason を正しく選ぶか、3 回で流さない返答になるか）、`use_item` のバケツ
 
 ### アバターの作り直しの調査（設計書 48） (2026-09-28)
 
@@ -1810,13 +1821,17 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
+### 視聴者の助言（設計書 49、2026-09-28 時点）
+
+実機で `python examples/integration_test_minecraft.py --comments examples/comments_advice.json` を回し、各 `pass` を見る。配信では `logs/chat/*.jsonl`（仕分けの種類）と警告「返答 N は〜を流している」「〜を流したまま話す」を見る。畑に水を引くのは Gemini の判断任せ（`use_item` のバケツは実機で未確認）
+
 ### アバターの作り直し（設計書 48、2026-09-28 時点）
 
 調査だけ済み。§9（Tripo を誰が回すか・プラン、4 面図の生成、合格の範囲、案 A〜D）をユーザーが決めたら、§8 の試作（Blender と VRM Add-on の準備から）
 
 ### 設計書 47 の残り（2026-09-28 時点）
 
-段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（`2391ee3`）、4B（`a281fb2`）、5（`9953314`）は済み。残りは 6（囲い・トラップ、別の設計書: 柵と門、動物を連れて来る、水、ホッパー）と、採掘場の坑道を延ばす・松明、畑に水を置く
+段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（`2391ee3`）、4B（`a281fb2`）、5（`9953314`）は済み。残りは 6（囲い・トラップ、別の設計書: 柵と門、動物を連れて来る、水、ホッパー）と、採掘場の坑道を延ばす・松明（畑の水は設計書 49 で乾いた耕地を知らせ、やり方の帳に足した）
 
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 

@@ -5,7 +5,7 @@
 // 制約はここで守り、断るときは理由を返す: 家に避難している間（夜、ドアの前の敵）は外に出る道具を
 // 断る、今の家と建てている家は掘らない・置かない。調べものの道具はすぐ返り、履歴に残さない。
 import vec3Pkg from 'vec3'
-import { round, inventoryCounts, isHostile, bearing } from './observe.mjs'
+import { round, inventoryCounts, isHostile, bearing, blockProps } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
 import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
@@ -345,10 +345,11 @@ export function createTools (deps) {
     }
   }
 
-  // 作物なら熟しているか（育ち途中は掘らない）
-  const crop = (p) => {
+  // 作物なら熟しているか（育ち途中は掘らない）と、ブロックの状態（耕地の moisture など）
+  const details = (p) => {
     const b = bot.blockAt(p)
-    return cropByBlock(b?.name) ? { ripe: isRipe(b), age: ageOf(b) } : {}
+    const props = blockProps(b)
+    return { ...(cropByBlock(b?.name) ? { ripe: isRipe(b), age: ageOf(b) } : {}), ...(props ? { props } : {}) }
   }
   const queries = {
     find_blocks (args) {
@@ -358,7 +359,7 @@ export function createTools (deps) {
       const me = bot.entity.position
       const found = bot.findBlocks({ matching: id, maxDistance: radius, count: 64 })
         .sort((a, b) => a.distanceTo(me) - b.distanceTo(me)).slice(0, FIND_SHOWN)
-        .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...crop(p) }))
+        .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...details(p) }))
       return found.length ? found : `no ${args.block} within ${radius}m`
     },
     recipe_of (args) {

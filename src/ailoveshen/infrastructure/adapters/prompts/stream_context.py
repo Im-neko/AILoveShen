@@ -573,7 +573,8 @@ def _format_broken(broken: list) -> list[str]:
 def _format_farm(farm: dict) -> list[str]:
     """
     畑（設計した畑と家の畑の合計）: 作物ごとの植わっている数、熟した数、育ち具合、空いたマス、
-    畑の名前（熟したものは掘ると取れて、植え直す。作物は近くにいる間だけ育つ）。
+    乾いた耕地（水が 4 マス以内にない。育ちが遅い）、畑の名前（熟したものは掘ると取れて、植え直す。
+    作物は近くにいる間だけ育つ）。
     """
     if not farm:
         return []
@@ -582,14 +583,16 @@ def _format_farm(farm: dict) -> list[str]:
         ages = f.get("ages")
         grow = f"、育ち具合 {ages[0]}〜{ages[1]}/{f.get('mature')}" if ages else ""
         free = f"、空き {f['free']}" if f.get("free") else ""
+        dry = f"、乾いた耕地 {f['dry']}" if f.get("dry") else ""
         seen = "、前に見たとき" if f.get("remembered") else ""
         where = f" {'・'.join(f['farms'])}" if f.get("farms") else ""
-        return f"{crop}{where} {f['planted']} マス（熟した {f['ripe']}{grow}{free}{seen}）"
+        return f"{crop}{where} {f['planted']} マス（熟した {f['ripe']}{grow}{free}{dry}{seen}）"
 
     parts = [one(crop, f) for crop, f in farm.items()]
+    dry = "。乾いた耕地は水が 4 マス以内になく、育ちが遅い" if any(f.get("dry") for f in farm.values()) else ""
     return [
         f"- 畑: {'、'.join(parts)}（熟したものを掘ると収穫して植え直す。"
-        "近くにいる間だけ育つ）"
+        f"近くにいる間だけ育つ{dry}）"
     ]
 
 

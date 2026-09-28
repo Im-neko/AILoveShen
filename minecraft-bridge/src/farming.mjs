@@ -85,6 +85,14 @@ export function ageOf (block) {
   return Number(props.age ?? block?.metadata ?? 0)
 }
 
+// 湿っていない耕地（moisture 7 未満: 4 マス以内に水がない。作物の育ちが遅く、踏むと土に戻りやすい）
+export const MOIST = 7
+export function isDry (block) {
+  if (block?.name !== 'farmland') return false
+  const m = block.getProperties?.().moisture
+  return m != null && Number(m) < MOIST
+}
+
 // 地面のセル（x, z）: 家の床の高さの近くで、固いブロックの上に 2 マス空いた所 → { ground, cell }
 export function surfaceAt (bot, x, z, y0) {
   for (let y = y0 + DY; y >= y0 - DY; y--) {

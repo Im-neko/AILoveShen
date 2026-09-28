@@ -38,6 +38,23 @@ def test_the_farm_and_what_remembered_blocks_give_are_shown():
     text = format_activity(Activity(observation=obs))
     assert "畑: wheat wheat_farm・home_farm 12 マス（熟した 8、育ち具合 3〜7/7、空き 4）" in text
     assert "wheat 12（→ wheat・wheat_seeds、" in text
+    assert "乾いた耕地" not in text
+
+
+def test_dry_farmland_is_told_only_when_there_is_some():
+    obs = GameObservation(
+        state={
+            "farm": {
+                "wheat": {"planted": 8, "ripe": 0, "dry": 5, "ages": [0, 2], "mature": 7, "free": 0}
+            }
+        },
+        candidates=(),
+        health=20,
+        food=20,
+    )
+    text = format_activity(Activity(observation=obs))
+    assert "wheat 8 マス（熟した 0、育ち具合 0〜2/7、乾いた耕地 5）" in text
+    assert "乾いた耕地は水が 4 マス以内になく、育ちが遅い）" in text
 
 
 def test_dusk_says_how_long_until_night_not_only_until_morning():

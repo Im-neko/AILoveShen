@@ -235,7 +235,8 @@ SKILL_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 
 QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
     "find_blocks": (
-        "近くのそのブロックの位置を近い順に調べる（すぐ返る）",
+        "近くのそのブロックの位置を近い順に調べる（すぐ返る）。ブロックの状態 props も付く"
+        "（耕地の moisture: \"7\" が湿っている、作物の age など）",
         {"block": _str("ブロック名"), "radius": _int("半径（既定 32、最大 64）")},
         ["block"],
     ),

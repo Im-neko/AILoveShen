@@ -65,7 +65,7 @@ import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
-import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
+import { summarize, bearing, inventoryCounts, isUnderground, blockInfo } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools } from './tools.mjs'
@@ -83,7 +83,6 @@ import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeCh
 import { surveyedSites } from './survey.mjs'
 import { landmarks, adoptFoundBase } from './landmarks.mjs'
 import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
-import vec3Pkg from 'vec3'
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
 const VERSION = '1.21.4'
@@ -214,11 +213,7 @@ let judgeIds = 0
 const skillDeps = {
   callTool,
   state: () => sharedState(bot, state, needs),
-  blockAt ({ x, y, z }) {
-    const p = new vec3Pkg.Vec3(Math.floor(Number(x)), Math.floor(Number(y)), Math.floor(Number(z)))
-    const b = bot.blockAt(p)
-    return b ? { name: b.name, x: p.x, y: p.y, z: p.z } : { name: null, error: 'not loaded' }
-  },
+  blockAt: (args) => blockInfo(bot, args),
   // 質問を /state に出し、見張りのティックで Jev が答えるのを待つ（来なければ answer: null）
   judge (q, signal, waitMs) {
     return new Promise((resolve) => {

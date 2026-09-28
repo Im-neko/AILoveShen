@@ -33,7 +33,9 @@ docker/docker-compose.yml、モデルは tts.voice.model_name、.env の TTS_MOD
         [--board-port 8765] [--control candidates|tools] [--speak]
 
 comments.json: [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}, ...]
-（after_seconds はプレイ開始からの秒数）
+（after_seconds はプレイ開始からの秒数。kind（request / advice / question / chat ...）を書くと、
+配信の返事の前の仕分け（Jev）の答えとして返答に渡す。返事のあとに、足された中目標と考え直しを表示する。
+助言を流さないかの確かめ: examples/comments_advice.json）
 """
 
 import argparse
@@ -82,8 +84,24 @@ async def feed_comments(
         goal_before = session.goal.spec.describe() if session and session.goal else "-"
         print(f"[chat] {c['user']}: {c['message']} (今の目標: {goal_before})", flush=True)
         t = time.monotonic()
-        reply = await llm.generate_response(c["user"], c["message"], session=session)
+        before = {g.id for g in session.plan.pending} if session else set()
+        mark = session.rethink_mark if session else 0
+        reply = await llm.generate_response(
+            c["user"], c["message"], session=session, kind=c.get("kind")
+        )
         print(f"[reply] ({time.monotonic() - t:.1f}s) {reply}", flush=True)
+        if session:
+            for g in session.plan.pending:
+                if g.id not in before:
+                    if g.requested_by:
+                        who = f"{g.requested_by}の頼み"
+                    elif g.suggested_by:
+                        who = f"{g.suggested_by}の提案"
+                    else:
+                        who = "自分"
+                    print(f"[mid goal] {g.title} ({who})", flush=True)
+            if session.rethink_mark != mark:
+                print(f"[rethink] {session.rethink_reason}", flush=True)
         if speak and reply:
             await speak(reply)
 

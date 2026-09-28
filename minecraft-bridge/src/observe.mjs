@@ -1,5 +1,9 @@
 // ボットの状況を簡潔にまとめた観測。行動の列挙と /observe で共有する。
 
+import vec3Pkg from 'vec3'
+
+const { Vec3 } = vec3Pkg
+
 export const MOB_RADIUS = 48
 export const MOB_LIMIT = 16
 export const DROP_RADIUS = 24
@@ -40,6 +44,20 @@ export function dayPhase (timeOfDay) {
 }
 
 export const isLog = (name) => name.endsWith('_log')
+// ブロックの状態（耕地の moisture 0–7、作物の age、ドアの open など）。なければ null
+export function blockProps (block) {
+  const props = block?.getProperties?.() ?? {}
+  return Object.keys(props).length ? props : null
+}
+
+// 技の t.block_at: その座標のブロックの名前と状態
+export function blockInfo (bot, { x, y, z }) {
+  const p = { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) }
+  const b = bot.blockAt(new Vec3(p.x, p.y, p.z))
+  if (!b) return { name: null, error: 'not loaded' }
+  const props = blockProps(b)
+  return { name: b.name, ...p, ...(props ? { props } : {}) }
+}
 export const isPlanks = (name) => name.endsWith('_planks')
 
 // 時間帯と、ワールドの何日目か（寝て飛ばした夜も数える。最初の時刻が届くまでは null）

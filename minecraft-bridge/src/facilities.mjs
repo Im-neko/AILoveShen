@@ -6,7 +6,7 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, isLog } from './observe.mjs'
 import { buildBox } from './builds.mjs'
-import { CROPS, cropByBlock, cropOf, cropStatus, ageOf, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
+import { CROPS, cropByBlock, cropOf, cropStatus, ageOf, isDry, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -93,7 +93,10 @@ function contents (bot, state, fac, jaOf) {
   if (fac.layout) {
     // 設計した施設: 設計のマスのうち済んだもの、これからのもの（設計書 47 §7）
     const s = layoutStatus(bot, fac)
-    const work = fac.kind === 'farm' ? { to_till: s.till.length, to_sow: s.sow.length } : { to_plant: s.plant.length }
+    // 畑は、湿っていない耕地の数も（知らせるだけ: 水を引くかどうかは判断に任せる）
+    const work = fac.kind === 'farm'
+      ? { to_till: s.till.length, to_sow: s.sow.length, dry: fac.layout.cells.filter((c) => isDry(bot.blockAt(new Vec3(c.x, c.y, c.z)))).length }
+      : { to_plant: s.plant.length }
     const what = fac.kind === 'farm' ? { crop: fac.layout.crop, crop_ja: jaOf(fac.layout.crop) } : { sapling: fac.layout.sapling, spacing: fac.layout.spacing }
     return { ...what, cells: s.total, done: s.done, ...work, ...(s.unseen ? { out_of_view: s.unseen } : {}) }
   }
@@ -105,9 +108,10 @@ function contents (bot, state, fac, jaOf) {
           const b = bot.blockAt(new Vec3(x, y, z))
           const crop = cropByBlock(b?.name)
           if (!crop || bot.blockAt(new Vec3(x, y - 1, z))?.name !== 'farmland') continue
-          crops[crop] ??= { planted: 0, ripe: 0, ja: jaOf(crop) }
+          crops[crop] ??= { planted: 0, ripe: 0, dry: 0, ja: jaOf(crop) }
           crops[crop].planted++
           if (isRipe(b)) crops[crop].ripe++
+          if (isDry(bot.blockAt(new Vec3(x, y - 1, z)))) crops[crop].dry++
         }
       }
     }
@@ -406,14 +410,16 @@ function measureCrops (bot, crop, positions, free) {
   return {
     planted: positions.length,
     ripe: ripe.length,
+    dry: positions.filter((p) => isDry(bot.blockAt(p.offset(0, -1, 0)))).length,
     ages: ages.length ? [Math.min(...ages), Math.max(...ages)] : null,
     free,
     pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : null
   }
 }
 
-// その作物の畑の合計: { planted, ripe, ages, mature, free, pos, remembered, farms: [{ name, planted, ripe,
-// free, remembered }] }。free は、まだまける・耕せるマス（設計した畑の残りと、家の畑の空いた耕地）。
+// その作物の畑の合計: { planted, ripe, dry, ages, mature, free, pos, remembered, farms: [{ name, planted, ripe,
+// dry, free, remembered }] }。free は、まだまける・耕せるマス（設計した畑の残りと、家の畑の空いた耕地）。
+// dry は、植わっているマスのうち下の耕地が湿っていないもの（知らせるだけ。目標の判定には使わない）。
 // pos は熟したもの（なければ植わったもの）がある、ボットに一番近い畑の 1 マス
 export function cropFarms (bot, state, crop) {
   const memory = state.memory ? (state.memory.farms ??= {}) : {}
@@ -450,12 +456,13 @@ export function cropFarms (bot, state, crop) {
   return {
     planted: farms.reduce((n, f) => n + f.planted, 0),
     ripe: farms.reduce((n, f) => n + f.ripe, 0),
+    dry: farms.reduce((n, f) => n + (f.dry ?? 0), 0),
     ages: planted.length ? [Math.min(...planted.map((f) => f.ages[0])), Math.max(...planted.map((f) => f.ages[1]))] : null,
     mature: CROPS[crop].mature,
     free: farms.reduce((n, f) => n + f.free, 0),
     pos: at?.pos ?? null,
     remembered: farms.length > 0 && farms.every((f) => f.remembered),
-    farms: farms.map(({ name, planted, ripe, free, remembered }) => ({ name, planted, ripe, free, ...(remembered ? { remembered } : {}) }))
+    farms: farms.map(({ name, planted, ripe, dry, free, remembered }) => ({ name, planted, ripe, dry: dry ?? 0, free, ...(remembered ? { remembered } : {}) }))
   }
 }
 
@@ -466,7 +473,7 @@ export function farmSummary (bot, state) {
   for (const crop of Object.keys(CROPS)) {
     const f = cropFarms(bot, state, crop)
     if (!f.planted && !designedFarms(state, crop).length) continue
-    out[crop] = { planted: f.planted, ripe: f.ripe, ages: f.ages, mature: f.mature, free: f.free, farms: f.farms.map((x) => x.name), ...(f.remembered ? { remembered: true } : {}) }
+    out[crop] = { planted: f.planted, ripe: f.ripe, dry: f.dry, ages: f.ages, mature: f.mature, free: f.free, farms: f.farms.map((x) => x.name), ...(f.remembered ? { remembered: true } : {}) }
   }
   return out
 }

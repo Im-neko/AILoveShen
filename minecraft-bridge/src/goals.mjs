@@ -677,6 +677,7 @@ function evaluateOne (bot, state, knowledge, world) {
       out.remaining = Math.max(0, count - f.planted)
       const where = f.farms.map((x) => `${x.name} ${x.planted}${x.remembered ? ' (last seen)' : ''}`).join(', ')
       out.lines.push(`${crop} planted on the farms: ${f.planted}/${count} (ripe ${f.ripe}, free cells ${f.free}${where ? `; ${where}` : ''})`)
+      if (f.dry) out.lines.push(`${f.dry} of them on dry farmland (moisture < 7: no water within 4 blocks; crops grow slower there)`)
       if (out.met) break
       if (!f.farms.length && !designedFarms(state, crop).length) {
         const why = `there is no farm for ${crop}: add facility(<name>) (a ${crop} farm) to a mid goal first; it is designed on the town map`

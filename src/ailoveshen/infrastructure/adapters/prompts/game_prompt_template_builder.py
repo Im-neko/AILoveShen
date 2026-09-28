@@ -121,7 +121,9 @@ JavaScript で `function check(w) { ... }` を 1 つ書く。世界を読んで
 - 同期で動く（async / await / Promise は使えない）。50 ms、ブロックを読むのは 20000 回まで。
   require・fetch・時計はない
 - 使えるのは w だけ（読むだけ。世界は変えられない）:
-  - w.block(x, y, z) → { name, solid, props? } か null（読み込まれていない）。name は "oak_log" など
+  - w.block(x, y, z) → { name, solid, props? } か null（読み込まれていない）。name は "oak_log" など。
+    props はブロックの状態で値は文字列（耕地の moisture "0"〜"7": "7" が湿っている、作物の age、
+    ドアの open など）
   - w.find(name, { near?: [x, y, z], max_distance?: 32（64 まで）, count?: 64（256 まで） })
     → [[x, y, z], ...] 近い順。name は 1 つのブロック名か "*_suffix"（"*_bed" はすべてのベッド）
   - w.inventory() → { item: 数 }（持ち物）
@@ -573,11 +575,13 @@ export default async function (t, args) {
   t.sleep(), t.build_next({name?}), t.move_furniture({x, y, z, to_x?, to_y?, to_z?}),
   t.plant({item?, x?, y?, z?}), t.till({x?, y?, z?}), t.sow({item?, x?, y?, z?}), t.wait()
   （plant / till / sow は場所を省くとブリッジが家のまわりから選ぶ）
-- 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed}] か文 },
+- 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed,
+  props?}] か文 },
   t.recipe_of({item}), t.find_recipes({query, limit?}), t.how_to_get({item, count?}),
   t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
   hostile, distance_m, direction}], surroundings, needs, time, action },
-  t.block_at({x, y, z}) → { name }
+  t.block_at({x, y, z}) → { name, props? }（props はブロックの状態で値は文字列: 耕地の moisture
+  "0"〜"7"（"7" が湿っている）、作物の age、ドアの open など）
 - 判定: t.judge(question, {kind: 'yes_no' | 'choice', options?}) → { answer, confidence }（速い判断
   モデルが今の状態を見て答える。答えがなければ answer: null）
 - 記録: t.log(message)（失敗したときに読み返す）

@@ -51,7 +51,7 @@ test('今ある家・耕地・植えた苗木を施設として取り込む（�
   assert.equal(adoptExisting(bot, state), false) // 2 回目は変わらない
 
   const list = Object.fromEntries(facilitiesStatus(bot, state).map((f) => [f.name, f]))
-  assert.deepEqual(list.home_farm.contents, { crops: { wheat: { planted: 2, ripe: 1, ja: '' } } })
+  assert.deepEqual(list.home_farm.contents, { crops: { wheat: { planted: 2, ripe: 1, dry: 0, ja: '' } } })
   assert.equal(list.home.entrance.z, 4)
   const trees = [list.tree_farm_1, list.tree_farm_2].find((t) => t.box.min.x <= 0)
   assert.deepEqual(trees.contents, { saplings: 1, trees: 1, empty: 0 })

@@ -30,7 +30,23 @@
     骨粉を持っていれば use_item {item: bone_meal, x,y,z} で早く育つ
     小麦 3 つでパン（craft {item: bread}）
   tools: [search_facility, find_blocks, dig, use_item, craft]
-  see: [make_farm]
+  see: [make_farm, water_farm]
+
+- key: water_farm
+  title: 畑に水を引く
+  words: water farm farmland moisture dry hydrate bucket irrigation 水 水路 乾いた
+  when: 畑の状態に乾いた耕地（dry）があるとき、作物の育ちが遅いとき、視聴者に水を言われたとき
+  how: |
+    耕地は水から 4 マス以内（同じ高さか 1 つ上）だと湿り（moisture 7）、作物が早く育つ。乾いた耕地は
+    find_blocks {block: farmland} の props.moisture が "7" より小さい。畑の乾いたマスの数は search_facility
+    1. バケツを作る: craft {item: bucket}（鉄インゴット 3。材料は recipe_of）
+    2. 水源（流れていない水）の上で use_item {item: bucket, x,y,z}（水のブロックの座標）で汲む → water_bucket
+    3. 畑の中の 1 マスを dig して穴にし、その穴の底のブロックに use_item {item: water_bucket, x,y,z} で水を置く
+       （9x9 の真ん中に 1 つで、まわり 4 マスが湿る）
+    4. 水源を 2x2 に並べると、汲んでも減らない無限の水源になる
+    湿ったかは find_blocks {block: farmland} の props か、search_facility の dry で確かめる
+  tools: [craft, recipe_of, use_item, dig, find_blocks, search_facility]
+  see: [make_farm, harvest_crops, use_items]
 
 - key: get_seeds
   title: 種を集める
@@ -256,6 +272,7 @@
     use_item {item, entity?} でそのモブに（餌、ハサミ、リード）、use_item {item, x,y,z} でそのブロックに（骨粉、バケツ、斧）
     どちらもなければ向いている方へ（雪玉、釣り竿）。食べ物は eat、ボートは ride_boat、チェストは deposit / withdraw
   tools: [use_item, eat, ride_boat, deposit, withdraw]
+  see: [water_farm]
 
 - key: skills
   title: 技を使う・覚える
