@@ -9,7 +9,7 @@
 
 ### Style-Bert-VITS2 の Neutral を Irodori-TTS の音声から作り直す (2026-09-28)
 
-**Commit**: なし（未コミット）
+**Commit**: `ae1ca6e`
 
 ユーザー「9/26 に作ったスタイルの Neutral は昔のもの？ Irodori 由来で Neutral も作りたい」「昔の Neutral は Neutral-01 として残す」「Irodori は生成が重いので SBV2 の Neutral を」。
 - 確認: 9/26 の Neutral は元の録音から作ったもののまま（バックアップと一致）。配信は `tts.engine` 既定の style_bert_vits2、`emotion_style_map` は全部 Neutral（各スタイルの声が微妙だったため 9/28 に戻した）
