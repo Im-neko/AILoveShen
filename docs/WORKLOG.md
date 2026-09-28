@@ -2,7 +2,7 @@
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-28
-**Test Status**: `python -m pytest tests/` 860 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 257 件
+**Test Status**: `python -m pytest tests/` 860 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 259 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
@@ -18,7 +18,7 @@
 
 ### 採掘場の見直し: 部屋を掘る順、設計の読みすぎ、階段の柱 (2026-09-28)
 
-**Commit**: (後で記入)
+**Commit**: `6748eea`
 
 アドバイザーの指摘。設計書 47 §16。
 - 部屋を固定の蛇行で掘っていたので、底の段が蛇行の端にない深さ（28 段など）で最初のセルの隣に空いたセルがなく、経路探しが石を掘って自分で道を作るところだった（テストは底が y 40 = 蛇行の端でたまたま通っていた）。最後の段から幅優先に。12 通りの深さで隣を確かめるテストを足し、前のコードで落ちることを確かめた
