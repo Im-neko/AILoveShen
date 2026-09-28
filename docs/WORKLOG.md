@@ -17,6 +17,7 @@
 - 実行: Irodori-TTS で台本のふつうの文 30 本（除外 0、5 分半）→ `data/irodori_train/shen_sbv2_neutral/`（声 `shen_sbv2_neutral` も登録）→ Neutral を置き換え（`style_vectors.npy.20260928-205345.bak`）→ TTS サーバー再起動。スタイルは Neutral, Happy, Surprised, Sad, Angry, Fear, Neutral-01
 - 埋め込みの cos: 感情スタイルと元の Neutral 0.65〜0.68、新しい Neutral 0.83〜0.96。感情スタイルと元の Neutral の差の大半は「Irodori-TTS が読んだ音」の違いだった
 - `sbv2_add_styles.py` は `Style-Bert-VITS2/venv` では動かない（torchaudio 2.9.1 に pyannote.audio 3.4 が要る `AudioMetaData` がない。SBV2 の要件は torchaudio<2.4）。9/26 もこのリポジトリの `.venv`（9/26 に pyannote 3.4.0 / torchaudio 2.3.1 を入れた）で動かしていた。手順書・スクリプトの案内を `.venv` に直した
+- `config/development.yaml` の `emotion_style_map` を感情のスタイルに戻した（happy→Happy、surprised→Surprised、sad→Sad、angry→Angry、scared→Fear、excited→Happy。style_weight 1.0 のまま。ユーザーの選択）
 - 未確認: 聞き比べ（新しい Neutral と Neutral-01、Neutral 基準での感情スタイル）
 
 ### 視聴者の助言を流さない、ブロックの状態を渡す（設計書 49） (2026-09-28)

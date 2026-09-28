@@ -9,13 +9,15 @@ logging:
 tts:
   audio:
     device: "BlackHole 2ch"
+  # Neutral は Irodori-TTS が説明なしで読んだ音声から、感情のスタイルは感情つきで読んだ音声から
+  # （tools/sbv2_add_styles.py）。元の録音の Neutral は Neutral-01
   emotion_style_map:
     neutral: "Neutral"
-    happy: "Neutral"
-    surprised: "Neutral"
-    sad: "Neutral"
-    angry: "Neutral"
-    scared: "Neutral"
-    excited: "Neutral"
+    happy: "Happy"
+    surprised: "Surprised"
+    sad: "Sad"
+    angry: "Angry"
+    scared: "Fear"
+    excited: "Happy"
   synthesis:
     style_weight: 1.0   # 感情の強さ（1 で弱ければ上げる。上げすぎると声が崩れる）
