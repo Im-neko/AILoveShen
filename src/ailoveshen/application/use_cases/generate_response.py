@@ -302,7 +302,12 @@ class GenerateResponseUseCase(IGenerateResponse):
             if handling == RequestHandling.ACCEPT.value:
                 try:
                     proposal = parse_proposal(data)
-                    mid_goal = await self._accept(session, request.user_name, proposal, advice)
+                    # 助言か: 仕分けの答えか、返答自身の見立て（Jev の仕分けは頼み・質問・助言の
+                    # 境目で迷う: 「畑広げない？」が頼み、「畑拡張は？」が質問だった。2026-09-28）
+                    suggestion = advice or data.get("suggestion") is True
+                    mid_goal = await self._accept(
+                        session, request.user_name, proposal, suggestion
+                    )
                 except (ValueError, GoalRejectedError) as e:
                     # 返答が、プランに入らないものを受けている: それは決して言わせない
                     error = (

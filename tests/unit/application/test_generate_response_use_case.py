@@ -1095,6 +1095,24 @@ class TestSuggestionsAreNotBrushedOff:
         assert "畑を広げる" in [g.title for g in session.plan.pending]
 
     @pytest.mark.asyncio
+    async def test_the_reply_may_tell_a_suggestion_the_triage_took_for_a_request(
+        self, use_case, mock_text_generator
+    ):
+        """「畑広げない？」を Jev は頼みと仕分けた（2026-09-28）: 返答の suggestion で自分の中目標に。"""
+        mock_text_generator.generate_json.side_effect = [
+            BED_REQUEST,
+            {**self.FARM, "suggestion": True},
+        ]
+        session = _playing()
+        await use_case.execute(self._request(session, "ベッド作って！", "request"))
+
+        response = await use_case.execute(self._request(session, "畑広げない？", "request"))
+
+        assert response.mid_goal is not None
+        assert response.mid_goal.suggested_by == "neko"
+        assert response.mid_goal.requested_by is None
+
+    @pytest.mark.asyncio
     async def test_brushing_off_advice_is_sent_back(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):

@@ -34,7 +34,9 @@ docker/docker-compose.yml、モデルは tts.voice.model_name、.env の TTS_MOD
 
 comments.json: [{"after_seconds": 60, "user": "neko", "message": "ベッド作って！"}, ...]
 （after_seconds はプレイ開始からの秒数。kind（request / advice / question / chat ...）を書くと、
-配信の返事の前の仕分け（Jev）の答えとして返答に渡す。返事のあとに、足された中目標と考え直しを表示する。
+配信の返事の前の仕分け（Jev）の答えの代わりに返答に渡す。書かなければ配信と同じく Jev が
+仕分ける（twitch.response.triage: jev と TypeSafe のキーがあるとき）。返事のあとに、足された
+中目標と考え直しを表示する。
 助言を流さないかの確かめ: examples/comments_advice.json）
 """
 
@@ -49,6 +51,7 @@ from pathlib import Path
 # プロジェクトの src をパスに足す
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from ailoveshen.application.use_cases.comment_triage import CommentTriage
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.events import (
     GoalSetEvent,
@@ -58,9 +61,13 @@ from ailoveshen.domain.events import (
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
 )
-from ailoveshen.domain.value_objects import SpeechPriority
+from ailoveshen.domain.value_objects import ChatComment, SpeechPriority
 from ailoveshen.factories.game import create_game_service
-from ailoveshen.factories.llm import create_llm_service, create_promise_check
+from ailoveshen.factories.llm import (
+    create_comment_triage,
+    create_llm_service,
+    create_promise_check,
+)
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import InMemoryGenerationLog
 from ailoveshen.infrastructure.config import load_config_dict, load_settings
@@ -75,19 +82,28 @@ async def feed_comments(
     game: GameService,
     llm: LLMService,
     speak: Callable[[str], Awaitable[None]] | None = None,
+    triage: CommentTriage | None = None,
 ) -> None:
-    """台本のコメントを決まった時刻に送り、返事を表示する。"""
+    """
+    台本のコメントを決まった時刻に送り、返事を表示する。kind のないコメントは、配信と同じく
+    Jev が仕分ける（triage があるとき）。
+    """
     started = time.monotonic()
     for c in sorted(comments, key=lambda c: c["after_seconds"]):
         await asyncio.sleep(max(0.0, c["after_seconds"] - (time.monotonic() - started)))
         session = game.session
         goal_before = session.goal.spec.describe() if session and session.goal else "-"
         print(f"[chat] {c['user']}: {c['message']} (今の目標: {goal_before})", flush=True)
+        kind = c.get("kind")
+        if kind is None and triage is not None:
+            result = await triage.triage(ChatComment(user_name=c["user"], message=c["message"]))
+            kind = result.kind if result.source == "jev" else None
+            print(f"[triage] {result.kind} ({result.source}, {result.confidence:.2f})", flush=True)
         t = time.monotonic()
         before = {g.id for g in session.plan.pending} if session else set()
         mark = session.rethink_mark if session else 0
         reply = await llm.generate_response(
-            c["user"], c["message"], session=session, kind=c.get("kind")
+            c["user"], c["message"], session=session, kind=kind
         )
         print(f"[reply] ({time.monotonic() - t:.1f}s) {reply}", flush=True)
         if session:
@@ -233,7 +249,16 @@ async def run(
         board = asyncio.create_task(goal_board.serve(port=board_port))
         print(f"[debug] Gemini の思考: http://127.0.0.1:{board_port}/debug/gemini", flush=True)
         print(f"[avatar] アバター: http://127.0.0.1:{board_port}/avatar", flush=True)
-    chat = asyncio.create_task(feed_comments(comments, game, llm, say_reply)) if comments else None
+    triage = (
+        create_comment_triage(settings.twitch, settings.jev, activity, Path(__file__).parent.parent)
+        if comments
+        else None
+    )
+    chat = (
+        asyncio.create_task(feed_comments(comments, game, llm, say_reply, triage))
+        if comments
+        else None
+    )
     try:
         outcome = await game.play(max_steps=max_steps)
         await narrator.drain()
@@ -245,6 +270,8 @@ async def run(
         await llm.close()
         if promise_check is not None:
             await promise_check.close()
+        if triage is not None:
+            await triage.close()
         if avatar is not None:
             await avatar.close()
         if tts is not None:

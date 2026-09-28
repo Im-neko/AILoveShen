@@ -1,14 +1,14 @@
 [
-  {"after_seconds": 120, "user": "neko", "kind": "advice", "message": "畑拡張は？",
+  {"after_seconds": 120, "user": "neko", "message": "畑拡張は？",
    "pass": "中目標（nekoの提案）が足される: facility か farmed。「今は○○中だから後で」だけで終わらない"},
-  {"after_seconds": 300, "user": "neko", "kind": "advice", "message": "木を集めるために植林する方が良くないですか？",
+  {"after_seconds": 300, "user": "neko", "message": "木を集めるために植林する方が良くないですか？",
    "pass": "同じ neko の 2 つ目でも上限で断られず、植林（facility か planted）の中目標が足される"},
-  {"after_seconds": 480, "user": "inu", "kind": "advice", "message": "あと苗木植えるならちょっと家から離して専用の場所を作らない？",
+  {"after_seconds": 480, "user": "inu", "message": "あと苗木植えるならちょっと家から離して専用の場所を作らない？",
    "pass": "植林場の中目標が足される（もう植林の中目標があれば、その理由を言う decline wrong か、rethink / lesson）"},
-  {"after_seconds": 660, "user": "tori", "kind": "advice", "message": "畑に水ないと育ち遅いよ",
+  {"after_seconds": 660, "user": "tori", "message": "畑に水ないと育ち遅いよ",
    "pass": "畑に乾いた耕地があれば: 水を引く中目標（custom など）か rethink。乾いた耕地がなければ decline wrong で「もう湿ってる」と言う。畑がまだなければ lesson か畑の中目標"},
-  {"after_seconds": 840, "user": "neko", "kind": "request", "message": "ベッド作って！",
+  {"after_seconds": 840, "user": "neko", "message": "ベッド作って！",
    "pass": "頼み（nekoの頼み）の中目標が足される。助言の中目標は頼みの上限に数えない"},
-  {"after_seconds": 1020, "user": "neko", "kind": "request", "message": "剣もほしい！",
+  {"after_seconds": 1020, "user": "neko", "message": "剣もほしい！",
    "pass": "同じ人の 2 つ目の頼みは decline（limit）で、理由を言う。「今は忙しい」は理由にしない"}
 ]

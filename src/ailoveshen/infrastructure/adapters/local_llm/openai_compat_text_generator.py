@@ -25,6 +25,7 @@ from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import Screenshot
 from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     check,
+    drop_empty,
     estimate_tokens,
     extract_json,
     strip_thinking,
@@ -132,7 +133,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         message = await self._chat(messages, purpose, schema=schema)
         text = message.get("content") or ""
         try:
-            data = extract_json(text)
+            data = drop_empty(extract_json(text), schema)
             errors = check(data, schema)
         except ValueError as e:
             data, errors = None, [str(e)]
@@ -149,7 +150,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
             ]
             message = await self._chat(messages, purpose, schema=schema)
             try:
-                data = extract_json(message.get("content") or "")
+                data = drop_empty(extract_json(message.get("content") or ""), schema)
             except ValueError as e:
                 raise TextGenerationError(f"local model gave no JSON object: {e}") from e
             left = check(data, schema)

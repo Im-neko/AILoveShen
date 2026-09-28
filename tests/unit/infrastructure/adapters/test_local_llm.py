@@ -17,6 +17,7 @@ from ailoveshen.infrastructure.adapters.local_llm.routing_text_generator import 
 )
 from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     check,
+    drop_empty,
     estimate_tokens,
     extract_json,
 )
@@ -79,6 +80,28 @@ def test_json_is_taken_out_of_the_answer_and_checked():
     assert len(errors) == 3
     assert check({}, SCHEMA) == ["$.color is required"]
     assert check({"color": "red", "count": True}, SCHEMA) == ["$.count must be integer, got bool"]
+
+
+def test_empty_optional_fields_count_as_not_written():
+    """使わない項目を "" で埋めて enum に合わず、書き直しになっていた（2026-09-27: lesson_when.goal）。"""
+    schema = {
+        "type": "object",
+        "properties": {
+            "reply": {"type": "string"},
+            "reason": {"type": "string", "enum": ["cannot", "wrong"]},
+            "note": {"type": ["string", "null"]},
+            "when": {
+                "type": "object",
+                "properties": {"goal": {"type": "string", "enum": ["have"]}},
+            },
+        },
+        "required": ["reply"],
+    }
+    data = drop_empty(
+        {"reply": "", "reason": "", "note": None, "when": {"goal": ""}, "extra": None}, schema
+    )
+    assert data == {"reply": "", "note": None, "when": {}}
+    assert check(data, schema) == []
 
 
 def test_tokens_are_estimated_generously_for_japanese():

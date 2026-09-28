@@ -16,7 +16,9 @@
 - 助言は配信者の中目標（`MidGoal.suggested_by`、上限・予算に数えない）、上限の確かめを設計の前に（`check_room`）、流す返答の差し戻し（`unanswered`、`DeclineReason`）、返答の決まりを効率優先に合わせた。盤面・オーバーレイ・実況に「〜さんの提案」
 - ブロックの状態: `t.block_at` / `find_blocks` に `props`、畑の状態と施設の中身に `dry`（知らせるだけ）、技・条件を書く決まりに props の読み方、やり方の帳に `water_farm`。ブリッジの devDependency に prismarine-block（本物の状態 id で moisture を確かめるテスト）
 - 確かめる台本 `examples/comments_advice.json`（各コメントに合否の基準 `pass`、台本は `kind` を書ける）。`integration_test_minecraft.py` は返事のあとに足された中目標と考え直しを表示する
-- 未確認: 実機（ローカルの LLM が decline_reason を正しく選ぶか、3 回で流さない返答になるか）、`use_item` のバケツ
+- 仕分けの記録では「畑拡張は？」が question、「畑広げない？」が request だった（Jev の確信度 0.5 前後）: 仕分けの定義を直し、返答の `suggestion` でも助言にする。台本は仕分けも通す（`create_comment_triage` を配信と共有）
+- ローカルの LLM が使わない項目を "" で埋めると enum に合わず書き直しになる（前から 33 回）: `drop_empty` で書かなかったことにする
+- 未確認: 実機（ローカルの LLM が decline_reason / suggestion を正しく選ぶか、3 回で流さない返答になるか、Jev の仕分けが直るか）、`use_item` のバケツ
 
 ### アバターの作り直しの調査（設計書 48） (2026-09-28)
 

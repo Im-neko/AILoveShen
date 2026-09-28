@@ -13,7 +13,11 @@ from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import SpeechPriority
 from ailoveshen.factories.game import create_game_service
-from ailoveshen.factories.llm import create_llm_service, create_promise_check
+from ailoveshen.factories.llm import (
+    create_comment_triage,
+    create_llm_service,
+    create_promise_check,
+)
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import (
     InMemoryGenerationLog,
@@ -263,26 +267,8 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         # トークンがあれば、そのアカウントでログインしてチャットに書ける（!commands の一覧）
         chat = TwitchIrcChat(twitch.channel, login=twitch.bot_login, token=twitch.access_token)
         # 返事の前に Jev が仕分ける（設計書 34 §5）
-        triage = None
-        if twitch.triage == "jev" and settings.jev.api_key:
-            from ailoveshen.application.use_cases.comment_triage import CommentTriage
-            from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
-            from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
-                JsonlWatchRecorder,
-            )
-
-            triage = CommentTriage(
-                judge=JevFastJudge(
-                    api_key=settings.jev.api_key,
-                    model=settings.jev.model,
-                    timeout_seconds=settings.jev.timeout_seconds,
-                ),
-                activity=activity,
-                skip_min_confidence=twitch.skip_min_confidence,
-                recorder=JsonlWatchRecorder(str(base_dir / twitch.triage_record_dir))
-                if twitch.triage_record_dir
-                else None,
-            )
+        triage = create_comment_triage(twitch, settings.jev, activity, base_dir)
+        if triage is not None:
             closers.append(triage.close)
         responder = ChatResponder(
             llm,

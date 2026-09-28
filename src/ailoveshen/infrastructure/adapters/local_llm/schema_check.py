@@ -46,6 +46,28 @@ def extract_json(text: str) -> Any:
     return value
 
 
+def drop_empty(value: Any, schema: dict[str, Any]) -> Any:
+    """
+    必須でない項目の空文字列・null を、書かなかったことにする（ローカルのモデルは使わない項目も
+    "" で埋めることがあり、enum に合わずに書き直しになっていた: 2026-09-27 の lesson_when.goal など）。
+    null を許す項目の null は残す。
+    """
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        out = {}
+        for key, item in value.items():
+            sub = props.get(key, {})
+            nullable = "type" in sub and _is_type(None, sub["type"])
+            if key not in required and (item == "" or (item is None and not nullable)):
+                continue
+            out[key] = drop_empty(item, sub)
+        return out
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [drop_empty(item, schema["items"]) for item in value]
+    return value
+
+
 def check(value: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
     """スキーマに合わないところ（なければ空）。"""
     errors: list[str] = []

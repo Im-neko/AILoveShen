@@ -493,6 +493,14 @@ def reply_schema() -> dict[str, Any]:
                 "advice); limit = the viewers' limit or a full list. Being busy with something "
                 "else is never a reason: accept it with when=next instead",
             },
+            "suggestion": {
+                "type": "boolean",
+                "description": "accept only: true when the comment suggests something for the "
+                "streamer's own play (a better way, a farm or tree farm, being efficient or safe), "
+                "even when it is phrased as a question or a request; false when it is the viewer's "
+                "own wish. A suggestion becomes her own mid goal and does not count toward the "
+                "viewers' limits",
+            },
             "title": {"type": "string", "description": "accept: the mid goal's title"},
             "conditions": _conditions_schema(),
             "position": {

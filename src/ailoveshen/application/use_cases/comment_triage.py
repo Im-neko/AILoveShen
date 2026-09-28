@@ -22,10 +22,12 @@ from ailoveshen.domain.exceptions import AILoveShenError
 from ailoveshen.domain.value_objects import Activity, ChatComment, FastQuestion, FastQuestionKind
 
 KINDS = {
-    "request": "asks the streamer to do or make something in the game",
-    "advice": "suggests a better way, points something out, or corrects the streamer",
+    "request": "asks the streamer to do or make something the viewer wants to see in the game",
+    "advice": "suggests a better way or something that would help her play (also as a question: "
+    "'what about X?', 'why not X?', 'shall we X?'), points something out, or corrects the streamer",
     "withdraw": "calls off something they asked for earlier",
-    "question": "asks the streamer a question",
+    "question": "asks the streamer something to know the answer (not a suggestion phrased as a "
+    "question)",
     "chat": "a greeting, a reaction, or small talk",
     "noise": "spam, a lone emote, or nothing a streamer would answer",
 }

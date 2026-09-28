@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.use_cases.comment_triage import CommentTriage
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
@@ -16,7 +18,7 @@ from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
-from ailoveshen.domain.value_objects import CharacterProfile
+from ailoveshen.domain.value_objects import Activity, CharacterProfile
 from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
     PromptTemplateBuilder,
 )
@@ -167,5 +169,34 @@ def create_promise_check(
         ),
         recorder=JsonlWatchRecorder(str(base_dir / twitch.promise_record_dir))
         if twitch.promise_record_dir
+        else None,
+    )
+
+
+def create_comment_triage(
+    twitch: TwitchSettings,
+    jev: JevSettings,
+    activity: Callable[[], Activity | None],
+    base_dir: Path,
+) -> CommentTriage | None:
+    """
+    返事の前にコメントを Jev で仕分けるもの（docs/design/34 §5）。`twitch.response.triage` が jev で
+    TypeSafe のキーがあるときだけ作る（なければ None: 仕分けない）。閉じるのは呼び出し側。
+    """
+    if twitch.triage != "jev" or not jev.api_key:
+        return None
+    from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
+    from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
+        JsonlWatchRecorder,
+    )
+
+    return CommentTriage(
+        judge=JevFastJudge(
+            api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+        ),
+        activity=activity,
+        skip_min_confidence=twitch.skip_min_confidence,
+        recorder=JsonlWatchRecorder(str(base_dir / twitch.triage_record_dir))
+        if twitch.triage_record_dir
         else None,
     )
