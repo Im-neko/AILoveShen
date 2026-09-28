@@ -32,6 +32,7 @@ from ailoveshen.infrastructure.adapters.map import PilMapRenderer
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
     MineflayerBridgeClient,
 )
+from ailoveshen.infrastructure.adapters.prompts.abilities import load_abilities
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
 )
@@ -345,6 +346,7 @@ def create_game_service(
         stuck_check=stuck_check,
         lessons=lessons,
         search=search,
+        abilities=load_abilities(),
         skills=(
             SkillWriter(
                 text_generator,

@@ -14,7 +14,7 @@ import asyncio
 import json
 import re
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,7 +23,12 @@ from loguru import logger
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
-from ailoveshen.application.use_cases.tool_catalog import SEARCH_FACILITY, SEARCH_MEMORY
+from ailoveshen.application.use_cases.tool_catalog import (
+    ITEM_INFO,
+    SEARCH_ABILITIES,
+    SEARCH_FACILITY,
+    SEARCH_MEMORY,
+)
 from ailoveshen.domain.exceptions import AILoveShenError, GameBridgeError
 from ailoveshen.domain.value_objects import FastQuestion, FastQuestionKind
 
@@ -32,6 +37,7 @@ FALLBACK_SHOWN = 3  # Jev が答えないときに返す候補の数
 NONE = "none"
 _WORD = re.compile(r"[a-z0-9]+")
 _JAPANESE = re.compile(r"[぀-ヿ一-鿿]+")
+_KANJI = re.compile(r"[一-鿿]")
 
 
 @dataclass(frozen=True)
@@ -45,7 +51,7 @@ class SearchEntry:
 
 @dataclass(frozen=True)
 class SearchResult:
-    """検索の答え: LLM に返す文、返したキー、決め方（jev / none / fallback / empty）。"""
+    """検索の答え: LLM に返す文、返したキー、決め方（exact / jev / none / fallback / empty）。"""
 
     text: str
     keys: tuple[str, ...]
@@ -54,19 +60,26 @@ class SearchResult:
 
 
 def _terms(text: str) -> set[str]:
-    """語の集まり: 英数字の語（_ で区切る）と、日本語の文字の 2-gram。"""
+    """
+    語の集まり: 英数字の語（_ で区切る）、日本語の文字の 2-gram、漢字 1 文字（「鉄」で「鉄鉱石」を
+    引く。かなの 1 文字は「の」などが多すぎるので入れない）。
+    """
     lower = text.lower().replace("_", " ")
-    terms = set(_WORD.findall(lower))
+    terms = set(_WORD.findall(lower)) | set(_KANJI.findall(lower))
     for run in _JAPANESE.findall(lower):
         terms |= {run[i : i + 2] for i in range(len(run) - 1)} or {run}
     return terms
 
 
-def rank(query: str, entries: Sequence[SearchEntry]) -> list[SearchEntry]:
-    """語の重なりが多い順（同じなら一覧の順）。検索語の語が 1 つもない一覧でも、全部を返す。"""
+def _normal(key: str) -> str:
+    return key.strip().lower().replace(" ", "_")
+
+
+def rank(query: str, entries: Sequence[SearchEntry]) -> list[tuple[int, SearchEntry]]:
+    """(重なった語の数, 項目) を多い順に（同じなら一覧の順）。重なりがなくても全部を返す。"""
     q = _terms(query)
     scored = [(len(q & _terms(f"{e.key} {e.summary}")), i, e) for i, e in enumerate(entries)]
-    return [e for _, _, e in sorted(scored, key=lambda t: (-t[0], t[1]))]
+    return [(n, e) for n, _, e in sorted(scored, key=lambda t: (-t[0], t[1]))]
 
 
 class KeySearch:
@@ -98,36 +111,60 @@ class KeySearch:
         self._clock = clock
 
     async def find(
-        self, tool: str, query: str, entries: Sequence[SearchEntry], what: str
+        self,
+        tool: str,
+        query: str,
+        entries: Sequence[SearchEntry],
+        what: str,
+        describe: Callable[[SearchEntry], Awaitable[str]] | None = None,
     ) -> SearchResult:
         """
         検索語 `query` に合う 1 件を選ぶ。`what` は一覧が何か（例: facility）。答えの文を返す。
+        `describe` は選んだ項目の中身を作る（アイテムの情報のように、一覧の全部には作らないもの）。
+        キーと同じ検索語（大文字・空白の違いは見ない）は Jev に聞かずにそれを返す。
         """
         started = self._clock()
+
+        async def detail(e: SearchEntry) -> str:
+            return await describe(e) if describe is not None else e.detail
+
         if not entries:
-            return self._done(
-                tool,
-                query,
-                [],
-                None,
-                0.0,
-                started,
-                SearchResult(f"no {what} is known yet", (), "empty"),
-            )
-        shown = rank(query, entries)[: self._choices]
+            result = SearchResult(f"no {what} is known yet", (), "empty")
+            return self._done(tool, query, [], None, 0.0, started, result)
+        exact = next((e for e in entries if _normal(e.key) == _normal(query)), None)
+        if exact is not None:
+            result = SearchResult(await detail(exact), (exact.key,), "exact", 1.0)
+            return self._done(tool, query, [exact], None, 1.0, started, result)
+        ranked = rank(query, entries)
+        shown = [e for _, e in ranked[: self._choices]]
+        # 検索語と語が 1 つも重ならず、一覧が長い: 絞れていない（正解が切り捨てられたかもしれない）
+        unmatched = ranked[0][0] == 0
+        cut = unmatched and len(entries) > len(shown)
         picked, confidence = await self._ask(query, shown, what)
         if picked is not None and picked != NONE:
             entry = shown[ord(picked) - ord("A")]
-            result = SearchResult(entry.detail, (entry.key,), "jev", confidence)
-        elif picked == NONE:
+            result = SearchResult(await detail(entry), (entry.key,), "jev", confidence)
+        elif picked == NONE or cut:
             near = ", ".join(e.key for e in shown[:FALLBACK_SHOWN])
-            result = SearchResult(
-                f"no {what} matches {query!r} (the nearest by name: {near})", (), "none", confidence
-            )
+            text = f"no {what} matches {query!r}"
+            if cut:
+                text += (
+                    f" (no {what} shares a word with it; {len(entries)} are known, only "
+                    f"{len(shown)} were compared: search again with another word, e.g. the "
+                    "English name)"
+                )
+            else:
+                text += f" (the nearest by name: {near})"
+            result = SearchResult(text, (), "none", confidence)
+        elif unmatched:
+            # 語が重ならない候補の中身（座標）を返すと、見当違いの場所へ歩く: 名前だけ
+            names = ", ".join(e.key for e in shown[:FALLBACK_SHOWN])
+            text = f"not sure which {what} matches {query!r}; the {what} entries: {names}"
+            result = SearchResult(text, (), "fallback", confidence)
         else:
-            top = shown[:FALLBACK_SHOWN]
+            top = [e for n, e in ranked[:FALLBACK_SHOWN] if n > 0]
             text = f"not sure which {what} matches {query!r}; the closest by words:\n" + "\n".join(
-                f"- {e.detail}" for e in top
+                [f"- {await detail(e)}" for e in top]
             )
             result = SearchResult(text, tuple(e.key for e in top), "fallback", confidence)
         return self._done(tool, query, shown, picked, confidence, started, result)
@@ -196,6 +233,16 @@ class KeySearch:
 
 
 TOP_ITEMS = 6  # 一覧の説明に書くチェストの中身の数
+# 施設の種類の日本語（日本語の検索語で引く。docs/design/47 §5）
+KIND_JA = {
+    "home": "家",
+    "build": "建物",
+    "farm": "畑 農場",
+    "tree_farm": "植林場 木 原木",
+    "mine": "採掘場 鉱山",
+    "pen": "動物の囲い 牧場",
+    "trap": "トラップ",
+}
 
 
 def _json(value: Any) -> str:
@@ -214,24 +261,29 @@ def _items(counts: Any) -> str:
     return ", ".join(f"{k} {v}" for k, v in top[:TOP_ITEMS])
 
 
+def _named(name: str, ja: str) -> str:
+    return f"{name}（{ja}）" if ja else name
+
+
 def facility_entries(facilities: Sequence[dict[str, Any]]) -> list[SearchEntry]:
     """施設の一覧（GET /facilities）を検索の一覧にする。中身は施設の JSON そのまま。"""
     out = []
     for f in facilities:
         contents = f.get("contents") or {}
         what = ""
-        if isinstance(contents.get("crops"), dict):
-            what = (
-                "crops: " + ", ".join(contents["crops"]) if contents["crops"] else "crops: none now"
-            )
+        crops = contents.get("crops")
+        if isinstance(crops, dict):
+            names = [_named(k, str((v or {}).get("ja", ""))) for k, v in crops.items()]
+            what = "crops: " + ", ".join(names) if names else "crops: none now"
         elif "saplings" in contents:
             what = "saplings and trees (logs)"
         elif "total" in contents:
             what = f"{contents.get('placed')}/{contents.get('total')} blocks placed"
+        kind = str(f.get("kind"))
         summary = "; ".join(
             s
             for s in (
-                f"{f.get('kind')} ({f.get('status')})",
+                f"{_named(kind, KIND_JA.get(kind, ''))} ({f.get('status')})",
                 str(f.get("purpose") or ""),
                 what,
                 _where(f),
@@ -243,59 +295,113 @@ def facility_entries(facilities: Sequence[dict[str, Any]]) -> list[SearchEntry]:
 
 
 def memory_entries(memory: dict[str, Any]) -> list[SearchEntry]:
-    """覚えた場所（GET /memory）を検索の一覧にする。キーは「種類@x,y,z」。"""
+    """
+    覚えた場所（GET /memory）を検索の一覧にする。場所は種類ごとに 1 件（キーは種類の名前、
+    中身は近い順の座標）、チェストとかまどは 1 つずつ（キーは「chest@x,y,z」）、死んだ場所は
+    まとめて 1 件。
+    """
     out = []
 
     def at(p: dict[str, Any]) -> str:
         return f"{p.get('x')},{p.get('y')},{p.get('z')}"
 
     for p in memory.get("places", []):
-        gives = f"; gives {', '.join(p['gives'])}" if p.get("gives") else ""
-        seen = f"seen {p.get('minutes_ago')} min ago"
-        summary = f"{p.get('kind')} x{p.get('count')}{gives}; {_where(p)}, {seen}"
-        out.append(SearchEntry(f"{p.get('kind')}@{at(p)}", summary, _json(p)))
+        nearest = p.get("nearest") or [{}]
+        gives = ""
+        if p.get("gives"):
+            gives_ja = p.get("gives_ja") or [""] * len(p["gives"])
+            gives = "; gives " + ", ".join(_named(g, j) for g, j in zip(p["gives"], gives_ja))
+        summary = (
+            f"{_named(str(p.get('kind')), str(p.get('ja') or ''))}{gives}; "
+            f"{p.get('places_known', len(nearest))} places, the nearest {_where(nearest[0])}, "
+            f"seen {nearest[0].get('minutes_ago')} min ago"
+        )
+        out.append(SearchEntry(str(p.get("kind")), summary, _json(p)))
     for c in memory.get("chests", []):
-        summary = f"chest with {_items(c.get('contents')) or 'nothing'}; {_where(c)}"
+        summary = f"chest（チェスト） with {_items(c.get('contents')) or 'nothing'}; {_where(c)}"
         out.append(SearchEntry(f"chest@{at(c)}", summary, _json(c)))
     for f in memory.get("furnaces", []):
-        summary = f"furnace making {_items(f.get('making'))}; {_where(f)}"
+        summary = f"furnace（かまど） making {_items(f.get('making'))}; {_where(f)}"
         out.append(SearchEntry(f"furnace@{at(f)}", summary, _json(f)))
-    for d in memory.get("deaths", []):
-        summary = (
-            f"where I died (items may be dropped); {_where(d)}, {d.get('minutes_ago')} min ago"
-        )
-        out.append(SearchEntry(f"death@{at(d)}", summary, _json(d)))
+    deaths = memory.get("deaths", [])
+    if deaths:
+        summary = f"deaths（死んだ場所）: items may be dropped there; {len(deaths)} places"
+        out.append(SearchEntry("deaths", summary, _json(deaths)))
+    return out
+
+
+def item_entries(items: Sequence[dict[str, Any]]) -> list[SearchEntry]:
+    """アイテムの一覧（GET /items）を検索の一覧にする。中身は選んでからブリッジに聞く。"""
+    return [
+        SearchEntry(str(i.get("name")), str(i.get("ja") or ""), "") for i in items if i.get("name")
+    ]
+
+
+def ability_entries(abilities: Sequence[dict[str, Any]]) -> list[SearchEntry]:
+    """
+    やり方の帳（abilities.yaml の項目 {key, title, words, when, how, see}）を検索の一覧にする。
+    """
+    out = []
+    for a in abilities:
+        summary = f"{a.get('title', '')} ({a.get('words', '')}); when: {a.get('when', '')}"
+        detail = {
+            "key": a.get("key"),
+            "title": a.get("title"),
+            "when": a.get("when"),
+            "how": a.get("how"),
+            **({"see": a["see"]} if a.get("see") else {}),
+        }
+        out.append(SearchEntry(str(a.get("key")), summary, _json(detail)))
     return out
 
 
 class WorldSearch:
     """
-    検索の道具（search_facility、search_memory）を実行する。一覧はブリッジから読み、どれが
-    検索語に合うかは KeySearch（Jev）が選ぶ（docs/design/47 §4）。
+    検索の道具（search_facility、search_memory、item_info、search_abilities）を実行する。一覧は
+    ブリッジ（やり方の帳は渡されたもの）から読み、どれが検索語に合うかは KeySearch（Jev）が選ぶ
+    （docs/design/47 §4）。
     """
 
-    def __init__(self, bridge: IMinecraftBridge, search: KeySearch) -> None:
+    def __init__(
+        self,
+        bridge: IMinecraftBridge,
+        search: KeySearch,
+        abilities: Sequence[dict[str, Any]] = (),
+    ) -> None:
         """
         Args:
             bridge: 一覧を読むブリッジ
             search: 一覧から選ぶもの
+            abilities: やり方の帳の項目
         """
         self._bridge = bridge
         self._search = search
+        self._abilities = ability_entries(abilities)
+        self._items: list[SearchEntry] = []  # アイテムの一覧は変わらない: 1 回だけ読む
 
     async def run(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
         """(ok, 結果の文)。一覧を読めないときは ok が偽（空の一覧は偽ではない: まだないと返す）。"""
         query = str(args.get("query") or "").strip()
         if not query:
             return False, "invalid call: query is empty"
+        describe = None
         try:
             if tool == SEARCH_FACILITY:
                 entries, what = facility_entries(await self._bridge.facilities()), "facility"
             elif tool == SEARCH_MEMORY:
                 entries, what = memory_entries(await self._bridge.memory()), "remembered place"
+            elif tool == ITEM_INFO:
+                if not self._items:
+                    self._items = item_entries(await self._bridge.items())
+                entries, what, describe = self._items, "item", self._item_info
+            elif tool == SEARCH_ABILITIES:
+                entries, what = self._abilities, "ability"
             else:
                 return False, f"invalid call: unknown search {tool!r}"
+            result = await self._search.find(tool, query, entries, what, describe)
         except GameBridgeError as e:
             return False, f"could not read the list: {e}"
-        result = await self._search.find(tool, query, entries, what)
         return True, result.text
+
+    async def _item_info(self, entry: SearchEntry) -> str:
+        return _json(await self._bridge.item_info(entry.key))

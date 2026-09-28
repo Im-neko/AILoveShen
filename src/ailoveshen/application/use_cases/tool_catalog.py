@@ -26,7 +26,9 @@ from ailoveshen.domain.value_objects import (
 LOOK_SCREEN = "look_screen"
 SEARCH_FACILITY = "search_facility"
 SEARCH_MEMORY = "search_memory"
-SEARCH_TOOLS = (SEARCH_FACILITY, SEARCH_MEMORY)
+ITEM_INFO = "item_info"
+SEARCH_ABILITIES = "search_abilities"
+SEARCH_TOOLS = (SEARCH_FACILITY, SEARCH_MEMORY, ITEM_INFO, SEARCH_ABILITIES)
 RUN_SKILL = "run_skill"
 WRITE_SKILL = "write_skill"
 SKILL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
@@ -248,6 +250,15 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"query": _str("探す語（英語のアイテム名の一部）"), "limit": _int("件数（既定 8）")},
         ["query"],
     ),
+    "uses_of": (
+        "その素材を使うレシピ（逆引き。すぐ返る）。have: true なら今の持ち物だけで作れる物。"
+        "手に入れた物で何が作れるか、何に使うかを知りたいときに使う（名前は item_info で確かめる）",
+        {
+            "item": _str("素材のアイテム名（英語の正確な名前）"),
+            "have": {"type": "boolean", "description": "今の持ち物で作れる物だけ"},
+        },
+        ["item"],
+    ),
     "how_to_get": (
         "ソルバーに、手に入れるまでに何が足りないかを聞く（すぐ返る。参考）",
         {"item": _str("アイテムかグループ（log、planks、food など）"), "count": _int("個数")},
@@ -265,6 +276,19 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         "覚えている場所（前に見た鉱石、木、動物、作物、チェストの中身、かまど、死んだ場所）を"
         "探す。座標と、何分前に見たかが返る（すぐ返る）。遠くへ探しに行く前に使う",
         {"query": _str("探すもの（日本語か英語。例: iron_ore、鉄、羊、小麦が入ったチェスト）")},
+        ["query"],
+    ),
+    ITEM_INFO: (
+        "アイテムかブロックを調べる: 取り方（作る・焼く・掘るブロックと要る道具・落とすモブ・"
+        "育てる）、置けるか、食べられるか、何に使うか（すぐ返る）。名前が分からない物、取り方を"
+        "知らない物を探しに行く前に使う",
+        {"query": _str("調べる物（英語の名前か日本語。例: iron_ingot、鉄、羊毛、パン）")},
+        ["query"],
+    ),
+    SEARCH_ABILITIES: (
+        "自分にできること（やり方の帳）を探す: どの道具・目標で、どんな手順で、何に気をつけるか"
+        "（すぐ返る）。やり方が分からないとき、初めてのことをする前に使う",
+        {"query": _str("したいこと（日本語か英語。例: 畑を作る、水を渡る、肉を焼く、夜を越す）")},
         ["query"],
     ),
     # 画面を撮れるときだけ出す（docs/design/23）

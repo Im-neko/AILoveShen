@@ -174,18 +174,24 @@ export function frontierDistance (memory, from, dx, dz, max = FRONTIER_MAX) {
 }
 
 // 判断する側が見るもの: 種類ごとの一番近い場所と、ボットが死んだ場所
-// GET /memory（設計書 47 §4 search_memory）: 覚えている場所を座標つきで。種類ごとに近い順 MEMORY_PER_KIND 件、
-// チェスト（中身）、焼いている途中のかまど、死んだ場所。dropsOf(kind) はそのブロックから取れる物
+// GET /memory（設計書 47 §4 search_memory）: 覚えている場所を座標つきで。場所は種類ごとに 1 件（近い順
+// MEMORY_PER_KIND か所。検索の一覧を種類の数に抑える）、チェスト（中身）、焼いている途中のかまど、
+// 死んだ場所。dropsOf(kind) はそのブロックから取れる物、jaOf(name) は日本語名（日本語の検索語で引く）
 export const MEMORY_PER_KIND = 5
-export function memoryList (memory, me, now, bearing, dropsOf = () => []) {
+export function memoryList (memory, me, now, bearing, dropsOf = () => [], jaOf = () => '') {
   const where = (p) => ({ x: p.x, y: p.y, z: p.z, distance_m: Math.round(flatDistance(p, me)), direction: bearing(me, p), minutes_ago: Math.round((now - p.seen) / TICKS_PER_MINUTE) })
   const places = Object.entries(memory.places).flatMap(([kind, list]) => {
+    const fresh = list.filter((p) => !stale(kind, p, now)).sort((a, b) => flatDistance(a, me) - flatDistance(b, me))
+    if (!fresh.length) return []
     const gives = dropsOf(kind)
-    return list.filter((p) => !stale(kind, p, now))
-      .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))
-      .slice(0, MEMORY_PER_KIND)
-      .map((p) => ({ kind, count: p.count, ...where(p), ...(gives.length ? { gives } : {}) }))
-  })
+    return [{
+      kind,
+      ja: jaOf(kind),
+      ...(gives.length ? { gives, gives_ja: gives.map(jaOf) } : {}),
+      places_known: fresh.length,
+      nearest: fresh.slice(0, MEMORY_PER_KIND).map((p) => ({ count: p.count, ...where(p) }))
+    }]
+  }).sort((a, b) => a.nearest[0].distance_m - b.nearest[0].distance_m)
   return {
     places,
     chests: chests(memory).map((c) => ({ ...where(c), contents: c.contents })),

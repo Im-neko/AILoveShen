@@ -8,7 +8,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
-from typing import Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 from loguru import logger
 
@@ -284,6 +284,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         stuck_check: Optional[StuckCheck] = None,
         lessons: Optional[LessonBook] = None,
         search: Optional[KeySearch] = None,
+        abilities: Sequence[dict[str, Any]] = (),
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -364,8 +365,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._last_ended = ""  # 前の小目標の終わり方（stuck / stalled / died / met / other）
         self._undesignable: dict[str, float] = {}  # 設計できなかった建物 → また試してよい時刻
         self._skill_failures: dict[str, str] = {}  # 技の名前 -> 最後の失敗（直すときに見せる）
-        # 検索の道具（docs/design/47 §4）。Jev がなければ語の重なりの上位を返す
-        self._search = WorldSearch(bridge, search or KeySearch(None))
+        # 検索の道具（docs/design/47 §4）。Jev がなければ語の重なりの上位を返す。abilities はやり方の帳
+        self._search = WorldSearch(bridge, search or KeySearch(None), abilities)
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""

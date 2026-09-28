@@ -154,7 +154,17 @@ class IMinecraftBridge(ABC):
 
     @abstractmethod
     async def memory(self) -> dict[str, Any]:
-        """覚えている場所を座標つきで: {places, chests, furnaces, deaths}（docs/design/47 §4）。"""
+        """覚えている場所を座標つきで: {places（種類ごと）, chests, furnaces, deaths}（docs/design/47 §4）。"""
+        ...
+
+    @abstractmethod
+    async def items(self) -> list[dict[str, Any]]:
+        """アイテムとブロックの名前と日本語名 [{name, ja}]（item_info の一覧。docs/design/47 §4）。"""
+        ...
+
+    @abstractmethod
+    async def item_info(self, name: str) -> dict[str, Any]:
+        """アイテムの取り方（作る・焼く・掘る・モブ・育てる）、置けるか、食べられるか、何に使うか。"""
         ...
 
     @abstractmethod

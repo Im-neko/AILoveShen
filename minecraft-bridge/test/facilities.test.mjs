@@ -51,7 +51,7 @@ test('今ある家・耕地・植えた苗木を施設として取り込む（�
   assert.equal(adoptExisting(bot, state), false) // 2 回目は変わらない
 
   const list = Object.fromEntries(facilitiesStatus(bot, state).map((f) => [f.name, f]))
-  assert.deepEqual(list.home_farm.contents, { crops: { wheat: { planted: 2, ripe: 1 } } })
+  assert.deepEqual(list.home_farm.contents, { crops: { wheat: { planted: 2, ripe: 1, ja: '' } } })
   assert.equal(list.home.entrance.z, 4)
   const trees = [list.tree_farm_1, list.tree_farm_2].find((t) => t.box.min.x <= 0)
   assert.deepEqual(trees.contents, { saplings: 1, trees: 1, empty: 0 })
@@ -64,12 +64,17 @@ test('植えた苗木のかたまり: 8 マス以内でつながるものは 1 �
   assert.equal(plantingGroups([{ x: 0, z: 0 }, { x: 30, z: 0 }]).length, 2)
 })
 
-test('覚えている場所を座標つきで、種類ごとに近い順、取れる物つきで返す', () => {
+test('覚えている場所を種類ごとに 1 件、座標は近い順、取れる物と日本語名つきで返す', () => {
   const memory = newMemory()
   memory.places.wheat = [{ x: 100, y: 64, z: 0, count: 8, seen: 0 }, { x: 10, y: 64, z: 0, count: 3, seen: 1200 }]
   memory.deaths.push({ x: 0, y: 64, z: 300, seen: 0 })
-  const out = memoryList(memory, v(0, 64, 0), 2400, bearing, (k) => (k === 'wheat' ? ['wheat', 'wheat_seeds'] : []))
-  assert.deepEqual(out.places.map((p) => [p.x, p.distance_m, p.minutes_ago]), [[10, 10, 1], [100, 100, 2]])
-  assert.deepEqual(out.places[0].gives, ['wheat', 'wheat_seeds'])
+  const ja = { wheat: '小麦', wheat_seeds: '小麦の種' }
+  const out = memoryList(memory, v(0, 64, 0), 2400, bearing, (k) => (k === 'wheat' ? ['wheat', 'wheat_seeds'] : []), (n) => ja[n] ?? '')
+  assert.equal(out.places.length, 1)
+  const [wheat] = out.places
+  assert.equal(wheat.ja, '小麦')
+  assert.equal(wheat.places_known, 2)
+  assert.deepEqual(wheat.nearest.map((p) => [p.x, p.distance_m, p.minutes_ago]), [[10, 10, 1], [100, 100, 2]])
+  assert.deepEqual(wheat.gives_ja, ['小麦', '小麦の種'])
   assert.equal(out.deaths[0].direction, 'S')
 })

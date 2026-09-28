@@ -16,6 +16,7 @@ import { homeChests, chestWith } from './memory.mjs'
 import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
+import { usesOf } from './items.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { levelTarget, levelStatus, fillItem, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
@@ -44,7 +45,7 @@ const MAX_HOLD_S = 3
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
   'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait',
   'use_item', 'ride_boat', 'level']
-export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get']
+export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of']
 
 class Refused extends Error {}
 const refuse = (why) => { throw new Refused(why) }
@@ -356,6 +357,15 @@ export function createTools (deps) {
       if (!knowledge.index) refuse('the recipe list is not loaded')
       const found = knowledge.index.search(String(args.query ?? ''), Math.max(1, Math.min(20, Number(args.limit ?? 8))))
       return found.length ? found : `no recipe matches "${args.query}"`
+    },
+    // その素材を使うレシピ（逆引き。設計書 47 §4）。have なら今の持ち物だけで作れるもの
+    uses_of (args) {
+      if (!knowledge.index) refuse('the recipe list is not loaded')
+      const item = String(args.item ?? '')
+      if (!knowledge.md.itemsByName[item]) refuse(`unknown item ${item} (check the name with item_info)`)
+      const { total, recipes } = usesOf(knowledge.index, item, inventoryCounts(bot), Boolean(args.have))
+      if (!recipes.length) return args.have ? `nothing can be made now with ${item} and what you carry (${total} recipes use it)` : `no recipe uses ${item}`
+      return { total, shown: recipes.length, recipes }
     },
     how_to_get (args) {
       const count = Math.max(1, Math.floor(Number(args.count ?? 1)))

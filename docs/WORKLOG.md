@@ -7,6 +7,23 @@
 
 ## Completed Work
 
+### 検索の道具を増やす: item_info、uses_of、search_abilities（設計書 47 段階 2） (2026-09-28)
+
+**Commit**: (次のコミット)
+
+ユーザー:「レシピ等も含め検索ツールを充実させていく方向」「できることを検索可能にして動的に教える」。設計書 47 §12 に実装で分かったこと。
+- 段階 1 の穴を先に直した: 一覧の説明が英語なので日本語の検索語（鉄、小麦の畑）が語の重なりで当たらず、覚えた場所は 16 件を超えて正解が切り捨てられ、関係ない候補の座標を返していた
+  - ゲームの `ja_jp.json`（misode/mcmeta `1.21.4-assets`）から日本語名: `tools/fetch-recipes.mjs` → `data-static/names-ja-1.21.4.json`（アイテム 1552、モブ 154）
+  - ブリッジ: `/memory` は種類ごとに 1 件（近い 5 か所、`ja`、`gives_ja`）、`/facilities` の作物に `ja`
+  - `search.py`: 漢字 1 文字も語に、完全一致は Jev に聞かない、語が重ならない候補は名前だけ、長い一覧で重ならなければ「切り捨てた、英語で検索し直して」
+- ブリッジ `items.mjs`（新規）: `GET /items`（名前と日本語名）、`GET /items/<name>`（作る・焼く・掘るブロックと要る道具・落とすモブ（まれなもの）・畑・植える、置けるか、食べ物、使うレシピの数）、道具 `uses_of {item, have?}`（逆引き、作れる物が先、20 件）
+- Python: 道具 `item_info {query}`（一覧は 1 回だけ読む）、`search_abilities {query}`。やり方の帳 `infrastructure/adapters/prompts/abilities.yaml`（22 項目。`data/` は git から外れているのでここ）+ `abilities.py`（読み込み）。道具のプロンプトの決まりを検索の道具の使い分けに
+- CLAUDE.md: 機能を足したら帳にも足す決まり。帳の道具と `see` を確かめるテスト
+- 本物の Jev で確かめた（§12）: パン→bread、かまど→furnace、水を渡りたい→cross_water など 16 件中 14 件が正解か完全一致
+- テスト: Python 831（`test_search.py` 17 件）、ブリッジ 242（`items.test.mjs` 3 件）
+- 要 ブリッジと Python の再起動
+- 落ちているのは `TestPromptLength::test_goal_system_length`（8024 > 8000）だけ。ユーザーの未コミットの目標のシステム指示の書き換えによるもので、どこを削るかはユーザーが決める
+
 ### 施設の登録と検索の道具（設計書 47 段階 1） (2026-09-28)
 
 **Commit**: `44aa0aa`

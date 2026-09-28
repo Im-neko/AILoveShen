@@ -1,0 +1,245 @@
+# やり方の帳（docs/design/47 §4.1）: 道具 search_abilities で引く。プレイする LLM（Qwen3.6、考えない）は
+# Minecraft の知識が少ないので、できることを検索で教える。機能を足したらここにも足す（CLAUDE.md）。
+#
+# 1 項目: key（英小文字と _）、title（日本語）、words（英語の検索語）、when（どんなときに）、
+# how（手順。道具の名前と引数で書く）、tools（how で使う道具。tests/unit/infrastructure/test_abilities.py が
+# 道具の一覧にあるかを確かめる）、see（関連する項目の key）
+- key: make_farm
+  title: 畑を作る・広げる
+  words: farm field crops farmland till sow hoe wheat carrot potato beetroot
+  when: 食べ物（パン、ニンジン、ジャガイモ）を毎日取れるようにしたいとき、中目標が farmed のとき
+  how: |
+    1. クワを持つ（なければ craft で wooden_hoe など。材料は recipe_of）
+    2. till {x,y,z} で土か草のブロックを耕す（上が空いていること）。水から 4 マス以内だと早く育つ。畑は 1 か所にまとめる
+    3. sow {item, x,y,z} で耕地に種をまく（wheat_seeds / carrot / potato / beetroot_seeds）
+    x,y,z を省くと、家から 6〜24m の空いた所を選ぶ。家とまわり、建物の上は断られる
+    今の畑の場所と作物は search_facility（例: 畑、wheat farm）
+  tools: [till, sow, craft, recipe_of, search_facility]
+  see: [get_seeds, harvest_crops]
+
+- key: harvest_crops
+  title: 作物を収穫する
+  words: harvest crops ripe wheat carrots potatoes beetroots bread
+  when: 畑の作物が熟したとき、小麦・ニンジン・ジャガイモが要るとき
+  how: |
+    1. search_facility で畑の場所と熟した数（ripe）を調べる。find_blocks {block: wheat} は ripe と age を返す
+    2. 熟した作物を dig {x,y,z} する。5m 以内の熟した作物もまとめて収穫し、拾った種でまき直す
+    未熟な作物の dig は断られる。作物はプレイヤーの近くでしか育たない（遠くへ行くと止まる）
+    骨粉を持っていれば use_item {item: bone_meal, x,y,z} で早く育つ
+    小麦 3 つでパン（craft {item: bread}）
+  tools: [search_facility, find_blocks, dig, use_item, craft]
+  see: [make_farm]
+
+- key: get_seeds
+  title: 種を集める
+  words: seeds wheat_seeds grass short_grass tall_grass
+  when: 畑にまく種がないとき
+  how: |
+    草（short_grass / tall_grass / fern）を dig {x,y,z} すると、ときどき（1 割ほど）wheat_seeds が落ちる
+    1 回の dig で、何か落ちるまで 5m 以内の同じ草を続けて掘る。何も落ちなくても失敗ではない
+    熟した小麦を収穫しても種が取れる。ニンジンとジャガイモは村の畑か、ゾンビがまれに落とす
+  tools: [dig]
+  see: [make_farm]
+
+- key: plant_trees
+  title: 苗木を植える・植林場を作る
+  words: plant trees sapling tree farm forest logs wood
+  when: 近くに木がない、原木を毎回遠くへ取りに行っているとき、中目標が planted のとき
+  how: |
+    1. 苗木は葉（*_leaves）を dig するとときどき（5%）落ちる。原木を取るときに葉も掘る
+    2. plant {item, x,y,z} で土か草の上の空いたセルに植える（省くと家から 6〜24m を選ぶ）。上に空きが要る
+    家とまわり 1 マス、建物の上には植えない。植えた木は search_facility（例: 植林場、tree farm）で見られる
+  tools: [dig, plant, search_facility]
+  see: [gather_wood]
+
+- key: gather_wood
+  title: 原木を集める
+  words: wood logs tree oak birch spruce planks sticks
+  when: 板材・棒・作業台・道具の材料が要るとき
+  how: |
+    1. 「目の前のブロック」に *_log があればその座標を dig。なければ find_blocks {block: oak_log}
+    2. 見えなければ search_memory（例: oak_log、木）で前に見た森、search_facility で植林場
+    原木 1 つで板材 4 枚、板材 2 枚で棒 4 本（craft）
+  tools: [find_blocks, dig, search_memory, search_facility, craft]
+  see: [plant_trees]
+
+- key: mine_ores
+  title: 石と鉱石を掘る
+  words: mine mining stone cobblestone ore iron coal diamond gold pickaxe cave
+  when: 丸石、石炭、鉄、ダイヤが要るとき
+  how: |
+    ツルハシが要る: 木のツルハシで石・石炭、石のツルハシで鉄、鉄のツルハシでダイヤ・金・レッドストーン
+    （item_info {query: raw_iron} で要る道具と、どのブロックから取れるかが分かる）
+    1. 目の前や find_blocks で見える鉱石を dig
+    2. search_memory（例: iron_ore、鉄）で前に見た鉱石へ goto
+    3. 地下の鉱石はソルバーの提案（do_suggestion の dig down …）で階段を掘って下りる
+    鉄鉱石は raw_iron になり、かまどで iron_ingot に焼く
+  tools: [dig, find_blocks, search_memory, goto, do_suggestion, item_info]
+  see: [smelt, upgrade_tools]
+
+- key: smelt
+  title: かまどで焼く・精錬する
+  words: smelt furnace cook ingot iron glass charcoal stone fuel
+  when: 鉄のインゴット、焼いた肉、木炭、ガラス、石が要るとき
+  how: |
+    1. かまどがなければ丸石 8 個で craft {item: furnace} して place で置く（家の中でも外でもよい）
+    2. smelt {input, count} で近くのかまどで焼く。燃料は持ち物から選ぶ（石炭・木炭は 8 個、板材・原木は 1.5 個焼ける）
+    例: raw_iron → iron_ingot、beef → cooked_beef、oak_log → charcoal、sand → glass、cobblestone → stone
+    焼いている途中のかまどは search_memory（例: furnace）で見られる
+  tools: [craft, place, smelt, search_memory]
+  see: [cook_food]
+
+- key: cook_food
+  title: 肉を焼く・食べる
+  words: food eat cook meat beef porkchop chicken mutton hunger bread
+  when: おなかが減ったとき、食べ物を蓄えたいとき
+  how: |
+    eat {item} で食べる。焼いた物を先に食べる。生肉は飢えているとき（満腹度 6 以下）だけ
+    生肉は smelt {input: beef, count} で焼く（かまどが要る）。小麦 3 つでパン（craft {item: bread}）
+    食べ物は動物を狩る、畑で育てる、チェストから withdraw
+  tools: [eat, smelt, craft, withdraw]
+  see: [hunt, smelt, harvest_crops]
+
+- key: hunt
+  title: 動物を狩る・増やす・毛を刈る
+  words: hunt animals cow pig sheep chicken meat wool leather breed shears
+  when: 肉・羊毛・革が要るとき
+  how: |
+    attack {entity}（近くのモブの id）で倒す。牛（肉と革）、豚、羊（肉と羊毛）、鶏（肉と羽根）
+    羊毛だけ欲しいときはハサミ（鉄のインゴット 2 つ）で use_item {item: shears, entity} すると羊が残る
+    増やす: 同じ種類の 2 匹に use_item で餌をやる（牛・羊は wheat、豚は carrot、鶏は wheat_seeds）
+    前に見た動物の場所は search_memory（例: sheep、羊）
+  tools: [attack, use_item, search_memory]
+  see: [cook_food]
+
+- key: survive_night
+  title: 夜を越す
+  words: night sleep bed dark monsters zombie skeleton shelter
+  when: 夕方・夜になったとき
+  how: |
+    家があれば go_home で入ってドアを閉め、sleep で家のベッドで寝る（夜だけ）
+    家から遠いときは、ベッドを持っていれば置いて寝る（小目標 through_night の提案 do_suggestion）か、地下にいる
+    夜に家の中にいると、外に出る道具は断られる。家の中なら敵は来ない
+  tools: [go_home, sleep, do_suggestion]
+  see: [fight]
+
+- key: fight
+  title: 敵と戦う・逃げる
+  words: fight attack flee monster zombie skeleton creeper spider sword
+  when: 敵が近くにいるとき
+  how: |
+    剣か斧を equip してから attack {entity}。体力が少ない・武器がないときは flee {entity}
+    クリーパーは近づくと爆発する: 離れるか、離れた所から戦う
+    近くの敵には反射（自動の戦う・逃げる）が先に動く
+  tools: [equip, attack, flee]
+  see: [survive_night, upgrade_tools]
+
+- key: cross_water
+  title: ボートで水を渡る
+  words: boat water river lake ocean cross sail row
+  when: 長い水（川、湖、海）の向こうへ行くとき
+  how: |
+    ボートは同じ木の板材 5 枚で craft（作業台が要る。例: oak_boat）
+    goto など遠くへ行く道具は、途中に長い水があれば、ボートを持っていれば自分で乗って渡る
+    ride_boat {x, z} で水の上を進む（水際で置いて乗り、岸で降りて拾う）
+  tools: [craft, goto, ride_boat]
+
+- key: store_items
+  title: チェストにしまう・出す
+  words: chest store deposit withdraw storage inventory full
+  when: 持ち物がいっぱいのとき、集めた物を蓄えるとき、しまった物が要るとき
+  how: |
+    deposit {item, count} で家のチェストに入れる（チェストがなければ板材 8 枚で craft して家の中に place）
+    withdraw {item, count} で入っているチェストから出す
+    どのチェストに何があるかは search_memory（例: チェスト、wheat が入ったチェスト）
+  tools: [deposit, withdraw, craft, place, search_memory]
+
+- key: place_things
+  title: 物を置く（松明、家具、ブロック）
+  words: place put torch lantern furniture block wall floor
+  when: 松明や家具を置く、足場や壁を作る、穴をふさぐとき
+  how: |
+    place {item, x,y,z, on?} で持っているブロックを空いたセルに置く（隣に面を借りるブロックが要る）
+    松明・看板は on: wall で壁に。家の部屋の中にも何でも置ける（ドアのすぐ内側とベッドの場所は空ける）
+    置いてある家具（ベッド・作業台・かまど・チェスト）は move_furniture で動かす
+  tools: [place, move_furniture]
+  see: [light_up]
+
+- key: light_up
+  title: 明るくする・湧き潰し
+  words: light torch dark spawn mobs lit lighting
+  when: 家のまわりに敵が湧くとき、暗い所をなくしたいとき
+  how: |
+    松明は石炭（か木炭）1 つと棒 1 本で 4 本（craft {item: torch}）
+    place {item: torch, x,y,z} で暗い地面に置く。完了条件 lit(distance) はブリッジが暗い所を数える
+  tools: [craft, place]
+  see: [place_things]
+
+- key: level_ground
+  title: 整地する
+  words: level flatten ground terrain dig fill
+  when: 建物や畑の場所の地面をそろえたいとき
+  how: |
+    level {where, radius} で where（home か x,y,z）のまわりを 1 つの高さにそろえる
+    出っ張った土や石を掘り、穴を土で埋める。家・建物・木・畑・水・置いた物は触らない
+  tools: [level]
+
+- key: build
+  title: 建物を建てる
+  words: build house building construct shed tower wall blueprint
+  when: 家や名前付きの建物（倉庫、塔、壁）を建てるとき
+  how: |
+    build_next {name} で設計図の次のブロックを 1 つ置く（name を省くと今の目標の建物か家）
+    材料（板材、原木、丸石、土）を先に集めておく。建てている建物の場所は search_facility
+  tools: [build_next, search_facility]
+
+- key: craft
+  title: クラフトする
+  words: craft make recipe crafting table tools items
+  when: 道具・家具・材料を作るとき
+  how: |
+    craft {item, times} で作る。作業台が要るレシピは 32m 以内の作業台まで歩く（遠ければ板材 4 枚で作業台を作って置くほうが早い）
+    材料は recipe_of {item}、名前が分からなければ item_info {query}、手持ちで作れる物は uses_of {item, have: true}
+  tools: [craft, recipe_of, item_info, uses_of]
+  see: [upgrade_tools]
+
+- key: upgrade_tools
+  title: 道具を作り直す・良い道具にする
+  words: tools pickaxe axe shovel sword hoe upgrade broken durability stone iron diamond
+  when: 道具が壊れたとき、もっと硬い物を掘りたいとき
+  how: |
+    格は木 → 石 → 鉄 → ダイヤ。材料は板材 / 丸石 / 鉄のインゴット / ダイヤ と棒
+    例: stone_pickaxe は丸石 3 と棒 2（作業台）。壊れた道具は「壊れた道具」に出る
+    craft {item} で作る。何が要るかは recipe_of {item}
+  tools: [craft, recipe_of]
+  see: [mine_ores, craft]
+
+- key: find_things
+  title: 物や場所を探す
+  words: find search look where explore gather locate
+  when: 要る物が手元にないとき
+  how: |
+    1. 「目の前のブロック」「目の前に落ちている物」を見る（pickup で拾う）
+    2. find_blocks {block} で近く（最大 64m）を探す
+    3. search_memory {query} で前に見た場所、search_facility {query} で自分の施設
+    4. item_info {query} でどこで取れるか（どのブロック・モブ・レシピ）を調べる
+    5. それでもなければ、ソルバーの提案の探索（do_suggestion の explore …）で遠くへ
+  tools: [pickup, find_blocks, search_memory, search_facility, item_info, do_suggestion]
+
+- key: use_items
+  title: アイテムを使う（右クリック）
+  words: use item bucket water bone_meal shears lead strip fishing
+  when: バケツで水を汲む・注ぐ、骨粉で育てる、ハサミで毛を刈る、斧で皮をはぐ、釣りをするとき
+  how: |
+    use_item {item, entity?} でそのモブに（餌、ハサミ、リード）、use_item {item, x,y,z} でそのブロックに（骨粉、バケツ、斧）
+    どちらもなければ向いている方へ（雪玉、釣り竿）。食べ物は eat、ボートは ride_boat、チェストは deposit / withdraw
+  tools: [use_item, eat, ride_boat, deposit, withdraw]
+
+- key: skills
+  title: 技を使う・覚える
+  words: skill script routine repeat automate
+  when: 同じ道具の並びを何度も呼んでいるとき
+  how: |
+    run_skill {name} で覚えた技を実行する（合う技があれば道具を 1 つずつ呼ぶより先に）
+    write_skill {name, what} で新しい技を書く（すぐ 1 回試す）。失敗したら理由を読んで同じ名前で直す
+  tools: [run_skill, write_skill]

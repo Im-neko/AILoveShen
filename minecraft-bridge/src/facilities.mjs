@@ -73,7 +73,7 @@ export function adoptExisting (bot, state) {
 }
 
 // 施設の中身（今見えている分。見えていなければ null）
-function contents (bot, state, fac) {
+function contents (bot, state, fac, jaOf) {
   const loaded = bot.blockAt(center(fac.box))
   if (!loaded) return null
   if (fac.kind === 'farm') {
@@ -84,7 +84,7 @@ function contents (bot, state, fac) {
           const b = bot.blockAt(new Vec3(x, y, z))
           const crop = cropByBlock(b?.name)
           if (!crop || bot.blockAt(new Vec3(x, y - 1, z))?.name !== 'farmland') continue
-          crops[crop] ??= { planted: 0, ripe: 0 }
+          crops[crop] ??= { planted: 0, ripe: 0, ja: jaOf(crop) }
           crops[crop].planted++
           if (isRipe(b)) crops[crop].ripe++
         }
@@ -111,13 +111,13 @@ function contents (bot, state, fac) {
   return null
 }
 
-// GET /facilities: 一覧（近い順）と今の中身
-export function facilitiesStatus (bot, state) {
+// GET /facilities: 一覧（近い順）と今の中身。jaOf(name) は作物の日本語名（日本語の検索語で引く）
+export function facilitiesStatus (bot, state, jaOf = () => '') {
   const me = bot.entity.position
   return Object.values(state.facilities ?? {})
     .map((fac) => {
       const c = center(fac.box)
-      const inside = fac.kind === 'build' ? contents(bot, state, fac) : null
+      const inside = fac.kind === 'build' ? contents(bot, state, fac, jaOf) : null
       const status = fac.kind === 'build' && inside?.complete ? 'done' : fac.status
       return {
         name: fac.name,
@@ -130,7 +130,7 @@ export function facilitiesStatus (bot, state) {
         center: { x: Math.round(c.x), y: c.y, z: Math.round(c.z) },
         distance_m: round(Math.hypot(c.x - me.x, c.z - me.z)),
         direction: bearing(me, c),
-        contents: inside ?? contents(bot, state, fac)
+        contents: inside ?? contents(bot, state, fac, jaOf)
       }
     })
     .sort((a, b) => a.distance_m - b.distance_m)

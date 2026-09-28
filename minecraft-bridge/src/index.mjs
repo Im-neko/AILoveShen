@@ -19,7 +19,9 @@
 //   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
 //   GET  /facilities       -> 施設（設計書 47 §5）: [{ name, kind, status, box, entrance?, center, distance_m, direction, contents }]
 //                             （今ある家・建物・畑・植えた苗木を先に取り込む）
-//   GET  /memory           -> 覚えている場所を座標つきで: { places, chests, furnaces, deaths }（search_memory）
+//   GET  /memory           -> 覚えている場所を座標つきで: { places（種類ごと）, chests, furnaces, deaths }（search_memory）
+//   GET  /items            -> アイテムとブロックの名前と日本語名 [{ name, ja }]（item_info の一覧）
+//   GET  /items/<name>     -> 取り方（作る・焼く・掘る・モブ・育てる）、置けるか、食べられるか、何に使うか（item_info）
 //   PUT  /conditions/<name> {description, code} -> Gemini が書いた判定を確かめて登録する（設計書 42）:
 //                             { name, met, remaining, lines }。形が違う・動かない・もう成り立っていれば 400 と理由
 //   GET  /conditions       -> [{ name, description }]
@@ -56,6 +58,7 @@ import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { adoptExisting, facilitiesStatus } from './facilities.mjs'
+import { loadNames, itemList, itemInfo } from './items.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
 import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
@@ -117,6 +120,8 @@ loadState(state)
 const recipeIndex = RecipeIndex.load(VERSION)
 useRecipes(recipeIndex)
 const knowledge = new Knowledge(minecraftData(VERSION), recipeIndex)
+const names = loadNames(VERSION)
+const jaOf = (name) => names.items[name] ?? ''
 
 const worldAge = () => Number(bot.time.age)
 
@@ -436,10 +441,17 @@ async function handle (req, res) {
   }
   if (req.method === 'GET' && req.url === '/facilities') {
     if (adoptExisting(bot, state)) saveState(state)
-    return send(res, 200, facilitiesStatus(bot, state))
+    return send(res, 200, facilitiesStatus(bot, state, jaOf))
   }
   if (req.method === 'GET' && req.url === '/memory') {
-    return send(res, 200, memoryList(state.memory, bot.entity.position, worldAge(), bearing, (k) => knowledge.dropsOf(k)))
+    return send(res, 200, memoryList(state.memory, bot.entity.position, worldAge(), bearing, (k) => knowledge.dropsOf(k), jaOf))
+  }
+  if (req.method === 'GET' && req.url === '/items') {
+    return send(res, 200, itemList(knowledge.md, names))
+  }
+  if (req.method === 'GET' && req.url.startsWith('/items/')) {
+    const info = itemInfo(decodeURIComponent(req.url.slice('/items/'.length)), { md: knowledge.md, knowledge, index: recipeIndex, names })
+    return send(res, info ? 200 : 404, info ?? { error: 'unknown item' })
   }
   if (req.method === 'GET' && req.url === '/build-plan') {
     return send(res, state.plan ? 200 : 404, state.plan ? state.plan.status(bot) : { error: 'no plan' })

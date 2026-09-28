@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -177,6 +178,16 @@ class MineflayerBridgeClient(IMinecraftBridge):
     async def memory(self) -> dict[str, Any]:
         """覚えている場所を座標つきで（minecraft-bridge/src/memory.mjs の memoryList）。"""
         data: Any = await self._request("GET", "/memory")
+        return dict(data) if isinstance(data, dict) else {}
+
+    async def items(self) -> list[dict[str, Any]]:
+        """アイテムとブロックの名前と日本語名（minecraft-bridge/src/items.mjs の itemList）。"""
+        data: Any = await self._request("GET", "/items")
+        return list(data) if isinstance(data, list) else []
+
+    async def item_info(self, name: str) -> dict[str, Any]:
+        """アイテムの取り方と使い方（items.mjs の itemInfo）。"""
+        data: Any = await self._request("GET", f"/items/{quote(name)}")
         return dict(data) if isinstance(data, dict) else {}
 
     async def set_condition(self, name: str, description: str, code: str) -> dict[str, Any]:
