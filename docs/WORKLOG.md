@@ -9,7 +9,7 @@
 
 ### 施設の登録と検索の道具（設計書 47 段階 1） (2026-09-28)
 
-**Commit**: (次のコミット)
+**Commit**: `44aa0aa`
 
 ユーザー:「施設を作る前に配置図・設計図、街の理想図をマスターデータに」「search_facility でリストとLLMの検索語を Jev に渡してキーを選ばせる」「プレイするのは Qwen3.6。できることをどんどん検索可能にして動的に教える」。設計書 47 §10 の段階 1。
 - ブリッジ `facilities.mjs`（新規）: `state.facilities`（kind home/build/farm/tree_farm/mine/pen/trap、box、entrance、status）。今ある物を取り込む（`adoptExisting`: 家、`state.builds`、家のまわりの耕地 → `home_farm`、植えた苗木のかたまり → `tree_farm_N`）。`GET /facilities`（近い順、中身: 作物ごとの planted/ripe、苗木/木/空き、建物の進み）
