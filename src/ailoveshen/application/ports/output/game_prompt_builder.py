@@ -179,6 +179,29 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_facility_prompt(
+        self,
+        name: str,
+        brief: str,
+        town_map: Optional[TownMap],
+        zones: list[dict[str, Any]],
+        planned: list[str],
+        previous_error: str = "",
+    ) -> str:
+        """
+        施設（畑・植林場）を設計させるプロンプト（docs/design/47 §7）。
+
+        Args:
+            name: 施設の名前
+            brief: 何のための施設か（中目標の題名と理由）
+            town_map: 街の理想図（なければ家のまわりに作る）
+            zones: ブリッジが測った区画の地形（GET /zones。理想図がなければ空）
+            planned: 理想図でこの名前に予定した区画
+            previous_error: 前回の設計が拒否された理由（あれば）
+        """
+        ...
+
+    @abstractmethod
     def vocabulary_version(self) -> str:
         """
         街の段階を書くときに見せる語彙（使える条件と、できること）の版。変わったときだけ、

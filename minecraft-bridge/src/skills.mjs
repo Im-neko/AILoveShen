@@ -23,7 +23,7 @@ export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
 const MAX_CALLS_SHOWN = 30
-const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'custom', 'progress']
+const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'custom', 'facility', 'progress']
 const NAME = /^[a-z][a-z0-9_]{1,39}$/
 // 技から呼べる行動（ソルバーの提案は技からは使わない: 技はソルバーに依存しない手順にする）
 export const SKILL_ACTIONS = ACTION_TOOLS.filter((n) => n !== 'do_suggestion')
@@ -68,6 +68,7 @@ function validateExpects (e) {
     if (e.count == null) bad(`expects ${e.predicate} needs a count (a number, "+N" or "$param")`)
   }
   if (e.predicate === 'custom' && !e.name) bad('expects custom needs the name of a check (a custom mid goal condition)')
+  if (e.predicate === 'facility' && !e.name) bad('expects facility needs the name of a designed facility (search_facility)')
 }
 
 // "$param" を引数の値に置き換える

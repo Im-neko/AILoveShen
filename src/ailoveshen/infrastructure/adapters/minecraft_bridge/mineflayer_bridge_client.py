@@ -10,7 +10,12 @@ from urllib.parse import quote
 import httpx
 
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
-from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, SkillRejectedError
+from ailoveshen.domain.exceptions import (
+    FacilityAreaNotReadyError,
+    GameBridgeError,
+    GoalRejectedError,
+    SkillRejectedError,
+)
 from ailoveshen.domain.value_objects import (
     ActionResult,
     BuildDesign,
@@ -179,6 +184,23 @@ class MineflayerBridgeClient(IMinecraftBridge):
         """覚えている場所を座標つきで（minecraft-bridge/src/memory.mjs の memoryList）。"""
         data: Any = await self._request("GET", "/memory")
         return dict(data) if isinstance(data, dict) else {}
+
+    async def set_facility(self, name: str, body: dict[str, Any]) -> dict[str, Any]:
+        """施設の設計を登録する（400: 設計を直せる理由、409: 区画が読み込まれていない）。"""
+        try:
+            response = await self._client.put(f"/facilities/{name}", json=body)
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge PUT /facilities failed: {e}") from e
+        if response.status_code == 400:
+            raise GoalRejectedError(f"facility {name} rejected: {response.json()['error']}")
+        if response.status_code == 409:
+            raise FacilityAreaNotReadyError(f"facility {name}: {response.json()['error']}")
+        if response.status_code != 200:
+            raise GameBridgeError(
+                f"Minecraft bridge PUT /facilities -> {response.status_code}: {response.text[:200]}"
+            )
+        data: dict[str, Any] = response.json()
+        return data
 
     async def zones(self, x: int, z: int) -> list[dict[str, Any]]:
         """街の理想図の区画の地形（minecraft-bridge/src/zones.mjs）。"""

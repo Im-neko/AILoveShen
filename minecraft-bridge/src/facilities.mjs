@@ -6,12 +6,12 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, isLog } from './observe.mjs'
 import { buildBox } from './builds.mjs'
-import { cropByBlock, isRipe, SAPLING, PLANT_RING } from './farming.mjs'
+import { CROPS, cropByBlock, cropOf, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
 
 const { Vec3 } = vec3Pkg
 
 export const FACILITY_KINDS = ['home', 'build', 'farm', 'tree_farm', 'mine', 'pen', 'trap']
-const TREE_GAP = 8 // 植えた苗木がこの距離より離れていれば、別の植林場
+const GROUP_GAP = 8 // 植えた苗木がこの距離より離れていれば、別の植林場
 const FARM_SEARCH = PLANT_RING.max + 8 // 家から、耕地を探す範囲
 const HOME_FARM = 'home_farm'
 
@@ -24,7 +24,7 @@ const inBox = (box, p) => p.x >= box.min.x && p.x <= box.max.x && p.z >= box.min
 const center = (box) => new Vec3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2)
 
 // 植えた苗木を、近いものどうしでかたまりにする（1 つのかたまり = 1 つの植林場）
-export function plantingGroups (plantings, gap = TREE_GAP) {
+export function plantingGroups (plantings, gap = GROUP_GAP) {
   const groups = []
   for (const p of plantings) {
     const near = groups.filter((g) => g.some((q) => Math.abs(q.x - p.x) <= gap && Math.abs(q.z - p.z) <= gap))
@@ -57,7 +57,9 @@ export function adoptExisting (bot, state) {
     const box = buildBox(plan)
     f[name] = { name, kind: 'build', box: { min: xyz(box.min), max: xyz(box.max) }, status: 'building', adopted: true, purpose: plan.design?.purpose ?? '' }
   }
-  const farmland = farmlandAroundHome(bot, state)
+  // 設計した畑（取り込みでない施設）の耕地は、家の畑に入れない（2 度数えない）
+  const designed = Object.values(f).filter((x) => !x.adopted && x.kind === 'farm')
+  const farmland = farmlandAroundHome(bot, state)?.filter((p) => !designed.some((d) => inBox(d.box, p)))
   if (farmland?.length && (!f[HOME_FARM] || f[HOME_FARM].adopted)) {
     f[HOME_FARM] = { name: HOME_FARM, kind: 'farm', box: boxOf(farmland), status: 'done', adopted: true }
   }
@@ -76,6 +78,13 @@ export function adoptExisting (bot, state) {
 function contents (bot, state, fac, jaOf) {
   const loaded = bot.blockAt(center(fac.box))
   if (!loaded) return null
+  if (fac.layout) {
+    // 設計した施設: 設計のマスのうち済んだもの、これからのもの（設計書 47 §7）
+    const s = layoutStatus(bot, fac)
+    const work = fac.kind === 'farm' ? { to_till: s.till.length, to_sow: s.sow.length } : { to_plant: s.plant.length }
+    const what = fac.kind === 'farm' ? { crop: fac.layout.crop, crop_ja: jaOf(fac.layout.crop) } : { sapling: fac.layout.sapling, spacing: fac.layout.spacing }
+    return { ...what, cells: s.total, done: s.done, ...work, ...(s.unseen ? { out_of_view: s.unseen } : {}) }
+  }
   if (fac.kind === 'farm') {
     const crops = {}
     for (let x = fac.box.min.x; x <= fac.box.max.x; x++) {
@@ -134,4 +143,206 @@ export function facilitiesStatus (bot, state, jaOf = () => '') {
       }
     })
     .sort((a, b) => a.distance_m - b.distance_m)
+}
+
+// ---- 施設の設計（設計書 47 §7）: Python の設計（区画と大きさ）から、ブリッジが実際のマスを選ぶ ----
+
+export const DESIGNABLE = ['farm', 'tree_farm']
+export const FACILITY_NAME = /^[a-z][a-z0-9_]{1,31}$/
+export const FARM_SIDE = { min: 1, max: 16 }
+export const TREES = { min: 1, max: 32 }
+export const SPACING = { min: TREE_GAP, max: 6 } // 苗木どうしの間（farming.mjs の TREE_GAP 以上: 植える規則と同じ）
+const USABLE_SHARE = 0.6 // 畑の四角のうち耕せるマスがこれ未満なら、そこには作れない
+const LOGS = /(_log|_sapling|_propagule)$/
+
+// 断る理由。world は世界の状態（読み込まれていない）: 設計をやり直しても直らない
+export class FacilityError extends Error {
+  constructor (message, { world = false } = {}) {
+    super(message)
+    this.world = world
+  }
+}
+
+const cellKey = (p) => `${p.x},${p.z}`
+
+// 区画の範囲（複数）をまとめた範囲
+function unionBox (boxes) {
+  if (!Array.isArray(boxes) || !boxes.length) throw new FacilityError('boxes: give the zones as {min_x, min_z, max_x, max_z}')
+  const n = (v, k) => {
+    const x = Number(v?.[k])
+    if (!Number.isInteger(x)) throw new FacilityError(`boxes: ${k} must be an integer`)
+    return x
+  }
+  return {
+    min_x: Math.min(...boxes.map((b) => n(b, 'min_x'))),
+    min_z: Math.min(...boxes.map((b) => n(b, 'min_z'))),
+    max_x: Math.max(...boxes.map((b) => n(b, 'max_x'))),
+    max_z: Math.max(...boxes.map((b) => n(b, 'max_z')))
+  }
+}
+
+// 施設に使える地面（範囲のすべての列）。ほかの施設・家・建物のそばは除く
+function groundCells (bot, state, area, name) {
+  const y0 = state.home ? state.home.inside.y : Math.floor(bot.entity.position.y)
+  const others = Object.values(state.facilities ?? {}).filter((x) => x.name !== name && x.kind !== 'home')
+  const out = []
+  let unloaded = 0
+  for (let x = area.min_x; x <= area.max_x; x++) {
+    for (let z = area.min_z; z <= area.max_z; z++) {
+      if (!bot.blockAt(new Vec3(x, y0, z))) { unloaded++; continue }
+      const g = groundWithPlants(bot, x, z, y0)
+      if (!g) continue
+      if (farmRefusal(state, g.cell) || others.some((o) => inBox(o.box, g.cell))) continue
+      out.push(g)
+    }
+  }
+  const total = (area.max_x - area.min_x + 1) * (area.max_z - area.min_z + 1)
+  if (unloaded > total / 2) throw new FacilityError('the area is not loaded (too far from the bot): go near it before designing', { world: true })
+  return out
+}
+
+// 地面（固いブロック）と、その上のマス（空気か、どけられる草花）
+function groundWithPlants (bot, x, z, y0) {
+  const s = surfaceAt(bot, x, z, y0)
+  if (s) return { ground: s.ground, cell: s.cell, plant: false }
+  for (let y = y0 + 4; y >= y0 - 4; y--) {
+    const b = bot.blockAt(new Vec3(x, y, z))
+    if (!b) return null
+    if (b.boundingBox !== 'block') continue
+    const above = bot.blockAt(new Vec3(x, y + 1, z))
+    const head = bot.blockAt(new Vec3(x, y + 2, z))
+    if (above && CLEARABLE.test(above.name) && head?.boundingBox === 'empty') return { ground: b, cell: new Vec3(x, y + 1, z), plant: true }
+    return null
+  }
+  return null
+}
+
+// 畑: 幅 x 奥行きの四角（向きは両方試す）のうち、耕せる地面が同じ高さ（±1）に一番多く並ぶ所
+function farmLayout (bot, cells, area, width, depth) {
+  const byXZ = new Map(cells.filter((c) => TILLABLE.test(c.ground.name) || c.ground.name === 'farmland')
+    .filter((c) => !nearName(bot, c.cell, LOGS, 1)).map((c) => [cellKey(c.cell), c]))
+  let best = null
+  for (const [w, d] of width === depth ? [[width, depth]] : [[width, depth], [depth, width]]) {
+    for (let x0 = area.min_x; x0 + w - 1 <= area.max_x; x0++) {
+      for (let z0 = area.min_z; z0 + d - 1 <= area.max_z; z0++) {
+        const inside = []
+        for (let x = x0; x < x0 + w; x++) for (let z = z0; z < z0 + d; z++) { const c = byXZ.get(`${x},${z}`); if (c) inside.push(c) }
+        if (!inside.length) continue
+        const ys = inside.map((c) => c.cell.y).sort((a, b) => a - b)
+        const mid = ys[Math.floor(ys.length / 2)]
+        const level = inside.filter((c) => Math.abs(c.cell.y - mid) <= 1)
+        if (!best || level.length > best.cells.length) best = { cells: level, size: w * d }
+      }
+    }
+  }
+  if (!best || best.cells.length < best.size * USABLE_SHARE) {
+    const most = best ? best.cells.length : 0
+    throw new FacilityError(`not enough flat dirt or grass for a ${width}x${depth} farm in these zones (at most ${most} of ${width * depth} cells): choose a smaller size or other zones`)
+  }
+  return best.cells.map((c) => ({ x: c.cell.x, y: c.cell.y - 1, z: c.cell.z })) // 耕すのは地面のブロック
+}
+
+// 植林場: 間隔 spacing の格子で、苗木を植えられる地面（範囲の中心に近い順に count か所）
+function treeLayout (bot, cells, area, count, spacing) {
+  const ok = cells.filter((c) => SAPLING_GROUND.test(c.ground.name) && !nearName(bot, c.cell, LOGS, TREE_GAP - 1))
+  const byXZ = new Map(ok.map((c) => [cellKey(c.cell), c]))
+  const cx = (area.min_x + area.max_x) / 2
+  const cz = (area.min_z + area.max_z) / 2
+  let best = []
+  for (let ox = 0; ox < spacing; ox++) {
+    for (let oz = 0; oz < spacing; oz++) {
+      const grid = []
+      for (let x = area.min_x + ox; x <= area.max_x; x += spacing) for (let z = area.min_z + oz; z <= area.max_z; z += spacing) { const c = byXZ.get(`${x},${z}`); if (c) grid.push(c) }
+      if (grid.length > best.length) best = grid
+    }
+  }
+  if (best.length < count) throw new FacilityError(`only ${best.length} places for saplings ${spacing} apart in these zones (asked ${count}): plant fewer, closer (spacing ${SPACING.min}), or choose more zones`)
+  best.sort((a, b) => Math.hypot(a.cell.x - cx, a.cell.z - cz) - Math.hypot(b.cell.x - cx, b.cell.z - cz))
+  return best.slice(0, count).map((c) => ({ x: c.cell.x, y: c.cell.y, z: c.cell.z })) // 植えるのは地面の上のマス
+}
+
+// PUT /facilities/<name> { kind, zones: [id], boxes: [{min_x, min_z, max_x, max_z}] | near_home: true, purpose, design }
+//   farm: design { crop, width, depth }、tree_farm: design { sapling, count, spacing }
+export function registerFacility (bot, state, name, body) {
+  if (!FACILITY_NAME.test(name)) throw new FacilityError('the name must be lowercase letters, digits and _ (2-32)')
+  state.facilities ??= {}
+  if (state.facilities[name]) throw new FacilityError(`there is already a facility named ${name}`)
+  const kind = String(body?.kind ?? '')
+  if (!DESIGNABLE.includes(kind)) throw new FacilityError(`kind must be one of ${DESIGNABLE.join(', ')}`)
+  // 理想図がまだなければ（街が決まる前）、家のまわり（6〜24 m）から選ぶ
+  const around = PLANT_RING.max
+  const area = body.near_home && state.home
+    ? { min_x: state.home.inside.x - around, min_z: state.home.inside.z - around, max_x: state.home.inside.x + around, max_z: state.home.inside.z + around }
+    : unionBox(body.boxes)
+  const design = body.design ?? {}
+  const cells = groundCells(bot, state, area, name)
+  let layout
+  if (kind === 'farm') {
+    const crop = cropOf(design.crop ?? 'wheat')
+    if (!crop) throw new FacilityError(`crop must be one of ${Object.keys(CROPS).join(', ')}`)
+    const side = (k) => {
+      const n = Number(design[k])
+      if (!Number.isInteger(n) || n < FARM_SIDE.min || n > FARM_SIDE.max) throw new FacilityError(`${k} must be ${FARM_SIDE.min}-${FARM_SIDE.max}`)
+      return n
+    }
+    layout = { crop, cells: farmLayout(bot, cells, area, side('width'), side('depth')) }
+  } else {
+    const sapling = String(design.sapling ?? 'sapling')
+    if (sapling !== 'sapling' && !(SAPLING.test(sapling) && bot.registry.itemsByName[sapling])) throw new FacilityError('sapling must be sapling (any kind) or one kind like oak_sapling')
+    const count = Number(design.count)
+    if (!Number.isInteger(count) || count < TREES.min || count > TREES.max) throw new FacilityError(`count must be ${TREES.min}-${TREES.max}`)
+    const spacing = Number(design.spacing ?? SPACING.min)
+    if (!Number.isInteger(spacing) || spacing < SPACING.min || spacing > SPACING.max) throw new FacilityError(`spacing must be ${SPACING.min}-${SPACING.max} (saplings closer than ${TREE_GAP} do not grow well)`)
+    layout = { sapling, spacing, cells: treeLayout(bot, cells, area, count, spacing) }
+  }
+  const box = boxOf(layout.cells)
+  state.facilities[name] = {
+    name,
+    kind,
+    zone: (body.zones ?? []).map(String).join(','),
+    purpose: String(body.purpose ?? ''),
+    box,
+    entrance: xyz(layout.cells.reduce((a, b) => (Math.hypot(a.x - state.home?.inside.x, a.z - state.home?.inside.z) <= Math.hypot(b.x - state.home?.inside.x, b.z - state.home?.inside.z) ? a : b))),
+    layout,
+    status: 'planned',
+    createdAt: Date.now()
+  }
+  return state.facilities[name]
+}
+
+// 設計した施設の今: 済んだマス、耕す・まく・植えるマス、見えていないマス
+export function layoutStatus (bot, fac) {
+  const out = { total: fac.layout.cells.length, done: 0, till: [], sow: [], plant: [], unseen: 0 }
+  for (const c of fac.layout.cells) {
+    const p = new Vec3(c.x, c.y, c.z)
+    const b = bot.blockAt(p)
+    if (!b) { out.unseen++; continue }
+    if (fac.kind === 'farm') {
+      const above = bot.blockAt(p.offset(0, 1, 0))
+      if (b.name === 'farmland' && cropByBlock(above?.name) === fac.layout.crop) out.done++
+      else if (b.name === 'farmland') out.sow.push(p)
+      else out.till.push(p)
+    } else {
+      if (SAPLING.test(b.name) || isLog(b.name)) out.done++
+      else out.plant.push(p)
+    }
+  }
+  return out
+}
+
+// 設計した施設の状態を、今のマスから直す（planned → building → done）。変わったら真
+export function updateStatus (bot, fac) {
+  if (!fac.layout) return false
+  const s = layoutStatus(bot, fac)
+  if (s.unseen) return false
+  const status = s.done === s.total ? 'done' : s.done > 0 ? 'building' : 'planned'
+  if (status === fac.status) return false
+  fac.status = status
+  return true
+}
+
+// 次に作業するマス（ボットに近い順）: kind は till / sow / plant
+export function nextCell (bot, fac, kind) {
+  const me = bot.entity.position
+  return layoutStatus(bot, fac)[kind].sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
 }

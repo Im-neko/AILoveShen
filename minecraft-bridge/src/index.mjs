@@ -19,6 +19,8 @@
 //   GET  /builds           -> [{ name, purpose, anchor, placed, total, complete, origin }]
 //   GET  /facilities       -> 施設（設計書 47 §5）: [{ name, kind, status, box, entrance?, center, distance_m, direction, contents }]
 //                             （今ある家・建物・畑・植えた苗木を先に取り込む）
+//   PUT  /facilities/<name> {kind, zones, boxes, purpose, design} -> 施設を設計どおりに登録する（畑: crop, width, depth、植林場: sapling, count, spacing）。
+//                             実際のマスはブリッジが区画の中から選ぶ。直せる理由は 400、読み込まれていない区画は 409
 //   GET  /memory           -> 覚えている場所を座標つきで: { places（種類ごと）, chests, furnaces, deaths }（search_memory）
 //   GET  /zones?x=&z=[&cells=&size=] -> 街の理想図の区画の地形（zones.mjs、設計書 47 §6）: [{ id, min_x.., seen, water, lava, trees, built, stone, flat, height, facilities }]
 //   GET  /items            -> アイテムとブロックの名前と日本語名 [{ name, ja }]（item_info の一覧）
@@ -58,7 +60,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
-import { adoptExisting, facilitiesStatus } from './facilities.mjs'
+import { adoptExisting, facilitiesStatus, registerFacility, updateStatus, FacilityError } from './facilities.mjs'
 import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
@@ -441,8 +443,24 @@ async function handle (req, res) {
   if (req.method === 'GET' && req.url === '/builds') {
     return send(res, 200, buildsStatus(bot, state))
   }
+  const facility = req.url.match(/^\/facilities\/([a-z0-9_]{1,40})$/)
+  if (req.method === 'PUT' && facility) {
+    // 施設の設計を登録する（設計書 47 §7）: 区画の中から実際のマスを選ぶ。直せる理由は 400、
+    // 世界の状態（読み込まれていない）は 409
+    try {
+      adoptExisting(bot, state)
+      const fac = registerFacility(bot, state, facility[1], await readJson(req))
+      saveState(state)
+      return send(res, 200, facilitiesStatus(bot, state, jaOf).find((f) => f.name === fac.name))
+    } catch (e) {
+      if (e instanceof FacilityError) return send(res, e.world ? 409 : 400, { error: e.message })
+      throw e
+    }
+  }
   if (req.method === 'GET' && req.url === '/facilities') {
-    if (adoptExisting(bot, state)) saveState(state)
+    let changed = adoptExisting(bot, state)
+    for (const f of Object.values(state.facilities ?? {})) changed = updateStatus(bot, f) || changed
+    if (changed) saveState(state)
     return send(res, 200, facilitiesStatus(bot, state, jaOf))
   }
   if (req.method === 'GET' && req.url === '/memory') {

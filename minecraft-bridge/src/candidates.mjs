@@ -11,6 +11,7 @@
 // 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
+import { nextCell } from './facilities.mjs'
 import { plantSpot, tillSpot, sowSpot } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
@@ -278,18 +279,28 @@ function fromLeaf (bot, state, world, leaf) {
     case 'stay_underground':
       return [{ id: 'keep working underground through the night', verb: 'wait', target: 'here', inPlace: true, seconds: 10, purpose: 'underground it is as dark by day as by night: the night outside does not matter here' }]
     case 'plant': {
-      // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面。id に場所は入れない
-      // （/act は候補を作り直して id で探す: 場所の選び直しで id が変わると動かない）
-      const p = plantSpot(bot, state)
-      return p ? [{ id: `plant ${leaf.item} near the home`, verb: 'plant', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+      // 植林（設計書 33）: 家から 6〜24 m の、ほかの木から離れた地面。設計した植林場なら、そのマス（設計書 47 §7）。
+      // id に場所は入れない（/act は候補を作り直して id で探す: 場所の選び直しで id が変わると動かない）
+      const fac = leaf.facility ? state.facilities?.[leaf.facility] : null
+      const p = fac ? nextCell(bot, fac, 'plant') : plantSpot(bot, state)
+      const id = fac ? `plant ${leaf.item} in the tree farm ${fac.name}` : `plant ${leaf.item} near the home`
+      return p ? [{ id, verb: 'plant', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
     }
     case 'till': {
-      const p = tillSpot(bot, state)
-      return p ? [{ id: 'till the ground near the home with a hoe', verb: 'till', target: 'farmland', pos: p, distance: dist(bot, p) }] : []
+      const fac = leaf.facility ? state.facilities?.[leaf.facility] : null
+      const p = fac ? nextCell(bot, fac, 'till') : tillSpot(bot, state)
+      const id = fac ? `till the ground of the farm ${fac.name} with a hoe` : 'till the ground near the home with a hoe'
+      return p ? [{ id, verb: 'till', target: 'farmland', pos: p, distance: dist(bot, p) }] : []
     }
     case 'sow': {
-      const p = sowSpot(bot, state)
-      return p ? [{ id: `sow ${leaf.item} on the farmland near the home`, verb: 'sow', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+      const fac = leaf.facility ? state.facilities?.[leaf.facility] : null
+      const p = fac ? nextCell(bot, fac, 'sow') : sowSpot(bot, state)
+      const id = fac ? `sow ${leaf.item} on the farm ${fac.name}` : `sow ${leaf.item} on the farmland near the home`
+      return p ? [{ id, verb: 'sow', target: leaf.item, item: leaf.item, pos: p, distance: dist(bot, p) }] : []
+    }
+    case 'go_facility': {
+      const p = new Vec3(leaf.pos.x, leaf.pos.y, leaf.pos.z)
+      return [{ id: `go to the facility ${leaf.name}`, verb: 'goto_memory', target: leaf.name, pos: p, distance: dist(bot, p) }]
     }
     default:
       return []

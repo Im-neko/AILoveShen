@@ -29,10 +29,12 @@ export const isRipe = (block) => {
 const CROP_ALIASES = { wheat: 'wheat', wheat_seeds: 'wheat', carrot: 'carrots', carrots: 'carrots', potato: 'potatoes', potatoes: 'potatoes', beetroot: 'beetroots', beetroots: 'beetroots', beetroot_seeds: 'beetroots' }
 export const cropOf = (item) => CROP_ALIASES[String(item)] ?? null
 export const cropBySeed = (seed) => Object.keys(CROPS).find((k) => CROPS[k].seed === seed) ?? null
-const SAPLING_GROUND = /^(dirt|grass_block|podzol|coarse_dirt|rooted_dirt|mud|moss_block|mycelium)$/
-const TILLABLE = /^(dirt|grass_block|dirt_path)$/
+export const SAPLING_GROUND = /^(dirt|grass_block|podzol|coarse_dirt|rooted_dirt|mud|moss_block|mycelium)$/
+export const TILLABLE = /^(dirt|grass_block|dirt_path)$/
+// 耕す前に掘ってどける、地面の上の草花（耕すには上が空いている必要がある）
+export const CLEARABLE = /^(short_grass|tall_grass|fern|large_fern|dead_bush|dandelion|poppy|blue_orchid|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony|(red|orange|white|pink)_tulip)$/
 export const PLANT_RING = { min: 6, max: 24 } // 家から（水平の距離）
-const TREE_GAP = 4 // 苗木どうし、木との間
+export const TREE_GAP = 4 // 苗木どうし、木との間
 const WATER_REACH = 4 // 耕地が湿る水の距離
 const DY = 4 // 家の床の高さから上下
 
@@ -120,7 +122,7 @@ export function ageOf (block) {
 }
 
 // 地面のセル（x, z）: 家の床の高さの近くで、固いブロックの上に 2 マス空いた所 → { ground, cell }
-function surfaceAt (bot, x, z, y0) {
+export function surfaceAt (bot, x, z, y0) {
   for (let y = y0 + DY; y >= y0 - DY; y--) {
     const b = bot.blockAt(new Vec3(x, y, z))
     if (!b) return null
@@ -156,7 +158,7 @@ function ringCells (state) {
   return out
 }
 
-const nearName = (bot, p, re, r) => {
+export const nearName = (bot, p, re, r) => {
   for (let dx = -r; dx <= r; dx++) {
     for (let dz = -r; dz <= r; dz++) {
       for (let dy = -1; dy <= 2; dy++) {

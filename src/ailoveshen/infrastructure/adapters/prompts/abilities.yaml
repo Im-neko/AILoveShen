@@ -6,16 +6,18 @@
 # 道具の一覧にあるかを確かめる）、see（関連する項目の key）
 - key: make_farm
   title: 畑を作る・広げる
-  words: farm field crops farmland till sow hoe wheat carrot potato beetroot
+  words: farm field crops farmland till sow hoe wheat carrot potato beetroot facility 畑
   when: 食べ物（パン、ニンジン、ジャガイモ）を毎日取れるようにしたいとき、中目標が farmed のとき
   how: |
+    畑は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の施設名。
+    なければ新しい名前）。そのとき区画・作物・大きさを決め、耕すマスが決まる
     1. クワを持つ（なければ craft で wooden_hoe など。材料は recipe_of）
-    2. till {x,y,z} で土か草のブロックを耕す（上が空いていること）。水から 4 マス以内だと早く育つ。畑は 1 か所にまとめる
-    3. sow {item, x,y,z} で耕地に種をまく（wheat_seeds / carrot / potato / beetroot_seeds）
-    x,y,z を省くと、家から 6〜24m の空いた所を選ぶ。家とまわり、建物の上は断られる
-    今の畑の場所と作物は search_facility（例: 畑、wheat farm）
+    2. 小目標 facility(name) の間は、till と sow の x,y,z を省くとその畑の次のマスを選ぶ
+       （草が生えていれば刈ってから耕す）。全部のマスを耕して種をまくと完成
+    3. sow {item} で耕地に種をまく（wheat_seeds / carrot / potato / beetroot_seeds）
+    畑の場所・作物・残りのマスは search_facility（例: 畑、wheat farm）
   tools: [till, sow, craft, recipe_of, search_facility]
-  see: [get_seeds, harvest_crops]
+  see: [get_seeds, harvest_crops, plant_trees]
 
 - key: harvest_crops
   title: 作物を収穫する
@@ -43,14 +45,17 @@
 
 - key: plant_trees
   title: 苗木を植える・植林場を作る
-  words: plant trees sapling tree farm forest logs wood
+  words: plant trees sapling tree farm forest logs wood facility 植林場
   when: 近くに木がない、原木を毎回遠くへ取りに行っているとき、中目標が planted のとき
   how: |
+    植林場は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の
+    施設名。なければ新しい名前）。そのとき区画・苗木の種類・本数・間隔を決め、植えるマスが決まる
     1. 苗木は葉（*_leaves）を dig するとときどき（5%）落ちる。原木を取るときに葉も掘る
-    2. plant {item, x,y,z} で土か草の上の空いたセルに植える（省くと家から 6〜24m を選ぶ）。上に空きが要る
-    家とまわり 1 マス、建物の上には植えない。植えた木は search_facility（例: 植林場、tree farm）で見られる
+    2. 小目標 facility(name) の間は、plant {item} の x,y,z を省くとその植林場の次のマスを選ぶ。
+       全部のマスに植えると完成
+    植えた木と植林場は search_facility（例: 植林場、tree farm）で見られる
   tools: [dig, plant, search_facility]
-  see: [gather_wood]
+  see: [gather_wood, make_farm]
 
 - key: gather_wood
   title: 原木を集める

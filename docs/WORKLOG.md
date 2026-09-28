@@ -7,6 +7,19 @@
 
 ## Completed Work
 
+### 施設の設計と facility(name)（設計書 47 段階 4A） (2026-09-28)
+
+**Commit**: (後で記入)
+
+ユーザー:「施設を作る前にレイアウトと設計図を作る」。設計書 47 §14。
+- ブリッジ `facilities.mjs`: `registerFacility`（区画の中から畑の四角・植林場の格子を選ぶ。`near_home`）、`layoutStatus` / `updateStatus` / `nextCell`、`FacilityError`（400 直せる / 409 区画が読み込まれていない）。`PUT /facilities/<name>`。`farming.mjs` の `TILLABLE` / `CLEARABLE` / `SAPLING_GROUND` / `TREE_GAP` / `surfaceAt` を公開、`till` は草花を刈ってから耕す
+- `goals.mjs` 述語 `facility`（条件、葉は till / sow / plant、見えていなければ施設へ行く）、`candidates.mjs`（施設の次のマス）、`tools.mjs`（x,y,z を省くと今の小目標の施設の次のマス）、`skills.mjs` の expects。テスト `facility-design.test.mjs`
+- Python: `GoalPredicate.FACILITY`、`FacilityNotDesignedError` / `FacilityAreaNotReadyError`、ポートとクライアントの `set_facility`、`facility_design.py`（新規 `FacilityDesigner`）、`FACILITY_TEMPLATE` / `build_facility_prompt`、`MidGoalKeeper` の設計のフック（編集、頼み、街の段階）、`_without_build` が施設も落とす、ファクトリー（プランを 1 つ作って開始と設計に渡す）、`config/default.yaml`（facility_design: ローカルで考える、high）
+- `abilities.yaml` の make_farm / plant_trees を施設の流れに
+- テスト: `test_facility_design.py` 12 件。Python 858、ブリッジ 249
+- まだ（4B）: `farmed` / `planted` を施設の中で数える。水はまだ置かない
+- 要 ブリッジと Python の再起動。述語が増えたので、次の起動で今の段階の未解決の部分が 1 度書き直される
+
 ### 街の理想図（設計書 47 段階 3） (2026-09-28)
 
 **Commit**: `8004636`
@@ -1747,9 +1760,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 設計書 47 の残り（2026-09-28 時点）
 
-段階 1（`44aa0aa`）、2（`b38cc1c`）、3（街の理想図）は済み。残りは段階 4（畑と植林場の設計: `facility(name)`、`farmed` / `planted` を施設の範囲で数える、`facility_design`）、5（採掘場）、6（囲い・トラップ、別の設計書）。止めた理由:
-- ユーザーの未コミットの変更と同じ所を触る: `thinking_purposes` の 1 行（ユーザーが tool を足した。段階 3・4 は facility_design / town_plan を足す）、目標のシステム指示（すでに 8024 > 8000、段階 4 は条件を足す）
-- 段階 4 は段階 1 の取り込み（`home_farm` の範囲 = 家のまわりの耕地を全部）を土台にする: 実機で `GET /facilities` を見てから（近くに村の畑があれば入ってしまう）
+段階 1（`44aa0aa`）、2（`b38cc1c`）、3（`8004636`）、4A（施設の設計と `facility(name)`）は済み。残りは 4B（`farmed` / `planted` を施設の中で数える、施設の外の畑を断る、育つのを待つ間に広げる提案）、5（採掘場）、6（囲い・トラップ、別の設計書）
 
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 

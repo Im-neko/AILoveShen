@@ -13,6 +13,7 @@ from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridg
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
+from ailoveshen.application.use_cases.facility_design import FacilityDesigner
 from ailoveshen.application.use_cases.goal_vocabulary import (
     MidGoalProposal,
     PlanChange,
@@ -58,6 +59,7 @@ class MidGoalKeeper:
         store: IMissionStore,
         builder: BuildDesigner | None = None,
         checker: CheckWriter | None = None,
+        facilities: FacilityDesigner | None = None,
     ) -> None:
         """
         依存を受け取って初期化する（依存性の注入）。
@@ -70,12 +72,15 @@ class MidGoalKeeper:
                 （docs/design/25_builds.md）。None なら、ない建物は判定できずに断られる
             checker: 条件にまだない判定（custom(name)）があるとき、先に判定を書かせる
                 （docs/design/42_custom_conditions.md）。None なら、ない判定は断られる
+            facilities: 条件にまだない施設（facility(name)）があるとき、先に設計させる
+                （docs/design/47 §7）。None なら、ない施設は判定できずに断られる
         """
         self._bridge = bridge
         self._event_publisher = event_publisher
         self._store = store
         self._builder = builder
         self._checker = checker
+        self._facilities = facilities
         self._design_failures: dict[str, int] = {}  # 街の段階の建物の設計に失敗した回数
 
     async def judge(self, plan: MidGoalPlan) -> None:
@@ -153,6 +158,7 @@ class MidGoalKeeper:
         if stage is None or plan.site is None or plan.preparing_town:
             return
         await self._write_stage_checks(plan)
+        await self._design_stage_facilities(plan)
         if self._builder is None:
             return
         names = [
@@ -173,6 +179,29 @@ class MidGoalKeeper:
             except GoalRejectedError as e:
                 self._design_failures[name] = self._design_failures.get(name, 0) + 1
                 logger.error(f"街の段階の建物 {name} を設計できない: {e}")
+
+    async def _design_stage_facilities(self, plan: MidGoalPlan) -> None:
+        """今の街の段階の条件に、まだない施設（facility(name)）があれば設計させる（失敗は建物と同じく数える）。"""
+        stage = plan.current_stage
+        assert stage is not None
+        names = [
+            c.name
+            for c in plan.stage_remaining
+            if c.predicate == GoalPredicate.FACILITY
+            and c.name is not None
+            and self._design_failures.get(c.name, 0) < MAX_STAGE_DESIGN_TRIES
+        ]
+        if not names or self._facilities is None:
+            return
+        known = await self._facilities.known()
+        for name in names:
+            if name in known:
+                continue
+            try:
+                await self._facilities.design(name, f"{stage.title}: {stage.why}")
+            except GoalRejectedError as e:
+                self._design_failures[name] = self._design_failures.get(name, 0) + 1
+                logger.error(f"街の段階の施設 {name} を設計できない: {e}")
 
     async def _write_stage_checks(self, plan: MidGoalPlan) -> None:
         """今の街の段階の条件に、まだない判定（custom(name)）があれば書かせる（失敗は建物と同じく数える）。"""
@@ -235,6 +264,7 @@ class MidGoalKeeper:
         for change in changes:
             if change.proposal is not None:
                 await self._design_builds(change.proposal)
+                await self._design_facilities(change.proposal.conditions, _brief(change.proposal))
                 await self._write_checks(change.proposal.conditions, _brief(change.proposal))
                 await self._bridge.check(change.proposal.conditions)
 
@@ -278,6 +308,7 @@ class MidGoalKeeper:
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
         blocks = await self._design_builds(proposal, BuildDesign.VIEWER_MAX_BLOCKS)
+        await self._design_facilities(proposal.conditions, _brief(proposal))
         await self._write_checks(proposal.conditions, _brief(proposal))
         await self._bridge.check(proposal.conditions)
         goal = plan.add(
@@ -339,6 +370,33 @@ class MidGoalKeeper:
                 await self._builder.design(name, _brief(proposal), max_blocks)
         totals = {str(b["name"]): int(b.get("total", 0)) for b in await self._bridge.builds()}
         return sum(totals.get(name, 0) for name in names)
+
+    async def _design_facilities(self, conditions: Sequence[GoalSpec], brief: str) -> None:
+        """
+        条件の facility(name) のうち、まだない施設を設計させて登録する（docs/design/47 §7）。
+
+        Raises:
+            GoalRejectedError: 設計できなかったとき（FacilityNotDesignedError）
+        """
+        names = [
+            c.name
+            for c in conditions
+            if c.predicate == GoalPredicate.FACILITY and c.name is not None
+        ]
+        if not names:
+            return
+        if self._facilities is None:
+            known = {str(f["name"]) for f in await self._bridge.facilities()}
+            missing = [n for n in names if n not in known]
+            if missing:
+                raise GoalRejectedError(
+                    f"no facility named {', '.join(missing)} (cannot design here)"
+                )
+            return
+        known = await self._facilities.known()
+        for name in names:
+            if name not in known:
+                await self._facilities.design(name, brief)
 
     async def _write_checks(self, conditions: Sequence[GoalSpec], brief: str) -> None:
         """

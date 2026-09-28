@@ -247,6 +247,29 @@ $previous_error
 指定の JSON で出力してください（concept、areas）。
 """)
 
+# 施設の設計（docs/design/47 §7）: 畑と植林場の区画・大きさ・作物か苗木（facility_design）
+FACILITY_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者の、施設「$name」を設計します。
+施設は作る前に場所と大きさを決めます。実際に耕す・植えるマスは、決めた区画の中からコードが選びます。
+
+## 何のための施設か
+$brief
+$where
+## 種類
+- farm（畑）: crop（wheat / carrots / potatoes / beetroots）と大きさ width x depth（各 1〜16）。
+  全部のマスを耕して種をまくと完成。区画の平らな地面に収まる大きさにする（1 区画は 8 x 8）
+- tree_farm（植林場）: sapling（苗木の種類。何でもよければ sapling）と本数 count（1〜32）、
+  苗木どうしの間 spacing（4〜6。木が育つ間隔）。全部のマスに植えると完成。1 区画に 4 本ほど
+
+## 決まり
+- 効率を先に: 今要る量に合う大きさにする（食べ物なら小麦 1 列 8〜16 マスから、木材なら 4〜8 本から）。
+  あとで広げるときは同じ区画の中で大きくする
+- 畑は水の近くの平らな区画、植林場は平らか木の多い区画
+$previous_error
+## 出力
+指定の JSON で出力してください。
+""")
+
 _GRID_FIXED = {
     "home": "H",
     "building": "B",
@@ -795,6 +818,60 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             current=now,
             reason=reason,
             previous_error=_retry(previous_error, "描き直してください。"),
+        )
+
+    def build_facility_prompt(
+        self,
+        name: str,
+        brief: str,
+        town_map: Optional[TownMap],
+        zones: list[dict[str, Any]],
+        planned: list[str],
+        previous_error: str = "",
+    ) -> str:
+        """施設（畑・植林場）を設計させるプロンプト（docs/design/47 §7）。"""
+        if town_map is None:
+            where = "\n## 場所\n街の理想図はまだない。家のまわりの平らな地面に作る（zones は書かない）。\n"
+        else:
+            rows = {str(r["id"]): r for r in zones}
+            letters = {z.id: _zone_letter(z, rows.get(z.id, {})) for z in town_map.zones}
+            for z in town_map.zones:
+                if not z.fixed and z.use != "free":
+                    letters[z.id] = _GRID_FIXED.get(z.use, "B").lower()
+            usable = [
+                z
+                for z in town_map.zones
+                if not z.fixed
+                and z.use in ("free", "farm", "tree_farm")
+                and (not z.facility or z.facility == name)
+            ]
+            choices = [
+                f"- {z.id}: {_terrain(rows.get(z.id, {}))}"
+                + (f"（予定: {z.use} {z.facility} {z.note}）".replace("  ", " ") if z.facility else "")
+                for z in usable
+            ]
+            plan = (
+                f"理想図ではこの施設の区画は {', '.join(planned)}。特に理由がなければそこに作る。"
+                if planned
+                else "理想図にこの施設の予定はない。空いた区画から選ぶ。"
+            )
+            where = (
+                "\n## 場所（街の理想図。区画は 8 ブロック四方、列 A〜L が西→東、行 1〜12 が北→南）\n"
+                f"考え: {town_map.concept}\n"
+                f"{_zone_grid(letters, [z.id for z in town_map.zones])}\n"
+                "凡例: 大文字は今あるもの（H 家、B 建物、F 畑、W 植林場、M 採掘場）、小文字は予定、"
+                "~ 水、! 溶岩、. 平らな空き、^ でこぼこ、T 木が多い、? まだ見ていない\n"
+                f"{plan}\n"
+                "zones は隣り合って 1 つの四角になる区画（1〜4 個）。選べる区画と地形"
+                "（平ら = 高さがそろった列の割合、木・石・水 = 割合、高さ = 家の床からの差）:\n"
+                + ("\n".join(choices) or "- なし")
+                + "\n"
+            )
+        return FACILITY_TEMPLATE.substitute(
+            name=name,
+            brief=brief,
+            where=where,
+            previous_error=_retry(previous_error, "設計し直してください。"),
         )
 
     def vocabulary_version(self) -> str:

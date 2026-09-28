@@ -65,6 +65,17 @@ class BuildNotDesignedError(GoalRejectedError):
         self.name = name
 
 
+class FacilityNotDesignedError(BuildNotDesignedError):
+    """
+    施設（facility(name)）の設計ができなかった（答えない・使える設計が出ない・区画が読み込まれて
+    いない）。建物と同じく、しばらくその名前を中目標に足さない。`name` はその施設。
+    """
+
+
+class FacilityAreaNotReadyError(GoalRejectedError):
+    """施設の区画が今は使えない（読み込まれていない）。設計をやり直しても直らない。"""
+
+
 class CheckNotWrittenError(GoalRejectedError):
     """custom(name) の判定が書けなかった（答えない・使える判定が出ない）。`name` はその判定。"""
 

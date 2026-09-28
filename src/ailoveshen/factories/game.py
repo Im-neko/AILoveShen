@@ -7,6 +7,7 @@ from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
+from ailoveshen.application.use_cases.facility_design import FacilityDesigner
 from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.step_picker import StepPicker
 from ailoveshen.application.use_cases.stuck_check import StuckCheck
@@ -292,12 +293,21 @@ def create_game_service(
         if minecraft.control == "tools"
         else None
     )
+    # 中目標のプラン: 始めるときに保存から戻す。施設の設計が理想図を読み書きするので同じものを渡す
+    plan = create_mid_goal_plan(minecraft.mission)
     mid_goals = MidGoalKeeper(
         bridge=bridge,
         event_publisher=event_publisher,
         store=store,
         builder=builder,
         checker=checker,
+        facilities=FacilityDesigner(
+            text_generator=text_generator,
+            prompt_builder=prompt_builder,
+            bridge=bridge,
+            plan=plan,
+            store=store,
+        ),
     )
     designer = HouseDesigner(
         text_generator=text_generator, prompt_builder=prompt_builder, character=profile
@@ -317,7 +327,7 @@ def create_game_service(
         bridge=bridge,
         event_publisher=event_publisher,
         designer=designer,
-        plan=create_mid_goal_plan(minecraft.mission),
+        plan=plan,
         store=store,
         town=town,
         notes=notes,

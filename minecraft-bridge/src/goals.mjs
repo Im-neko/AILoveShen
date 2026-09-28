@@ -16,6 +16,7 @@
 //   planted(item, count)     自分が植えた苗木（sapling か種類）が `count` 本ある（育った木も数える。設計書 33）
 //   farmed(item, count)      家のまわりの耕地に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている
 //   leveled(where, distance) where（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている（設計書 41）
+//   facility(name)           設計した施設（畑・植林場: facilities.mjs）のマスがすべて済んでいる（耕してまいた、植えた。設計書 47 §7）
 //   custom(name)             Gemini が書いた判定（conditions.mjs）が成り立っている（設計書 42。候補は出さない: 道具で進める）
 
 import vec3Pkg from 'vec3'
@@ -31,6 +32,7 @@ import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem }
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, cropStatus, plantingStatus, isSaplingItem, saplingMatches, sowSpot, tillSpot, plantSpot } from './farming.mjs'
 import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
+import { layoutStatus, updateStatus } from './facilities.mjs'
 import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
@@ -48,10 +50,10 @@ const DAY_TICKS = 24000
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
 // ワールドの状態だけから判定するので、中目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
 const MAX_PLANTED = 32
 const DEPOSIT_BATCH = 32 // これだけ持ったらチェストに入れに行く
 const NEAR_HOME = 12
@@ -217,6 +219,14 @@ function validGoal (spec, bot, state, knowledge) {
       // 判定は Python が先に登録する（PUT /conditions/<name>）。まだない名前は「まだ」
       const name = String(spec.name ?? '')
       if (!state.conditions?.[name]) throw new NotYetError(`there is no check named ${name} yet: it is written when the mid goal is added`)
+      return { spec: { predicate, name } }
+    }
+    case 'facility': {
+      // 設計した施設（設計書 47 §7）。設計は Python が先に登録する。まだない名前は「まだ」
+      const name = String(spec.name ?? '')
+      const fac = state.facilities?.[name]
+      if (!fac) throw new NotYetError(`there is no facility named ${name} yet: it is designed when the mid goal is added`)
+      if (!fac.layout) throw new Error(`${name} was not designed (it was already there): facility() is for designed farms and tree farms`)
       return { spec: { predicate, name } }
     }
     case 'planted': {
@@ -578,6 +588,35 @@ function evaluateOne (bot, state, knowledge, world) {
         out.lines.push(`${def?.description ?? goal.spec.name}: the check failed`)
         out.blocked.push(`the check failed: ${e.message}`)
       }
+      break
+    }
+    case 'facility': {
+      // 設計した施設のマス（設計書 47 §7）: 畑は耕してまく、植林場は苗木を植える
+      const fac = state.facilities[goal.spec.name]
+      const f = layoutStatus(bot, fac)
+      updateStatus(bot, fac)
+      out.met = f.done === f.total
+      out.remaining = f.total - f.done
+      const what = fac.kind === 'farm' ? `farm ${fac.name} (${fac.layout.crop})` : `tree farm ${fac.name} (${fac.layout.sapling})`
+      out.lines.push(`${what}: ${f.done}/${f.total} cells done${f.till.length ? `, to till ${f.till.length}` : ''}${f.sow.length ? `, to sow ${f.sow.length}` : ''}${f.plant.length ? `, to plant ${f.plant.length}` : ''}${f.unseen ? `, out of view ${f.unseen}` : ''}`)
+      if (out.met) break
+      const inv = inventoryCounts(bot)
+      if (fac.kind === 'farm') {
+        const seed = CROPS[fac.layout.crop].seed
+        if (f.sow.length) {
+          if (inv[seed] > 0) out.leaves.push({ kind: 'sow', item: seed, facility: fac.name })
+          else addSolved([{ spec: seed, count: Math.min(f.sow.length + f.till.length, 16) }])
+        }
+        if (f.till.length) {
+          if (Object.keys(inv).some((n) => n.endsWith('_hoe'))) out.leaves.push({ kind: 'till', facility: fac.name })
+          else addSolved([{ spec: 'hoe', count: 1 }])
+        }
+      } else if (f.plant.length) {
+        const held = Object.entries(inventoryCounts(bot)).find(([n, c]) => c > 0 && saplingMatches(fac.layout.sapling, n))
+        if (held) out.leaves.push({ kind: 'plant', item: held[0], facility: fac.name })
+        else addSolved([{ spec: fac.layout.sapling, count: f.plant.length }])
+      }
+      if (f.unseen && !out.leaves.length) out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance })
       break
     }
     case 'planted': {

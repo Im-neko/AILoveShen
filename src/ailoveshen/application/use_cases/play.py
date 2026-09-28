@@ -903,8 +903,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                     if _without_build(decision, name) != decision:
                         decision = _without_build(decision, name)
                         dropped = (
-                            f" (the build {name} could not be designed a moment ago: do not add it "
-                            "again for a while; choose another mid goal)"
+                            f" (the build or facility {name} could not be designed a moment ago: "
+                            "do not add it again for a while; choose another mid goal)"
                         )
                 if decision.spec.predicate not in predicates:
                     raise ValueError(
@@ -918,12 +918,12 @@ class AdvancePlayUseCase(IAdvancePlay):
                     await self._mid_goals.check_new(decision.changes)
                 except BuildNotDesignedError as e:
                     # 建物を設計できなくても、決定の残り（空腹なら食べる、など）は通す: その建物の
-                    # 中目標と手順だけ落とす（2026-09-27: 餓死寸前に決定ごと差し戻していた）
-                    logger.warning(f"建物 {e.name} を設計できないので、その中目標は足さない: {e}")
+                    # 中目標と手順だけ落とす（2026-09-27: 餓死寸前に決定ごと差し戻していた）。施設も同じ
+                    logger.warning(f"建物・施設 {e.name} を設計できないので、その中目標は足さない: {e}")
                     self._undesignable[e.name] = self._clock() + UNDESIGNABLE_SECONDS
                     dropped = (
-                        f" (the build {e.name} could not be designed just now and was left out: "
-                        "choose another mid goal for now)"
+                        f" (the build or facility {e.name} could not be designed just now and was "
+                        "left out: choose another mid goal for now)"
                     )
                     decision = _without_build(decision, e.name)
                     await self._mid_goals.check_new(decision.changes)
@@ -1206,10 +1206,13 @@ def _same_failures(session: PlaySession) -> int:
 
 
 def _without_build(decision: GoalDecision, name: str) -> GoalDecision:
-    """その建物（built(name)）を条件に持つ中目標の追加と、それを建てる手順を除いた決定。"""
+    """
+    その建物か施設（built(name) / facility(name)）を条件に持つ中目標の追加と、それを作る手順を
+    除いた決定。
+    """
 
     def builds_it(spec: GoalSpec) -> bool:
-        return spec.predicate == GoalPredicate.BUILT and spec.name == name
+        return spec.predicate in (GoalPredicate.BUILT, GoalPredicate.FACILITY) and spec.name == name
 
     changes = tuple(
         c

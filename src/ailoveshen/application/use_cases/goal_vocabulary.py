@@ -50,7 +50,9 @@ BUILD_NAME_DESCRIPTION = (
     "tower, a wall...). custom: the name of a check (a-z, 0-9, _; 2-40 characters, saying "
     "what it tests, e.g. sheep_in_pen_3, flowers_by_door) for a result no other predicate "
     "can say; a new name in a mid goal's conditions means you write the check right after, "
-    "from the mid goal's title and reason (say exactly what must hold)"
+    "from the mid goal's title and reason (say exactly what must hold). facility: the name of "
+    "a farm or tree farm (a-z, 0-9, _; e.g. wheat_farm, oak_grove; the town map's name for it "
+    "when it has one); a new name means you design it right after (zones, size, crop or sapling)"
 )
 # 条件を示す順番（frozenset には順番がない）
 _CONDITION_ORDER = [p for p in GoalPredicate if p in PLANNABLE_CONDITIONS]
@@ -609,7 +611,8 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             else None,
             dig_depth=int(data["dig_depth"]) if data.get("dig_depth") is not None else None,
             name=str(data["name"]).strip().lower() or None
-            if predicate in (GoalPredicate.BUILT, GoalPredicate.CUSTOM) and data.get("name")
+            if predicate in (GoalPredicate.BUILT, GoalPredicate.CUSTOM, GoalPredicate.FACILITY)
+            and data.get("name")
             else None,
         )
     except (KeyError, TypeError) as e:
@@ -834,6 +837,11 @@ def predicates_now(
         c.predicate == GoalPredicate.CUSTOM for g in plan.pending for c in g.conditions
     ):
         out.append(GoalPredicate.CUSTOM)
+    # 設計した施設（docs/design/47 §7）: それを条件に持つ中目標があるときだけ
+    if obs.has_home and any(
+        c.predicate == GoalPredicate.FACILITY for g in plan.pending for c in g.conditions
+    ):
+        out.append(GoalPredicate.FACILITY)
     out.append(GoalPredicate.EXPLORED)
     return out
 

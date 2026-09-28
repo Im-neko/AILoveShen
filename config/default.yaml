@@ -106,8 +106,9 @@ llm:
     # Purposes the local model thinks for (all others: no thinking). Thinking is slow locally, so the
     # everyday calls (tool_after_failure, commentary, live, reply) do not think; the goal decisions do
     # (they are few and plan the next minutes; user 2026-09-27), and so does the tool choice (user
-    # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9); [] = never think
-    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "town_plan"]
+    # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9), facility_design lays out
+    # a farm or tree farm (47 §7); [] = never think
+    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "town_plan", "facility_design"]
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.
@@ -139,6 +140,7 @@ gemini:
     town: "high"               # the town definition
     site: "high"               # choosing the town site
     town_plan: "high"          # the town's master plan (docs/design/47 §6)
+    facility_design: "high"    # a farm or tree farm's zones and size (docs/design/47 §7)
     house: "medium"            # designing the house
     build_design: "high"       # designing a named build (docs/design/25_builds.md)
     goal: "low"                # the small goal (with mid-goal edits and notes)

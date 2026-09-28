@@ -378,6 +378,8 @@ class GoalPredicate(str, Enum):
       （整地）
     - CUSTOM: `name` の判定（Gemini が書いた JS。ブリッジが世界を読んで動かす）が成り立っている
       （組み込みの述語で書けない頼み。docs/design/42_custom_conditions.md）
+    - FACILITY: `name` の施設（設計した畑・植林場、docs/design/47 §7）のマスがすべて済んでいる
+      （畑は耕してまいた、植林場は苗木を植えた）
     """
 
     HAVE = "have"
@@ -394,6 +396,7 @@ class GoalPredicate(str, Enum):
     PLANTED = "planted"
     FARMED = "farmed"
     CUSTOM = "custom"
+    FACILITY = "facility"
 
 
 @dataclass(frozen=True)
@@ -415,7 +418,7 @@ class GoalSpec:
     distance: Optional[int] = None
     # 埋まった石・鉱石まで階段で掘り下げてよい深さ（小目標だけ。None: 掘り下げない）
     dig_depth: Optional[int] = None
-    # built の建物の名前（None: 家）、custom の判定の名前
+    # built の建物の名前（None: 家）、custom の判定の名前、facility の施設の名前
     name: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -441,6 +444,8 @@ class GoalSpec:
             raise ValueError("leveled needs where (home or x,y,z)")
         if self.predicate == GoalPredicate.CUSTOM and not self.name:
             raise ValueError("custom needs the name of its check")
+        if self.predicate == GoalPredicate.FACILITY and not self.name:
+            raise ValueError("facility needs the name of the facility")
         radius = (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
         if self.predicate in radius and (self.distance is None or self.distance < 1):
             raise ValueError(
@@ -538,6 +543,7 @@ CONDITION_PREDICATES = frozenset(
         GoalPredicate.FARMED,
         GoalPredicate.LEVELED,
         GoalPredicate.CUSTOM,
+        GoalPredicate.FACILITY,
     }
 )
 # LLM が中目標や街の段階に書ける条件。調査は、街の場所を決める前にコードが足すだけ

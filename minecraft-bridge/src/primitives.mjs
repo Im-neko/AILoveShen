@@ -19,7 +19,7 @@ import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './move.mjs'
 import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
-import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS } from './farming.mjs'
+import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
 import { levelStatus, fillItem, TERRAIN } from './leveling.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
@@ -1104,6 +1104,9 @@ export const PRIMITIVES = {
     const hoe = bot.inventory.items().find((i) => i.name.endsWith('_hoe'))
     if (!hoe) throw new Error('no hoe')
     await goNear(bot, c.pos, 3, signal)
+    // 上の草花は先にどける（耕すには上が空いている必要がある）
+    const plant = bot.blockAt(c.pos.offset(0, 1, 0))
+    if (plant && CLEARABLE.test(plant.name)) await bot.dig(plant)
     const block = bot.blockAt(c.pos)
     if (!/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') || bot.blockAt(c.pos.offset(0, 1, 0))?.name !== 'air') {
       throw new Error(`nothing to till at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${block?.name ?? 'unloaded'})`)

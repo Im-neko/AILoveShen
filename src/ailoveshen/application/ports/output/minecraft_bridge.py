@@ -158,6 +158,18 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def set_facility(self, name: str, body: dict[str, Any]) -> dict[str, Any]:
+        """
+        施設の設計を登録する（docs/design/47 §7。PUT /facilities/<name>）: {kind, zones, boxes |
+        near_home, purpose, design}。ブリッジが区画の中から実際のマスを選び、登録した施設を返す。
+
+        Raises:
+            GoalRejectedError: 設計を直せば通る理由（大きすぎる、区画に耕せる地面が足りない）
+            FacilityAreaNotReadyError: 区画が読み込まれていない（設計を直しても通らない）
+        """
+        ...
+
+    @abstractmethod
     async def zones(self, x: int, z: int) -> list[dict[str, Any]]:
         """
         街の理想図の区画の地形（docs/design/47 §6。中心 x, z から 12 x 12、1 区画 8 ブロック）:

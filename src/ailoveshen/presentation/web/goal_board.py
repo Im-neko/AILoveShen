@@ -207,6 +207,8 @@ def goal_label(spec: GoalSpec) -> str:
         return f"木を {n} 本植える"
     if p == GoalPredicate.FARMED:
         return f"畑に{item}を {n} マス植える"
+    if p == GoalPredicate.FACILITY:
+        return f"{spec.name} を作る"
     return spec.describe()
 
 
