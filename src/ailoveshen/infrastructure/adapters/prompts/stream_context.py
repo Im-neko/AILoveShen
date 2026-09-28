@@ -115,18 +115,19 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.PLANTED: (
         "planted(item, count): 植林場（facility で設計したもの）に苗木を植え、植えた木を count 本に"
         "する（育った木も数える）。item は sapling か oak_sapling など。苗木は葉を壊すとときどき落ちる。"
-        "植林場がないか空きがなければ、先に facility で作る・広げる。例: planted(sapling, 4)"
+        "植林場がないか空きがなければ、先に facility で別の名前の植林場を足す。例: planted(sapling, 4)"
     ),
     GoalPredicate.FARMED: (
         "farmed(item, count): 畑（facility で設計した畑と前からの家の畑の合計）に作物を count マス"
         "植える（クワで耕す）。item は wheat（種は草からときどき）か、持っていれば carrots / potatoes /"
-        " beetroots。畑がないか空きがなければ、先に facility で作る・広げる。例: farmed(wheat, 9)"
+        " beetroots。畑がないか空きがなければ、先に facility で別の名前の畑を足す。例: farmed(wheat, 9)"
     ),
     GoalPredicate.FACILITY: (
         "facility(name): 施設（畑か植林場）を設計どおりに作る（畑は全部耕してまく、植林場は全部植える）。"
-        "新しく耕す・植えるのは施設のマスだけなので、畑や植林場を作る・広げるときは先にこれを中目標の"
+        "新しく耕す・植えるのは施設のマスだけなので、畑や植林場を作る・増やすときは先にこれを中目標の"
         "条件にする（新しい name を書くと、街の理想図の区画に配置を設計してから作る。理想図に予定の施設が"
-        "あればその名前で）。例: facility(wheat_farm)"
+        "あればその名前で）。できた施設は広げられない: 増やすときは別の名前（例: wheat_farm_2）。"
+        "例: facility(wheat_farm)"
     ),
     GoalPredicate.CLEARED: (
         "cleared: ドアの近くで待ち構える敵を外に出て倒す（昼は素手でも。夜は剣か斧があり体力 14 以上の"

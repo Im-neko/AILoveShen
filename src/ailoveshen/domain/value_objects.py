@@ -679,6 +679,8 @@ class GoalStatus:
     blocked: tuple[str, ...] = ()
     # 小目標の束（docs/design/44）のとき、条件ごとの状態（先頭が lead）
     members: tuple["BundleMember", ...] = ()
+    # 進める手が 1 つもなく、今は手に入らない部分があるとき、その理由（例: 畑がない。設計書 47 §15）
+    dead_end: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

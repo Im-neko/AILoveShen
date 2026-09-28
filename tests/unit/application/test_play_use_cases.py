@@ -553,6 +553,24 @@ class TestAdvancePlay:
         assert "have(planks, 4) is already met now" in error
 
     @pytest.mark.asyncio
+    async def test_a_goal_that_cannot_progress_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """進める手がない小目標（畑がないのに farmed など）は差し戻す（設計書 47 §15）。"""
+        text_generator.generate_json.side_effect = [PLANKS, {**PLANKS, "count": 8}]
+        bridge.set_goal.side_effect = [
+            GoalStatus(False, 4, dead_end=("there is no farm for wheat",)),
+            GoalStatus(False, 8),
+        ]
+        session = _session()
+
+        await use_case.execute(session)
+
+        assert session.goal.spec.count == 8
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "cannot progress now: there is no farm for wheat" in error
+
+    @pytest.mark.asyncio
     async def test_steps_before_one_already_met_are_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):

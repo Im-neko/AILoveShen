@@ -5,7 +5,7 @@
 # how（手順。道具の名前と引数で書く）、tools（how で使う道具。tests/unit/infrastructure/test_abilities.py が
 # 道具の一覧にあるかを確かめる）、see（関連する項目の key）
 - key: make_farm
-  title: 畑を作る・広げる
+  title: 畑を作る・増やす
   words: farm field crops farmland till sow hoe wheat carrot potato beetroot facility 畑
   when: 食べ物（パン、ニンジン、ジャガイモ）を毎日取れるようにしたいとき、中目標が farmed のとき
   how: |

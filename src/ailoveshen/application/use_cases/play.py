@@ -942,6 +942,13 @@ class AdvancePlayUseCase(IAdvancePlay):
                         f"the small goal {_bundle_label(decision)} is already met now; choose one "
                         "that is not met yet (see the steps' state now)"
                     )
+                if status.dead_end:
+                    # 進める手がない小目標（畑がないのに farmed など）は、行き詰まるまで回さずに差し戻す
+                    raise ValueError(
+                        f"the small goal {_bundle_label(decision)} cannot progress now: "
+                        f"{'; '.join(status.dead_end)}. Choose a step that can be done now "
+                        "(what it needs first)"
+                    )
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
                 _serving(decision, preview)

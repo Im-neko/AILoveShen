@@ -186,7 +186,9 @@ function decisionView () {
   return { status, candidates }
 }
 
-const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)], ...(s.members ? { members: s.members.map(({ spec, met, remaining }) => ({ spec, met, remaining })) } : {}) }
+// dead_end: 進める手が 1 つもなく、今は手に入らない部分がある（その理由）。Python は決定を差し戻す
+const deadEnd = (s) => !s.met && !s.leaves?.length && s.impossible?.length ? [...new Set(s.impossible)] : []
+const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remaining, lines: s.lines, blocked: [...new Set(s.blocked)], dead_end: deadEnd(s), ...(s.members ? { members: s.members.map(({ spec, met, remaining }) => ({ spec, met, remaining })) } : {}) }
 
 // 候補を1つ実行する（実行の経路は runner.mjs。道具と同じ）
 const run = createRunner(bot, state, {

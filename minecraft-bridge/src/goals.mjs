@@ -643,7 +643,7 @@ function evaluateOne (bot, state, knowledge, world) {
         break
       }
       if (!cell) {
-        const why = `the tree farms (${farms.map((f) => f.name).join(', ')}) have no free cell for ${held?.[0] ?? item}: add or enlarge a tree farm with facility(<name>)`
+        const why = `the tree farms (${farms.map((f) => f.name).join(', ')}) have no free cell for ${held?.[0] ?? item}: add another tree farm with a new name, facility(<new name>) (e.g. ${farms[0].name}_2); a facility cannot be enlarged`
         out.blocked.push(why)
         out.impossible.push(why)
         break
@@ -669,7 +669,7 @@ function evaluateOne (bot, state, knowledge, world) {
         break
       }
       if (f.planted + f.free < count) {
-        const why = `the ${crop} farms have room for ${f.planted + f.free} (asked ${count}): add or enlarge a farm with facility(<name>) for more`
+        const why = `the ${crop} farms have room for ${f.planted + f.free} (asked ${count}): for more, add another farm with a new name, facility(<new name>) (e.g. ${crop}_farm_2); a facility cannot be enlarged`
         out.blocked.push(why)
         if (!f.free) { out.impossible.push(why); break }
       }

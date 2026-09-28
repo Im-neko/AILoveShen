@@ -386,6 +386,7 @@ def _to_status(data: dict[str, Any]) -> GoalStatus:
         remaining=int(data["remaining"]),
         lines=tuple(str(x) for x in data.get("lines", [])),
         blocked=tuple(str(x) for x in data.get("blocked", [])),
+        dead_end=tuple(str(x) for x in data.get("dead_end", [])),
         members=tuple(
             BundleMember(
                 label=_label(m.get("spec") or {}),

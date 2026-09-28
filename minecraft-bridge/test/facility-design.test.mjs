@@ -151,5 +151,5 @@ test('畑も植林場もなければ、先に facility(name) で設計するよ�
 
   registerFacility(world(), s, 'small', { kind: 'farm', boxes: ZONE.map((z) => ({ ...z, min_z: 4 })), design: { width: 1, depth: 1 } })
   s.goal = makeGoal({ predicate: 'farmed', item: 'wheat', count: 5 }, bot, s, k)
-  assert.match(evaluate(bot, s, k, {}).blocked.join('\n'), /the wheat farms have room for 1 \(asked 5\): add or enlarge/)
+  assert.match(evaluate(bot, s, k, {}).blocked.join('\n'), /the wheat farms have room for 1 \(asked 5\): for more, add another farm with a new name/)
 })

@@ -240,7 +240,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     const seed = CROPS[crop].seed
     const meal = (world.inventory?.bone_meal ?? 0) > 0 && farm.f.pos ? `; bone meal grows it at once (use_item bone_meal on the ${farm.s} at ${farm.f.pos.x},${farm.f.pos.y},${farm.f.pos.z})` : ''
     // 育つ間に畑の空いたマスを埋める（次の収穫が増える）: 種があればまく、クワがあれば耕す。ついでの作業（also）。
-    // 空きがなければ、畑を足す・広げる（設計してから: 設計書 47 §14）
+    // 空きがなければ、別の名前の畑を足す（設計してから。施設は広げられない: 設計書 47 §14）
     const also = `fill the ${crop} farms while it grows (more ${farm.s} next harvest)`
     const expand = free > 0
       ? [
@@ -250,7 +250,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
       : []
     const more = free > 0
       ? `or fill the farms' ${free} free cells (till and sow ${seed}; a step farmed(${crop}, ${planted + free}))`
-      : `or, for more, add or enlarge a ${crop} farm (facility(<name>) in a mid goal: it is designed on the town map first)`
+      : `or, for more, add another ${crop} farm with a new name (facility(<new name>) in a mid goal, e.g. ${crop}_farm_2: it is designed on the town map first)`
     leaf = {
       kind: 'growing',
       item,

@@ -74,8 +74,8 @@ test('畑の小麦が育ち途中なら遠出しない。熟していれば畑�
   const growing = solve(k, world(farm({ ripe: 0 })), need)
   assert.deepEqual(growing.leaves, [])
   assert.match(growing.blocked.join('\n'), /wheat on the farms for wheat is still growing \(9 planted, none ripe, age 1-5 of 7\).*grows only while you stay near it/)
-  // 空きがなければ、畑を足す・広げる（設計してから。設計書 47 §14）
-  assert.match(growing.blocked.join('\n'), /add or enlarge a wheat farm \(facility\(<name>\)/)
+  // 空きがなければ、別の名前の畑を足す（設計してから。施設は広げられない。設計書 47 §14）
+  assert.match(growing.blocked.join('\n'), /add another wheat farm with a new name \(facility\(<new name>\)/)
 
   // 空きがあれば、育つ間に埋める: 種があればまく、クワがあれば耕す（ついでの作業: 停滞に数えない）
   const tools = solve(k, { ...world(farm({ ripe: 0, free: 7 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
