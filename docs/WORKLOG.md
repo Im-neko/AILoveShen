@@ -1849,6 +1849,13 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
+### 暗い所で松明を自動で置く（2026-09-28 時点、未着手。ユーザーが 1・2 の実装を了承済み）
+
+1. 行動の途中で自動で置く: runner（`runner.mjs`）の 0.5 秒ごとの見張りで暗い状態が続いた時間を数え（`isDark`、`state.darkSince`）、5 秒続いて松明を持っていれば置く。置くのは primitives.mjs に足す `keepLit`（`torchSpot` の足元、`place_torch` と同じ置き方。失敗しても行動は失敗にしない）。掘るループ（`dig_down`、`dig_mine`、`level`）はブロックの区切りで呼ぶ（道具の持ち替えとぶつからない）。歩く行動は終わった直後に runner が呼ぶ。結果の文に置いたことを添える
+2. 地下へ行く前に用意: goals.mjs の「ついで」（`upgradesToTry` の近く）に、葉が `go_mine` / `dig_down` / `dig_mine` か地下にいて松明が 8 本未満なら、作るだけでできるとき torch の作成を `also` で出す（材料からなら行で知らせる）
+3. （任意・別作業）本物の光の値（ブロックの光）が 1.21.4 で信用できるか実機で確かめる
+テスト（test/ に偽の世界）、CLAUDE.md・設計書（新しいか 33/47 の追記）、abilities.yaml の `light_up` に自動で置くことを書く
+
 ### 視聴者の助言（設計書 49、2026-09-28 時点）
 
 実機で `python examples/integration_test_minecraft.py --comments examples/comments_advice.json` を回し、各 `pass` を見る。配信では `logs/chat/*.jsonl`（仕分けの種類）と警告「返答 N は〜を流している」「〜を流したまま話す」を見る。畑に水を引くのは Gemini の判断任せ（`use_item` のバケツは実機で未確認）
