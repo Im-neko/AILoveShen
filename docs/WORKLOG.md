@@ -1720,6 +1720,12 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
+### 設計書 47 の残り（2026-09-28 時点）
+
+段階 1（`44aa0aa`）と 2（`b38cc1c`）は済み。残りは段階 3（街の理想図: 12x12 の区画、各 8 マス）、4（畑と植林場の設計: `facility(name)`、`farmed` / `planted` を施設の範囲で数える、`facility_design`）、5（採掘場）、6（囲い・トラップ、別の設計書）。止めた理由:
+- ユーザーの未コミットの変更と同じ所を触る: `thinking_purposes` の 1 行（ユーザーが tool を足した。段階 3・4 は facility_design / town_plan を足す）、目標のシステム指示（すでに 8024 > 8000、段階 4 は条件を足す）
+- 段階 4 は段階 1 の取り込み（`home_farm` の範囲 = 家のまわりの耕地を全部）を土台にする: 実機で `GET /facilities` を見てから（近くに村の畑があれば入ってしまう）
+
 ### 次のセッションで決めること・やること（2026-09-25 時点）
 
 0. **OBS の準備**（23 §6）: WebSocket サーバーを有効にしてパスワードを `.env` の `OBS_PASSWORD` に、視点のクライアントを映すソースを `Minecraft`（または `OBS_GAME_SOURCE`）に。`pip install -r requirements.txt` をやり直す（`obsws-python`）。実機で見ること: 画像が撮れるか（黒くないか、縦横比）、定期の見直しで Gemini が画面をどう読むか、1 枚あたりのトークンと時間（`/debug/gemini`）、`look_screen` をいつ使うか
