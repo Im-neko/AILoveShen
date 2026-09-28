@@ -131,11 +131,20 @@ test('整地は、同じ高さならドアの前の穴を埋める列に数え�
 })
 
 test('goto は歩いた後の実際の位置で着いたかを言う（穴の中で「着いた」と言わない）', () => {
-  const bot = { entity: { position: new Vec3(-75.5, 64, -149.7) } }
+  const bot = { entity: { position: new Vec3(-75.5, 64, -149.7), onGround: true }, blockAt: () => ({ name: 'air', boundingBox: 'empty' }) }
   const target = new Vec3(-76, 65, -151)
   assert.throws(() => arrivalReport(bot, new goals.GoalNear(target.x, target.y, target.z, 1), target), /did not reach -76,65,-151: stopped at -75.5,64,-149.7 .*height -1/)
   bot.entity.position = new Vec3(-75.5, 65, -150.5)
   assert.match(arrivalReport(bot, new goals.GoalNear(target.x, target.y, target.z, 1), target), /arrived near -76,65,-151/)
+})
+
+test('耕地やハーフブロックの上は pathfinder と同じく 1 つ上のセルに立っている（着いたのに失敗にしない）', () => {
+  const bot = {
+    entity: { position: new Vec3(0.5, 64.9375, 0.5), onGround: true },
+    blockAt: (p) => ({ name: p.y === 64 ? 'farmland' : 'air', boundingBox: p.y === 64 ? 'block' : 'empty' })
+  }
+  const target = new Vec3(1, 65, 0)
+  assert.match(arrivalReport(bot, new goals.GoalNear(target.x, target.y, target.z, 1), target), /arrived near 1,65,0 .*height \+0/)
 })
 
 test('オートジャンプ: 前へ歩いていて、進む先に 1 段の完全なブロックがあれば跳ぶ（ドア・柵、pathfinder の移動では跳ばない）', () => {
@@ -157,4 +166,8 @@ test('オートジャンプ: 前へ歩いていて、進む先に 1 段の完全
   assert.equal(shouldAutoJump(at({ '0,65,-1': 'dirt', '0,66,-1': 'dirt' })), false) // 2 段
   assert.equal(shouldAutoJump(at({ '0,65,-1': 'dirt' }, { pathfinder: { isMoving: () => true } })), false)
   assert.equal(shouldAutoJump(at({ '0,65,-1': 'dirt' }, { controlState: { forward: false } })), false)
+  // 耕地（15/16 の高さ）から隣の草へは段差ではない。耕地の上からは 1 つ上の段差で跳ぶ
+  const onFarmland = { entity: { position: new Vec3(0.5, 64.9375, 0.5), yaw: 0, onGround: true } }
+  assert.equal(shouldAutoJump(at({ '0,64,0': 'farmland' }, onFarmland)), false)
+  assert.equal(shouldAutoJump(at({ '0,64,0': 'farmland', '0,65,-1': 'dirt' }, onFarmland)), true)
 })

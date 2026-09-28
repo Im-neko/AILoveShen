@@ -61,6 +61,15 @@ export function blockProps (block) {
   return Object.keys(props).length ? props : null
 }
 
+// ボットが立っているセル（pathfinder の出発点と同じ決め方）: 足が半端な高さで、床を切り下げたセルが
+// 空でない（耕地、土の道、ハーフブロック、ソウルサンド、泥など）なら 1 つ上
+export function standingCell (bot) {
+  const pos = bot.entity.position
+  const p = pos.floored()
+  const b = bot.blockAt(p)
+  return b && pos.y - p.y > 0.001 && bot.entity.onGround && b.boundingBox !== 'empty' ? p.offset(0, 1, 0) : p
+}
+
 // 技の t.block_at: その座標のブロックの名前と状態
 export function blockInfo (bot, { x, y, z }) {
   const p = { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) }

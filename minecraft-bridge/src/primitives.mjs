@@ -8,7 +8,7 @@
 import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
-import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem } from './observe.mjs'
+import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell } from './observe.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
@@ -62,7 +62,7 @@ export const isLeaves = (name) => !!name?.endsWith('_leaves')
 export function arrivalReport (bot, goal, target) {
   const p = bot.entity.position
   const at = `${round(p.x)},${round(p.y)},${round(p.z)}`
-  const f = p.floored()
+  const f = standingCell(bot)
   if (!goal.isEnd(f)) {
     throw new Error(`did not reach ${target.x},${target.y},${target.z}: stopped at ${at} ` +
       `(${round(Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z))} m away horizontally, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`)

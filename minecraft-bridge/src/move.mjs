@@ -17,6 +17,7 @@
 
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { doorOpener } from './doors.mjs'
+import { standingCell } from './observe.mjs'
 
 const { GoalNearXZ } = pathfinderPkg.goals
 
@@ -74,8 +75,9 @@ export function installAutoJump (bot) {
 export function shouldAutoJump (bot) {
   const e = bot.entity
   if (!e?.onGround || !bot.controlState?.forward || bot.pathfinder?.isMoving?.()) return false
-  const feet = e.position.floored()
+  const feet = standingCell(bot)
   const ahead = e.position.offset(-Math.sin(e.yaw) * AHEAD_M, 0, -Math.cos(e.yaw) * AHEAD_M).floored()
+  ahead.y = feet.y
   if (ahead.x === feet.x && ahead.z === feet.z) return false
   const step = bot.blockAt(ahead)
   if (!step || step.boundingBox !== 'block' || NO_JUMP.test(step.name) || !isFullCube(step)) return false

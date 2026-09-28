@@ -14,7 +14,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
 import { buildAllowsDig, onBuildCell, isHomeCell, buildBox } from './builds.mjs'
 import { walkTo } from './move.mjs'
-import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem } from './observe.mjs'
+import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem, standingCell } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const { goals } = pathfinderPkg
@@ -177,7 +177,7 @@ export function describeDoorstep (bot, home) {
   const name = (p) => bot.blockAt(p)?.name ?? 'unloaded'
   const o = home.outside
   const door = isDoorOpen(bot, home) ? 'open' : 'closed'
-  const me = bot.entity.position.floored()
+  const me = standingCell(bot)
   return `door ${door}; in front of the door: floor ${name(o.offset(0, -1, 0))}, feet ${name(o)}, head ${name(o.offset(0, 1, 0))}; ` +
     `you stand at ${me.x},${me.y},${me.z} (the doorstep is ${o.x},${o.y},${o.z})`
 }
@@ -231,10 +231,10 @@ async function fillDoorstep (bot, home, signal) {
     if (!item) {
       throw new Error(`the floor in front of the door is missing at ${cell.x},${cell.y},${cell.z} and you carry nothing to fill it (dirt or cobblestone) (${describeDoorstep(bot, home)})`)
     }
-    if (!bot.entity.position.floored().equals(cell) && bot.entity.position.distanceTo(cell.offset(0.5, 0.5, 0.5)) > PLACE_REACH) {
+    if (!standingCell(bot).equals(cell) && bot.entity.position.distanceTo(cell.offset(0.5, 0.5, 0.5)) > PLACE_REACH) {
       await walkTo(bot, new goals.GoalNear(cell.x, cell.y, cell.z, 2), signal)
     }
-    if (bot.entity.position.floored().equals(cell)) await jumpAndPlace(bot, cell, item)
+    if (standingCell(bot).equals(cell)) await jumpAndPlace(bot, cell, item)
     else {
       await bot.equip(item, 'hand')
       await bot.placeBlock(bot.blockAt(cell.offset(0, -1, 0)), new Vec3(0, 1, 0))
@@ -246,7 +246,7 @@ async function fillDoorstep (bot, home, signal) {
 
 // ドアの前（外のセル）の高さに立っているか（1 段下の穴の中は、近くても前ではない）
 const onDoorstepLevel = (bot, home) => {
-  const p = bot.entity.position.floored()
+  const p = standingCell(bot)
   return p.y === home.outside.y && Math.abs(p.x - home.outside.x) + Math.abs(p.z - home.outside.z) <= 1
 }
 
