@@ -247,8 +247,9 @@ tts:
     blocksize: 1024
 
   # Emotion to Style mapping (for EmotionStyleService)
-  # The shen model only has the "Neutral" style (unknown styles return 422).
-  # Emotions are expressed by the avatar (Live2D), not the voice.
+  # Styles of the shen model: Neutral (from Irodori-TTS's plain reading), Happy / Surprised / Sad /
+  # Angry / Fear (tools/sbv2_add_styles.py), Neutral-01 (the Neutral from the original recordings).
+  # Unknown styles return 422.
   emotion_style_map:
     neutral: "Neutral"
     happy: "Neutral"

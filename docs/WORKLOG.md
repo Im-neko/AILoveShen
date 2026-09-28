@@ -7,6 +7,18 @@
 
 ## Completed Work
 
+### Style-Bert-VITS2 の Neutral を Irodori-TTS の音声から作り直す (2026-09-28)
+
+**Commit**: なし（未コミット）
+
+ユーザー「9/26 に作ったスタイルの Neutral は昔のもの？ Irodori 由来で Neutral も作りたい」「昔の Neutral は Neutral-01 として残す」「Irodori は生成が重いので SBV2 の Neutral を」。
+- 確認: 9/26 の Neutral は元の録音から作ったもののまま（バックアップと一致）。配信は `tts.engine` 既定の style_bert_vits2、`emotion_style_map` は全部 Neutral（各スタイルの声が微妙だったため 9/28 に戻した）
+- `irodori_from_sbv2.py emotions` に `neutral`（説明なしで、声 shen_sbv2 のまま読む）。`sbv2_add_styles.py` に `neutral` → Neutral、初めて置き換えるときは前の Neutral を `Neutral-01` として残す
+- 実行: Irodori-TTS で台本のふつうの文 30 本（除外 0、5 分半）→ `data/irodori_train/shen_sbv2_neutral/`（声 `shen_sbv2_neutral` も登録）→ Neutral を置き換え（`style_vectors.npy.20260928-205345.bak`）→ TTS サーバー再起動。スタイルは Neutral, Happy, Surprised, Sad, Angry, Fear, Neutral-01
+- 埋め込みの cos: 感情スタイルと元の Neutral 0.65〜0.68、新しい Neutral 0.83〜0.96。感情スタイルと元の Neutral の差の大半は「Irodori-TTS が読んだ音」の違いだった
+- `sbv2_add_styles.py` は `Style-Bert-VITS2/venv` では動かない（torchaudio 2.9.1 に pyannote.audio 3.4 が要る `AudioMetaData` がない。SBV2 の要件は torchaudio<2.4）。9/26 もこのリポジトリの `.venv`（9/26 に pyannote 3.4.0 / torchaudio 2.3.1 を入れた）で動かしていた。手順書・スクリプトの案内を `.venv` に直した
+- 未確認: 聞き比べ（新しい Neutral と Neutral-01、Neutral 基準での感情スタイル）
+
 ### 視聴者の助言を流さない、ブロックの状態を渡す（設計書 49） (2026-09-28)
 
 **Commit**: 5f3478b（助言）、6ddb7d3（ブロックの状態）、8db950b（問いかけの形の助言、空の値）

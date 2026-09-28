@@ -138,10 +138,11 @@ python tools/irodori_from_sbv2.py train --max-steps 3000
 
 ## 8. 感情の声（Irodori-TTS で読ませて、Style-Bert-VITS2 のスタイルにも）
 
-`shen_sbv2` の声で、台本の感情の文（楽しい H、驚き S、悲しい D、むっ A、怖い F）を Irodori-TTS に感情の話し方の説明（`tts.irodori.emotion_captions`）付きで読ませる。
+`shen_sbv2` の声で、台本の感情の文（楽しい H、驚き S、悲しい D、むっ A、怖い F）を Irodori-TTS に感情の話し方の説明（`tts.irodori.emotion_captions`）付きで読ませる。`neutral`（ふつう N）は説明なしで読ませる（Style-Bert-VITS2 の Neutral を作り直すため）。
 
 ```bash
 python tools/irodori_from_sbv2.py emotions --source irodori --per-emotion 20
+python tools/irodori_from_sbv2.py emotions --source irodori --emotions neutral --per-emotion 30
 ```
 
 - `data/irodori_train/shen_sbv2_<感情>/audio/*.wav`。**聞いて、その感情に聞こえないもの・声が違うものは消す**。消したら `--register-only` で登録し直す
@@ -150,10 +151,11 @@ python tools/irodori_from_sbv2.py emotions --source irodori --per-emotion 20
 ### Style-Bert-VITS2 のスタイルにする
 
 ```bash
-<Style-Bert-VITS2 の学習に使った環境の Python> tools/sbv2_add_styles.py --model shen   # --dry-run で確認だけ
+.venv/bin/python tools/sbv2_add_styles.py --model shen   # --dry-run で確認だけ、--emotions neutral で Neutral だけ
 (cd docker && docker compose restart)                    # TTS サーバーがスタイルを読み直す
 ```
 
-- 感情ごとの音声の埋め込み（pyannote wespeaker、Style-Bert-VITS2 の `style_gen`）の平均を、`model_assets/shen/style_vectors.npy` に Happy / Surprised / Sad / Angry / Fear として足す（同じ名前があれば置き換え）。**今の Neutral はそのまま**（公式 WebUI の「方法0」は Neutral を全体の平均で作り直すので使わない）。前のファイルは `*.<日時>.bak`
-- 学習し直さない。Docker の TTS サーバーは推論だけの環境（pyannote なし、モデルのフォルダーは読み取り専用）なので、学習に使った Style-Bert-VITS2 の環境で動かす
+- 感情ごとの音声の埋め込み（pyannote wespeaker、Style-Bert-VITS2 の `style_gen`）の平均を、`model_assets/shen/style_vectors.npy` に Happy / Surprised / Sad / Angry / Fear として足し、`neutral` の音声から Neutral を作り直す（同じ名前があれば置き換え）。Neutral を初めて置き換えるときは、前の Neutral（元の録音から作ったもの）を **`Neutral-01`** として残す（公式 WebUI の「方法0」は Neutral を全体の平均で作り直すので使わない）。前のファイルは `*.<日時>.bak`
+- 学習し直さない。Docker の TTS サーバーは推論だけの環境（pyannote なし、モデルのフォルダーは読み取り専用）なので、pyannote.audio と torchaudio < 2.9 が入ったこのリポジトリの `.venv` で動かす（`Style-Bert-VITS2/venv` は torchaudio 2.9.1 で、pyannote.audio 3.4 が「module 'torchaudio' has no attribute 'AudioMetaData'」で読めない）
+- 感情のスタイルは Irodori-TTS が読んだ音声から、元の Neutral は元の録音から作ったので、元の Neutral との差には感情のほかに「Irodori-TTS が読んだ音」の違いが混ざる（埋め込みの cos: 元の Neutral と 0.65〜0.68、Irodori-TTS の Neutral と 0.83〜0.96）。Neutral も Irodori-TTS の音声から作ると、スタイルどうしの差は感情だけになる
 - 出てくる `tts.emotion_style_map` と `tts.synthesis.style_weight`（感情の強さ、1 で弱ければ 2〜5）を `config/development.yaml` に。聞き比べは `python tools/tts_compare.py --emotion`（両方の方式で、感情なしと感情つき）

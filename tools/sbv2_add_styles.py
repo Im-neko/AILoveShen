@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
 Irodori-TTS が感情をつけて読んだ音声（tools/irodori_from_sbv2.py emotions）から、Style-Bert-VITS2 の
-モデルに感情のスタイル（Happy / Surprised / Sad / Angry / Fear）を足す（docs/setup/irodori_tts.md §8）。
+モデルに感情のスタイル（Happy / Surprised / Sad / Angry / Fear）を足し、説明なしで読んだ音声（neutral）から
+Neutral を作り直す（docs/setup/irodori_tts.md §8）。
 
 学習し直さない: Style-Bert-VITS2 のスタイルは、音声から取った 256 次元のベクトル（pyannote の wespeaker）の
-平均。今のスタイル（Neutral など）はそのまま残し、同じ名前のスタイルだけ置き換えるか足す。公式の WebUI の
-「スタイル作成 → 方法0（サブフォルダごと）」は Neutral をフォルダー全体の平均で作り直してしまうので使わない。
+平均。同じ名前のスタイルだけ置き換えるか足し、ほかはそのまま残す。Neutral を初めて置き換えるときは、前の
+Neutral（元の録音から作ったもの）を Neutral-01 として残す。公式の WebUI の「スタイル作成 → 方法0
+（サブフォルダごと）」は Neutral をフォルダー全体の平均で作り直してしまうので使わない。
 
-Style-Bert-VITS2 の学習に使った環境（pyannote が入っている）の Python で動かす:
+pyannote.audio と torchaudio < 2.9 が入った Python で動かす（このリポジトリの .venv。Style-Bert-VITS2/venv は
+torchaudio 2.9 で pyannote.audio 3.4 が読めない: 「module 'torchaudio' has no attribute 'AudioMetaData'」）:
 
-    <Style-Bert-VITS2>/venv/bin/python tools/sbv2_add_styles.py [--sbv2 Style-Bert-VITS2] [--model shen]
-        [--from shen_sbv2] [--emotions happy,surprised,sad,angry,scared] [--dry-run]
+    .venv/bin/python tools/sbv2_add_styles.py [--sbv2 Style-Bert-VITS2] [--model shen]
+        [--from shen_sbv2] [--emotions happy,surprised,sad,angry,scared,neutral] [--dry-run]
 
 - 読む音声: data/irodori_train/<from>_<感情>/audio/*.wav（聞いて、違う感情のものは消しておく）
 - 書く: <sbv2>/model_assets/<model>/style_vectors.npy と config.json（前のものは *.<日時>.bak）
@@ -28,7 +31,9 @@ from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-STYLES = {"happy": "Happy", "surprised": "Surprised", "sad": "Sad", "angry": "Angry", "scared": "Fear"}
+STYLES = {"happy": "Happy", "surprised": "Surprised", "sad": "Sad", "angry": "Angry", "scared": "Fear", "neutral": "Neutral"}
+# Neutral を置き換えるとき、前の Neutral を残す名前
+FORMER_NEUTRAL = "Neutral-01"
 
 
 def accept_old_hub_arguments() -> None:
@@ -103,7 +108,7 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001 - 環境が違う
         print(
             f"Style-Bert-VITS2 の style_gen を読めない: {e}\n"
-            "Style-Bert-VITS2 の学習に使った環境の Python で動かす（例: <Style-Bert-VITS2>/venv/bin/python）",
+            "pyannote.audio と torchaudio < 2.9 が入った Python で動かす（例: .venv/bin/python）",
             file=sys.stderr,
         )
         return 1
@@ -124,6 +129,10 @@ def main() -> int:
             continue
         mean = np.mean(np.stack(embs), axis=0)
         name = STYLES[e]
+        if name == "Neutral" and FORMER_NEUTRAL not in style2id:
+            style2id[FORMER_NEUTRAL] = len(rows)
+            rows.append(rows[style2id[name]])
+            print(f"  {FORMER_NEUTRAL}: 前の Neutral を残した")
         if name in style2id:
             rows[style2id[name]] = mean
             print(f"  {name}: 置き換えた（{len(embs)} 個の平均）")
@@ -143,6 +152,8 @@ def main() -> int:
     print("次に: cd docker && docker compose restart （TTS サーバーがスタイルを読み直す）")
     print("使う（config/development.yaml）:\ntts:\n  emotion_style_map:\n    neutral: \"Neutral\"")
     for e in STYLES:
+        if e == "neutral":
+            continue
         print(f"    {e}: \"{STYLES[e] if e in clips or STYLES[e] in style2id else 'Neutral'}\"")
     print(f"    excited: \"{'Happy' if 'Happy' in style2id else 'Neutral'}\"")
     print("  synthesis:\n    style_weight: 2.0   # 感情の強さ（1 で弱ければ上げる。上げすぎると声が崩れる）")

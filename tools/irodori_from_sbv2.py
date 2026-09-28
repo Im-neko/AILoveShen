@@ -14,8 +14,9 @@ Style-Bert-VITS2 で作った（雑音のない）音声から、Irodori-TTS の
 generate --for-reference で語りとふつうの文（64 文）だけ作れば足りる。学習用の量（30〜40 分）は 2b の LoRA
 のためで、学習した LoRA は小さく、合成の速さはほとんど変わらない（学習データは合成のときには使わない）。
 
-    # 3. 感情ごとの声（shen_sbv2_happy …: tts.irodori.emotion_voices で感情に応じて切り替える）
-    python tools/irodori_from_sbv2.py emotions [--source auto|sbv2|irodori] [--emotions happy,sad]
+    # 3. 感情ごとの声（shen_sbv2_happy …: tts.irodori.emotion_voices で感情に応じて切り替える）。neutral は
+    #    説明なしで読んだふだんの声（shen_sbv2_neutral: Style-Bert-VITS2 の Neutral を作り直すため）
+    python tools/irodori_from_sbv2.py emotions [--source auto|sbv2|irodori] [--emotions happy,sad,neutral]
 
     # 2b. LoRA の追加学習（Irodori-TTS の学習用リポジトリが要る: scripts/irodori/setup_train_mac.sh）
     python tools/irodori_from_sbv2.py base                 # 元のモデルの重みを取ってくる
@@ -230,17 +231,18 @@ def reference(args: argparse.Namespace) -> int:
 
 # ---- 3. 感情ごとの声 ----
 
-EMOTIONS = ("happy", "surprised", "sad", "angry", "scared")
+EMOTIONS = ("happy", "surprised", "sad", "angry", "scared", "neutral")
 
 
 async def emotions(args: argparse.Namespace) -> int:
     """
     感情ごとの参照音声を作り、声 <name>_<感情> として登録する（tts.irodori.emotion_voices で使う）。
 
-    読ませるのは台本のその感情の文（楽しい H、驚き S、悲しい D、むっ A、怖い F）。読み手:
+    読ませるのは台本のその感情の文（楽しい H、驚き S、悲しい D、むっ A、怖い F、ふつう N）。読み手:
     - sbv2: Style-Bert-VITS2 のその感情のスタイル（tts.emotion_style_map がモデルにある Neutral 以外の
       スタイルを指しているときだけ。shen モデルは Neutral しかない）
     - irodori: Irodori-TTS に、ふだんの声（--name）と感情の話し方の説明（tts.irodori.emotion_captions）で
+      （neutral には説明がないので、参照音声のままの話し方）
     - auto（既定）: sbv2 でできる感情は sbv2、ほかは irodori
     """
     from ailoveshen.domain.value_objects import EmotionState, EmotionType
@@ -340,13 +342,15 @@ async def emotions(args: argparse.Namespace) -> int:
     if not registered:
         return 1
     print("\n聞いてみて、違う感情に聞こえるクリップや声の違うものは消し、--register-only でもう一度登録する。")
-    print("Irodori-TTS で感情の声を使う（config/development.yaml）:")
-    print("tts:\n  irodori:\n    emotion_voices:")
-    for e in registered:
-        print(f"      {e}: {args.name}_{e}")
-    if "happy" in registered:
-        print(f"      excited: {args.name}_happy")
-    print("Style-Bert-VITS2 のスタイルにする: <Style-Bert-VITS2 の Python> tools/sbv2_add_styles.py")
+    feelings = [e for e in registered if e != "neutral"]
+    if feelings:
+        print("Irodori-TTS で感情の声を使う（config/development.yaml）:")
+        print("tts:\n  irodori:\n    emotion_voices:")
+        for e in feelings:
+            print(f"      {e}: {args.name}_{e}")
+        if "happy" in feelings:
+            print(f"      excited: {args.name}_happy")
+    print("Style-Bert-VITS2 のスタイルにする: .venv/bin/python tools/sbv2_add_styles.py")
     return status
 
 
