@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Optional
 
 from ailoveshen.domain.value_objects import (
     Activity,
@@ -20,8 +20,10 @@ from ailoveshen.domain.value_objects import (
     SkillInfo,
     ToolOutcome,
     TownDefinition,
+    TownMap,
     TownSite,
     TownStage,
+    Zone,
 )
 
 
@@ -147,6 +149,31 @@ class IGamePromptBuilder(ABC):
         Args:
             town: その段階が属する街
             stage: まだ解決していない部分がある段階
+            previous_error: 前回の答えが拒否された理由（あれば）
+        """
+        ...
+
+    @abstractmethod
+    def build_town_map_prompt(
+        self,
+        town: TownDefinition,
+        town_stage: int,
+        zones: list[dict[str, Any]],
+        base: list[Zone],
+        current: Optional[TownMap],
+        reason: str,
+        previous_error: str = "",
+    ) -> str:
+        """
+        街の理想図（区画ごとの用途）を描かせる・描き直させるプロンプト（docs/design/47 §6）。
+
+        Args:
+            town: 街の定義と段階
+            town_stage: 済んだ段階の数
+            zones: ブリッジが測った区画の地形（GET /zones）
+            base: コードが決めた区画（固定: 今ある施設、水・溶岩）
+            current: 今の理想図（描き直しのとき）
+            reason: 描く・描き直す理由
             previous_error: 前回の答えが拒否された理由（あれば）
         """
         ...

@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ailoveshen.domain.entities import MidGoalPlan
-from ailoveshen.domain.value_objects import GoalSpec, MidGoal, Mission, TownDefinition, TownSite
+from ailoveshen.domain.value_objects import (
+    GoalSpec,
+    MidGoal,
+    Mission,
+    TownDefinition,
+    TownMap,
+    TownSite,
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +29,7 @@ class SavedPlan:
     town_stage: int = 0
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
     site: Optional[TownSite] = None  # 選んだ街の場所
+    town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6）
 
 
 class IMissionStore(ABC):

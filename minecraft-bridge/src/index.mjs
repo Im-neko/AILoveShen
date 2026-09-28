@@ -20,6 +20,7 @@
 //   GET  /facilities       -> 施設（設計書 47 §5）: [{ name, kind, status, box, entrance?, center, distance_m, direction, contents }]
 //                             （今ある家・建物・畑・植えた苗木を先に取り込む）
 //   GET  /memory           -> 覚えている場所を座標つきで: { places（種類ごと）, chests, furnaces, deaths }（search_memory）
+//   GET  /zones?x=&z=[&cells=&size=] -> 街の理想図の区画の地形（zones.mjs、設計書 47 §6）: [{ id, min_x.., seen, water, lava, trees, built, stone, flat, height, facilities }]
 //   GET  /items            -> アイテムとブロックの名前と日本語名 [{ name, ja }]（item_info の一覧）
 //   GET  /items/<name>     -> 取り方（作る・焼く・掘る・モブ・育てる）、置けるか、食べられるか、何に使うか（item_info）
 //   PUT  /conditions/<name> {description, code} -> Gemini が書いた判定を確かめて登録する（設計書 42）:
@@ -59,6 +60,7 @@ import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { adoptExisting, facilitiesStatus } from './facilities.mjs'
 import { loadNames, itemList, itemInfo } from './items.mjs'
+import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
 import { summarize, bearing, inventoryCounts, isUnderground } from './observe.mjs'
@@ -445,6 +447,15 @@ async function handle (req, res) {
   }
   if (req.method === 'GET' && req.url === '/memory') {
     return send(res, 200, memoryList(state.memory, bot.entity.position, worldAge(), bearing, (k) => knowledge.dropsOf(k), jaOf))
+  }
+  if (req.method === 'GET' && req.url.startsWith('/zones?')) {
+    const q = new URL(req.url, 'http://bridge').searchParams
+    const center = { x: Number(q.get('x')), z: Number(q.get('z')) }
+    if (!Number.isFinite(center.x) || !Number.isFinite(center.z)) return send(res, 400, { error: 'x and z are required' })
+    if (adoptExisting(bot, state)) saveState(state)
+    const cells = Math.max(2, Math.min(16, Number(q.get('cells') ?? TOWN_CELLS)))
+    const size = Math.max(4, Math.min(16, Number(q.get('size') ?? ZONE_SIZE)))
+    return send(res, 200, zonesAround(bot, state, center, cells, size))
   }
   if (req.method === 'GET' && req.url === '/items') {
     return send(res, 200, itemList(knowledge.md, names))

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>街の理想図</title>
+<!--
+  街の理想図（docs/design/47 §6）: /api/goals の town_map を 5 秒ごとに読み、区画を用途の色で並べる。
+  枠が太い区画は今ある施設か使えない地形（固定）、薄い区画は予定。ブラウザでも OBS のブラウザソースでも開ける。
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f5ef; --fg: #2b2b2b; --muted: #777; --line: #d8d3c6;
+    --home: #e8a87c; --residence: #f3c98b; --building: #d9b38c; --farm: #b5d99c; --tree_farm: #6fb07a;
+    --mine: #9aa3ad; --pen: #e6d38a; --trap: #c49bd6; --storage: #c7b299; --workshop: #d4a373;
+    --plaza: #f0e6c8; --road: #cfcfcf; --free: #ffffff; --unusable: #8ec5e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15181c; --fg: #e8e8e8; --muted: #9aa4ae; --line: #2c333b; --free: #1d2126; }
+  }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 "Noto Sans JP", "Hiragino Sans", sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  #concept { color: var(--muted); margin-bottom: 12px; }
+  .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .grid { display: grid; gap: 2px; }
+  .cell { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 3px; font-size: 10px;
+          display: flex; align-items: center; justify-content: center; box-sizing: border-box; opacity: .6; }
+  .cell.fixed { border: 2px solid var(--fg); opacity: 1; }
+  .cell.assigned { opacity: .85; }
+  .label { font-size: 11px; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+  ul { margin: 0; padding-left: 18px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  #empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>街の理想図</h1>
+<div id="concept"></div>
+<div id="empty">まだ描いていません</div>
+<div class="wrap">
+  <div id="grid" class="grid"></div>
+  <ul id="legend"></ul>
+</div>
+<script>
+const USES = { home: '家', residence: '住まい', building: '建物', farm: '畑', tree_farm: '植林場', mine: '採掘場',
+  pen: '囲い', trap: 'トラップ', storage: '倉庫', workshop: '作業場', plaza: '広場', road: '道', free: '空き', unusable: '使えない' }
+
+function render (map) {
+  const grid = document.getElementById('grid')
+  const legend = document.getElementById('legend')
+  document.getElementById('empty').style.display = map ? 'none' : ''
+  grid.innerHTML = ''
+  legend.innerHTML = ''
+  if (!map) return
+  document.getElementById('concept').textContent = map.concept
+  const cols = [...new Set(map.zones.map((z) => z.id[0]))].sort()
+  const rows = [...new Set(map.zones.map((z) => Number(z.id.slice(1))))].sort((a, b) => a - b)
+  grid.style.gridTemplateColumns = `20px repeat(${cols.length}, 30px)`
+  grid.append(Object.assign(document.createElement('div'), { className: 'label' }))
+  for (const c of cols) grid.append(Object.assign(document.createElement('div'), { className: 'label', textContent: c }))
+  const byId = Object.fromEntries(map.zones.map((z) => [z.id, z]))
+  for (const r of rows) {
+    grid.append(Object.assign(document.createElement('div'), { className: 'label', textContent: r }))
+    for (const c of cols) {
+      const z = byId[`${c}${r}`]
+      const cell = document.createElement('div')
+      cell.className = 'cell' + (z.fixed ? ' fixed' : z.use !== 'free' ? ' assigned' : '')
+      cell.style.background = `var(--${z.use})`
+      cell.title = `${z.id} ${USES[z.use] ?? z.use}${z.facility ? ' ' + z.facility : ''}${z.note ? ': ' + z.note : ''}`
+      grid.append(cell)
+    }
+  }
+  const groups = {}
+  for (const z of map.zones) {
+    if (z.use === 'free') continue
+    const key = `${z.use}|${z.facility}|${z.fixed}`
+    ;(groups[key] ??= { ...z, ids: [] }).ids.push(z.id)
+  }
+  for (const g of Object.values(groups)) {
+    const li = document.createElement('li')
+    li.innerHTML = `<span class="swatch" style="background: var(--${g.use})"></span>`
+    li.append(`${USES[g.use] ?? g.use}${g.facility ? '「' + g.facility + '」' : ''}${g.fixed ? '' : '（予定）'}: ${g.ids.join(', ')}${g.note ? ' — ' + g.note : ''}`)
+    legend.append(li)
+  }
+}
+
+async function tick () {
+  try {
+    const res = await fetch('/api/goals')
+    render((await res.json()).town_map)
+  } catch (e) {
+    console.log('town map', e)
+  }
+}
+tick()
+setInterval(tick, 5000)
+</script>
+</body>
+</html>

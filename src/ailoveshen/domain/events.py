@@ -210,6 +210,15 @@ class TownDefinedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class TownMapDrawnEvent(DomainEvent):
+    """街の理想図を描いた・描き直したときのイベント（docs/design/47 §6）。"""
+
+    concept: str = ""
+    reason: str = ""
+    revised: bool = False
+
+
+@dataclass(frozen=True)
 class TownSiteChosenEvent(DomainEvent):
     """配信者が候補地を見比べて、街の場所を選んだときのイベント。"""
 

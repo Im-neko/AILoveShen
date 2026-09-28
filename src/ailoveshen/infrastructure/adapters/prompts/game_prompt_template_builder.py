@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from string import Template
-from typing import Any
+from typing import Any, Optional
 
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
@@ -25,8 +25,10 @@ from ailoveshen.domain.value_objects import (
     SkillInfo,
     ToolOutcome,
     TownDefinition,
+    TownMap,
     TownSite,
     TownStage,
+    Zone,
 )
 from ailoveshen.infrastructure.adapters.prompts.stream_context import (
     ABILITIES,
@@ -206,6 +208,121 @@ $previous_error
 指定の JSON で出力してください。
 """)
 
+# 街の理想図（docs/design/47 §6）: 区画ごとの用途。ローカルの LLM が考えて描く（town_plan）
+TOWN_MAP_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者の、街の理想図（どの区画に何を作るか）を描きます。
+理想図は街のマスターデータで、畑・植林場・採掘場・建物を作るときは、ここで決めた区画に作ります。
+
+## 街
+$text
+段階:
+$stages
+
+## 区画
+街の中心から 12 x 12 区画、1 区画は 8 ブロック四方（全体 96 x 96）。列 A〜L が西→東、行 1〜12 が北→南。
+地図（1 文字 = 1 区画）:
+$grid
+凡例: H 家、B 建物、F 畑、W 植林場、M 採掘場、P 囲い、X トラップ（今あるもの。固定）、~ 水、
+! 溶岩（使えない。固定）、. 平らな空き、^ でこぼこ、T 木が多い、? まだ見ていない
+
+## 固定の区画（変えない。areas に入れない）
+$fixed
+
+## 空き区画の地形（平ら = 高さがそろった列の割合、木・石・水 = 割合、高さ = 家の床からの差）
+$terrain
+$current
+## 描く理由
+$reason
+
+## 決まり
+- 街の定義と段階に要るもの（住まい、畑、植林場、採掘場、倉庫、作業場、広場、道など）の場所を
+  先に決めておく。後の段階で作る物にも場所を取っておく
+- 効率を先に: 毎日使う施設（畑、倉庫、作業場）は家の近く。畑は平らな所、植林場は平らか木の多い所、
+  採掘場は石の多い所。行き来が短くなるように並べる
+- 1 つの施設は隣り合う区画にまとめる（畑・植林場は 1〜4 区画）。施設ごとに名前（facility）を付ける
+- 道は要るなら施設をつなぐ細い列。全部は埋めない（空きを残す）
+- 固定の区画は変えない。まだ見ていない区画にも割り当ててよい
+$previous_error
+## 出力
+指定の JSON で出力してください（concept、areas）。
+""")
+
+_GRID_FIXED = {
+    "home": "H",
+    "building": "B",
+    "farm": "F",
+    "tree_farm": "W",
+    "mine": "M",
+    "pen": "P",
+    "trap": "X",
+}
+
+
+def _zone_letter(zone: Zone, row: dict[str, Any]) -> str:
+    """地図の 1 文字（固定の区画は用途、空きは地形）。"""
+    if zone.fixed:
+        if zone.use == "unusable":
+            return "!" if zone.note == "溶岩" else "~"
+        return _GRID_FIXED.get(zone.use, "B")
+    if float(row.get("seen", 0)) < 0.5:
+        return "?"
+    if float(row.get("trees", 0)) >= 0.4:
+        return "T"
+    return "." if float(row.get("flat", 0)) >= 0.6 else "^"
+
+
+def _zone_grid(letters: dict[str, str], ids: list[str]) -> str:
+    cols = sorted({z[0] for z in ids})
+    rows = sorted({int(z[1:]) for z in ids})
+    lines = ["     " + " ".join(cols)]
+    for r in rows:
+        lines.append(f"  {r:>2} " + " ".join(letters.get(f"{c}{r}", " ") for c in cols))
+    return "\n".join(lines)
+
+
+def _terrain(row: dict[str, Any]) -> str:
+    if float(row.get("seen", 0)) < 0.5:
+        return "まだ見ていない"
+    height = row.get("height")
+    h = f"、高さ {int(height):+d}" if height is not None else ""
+    return (
+        f"平ら {row.get('flat')}、木 {row.get('trees')}、石 {row.get('stone')}、"
+        f"水 {row.get('water')}{h}"
+    )
+
+
+def format_town_map(town_map: Optional[TownMap]) -> str:
+    """
+    目標の決定に見せる理想図の要約: 用途ごとの区画と施設（今あるものと予定）、空きの数。
+    """
+    if town_map is None:
+        return ""
+    lines = [
+        "## 街の理想図（区画は 8 ブロック四方。列 A〜L が西→東、行 1〜12 が北→南。施設はここに作る）",
+        f"考え: {town_map.concept}",
+    ]
+    counts: list[str] = []
+    for use, zones in town_map.by_use().items():
+        if use in ("free", "unusable"):
+            counts.append(f"{use} {len(zones)} 区画")
+            continue
+        groups: dict[tuple[str, str, bool], list[str]] = {}
+        for z in zones:
+            groups.setdefault((z.facility, z.note, z.fixed), []).append(z.id)
+        parts = []
+        for (facility, note, fixed), ids in groups.items():
+            label = facility or ""
+            if not fixed and facility:
+                label += "、予定"
+            if note and not fixed:
+                label += f": {note}"
+            parts.append(f"{', '.join(ids)}" + (f"（{label}）" if label else ""))
+        lines.append(f"- {use}: " + " / ".join(parts))
+    if counts:
+        lines.append("- " + "、".join(counts))
+    return "\n".join(lines) + "\n"
+
+
 STAGE_TEMPLATE = Template("""\
 配信の大目標の「街」は、次のように定義してある:
 $text
@@ -343,7 +460,7 @@ $blueprint
 
 ## 今していること
 $activity
-
+$town_map
 ## 今使える小目標
 $predicates
 $steps
@@ -634,6 +751,52 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             previous_error=_retry(previous_error, "書き直してください。"),
         )
 
+    def build_town_map_prompt(
+        self,
+        town: TownDefinition,
+        town_stage: int,
+        zones: list[dict[str, Any]],
+        base: list[Zone],
+        current: Optional[TownMap],
+        reason: str,
+        previous_error: str = "",
+    ) -> str:
+        """街の理想図を描かせる・描き直させるプロンプト（docs/design/47 §6）。"""
+        rows = {str(r["id"]): r for r in zones}
+        letters = {z.id: _zone_letter(z, rows.get(z.id, {})) for z in base}
+        fixed = [
+            f"- {z.id}: {z.use}（{z.facility or z.note}）" for z in base if z.fixed
+        ]
+        terrain = [f"- {z.id}: {_terrain(rows.get(z.id, {}))}" for z in base if not z.fixed]
+        stages = "\n".join(
+            f"{i + 1}. [{'済' if i < town_stage else '今' if i == town_stage else '先'}] "
+            f"{st.title}: {st.why}"
+            for i, st in enumerate(town.stages)
+        )
+        now = ""
+        if current is not None:
+            planned = [
+                f"- {z.id}: {z.use}" + (f"（{z.facility}）" if z.facility else "")
+                + (f" {z.note}" if z.note else "")
+                for z in current.zones
+                if not z.fixed and z.use != "free"
+            ]
+            now = (
+                f"\n## 今の理想図（描き直す。残す区画もすべて書く）\n考え: {current.concept}\n"
+                + ("\n".join(planned) or "- 割り当てなし")
+                + "\n"
+            )
+        return TOWN_MAP_TEMPLATE.substitute(
+            text=town.text,
+            stages=stages,
+            grid=_zone_grid(letters, [z.id for z in base]),
+            fixed="\n".join(fixed) or "- なし",
+            terrain="\n".join(terrain) or "- なし",
+            current=now,
+            reason=reason,
+            previous_error=_retry(previous_error, "描き直してください。"),
+        )
+
     def vocabulary_version(self) -> str:
         """段階のプロンプトに見せる語彙（条件の一覧と、できること）のハッシュ。"""
         text = format_conditions() + ABILITIES
@@ -674,6 +837,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             failure=_format_failure(failure_record, offered, retry_allowed),
             previous_error=error,
             steps=_format_step_status(step_status),
+            town_map=format_town_map(activity.town_map),
         )
 
     def build_tool_prompt(

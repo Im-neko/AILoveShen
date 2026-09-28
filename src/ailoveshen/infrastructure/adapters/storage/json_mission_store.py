@@ -19,8 +19,10 @@ from ailoveshen.domain.value_objects import (
     Mission,
     PlannedStep,
     TownDefinition,
+    TownMap,
     TownSite,
     TownStage,
+    Zone,
 )
 
 
@@ -55,6 +57,7 @@ class JsonMissionStore(IMissionStore):
             town_stage=int(data.get("town_stage", 0)),
             stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
             site=TownSite(**data["site"]) if data.get("site") else None,
+            town_map=_town_map(data["town_map"]) if data.get("town_map") else None,
         )
         logger.info(f"中目標を {self._path} から読み込んだ")
         return saved
@@ -70,6 +73,7 @@ class JsonMissionStore(IMissionStore):
             "town_stage": plan.town_stage,
             "stage_met": [c.to_dict() for c in plan.stage_met],
             "site": asdict(plan.site) if plan.site else None,
+            "town_map": asdict(plan.town_map) if plan.town_map else None,
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
@@ -170,4 +174,15 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),
         prepares_town=bool(data.get("prepares_town", False)),
+    )
+
+
+def _town_map(data: dict[str, Any]) -> TownMap:
+    return TownMap(
+        center_x=int(data["center_x"]),
+        center_z=int(data["center_z"]),
+        zones=tuple(Zone(**z) for z in data["zones"]),
+        concept=data.get("concept", ""),
+        stage=int(data.get("stage", 0)),
+        history=tuple(data.get("history", [])),
     )

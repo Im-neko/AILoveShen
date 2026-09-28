@@ -21,6 +21,7 @@ from ailoveshen.domain.events import (
     SkillRevisedEvent,
     TownCompletedEvent,
     TownDefinedEvent,
+    TownMapDrawnEvent,
     TownSiteChosenEvent,
 )
 from ailoveshen.domain.value_objects import Activity
@@ -86,6 +87,7 @@ class Narrator:
         bus.subscribe(HouseCompletedEvent, self.on_house_completed)
         bus.subscribe(TownSiteChosenEvent, self.on_town_site_chosen)
         bus.subscribe(TownDefinedEvent, self.on_town_defined)
+        bus.subscribe(TownMapDrawnEvent, self.on_town_map_drawn)
         bus.subscribe(TownCompletedEvent, self.on_town_completed)
         bus.subscribe(SkillLearnedEvent, self.on_skill_learned)
         bus.subscribe(SkillRevisedEvent, self.on_skill_revised)
@@ -181,6 +183,11 @@ class Narrator:
         self._pending.append(
             f"大目標の街をこう決めた: {event.text}（段階: {' → '.join(event.stages)}）"
         )
+
+    async def on_town_map_drawn(self, event: TownMapDrawnEvent) -> None:
+        """街の理想図は、次の目標と一緒に話す。"""
+        what = "描き直した" if event.revised else "描いた"
+        self._pending.append(f"街の理想図を{what}（{event.reason}）: {event.concept}")
 
     async def on_town_completed(self, event: TownCompletedEvent) -> None:
         """街の完成。次の目標と一緒に話す。"""

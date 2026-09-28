@@ -40,6 +40,7 @@ from ailoveshen.domain.events import (
     MidGoalAddedEvent,
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
+    TownMapDrawnEvent,
     TownSiteChosenEvent,
 )
 from ailoveshen.domain.value_objects import (
@@ -55,6 +56,7 @@ from ailoveshen.presentation.web.avatar import AvatarStage
 OVERLAY_HTML = Path(__file__).with_name("overlay.html")
 VTUBER_HTML = Path(__file__).with_name("overlay_vtuber.html")
 DEBUG_HTML = Path(__file__).with_name("debug_gemini.html")
+TOWN_HTML = Path(__file__).with_name("town_map.html")
 KEEPALIVE_SECONDS = 15.0
 QUEUE_SIZE = 16
 # ボードの表示が変わるイベントすべて（ステップで小目標の進み具合が変わる）
@@ -65,6 +67,7 @@ EVENTS: tuple[type[DomainEvent], ...] = (
     MidGoalCompletedEvent,
     MidGoalDroppedEvent,
     TownSiteChosenEvent,
+    TownMapDrawnEvent,
     GameActionExecutedEvent,
 )
 
@@ -81,6 +84,7 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             "mid_goals": [],
             "goal": None,
             "home": None,
+            "town_map": None,
         }
     pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
     finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
@@ -115,6 +119,8 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         "home": _home(obs),
         # 道具で操作しているとき、今やろうとしていること（配信者が書いた 1 文）
         "intent": activity.intent or None,
+        # 街の理想図（docs/design/47 §6。/town が描く）
+        "town_map": asdict(activity.town_map) if activity.town_map else None,
     }
 
 
@@ -401,6 +407,10 @@ class GoalBoard:
 
         if self._avatar is not None:
             self._avatar.install(app)
+
+        @app.get("/town", response_class=HTMLResponse)
+        async def town_page() -> str:
+            return TOWN_HTML.read_text(encoding="utf-8")
 
         @app.get("/debug/gemini", response_class=HTMLResponse)
         async def gemini_page() -> str:

@@ -180,6 +180,11 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data: Any = await self._request("GET", "/memory")
         return dict(data) if isinstance(data, dict) else {}
 
+    async def zones(self, x: int, z: int) -> list[dict[str, Any]]:
+        """街の理想図の区画の地形（minecraft-bridge/src/zones.mjs）。"""
+        data: Any = await self._request("GET", f"/zones?x={x}&z={z}")
+        return list(data) if isinstance(data, list) else []
+
     async def items(self) -> list[dict[str, Any]]:
         """アイテムとブロックの名前と日本語名（minecraft-bridge/src/items.mjs の itemList）。"""
         data: Any = await self._request("GET", "/items")

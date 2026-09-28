@@ -22,9 +22,15 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 )
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.town_map import apply_areas, base_zones, town_map_schema
 from ailoveshen.domain.entities import MidGoalPlan, PlaySession
-from ailoveshen.domain.events import HouseDesignedEvent, TownDefinedEvent, TownSiteChosenEvent
-from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
+from ailoveshen.domain.events import (
+    HouseDesignedEvent,
+    TownDefinedEvent,
+    TownMapDrawnEvent,
+    TownSiteChosenEvent,
+)
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GameObservation,
@@ -149,7 +155,9 @@ class TownPlanner:
             await self._event_publisher.publish(
                 TownDefinedEvent(text=town.text, stages=tuple(s.title for s in town.stages))
             )
+            await self._keep_map(plan)
             return
+        await self._keep_map(plan)
         town = plan.town
         i = plan.town_stage
         if i >= len(town.stages):
@@ -164,6 +172,65 @@ class TownPlanner:
         stages[i] = written
         plan.define_town(replace(town, stages=tuple(stages)))
         self._store.save(plan)
+
+    async def _keep_map(self, plan: MidGoalPlan) -> None:
+        """
+        街の理想図（docs/design/47 §6）を、まだなければ描き、街の段階が進んでいれば描き直す。
+        引っ越しの途中は描かない（街の場所の地形がまだ見えていない）。
+        """
+        if plan.town is None or plan.site is None or plan.preparing_town:
+            return
+        current = plan.town_map
+        if current is None:
+            await self._draw_map(plan, "街を定めた" if plan.town_stage == 0 else "理想図がまだない")
+        elif current.stage < plan.town_stage and not plan.town_complete:
+            stage = plan.town.stages[plan.town_stage]
+            await self._draw_map(plan, f"段階 {plan.town_stage + 1}「{stage.title}」に進んだ")
+
+    async def _draw_map(self, plan: MidGoalPlan, reason: str) -> None:
+        """理想図を描く（描き直す）。区画の地形を読めなければ次の切れ目に持ち越す。"""
+        assert plan.town is not None and plan.site is not None
+        site = plan.site
+        try:
+            rows = await self._bridge.zones(site.x, site.z)
+        except GameBridgeError as e:
+            logger.warning(f"街の理想図を次の切れ目に持ち越す（区画の地形を読めない）: {e}")
+            return
+        base = base_zones(rows)
+        current = plan.town_map
+        schema = town_map_schema([z.id for z in base if not z.fixed])
+        error = ""
+        for attempt in range(1, self._max_attempts + 1):
+            prompt = self._prompt_builder.build_town_map_prompt(
+                plan.town, plan.town_stage, rows, base, current, reason, previous_error=error
+            )
+            data = await self._text_generator.generate_json(prompt, schema, purpose="town_plan")
+            try:
+                town_map = apply_areas(
+                    base,
+                    data,
+                    (site.x, site.z),
+                    plan.town_stage,
+                    current.history if current else (),
+                    reason,
+                )
+            except ValueError as e:
+                error = str(e)
+                logger.warning(f"街の理想図の試行 {attempt} を差し戻した: {error}")
+                continue
+            plan.set_town_map(town_map)
+            self._store.save(plan)
+            used = {u: len(zs) for u, zs in town_map.by_use().items()}
+            logger.info(f"街の理想図を描いた（{reason}）: {town_map.concept} / {used}")
+            await self._event_publisher.publish(
+                TownMapDrawnEvent(
+                    concept=town_map.concept, reason=reason, revised=current is not None
+                )
+            )
+            return
+        raise TextGenerationError(
+            f"no valid town map after {self._max_attempts} attempts: {error}"
+        )
 
     async def _survey_or_choose(self, plan: MidGoalPlan, obs: GameObservation) -> None:
         if plan.preparing_town:

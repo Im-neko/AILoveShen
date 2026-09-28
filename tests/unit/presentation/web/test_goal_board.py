@@ -23,8 +23,10 @@ from ailoveshen.domain.value_objects import (  # noqa: E402
     Mission,
     Side,
     TownDefinition,
+    TownMap,
     TownSite,
     TownStage,
+    Zone,
 )
 from ailoveshen.presentation.web.goal_board import GoalBoard, goals_snapshot  # noqa: E402
 
@@ -93,7 +95,17 @@ class TestGoalsSnapshot:
             "mid_goals": [],
             "goal": None,
             "home": None,
+            "town_map": None,
         }
+
+    def test_the_town_map_is_on_the_board(self):
+        """街の理想図（docs/design/47 §6）は /api/goals に入り、/town が描く。"""
+        session = _session()
+        zone = Zone("A1", 0, 0, 7, 7, use="farm", facility="wheat_farm")
+        session.plan.set_town_map(TownMap(0, 0, (zone,), concept="畑を家のそばに"))
+        snap = goals_snapshot(session.activity())
+        assert snap["town_map"]["concept"] == "畑を家のそばに"
+        assert snap["town_map"]["zones"][0]["facility"] == "wheat_farm"
 
     def test_site(self):
         """選んだ場所（決めたこと）と、調べた候補地（ブリッジの数字）を別に出す。"""
@@ -176,6 +188,7 @@ class TestGoalBoard:
         page = client.get("/overlay")
         assert page.status_code == 200
         assert "/api/goals/stream" in page.text
+        assert "town_map" in client.get("/town").text
 
     @pytest.mark.asyncio
     async def test_changes_are_pushed_to_the_stream(self):

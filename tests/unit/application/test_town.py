@@ -15,7 +15,7 @@ from ailoveshen.domain.events import (
     TownDefinedEvent,
     TownSiteChosenEvent,
 )
-from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
+from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     ConditionStatus,
@@ -109,9 +109,13 @@ def _check(met=frozenset(), impossible=frozenset(), rejected=frozenset()):
 
 @pytest.fixture
 def bridge():
-    """ブリッジのモック。まだ何も満たしておらず、何でも手に入る。"""
+    """
+    ブリッジのモック。まだ何も満たしておらず、何でも手に入る。区画の地形は読めない（理想図は
+    描かない。理想図は TestTownMap で確かめる）。
+    """
     b = AsyncMock()
     b.check.side_effect = _check()
+    b.zones.side_effect = GameBridgeError("no zones in this test")
     return b
 
 

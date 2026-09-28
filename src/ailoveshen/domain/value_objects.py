@@ -1168,6 +1168,91 @@ class TownSite:
         return self.site_id != HERE_SITE
 
 
+TOWN_CELLS = 12  # 街の理想図の区画の数（1 辺。docs/design/47 §6）
+ZONE_SIZE = 8  # 1 区画のブロック数（1 辺）
+# 区画の用途。unusable（水・溶岩）と、今ある施設の区画はコードが決め、描き直しでも動かさない
+ZONE_USES = (
+    "home",
+    "residence",
+    "building",
+    "farm",
+    "tree_farm",
+    "mine",
+    "pen",
+    "trap",
+    "storage",
+    "workshop",
+    "plaza",
+    "road",
+    "free",
+    "unusable",
+)
+# 施設の種類 → 区画の用途
+FACILITY_USE = {
+    "home": "home",
+    "build": "building",
+    "farm": "farm",
+    "tree_farm": "tree_farm",
+    "mine": "mine",
+    "pen": "pen",
+    "trap": "trap",
+}
+
+
+@dataclass(frozen=True)
+class Zone:
+    """
+    街の理想図の区画 1 つ: id（列 A.. が西→東、行 1.. が北→南）、ワールドの範囲（両端を含む）、
+    用途、そこに作る・ある施設の名前、ひとこと。`fixed` は今ある施設か使えない地形で、描き直しでも
+    変えない。
+
+    Raises:
+        ValueError: 用途が ZONE_USES にないとき。
+    """
+
+    id: str
+    min_x: int
+    min_z: int
+    max_x: int
+    max_z: int
+    use: str = "free"
+    facility: str = ""
+    note: str = ""
+    fixed: bool = False
+
+    def __post_init__(self) -> None:
+        """用途を確かめる。"""
+        if self.use not in ZONE_USES:
+            raise ValueError(f"zone {self.id}: unknown use {self.use!r} (one of {ZONE_USES})")
+
+
+@dataclass(frozen=True)
+class TownMap:
+    """
+    街の理想図（マスターデータ。docs/design/47 §6）: 街の中心から TOWN_CELLS x TOWN_CELLS の区画。
+    `concept` は全体の考え（1 文）、`stage` は描いたときの街の段階（段階が進んだら見直す）、
+    `history` は描き直しの理由（新しいものが後ろ）。
+    """
+
+    center_x: int
+    center_z: int
+    zones: tuple[Zone, ...]
+    concept: str = ""
+    stage: int = 0
+    history: tuple[str, ...] = ()
+
+    def zone(self, zone_id: str) -> Optional[Zone]:
+        """id の区画（なければ None）。"""
+        return next((z for z in self.zones if z.id == zone_id), None)
+
+    def by_use(self) -> dict[str, list[Zone]]:
+        """用途ごとの区画（区画の順）。"""
+        out: dict[str, list[Zone]] = {}
+        for z in self.zones:
+            out.setdefault(z.use, []).append(z)
+        return out
+
+
 MAX_NOTE_CHARS = 80
 NOTE_LIFETIME_DAYS = 3  # ゲーム内の日。keep で延びる
 
@@ -1307,6 +1392,7 @@ class Activity:
     intent: str = ""  # 道具で操作しているとき、今やろうとしていること（配信者が道具に添えた 1 文）
     screen_note: Optional["ScreenNote"] = None  # 画面で見たこと（確かめていない）
     lessons: tuple[Lesson, ...] = ()  # 今の状況で思い出した教訓（確かめていない。docs/design/35）
+    town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6。目標の決定とボードが見る）
 
 
 @dataclass(frozen=True)

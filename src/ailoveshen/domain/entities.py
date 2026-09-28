@@ -32,6 +32,7 @@ from ailoveshen.domain.value_objects import (
     PlannedStep,
     ScreenNote,
     TownDefinition,
+    TownMap,
     TownSite,
     TownStage,
 )
@@ -202,6 +203,7 @@ class MidGoalPlan(Entity):
     _town_stage: int = field(default=0, init=False, repr=False)
     _stage_met: tuple[GoalSpec, ...] = field(default=(), init=False, repr=False)
     _site: Optional[TownSite] = field(default=None, init=False, repr=False)
+    _town_map: Optional[TownMap] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """上限を検証する。"""
@@ -246,6 +248,15 @@ class MidGoalPlan(Entity):
             raise ValueError(f"the town site is already chosen ({self._site.site_id})")
         self._site = site
         self.updated_at = _utc_now()
+
+    @property
+    def town_map(self) -> Optional[TownMap]:
+        """街の理想図（docs/design/47 §6。まだ描いていなければ None）。"""
+        return self._town_map
+
+    def set_town_map(self, town_map: TownMap) -> None:
+        """理想図を描いた・描き直した。"""
+        self._town_map = town_map
 
     @property
     def preparing_town(self) -> bool:
@@ -414,6 +425,7 @@ class MidGoalPlan(Entity):
         town_stage: int = 0,
         stage_met: tuple[GoalSpec, ...] = (),
         site: Optional[TownSite] = None,
+        town_map: Optional[TownMap] = None,
     ) -> None:
         """保存したプランを戻す（id はそのまま）。"""
         self._goals = list(pending)
@@ -424,6 +436,7 @@ class MidGoalPlan(Entity):
         self._town_stage = town_stage
         self._stage_met = stage_met
         self._site = site
+        self._town_map = town_map
 
     @property
     def next_id(self) -> int:
@@ -625,6 +638,7 @@ class PlaySession(Entity):
             intent=self.intent,
             screen_note=self.screen_note,
             lessons=self.lessons,
+            town_map=self.plan.town_map,
         )
 
     @property

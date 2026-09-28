@@ -7,6 +7,22 @@
 
 ## Completed Work
 
+### 街の理想図（設計書 47 段階 3） (2026-09-28)
+
+**Commit**: (次のコミット)
+
+ユーザー:「1 枚の街の理想図を常にもっておいてマスターデータとしたい」「実際の座標も合わせて持ってると尚良い」。設計書 47 §13。
+- ブリッジ `zones.mjs`（新規）+ `GET /zones`: 区画ごとの地形と重なる施設。テスト `zones.test.mjs`
+- Python: `Zone` / `TownMap`（`value_objects.py`、`ZONE_USES`、`FACILITY_USE`）、`MidGoalPlan.town_map` / `restore(town_map=)`、`SavedPlan.town_map`、`JsonMissionStore`、`Activity.town_map`、`TownMapDrawnEvent`（Narrator が次の実況で話す）
+- `town_map.py`（新規）: 固定の区画（施設、水・溶岩）、出力の形、当てはめと差し戻し
+- `TownPlanner._keep_map` / `_draw_map`: 街を定めたら描き、段階が進んだら描き直す（引っ越しの途中は描かない）
+- プロンプト: `TOWN_MAP_TEMPLATE`（1 文字 1 区画の地図、固定の区画、地形）、目標の決定の本文に `format_town_map`
+- ゴールボード `/town` と `/api/goals` の `town_map`。`docs/streaming.md` の見るところ
+- `config/default.yaml`: `thinking_purposes` に town_plan、`thinking_levels.town_plan: high`
+- テスト: `test_town_map.py` 13 件、`test_goal_board.py`、`test_town.py`（区画を読めないブリッジ）。Python 846、ブリッジ 244
+- まだ: 建物の設計の地図に区画の枠（格子がずれる）。施設の区画が足りないときの描き直しは段階 4
+- 要 ブリッジと Python の再起動。今の保存（街が定まっている）なら、起動の `prepare` で最初の理想図を描く
+
 ### 目標の決定は効率を先に、システム指示を整理 (2026-09-28)
 
 **Commit**: `7915417`
@@ -1731,7 +1747,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ### 設計書 47 の残り（2026-09-28 時点）
 
-段階 1（`44aa0aa`）と 2（`b38cc1c`）は済み。残りは段階 3（街の理想図: 12x12 の区画、各 8 マス）、4（畑と植林場の設計: `facility(name)`、`farmed` / `planted` を施設の範囲で数える、`facility_design`）、5（採掘場）、6（囲い・トラップ、別の設計書）。止めた理由:
+段階 1（`44aa0aa`）、2（`b38cc1c`）、3（街の理想図）は済み。残りは段階 4（畑と植林場の設計: `facility(name)`、`farmed` / `planted` を施設の範囲で数える、`facility_design`）、5（採掘場）、6（囲い・トラップ、別の設計書）。止めた理由:
 - ユーザーの未コミットの変更と同じ所を触る: `thinking_purposes` の 1 行（ユーザーが tool を足した。段階 3・4 は facility_design / town_plan を足す）、目標のシステム指示（すでに 8024 > 8000、段階 4 は条件を足す）
 - 段階 4 は段階 1 の取り込み（`home_farm` の範囲 = 家のまわりの耕地を全部）を土台にする: 実機で `GET /facilities` を見てから（近くに村の畑があれば入ってしまう）
 

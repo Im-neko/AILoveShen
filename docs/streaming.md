@@ -307,6 +307,8 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 |---|---|
 | Gemini の思考（直近の呼び出し） | `http://127.0.0.1:8765/debug/gemini`（JSON: `/api/debug/gemini?limit=20`） |
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
+| 街の理想図（区画ごとの用途。設計書 47 §6） | `http://127.0.0.1:8765/town`（JSON は `/api/goals` の `town_map`、保存は `data/mission.json`） |
+| 施設と覚えた場所・アイテムの検索（Jev が選んだキー） | `logs/search/*.jsonl`、施設の一覧は `http://127.0.0.1:3000/facilities` |
 | 見張りの記録（道具モード） | `logs/watch/*.jsonl` |
 | 1 手を Jev が選んだか・Gemini に回した理由（設計書 34） | `logs/steps/*.jsonl` |
 | コメントの仕分け（返事をしなかったコメントの文も） | `logs/chat/*.jsonl` |

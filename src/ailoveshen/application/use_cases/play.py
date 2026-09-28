@@ -227,6 +227,7 @@ class StartPlayUseCase(IStartPlay):
                 town_stage=saved.town_stage,
                 stage_met=saved.stage_met,
                 site=saved.site,
+                town_map=saved.town_map,
             )
             logger.info(f"中目標を引き継いだ: {', '.join(g.describe() for g in plan.pending)}")
         else:

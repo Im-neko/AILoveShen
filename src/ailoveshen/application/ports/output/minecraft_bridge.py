@@ -158,6 +158,15 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def zones(self, x: int, z: int) -> list[dict[str, Any]]:
+        """
+        街の理想図の区画の地形（docs/design/47 §6。中心 x, z から 12 x 12、1 区画 8 ブロック）:
+        [{id, min_x, min_z, max_x, max_z, seen, water, lava, trees, built, stone, flat, height,
+        facilities}]。
+        """
+        ...
+
+    @abstractmethod
     async def items(self) -> list[dict[str, Any]]:
         """アイテムとブロックの名前と日本語名 [{name, ja}]（item_info の一覧。docs/design/47 §4）。"""
         ...
