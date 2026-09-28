@@ -9,7 +9,7 @@
 
 ### 作物と植林は施設で数える（設計書 47 段階 4B） (2026-09-28)
 
-**Commit**: (後で記入)
+**Commit**: `a281fb2`
 
 設計書 47 §15、設計書 33 の追記。
 - ブリッジ `facilities.mjs`: `cropFarms`（設計した畑 + 家の畑の合計、最後に見た数 `state.memory.farms`）、`farmSummary`（`farming.mjs` から移動）、`workCell`、`layoutAt`、`designedFarms` / `designedTreeFarms`。`farming.mjs` から `homeFarm` / `plantSpot` / `tillSpot` / `sowSpot` / 輪を消した
