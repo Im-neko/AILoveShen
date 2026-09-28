@@ -111,6 +111,10 @@ MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら�
 UNDESIGNABLE_SECONDS = 600  # 設計できなかった建物を、中目標に足さない間（秒）
 MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
 RETHINK_POLL_SECONDS = 0.5  # 行動の間、考え直しの依頼が来たかを見る間隔（docs/design/38）
+# 目標の決定を待つ間（ローカルの LLM で数分かかる）、この間隔で飢えを確かめ、ブリッジの候補に食べる
+# 物があれば食べる（2026-09-28: 空腹 0 のまま 6 分近く決定を待って立っていた）。ほかの行動はしない
+MEANWHILE_SECONDS = 5.0
+HUNGER_URGENT = 6  # ブリッジの HUNGER_URGENT と同じ（これ以下で飢えそう）
 
 T = TypeVar("T")
 
@@ -758,9 +762,41 @@ class AdvancePlayUseCase(IAdvancePlay):
                 moment="decision",
             )
             activity = replace(activity, lessons=recalled)
-        await self._decide_goal(session, obs, activity, reason, situation, seen)
+        await self._while_deciding(self._decide_goal(session, obs, activity, reason, situation, seen))
         self._last_gemini_at = self._clock()
         self._last_plan = tuple(g.id for g in session.plan.pending)
+
+    async def _while_deciding(self, deciding: Awaitable[None]) -> None:
+        """
+        目標の決定を待つ間の最低限の安全策: 飢えそうで、ブリッジの候補に食べる物があれば食べる。
+        移動や作業は始めない（目標の決定と競わない）。
+        """
+        task = asyncio.ensure_future(deciding)
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=MEANWHILE_SECONDS)
+                if done:
+                    task.result()
+                    return
+                await self._eat_if_starving()
+        finally:
+            if not task.done():
+                task.cancel()
+
+    async def _eat_if_starving(self) -> None:
+        try:
+            obs = await self._bridge.observe()
+            if obs.food > HUNGER_URGENT:
+                return
+            eat = next(
+                (c for c in obs.candidates if c.description.get("verb") == "eat"), None
+            )
+            if eat is None:
+                return
+            result = await self._bridge.act(eat.action_id)
+            logger.info(f"目標の決定を待つ間に食べた: {eat.action_id} → {result.result}")
+        except GameBridgeError as e:
+            logger.warning(f"目標の決定を待つ間に食べられなかった: {e}")
 
     async def _members_met(self, session: PlaySession, obs: GameObservation) -> None:
         """束の条件が 1 つ済んだら伝える（束全体はまだ。docs/design/44）。"""

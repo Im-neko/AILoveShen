@@ -310,8 +310,10 @@ class OpenAICompatTextGenerator(ITextGenerator):
             try:
                 return await self._client.post("/chat/completions", json=body)
             except httpx.HTTPError as e:
-                self._record(body, purpose, think, started, error=str(e))
-                raise TextGenerationError(f"local LLM request failed: {e}") from e
+                # 読み取りの時間切れは str(e) が空になる: 種類と待った秒数を書く
+                why = f"{type(e).__name__} after {time.monotonic() - started:.0f}s: {e}".rstrip(": ")
+                self._record(body, purpose, think, started, error=why)
+                raise TextGenerationError(f"local LLM request failed: {why}") from e
 
     @staticmethod
     def _optional_fields(body: dict[str, Any]) -> list[str]:

@@ -392,6 +392,28 @@ class TestAdvancePlay:
         )
 
     @pytest.mark.asyncio
+    async def test_while_a_slow_decision_runs_she_eats_when_starving(
+        self, use_case, bridge, monkeypatch
+    ):
+        """空腹 0 のまま 6 分近く決定を待って立っていた（2026-09-28）: 待つ間に食べる。ほかはしない。"""
+        import asyncio
+
+        from ailoveshen.application.use_cases import play
+
+        monkeypatch.setattr(play, "MEANWHILE_SECONDS", 0.01)
+        hungry = replace(_obs(candidates=("eat bread", "go home")), food=3)
+        full = replace(_obs(candidates=("eat bread", "go home")), food=18)
+        seen = []
+        bridge.observe.side_effect = lambda: seen.append(1) or (hungry if len(seen) == 1 else full)
+
+        async def slow():
+            await asyncio.sleep(0.05)
+
+        await use_case._while_deciding(slow())
+
+        assert [c.args[0] for c in bridge.act.await_args_list] == ["eat bread"]
+
+    @pytest.mark.asyncio
     async def test_the_chests_keep_what_the_mid_goals_store(self, use_case, text_generator, bridge):
         """蓄える中目標の stored() の条件は小目標と一緒に送り、チェストから取り出させない。"""
         text_generator.generate_json.return_value = PLANKS
