@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { registerFacility, mineStatus, onMineCell, finishedMine, updateStatus, FacilityError } from '../src/facilities.mjs'
+import { registerFacility, mineStatus, onMineCell, inMineBody, finishedMine, updateStatus, FacilityError } from '../src/facilities.mjs'
 import { columnWork } from '../src/leveling.mjs'
 import { makeGoal, evaluate } from '../src/goals.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
@@ -143,4 +143,26 @@ test('深い鉄は、下りきった採掘場があればそこから下りて�
   // 浅いものはその場で掘り下げる
   const shallow = solve(k, w({ mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 60, 0), depth: 4 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
   assert.deepEqual(shallow.leaves.map((l) => l.kind), ['dig_down'])
+})
+
+test('どの深さでも、2 つ目からのセルは先に空けたセルの隣（同じ高さか 1 つ上）に立って掘れる', () => {
+  // 輪は 12 段で 1 周: 底の段の位置が 12 通りすべてになる深さを試す
+  for (let bottom = 40; bottom >= 29; bottom--) {
+    const fac = registerFacility(world(), state(), `mine_${bottom}`, { ...MINE, design: { bottom_y: bottom, tunnels: 4, tunnel_length: 4 } })
+    const cells = fac.layout.cells
+    cells.slice(1).forEach((c, i) => {
+      const ok = cells.slice(0, i + 1).some((a) => Math.abs(a.x - c.x) + Math.abs(a.z - c.z) === 1 && a.y - c.y >= 0 && a.y - c.y <= 1)
+      assert.ok(ok, `bottom ${bottom}: ${c.part} ${c.x},${c.y},${c.z} has no dug neighbour before it`)
+    })
+  }
+})
+
+test('らせん階段の柱と段の床は経路探しに壊させない（空ける所は別）', () => {
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  const [a, b] = fac.layout.cells.slice(1, 3)
+  assert.equal(inMineBody(s, new Vec3(a.x, a.y - 1, a.z)), true) // 段の床
+  assert.equal(inMineBody(s, new Vec3(fac.box.min.x + 1, 50, fac.box.min.z + 1)), true) // 真ん中の柱
+  assert.equal(inMineBody(s, new Vec3(b.x, b.y, b.z)), false) // 空ける所
+  assert.equal(inMineBody(s, new Vec3(fac.box.max.x + 1, 50, fac.box.min.z)), false) // 輪の外
 })

@@ -497,6 +497,7 @@ export const MINE_BOTTOM = { min: -58, max: 100 } // 1.21.4 の岩盤は y -64�
 export const MINE_MIN_STEPS = 4
 export const TUNNELS = { min: 0, max: 4 }
 export const TUNNEL_LENGTH = { min: 4, max: 32 }
+const MINE_OFFSETS = 25
 const RING = [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1], [3, 2], [3, 3], [2, 3], [1, 3], [0, 3], [0, 2], [0, 1]] // 4 x 4 の外周
 const FALLING = /(^|_)(sand|gravel)$|concrete_powder$/
 const FLUID = /water|lava/
@@ -533,13 +534,21 @@ function mineCells (x0, z0, y0, bottom, tunnels, length) {
     const [dx, dz] = RING[i % RING.length]
     cells.push({ x: x0 + dx, y: y0 - i, z: z0 + dz, h: 3, part: 'stairs' })
   }
-  // 下の部屋（4 x 4、高さ 2）: 最後の段から蛇行して、隣り合う順に
+  // 下の部屋（4 x 4、高さ 2）: 最後の段から近い順（幅優先）。どのセルも、先に空けた隣に立って掘れる
   const last = cells[cells.length - 1]
-  const rows = [0, 1, 2, 3].map((dz) => [0, 1, 2, 3].map((dx) => ({ x: x0 + dx, z: z0 + dz })))
-  const snake = rows.flatMap((row, i) => (i % 2 ? [...row].reverse() : row))
-  const start = snake.findIndex((p) => p.x === last.x && p.z === last.z)
-  const ordered = start <= snake.length / 2 ? snake : [...snake].reverse()
-  for (const p of ordered) if (!(p.x === last.x && p.z === last.z)) cells.push({ ...p, y: bottom, h: 2, part: 'room' })
+  const seen = new Set([`${last.x},${last.z}`])
+  const queue = [{ x: last.x, z: last.z }]
+  while (queue.length) {
+    const p = queue.shift()
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const q = { x: p.x + dx, z: p.z + dz }
+      const key = `${q.x},${q.z}`
+      if (seen.has(key) || q.x < x0 || q.x > x0 + 3 || q.z < z0 || q.z > z0 + 3) continue
+      seen.add(key)
+      queue.push(q)
+      cells.push({ ...q, y: bottom, h: 2, part: 'room' })
+    }
+  }
   // 坑道: 部屋の各辺の真ん中から外へまっすぐ
   for (const [name, [dx, dz]] of Object.entries(DIRECTIONS)) {
     if (!tunnels.includes(name)) continue
@@ -554,10 +563,10 @@ function mineCells (x0, z0, y0, bottom, tunnels, length) {
 export const plannedBlocks = (cells) => new Set(cells.flatMap((c) => blocksOf(c).map((p) => `${p.x},${p.y},${p.z}`)))
 export const mineBlocks = blocksOf
 
-// 危なくないセルの並びの長さ（最初の危ないセルまで）と、その理由
-function safePrefix (bot, cells) {
+// 危なくないセルの並びの長さ（最初の危ないセルまで）と、その理由。from より前のセルは確かめ済み
+function safePrefix (bot, cells, from = 0) {
   const planned = plannedBlocks(cells)
-  for (let i = 0; i < cells.length; i++) {
+  for (let i = from; i < cells.length; i++) {
     const why = mineDanger(bot, cells[i], planned)
     if (why) return { n: i, why }
   }
@@ -580,6 +589,8 @@ function mineLayout (bot, state, area, name, design) {
   for (let x0 = area.min_x; x0 + 3 <= area.max_x; x0++) for (let z0 = area.min_z; z0 + 3 <= area.max_z; z0++) offsets.push([x0, z0])
   offsets.sort((a, b) => Math.hypot(a[0] + 1.5 - cx, a[1] + 1.5 - cz) - Math.hypot(b[0] + 1.5 - cx, b[1] + 1.5 - cz))
   if (!offsets.length) throw new FacilityError('the zones are smaller than the 4 x 4 shaft')
+  // 試すのは中心に近い MINE_OFFSETS か所まで（全部の位置で深い縦穴を読むと、ボットの処理が長く止まる）
+  offsets.splice(MINE_OFFSETS)
   let deepest = null
   let unloaded = 0
   for (const [x0, z0] of offsets) {
@@ -599,7 +610,7 @@ function mineLayout (bot, state, area, name, design) {
     // 坑道: 安全に掘り切れる向きを count 本（東、南、西、北の順に試す）
     const ok = Object.keys(DIRECTIONS).filter((d) => {
       const t = mineCells(x0, z0, y0, bottom, [d], length).filter((c) => c.part.startsWith('tunnel'))
-      return safePrefix(bot, [...shaft, ...t]).n === shaft.length + t.length
+      return safePrefix(bot, [...shaft, ...t], shaft.length).n === shaft.length + t.length
     })
     if (ok.length < count) {
       if (!deepest || bottom <= deepest.y) deepest = { y: bottom, why: `only ${ok.length} tunnels of ${length} are safe here` }
@@ -624,10 +635,36 @@ export function mineStatus (bot, fac) {
   return out
 }
 
+// 採掘場ごとの、空ける所（"x,y,z"）と、らせん階段の縦の範囲（輪の 4 x 4、底の床から入口の上まで）。
+// 経路探しが 1 回に何千回も聞くので、セルの並びごとに作っておく（stopMine で並びが変わると作り直す）
+const mineIndexes = new WeakMap()
+function mineIndex (fac) {
+  let index = mineIndexes.get(fac.layout.cells)
+  if (!index) {
+    const cells = fac.layout.cells
+    const stairs = cells.filter((c) => c.part === 'stairs')
+    index = {
+      open: plannedBlocks(cells),
+      body: cells.length ? { ...fac.box, y0: (stairs.at(-1) ?? cells[0]).y - 1, y1: cells[0].y + 2 } : null
+    }
+    mineIndexes.set(fac.layout.cells, index)
+  }
+  return index
+}
+const mines = (state) => Object.values(state.facilities ?? {}).filter((f) => f.kind === 'mine' && f.layout)
+
 // 採掘場のセルか（空けておく所: 足場も土も置かない、整地で埋めない）
 export function onMineCell (state, p) {
-  return Object.values(state.facilities ?? {}).some((f) => f.kind === 'mine' && f.layout &&
-    f.layout.cells.some((c) => c.x === p.x && c.z === p.z && p.y >= c.y && p.y < c.y + c.h))
+  return mines(state).some((f) => mineIndex(f).open.has(`${p.x},${p.y},${p.z}`))
+}
+
+// らせん階段の柱と段の床（空けない所）か: 経路探しに壊させない（階段が崩れる）
+export function inMineBody (state, p) {
+  return mines(state).some((f) => {
+    const { open, body } = mineIndex(f)
+    return body && p.x >= body.min.x && p.x <= body.max.x && p.z >= body.min.z && p.z <= body.max.z &&
+      p.y >= body.y0 && p.y <= body.y1 && !open.has(`${p.x},${p.y},${p.z}`)
+  })
 }
 
 // 採掘の途中で見つけた危ないもの: そのセルから先を設計から外し、理由を残す（黙って浅くしない）

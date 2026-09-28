@@ -21,7 +21,7 @@ import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
 import { levelStatus, fillItem, TERRAIN } from './leveling.mjs'
-import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell } from './facilities.mjs'
+import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody } from './facilities.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -92,6 +92,8 @@ export function configureMovements (bot, state) {
   m.exclusionAreasPlace.push((block) => block.position && !inHouse(state, block.position, 1) ? 0 : 100)
   // 採掘場の空ける所には足場を置かない（階段や坑道を埋めない。設計書 47 §16）
   m.exclusionAreasPlace.push((block) => block.position && onMineCell(state, block.position) ? 100 : 0)
+  // らせん階段の柱と段の床は壊さない（経路探しが近道に掘ると階段が崩れる）
+  m.exclusionAreasBreak.push((block) => block.position && inMineBody(state, block.position) ? 100 : 0)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
   m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
