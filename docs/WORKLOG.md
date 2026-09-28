@@ -2,14 +2,14 @@
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-28
-**Test Status**: `python -m pytest tests/` 874 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 269 件
+**Test Status**: `python -m pytest tests/` 874 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 270 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
 
 ### 家に入れない（ドアの前の穴）、言うことと行動を合わせる (2026-09-28)
 
-**Commit**: 5c21699（ブリッジ）、872cdb1（助言）、42819d2（待つ間に食べる）、f0bc03b（一言の実況）
+**Commit**: 5c21699・fbee788（ブリッジ）、872cdb1（助言）、42819d2（待つ間に食べる）、f0bc03b（一言の実況）
 
 配信で家のドアの前の床が 1 つ抜け、家に入れないまま約 20 分（体力 5.3、空腹 0、夜）。視聴者の「家の前の穴を埋めて」を受けたのに後回し、実況は「家に入れた」「パンにするね」と行動と違うことを繰り返した。ユーザーの依頼「1 から順に」「オートジャンプ」「小目標は常に今やっていること」「喋るときは行動を選ぶ、選んでいる間は繰り返さない」。
 - ブリッジ: `enterHome` がドアの前の床の穴を埋めてから入る、足場の除外からドアの前の床の列を外す、穴の中を「前に着いた」としない、失敗に理由（ドアの前の様子と高さ）、`goto` は着いていなければ失敗、整地はドアの前の列も埋める、オートジャンプ（Minecraft のは画面側の設定で、ボットにはない）。`fillItem` を observe.mjs へ（循環の import を避ける）。`test/doorstep.test.mjs`
