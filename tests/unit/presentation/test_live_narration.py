@@ -7,6 +7,8 @@ import pytest
 from ailoveshen.domain.events import GameActionExecutedEvent
 from ailoveshen.domain.value_objects import (
     Activity,
+    FastAnswer,
+    FastVerdict,
     GameObservation,
     Goal,
     GoalPredicate,
@@ -63,6 +65,41 @@ def _setup(lines=(), intent="北の森で原木を集めてくるね", obs=None)
 def test_similar_lines_are_the_same_content():
     assert similarity("原木を集めてくるね！", "原木を集めてくるね") == 1.0
     assert similarity("北の森で原木を集めてくるね", "南の洞窟で鉄を掘るよ") < 0.2
+
+
+@pytest.mark.asyncio
+async def test_jev_semantic_duplicate_is_blocked():
+    """Jev が「同じ意味」なら、表記の揺れでも発話を抑止する。"""
+
+    class FakeJudge:
+        async def ask(self, state, questions):
+            return FastVerdict(
+                answers={questions[0].name: FastAnswer(questions[0].name, True, 0.9)},
+                elapsed_ms=10,
+                input_tokens=20,
+            )
+
+    live, clock, said, _, llm, state = _setup(
+        lines=["また拒否されちゃった……！ 目の前にベッドがあるのに家に入れないの～？"],
+        intent="目の前にベッドがあるのに家に入れない",
+    )
+    live._judge = FakeJudge()
+
+    live._spoken.remember("目の前にベッドがあるのに家に入れない")
+    assert await live._duplicate_of_recent("また拒否されちゃった……！ 目の前にベッドがあるのに家に入れないの～？") == (
+        "目の前にベッドがあるのに家に入れない"
+    )
+    assert llm.generate_commentary.await_count == 0
+
+    state["activity"] = Activity(
+        goal=GOAL,
+        intent="目の前にベッドがあるのに、なぜか家に戻ろうとして拒否されちゃう……！",
+        observation=_obs({}),
+    )
+    clock.now = 20
+    await live.tick()
+    assert said == []
+    assert llm.generate_commentary.await_count == 0
 
 
 @pytest.mark.asyncio

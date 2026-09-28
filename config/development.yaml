@@ -11,11 +11,11 @@ tts:
     device: "BlackHole 2ch"
   emotion_style_map:
     neutral: "Neutral"
-    happy: "Happy"
-    surprised: "Surprised"
-    sad: "Sad"
-    angry: "Angry"
-    scared: "Fear"
-    excited: "Happy"
+    happy: "Neutral"
+    surprised: "Neutral"
+    sad: "Neutral"
+    angry: "Neutral"
+    scared: "Neutral"
+    excited: "Neutral"
   synthesis:
     style_weight: 1.0   # 感情の強さ（1 で弱ければ上げる。上げすぎると声が崩れる）

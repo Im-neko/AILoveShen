@@ -25,16 +25,32 @@ from typing import Any
 from loguru import logger
 
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
+from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.domain.events import GameActionExecutedEvent
-from ailoveshen.domain.value_objects import Activity
+from ailoveshen.domain.value_objects import Activity, FastQuestion, FastQuestionKind
 from ailoveshen.presentation.services.llm_service import LLMService
 
 SIMILAR = 0.5  # 文字の 2-gram の Jaccard がこれ以上なら同じ内容とみなす
+SEMANTIC_SIMILARITY = 0.8  # Jev が「意味的に 8 割以上同じ」と判定したら同じ
 REMEMBERED_LINES = 8
 SHOWN_LINES = 4  # 一言のプロンプトに見せる、直前に話したこと
 RECENT_ACTIONS = 3
 _JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
 _PUNCT = re.compile(r"[\s、。！？!?…「」『』（）()〜ー・,.]+")
+SAME_MEANING_QUESTION = FastQuestion(
+    name="same_meaning",
+    kind=FastQuestionKind.YES_NO,
+    instructions=(
+        "Compare two short Japanese lines from a live game stream narration. "
+        "Return true only when the second line is effectively the same meaning as the first, "
+        "even if the wording is different. "
+        "Do not treat a new problem, new action, change in place, or new inventory state as the same."
+    ),
+    criteria={
+        "yes": "The second line says the same thing in substance as the first.",
+        "no": "The second line adds a new fact, new state, or a different action.",
+    },
+)
 
 
 def _grams(text: str) -> set[str]:
@@ -83,6 +99,8 @@ class LiveNarration:
         interval_seconds: float = 10.0,
         tick_seconds: float = 1.0,
         clock: Callable[[], float] = time.monotonic,
+        judge: IFastJudge | None = None,
+        semantic_similarity_threshold: float = 0.8,
     ) -> None:
         """
         Args:
@@ -103,6 +121,8 @@ class LiveNarration:
         self._interval = interval_seconds
         self._tick = tick_seconds
         self._clock = clock
+        self._judge = judge
+        self._semantic_similarity_threshold = semantic_similarity_threshold
         self._quiet_from = clock()
         self._last_intent = ""
         self._actions: deque[str] = deque(maxlen=RECENT_ACTIONS)
@@ -124,6 +144,36 @@ class LiveNarration:
                 await self.tick()
             except Exception as e:  # noqa: BLE001 - 一言の失敗で配信を止めない
                 logger.warning(f"行動の途中の一言を話せなかった: {e}")
+
+    async def _same_meaning(self, candidate: str, previous: str) -> bool:
+        """Jev に、前回の出力と意味的に近いかを聞く。8 割以上なら同じ判定。"""
+        if not candidate or not previous:
+            return False
+        if similarity(candidate, previous) >= SIMILAR:
+            return True
+        if self._judge is None:
+            return False
+        try:
+            verdict = await self._judge.ask(
+                {"previous_line": previous, "candidate_line": candidate},
+                (SAME_MEANING_QUESTION,),
+            )
+        except Exception as e:  # noqa: BLE001 - 判定失敗時は話させる
+            logger.debug(f"Jev の意味判定に失敗したので通す: {e}")
+            return False
+        answer = verdict.answers.get(SAME_MEANING_QUESTION.name)
+        if answer is None:
+            return False
+        return bool(answer.value) and float(answer.confidence) >= self._semantic_similarity_threshold
+
+    async def _duplicate_of_recent(self, text: str) -> str | None:
+        """直前の発話のいずれかと意味が近ければ、その行を返す。"""
+        for line in reversed(self._spoken.recent()):
+            if similarity(text, line) >= SIMILAR:
+                return line
+            if await self._same_meaning(text, line):
+                return line
+        return None
 
     async def tick(self) -> None:
         """黙っている時間が間隔を超えていれば 1 行話す。"""
@@ -153,6 +203,10 @@ class LiveNarration:
             return
         if not self._is_idle():
             logger.info(f"[live] 作っている間にほかの発話が始まったので捨てた: {line}")
+            return
+        previous = await self._duplicate_of_recent(line)
+        if previous is not None:
+            logger.info(f"[live] Jev/類似度で前回と同じ判定したので捨てた: {line}（前: {previous}）")
             return
         logger.debug(f"[live] {source}: {line}")
         await self._say(line)

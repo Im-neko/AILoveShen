@@ -106,7 +106,7 @@ llm:
     # Purposes the local model thinks for (all others: no thinking). Thinking is slow locally, so the
     # everyday calls (tool, tool_after_failure, commentary, live, reply) do not think; the goal decisions
     # do (they are few and plan the next minutes; user 2026-09-27); [] = never think
-    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site"]
+    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool"]
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.

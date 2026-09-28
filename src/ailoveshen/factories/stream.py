@@ -187,25 +187,29 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
 
     # 小目標の切れ目の実況は、今話す価値があるかを Jev が決める（設計書 34 §6）
     gate = None
-    if settings.stream.commentary_judge == "jev" and settings.jev.api_key:
-        from ailoveshen.application.use_cases.commentary_gate import CommentaryGate
+    live_judge = None
+    if settings.jev.api_key:
         from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
-        from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
-            JsonlWatchRecorder,
-        )
 
-        gate = CommentaryGate(
-            judge=JevFastJudge(
-                api_key=settings.jev.api_key,
-                model=settings.jev.model,
-                timeout_seconds=settings.jev.timeout_seconds,
-            ),
-            activity=activity,
-            recorder=JsonlWatchRecorder(str(base_dir / settings.stream.commentary_record_dir))
-            if settings.stream.commentary_record_dir
-            else None,
+        live_judge = JevFastJudge(
+            api_key=settings.jev.api_key,
+            model=settings.jev.model,
+            timeout_seconds=settings.jev.timeout_seconds,
         )
-        closers.append(gate.close)
+        if settings.stream.commentary_judge == "jev":
+            from ailoveshen.application.use_cases.commentary_gate import CommentaryGate
+            from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
+                JsonlWatchRecorder,
+            )
+
+            gate = CommentaryGate(
+                judge=live_judge,
+                activity=activity,
+                recorder=JsonlWatchRecorder(str(base_dir / settings.stream.commentary_record_dir))
+                if settings.stream.commentary_record_dir
+                else None,
+            )
+            closers.append(gate.close)
     Narrator(
         llm,
         activity=activity,
@@ -223,6 +227,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             spoken=spoken,
             is_idle=tts.is_idle if tts is not None else (lambda: True),
             interval_seconds=settings.stream.live_interval_seconds,
+            judge=live_judge,
         )
         live.subscribe(bus)
         logger.info(f"[live] {settings.stream.live_interval_seconds:.0f} 秒黙っていたら一言話す")
