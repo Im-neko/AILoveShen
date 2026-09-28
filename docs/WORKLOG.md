@@ -1,8 +1,8 @@
 ## Current Status
 
-**Active Phase**: 設計書 36（ローカル LLM と Gemini の振り分け）を実装した。ユーザーの FreeToken（Qwen3.6）で `tools/llm_probe.py` を測り、`LOCAL_LLM=1` で様子を見る段階。その前に 設計書 35（教訓帳: 指摘と失敗を似た状況で思い出す）を実装した（実機では未確認。`logs/lessons` と `data/lessons.json` を見て点の重みと閾値を直す）。アバターは既定で全身表示（OBS で切り抜く）。その前に設計書 34（Jev でできることは Jev に）を実装した: 道具モード（2026-09-26 から既定）の 1 手をまず Jev が選ぶ、読み上げの感情、コメントの仕分け、実況の間合い、失敗の後の振り分け。どれも実機では未確認。次はユーザーの環境で配信（Python 側の再起動だけ。ブリッジは変わっていない）を動かし、`logs/steps`・`logs/chat`・`logs/commentary`・`logs/goals` を見て閾値を直すこと。音声は Irodori-TTS（`shen_sbv2` が合う）と、Style-Bert-VITS2 の感情スタイル（`tools/sbv2_add_styles.py`、pyannote の読み込みを直したところ）。ブランチ `claude/peaceful-edison-prr51v`
-**Last Updated**: 2026-09-27
-**Test Status**: `pytest tests/unit` 778 passed（`test_stream_factory` の 1 件は配信中でポート 8765 が使われているため）; 前回 `pytest tests/` 735 passed（`python -m pytest`: uv の pytest は別の Python を使う）, 2 skipped。ブリッジ `npm test` 194 件
+**Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
+**Last Updated**: 2026-09-28
+**Test Status**: `python -m pytest tests/` 860 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 257 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
