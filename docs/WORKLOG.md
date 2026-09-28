@@ -9,7 +9,7 @@
 
 ### 施設の設計と facility(name)（設計書 47 段階 4A） (2026-09-28)
 
-**Commit**: (後で記入)
+**Commit**: `2391ee3`
 
 ユーザー:「施設を作る前にレイアウトと設計図を作る」。設計書 47 §14。
 - ブリッジ `facilities.mjs`: `registerFacility`（区画の中から畑の四角・植林場の格子を選ぶ。`near_home`）、`layoutStatus` / `updateStatus` / `nextCell`、`FacilityError`（400 直せる / 409 区画が読み込まれていない）。`PUT /facilities/<name>`。`farming.mjs` の `TILLABLE` / `CLEARABLE` / `SAPLING_GROUND` / `TREE_GAP` / `surfaceAt` を公開、`till` は草花を刈ってから耕す
