@@ -10,7 +10,7 @@ from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChoose
 from ailoveshen.application.use_cases.goal_vocabulary import goal_schema, parse_decision
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, _also
-from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
 from ailoveshen.domain.events import GoalMemberMetEvent
 from ailoveshen.domain.value_objects import (
     ActionDecision,
@@ -25,7 +25,7 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     Mission,
-    PlannedStep,
+    Job,
     Side,
 )
 from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
@@ -55,8 +55,8 @@ BUNDLE = {
 }
 
 
-def _plan() -> MidGoalPlan:
-    plan = MidGoalPlan(mission=Mission("街"))
+def _plan() -> ObjectivePlan:
+    plan = ObjectivePlan(mission=Mission("街"))
     plan.add("家を建てる", (BUILT,))
     return plan
 
@@ -78,11 +78,11 @@ class TestShape:
         assert decision.together == (SAPLING, STONE)
         assert decision.approach.startswith("森へ")
         schema = goal_schema([GoalPredicate.HAVE], ["m1"])
-        # 見直しの次に、残りを外出ごとに分けさせてから手順を書かせる（§9）
+        # 見直しの次に、残りを外出ごとに分けさせてから中目標を書かせる（§9）
         assert list(schema["properties"])[:2] == ["review", "trips"]
         assert "trips" in schema["required"]
         assert schema["properties"]["together"]["maxItems"] == 3
-        step = schema["properties"]["steps"]["items"]["properties"]
+        step = schema["properties"]["jobs"]["items"]["properties"]
         assert "together" in step and "approach" in step
 
     def test_only_up_to_four_world_conditions_without_repeats(self):
@@ -92,37 +92,37 @@ class TestShape:
             Goal(LOG, together=(SAPLING, STONE, BUILT, GoalSpec(GoalPredicate.LIT, distance=8)))
         with pytest.raises(ValueError, match="twice"):
             Goal(LOG, together=(LOG,))
-        with pytest.raises(ValueError, match="step 1: together 1"):
-            parse_decision({**BUNDLE, "steps": [{**BUNDLE, "together": [{"predicate": "x"}]}]})
+        with pytest.raises(ValueError, match="job 1: together 1"):
+            parse_decision({**BUNDLE, "jobs": [{**BUNDLE, "together": [{"predicate": "x"}]}]})
 
-    def test_a_bundled_goal_bundles_the_steps_it_was_written_as_apart(self):
-        """実測（2026-09-27）: 小目標は束なのに、手順では石と原木を別々に書いた。"""
+    def test_a_bundled_goal_bundles_the_jobs_it_was_written_as_apart(self):
+        """実測（2026-09-27）: 小目標は束なのに、中目標では石と原木を別々に書いた。"""
         decision = parse_decision(
             {
                 **BUNDLE,
                 "together": [{"predicate": "have", "item": "cobblestone", "count": 8}],
-                "steps": [
+                "jobs": [
                     {"predicate": "have", "item": "log", "count": 16, "reason": "原木"},
                     {"predicate": "have", "item": "cobblestone", "count": 8, "reason": "石"},
                     {"predicate": "built", "reason": "建てる"},
                 ],
             }
         )
-        assert [s.specs for s in decision.steps] == [(LOG, STONE), (BUILT,)]
-        assert decision.steps[0].approach == decision.approach
-        assert decision.steps[0].reason == "原木"
+        assert [s.specs for s in decision.jobs] == [(LOG, STONE), (BUILT,)]
+        assert decision.jobs[0].approach == decision.approach
+        assert decision.jobs[0].reason == "原木"
 
-    def test_steps_can_be_bundles_and_are_saved(self, tmp_path):
-        decision = parse_decision({**BUNDLE, "steps": [{**BUNDLE, "reason": "森へ"}]})
-        step = decision.steps[0]
+    def test_jobs_can_be_bundles_and_are_saved(self, tmp_path):
+        decision = parse_decision({**BUNDLE, "jobs": [{**BUNDLE, "reason": "森へ"}]})
+        step = decision.jobs[0]
         assert step.specs == (LOG, SAPLING, STONE)
         assert step.describe() == "have(log, 16) + planted(sapling, 4) + have(cobblestone, 8)"
         plan = _plan()
-        plan.set_steps("m1", decision.steps)
+        plan.set_jobs("m1", decision.jobs)
         store = JsonMissionStore(tmp_path / "mission.json")
         store.save(plan)
-        assert store.load().pending[0].plan_steps == plan.get("m1").plan_steps
-        assert store.load().pending[0].plan_steps[0].specs == step.specs
+        assert store.load().pending[0].jobs == plan.get("m1").jobs
+        assert store.load().pending[0].jobs[0].specs == step.specs
 
 
 class TestSession:
@@ -149,13 +149,13 @@ class TestSession:
 
 class TestChooser:
     @pytest.mark.asyncio
-    async def test_a_bundle_step_goes_on_with_what_is_not_met_yet(self):
+    async def test_a_bundle_job_goes_on_with_what_is_not_met_yet(self):
         session = PlaySession(blueprint=None, plan=_plan())
-        session.plan.set_steps(
+        session.plan.set_jobs(
             "m1",
             (
-                PlannedStep(LOG, "森へ", together=(SAPLING, STONE), approach="森で"),
-                PlannedStep(BUILT, "建てる"),
+                Job(LOG, "森へ", together=(SAPLING, STONE), approach="森で"),
+                Job(BUILT, "建てる"),
             ),
         )
         bridge = AsyncMock()
@@ -171,7 +171,7 @@ class TestChooser:
         assert (picked.spec, picked.together, picked.approach) == (SAPLING, (STONE,), "森で")
         state, (question,) = jev.ask.await_args.args
         assert "planted(sapling, 4) + have(cobblestone, 8)" in question.criteria["A"]
-        assert "not yet: planted(sapling, 4), have(cobblestone, 8)" in state["steps"][0]
+        assert "not yet: planted(sapling, 4), have(cobblestone, 8)" in state["jobs"][0]
 
 
 @pytest.mark.asyncio
@@ -197,13 +197,13 @@ async def test_a_member_met_is_published_and_narrated():
         action_selector=selector,
         event_publisher=events,
         conversation=Conversation(),
-        mid_goals=AsyncMock(),
+        objectives=AsyncMock(),
         town=AsyncMock(),
         notes=NoteKeeper(notes),
     )
     blueprint = HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2)
     session = PlaySession(blueprint=blueprint, plan=_plan())
-    session.set_goal(Goal(LOG, together=(STONE,), mid_goal_id="m1"), "day")
+    session.set_goal(Goal(LOG, together=(STONE,), objective_id="m1"), "day")
 
     await use_case.execute(session)
 
@@ -233,10 +233,10 @@ async def test_a_member_met_is_published_and_narrated():
 
 def test_the_bundle_is_shown_to_gemini_and_on_the_board():
     goal = Goal(
-        LOG, reason="家の材料", together=(STONE,), approach="森の途中で石も", mid_goal_id="m1"
+        LOG, reason="家の材料", together=(STONE,), approach="森の途中で石も", objective_id="m1"
     )
     activity = Activity(
-        mission=Mission("街"), mid_goals=tuple(_plan().pending), goal=goal, observation=_obs()
+        mission=Mission("街"), objectives=tuple(_plan().pending), goal=goal, observation=_obs()
     )
     text = format_activity(activity)
     assert "have(log, 16) + have(cobblestone, 8)" in text

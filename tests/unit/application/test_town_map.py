@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.town import MOVE_CONDITIONS, TownPlanner
 from ailoveshen.application.use_cases.town_map import apply_areas, base_zones, town_map_schema
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.events import TownMapDrawnEvent
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import (
@@ -108,7 +108,7 @@ def test_the_goal_decision_sees_a_summary():
 
 
 def test_the_map_is_saved_and_restored(tmp_path):
-    plan = MidGoalPlan(mission=MISSION)
+    plan = ObjectivePlan(mission=MISSION)
     plan.set_town_map(apply_areas(base_zones(_rows()), ANSWER, (0, 0), 0, (), "r"))
     store = JsonMissionStore(tmp_path / "mission.json")
     store.save(plan)
@@ -128,14 +128,14 @@ def _planner(answers, zones=None):
         event_publisher=events,
         character=CharacterProfile(),
         store=store,
-        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store),
         designer=AsyncMock(),
     )
     return planner, text_generator, events, store
 
 
-def _defined(town_stage=0, town_map=None) -> MidGoalPlan:
-    plan = MidGoalPlan(mission=MISSION)
+def _defined(town_stage=0, town_map=None) -> ObjectivePlan:
+    plan = ObjectivePlan(mission=MISSION)
     plan.restore([], [], 1, town=TOWN, town_stage=town_stage, site=HERE, town_map=town_map)
     return plan
 

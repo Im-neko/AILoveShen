@@ -195,7 +195,7 @@ class GeminiTextGenerator(ITextGenerator):
             logger.warning(f"スキーマをプロンプトに書くと通った: purpose={purpose} では以後そうする")
         if finish == types.FinishReason.MAX_TOKENS and config.max_output_tokens:
             # 思考で上限を使い切って JSON が途中で切れた: 上限を倍にして 1 回だけやり直す
-            # （2026-09-26: 目標の決定の見直し・中目標の編集が長くなって切れた）
+            # （2026-09-26: 目標の決定の見直し・大目標の編集が長くなって切れた）
             bigger = min(config.max_output_tokens * 2, MAX_OUTPUT_TOKENS_RETRY)
             if bigger > config.max_output_tokens:
                 logger.warning(

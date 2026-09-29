@@ -1,7 +1,7 @@
 """
 施設の設計（docs/design/47 §7、§16）: 畑・植林場・採掘場は、作る前に配置を決める。
 
-まだない名前の `facility(name)` を中目標に足すとき、`MidGoalKeeper` が呼ぶ。街の理想図に
+まだない名前の `facility(name)` を大目標に足すとき、`ObjectiveKeeper` が呼ぶ。街の理想図に
 その名前の予定の区画があればそこに、なければ空いた区画から LLM が選ぶ（理想図がまだなければ
 家のまわり）。LLM が決めるのは種類・区画・大きさ・作物か苗木・採掘場の深さと坑道。実際のマス
 （耕せる・植えられる地面、安全に下りられる階段）はブリッジが区画の中から選んで登録する。登録したら、理想図のその区画に施設を書き込む。
@@ -18,7 +18,7 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import (
     FacilityAreaNotReadyError,
     FacilityNotDesignedError,
@@ -173,7 +173,7 @@ class FacilityDesigner:
         text_generator: ITextGenerator,
         prompt_builder: IGamePromptBuilder,
         bridge: IMinecraftBridge,
-        plan: MidGoalPlan,
+        plan: ObjectivePlan,
         store: IMissionStore,
         max_attempts: int = 3,
     ) -> None:
@@ -182,7 +182,7 @@ class FacilityDesigner:
             text_generator: LLM（構造化出力。purpose=facility_design）
             prompt_builder: プロンプトの組み立て
             bridge: 区画の地形を読み、設計を登録する
-            plan: 大目標のプラン（理想図を読み、書き込む。オブジェクトは差し替えられない）
+            plan: 最終目標のプラン（理想図を読み、書き込む。オブジェクトは差し替えられない）
             store: 理想図を書き込んだら保存する
             max_attempts: あきらめるまでに設計させる回数
         """

@@ -89,7 +89,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         character=settings.character,
         event_publisher=bus,
         conversation=conversation,
-        mid_goals=game.mid_goals,
+        objectives=game.objectives,
         generation_log=gemini_calls,
         llm=settings.llm,
         text_generator=shared_text,

@@ -14,9 +14,9 @@ from ailoveshen.domain.events import (
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
     SkillLearnedEvent,
     SkillRevisedEvent,
 )
@@ -79,17 +79,17 @@ class Stream:
             logger.info(f"[design] {e.name}: {e.concept}")
 
         async def goal(e: GoalSetEvent) -> None:
-            serves = f" [{e.mid_goal} のため]" if e.mid_goal else " [生存]"
+            serves = f" [{e.objective} のため]" if e.objective else " [生存]"
             logger.info(f"[goal] {e.goal}{serves}: {e.reason}")
 
-        async def mid_added(e: MidGoalAddedEvent) -> None:
+        async def objective_added(e: ObjectiveAddedEvent) -> None:
             who = f" [{e.requested_by} の頼み]" if e.requested_by else ""
-            logger.info(f"[mid+] #{e.position} {e.title}{who}: {e.reason}")
+            logger.info(f"[objective+] #{e.position} {e.title}{who}: {e.reason}")
 
-        async def mid_done(e: MidGoalCompletedEvent) -> None:
+        async def objective_done(e: ObjectiveCompletedEvent) -> None:
             logger.info(f"[mid✓] {e.title}")
 
-        async def mid_dropped(e: MidGoalDroppedEvent) -> None:
+        async def objective_dropped(e: ObjectiveDroppedEvent) -> None:
             logger.info(f"[mid×] {e.title}: {e.reason}")
 
         async def house(e: HouseCompletedEvent) -> None:
@@ -97,9 +97,9 @@ class Stream:
 
         bus.subscribe(HouseDesignedEvent, designed)
         bus.subscribe(GoalSetEvent, goal)
-        bus.subscribe(MidGoalAddedEvent, mid_added)
-        bus.subscribe(MidGoalCompletedEvent, mid_done)
-        bus.subscribe(MidGoalDroppedEvent, mid_dropped)
+        bus.subscribe(ObjectiveAddedEvent, objective_added)
+        bus.subscribe(ObjectiveCompletedEvent, objective_done)
+        bus.subscribe(ObjectiveDroppedEvent, objective_dropped)
         bus.subscribe(HouseCompletedEvent, house)
 
         async def skill_learned(e: SkillLearnedEvent) -> None:

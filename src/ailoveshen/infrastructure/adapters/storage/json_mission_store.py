@@ -1,4 +1,4 @@
-"""大目標を JSON ファイルに保存するアダプター。"""
+"""最終目標を JSON ファイルに保存するアダプター。"""
 
 from __future__ import annotations
 
@@ -11,15 +11,15 @@ from typing import Any, Optional
 from loguru import logger
 
 from ailoveshen.application.ports.output.mission_store import IMissionStore, SavedPlan
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     JobState,
-    MidGoal,
-    MidGoalState,
+    Objective,
+    ObjectiveState,
     Mission,
-    PlannedStep,
+    Job,
     TownDefinition,
     TownMap,
     TownSite,
@@ -28,12 +28,12 @@ from ailoveshen.domain.value_objects import (
 )
 
 # 保存の形の版。違うファイルは読まない（互換のための移行はしない。最初のリストで始める）
-FORMAT = 2
+FORMAT = 3
 
 
 class JsonMissionStore(IMissionStore):
     """
-    大目標、その中目標、街とその場所を 1つの JSON ファイルに保存する。
+    最終目標、その大目標、街とその場所を 1つの JSON ファイルに保存する。
 
     一時ファイルに書いてから名前を変えるので、書き込み中に落ちても
     最後に完全に保存した内容が残る。
@@ -61,10 +61,10 @@ class JsonMissionStore(IMissionStore):
                 raise ValueError(f"format {data.get('format')!r}, not {FORMAT}")
             saved = SavedPlan(
                 mission=Mission(text=data["mission"]),
-                pending=tuple(_mid_goal(g) for g in data["pending"]),
-                finished=tuple(_mid_goal(g) for g in data["finished"]),
+                pending=tuple(_objective(g) for g in data["pending"]),
+                finished=tuple(_objective(g) for g in data["finished"]),
                 next_id=int(data["next_id"]),
-                next_step_id=int(data["next_step_id"]),
+                next_job_id=int(data["next_job_id"]),
                 town=_town(data["town"]) if data.get("town") else None,
                 town_stage=int(data.get("town_stage", 0)),
                 stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
@@ -75,14 +75,14 @@ class JsonMissionStore(IMissionStore):
             aside = self._path.with_suffix(self._path.suffix + ".unreadable")
             shutil.copy2(self._path, aside)
             logger.warning(
-                f"{self._path} は今の形で読めない（{type(e).__name__}: {e}）。最初の中目標で始める"
+                f"{self._path} は今の形で読めない（{type(e).__name__}: {e}）。最初の大目標で始める"
                 f"（元のファイルは {aside} に残した）"
             )
             return None
-        logger.info(f"中目標を {self._path} から読み込んだ")
+        logger.info(f"大目標を {self._path} から読み込んだ")
         return saved
 
-    def save(self, plan: MidGoalPlan) -> None:
+    def save(self, plan: ObjectivePlan) -> None:
         """計画を保存する。"""
         data = {
             "format": FORMAT,
@@ -90,7 +90,7 @@ class JsonMissionStore(IMissionStore):
             "pending": [_to_dict(g) for g in plan.pending],
             "finished": [_to_dict(g) for g in plan.finished],
             "next_id": plan.next_id,
-            "next_step_id": plan.next_step_id,
+            "next_job_id": plan.next_job_id,
             "town": _town_dict(plan.town) if plan.town else None,
             "town_stage": plan.town_stage,
             "stage_met": [c.to_dict() for c in plan.stage_met],
@@ -103,25 +103,25 @@ class JsonMissionStore(IMissionStore):
         tmp.replace(self._path)
 
 
-def _step_to_dict(step: PlannedStep) -> dict[str, Any]:
+def _job_to_dict(job: Job) -> dict[str, Any]:
     out: dict[str, Any] = {
-        "id": step.id,
-        "state": step.state.value,
-        "spec": step.spec.to_dict(),
-        "reason": step.reason,
-        "requested_by": step.requested_by,
-        "suggested_by": step.suggested_by,
-        "steps": step.steps,
-        "progress": list(step.progress),
+        "id": job.id,
+        "state": job.state.value,
+        "spec": job.spec.to_dict(),
+        "reason": job.reason,
+        "requested_by": job.requested_by,
+        "suggested_by": job.suggested_by,
+        "budget_used": job.budget_used,
+        "progress": list(job.progress),
     }
-    if step.together:
+    if job.together:
         # 小目標の束（docs/design/44）
-        out["together"] = [t.to_dict() for t in step.together]
-        out["approach"] = step.approach
+        out["together"] = [t.to_dict() for t in job.together]
+        out["approach"] = job.approach
     return out
 
 
-def _to_dict(goal: MidGoal) -> dict[str, Any]:
+def _to_dict(goal: Objective) -> dict[str, Any]:
     return {
         "id": goal.id,
         "title": goal.title,
@@ -131,9 +131,9 @@ def _to_dict(goal: MidGoal) -> dict[str, Any]:
         "suggested_by": goal.suggested_by,
         "state": goal.state.value,
         "ended_because": goal.ended_because,
-        "steps": goal.steps,
+        "budget_used": goal.budget_used,
         "budget": goal.budget,
-        "plan_steps": [_step_to_dict(s) for s in goal.plan_steps],
+        "jobs": [_job_to_dict(s) for s in goal.jobs],
         "progress": list(goal.progress),
         "stage": goal.stage,
         "prepares_town": goal.prepares_town,
@@ -183,20 +183,20 @@ def _spec(c: dict[str, Any]) -> GoalSpec:
     )
 
 
-def _mid_goal(data: dict[str, Any]) -> MidGoal:
-    return MidGoal(
+def _objective(data: dict[str, Any]) -> Objective:
+    return Objective(
         id=data["id"],
         title=data["title"],
         conditions=tuple(_spec(c) for c in data["conditions"]),
         reason=data.get("reason", ""),
         requested_by=data.get("requested_by"),
         suggested_by=data.get("suggested_by"),
-        state=MidGoalState(data.get("state", MidGoalState.PENDING.value)),
+        state=ObjectiveState(data.get("state", ObjectiveState.PENDING.value)),
         ended_because=data.get("ended_because", ""),
-        steps=int(data.get("steps", 0)),
+        budget_used=int(data.get("budget_used", 0)),
         budget=int(data["budget"]) if data.get("budget") else None,
-        plan_steps=tuple(
-            PlannedStep(
+        jobs=tuple(
+            Job(
                 _spec(s["spec"]),
                 s.get("reason", ""),
                 together=tuple(_spec(t) for t in s.get("together", [])),
@@ -205,10 +205,10 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
                 state=JobState(s["state"]),
                 requested_by=s.get("requested_by"),
                 suggested_by=s.get("suggested_by"),
-                steps=int(s.get("steps", 0)),
+                budget_used=int(s.get("budget_used", 0)),
                 progress=tuple(s.get("progress", [])),
             )
-            for s in data.get("plan_steps", [])
+            for s in data.get("jobs", [])
         ),
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),

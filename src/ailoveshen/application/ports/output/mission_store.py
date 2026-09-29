@@ -1,4 +1,4 @@
-"""大目標の保存の出力ポート。"""
+"""最終目標の保存の出力ポート。"""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
     GoalSpec,
-    MidGoal,
+    Objective,
     Mission,
     TownDefinition,
     TownMap,
@@ -19,13 +19,13 @@ from ailoveshen.domain.value_objects import (
 
 @dataclass(frozen=True)
 class SavedPlan:
-    """プランのうち保存するもの: 大目標、中目標、次の id の番号、街とその場所。"""
+    """プランのうち保存するもの: 最終目標、大目標、次の id の番号、街とその場所。"""
 
     mission: Mission
-    pending: tuple[MidGoal, ...]
-    finished: tuple[MidGoal, ...]
+    pending: tuple[Objective, ...]
+    finished: tuple[Objective, ...]
     next_id: int
-    next_step_id: int = 1  # 次の手順の id の番号（docs/design/50）
+    next_job_id: int = 1  # 次の中目標の id の番号（docs/design/50）
     town: Optional[TownDefinition] = None
     town_stage: int = 0
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
@@ -35,7 +35,7 @@ class SavedPlan:
 
 class IMissionStore(ABC):
     """
-    大目標とその中目標を、再起動をまたいで保つ出力ポート。
+    最終目標とその大目標を、再起動をまたいで保つ出力ポート。
 
     このインターフェースはアプリケーション層で定義する。
     インフラ層のアダプターがこれを実装する。
@@ -47,6 +47,6 @@ class IMissionStore(ABC):
         ...
 
     @abstractmethod
-    def save(self, plan: MidGoalPlan) -> None:
+    def save(self, plan: ObjectivePlan) -> None:
         """プランを保存する（変更のたびに）。"""
         ...

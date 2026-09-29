@@ -53,8 +53,8 @@ class IGamePromptBuilder(ABC):
 
         Args:
             character: 配信者
-            name: 建物の名前（中目標の条件の built(name)）
-            brief: 何のための建物か（中目標の題名と理由、視聴者の頼み）
+            name: 建物の名前（大目標の条件の built(name)）
+            brief: 何のための建物か（大目標の題名と理由、視聴者の頼み）
             home_note: 家の大きさとドアの向き
             builds_note: ほかの建物（名前、置き場所、大きさ）
             map_shown: 地図の画像を添えるか（添えるなら、マス目で置き場所を選べる）
@@ -72,8 +72,8 @@ class IGamePromptBuilder(ABC):
         （docs/design/42_custom_conditions.md）。
 
         Args:
-            name: 判定の名前（中目標の条件の custom(name) の name）
-            brief: 何を確かめるか（中目標の題名と理由、視聴者の頼み）
+            name: 判定の名前（大目標の条件の custom(name) の name）
+            brief: 何を確かめるか（大目標の題名と理由、視聴者の頼み）
             place_note: 家と今の場所（座標の基準）
             previous_error: 前回の判定が使えなかった理由（あれば）
         """
@@ -106,7 +106,7 @@ class IGamePromptBuilder(ABC):
 
         Args:
             character: 配信者
-            mission: 街を作る大目標
+            mission: 街を作る最終目標
             sites: ブリッジが測った候補地の数字（1 行が 1 か所）
             previous_error: 前回の選択が拒否された理由（あれば）
         """
@@ -127,11 +127,11 @@ class IGamePromptBuilder(ABC):
         previous_error: str = "",
     ) -> str:
         """
-        大目標の街がどんなものかを、段階に分けて LLM に尋ねるプロンプトを組み立てる。
+        最終目標の街がどんなものかを、段階に分けて LLM に尋ねるプロンプトを組み立てる。
 
         Args:
             character: 配信者
-            mission: 街を定める大目標
+            mission: 街を定める最終目標
             site: 選んだ街の場所（街はそこに合わせて定める）
             facts: その場所の、ブリッジが測った数字
             previous_error: 前回の定義が拒否された理由（あれば）
@@ -193,7 +193,7 @@ class IGamePromptBuilder(ABC):
 
         Args:
             name: 施設の名前
-            brief: 何のための施設か（中目標の題名と理由）
+            brief: 何のための施設か（大目標の題名と理由）
             town_map: 街の理想図（なければ家のまわりに作る）
             zones: ブリッジが測った区画の地形（GET /zones。理想図がなければ空）
             planned: 理想図でこの名前に予定した区画
@@ -229,24 +229,24 @@ class IGamePromptBuilder(ABC):
         failure_record: Sequence[str] = (),
         offered: Sequence[Candidate] = (),
         retry_allowed: bool = True,
-        step_status: Sequence[ConditionStatus] = (),
+        job_status: Sequence[ConditionStatus] = (),
     ) -> str:
         """
         LLM に次の目標を決めさせるプロンプトを組み立てる。
 
         Args:
             blueprint: 建てている家（None: 家は前の実行で建った）
-            activity: 配信者が今していること（大目標と中目標、終わる目標とその状態、
+            activity: 配信者が今していること（最終目標と大目標、終わる目標とその状態、
                 最近の目標）。実況と返答が見るものと同じ
             goal_ended_because: 新しい目標が要る理由
             recent_messages: 配信で話されたこと（配信者の言葉と視聴者のチャット）
             predicates: 今意味のある述語
-            previous_error: 前回の目標、または中目標の編集が使えなかった理由
+            previous_error: 前回の目標、または大目標の編集が使えなかった理由
             failure_record: 行き詰まった・進まなかった小目標の行動の記録（古い順。空: 失敗ではない）。
                 あれば原因を分析させる（docs/design/27）
             offered: その小目標で最後に出ていた候補
             retry_allowed: 同じ小目標のやり直しを選べるか（同じ失敗が続いたら選べない）
-            step_status: 一番上の中目標の手順を今判定したもの（見直しの材料。docs/design/31）
+            job_status: 一番上の大目標の中目標を今判定したもの（見直しの材料。docs/design/31）
         """
         ...
 

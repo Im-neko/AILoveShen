@@ -45,8 +45,8 @@ from ailoveshen.domain.events import (
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
     SkillLearnedEvent,
     SpeechCompletedEvent,
     SpeechStartedEvent,
@@ -151,8 +151,8 @@ class AvatarStage:
             ChatResponseGeneratedEvent,
             GoalSetEvent,
             GoalEndedEvent,
-            MidGoalAddedEvent,
-            MidGoalCompletedEvent,
+            ObjectiveAddedEvent,
+            ObjectiveCompletedEvent,
             HouseCompletedEvent,
             TownSiteChosenEvent,
             GameActionExecutedEvent,
@@ -175,11 +175,11 @@ class AvatarStage:
             if self._uses_tts() or not event.text.strip():
                 return []
             return [self._speak(event.text, speech_ms(event.text), emotion_from_text(event.text))]
-        if isinstance(event, (MidGoalCompletedEvent, HouseCompletedEvent, SkillLearnedEvent)):
+        if isinstance(event, (ObjectiveCompletedEvent, HouseCompletedEvent, SkillLearnedEvent)):
             return [_emote(EmotionType.HAPPY, 1.0, 4.0, "cheer")]
         if isinstance(event, TownSiteChosenEvent):
             return [_emote(EmotionType.HAPPY, 0.8, 3.0, "nod")]
-        if isinstance(event, MidGoalAddedEvent) and event.requested_by:
+        if isinstance(event, ObjectiveAddedEvent) and event.requested_by:
             return [_emote(EmotionType.HAPPY, 0.7, 2.5, "nod")]
         if isinstance(event, GoalEndedEvent):
             if event.met:
@@ -322,13 +322,13 @@ class AvatarStage:
 
 def moment_of(event: DomainEvent) -> str:
     """ゲームの出来事を、Jev に渡す「今起きていること」の 1 行にする。"""
-    if isinstance(event, MidGoalCompletedEvent):
-        return f"a mid goal was completed: {event.title}"
+    if isinstance(event, ObjectiveCompletedEvent):
+        return f"an objective was completed: {event.title}"
     if isinstance(event, HouseCompletedEvent):
         return f"the house was completed: {event.name}"
     if isinstance(event, TownSiteChosenEvent):
         return f"chose where to build the town: {event.name}"
-    if isinstance(event, MidGoalAddedEvent):
+    if isinstance(event, ObjectiveAddedEvent):
         return f"accepted a request from viewer {event.requested_by}: {event.title}"
     if isinstance(event, GoalEndedEvent):
         state = "done" if event.met else "gave up"

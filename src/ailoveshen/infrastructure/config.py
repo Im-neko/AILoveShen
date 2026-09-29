@@ -52,7 +52,7 @@ class TwitchSettings:
     triage: str = "jev"
     skip_min_confidence: float = 0.7
     triage_record_dir: str = "logs/chat"
-    # 返事が行動を約束しているのに中目標にも考え直しにもならないとき書き直させる（docs/design/34 §10）: jev か off
+    # 返事が行動を約束しているのに大目標にも考え直しにもならないとき書き直させる（docs/design/34 §10）: jev か off
     promise_check: str = "jev"
     promise_record_dir: str = "logs/promises"
 
@@ -160,7 +160,7 @@ class JevSettings:
     timeout_seconds: float = 10.0
 
 
-def _default_mid_goals() -> list[dict[str, Any]]:
+def _default_objectives() -> list[dict[str, Any]]:
     return [
         {
             "title": "自分の家を作る",
@@ -187,15 +187,15 @@ def _default_mid_goals() -> list[dict[str, Any]]:
 
 @dataclass
 class MissionSettings:
-    """大目標（コメントでは変わらない）、最初の中目標、計画の上限。"""
+    """最終目標（コメントでは変わらない）、最初の大目標、計画の上限。"""
 
     text: str = "生き延びながら家を建て、街にしていく"
     # [{title, conditions: [{predicate, item?, count?}], reason}]: 保存したものがないときのリスト
-    mid_goals: list[dict[str, Any]] = field(default_factory=_default_mid_goals)
-    max_mid_goals: int = 6
-    max_viewer_mid_goals: int = 2
+    objectives: list[dict[str, Any]] = field(default_factory=_default_objectives)
+    max_objectives: int = 6
+    max_viewer_objectives: int = 2
     viewer_budget_steps: int = 80
-    # 中目標は再起動をまたいで引き継ぐ（大目標の文が同じなら）
+    # 大目標は再起動をまたいで引き継ぐ（最終目標の文が同じなら）
     store_path: str = "data/mission.json"
 
 
@@ -237,7 +237,7 @@ class VisionSettings:
 
 @dataclass
 class MinecraftSettings:
-    """Minecraft ブリッジへの接続、エージェント、大目標の設定。"""
+    """Minecraft ブリッジへの接続、エージェント、最終目標の設定。"""
 
     bridge_host: str = "localhost"
     bridge_port: int = 3000
@@ -252,7 +252,7 @@ class MinecraftSettings:
     # 行動の決め方（docs/design/21）: tools（既定。Gemini が道具を呼ぶ）か candidates（候補から Jev が
     # 選ぶ。前の方式、比べるときだけ）
     control: str = "tools"
-    # 小目標の決め方（docs/design/26）: jev（Gemini が書いた手順から Jev が選ぶ）か gemini（毎回 Gemini）
+    # 小目標の決め方（docs/design/26）: jev（Gemini が書いた中目標から Jev が選ぶ）か gemini（毎回 Gemini）
     small_goals: str = "jev"
     # 道具モードの 1 手（docs/design/34 §3）: jev（まず Jev が候補と技から選び、迷ったら Gemini）か
     # gemini（毎回 Gemini）
@@ -262,7 +262,7 @@ class MinecraftSettings:
     step_max_failures: int = 2
     step_gemini_every: int = 8
     step_record_dir: str = "logs/steps"
-    # 小目標が行き詰まった後（docs/design/34 §7）: jev（まず Jev が別の手順か Gemini に考え直させるかを
+    # 小目標が行き詰まった後（docs/design/34 §7）: jev（まず Jev が別の中目標か Gemini に考え直させるかを
     # 選ぶ）か gemini（いつも Gemini が原因を分析する）
     failure_routing: str = "jev"
     # 行動の記録から行き詰まりを Jev が定期的に確かめる（docs/design/34 §9）。0 で確かめない
@@ -290,8 +290,8 @@ class MinecraftSettings:
     search_record_dir: str = "logs/search"
     jev_goal_min_confidence: float = 0.4
     replan_minutes: float = 20.0
-    # 一番上の中目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
-    mid_goal_stall_steps: int = 60
+    # 一番上の大目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
+    objective_stall_steps: int = 60
     goal_record_dir: str = "logs/goals"
     # 技（docs/design/22）: 道具モードで、Gemini が JS の技を書いて覚え、直して使い回す
     skills_enabled: bool = True
@@ -698,10 +698,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             notes_path=agent_data.get("notes_path", defaults.notes_path),
             mission=MissionSettings(
                 text=mission_data.get("text", mission_defaults.text),
-                mid_goals=mission_data.get("mid_goals", mission_defaults.mid_goals),
-                max_mid_goals=mission_data.get("max_mid_goals", mission_defaults.max_mid_goals),
-                max_viewer_mid_goals=mission_data.get(
-                    "max_viewer_mid_goals", mission_defaults.max_viewer_mid_goals
+                objectives=mission_data.get("objectives", mission_defaults.objectives),
+                max_objectives=mission_data.get("max_objectives", mission_defaults.max_objectives),
+                max_viewer_objectives=mission_data.get(
+                    "max_viewer_objectives", mission_defaults.max_viewer_objectives
                 ),
                 viewer_budget_steps=mission_data.get(
                     "viewer_budget_steps", mission_defaults.viewer_budget_steps
@@ -753,8 +753,8 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("jev_goal_min_confidence", defaults.jev_goal_min_confidence)
             ),
             replan_minutes=float(agent_data.get("replan_minutes", defaults.replan_minutes)),
-            mid_goal_stall_steps=int(
-                agent_data.get("mid_goal_stall_steps", defaults.mid_goal_stall_steps)
+            objective_stall_steps=int(
+                agent_data.get("objective_stall_steps", defaults.objective_stall_steps)
             ),
             goal_record_dir=agent_data.get("goal_record_dir", defaults.goal_record_dir),
             skills_enabled=bool(agent_data.get("skills", defaults.skills_enabled)),

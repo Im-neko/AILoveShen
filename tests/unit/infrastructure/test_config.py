@@ -350,25 +350,25 @@ class TestLoadJevAndMinecraftSettings:
             assert settings.minecraft.max_stalled_steps == 4
 
     def test_load_mission(self):
-        """大目標、最初の中目標、上限を読む。"""
+        """最終目標、最初の大目標、上限を読む。"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             (config_dir / "default.yaml").write_text(
                 "minecraft:\n"
                 "  mission:\n"
                 "    text: 村を作る\n"
-                "    mid_goals:\n"
+                "    objectives:\n"
                 "      - title: 家\n"
                 "        conditions: [{predicate: built}]\n"
-                "    max_viewer_mid_goals: 1\n"
+                "    max_viewer_objectives: 1\n"
             )
 
             mission = load_settings(config_dir=config_dir).minecraft.mission
 
             assert mission.text == "村を作る"
-            assert mission.mid_goals == [{"title": "家", "conditions": [{"predicate": "built"}]}]
-            assert mission.max_viewer_mid_goals == 1
-            assert mission.max_mid_goals == 6
+            assert mission.objectives == [{"title": "家", "conditions": [{"predicate": "built"}]}]
+            assert mission.max_viewer_objectives == 1
+            assert mission.max_objectives == 6
             assert mission.viewer_budget_steps == 80
             assert mission.store_path == "data/mission.json"
 
@@ -382,7 +382,7 @@ class TestLoadJevAndMinecraftSettings:
 
         assert settings.jev.api_key == "from-env"
         assert settings.minecraft.bridge_port == 3000
-        assert settings.minecraft.mission.mid_goals == MissionSettings().mid_goals
+        assert settings.minecraft.mission.objectives == MissionSettings().objectives
 
 
 class TestToolControlSettings:

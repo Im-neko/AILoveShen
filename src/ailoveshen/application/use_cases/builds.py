@@ -121,8 +121,8 @@ def _point(p: dict[str, Any]) -> tuple[int, int, int]:
 
 class BuildDesigner:
     """
-    名前付きの建物を設計させて登録する。まだない名前の `built(name)` を中目標に足すとき、
-    `MidGoalKeeper` が呼ぶ。
+    名前付きの建物を設計させて登録する。まだない名前の `built(name)` を大目標に足すとき、
+    `ObjectiveKeeper` が呼ぶ。
     """
 
     def __init__(
@@ -162,7 +162,7 @@ class BuildDesigner:
 
         Args:
             name: 建物の名前（built(name) の name）
-            brief: 何のための建物か（中目標の題名と理由）
+            brief: 何のための建物か（大目標の題名と理由）
             max_blocks: 展開したブロックの上限（視聴者の頼みは小さく）
 
         Raises:

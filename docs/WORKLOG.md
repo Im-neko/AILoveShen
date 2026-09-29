@@ -7,6 +7,18 @@
 
 ## Completed Work
 
+### 目標の 4 層 段階 3: 改名と語彙の入れ替え（設計書 50 §12） (2026-09-29)
+
+**Commit**: `6ba8a7f`
+
+ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。段階 3 は意味を変えずに名前と語彙だけを 1 回で入れ替えた（段階 2 は仕組み）。
+- 型・名前: `MidGoal` → `Objective`、`MidGoalPlan` / `MidGoalKeeper` / `MidGoalState` / `MidGoalProposal` / `MidGoal*Event` → `Objective*`、`PlannedStep` → `Job`、`mid_goal_id` → `objective_id`、`plan_steps` → `jobs`、予算の使用数 `steps` → `budget_used`、`set_steps` などの手順系 → `*_jobs`、`use_cases/mid_goals.py` → `objectives.py`、設定 `minecraft.mission.{mid_goals,max_mid_goals,max_viewer_mid_goals}` → `{objectives,max_objectives,max_viewer_objectives}`、`minecraft.agent.mid_goal_stall_steps` → `objective_stall_steps`。旧→新の全部は設計書 50 §12
+- Gemini の決定の JSON は `steps` → `jobs`。`data/mission.json` は `format: 3`（`plan_steps` → `jobs`、`steps` → `budget_used`、`next_step_id` → `next_job_id`。旧形式は読まず初期リストで始め、元を `.unreadable` に写す）。`/api/goals` は `mid_goals` → `objectives`、`steps*` → `jobs*`。ログの印は `[objective+]` など
+- 日本語: 旧「大目標」→「最終目標」、旧「中目標」→「大目標」、旧「手順」→「中目標」（プロンプト、活動の書式、実況、オーバーレイ、ブリッジのコメント）。目標の説明は 4 層。「手順」がやり方の意味のもの（技、やり方の帳、ソルバーの細かい手順）と、小目標のステップ（行動）は変えていない
+- ドキュメント: CLAUDE.md、設計書 50 §12、13・26・20 ほか語彙の入れ替わる設計書 24 本の冒頭に対応の注記、`docs/streaming.md`
+- テスト: `pytest tests/` 937 passed、ブリッジ `npm test` 272 件。テストファイルは `test_jobs.py` / `test_goal_board_jobs.py` / `test_json_mission_store_jobs.py` に改名
+- 要注意: `data/mission.json` は次の起動で初期リストに戻る（段階 2 で `format: 2` にした時点で旧形式は読めない。着手前に `data/backups/` へ退避）。台本のコメントと実機での確認は未実施
+
 ### 目標の 4 層 段階 2: 手順（中目標）を第一級に（設計書 50） (2026-09-29)
 
 **Commit**: `eba4cd9`
@@ -1879,9 +1891,9 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
-### 目標の 4 層（設計書 50、2026-09-29 時点。段階 2 は実装済み。段階 3（改名と語彙）は未着手）
+### 目標の 4 層（設計書 50、2026-09-29 時点。段階 2・3 は実装済み。台本のコメントと実機での確認が残り）
 
-ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。設計書 `docs/design/50_goal_layers.md`。段階: 2 仕組み（実装済み。上の Completed Work）→ 3 改名と語彙（1 回で: `MidGoal` → `Objective`、`PlannedStep` → `Job`、`MidGoalPlan` → `ObjectivePlan`、`MidGoalKeeper` → `ObjectiveKeeper`、イベント、`mid_goal_id` → `objective_id`、プロンプトと日本語の表示、ブリッジのエラー文、`abilities.yaml`、設計書 13・26・20、CLAUDE.md。`MidGoal.steps`（予算）は `budget_used` に）。
+ユーザーの依頼: 最終目標・大目標・中目標・小目標の 4 層にする。設計書 `docs/design/50_goal_layers.md`。段階 2（仕組み）と 3（改名と語彙）は実装済み（上の Completed Work）。残り: 設計書 §9 の台本のコメント（連投、関係のない頼み、乗っ取り、「家ができたらやるね」、助言）と実機（大目標の入れ替えのあと中目標が続きから進むか、オーバーレイの階層表示）、中目標の完了の実況（`JobDoneEvent`）、Gemini の決定で中目標を断念する操作。
 - 設計書で、ユーザーの決めた「小さい頼みは今の大目標の中目標」を「今の大目標に関係するものだけ」に絞った（§5）。確認待ち
 - `data/mission.json` は移行しない。着手前に `data/backups/` へ退避
 

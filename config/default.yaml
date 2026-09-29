@@ -49,7 +49,7 @@ twitch:
     triage_record_dir: "logs/chat"   # every comment's triage, skipped ones with their text
     # After a reply that neither accepts a request nor writes a rethink (docs/design/34 §10): jev = Jev
     # says whether the reply promises to do something in the game; if so Gemini (purpose promise)
-    # turns the promise into a mid goal, now (cutting the small goal) or after the current one, or
+    # turns the promise into an objective, now (cutting the small goal) or after the current one, or
     # the reply is written again without the promise. Unsure or failing Jev: spoken as is.
     # off = no check
     promise_check: "jev"
@@ -136,7 +136,7 @@ gemini:
   filter_thinking_level: "low"
   # Includes thinking tokens. Too small a value yields truncated or empty output.
   # Measured total usage peaks around 1.3k tokens (medium), but a long goal decision (review, plan
-  # edits, steps) was cut at 8192 (2026-09-26). A cut JSON output is retried once at twice the limit.
+  # edits, jobs) was cut at 8192 (2026-09-26). A cut JSON output is retried once at twice the limit.
   max_output_tokens: 16384
   # thinking_level per purpose (docs/design/19 §7, 21 §7). Purposes not listed use
   # main_thinking_level. high is unmeasured (it may hit max_output_tokens): measure before relying on it.
@@ -147,7 +147,7 @@ gemini:
     facility_design: "high"    # a farm or tree farm's zones and size (docs/design/47 §7)
     house: "medium"            # designing the house
     build_design: "high"       # designing a named build (docs/design/25_builds.md)
-    goal: "low"                # the small goal (with mid-goal edits and notes)
+    goal: "low"                # the small goal (with objective edits and notes)
     goal_after_failure: "medium"
     tool: "low"                # one tool call (control: tools)
     tool_after_failure: "medium"
@@ -444,8 +444,8 @@ minecraft:
     step_gemini_every: 8
     step_record_dir: "logs/steps"   # options, chosen, confidence, why Gemini
     # After a small goal is stuck or stalled (docs/design/34 §7): jev = Jev first picks another
-    # open step of the top mid goal (not the same kind) or "rethink" (Gemini analyses the failure);
-    # Gemini always after 2 failures of the same kind, a death, a stalled mid goal or a screen
+    # open job of the top objective (not the same kind) or "rethink" (Gemini analyses the failure);
+    # Gemini always after 2 failures of the same kind, a death, a stalled objective or a screen
     # rethink. gemini = Gemini always analyses (design 27)
     failure_routing: "jev"
     # Every stuck_check_steps actions of a small goal Jev reads the action record (actions, results,
@@ -482,17 +482,17 @@ minecraft:
     search_timeout_seconds: 3.0
     search_record_dir: "logs/search"
     # How small goals are chosen (docs/design/26_steps_and_context.md):
-    #   jev: Gemini writes the steps for a mid goal; Jev picks the next step (and survival goals)
-    #        at each boundary. Gemini is asked again after a failure, when the steps run out, when
-    #        Jev is unsure, and every replan_minutes (if the mid goals changed; else 3x as long)
+    #   jev: Gemini writes the jobs for an objective; Jev picks the next job (and survival goals)
+    #        at each boundary. Gemini is asked again after a failure, when the jobs run out, when
+    #        Jev is unsure, and every replan_minutes (if the objectives changed; else 3x as long)
     #   gemini: Gemini decides every small goal (the previous behaviour, costs more)
     small_goals: "jev"
     jev_goal_min_confidence: 0.4
     replan_minutes: 20
-    # When the top mid goal's progress (the counts of its conditions) stays the same over this many
+    # When the top objective's progress (the counts of its conditions) stays the same over this many
     # actions for it, Gemini reconsiders it (another approach, explore far, move it down or drop it):
     # small goals ending as stalled could otherwise come back to the same one and circle. 0: off
-    mid_goal_stall_steps: 60
+    objective_stall_steps: 60
     goal_record_dir: "logs/goals"  # Jev's choices (options, chosen, confidence, why Gemini)
     # Skills (docs/design/22_skills.md, control: tools only): Gemini writes JS skills over the
     # tools, the bridge runs them in a sandbox and keeps the ones that worked
@@ -534,11 +534,11 @@ minecraft:
     failure_interval_seconds: 60   # a screenshot goes with a rethink after failure at most this often
 
   # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
-  # mid goals are worked on from the top, completed when their conditions hold in the world.
+  # objectives are worked on from the top, completed when their conditions hold in the world.
   # Conditions: built / placed (item: bed) / have (item, count)
   mission:
     text: "生き延びながら家を建て、街にしていく"
-    mid_goals:
+    objectives:
       - title: "自分の家を作る"
         conditions: [{predicate: built}]
         reason: "夜を安全に過ごす拠点"
@@ -552,9 +552,9 @@ minecraft:
         conditions: [{predicate: have, item: food, count: 8}]
         reason: "空腹で動けなくならないように"
     # Limits the code keeps (not left to the model)
-    max_mid_goals: 6
-    max_viewer_mid_goals: 2       # at a time; one per viewer
-    viewer_budget_steps: 80       # a viewer's mid goal is dropped (and told) after this many steps
+    max_objectives: 6
+    max_viewer_objectives: 2       # at a time; one per viewer
+    viewer_budget_steps: 80       # a viewer's objective is dropped (and told) after this many steps
     # Carried on across restarts while the mission text stays the same
     store_path: "data/mission.json"
 

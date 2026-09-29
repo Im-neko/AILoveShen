@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ailoveshen.domain.entities import PlaySession
-from ailoveshen.domain.value_objects import Activity, EmotionState, MidGoal
+from ailoveshen.domain.value_objects import Activity, EmotionState, Objective
 
 
 @dataclass
@@ -52,7 +52,7 @@ class GenerateResponseRequest:
     チャット返答生成のユースケースの入力 DTO。
 
     プレイの `session` があると、返答は配信者が今していることを見て、
-    視聴者の頼みを中目標として受けることがある。
+    視聴者の頼みを大目標として受けることがある。
     """
 
     user_name: str
@@ -66,13 +66,13 @@ class GenerateResponseRequest:
 
 @dataclass
 class GenerateResponseResponse:
-    """チャット返答生成のユースケースの出力 DTO（`mid_goal`: 受けた頼み）。"""
+    """チャット返答生成のユースケースの出力 DTO（`objective`: 受けた頼み）。"""
 
     success: bool
     original_message: str
     user_name: str
     text: str = ""
-    mid_goal: Optional[MidGoal] = None
+    objective: Optional[Objective] = None
     error: Optional[str] = None
 
     @classmethod
@@ -81,7 +81,7 @@ class GenerateResponseResponse:
         text: str,
         original_message: str,
         user_name: str,
-        mid_goal: Optional[MidGoal] = None,
+        objective: Optional[Objective] = None,
     ) -> GenerateResponseResponse:
         """レスポンスを作る。テキストが空なら、モデルが使えるものを出さなかったということ。"""
         return cls(
@@ -89,7 +89,7 @@ class GenerateResponseResponse:
             text=text,
             original_message=original_message,
             user_name=user_name,
-            mid_goal=mid_goal,
+            objective=objective,
         )
 
     @classmethod

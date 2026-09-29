@@ -42,7 +42,7 @@ SAME_TEXT_RATIO = 0.85
 WEAK_AFTER_USES = 4  # これだけ思い出しても一度も効かなければ消す
 HUNGRY_FOOD = 6
 HURT_HEALTH = 8
-MID_STALLED = "has made no progress"  # play.py の中目標が進まない印と同じ
+OBJECTIVE_STALLED = "has made no progress"  # play.py の大目標が進まない印と同じ
 
 
 def ended_kind(reason: str) -> str:
@@ -53,7 +53,7 @@ def ended_kind(reason: str) -> str:
         return "died"
     if " is stuck" in reason:
         return "stuck"
-    if " stalled " in reason or MID_STALLED in reason:
+    if " stalled " in reason or OBJECTIVE_STALLED in reason:
         return "stalled"
     if reason.endswith(" is met"):
         return "met"
@@ -280,7 +280,7 @@ class LessonBook:
 
         Args:
             now: 今の状況のキー
-            upcoming: これからやること（一番上の中目標のまだの手順）の状況のキー
+            upcoming: これからやること（一番上の大目標のまだの中目標）の状況のキー
             context: Jev に見せる今の様子（目標の文など）
             moment: 記録用（"decision": 目標の決定の前、"start": 小目標の始まり）
         """

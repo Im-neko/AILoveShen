@@ -487,13 +487,13 @@ class Goal:
     """
     小目標: LLM が決めた今の方向。行動選択器はその中で動く。
 
-    `mid_goal_id` は、それが役立つ中目標（None: 生存のため。例えば夜を越すことは、
-    中目標を待ってくれない）。
+    `objective_id` は、それが役立つ大目標（None: 生存のため。例えば夜を越すことは、
+    大目標を待ってくれない）。
     """
 
     spec: GoalSpec
     reason: str = ""
-    mid_goal_id: Optional[str] = None
+    objective_id: Optional[str] = None
     set_at: datetime = field(default_factory=_utc_now)
     # 前の小目標が失敗で終わったとき: その原因の分析と、この小目標のやり方の助言（選択器が読む。
     # docs/design/27）
@@ -522,7 +522,7 @@ class Goal:
 
 @dataclass(frozen=True)
 class ConditionStatus:
-    """ブリッジが判定した中目標の条件（目標としては設定しない）。"""
+    """ブリッジが判定した大目標の条件（目標としては設定しない）。"""
 
     spec: GoalSpec
     met: bool
@@ -530,7 +530,7 @@ class ConditionStatus:
     impossible: tuple[str, ...] = ()  # 配信者が今できることでは手に入らないもの
 
 
-# 世界の状態だけから判定できる: 中目標の完了条件になれる
+# 世界の状態だけから判定できる: 大目標の完了条件になれる
 CONDITION_PREDICATES = frozenset(
     {
         GoalPredicate.BUILT,
@@ -546,7 +546,7 @@ CONDITION_PREDICATES = frozenset(
         GoalPredicate.FACILITY,
     }
 )
-# LLM が中目標や街の段階に書ける条件。調査は、街の場所を決める前にコードが足すだけ
+# LLM が大目標や街の段階に書ける条件。調査は、街の場所を決める前にコードが足すだけ
 PLANNABLE_CONDITIONS = CONDITION_PREDICATES - {GoalPredicate.SURVEYED}
 _SURVIVAL_PREDICATES = frozenset(
     {GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME, GoalPredicate.CLEARED}
@@ -580,7 +580,7 @@ def check_bundle(lead: GoalSpec, together: tuple[GoalSpec, ...]) -> None:
 
 
 def is_survival(spec: GoalSpec) -> bool:
-    """小目標が配信者を生き延びさせるためのものか（どの中目標のためでなくてもよい）。"""
+    """小目標が配信者を生き延びさせるためのものか（どの大目標のためでなくてもよい）。"""
     return spec.predicate in _SURVIVAL_PREDICATES or (
         spec.predicate == GoalPredicate.HAVE and spec.item == "food"
     )
@@ -593,8 +593,8 @@ class Mission:
     text: str
 
 
-class MidGoalState(str, Enum):
-    """中目標の状態。"""
+class ObjectiveState(str, Enum):
+    """大目標の状態。"""
 
     PENDING = "pending"
     DONE = "done"
@@ -603,8 +603,8 @@ class MidGoalState(str, Enum):
 
 class ObjectiveKind(str, Enum):
     """
-    中目標（大目標になる）の種類。コードが条件から決める（docs/design/50 §3）。build と facility は
-    成果物だけを条件にし、資材・整地・内装は手順に置く。
+    大目標の種類。コードが条件から決める（docs/design/50 §3）。build と facility は
+    成果物だけを条件にし、資材・整地・内装は中目標に置く。
     """
 
     BUILD = "build"
@@ -620,10 +620,10 @@ _DELIVERABLE_KINDS = {
 
 def objective_kind(conditions: tuple[GoalSpec, ...]) -> ObjectiveKind:
     """
-    条件から中目標の種類を決める。
+    条件から大目標の種類を決める。
 
     Raises:
-        ValueError: 建てる・施設と、ほかの条件が混ざっているとき（材料は手順に書く）
+        ValueError: 建てる・施設と、ほかの条件が混ざっているとき（材料は中目標に書く）
     """
     kinds = {
         _DELIVERABLE_KINDS[c.predicate] for c in conditions if c.predicate in _DELIVERABLE_KINDS
@@ -632,24 +632,24 @@ def objective_kind(conditions: tuple[GoalSpec, ...]) -> ObjectiveKind:
         return ObjectiveKind.INFRASTRUCTURE
     if len(kinds) > 1 or any(c.predicate not in _DELIVERABLE_KINDS for c in conditions):
         raise ValueError(
-            "a mid goal that builds (built) or lays out a facility (facility) holds only that "
-            "one kind of condition; put the materials, leveling and furnishing in its steps"
+            "an objective that builds (built) or lays out a facility (facility) holds only that "
+            "one kind of condition; put the materials, leveling and furnishing in its jobs"
         )
     return next(iter(kinds))
 
 
 @dataclass(frozen=True)
-class MidGoal:
+class Objective:
     """
-    中目標: 大目標への一歩。条件がすべて世界で満たされたら完了する。
+    大目標: 最終目標への一歩。条件がすべて世界で満たされたら完了する。
 
     `requested_by` は頼んだ視聴者（None: 配信者自身のもの）。
-    `suggested_by` は、配信者が納得して自分の中目標にした助言をくれた視聴者（頼みではないので、
+    `suggested_by` は、配信者が納得して自分の大目標にした助言をくれた視聴者（頼みではないので、
     視聴者の上限と予算には数えない）。
     `stage` は、それが表す街の段階（None: 段階ではない）。
     `prepares_town` は、街の段階の前にやる準備（候補地の調査、選んだ場所への引っ越し）。
     段階と同じく、やめられない。
-    `steps` は、そのために小目標が使ったステップの数（視聴者のものには予算がある）。
+    `budget_used` は、そのために小目標が使ったステップの数（視聴者のものには予算がある）。
 
     Raises:
         ValueError: 条件がないか、世界から判定できない条件があるとき。
@@ -660,30 +660,30 @@ class MidGoal:
     conditions: tuple[GoalSpec, ...]
     reason: str = ""
     requested_by: Optional[str] = None
-    state: MidGoalState = MidGoalState.PENDING
+    state: ObjectiveState = ObjectiveState.PENDING
     suggested_by: Optional[str] = None
     ended_because: str = ""
-    steps: int = 0
+    budget_used: int = 0
     progress: tuple[str, ...] = ()  # 最後に判定したときの、条件の進み具合
     stage: Optional[int] = None
     prepares_town: bool = False
     # 視聴者の頼みのステップの予算（None: プランの既定。建物は大きさに合わせて広げる）
     budget: Optional[int] = None
-    # Gemini が書いた、この中目標のための手順（小目標の並び。済んだものも残る）。Jev が次を選ぶ
+    # Gemini が書いた、この大目標のための中目標（小目標の並び。済んだものも残る）。Jev が次を選ぶ
     # （docs/design/26、50 §4）
-    plan_steps: tuple["PlannedStep", ...] = ()
+    jobs: tuple["Job", ...] = ()
 
     def __post_init__(self) -> None:
         """条件を確かめる。"""
         if not self.title:
-            raise ValueError("a mid goal needs a title")
+            raise ValueError("an objective needs a title")
         if not self.conditions:
-            raise ValueError(f"mid goal {self.title} needs at least one condition")
+            raise ValueError(f"objective {self.title} needs at least one condition")
         for c in self.conditions:
             if c.predicate not in CONDITION_PREDICATES:
                 allowed = ", ".join(sorted(p.value for p in CONDITION_PREDICATES))
                 raise ValueError(
-                    f"{c.predicate.value} cannot be a condition of a mid goal; use {allowed}"
+                    f"{c.predicate.value} cannot be a condition of an objective; use {allowed}"
                 )
         if self.stage is None and not self.prepares_town:
             objective_kind(self.conditions)  # 街の段階と準備は、段階の定義が条件を決める
@@ -697,14 +697,14 @@ class MidGoal:
             return ObjectiveKind.INFRASTRUCTURE
 
     @property
-    def open_steps(self) -> tuple["PlannedStep", ...]:
-        """まだ済んでいない手順（順番どおり）。"""
-        return tuple(s for s in self.plan_steps if s.state == JobState.PENDING)
+    def open_jobs(self) -> tuple["Job", ...]:
+        """まだ済んでいない中目標（順番どおり）。"""
+        return tuple(s for s in self.jobs if s.state == JobState.PENDING)
 
     @property
-    def done_steps(self) -> tuple["PlannedStep", ...]:
-        """済んだ手順（一度満たしたら済みのまま）。"""
-        return tuple(s for s in self.plan_steps if s.state == JobState.DONE)
+    def done_jobs(self) -> tuple["Job", ...]:
+        """済んだ中目標（一度満たしたら済みのまま）。"""
+        return tuple(s for s in self.jobs if s.state == JobState.DONE)
 
     def summary(self) -> tuple[str, ...]:
         """細かい手順（字下げした進み具合の行）を除いた、条件の進み具合。"""
@@ -891,27 +891,27 @@ class HouseBlueprint:
 
 
 class JobState(str, Enum):
-    """手順（大目標の中目標になる）の状態。断念した手順はリストから外す。"""
+    """中目標（大目標の中の仕事）の状態。断念した中目標はリストから外す。"""
 
     PENDING = "pending"
     DONE = "done"
     DROPPED = "dropped"
 
 
-# 1 つの中目標の、まだ済んでいない手順の数の上限（Gemini の 6 つ + 視聴者・助言の分）
-MAX_OPEN_STEPS = 8
+# 1 つの大目標の、まだ済んでいない中目標の数の上限（Gemini の 6 つ + 視聴者・助言の分）
+MAX_OPEN_JOBS = 8
 
 
 @dataclass(frozen=True)
-class PlannedStep:
+class Job:
     """
-    中目標のための手順の 1 つ: 小目標の条件と、なぜそれか（ゴールボードと実況が使う）。
+    大目標のための中目標の 1 つ: 小目標の条件と、なぜそれか（ゴールボードと実況が使う）。
     条件は世界から判定できるもの（`/check` で済んだかを見る）。
 
     `id` はプランが付ける（Gemini が書いたときは空）。`state` は、一度 `/check` で満たしたら済み
     のまま（あとで材料を使って条件が崩れても戻さない。docs/design/50 §4）。`requested_by` は
     頼んだ視聴者、`suggested_by` は納得して採った助言をくれた視聴者（どちらも書き直しで消さない）。
-    `steps` は視聴者の手順がこれまでに使った小目標のステップ数（予算）、`progress` は最後に
+    `budget_used` は視聴者の中目標がこれまでに使った小目標のステップ数（予算）、`progress` は最後に
     判定したときの進み具合の行、`ended_because` は断念した理由。
 
     Raises:
@@ -927,7 +927,7 @@ class PlannedStep:
     state: JobState = JobState.PENDING
     requested_by: Optional[str] = None
     suggested_by: Optional[str] = None
-    steps: int = 0
+    budget_used: int = 0
     progress: tuple[str, ...] = ()
     ended_because: str = ""  # 断念した理由
 
@@ -935,7 +935,7 @@ class PlannedStep:
         for spec in (self.spec, *self.together):
             if spec.predicate not in PLANNABLE_CONDITIONS:
                 raise ValueError(
-                    f"{spec.predicate.value} cannot be a step (steps must be conditions the "
+                    f"{spec.predicate.value} cannot be a job (jobs must be conditions the "
                     "world can judge: have, stored, built, placed, lit)"
                 )
         check_bundle(self.spec, self.together)
@@ -945,8 +945,8 @@ class PlannedStep:
         """束の条件すべて（先頭が spec）。"""
         return (self.spec, *self.together)
 
-    def same_as(self, other: "PlannedStep") -> bool:
-        """条件が同じか（順番は問わない）。書き直しで同じ手順を見分ける。"""
+    def same_as(self, other: "Job") -> bool:
+        """条件が同じか（順番は問わない）。書き直しで同じ中目標を見分ける。"""
         return {s.describe() for s in self.specs} == {s.describe() for s in other.specs}
 
     def describe(self) -> str:
@@ -1221,7 +1221,7 @@ class TownStage:
 
 @dataclass(frozen=True)
 class TownDefinition:
-    """大目標の街がどんなものか（配信で言う）と、順に並べた段階。"""
+    """最終目標の街がどんなものか（配信で言う）と、順に並べた段階。"""
 
     text: str
     stages: tuple[TownStage, ...]
@@ -1473,8 +1473,8 @@ class Lesson:
 class Activity:
     """
     配信者が今していることとその理由: 目標の決定、実況、チャットの返答がすべて見る
-    唯一の見え方。これで、言うこととすることが合う。大目標から下へ: 順に並べた
-    中目標（未完了のものが先、次に最近終わったもの）、小目標、ゲーム。
+    唯一の見え方。これで、言うこととすることが合う。最終目標から下へ: 順に並べた
+    大目標（未完了のものが先、次に最近終わったもの）、小目標、ゲーム。
     """
 
     mission: Optional[Mission] = None
@@ -1482,7 +1482,7 @@ class Activity:
     site: Optional[TownSite] = None  # 選んだ街の場所（決めたこと）
     town_stage: int = 0  # 済んだ段階の数
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
-    mid_goals: tuple[MidGoal, ...] = ()
+    objectives: tuple[Objective, ...] = ()
     goal: Optional[Goal] = None
     observation: Optional[GameObservation] = None
     recent_goals: tuple[GoalOutcome, ...] = ()

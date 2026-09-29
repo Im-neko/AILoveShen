@@ -1,9 +1,9 @@
 """LLM から見た目標の語彙: 今意味のある述語、スキーマ、パース。
 
 目標の決定とチャットの返答が共有する。こうして両方が同じ言い方で目標を語る:
-- 小目標（述語 1 つ）と、それがリストの一番上の中目標のためか生存のためか。一緒に決めた
-  中目標リストへの変更も含む
-- 中目標の完了条件（世界だけから判定する述語）。目標の決定での変更と、視聴者の頼みを受ける
+- 小目標（述語 1 つ）と、それがリストの一番上の大目標のためか生存のためか。一緒に決めた
+  大目標リストへの変更も含む
+- 大目標の完了条件（世界だけから判定する述語）。目標の決定での変更と、視聴者の頼みを受ける
   返答の両方で使う
 """
 
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
     MAX_BUNDLE,
     MAX_NOTE_CHARS,
@@ -23,7 +23,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     NoteKind,
-    PlannedStep,
+    Job,
     TownDefinition,
     TownSite,
     TownStage,
@@ -38,7 +38,7 @@ MAX_EXPLORE_DISTANCE = 128
 MAX_DIG_DEPTH = 384  # minecraft-bridge/src/goals.mjs と同じ（任意の上限。省けば上限なし）
 MAX_CONDITIONS = 3
 MAX_PLAN_CHANGES = 3
-MAX_STEPS = 6  # 中目標のための手順の数（docs/design/26）
+MAX_JOBS = 6  # 大目標のための中目標の数（docs/design/26）
 MAX_NOTE_CHANGES = 3
 ITEM_DESCRIPTION = (
     "have / stored / placed: an item or group, e.g. planks, log, bed, food, crafting_table, stick, "
@@ -46,12 +46,12 @@ ITEM_DESCRIPTION = (
 )
 BUILD_NAME_DESCRIPTION = (
     "built: the name of a build you design (a-z, 0-9, _; e.g. annex, storehouse, "
-    "watchtower). Leave it out for the house. A new name in a mid goal's conditions "
+    "watchtower). Leave it out for the house. A new name in an objective's conditions "
     "means you design that build right after (an extension of the home, a shed, a "
     "tower, a wall...). custom: the name of a check (a-z, 0-9, _; 2-40 characters, saying "
     "what it tests, e.g. sheep_in_pen_3, flowers_by_door) for a result no other predicate "
-    "can say; a new name in a mid goal's conditions means you write the check right after, "
-    "from the mid goal's title and reason (say exactly what must hold). facility: the name of "
+    "can say; a new name in an objective's conditions means you write the check right after, "
+    "from the objective's title and reason (say exactly what must hold). facility: the name of "
     "a farm or tree farm (a-z, 0-9, _; e.g. wheat_farm, oak_grove; the town map's name for it "
     "when it has one); a new name means you design it right after (zones, size, crop or sapling)"
 )
@@ -76,12 +76,12 @@ _COUNT_PREDICATES = (
 class Serves(str, Enum):
     """小目標が何のためか。"""
 
-    CURRENT = "current"  # リストの一番上の中目標（変更のあと）
+    CURRENT = "current"  # リストの一番上の大目標（変更のあと）
     SURVIVAL = "survival"  # 生き延びること: 夜、家、扉、食料
 
 
 class PlanOp(str, Enum):
-    """中目標リストの編集。"""
+    """大目標リストの編集。"""
 
     ADD = "add"
     MOVE = "move"
@@ -100,9 +100,9 @@ class RequestHandling(str, Enum):
     """返答が視聴者のコメントをどう扱うか。"""
 
     NONE = "none"  # 雑談か質問
-    ACCEPT = "accept"  # 中目標に足した
+    ACCEPT = "accept"  # 大目標に足した
     DECLINE = "decline"  # 受けない理由を返答で言う
-    WITHDRAW = "withdraw"  # 本人が自分の頼みを取り下げた（「もういいよ」）: その中目標をやめる
+    WITHDRAW = "withdraw"  # 本人が自分の頼みを取り下げた（「もういいよ」）: その大目標をやめる
 
 
 class DeclineReason(str, Enum):
@@ -115,23 +115,23 @@ class DeclineReason(str, Enum):
     CANNOT = "cannot"  # 完了条件でも custom(名前) でも書けない、まだできない
     WRONG = "wrong"  # 今の状態から見て、指摘・助言が当たっていない（もうある、事実と違う）
     UNSAFE = "unsafe"  # 死ぬ・家や持ち物を失うおそれ
-    OFF_MISSION = "off_mission"  # 頼みだけ: 大目標に関係なく、後の作業も楽にならない
-    LIMIT = "limit"  # 視聴者の頼みの上限、中目標のリストがいっぱい
+    OFF_MISSION = "off_mission"  # 頼みだけ: 最終目標に関係なく、後の作業も楽にならない
+    LIMIT = "limit"  # 視聴者の頼みの上限、大目標のリストがいっぱい
 
 
 class PromiseHandling(str, Enum):
     """約束している返答の約束を、どう守るか（docs/design/34 §10）。"""
 
     NONE = "none"  # ゲームでの行動を約束していない（今していることの説明、気持ち）: そのまま話す
-    ALREADY = "already"  # リストの中目標がもうそれをしている: そのまま話す
-    NOW = "now"  # 今の小目標を区切って今やる（中目標の先頭）
-    LATER = "later"  # 今の中目標の後でやる
+    ALREADY = "already"  # リストの大目標がもうそれをしている: そのまま話す
+    NOW = "now"  # 今の小目標を区切って今やる（大目標の先頭）
+    LATER = "later"  # 今の大目標の後でやる
     CANNOT = "cannot"  # 条件で書けない・受けられない: 約束しない返答に書き直す
 
 
 @dataclass(frozen=True)
-class MidGoalProposal:
-    """足す中目標: `position` は未完了のものの中での 0 始まりの位置（None: 最後）。"""
+class ObjectiveProposal:
+    """足す大目標: `position` は未完了のものの中での 0 始まりの位置（None: 最後）。"""
 
     title: str
     conditions: tuple[GoalSpec, ...]
@@ -139,20 +139,20 @@ class MidGoalProposal:
     position: Optional[int] = None
     # 視聴者の頼みを、配信者が待っている間（夜に家の中）に今やる（docs/design/13 §8）
     now: bool = False
-    # 大目標ではなく、今の大目標の手順（中目標）として足す（docs/design/50 §5）。条件の先頭が手順の
+    # 大目標ではなく、今の大目標の中目標として足す（docs/design/50 §5）。条件の先頭が中目標の
     # 条件、残りが一緒に追う条件
     job: bool = False
 
 
 @dataclass(frozen=True)
 class PlanChange:
-    """中目標リストの 1 つの編集（add は `proposal`、move と drop は `mid_goal_id`）。"""
+    """大目標リストの 1 つの編集（add は `proposal`、move と drop は `objective_id`）。"""
 
     op: PlanOp
     reason: str
-    mid_goal_id: str = ""
+    objective_id: str = ""
     position: Optional[int] = None  # 0 始まり
-    proposal: Optional[MidGoalProposal] = None
+    proposal: Optional[ObjectiveProposal] = None
 
 
 @dataclass(frozen=True)
@@ -180,21 +180,21 @@ class Remedy(str, Enum):
 
 @dataclass(frozen=True)
 class GoalDecision:
-    """次の小目標、それが何のためか、一緒に行う中目標リストの編集。"""
+    """次の小目標、それが何のためか、一緒に行う大目標リストの編集。"""
 
     spec: GoalSpec
     reason: str
     serves: Serves
     changes: tuple[PlanChange, ...] = ()
-    # 一番上の中目標のための手順（書き直すときだけ。空: 今の手順のまま）。docs/design/26
-    steps: tuple[PlannedStep, ...] = ()
+    # 一番上の大目標のための中目標（書き直すときだけ。空: 今の中目標のまま）。docs/design/26
+    jobs: tuple[Job, ...] = ()
     # 前の小目標が失敗で終わったときだけ（docs/design/27）: 原因の分析、対処、やり方の助言
     diagnosis: str = ""
     remedy: Optional[Remedy] = None
     advice: str = ""
     # 毎回: 今の状態で何ができるか、もっと早い・無駄のないやり方はないかの見直し（docs/design/31）
     review: str = ""
-    # 毎回: 残りを外出ごとに分けたもの（手順と小目標の束はこれに従う。docs/design/44 §9）
+    # 毎回: 残りを外出ごとに分けたもの（中目標と小目標の束はこれに従う。docs/design/44 §9）
     trips: str = ""
     # 失敗の後だけ（任意）: 似た状況で思い出す教訓と、その条件（docs/design/35）
     lesson: str = ""
@@ -205,14 +205,14 @@ class GoalDecision:
 
 
 def _bundle_properties() -> dict[str, Any]:
-    """小目標・手順を束にする欄（docs/design/44）。"""
+    """小目標・中目標を束にする欄（docs/design/44）。"""
     return {
         "together": {
             "type": "array",
             "maxItems": MAX_BUNDLE - 1,
             "description": "Optional: other conditions to chase at the same time as this one "
             "(a bundle, 4 in all at most): things got on the same trip, at the same place or with "
-            "the same tools, also for other mid goals. The goal ends when all hold. Only "
+            "the same tools, also for other objectives. The goal ends when all hold. Only "
             "conditions judged from the world; night, home and fighting goals and explored are "
             "chased alone",
             "items": {
@@ -259,9 +259,9 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
 def _conditions_schema() -> dict[str, Any]:
     return {
         "type": "array",
-        "description": "All must hold for the mid goal to be done (judged from the world). A mid "
-        "goal that builds (built) or lays out a facility (facility) holds only that one kind of "
-        "condition: put its materials, leveling and furnishing in the steps",
+        "description": "All must hold for the objective to be done (judged from the world). An "
+        "objective that builds (built) or lays out a facility (facility) holds only that one "
+        "kind of condition: put its materials, leveling and furnishing in the jobs",
         "minItems": 1,
         "maxItems": MAX_CONDITIONS,
         "items": {
@@ -305,7 +305,7 @@ def _note_change_schema(note_ids: list[str], goals: int, viewers: list[str]) -> 
 
 def goal_schema(
     predicates: list[GoalPredicate],
-    mid_goal_ids: list[str],
+    objective_ids: list[str],
     note_ids: list[str] | None = None,
     goals: int = 0,
     viewers: list[str] | None = None,
@@ -313,7 +313,7 @@ def goal_schema(
     retry_allowed: bool = True,
 ) -> dict[str, Any]:
     """
-    目標の決定の JSON スキーマ: 小目標、中目標リストの編集、自分のメモの編集。
+    目標の決定の JSON スキーマ: 小目標、大目標リストの編集、自分のメモの編集。
 
     `goals` は示した小目標の数（lesson の根拠に使える）、`viewers` は示した会話にいる
     視聴者。`after_failure` なら、先頭に原因の分析、次に対処と助言（docs/design/27。
@@ -324,7 +324,7 @@ def goal_schema(
         "type": "object",
         "properties": {
             "op": {"type": "string", "enum": [o.value for o in PlanOp]},
-            "title": {"type": "string", "description": "add: the mid goal's title"},
+            "title": {"type": "string", "description": "add: the objective's title"},
             "conditions": _conditions_schema(),
             "position": {
                 "type": "integer",
@@ -335,11 +335,11 @@ def goal_schema(
         },
         "required": ["op", "reason"],
     }
-    if mid_goal_ids:
+    if objective_ids:
         change["properties"]["id"] = {
             "type": "string",
-            "enum": mid_goal_ids,
-            "description": "move / drop: the mid goal",
+            "enum": objective_ids,
+            "description": "move / drop: the objective",
         }
     schema: dict[str, Any] = {
         "type": "object",
@@ -347,25 +347,25 @@ def goal_schema(
             "review": {
                 "type": "string",
                 "description": "First, every time: from the state now (what you carry, the "
-                "chests, what is nearby and remembered, the time, which steps are already done "
-                "or impossible), is there a faster or less wasteful way to the mid goals (another "
-                "order, other steps, skipping what is done, bundling what one trip gets: open "
-                "steps and other mid goals' conditions at the same place or on the way into one "
-                "step with together)? Say what you change, or why the plan stays. 1-2 sentences "
+                "chests, what is nearby and remembered, the time, which jobs are already done "
+                "or impossible), is there a faster or less wasteful way to the objectives (another "
+                "order, other jobs, skipping what is done, bundling what one trip gets: open "
+                "jobs and other objectives' conditions at the same place or on the way into one "
+                "job with together)? Say what you change, or why the plan stays. 1-2 sentences "
                 "in Japanese",
             },
             "trips": {
                 "type": "string",
-                "description": "Next, every time: group what is left to get (the open steps of "
-                "the mid goal at the top and the other mid goals' conditions) by trip: what one "
+                "description": "Next, every time: group what is left to get (the open jobs of "
+                "the objective at the top and the other objectives' conditions) by trip: what one "
                 "trip or place gets together (the same direction, on the way, the same place), in "
                 "order, e.g. 1) north: have(cobblestone, 48) + have(oak_log, 16) 2) home: built. "
-                "The steps and the small goal follow these groups (one group = one step, "
+                "The jobs and the small goal follow these groups (one group = one job, "
                 "together)",
             },
             "plan_changes": {
                 "type": "array",
-                "description": "Edits of the mid-goal list that the review calls for, applied in "
+                "description": "Edits of the objective list that the review calls for, applied in "
                 "order (none if the order is still the best)",
                 "maxItems": MAX_PLAN_CHANGES,
                 "items": change,
@@ -388,26 +388,26 @@ def goal_schema(
             "serves": {
                 "type": "string",
                 "enum": [s.value for s in Serves],
-                "description": "current: for the mid goal at the top of the list after the "
+                "description": "current: for the objective at the top of the list after the "
                 "edits; survival: to stay alive (the night, home, the door, food)",
             },
             "reason": {"type": "string", "description": "Why this goal now, in one short sentence"},
             **_bundle_properties(),
-            "steps": {
+            "jobs": {
                 "type": "array",
-                "maxItems": MAX_STEPS,
-                "description": "The steps (small goals, in order) to reach the mid goal at the top "
-                "of the list after the edits, one step per trip or place: what one trip gets goes "
-                "into one step with together (4 conditions at most), even when the review only "
-                "says so. Write them when it has no steps yet, they are not "
-                "working, or the review finds a faster way (a step already done, materials at hand "
-                "or in a chest, a nearer source); otherwise leave empty (the steps stay and the "
+                "maxItems": MAX_JOBS,
+                "description": "The jobs (small goals, in order) to reach the objective at the top "
+                "of the list after the edits, one job per trip or place: what one trip gets goes "
+                "into one job with together (4 conditions at most), even when the review only "
+                "says so. Write them when it has no jobs yet, they are not "
+                "working, or the review finds a faster way (a job already done, materials at hand "
+                "or in a chest, a nearer source); otherwise leave empty (the jobs stay and the "
                 "fast model picks the next one itself)",
                 "items": {
                     "type": "object",
                     "properties": {
                         **_spec_properties(_CONDITION_ORDER),
-                        "reason": {"type": "string", "description": "Why this step, one sentence"},
+                        "reason": {"type": "string", "description": "Why this job, one sentence"},
                         **_bundle_properties(),
                     },
                     "required": ["predicate", "reason"],
@@ -476,7 +476,7 @@ def reply_schema() -> dict[str, Any]:
     """
     チャットの返答と、それがコメントをどう扱うかの JSON スキーマ。
 
-    返答と扱いは 1 回の生成から出るので、頼みを受けた返答は必ずそれを中目標に足す。
+    返答と扱いは 1 回の生成から出るので、頼みを受けた返答は必ずそれを大目標に足す。
     """
     return {
         "type": "object",
@@ -485,9 +485,9 @@ def reply_schema() -> dict[str, Any]:
             "request": {
                 "type": "string",
                 "enum": [r.value for r in RequestHandling],
-                "description": "none: chat or a question; accept: add the request to the mid "
-                "goals; decline: not taken (the reply says why); withdraw: the viewer calls off "
-                "their own request in the list (e.g. never mind, no need any more)",
+                "description": "none: chat or a question; accept: add the request to the "
+                "objectives; decline: not taken (the reply says why); withdraw: the viewer calls "
+                "off their own request in the list (e.g. never mind, no need any more)",
             },
             "decline_reason": {
                 "type": "string",
@@ -504,18 +504,18 @@ def reply_schema() -> dict[str, Any]:
                 "description": "accept only: true when the comment suggests something for the "
                 "streamer's own play (a better way, a farm or tree farm, being efficient or safe), "
                 "even when it is phrased as a question or a request; false when it is the viewer's "
-                "own wish. A suggestion becomes her own mid goal and does not count toward the "
+                "own wish. A suggestion becomes her own objective and does not count toward the "
                 "viewers' limits",
             },
             "level": {
                 "type": "string",
                 "enum": ["objective", "job"],
-                "description": "accept: objective = a mid goal of its own (a named build or "
-                "facility, or a small thing unrelated to the mid goal worked on now); job = a step "
-                "of the mid goal worked on now (materials or a step it needs; the first condition "
-                "is the step, the others are chased with it). Default objective",
+                "description": "accept: objective = an objective of its own (a named build or "
+                "facility, or a small thing unrelated to the objective worked on now); job = a job "
+                "of the objective worked on now (materials or a job it needs; the first condition "
+                "is the job, the others are chased with it). Default objective",
             },
-            "title": {"type": "string", "description": "accept: the mid goal's title"},
+            "title": {"type": "string", "description": "accept: the objective's title"},
             "conditions": _conditions_schema(),
             "position": {
                 "type": "integer",
@@ -530,7 +530,7 @@ def reply_schema() -> dict[str, Any]:
                 "description": "accept: now = cut the current small goal and do it right away "
                 "because that is better (it is quick, can be done with what is here, gets harder "
                 "later or matters more than the current goal; or you are only waiting, e.g. the "
-                "night inside the home); next = after the mid goal worked on now (default)",
+                "night inside the home); next = after the objective worked on now (default)",
             },
             "rethink": {
                 "type": "string",
@@ -546,8 +546,8 @@ def reply_schema() -> dict[str, Any]:
                 "the lesson in your own words, one Japanese sentence of at most 80 characters. It "
                 "is kept and recalled in similar situations later. A lesson alone makes nothing "
                 "happen: advice whose result can be written as conditions (light the room: "
-                "placed(torch, home, 2)) is accepted as a mid goal as well, and a reply with only "
-                "a lesson says it will remember, never that it will do something",
+                "placed(torch, home, 2)) is accepted as an objective as well, and a reply with "
+                "only a lesson says it will remember, never that it will do something",
             },
             "lesson_when": lesson_when_schema(),
             "name_reading": {
@@ -600,14 +600,14 @@ def promise_schema(allow_now: bool = True) -> dict[str, Any]:
                 "type": "string",
                 "enum": decisions,
                 "description": "none: the reply promises no new action in the game (it tells "
-                "what the streamer is doing now, feelings, trying hard); already: a mid goal in "
+                "what the streamer is doing now, feelings, trying hard); already: an objective in "
                 "the list already has these conditions (what only a survival small goal is doing "
-                "does not count: make it a mid goal); now: cut the current small goal and do it "
-                "right away; later: after the mid goal worked on now (also when it is not the "
+                "does not count: make it an objective); now: cut the current small goal and do it "
+                "right away; later: after the objective worked on now (also when it is not the "
                 "most important now); cannot: only when its result cannot be written as "
                 "conditions",
             },
-            "title": {"type": "string", "description": "now / later: the mid goal's title"},
+            "title": {"type": "string", "description": "now / later: the objective's title"},
             "conditions": _conditions_schema(),
             "position": {
                 "type": "integer",
@@ -671,33 +671,33 @@ def _placed_count(data: dict[str, Any]) -> int | None:
     return int(count) if count is not None and int(count) != 1 else None
 
 
-def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
+def parse_proposal(data: dict[str, Any]) -> ObjectiveProposal:
     """
-    足す中目標をパースする（題名、条件、1 始まりの位置、理由）。
+    足す大目標をパースする（題名、条件、1 始まりの位置、理由）。
 
     Raises:
         ValueError: 題名か条件がないか、形が正しくないとき。
     """
     title = str(data.get("title", "")).strip()
     if not title:
-        raise ValueError("a mid goal needs a title")
+        raise ValueError("an objective needs a title")
     raw = data.get("conditions") or []
     if not raw:
         raise ValueError(
-            f"mid goal {title} needs conditions: the world states that mean it is done, e.g. "
+            f"objective {title} needs conditions: the world states that mean it is done, e.g. "
             "[{\"predicate\": \"placed\", \"item\": \"torch\"}] for a torch in the home"
         )
     conditions = tuple(parse_spec(c) for c in raw)
     for c in conditions:
         if c.predicate not in PLANNABLE_CONDITIONS:
-            raise ValueError(f"{c.predicate.value} cannot be a condition of a mid goal")
+            raise ValueError(f"{c.predicate.value} cannot be a condition of an objective")
     job = data.get("level") == "job"
     if job:
         check_bundle(conditions[0], conditions[1:])
     else:
         objective_kind(conditions)  # 設計や判定の前に、建てる・施設に材料を混ぜていないか確かめる
     position = data.get("position")
-    return MidGoalProposal(
+    return ObjectiveProposal(
         title=title,
         conditions=conditions,
         reason=str(data.get("reason", "")),
@@ -729,25 +729,25 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         if op == PlanOp.ADD:
             changes.append(PlanChange(op=op, reason=reason, proposal=parse_proposal(raw)))
             continue
-        mid_goal_id = str(raw.get("id", ""))
-        if not mid_goal_id:
-            raise ValueError(f"{op.value} needs the id of a mid goal")
+        objective_id = str(raw.get("id", ""))
+        if not objective_id:
+            raise ValueError(f"{op.value} needs the id of an objective")
         if op == PlanOp.MOVE and position is None:
-            raise ValueError(f"move {mid_goal_id} needs a position")
+            raise ValueError(f"move {objective_id} needs a position")
         changes.append(
             PlanChange(
                 op=op,
                 reason=reason,
-                mid_goal_id=mid_goal_id,
+                objective_id=objective_id,
                 position=int(position) - 1 if position is not None else None,
             )
         )
-    steps = []
-    for i, raw in enumerate(data.get("steps") or []):
+    jobs = []
+    for i, raw in enumerate(data.get("jobs") or []):
         try:
             together, approach = parse_bundle(raw)
-            steps.append(
-                PlannedStep(
+            jobs.append(
+                Job(
                     parse_spec(raw),
                     str(raw.get("reason", "")).strip(),
                     together=together,
@@ -755,7 +755,7 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
                 )
             )
         except ValueError as e:
-            raise ValueError(f"step {i + 1}: {e}") from e
+            raise ValueError(f"job {i + 1}: {e}") from e
     remedy = None
     if data.get("remedy"):
         try:
@@ -770,7 +770,7 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         reason=str(data.get("reason", "")),
         serves=serves,
         changes=tuple(changes),
-        steps=_steps_with_the_bundle(spec, together, approach, tuple(steps[:MAX_STEPS])),
+        jobs=_jobs_with_the_bundle(spec, together, approach, tuple(jobs[:MAX_JOBS])),
         diagnosis=str(data.get("diagnosis", "")).strip(),
         remedy=remedy,
         advice=str(data.get("advice", "")).strip(),
@@ -783,22 +783,22 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
     )
 
 
-def _steps_with_the_bundle(
-    spec: GoalSpec, together: tuple[GoalSpec, ...], approach: str, steps: tuple[PlannedStep, ...]
-) -> tuple[PlannedStep, ...]:
+def _jobs_with_the_bundle(
+    spec: GoalSpec, together: tuple[GoalSpec, ...], approach: str, jobs: tuple[Job, ...]
+) -> tuple[Job, ...]:
     """
-    小目標を束にしたのに、手順ではその条件を別々に書いたとき、それらを 1 つの束の手順にまとめる
-    （次に Jev が手順から選ぶとき、束がばらけないように。docs/design/44）。
+    小目標を束にしたのに、中目標ではその条件を別々に書いたとき、それらを 1 つの束の中目標にまとめる
+    （次に Jev が中目標から選ぶとき、束がばらけないように。docs/design/44）。
     """
     if not together:
-        return steps
+        return jobs
     bundle = {spec, *together}
-    inside = [i for i, s in enumerate(steps) if set(s.specs) <= bundle]
+    inside = [i for i, s in enumerate(jobs) if set(s.specs) <= bundle]
     if not inside:
-        return steps
+        return jobs
     first = inside[0]
-    merged = PlannedStep(spec, steps[first].reason, together=together, approach=approach)
-    return tuple(merged if i == first else s for i, s in enumerate(steps) if i not in inside[1:])
+    merged = Job(spec, jobs[first].reason, together=together, approach=approach)
+    return tuple(merged if i == first else s for i, s in enumerate(jobs) if i not in inside[1:])
 
 
 def parse_bundle(data: dict[str, Any]) -> tuple[tuple[GoalSpec, ...], str]:
@@ -855,12 +855,12 @@ def parse_note_changes(data: dict[str, Any]) -> tuple[NoteChange, ...]:
 
 
 def predicates_now(
-    obs: GameObservation, plan: MidGoalPlan, tools: bool = True
+    obs: GameObservation, plan: ObjectivePlan, tools: bool = True
 ) -> list[GoalPredicate]:
     """
     今意味のある述語（例: 家ができる前は、家についての述語は出さない）。調査は、それを
-    求める中目標があるときだけ（中目標を足した直後の観測には、調査の計画がまだない）。
-    custom は、それを条件に持つ中目標があって、道具で進めるときだけ（ブリッジは候補を出さない）。
+    求める大目標があるときだけ（大目標を足した直後の観測には、調査の計画がまだない）。
+    custom は、それを条件に持つ大目標があって、道具で進めるときだけ（ブリッジは候補を出さない）。
     """
     out = []
     if (obs.has_plan and not obs.house_complete) or obs.unfinished_builds:
@@ -889,7 +889,7 @@ def predicates_now(
         c.predicate == GoalPredicate.CUSTOM for g in plan.pending for c in g.conditions
     ):
         out.append(GoalPredicate.CUSTOM)
-    # 設計した施設（docs/design/47 §7）: それを条件に持つ中目標があるときだけ
+    # 設計した施設（docs/design/47 §7）: それを条件に持つ大目標があるときだけ
     if obs.has_home and any(
         c.predicate == GoalPredicate.FACILITY for g in plan.pending for c in g.conditions
     ):

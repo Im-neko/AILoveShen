@@ -1,4 +1,4 @@
-"""大目標の街: 場所を選び、LLM が一度だけ定め、ブリッジが確かめ、あとで埋める。"""
+"""最終目標の街: 場所を選び、LLM が一度だけ定め、ブリッジが確かめ、あとで埋める。"""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     town_schema,
 )
 from ailoveshen.application.use_cases.house import HouseDesigner
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.town_map import apply_areas, base_zones, town_map_schema
-from ailoveshen.domain.entities import MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     HouseDesignedEvent,
     TownDefinedEvent,
@@ -50,19 +50,19 @@ MOVE_CONDITIONS = (
 
 class TownPlanner:
     """
-    大目標の街の場所を選び、街を一度だけ作り、実現できる形に保つ
+    最終目標の街の場所を選び、街を一度だけ作り、実現できる形に保つ
     （docs/design/15_town.md §3、16_town_site.md）。
 
-    場所が先: 最初の家ができたら、候補地を調べる中目標を足す。調べ終えたら、ブリッジが
+    場所が先: 最初の家ができたら、候補地を調べる大目標を足す。調べ終えたら、ブリッジが
     測った数字の表から LLM が 1 か所選ぶ（決めた後は変えない）。最初の家の場所でなければ、
-    そこに建てる家を設計して引っ越しの中目標を足す。それから街を定める。どの手順も、
+    そこに建てる家を設計して引っ越しの大目標を足す。それから街を定める。どの手順も、
     世界とプランから次にやることを決めるので、途中で再起動しても続きから進む。
 
     街がどんなものかと、その段階は LLM が書く。定義を保存する前に、各段階の条件を
     ブリッジが確かめる: 判定できない条件や、配信者にできることでは手に入らない
     アイテム（製錬できる前の鉄の剣）は、理由をつけて差し戻す。最後の試行のあとも
     直らないものは、理由をつけて段階の未解決の部分に回す。こうして、できないことが
-    中目標になることはない。
+    大目標になることはない。
 
     定義は固定する: コメントでも実行でも変わらない。未解決の部分だけは、実行の
     始めに書き直す。その後に足された能力で表せるようになっているかもしれないから
@@ -77,7 +77,7 @@ class TownPlanner:
         event_publisher: IEventPublisher,
         character: CharacterProfile,
         store: IMissionStore,
-        mid_goals: MidGoalKeeper,
+        objectives: ObjectiveKeeper,
         designer: HouseDesigner,
         max_attempts: int = 3,
     ) -> None:
@@ -91,7 +91,7 @@ class TownPlanner:
             event_publisher: ドメインイベントの発行器
             character: 配信者のキャラクターのプロフィール
             store: 再起動をまたいでプランを保つ
-            mid_goals: 街の準備の中目標（調査、引っ越し）を足す
+            objectives: 街の準備の大目標（調査、引っ越し）を足す
             designer: 引っ越し先の家を設計する
             max_attempts: まだ直らないものを未解決に残すまでに生成する回数
         """
@@ -101,16 +101,16 @@ class TownPlanner:
         self._event_publisher = event_publisher
         self._character = character
         self._store = store
-        self._mid_goals = mid_goals
+        self._objectives = objectives
         self._designer = designer
         self._max_attempts = max_attempts
 
     async def advance(self, session: PlaySession, obs: GameObservation) -> None:
         """
-        街の準備を 1 つ進める（小目標の切れ目で、中目標を判定した後に呼ぶ）。
+        街の準備を 1 つ進める（小目標の切れ目で、大目標を判定した後に呼ぶ）。
 
-        調査の中目標を足す → 調べ終えたら場所を選ぶ → 引っ越すなら家を設計して
-        引っ越しの中目標を足す → 街を定める。LLM が使える答えを出せなかったときは、
+        調査の大目標を足す → 調べ終えたら場所を選ぶ → 引っ越すなら家を設計して
+        引っ越しの大目標を足す → 街を定める。LLM が使える答えを出せなかったときは、
         ログに残して次の切れ目でやり直す（代わりの場所や定義で進めない）。
         """
         plan = session.plan
@@ -125,7 +125,7 @@ class TownPlanner:
         except TextGenerationError as e:
             logger.error(f"街の準備を次の切れ目に持ち越す: {e}")
 
-    async def prepare(self, plan: MidGoalPlan) -> None:
+    async def prepare(self, plan: ObjectivePlan) -> None:
         """
         場所が決まっていれば、街がまだなければ定め、あれば今の段階の未解決の部分を書き直す。
         そして保存する。場所が決まるまでは何もしない（街は場所に合わせて定める）。
@@ -173,7 +173,7 @@ class TownPlanner:
         plan.define_town(replace(town, stages=tuple(stages)))
         self._store.save(plan)
 
-    async def _keep_map(self, plan: MidGoalPlan) -> None:
+    async def _keep_map(self, plan: ObjectivePlan) -> None:
         """
         街の理想図（docs/design/47 §6）を、まだなければ描き、街の段階が進んでいれば描き直す。
         引っ越しの途中は描かない（街の場所の地形がまだ見えていない）。
@@ -187,7 +187,7 @@ class TownPlanner:
             stage = plan.town.stages[plan.town_stage]
             await self._draw_map(plan, f"段階 {plan.town_stage + 1}「{stage.title}」に進んだ")
 
-    async def _draw_map(self, plan: MidGoalPlan, reason: str) -> None:
+    async def _draw_map(self, plan: ObjectivePlan, reason: str) -> None:
         """理想図を描く（描き直す）。区画の地形を読めなければ次の切れ目に持ち越す。"""
         assert plan.town is not None and plan.site is not None
         site = plan.site
@@ -232,7 +232,7 @@ class TownPlanner:
             f"no valid town map after {self._max_attempts} attempts: {error}"
         )
 
-    async def _survey_or_choose(self, plan: MidGoalPlan, obs: GameObservation) -> None:
+    async def _survey_or_choose(self, plan: ObjectivePlan, obs: GameObservation) -> None:
         if plan.preparing_town:
             return  # 調べている途中
         survey = obs.state.get("survey") or {}
@@ -240,14 +240,14 @@ class TownPlanner:
         if rows and len(rows) >= survey.get("planned", 0):
             await self._choose(plan, rows)
         elif obs.has_home:
-            await self._mid_goals.add_town_goal(
+            await self._objectives.add_town_goal(
                 plan,
                 title="街の場所を探す",
                 conditions=(GoalSpec(GoalPredicate.SURVEYED, count=SURVEY_SITES),),
                 reason="街を作る場所を、まわりを見て回って決める",
             )
 
-    async def _choose(self, plan: MidGoalPlan, rows: list[dict[str, Any]]) -> None:
+    async def _choose(self, plan: ObjectivePlan, rows: list[dict[str, Any]]) -> None:
         error = ""
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_site_prompt(
@@ -280,7 +280,7 @@ class TownPlanner:
         )
 
     async def _move(self, session: PlaySession, site: TownSite, obs: GameObservation) -> None:
-        """引っ越し先の家を建てる計画と、引っ越しの中目標（まだなければ）。"""
+        """引っ越し先の家を建てる計画と、引っ越しの大目標（まだなければ）。"""
         build = obs.state.get("build") or {}
         if build.get("site") != {"x": site.x, "z": site.z}:
             facts = await self._site_facts(site)
@@ -296,7 +296,7 @@ class TownPlanner:
         elif build.get("complete"):
             return  # 引っ越し先の家はもう建った
         if not session.plan.preparing_town:
-            await self._mid_goals.add_town_goal(
+            await self._objectives.add_town_goal(
                 session.plan,
                 title=f"{site.name}に引っ越す",
                 conditions=MOVE_CONDITIONS,
@@ -310,7 +310,7 @@ class TownPlanner:
         rows = (obs.state.get("survey") or {}).get("sites") or []
         return next((r for r in rows if r.get("id") == site.site_id), {})
 
-    async def _define(self, plan: MidGoalPlan, facts: dict[str, Any]) -> TownDefinition:
+    async def _define(self, plan: ObjectivePlan, facts: dict[str, Any]) -> TownDefinition:
         assert plan.site is not None
         error = ""
         town: TownDefinition | None = None

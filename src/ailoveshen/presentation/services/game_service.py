@@ -14,7 +14,7 @@ from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridg
 from ailoveshen.application.ports.output.screen_capture import IScreenCapture
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.danger import DangerWatcher
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.domain.entities import PlaySession
@@ -49,7 +49,7 @@ class GameService:
         bridge: IMinecraftBridge,
         text_generator: ITextGenerator,
         action_selector: IActionSelector,
-        mid_goals: MidGoalKeeper,
+        objectives: ObjectiveKeeper,
         fast_judge: IFastJudge | None = None,
         screen_capture: IScreenCapture | None = None,
         danger_watcher: DangerWatcher | None = None,
@@ -65,7 +65,7 @@ class GameService:
             bridge: Minecraft ブリッジ。サービスと一緒に閉じる
             text_generator: LLM。サービスと一緒に閉じる
             action_selector: 行動の選択器。サービスと一緒に閉じる
-            mid_goals: 中目標を持つ（チャットへの返答は、これを通して視聴者の頼みを加える）
+            objectives: 大目標を持つ（チャットへの返答は、これを通して視聴者の頼みを加える）
             fast_judge: 道具の見張りの判断モデル（control: tools のとき）。サービスと一緒に閉じる
             screen_capture: 配信の画面を撮るもの（OBS）。サービスと一緒に閉じる
             danger_watcher: 襲われたときの反射を Jev に選ばせる見張り（docs/design/28）。プレイの
@@ -78,7 +78,7 @@ class GameService:
         self._bridge = bridge
         self._text_generator = text_generator
         self._action_selector = action_selector
-        self._mid_goals = mid_goals
+        self._objectives = objectives
         self._fast_judge = fast_judge
         self._screen_capture = screen_capture
         self._danger = danger_watcher
@@ -105,9 +105,9 @@ class GameService:
             logger.debug(f"返事の前に様子を取り直せなかった: {e}")
 
     @property
-    def mid_goals(self) -> MidGoalKeeper:
-        """中目標を持つ。チャットへの返答は、これを通して視聴者の頼みを受ける。"""
-        return self._mid_goals
+    def objectives(self) -> ObjectiveKeeper:
+        """大目標を持つ。チャットへの返答は、これを通して視聴者の頼みを受ける。"""
+        return self._objectives
 
     @property
     def notes(self) -> NoteKeeper | None:

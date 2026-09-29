@@ -11,7 +11,7 @@ from ailoveshen.application.use_cases.danger import (
     ReflexPolicy,
     reflex_question,
 )
-from ailoveshen.domain.entities import MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.exceptions import ActionSelectionError
 from ailoveshen.domain.value_objects import (
     ActionResult,
@@ -101,7 +101,7 @@ async def test_no_danger_no_call():
 
 
 def _session():
-    plan = MidGoalPlan(mission=Mission("家を建てる"))
+    plan = ObjectivePlan(mission=Mission("家を建てる"))
     s = PlaySession(blueprint=None, plan=plan, max_stalled_steps=2, max_consecutive_failures=2)
     s.set_goal(Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=4)), "day")
     return s

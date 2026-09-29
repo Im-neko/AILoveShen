@@ -6,13 +6,13 @@ import pytest
 
 from ailoveshen.application.use_cases.checks import CHECK_SCHEMA, CheckWriter
 from ailoveshen.application.use_cases.goal_vocabulary import (
-    MidGoalProposal,
+    ObjectiveProposal,
     parse_proposal,
     parse_spec,
     predicates_now,
 )
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import CheckNotWrittenError, GoalRejectedError
 from ailoveshen.domain.value_objects import (
     ConditionStatus,
@@ -58,9 +58,9 @@ def test_custom_needs_a_name_and_parses_it():
     assert goal_label(SHEEP) == "sheep_in_pen_3 を仕上げる"
 
 
-def test_custom_is_a_small_goal_only_for_its_mid_goal_and_only_with_tools():
+def test_custom_is_a_small_goal_only_for_its_objective_and_only_with_tools():
     obs = GameObservation(state={}, candidates=(), health=20, food=20, has_home=True)
-    plan = MidGoalPlan(mission=Mission("街"))
+    plan = ObjectivePlan(mission=Mission("街"))
     assert GoalPredicate.CUSTOM not in predicates_now(obs, plan)
     plan.add("羊を柵に", (SHEEP,))
     assert GoalPredicate.CUSTOM in predicates_now(obs, plan)
@@ -104,16 +104,16 @@ async def test_the_keeper_writes_a_new_check_before_adding_a_viewers_request():
     bridge.check.side_effect = lambda specs: [ConditionStatus(s, False) for s in specs]
     checker = AsyncMock()
     checker.known.return_value = {"flowers_by_door"}
-    keeper = MidGoalKeeper(
+    keeper = ObjectiveKeeper(
         bridge=bridge, event_publisher=AsyncMock(), store=Mock(), checker=checker
     )
-    proposal = MidGoalProposal(
+    proposal = ObjectiveProposal(
         title="羊を柵に集める",
         conditions=(SHEEP, GoalSpec(GoalPredicate.CUSTOM, name="flowers_by_door")),
         reason="牧場っぽくしたい",
     )
 
-    await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="まめ")
+    await keeper.accept(ObjectivePlan(mission=Mission("街")), proposal, requested_by="まめ")
 
     # 知っている判定は書き直さない
     checker.write.assert_awaited_once_with("sheep_in_pen_3", "羊を柵に集める: 牧場っぽくしたい")
@@ -124,7 +124,7 @@ async def test_the_keeper_writes_a_new_check_before_adding_a_viewers_request():
 async def test_without_a_writer_an_unknown_check_is_rejected():
     bridge = AsyncMock()
     bridge.conditions.return_value = []
-    keeper = MidGoalKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
-    proposal = MidGoalProposal(title="羊", conditions=(SHEEP,), reason="")
+    keeper = ObjectiveKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
+    proposal = ObjectiveProposal(title="羊", conditions=(SHEEP,), reason="")
     with pytest.raises(GoalRejectedError, match="no check named sheep_in_pen_3"):
-        await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="a")
+        await keeper.accept(ObjectivePlan(mission=Mission("街")), proposal, requested_by="a")

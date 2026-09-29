@@ -37,8 +37,8 @@ CHECK_SCHEMA: dict[str, Any] = {
 
 class CheckWriter:
     """
-    custom(name) の判定を書かせて登録する。まだない名前の `custom(name)` を中目標に足すとき、
-    `MidGoalKeeper` が呼ぶ。
+    custom(name) の判定を書かせて登録する。まだない名前の `custom(name)` を大目標に足すとき、
+    `ObjectiveKeeper` が呼ぶ。
     """
 
     def __init__(
@@ -70,7 +70,7 @@ class CheckWriter:
 
         Args:
             name: 判定の名前（custom(name) の name）
-            brief: 何を確かめるか（中目標の題名と理由）
+            brief: 何を確かめるか（大目標の題名と理由）
 
         Raises:
             CheckNotWrittenError: 使える判定が出なかったとき（最後の理由を持つ）

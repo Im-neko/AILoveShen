@@ -88,7 +88,7 @@ export function sightings (bot) {
   return [...blocks, ...animals]
 }
 
-// チェストから取り出してよいもの: 中目標がそこに取っておくもの以外すべて（備蓄として取っておく
+// チェストから取り出してよいもの: 大目標がそこに取っておくもの以外すべて（備蓄として取っておく
 // 食料も、飢えているときは食べる）
 export function takeable (stored, keep, starving) {
   const out = { ...stored }

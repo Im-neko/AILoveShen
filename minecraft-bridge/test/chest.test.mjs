@@ -89,7 +89,7 @@ test('家の中で持ち物が一杯なら、余っている大きいスタッ�
   ])
 })
 
-test('中目標がチェストに取っておく物は取り出さない（飢えているときの食料は除く）', () => {
+test('大目標がチェストに取っておく物は取り出さない（飢えているときの食料は除く）', () => {
   const state = { home, plan: null, memory: newMemory() }
   const bot = { entity: { position: v(2, 70, 2) }, time: { timeOfDay: 1000 }, inventory: { items: () => [] } }
   const goal = makeGoal({ predicate: 'have', item: 'food', count: 6, keep: [{ item: 'food', count: 10 }] }, bot, state, k)
@@ -133,7 +133,7 @@ test('集めた物は 1 個ずつ運ばない: たまるか、ここで集める
   assert.equal(at(4, 1000, v(3, 70, 6)), true) // 家のそば
 })
 
-test('ほかの中目標の物がそばで取れるなら一緒に取る（木を見つけたら原木と、葉から苗木）', () => {
+test('ほかの大目標の物がそばで取れるなら一緒に取る（木を見つけたら原木と、葉から苗木）', () => {
   const state = { home, plan: null, memory: newMemory(), unreachableDrops: new Set() }
   const bot = {
     entity: { position: v(40, 70, 40) },
@@ -155,6 +155,6 @@ test('ほかの中目標の物がそばで取れるなら一緒に取る（木�
   const { candidates } = ground(bot, { ...state, goal }, k, w, status)
   const leaves = candidates.filter((c) => c.target === 'oak_leaves')
   assert.deepEqual(leaves.map((c) => c.id), ['dig oak_leaves at 43,73,40']) // 遠い葉は出さない
-  assert.equal(leaves[0].also, 'sapling for another mid goal')
+  assert.equal(leaves[0].also, 'sapling for another objective')
   assert.ok(candidates.some((c) => c.id === 'dig oak_log at 42,70,40'))
 })

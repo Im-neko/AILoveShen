@@ -133,7 +133,7 @@ def _reply_use_case(generator, builder, readings):
         event_publisher=AsyncMock(),
         conversation=Conversation(),
         character=CharacterProfile(),
-        mid_goals=keeper,
+        objectives=keeper,
         readings=readings,
     )
 

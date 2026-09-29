@@ -16,8 +16,8 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     MessageType,
-    MidGoal,
-    MidGoalState,
+    Objective,
+    ObjectiveState,
     Mission,
     Side,
     ToolCall,
@@ -32,7 +32,7 @@ from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder imp
 
 BLUEPRINT = HouseBlueprint("ぽかぽか", "明るい家", 5, 5, 3, Side.SOUTH, 2)
 PLANKS = Goal(
-    GoalSpec(GoalPredicate.HAVE, item="planks", count=12), reason="壁の材料", mid_goal_id="m1"
+    GoalSpec(GoalPredicate.HAVE, item="planks", count=12), reason="壁の材料", objective_id="m1"
 )
 MISSION = Mission("生き延びながら家を建て、街にしていく")
 EAST = TownSite("E", 96, 0, "地表の石が多い", "いしのまち")
@@ -53,7 +53,7 @@ EAST_ROW = {
     "loaded_pct": 100,
 }
 HERE_ROW = {**EAST_ROW, "id": "here", "x": 0, "distance": 0, "stone": 0}
-HOUSE = MidGoal(
+HOUSE = Objective(
     "m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),), progress=("30/70", "  sub-step")
 )
 ALL = list(GoalPredicate)
@@ -109,13 +109,13 @@ def _obs(**kwargs) -> GameObservation:
     return GameObservation(**params)
 
 
-def _goal_prompt(obs=None, recent_goals=(), mid_goals=(HOUSE,), activity=None, **kwargs) -> str:
+def _goal_prompt(obs=None, recent_goals=(), objectives=(HOUSE,), activity=None, **kwargs) -> str:
     args = {
         "blueprint": BLUEPRINT,
         "activity": activity
         or Activity(
             mission=MISSION,
-            mid_goals=mid_goals,
+            objectives=objectives,
             goal=PLANKS,
             observation=obs or _obs(),
             recent_goals=recent_goals,
@@ -267,18 +267,18 @@ class TestGamePromptTemplateBuilder:
         assert "unknown item or group: x" in prompt
 
     def test_goal_prompt_shows_the_hierarchy_and_what_was_said(self):
-        """小目標の決定は、大目標、id つきの中目標、会話を見る。"""
-        bed = MidGoal(
+        """小目標の決定は、最終目標、id つきの大目標、会話を見る。"""
+        bed = Objective(
             "m3",
             "ベッドで寝る",
             (GoalSpec(GoalPredicate.PLACED, item="bed", where="home"),),
             requested_by="neko",
         )
-        sword = MidGoal(
+        sword = Objective(
             "m2",
             "剣を持つ",
             (GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1),),
-            state=MidGoalState.DROPPED,
+            state=ObjectiveState.DROPPED,
             ended_because="it took 80 steps",
         )
         night = Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜は危ない")
@@ -289,10 +289,10 @@ class TestGamePromptTemplateBuilder:
         )
 
         prompt = _goal_prompt(
-            mid_goals=(HOUSE, bed, sword), recent_goals=recent, recent_messages=messages
+            objectives=(HOUSE, bed, sword), recent_goals=recent, recent_messages=messages
         )
 
-        assert "- 大目標: 生き延びながら家を建て、街にしていく" in prompt
+        assert "- 最終目標: 生き延びながら家を建て、街にしていく" in prompt
         assert "1. [m1] 自分の家を作る [取り組み中] 完了条件: built()（30/70）" in prompt
         assert "sub-step" not in prompt  # ソルバーの細かい手順はリストに出さない
         assert "2. [m3] ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
@@ -309,15 +309,15 @@ class TestGamePromptTemplateBuilder:
 
     def test_goal_prompt_shows_the_town_and_its_stage(self):
         """街の段階に印がつき、段階の小目標はやめられない。"""
-        stage = MidGoal("m4", "備蓄", (FOOD,), stage=0)
-        activity = Activity(mission=MISSION, town=TOWN, town_stage=0, mid_goals=(stage,))
+        stage = Objective("m4", "備蓄", (FOOD,), stage=0)
+        activity = Activity(mission=MISSION, town=TOWN, town_stage=0, objectives=(stage,))
 
         prompt = _goal_prompt(activity=activity)
 
         assert "- 街の定義: 安全で備えのある小さな街" in prompt
         assert "  1. [今] 備蓄: 冬に備える\n  2. [先] 敷地の安全: 夜に備える" in prompt
         assert "[m4] 備蓄 [街の段階 1: やめられない] [取り組み中]" in prompt
-        assert "街の段階の中目標はやめられない" in GamePromptTemplateBuilder().build_goal_system()
+        assert "街の段階の大目標はやめられない" in GamePromptTemplateBuilder().build_goal_system()
 
     def test_goal_prompt_shows_what_the_town_waits_for(self):
         """取り組む段階は未解決の部分を示す。街が完成したらそう言う。"""
@@ -334,7 +334,7 @@ class TestGamePromptTemplateBuilder:
         assert "街は完成した（全 3 段階）" in done
 
     def test_town_prompt(self):
-        """街のプロンプトには大目標、能力、条件、エラーが入る。"""
+        """街のプロンプトには最終目標、能力、条件、エラーが入る。"""
         prompt = GamePromptTemplateBuilder().build_town_prompt(
             CharacterProfile(), MISSION, EAST, EAST_ROW, previous_error="no way to get iron_sword"
         )
@@ -595,7 +595,7 @@ class TestPromptLength:
             Lesson(f"L{i}", "あ" * 80, condition="い" * 60, source="viewer:neko", used=9, helped=5)
             for i in range(4)
         )
-        base = Activity(mission=MISSION, mid_goals=(HOUSE,), goal=PLANKS, observation=_obs())
+        base = Activity(mission=MISSION, objectives=(HOUSE,), goal=PLANKS, observation=_obs())
         with_lessons = _goal_prompt(activity=replace(base, lessons=lessons))
         assert "思い出したこと" in with_lessons
         assert len(with_lessons) - len(_goal_prompt(activity=base)) < 800
@@ -609,20 +609,20 @@ class TestReviewPrompt:
         planks = GoalSpec(GoalPredicate.HAVE, item="planks", count=40)
         wool = GoalSpec(GoalPredicate.HAVE, item="wool", count=3)
         prompt = _goal_prompt(
-            step_status=(
+            job_status=(
                 ConditionStatus(log, True),
                 ConditionStatus(planks, False, ("planks 8/40",)),
                 ConditionStatus(wool, False, (), ("wool",)),
             )
         )
 
-        assert "## 手順の今の状態" in prompt
+        assert "## 中目標の今の状態" in prompt
         assert "- have(log, 12): 済み" in prompt
         assert "- have(planks, 40): まだ（planks 8/40）" in prompt
         assert "- have(wool, 3): まだ（今は手に入らない: wool）" in prompt
 
     def test_no_steps_no_section_and_the_rules_ask_for_a_review_every_time(self):
-        assert "手順の今の状態" not in _goal_prompt()
+        assert "中目標の今の状態" not in _goal_prompt()
         system = GamePromptTemplateBuilder().build_goal_system()
         assert "## 見直し（review。毎回、最初に）" in system
         assert "変えないのも答え" in system

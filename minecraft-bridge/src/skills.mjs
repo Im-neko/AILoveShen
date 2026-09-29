@@ -67,7 +67,7 @@ function validateExpects (e) {
     if (e.item == null) bad(`expects ${e.predicate} needs an item`)
     if (e.count == null) bad(`expects ${e.predicate} needs a count (a number, "+N" or "$param")`)
   }
-  if (e.predicate === 'custom' && !e.name) bad('expects custom needs the name of a check (a custom mid goal condition)')
+  if (e.predicate === 'custom' && !e.name) bad('expects custom needs the name of a check (a custom objective condition)')
   if (e.predicate === 'facility' && !e.name) bad('expects facility needs the name of a designed facility (search_facility)')
 }
 

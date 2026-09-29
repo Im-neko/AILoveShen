@@ -10,7 +10,7 @@ from ailoveshen.domain.events import (  # noqa: E402
     CommentaryGeneratedEvent,
     GameActionExecutedEvent,
     GoalEndedEvent,
-    MidGoalCompletedEvent,
+    ObjectiveCompletedEvent,
     SpeechCompletedEvent,
     SpeechStartedEvent,
 )
@@ -53,7 +53,7 @@ def test_text_only_ignores_tts_and_the_emotion_of_tts_wins_over_text_cues():
 
 def test_game_events_become_expressions_and_gestures():
     stage = AvatarStage()
-    [cheer] = stage.cues_for(MidGoalCompletedEvent(title="家"))
+    [cheer] = stage.cues_for(ObjectiveCompletedEvent(title="家"))
     assert (cheer["emotion"], cheer["gesture"]) == ("happy", "cheer")
     [hurt] = stage.cues_for(
         GameActionExecutedEvent(
@@ -139,11 +139,11 @@ async def test_with_a_director_the_mouth_moves_now_and_the_face_follows_jev():
         "source": "jev",
     }
 
-    await stage._on_event(MidGoalCompletedEvent(title="家"))
+    await stage._on_event(ObjectiveCompletedEvent(title="家"))
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     moment, line, rule = director.calls[1]
-    assert moment == "a mid goal was completed: 家" and rule.gesture == "cheer"
+    assert moment == "an objective was completed: 家" and rule.gesture == "cheer"
     await stage.close()
     assert director.closed
 
@@ -151,7 +151,7 @@ async def test_with_a_director_the_mouth_moves_now_and_the_face_follows_jev():
 async def test_without_a_director_rules_are_sent_directly():
     stage = AvatarStage(lip_sync="text")
     sent = _sent(stage)
-    await stage._on_event(MidGoalCompletedEvent(title="家"))
+    await stage._on_event(ObjectiveCompletedEvent(title="家"))
     assert (sent[0]["emotion"], sent[0]["gesture"]) == ("happy", "cheer")
 
 

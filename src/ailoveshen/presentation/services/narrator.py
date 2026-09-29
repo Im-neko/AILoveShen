@@ -14,9 +14,9 @@ from ailoveshen.domain.events import (
     GoalMemberMetEvent,
     GoalSetEvent,
     HouseCompletedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
     SkillLearnedEvent,
     SkillRevisedEvent,
     TownCompletedEvent,
@@ -36,8 +36,8 @@ class Narrator:
     目標の変化を実況にして、配信者がなぜ別のことを始めたのかを視聴者に伝える。
 
     小目標の切れ目で起きたことは、次の目標と一緒に（1回の発話で）話す:
-    小目標の終わり、完了した中目標とやめた中目標（視聴者の頼みをやめたときは
-    必ず話す）、配信者が自分で加えた中目標、家の完成、街（選んだ場所とその理由、
+    小目標の終わり、完了した大目標とやめた大目標（視聴者の頼みをやめたときは
+    必ず話す）、配信者が自分で加えた大目標、家の完成、街（選んだ場所とその理由、
     決めたときの中身、完成）。受けた視聴者の頼みは改めて話さない（いつやるかは返答で言っている）。
 
     activity はイベントが起きたときに取る。そのため実況は、生成中に決まった
@@ -81,9 +81,9 @@ class Narrator:
         bus.subscribe(GoalEndedEvent, self.on_goal_ended)
         bus.subscribe(GoalSetEvent, self.on_goal_set)
         bus.subscribe(GoalMemberMetEvent, self.on_member_met)
-        bus.subscribe(MidGoalAddedEvent, self.on_mid_goal_added)
-        bus.subscribe(MidGoalCompletedEvent, self.on_mid_goal_completed)
-        bus.subscribe(MidGoalDroppedEvent, self.on_mid_goal_dropped)
+        bus.subscribe(ObjectiveAddedEvent, self.on_objective_added)
+        bus.subscribe(ObjectiveCompletedEvent, self.on_objective_completed)
+        bus.subscribe(ObjectiveDroppedEvent, self.on_objective_dropped)
         bus.subscribe(HouseCompletedEvent, self.on_house_completed)
         bus.subscribe(TownSiteChosenEvent, self.on_town_site_chosen)
         bus.subscribe(TownDefinedEvent, self.on_town_defined)
@@ -102,7 +102,7 @@ class Narrator:
         起きたことと次の目標を 1回の発話で話す。gate に聞くときは、聞くところからバックグラウンドで
         （イベントの発行はハンドラーを待つので、プレイのループを止めない）。「今はいい」なら取っておく。
         """
-        serves = f"「{event.mid_goal}」のため" if event.mid_goal else "身を守るため"
+        serves = f"「{event.objective}」のため" if event.objective else "身を守るため"
         # これからやること（まだ済んでいない）と、今いる場所を添える: 前は
         # 「新しい小目標: at_home()」だけで、家から 390m 離れているのに「無事に家の中に入った」
         # と話した（2026-09-27）
@@ -147,25 +147,25 @@ class Narrator:
         self._must_speak = False
         await self._generate(events, self._activity())
 
-    async def on_mid_goal_added(self, event: MidGoalAddedEvent) -> None:
-        """配信者が自分で加えた中目標は次の目標と一緒に話す。視聴者のもの・採った助言は返答で話している。"""
+    async def on_objective_added(self, event: ObjectiveAddedEvent) -> None:
+        """配信者が自分で加えた大目標は次の目標と一緒に話す。視聴者のもの・採った助言は返答で話している。"""
         if event.requested_by or event.suggested_by:
             return
         self._pending.append(
-            f"中目標「{event.title}」をリストの {event.position} 番目に足した（{event.reason}）"
+            f"大目標「{event.title}」をリストの {event.position} 番目に足した（{event.reason}）"
         )
 
-    async def on_mid_goal_completed(self, event: MidGoalCompletedEvent) -> None:
-        """完了した中目標を取っておき、次の目標と一緒に話す。"""
+    async def on_objective_completed(self, event: ObjectiveCompletedEvent) -> None:
+        """完了した大目標を取っておき、次の目標と一緒に話す。"""
         self._pending.append(
-            f"中目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}が完了した"
+            f"大目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}が完了した"
         )
         self._must_speak = True
 
-    async def on_mid_goal_dropped(self, event: MidGoalDroppedEvent) -> None:
-        """やめた中目標を取っておき、次の目標と一緒に話す（黙ってやめない）。"""
+    async def on_objective_dropped(self, event: ObjectiveDroppedEvent) -> None:
+        """やめた大目標を取っておき、次の目標と一緒に話す（黙ってやめない）。"""
         self._pending.append(
-            f"中目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}"
+            f"大目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}"
             f"をやめた（{event.reason}）"
         )
         self._must_speak = True
@@ -184,7 +184,7 @@ class Narrator:
     async def on_town_defined(self, event: TownDefinedEvent) -> None:
         """配信者が決めた街は、次の目標と一緒に話す。"""
         self._pending.append(
-            f"大目標の街をこう決めた: {event.text}（段階: {' → '.join(event.stages)}）"
+            f"最終目標の街をこう決めた: {event.text}（段階: {' → '.join(event.stages)}）"
         )
 
     async def on_town_map_drawn(self, event: TownMapDrawnEvent) -> None:

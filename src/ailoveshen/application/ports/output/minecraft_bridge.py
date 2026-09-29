@@ -55,9 +55,9 @@ class IMinecraftBridge(ABC):
             spec: 小目標（束の先頭）
             together: 束で一緒に追う条件（docs/design/44_goal_bundles.md）。済んだかは束全体、
                 残りは合計、条件ごとの状態は GoalStatus.members
-            keep: 中目標の stored() 条件。チェストがそのために取っておくものは、この目標の
+            keep: 大目標の stored() 条件。チェストがそのために取っておくものは、この目標の
                 ために取り出さない（食料は飢えているときだけ取り出す）
-            also: ほかの中目標で集める物（have / stored / planted / farmed）。そばで取れるなら
+            also: ほかの大目標で集める物（have / stored / planted / farmed）。そばで取れるなら
                 一緒に取る候補が出る（木を見つけたら原木と、葉から苗木）
 
         Raises:
@@ -69,7 +69,7 @@ class IMinecraftBridge(ABC):
     @abstractmethod
     async def check(self, specs: Sequence[GoalSpec]) -> list[ConditionStatus]:
         """
-        目標を設定せずに、中目標の条件を世界から判定する。
+        目標を設定せずに、大目標の条件を世界から判定する。
 
         Raises:
             GoalRejectedError: spec が条件になれないとき（メッセージに理由がある）

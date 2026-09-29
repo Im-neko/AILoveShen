@@ -51,14 +51,14 @@ const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わ
 const TICKS_PER_MINUTE = 1200
 
 export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
-// ワールドの状態だけから判定するので、中目標の完了条件にできる
+// ワールドの状態だけから判定するので、大目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
 export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
 const MAX_PLANTED = 32
 const DEPOSIT_BATCH = 32 // これだけ持ったらチェストに入れに行く
 const NEAR_HOME = 12
 const FULL_SLOTS = 3
-const SIDE_RADIUS = 8 // ほかの中目標の物を一緒に取るのは、このくらいそばにあるときだけ
+const SIDE_RADIUS = 8 // ほかの大目標の物を一緒に取るのは、このくらいそばにあるときだけ
 const MAX_FARMED = 64
 
 // 目標の指定を検証し、保持する目標の状態を返す。不正なら理由を添えて投げる
@@ -66,7 +66,7 @@ const MAX_FARMED = 64
 export class NotYetError extends Error {}
 
 // どの目標も立てた場所を覚えている: 探索はそこから離れる方向に行い、行ったり来たりしない
-// keep: 中目標のためにチェストに取っておくもの（[{item, count}]、中目標の stored() の条件）。
+// keep: 大目標のためにチェストに取っておくもの（[{item, count}]、大目標の stored() の条件）。
 // ソルバーはこれを取り出さない。ただし飢えているときの食料は除く（world.mjs）
 // dig_depth: 埋まった石・鉱石まで階段で掘り下げてよい深さ（目標を立てた足元から。Gemini が決める。
 // なければ掘り下げない。docs/design/17_dig_down.md）
@@ -118,7 +118,7 @@ export function describeSpec (spec) {
   return `${spec.predicate}(${args.join(', ')})`
 }
 
-// also: ほかの中目標のために集めたい物（[{item, count}]）。今の目標の途中で、すぐそばで取れるなら
+// also: ほかの大目標のために集めたい物（[{item, count}]）。今の目標の途中で、すぐそばで取れるなら
 // 一緒に取る候補を出す（木を見つけたら原木と、ついでに葉から苗木）。知らない物は黙って外す
 const MAX_ALSO = 6
 function validAlso (also, knowledge) {
@@ -166,7 +166,7 @@ function validGoal (spec, bot, state, knowledge) {
       if (spec.name) {
         // 名前付きの建物（docs/design/25_builds.md）。設計は Python が先に登録する
         // まだない名前は「まだ」: /check（街の段階の確認）では未達、目標にはできない（PUT /goal は 400）
-        if (!state.builds?.[spec.name]) throw new NotYetError(`there is no build named ${spec.name} yet: it is designed when the mid goal is added`)
+        if (!state.builds?.[spec.name]) throw new NotYetError(`there is no build named ${spec.name} yet: it is designed when the objective is added`)
         return { spec: { predicate, name: String(spec.name) } }
       }
       if (!state.plan) throw new NotYetError('there is no house plan')
@@ -218,14 +218,14 @@ function validGoal (spec, bot, state, knowledge) {
     case 'custom': {
       // 判定は Python が先に登録する（PUT /conditions/<name>）。まだない名前は「まだ」
       const name = String(spec.name ?? '')
-      if (!state.conditions?.[name]) throw new NotYetError(`there is no check named ${name} yet: it is written when the mid goal is added`)
+      if (!state.conditions?.[name]) throw new NotYetError(`there is no check named ${name} yet: it is written when the objective is added`)
       return { spec: { predicate, name } }
     }
     case 'facility': {
       // 設計した施設（設計書 47 §7）。設計は Python が先に登録する。まだない名前は「まだ」
       const name = String(spec.name ?? '')
       const fac = state.facilities?.[name]
-      if (!fac) throw new NotYetError(`there is no facility named ${name} yet: it is designed when the mid goal is added`)
+      if (!fac) throw new NotYetError(`there is no facility named ${name} yet: it is designed when the objective is added`)
       if (!fac.layout) throw new Error(`${name} was not designed (it was already there): facility() is for designed farms and tree farms`)
       return { spec: { predicate, name } }
     }
@@ -646,7 +646,7 @@ function evaluateOne (bot, state, knowledge, world) {
       if (out.met) break
       const farms = designedTreeFarms(state, item)
       if (!farms.length) {
-        const why = `there is no tree farm for ${item} to plant in: add facility(<name>) (a tree farm) to a mid goal first; it is designed on the town map`
+        const why = `there is no tree farm for ${item} to plant in: add facility(<name>) (a tree farm) to an objective first; it is designed on the town map`
         out.blocked.push(why)
         out.impossible.push(why)
         break
@@ -680,7 +680,7 @@ function evaluateOne (bot, state, knowledge, world) {
       if (f.dry) out.lines.push(`${f.dry} of them on dry farmland (moisture < 7: no water within 4 blocks; crops grow slower there)`)
       if (out.met) break
       if (!f.farms.length && !designedFarms(state, crop).length) {
-        const why = `there is no farm for ${crop}: add facility(<name>) (a ${crop} farm) to a mid goal first; it is designed on the town map`
+        const why = `there is no farm for ${crop}: add facility(<name>) (a ${crop} farm) to an objective first; it is designed on the town map`
         out.blocked.push(why)
         out.impossible.push(why)
         break
@@ -791,7 +791,7 @@ function evaluateOne (bot, state, knowledge, world) {
       out.lines.push(`${water.length}m of water on the way: a boat (5 planks of one wood, at a crafting table) would cross it far faster than swimming`)
     }
   }
-  // ついでに取れるもの（ほかの中目標の物）: 昼に、そばにあれば。今の目標の残りには数えない
+  // ついでに取れるもの（ほかの大目標の物）: 昼に、そばにあれば。今の目標の残りには数えない
   if (!out.met && phase === 'day' && goal.also?.length) {
     const inv = inventoryCounts(bot)
     for (const a of goal.also) {
@@ -799,7 +799,7 @@ function evaluateOne (bot, state, knowledge, world) {
       if (have >= a.count) continue
       const r = solve(knowledge, world, [{ spec: a.item, count: a.count - have }])
       for (const l of r.leaves) {
-        if (l.kind === 'dig' || l.kind === 'kill') out.leaves.push({ ...l, also: `${a.item} for another mid goal`, near: SIDE_RADIUS })
+        if (l.kind === 'dig' || l.kind === 'kill') out.leaves.push({ ...l, also: `${a.item} for another objective`, near: SIDE_RADIUS })
       }
     }
   }
