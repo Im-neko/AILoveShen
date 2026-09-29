@@ -27,12 +27,14 @@ class Clock:
         return self.now
 
 
-def _obs(inventory, x=0.0):
+def _obs(inventory, x=0.0, health=20, phase="day", inside=False):
     return GameObservation(
         state={"inventory": inventory, "self": {"position": {"x": x, "y": 64, "z": 0}}},
         candidates=(),
-        health=20,
+        health=health,
         food=20,
+        time_phase=phase,
+        inside_home=inside,
     )
 
 
@@ -106,7 +108,7 @@ async def test_jev_semantic_duplicate_is_blocked():
 @pytest.mark.asyncio
 async def test_quiet_is_measured_from_the_end_of_speech():
     """読み上げている間は数えない。終わってから 10 秒で話す（新しい intent は LLM なしで）。"""
-    live, clock, said, tts, llm, _ = _setup()
+    live, clock, said, tts, llm, state = _setup()
     tts["busy"] = True
     clock.now = 30
     await live.tick()  # 話している
@@ -116,6 +118,12 @@ async def test_quiet_is_measured_from_the_end_of_speech():
     assert said == []  # 終わってから 5 秒
     clock.now = 40
     await live.tick()
+    assert said == []  # 基準ができただけ（状況が変わるまで黙る）
+    state["activity"] = Activity(
+        acting=True, goal=GOAL, intent="北の森で原木を集めてくるね", observation=_obs({"oak_log": 1})
+    )
+    clock.now = 50
+    await live.tick()
     assert said == ["北の森で原木を集めてくるね"]
     llm.generate_commentary.assert_not_awaited()
 
@@ -124,7 +132,7 @@ async def test_quiet_is_measured_from_the_end_of_speech():
 async def test_a_long_action_gets_new_lines_with_what_changed_and_no_repeats():
     """60 秒続く 1 つの行動: intent は 1 回だけ、あとは変わったことを渡す。似た行は言わない。"""
     live, clock, said, _, llm, state = _setup(
-        lines=["森が見えてきた！", "森が見えてきたよ！", "原木が 4 本になった、あと少し！"]
+        lines=["原木が 4 本になった、あと少し！"]
     )
     await live.on_action(GameActionExecutedEvent(action_id="dig oak_log", ok=True, result="got"))
     for t, logs, x in [(10, 0, 0), (20, 0, 0), (30, 0, 12), (40, 4, 12)]:
@@ -134,9 +142,9 @@ async def test_a_long_action_gets_new_lines_with_what_changed_and_no_repeats():
         )
         clock.now = t
         await live.tick()
+    # (10) 基準、(20) 変わらず黙る。(30) 12m 動いた: intent を 1 回、(40) 原木が増えた: 新しい一言
     assert said == [
         "北の森で原木を集めてくるね",
-        "森が見えてきた！",
         "原木が 4 本になった、あと少し！",
     ]
     last = llm.generate_commentary.await_args_list[-1].kwargs
@@ -144,7 +152,7 @@ async def test_a_long_action_gets_new_lines_with_what_changed_and_no_repeats():
     events = last["recent_events"]
     assert "行動の結果: dig oak_log → 成功: got" in events
     assert "持ち物の増減: oak_log +4" in events
-    assert "森が見えてきた！" in events[-1]  # 直前に話したこととは違う内容に
+    assert "北の森で原木を集めてくるね" in events[-1]  # 直前に話したこととは違う内容に
     # 予定を理由なく変えない
     # （2026-09-27:「パンをクラフトするよ」の 30 秒後に「パンは明日作れる」）。
     # ただし正しいのは今の状態（直前の誤り「家の中に入った」を、外にいるのに繰り返した）
@@ -178,6 +186,11 @@ async def test_nothing_while_not_playing_and_the_english_ids_of_jev_are_not_read
     assert said == []
     state["activity"] = Activity(acting=True, goal=GOAL, intent="dig oak_log at 1,2,3", observation=_obs({}))
     clock.now = 20
+    await live.tick()  # 基準
+    state["activity"] = Activity(
+        acting=True, goal=GOAL, intent="dig oak_log at 1,2,3", observation=_obs({"oak_log": 1})
+    )
+    clock.now = 30
     await live.tick()
     assert said == ["よし、掘るよ！"]  # id はそのまま読まず、一言を作らせる
 
@@ -192,3 +205,60 @@ async def test_nothing_is_said_while_the_next_action_is_being_chosen():
         await live.tick()
     assert said == []
     llm.generate_commentary.assert_not_awaited()
+
+
+def _acting(obs, failing=0):
+    return Activity(acting=True, goal=GOAL, intent="北の森で原木を集めてくるね", observation=obs, failing=failing)
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_said_while_nothing_has_changed():
+    """状況が変わらない間は、何秒たっても黙る（2026-09-29: 頻度を下げる）。"""
+    live, clock, said, _, llm, state = _setup(lines=["何か話す"])
+    for t in (10, 20, 60, 120, 600):
+        clock.now = t
+        await live.tick()
+    assert said == []
+    llm.generate_commentary.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed",
+    [
+        _obs({}, health=15),
+        _obs({}, phase="dusk"),
+        _obs({}, inside=True),
+        _obs({}, x=11),
+        _obs({"stick": 2}),
+    ],
+    ids=["health", "time of day", "in the home", "moved", "items"],
+)
+async def test_each_kind_of_change_makes_a_line(changed):
+    live, clock, said, _, llm, state = _setup(lines=["変わったね"])
+    state["activity"] = _acting(_obs({}))
+    clock.now = 10
+    await live.tick()  # 基準
+    state["activity"] = _acting(changed)
+    clock.now = 20
+    await live.tick()
+    assert said == ["北の森で原木を集めてくるね"]  # 新しい intent はそのまま
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_said_while_the_small_goal_keeps_failing():
+    """スタックして動けていない間、似た一言を言い続けない（2026-09-29）。"""
+    live, clock, said, _, llm, state = _setup(lines=["また失敗した", "逃げるね"])
+    state["activity"] = _acting(_obs({}))
+    clock.now = 10
+    await live.tick()  # 基準
+    for t, inventory in [(20, {"a": 1}), (30, {"a": 2}), (40, {"a": 3})]:
+        state["activity"] = _acting(_obs(inventory), failing=2)
+        clock.now = t
+        await live.tick()
+    assert said == []
+    llm.generate_commentary.assert_not_awaited()
+    state["activity"] = _acting(_obs({"a": 3}), failing=0)  # 別の手でうまくいった
+    clock.now = 50
+    await live.tick()
+    assert said == ["北の森で原木を集めてくるね"]

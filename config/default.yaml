@@ -12,13 +12,14 @@ stream:
   # speaking now (highlights and max_silence_seconds of quiet always speak; skipped events are
   # kept for the next line); always = every boundary
   commentary_judge: "jev"
-  max_silence_seconds: 60
+  max_silence_seconds: 180
   commentary_record_dir: "logs/commentary"
   # A line in the middle of an action (docs/design/43): after this many seconds of quiet (from the
   # end of the last spoken line) say the tool's new intent, or a new line (purpose live, not kept in
-  # the conversation). Lines like the last few are never spoken. 0: off. With Gemini (no local LLM)
-  # this is up to 360 calls an hour
-  live_interval_seconds: 10
+  # the conversation). Lines like the last few are never spoken. 0: off. Only when something changed
+  # since the last line (items, position, health, time of day, in / out of the home), and never
+  # while the small goal keeps failing (2026-09-29: fewer lines; think and try another way instead)
+  live_interval_seconds: 30
 
 # Twitch Integration
 twitch:
@@ -108,7 +109,7 @@ llm:
     # (they are few and plan the next minutes; user 2026-09-27), and so does the tool choice (user
     # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9), facility_design lays out
     # a farm or tree farm (47 §7); [] = never think
-    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "town_plan", "facility_design"]
+    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "tool_stuck", "town_plan", "facility_design"]
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.
@@ -147,6 +148,7 @@ gemini:
     goal_after_failure: "medium"
     tool: "low"                # one tool call (control: tools)
     tool_after_failure: "medium"
+    tool_stuck: "medium"       # the tool choice while the small goal keeps failing: think, then try another way
     commentary: "low"
     reply: "low"               # a viewer is waiting
     live: "low"                # a line in the middle of an action (docs/design/43)

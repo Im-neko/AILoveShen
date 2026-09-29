@@ -525,10 +525,13 @@ $suggestions
 $recent
 
 ## 決まり
-- 行動の道具には intent（今やろうとしていること、1 文）を必ず書く。配信で見える
-- 見張りの質問（watch）は、行動の途中で起きうることを確かめたいときだけ添える。英語で、状態から
-  答えられることを中立に書く（急ぎや優先の言葉は書かない）。完了の判定には使われない
-  （完了はワールドで確かめる）
+- 行動の道具には intent（今やろうとしていること、配信者の口調の 1 文、日本語）を必ず書く。配信で
+  見え、そのまま読み上げる（例: 北の森で原木を集めてくるね）
+- 見張りの質問（watch）は、行動の途中で起きうることを確かめたいときだけ添える。「<on_yes>: <質問>」
+  の文字列（例: wake: Has a hostile mob come within 6 m?）。質問は 1 秒ごとに速い判断モデルに聞く
+  はい/いいえで、英語で、状態（action / self / surroundings / mobs / needs）から答えられることを
+  中立に書く（急ぎや優先の言葉は書かない）。on_yes は stop（止める）、wake（止めて考え直す）、
+  maybe_done（止める。完了はワールドで確かめる）。完了の判定には使われない
 - 同じ失敗を繰り返さない。断られた・失敗した理由を読んで、別の手を選ぶ
 - 「目の前のブロック」「目の前に落ちている物」に要る物があれば、遠くへ探しに行く前にそれを使う
   （一番近いものの座標をそのまま dig などに使える）
@@ -544,6 +547,19 @@ $recent
   文字の状態で分からないとき（地形、何が起きているか）に使う。画像で完了は決めない
 - 画像が添えてあれば、それはいま配信に映っている自分の視点
 """)
+
+# 続けて失敗しているとき（STUCK_FAILURES 回以上）に足す節: 同じ手を繰り返さず、原因を考えて別の方法を選ばせる
+STUCK_FAILURES = 2
+TOOL_STUCK_SECTION = """
+## 行き詰まっている（続けて $failing 回失敗）
+- 「直近の道具」の失敗の理由を読み、なぜ失敗したかを考える。同じ道具を同じ引数（近い座標）でもう一度は
+  呼ばない。言い換えた intent で同じことを繰り返すのも同じ
+- 原因ごとの別の方法: 経路がない・遠い → 別の場所や別の木・鉱石を find_blocks / search_memory で探す、
+  足場を置く・掘って進む / 材料や道具が足りない → 先にそれを集める・作る / 断られた → 断られた理由の
+  ブロックや場所を避ける / 敵が近い → 倒すか離れるか、家に戻る
+- 何をすればよいか分からなければ、動く前に search_abilities / item_info / search_facility で調べる
+- 小目標そのものが今は進められないと考えたなら、家に戻って安全に別のことをする（小目標は自分で決め直される）
+"""
 
 # 技（docs/design/22）: 道具の選択に足す節（技を使うときだけ）
 TOOL_SKILLS_SECTION = """
@@ -932,6 +948,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         suggestions: Sequence[Candidate],
         recent_tools: Sequence[ToolOutcome],
         skills: Sequence[SkillInfo] | None = None,
+        failing: int = 0,
     ) -> str:
         """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
         around = state.get("surroundings") or {}
@@ -963,7 +980,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             )
             if skills is not None
             else ""
-        )
+        ) + (Template(TOOL_STUCK_SECTION).substitute(failing=failing) if failing >= STUCK_FAILURES else "")
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""

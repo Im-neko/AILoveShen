@@ -3,6 +3,15 @@
 
 debug: true
 
+llm:
+  local:
+    # Purposes the local model thinks for (all others: no thinking). Thinking is slow locally, so the
+    # everyday calls (tool_after_failure, commentary, live, reply) do not think; the goal decisions do
+    # (they are few and plan the next minutes; user 2026-09-27), and so does the tool choice (user
+    # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9), facility_design lays out
+    # a farm or tree farm (47 §7); [] = never think
+    # tool_stuck: the tool choice while the small goal keeps failing thinks even here
+    thinking_purposes: ["tool_stuck"]
 logging:
   level: "DEBUG"
   file: "data/logs/ailoveshen-dev.log"

@@ -16,7 +16,9 @@ export const AROUND_KINDS = 24 // 近い順にこれだけの種類
 const EMPTY = new Set(['air', 'cave_air', 'void_air'])
 
 // dropsOf(name): そのブロックから取れるアイテム（Knowledge.dropsOf。同じ名前だけなら []）
-export function aroundMe (bot, dropsOf = () => []) {
+// untouchable(p, block): 断られる場所（今の家、建物、建てている家）なら真。ここに出すと、掘れと
+// 言われて断られる（配信者はここの座標をそのまま dig に使う）ので出さない
+export function aroundMe (bot, dropsOf = () => [], untouchable = () => false) {
   const me = bot.entity.position
   const feet = me.floored()
   const kinds = new Map()
@@ -26,7 +28,7 @@ export function aroundMe (bot, dropsOf = () => []) {
         if (dx * dx + dz * dz > AROUND_RADIUS * AROUND_RADIUS) continue
         const p = new Vec3(feet.x + dx, feet.y + dy, feet.z + dz)
         const b = bot.blockAt(p)
-        if (!b || EMPTY.has(b.name) || !exposed(bot, p)) continue
+        if (!b || EMPTY.has(b.name) || !exposed(bot, p) || untouchable(p, b)) continue
         const dist = p.offset(0.5, 0.5, 0.5).distanceTo(me)
         let k = kinds.get(b.name)
         if (!k) kinds.set(b.name, (k = { name: b.name, count: 0, dist: Infinity, at: null }))

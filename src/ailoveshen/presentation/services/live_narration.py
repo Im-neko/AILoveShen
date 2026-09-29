@@ -4,7 +4,10 @@
 次の行動や目標を選んでいる間は、選ばれていない行動を言わない。
 
 小目標の切れ目の実況（Narrator）だけでは、時間で止めない長い行動（歩く、漕ぐ、焼くのを待つ）の
-間、何分も黙っていた。読み上げが終わってから `interval_seconds` 黙っていたら 1 行話す:
+間、何分も黙っていた。読み上げが終わってから `interval_seconds` 黙っていて、しかも前の一言から
+状況が変わっていたら（持ち物、位置、体力、時間帯、家の出入り）1 行話す。変わっていなければ黙る
+（2026-09-29: 頻度を下げる）。続けて失敗して行き詰まっている間も黙る（同じような一言を繰り返さず、
+考え直して別の手を選ぶほうが先）:
 - 道具に添えた日本語の intent が新しければ、それをそのまま読む（LLM を呼ばない）
 - そうでなければ、前の一言から変わったこと（行動の結果、持ち物の増減、動いた距離）と、
   直前に話したことを渡して、違う内容の 1 文を作らせる（purpose=live。会話の履歴には残さない）
@@ -36,6 +39,9 @@ SEMANTIC_SIMILARITY = 0.8  # Jev が「意味的に 8 割以上同じ」と判�
 REMEMBERED_LINES = 8
 SHOWN_LINES = 4  # 一言のプロンプトに見せる、直前に話したこと
 RECENT_ACTIONS = 3
+STUCK_FAILURES = 2  # 続けてこれだけ失敗している間は話さない
+MOVED_M = 10  # 前の一言からこれだけ動いたら「状況が変わった」
+HEALTH_DROP = 3  # 前の一言から体力がこれだけ減ったら「状況が変わった」
 _JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
 _PUNCT = re.compile(r"[\s、。！？!?…「」『』（）()〜ー・,.]+")
 SAME_MEANING_QUESTION = FastQuestion(
@@ -127,7 +133,7 @@ class LiveNarration:
         self._quiet_from = clock()
         self._last_intent = ""
         self._actions: deque[str] = deque(maxlen=RECENT_ACTIONS)
-        self._seen: dict[str, Any] = {}  # 前の一言のときの持ち物と位置
+        self._seen: dict[str, Any] = {}  # 前の一言のときの持ち物・位置・体力・時間帯・家の出入り
 
     def subscribe(self, bus: IEventSubscriber) -> None:
         """行動の結果を購読する（一言に渡す、前から変わったこと）。"""
@@ -190,11 +196,19 @@ class LiveNarration:
             # 行動を実行している間だけ話す。次の行動や目標を選んでいる間は黙る（2026-09-28: 目標の
             # 決定を 4 分待つ間、終わった行動の結果から「パンにするね」を何度も作って話した）
             return
+        if activity.failing >= STUCK_FAILURES:
+            return  # 行き詰まっている間は黙る（考え直して別の手を選ぶ。切れ目の実況がそれを話す）
+        changes = self._changes(activity)
+        if changes is None:  # 比べる前の状態がまだない: 今を基準にする
+            self._mark(activity)
+            return
+        if not changes:
+            return  # 状況が変わるまで黙る
         line = self._new_intent(activity)
         source = "intent"
         if line is None:
             line = await self._llm.generate_commentary(
-                recent_events=self._events(activity),
+                recent_events=self._events(activity, changes),
                 activity=activity,
                 purpose="live",
                 record=False,
@@ -202,6 +216,7 @@ class LiveNarration:
             source = "live"
         # 話しても話さなくても、次はもう 1 間隔待つ（捨てたときにすぐ作り直さない）
         self._quiet_from = self._clock()
+        self._mark(activity)
         if not line:
             return
         if not self._is_idle():
@@ -222,13 +237,13 @@ class LiveNarration:
         self._last_intent = intent
         return intent
 
-    def _events(self, activity: Activity) -> list[str]:
+    def _events(self, activity: Activity, changes: list[str]) -> list[str]:
         """一言に渡すこと: 今の行動、前の一言から変わったこと、直前に話したことと違う内容に。"""
         goal = activity.goal
         events = [f"今の小目標: {goal.describe()}（{goal.reason}）" if goal is not None else "今の小目標: なし"]
         events.append(f"今の行動: {activity.intent or 'なし'}")
         events += [f"行動の結果: {a}" for a in self._actions]
-        events += self._changes(activity)
+        events += changes
         said = "」「".join(self._spoken.recent())
         events.append(
             "（行動の途中の一言）今やっていること・考えていること・気づいたこと・次の段取りを"
@@ -243,36 +258,55 @@ class LiveNarration:
                 if said
                 else ""
             )
-            + "変わったことがなければ、今の様子や気持ちなど別の話題にする"
+            + "「変わったこと」に触れる"
         )
         return events
 
-    def _changes(self, activity: Activity) -> list[str]:
-        """前の一言のときからの、持ち物の増減と動いた距離。"""
+    @staticmethod
+    def _snapshot(activity: Activity) -> dict[str, Any] | None:
+        """状況の比べる項目（観測がなければ None）。"""
         obs = activity.observation
         if obs is None:
-            return []
-        inventory = dict(obs.state.get("inventory") or {})
-        position = (obs.state.get("self") or {}).get("position") or {}
-        before_inv = self._seen.get("inventory")
-        before_pos = self._seen.get("position")
-        self._seen = {"inventory": inventory, "position": position}
+            return None
+        return {
+            "inventory": dict(obs.state.get("inventory") or {}),
+            "position": (obs.state.get("self") or {}).get("position") or {},
+            "health": obs.health,
+            "phase": obs.time_phase,
+            "inside_home": obs.inside_home,
+        }
+
+    def _mark(self, activity: Activity) -> None:
+        """今の状況を、次に「変わったか」を比べる基準にする。"""
+        snap = self._snapshot(activity)
+        if snap is not None:
+            self._seen = snap
+
+    def _changes(self, activity: Activity) -> list[str] | None:
+        """前の一言のときからの、状況の変わったこと（なければ []。比べる基準がなければ None）。"""
+        now = self._snapshot(activity)
+        before = self._seen
+        if now is None or not before:
+            return None
         out = []
-        if before_inv is not None:
-            diff = {
-                k: inventory.get(k, 0) - before_inv.get(k, 0)
-                for k in set(inventory) | set(before_inv)
-                if inventory.get(k, 0) != before_inv.get(k, 0)
-            }
-            if diff:
-                out.append(
-                    "持ち物の増減: " + "、".join(f"{k} {v:+d}" for k, v in sorted(diff.items())[:6])
-                )
-        if before_pos and position:
+        diff = {
+            k: now["inventory"].get(k, 0) - before["inventory"].get(k, 0)
+            for k in set(now["inventory"]) | set(before["inventory"])
+            if now["inventory"].get(k, 0) != before["inventory"].get(k, 0)
+        }
+        if diff:
+            out.append("持ち物の増減: " + "、".join(f"{k} {v:+d}" for k, v in sorted(diff.items())[:6]))
+        if before["position"] and now["position"]:
             moved = (
-                sum((float(position.get(k, 0)) - float(before_pos.get(k, 0))) ** 2 for k in "xz")
+                sum((float(now["position"].get(k, 0)) - float(before["position"].get(k, 0))) ** 2 for k in "xz")
                 ** 0.5
             )
-            if moved >= 3:
+            if moved >= MOVED_M:
                 out.append(f"前の一言から {moved:.0f}m 動いた")
+        if before["health"] - now["health"] >= HEALTH_DROP:
+            out.append(f"体力が {before['health']:.0f} から {now['health']:.0f} に減った")
+        if now["phase"] != before["phase"]:
+            out.append(f"時間帯が {before['phase']} から {now['phase']} に変わった")
+        if now["inside_home"] != before["inside_home"]:
+            out.append("家の中に入った" if now["inside_home"] else "家の外に出た")
         return out

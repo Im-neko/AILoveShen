@@ -48,7 +48,7 @@ class TestToolCatalog:
                     "y": 70,
                     "z": 2,
                     "intent": "前の家のベッドを取りに行く",
-                    "watch": [{"question": "Is a hostile mob within 6 m?", "on_yes": "wake"}],
+                    "watch": ["wake: Is a hostile mob within 6 m?"],
                 },
             )
         )
@@ -67,12 +67,13 @@ class TestToolCatalog:
                     "z": 0,
                     "intent": "i",
                     "watch": [
-                        {"question": "", "on_yes": "stop"},
-                        {"question": "q", "on_yes": "explode"},
-                        {"question": "a", "on_yes": "stop"},
-                        {"question": "b", "on_yes": "stop"},
-                        {"question": "c", "on_yes": "stop"},
-                        {"question": "d", "on_yes": "stop"},
+                        "stop:",
+                        "explode: q",
+                        "no colon",
+                        "stop: a",
+                        "stop: b",
+                        "stop: c",
+                        "stop: d",
                     ],
                 },
             )
@@ -372,6 +373,55 @@ class TestToolStep:
         purposes = [c.kwargs["purpose"] for c in self.text_generator.choose_tool.call_args_list]
         assert purposes == ["tool", "tool_after_failure"]
 
+    @pytest.mark.asyncio
+    async def test_the_step_waits_for_the_reflex_instead_of_asking_the_model(
+        self, use_case, bridge, monkeypatch
+    ):
+        """反射が動いている間は道具が断られる。選ばせて 1 手を無駄にせず、終わるまで待つ。"""
+        import ailoveshen.application.use_cases.play as play
+
+        monkeypatch.setattr(play, "REFLEX_POLL_SECONDS", 0.001)
+        quiet = {"action": None, "surroundings": {}, "mobs": [], "reflex": False}
+        bridge.state.side_effect = [
+            {**quiet, "reflex": True},
+            {**quiet, "reflex": True},
+            quiet,
+            quiet,
+        ]
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        assert bridge.state.await_count == 4  # 待つ間に 3 回、選ぶときに 1 回
+        self.text_generator.choose_tool.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pickup_is_not_offered_when_nothing_lies_on_the_ground(self, use_case, bridge):
+        bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": [], "pickup_ready": False}
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+        await use_case.execute(_session(HAVE_PLANKS))
+        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
+        assert "pickup" not in offered and "dig" in offered
+
+        bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": [], "pickup_ready": True}
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+        await use_case.execute(_session(HAVE_PLANKS))
+        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
+        assert "pickup" in offered
+
+    @pytest.mark.asyncio
+    async def test_a_failing_small_goal_makes_the_model_think_and_try_another_way(self, use_case):
+        session = _session(HAVE_PLANKS)
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})] * 2
+        await use_case.execute(session)
+        session.consecutive_failures = 2
+        await use_case.execute(session)
+
+        purposes = [c.kwargs["purpose"] for c in self.text_generator.choose_tool.call_args_list]
+        assert purposes[-1] == "tool_stuck"
+        failing = [c.kwargs["failing"] for c in self.prompt_builder.build_tool_prompt.call_args_list]
+        assert failing == [0, 2]
+
     def test_tools_control_needs_a_watcher(self, bridge):
         with pytest.raises(ValueError, match="needs a tool_watcher"):
             AdvancePlayUseCase(
@@ -393,3 +443,17 @@ def test_move_furniture_is_an_action_tool_with_an_optional_target():
     move = specs["move_furniture"].parameters
     assert move["required"] == ["intent", "x", "y", "z"]
     assert {"to_x", "to_y", "to_z"} <= set(move["properties"])
+
+
+def test_the_tool_prompt_asks_for_another_way_only_while_the_small_goal_keeps_failing():
+    from ailoveshen.domain.value_objects import Activity
+    from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
+        GamePromptTemplateBuilder,
+    )
+
+    builder = GamePromptTemplateBuilder()
+    state = {"surroundings": {}, "mobs": []}
+    assert "行き詰まっている" not in builder.build_tool_prompt(Activity(), state, (), (), failing=1)
+    stuck = builder.build_tool_prompt(Activity(), state, (), (), failing=3)
+    assert "行き詰まっている（続けて 3 回失敗）" in stuck
+    assert "同じ道具を同じ引数" in stuck

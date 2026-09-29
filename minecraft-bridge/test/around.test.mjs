@@ -50,3 +50,14 @@ test('落ちているアイテムは種類ごとに数と一番近いもの（�
   const { items } = aroundMe(bot)
   assert.deepEqual(items, [{ item: 'oak_sapling', count: 3, distance_m: 2, direction: 'E' }])
 })
+
+test('断られる場所（今の家など）は出さず、ほかの同じ種類のうち一番近いものを出す', () => {
+  const bot = world({
+    '2,70,0': { name: 'oak_log' }, // 家の壁
+    '5,70,0': { name: 'oak_log' }
+  })
+  const around = aroundMe(bot, () => [], (p) => p.x === 2)
+  const log = around.blocks.find((b) => b.name === 'oak_log')
+  assert.equal(log.count, 1)
+  assert.equal(log.nearest.x, 5)
+})

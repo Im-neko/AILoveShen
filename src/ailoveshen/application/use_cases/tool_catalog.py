@@ -48,28 +48,12 @@ def _str(description: str) -> dict[str, Any]:
 
 _POS = {"x": _int("x 座標"), "y": _int("y 座標（足元の高さ）"), "z": _int("z 座標")}
 
+# 行動の道具ぜんぶに付くので短く保つ（書き方は道具の選択のプロンプトの「決まり」に 1 回だけ書く）。
+# 1 つは「<on_yes>: <質問>」の文字列（例: wake: Has a hostile mob come within 6 m?）
 _WATCH = {
     "type": "array",
     "maxItems": MAX_WATCH_QUESTIONS,
-    "description": (
-        "この行動の間、1 秒ごとに速い判断モデルに聞く、はい/いいえの質問（任意、最大 3 つ）。"
-        "質問は英語で、状態（action / self / surroundings / mobs / needs）から答えられることを"
-        "中立に書く。急ぎや優先を表す言葉は書かない。"
-        "on_yes: stop（止める）、wake（止めて考え直す）、"
-        "maybe_done（止める。完了はワールドで確かめる）"
-    ),
-    "items": {
-        "type": "object",
-        "properties": {
-            "question": {
-                "type": "string",
-                "maxLength": MAX_WATCH_QUESTION_CHARS,
-                "description": "例: Has a hostile mob come within 6 m?",
-            },
-            "on_yes": {"type": "string", "enum": [a.value for a in WatchAction]},
-        },
-        "required": ["question", "on_yes"],
-    },
+    "items": {"type": "string", "description": "<stop|wake|maybe_done>: <English yes/no question>"},
 }
 
 # 名前 -> (説明, 固有の引数, 必須の引数)
@@ -315,10 +299,7 @@ def tool_specs(can_look: bool = False, skills: bool = False) -> list[ToolSpec]:
                 parameters={
                     "type": "object",
                     "properties": {
-                        "intent": _str(
-                            "今やろうとしていること（配信者の口調の 1 文、日本語。配信で見え、"
-                            "そのまま読み上げる。例: 北の森で原木を集めてくるね）"
-                        ),
+                        "intent": _str("今やろうとしていること（配信者の口調の 1 文、日本語）"),
                         **props,
                         "watch": _WATCH,
                     },
@@ -367,12 +348,9 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
     watch: list[WatchQuestion] = []
     for item in raw_watch if isinstance(raw_watch, list) else []:
         try:
-            watch.append(
-                WatchQuestion(
-                    question=str(item.get("question", "")), on_yes=WatchAction(item.get("on_yes"))
-                )
-            )
-        except (ValueError, AttributeError) as e:
+            on_yes, _, question = str(item).partition(":")
+            watch.append(WatchQuestion(question=question.strip(), on_yes=WatchAction(on_yes.strip())))
+        except ValueError as e:
             logger.warning(f"見張りの質問を捨てた（{item!r}）: {e}")
         if len(watch) == MAX_WATCH_QUESTIONS:
             break

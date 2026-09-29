@@ -66,9 +66,9 @@ import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
 import { summarize, bearing, inventoryCounts, isUnderground, blockInfo } from './observe.mjs'
-import { configureMovements, DAMAGE_TOLERANT } from './primitives.mjs'
+import { configureMovements, DAMAGE_TOLERANT, nearbyDrops } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
-import { createTools } from './tools.mjs'
+import { createTools, DROP_RADIUS as PICKUP_RADIUS } from './tools.mjs'
 import { sharedState } from './state.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
@@ -77,7 +77,7 @@ import { RecipeIndex } from './recipes.mjs'
 import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
-import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed } from './home.mjs'
+import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed, protectedReason } from './home.mjs'
 import { startReflex, steerReflex, dangerView } from './reflex.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
@@ -165,7 +165,7 @@ function observation () {
   // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
   extra.nearby = landmarks(bot, state)
   // 目の前にあるもの（半径 8、足元の高さ ±2 の、見えているブロックと落ちているアイテム）
-  extra.around = aroundMe(bot, (name) => knowledge.dropsOf(name))
+  extra.around = aroundMe(bot, (name) => knowledge.dropsOf(name), (p, b) => protectedReason(state, p, 0, b) !== null)
   extra.underground = isUnderground(bot)
   // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
   const broken = recentBreaks(bot, state)
@@ -351,7 +351,14 @@ async function handle (req, res) {
   if (req.method === 'GET' && req.url === '/state') {
     const skill = state.skill && { name: state.skill.name, version: state.skill.version, ...state.skill.control.view?.() }
     const judge = state.pendingJudge && { id: state.pendingJudge.id, question: state.pendingJudge.question, kind: state.pendingJudge.kind, options: state.pendingJudge.options }
-    return send(res, 200, { ...sharedState(bot, state, needs), skill: skill || null, pending_judge: judge || null })
+    // reflex: 反射が動いていて道具は断られる。pickup_ready: pickup が拾える落とし物があるか（tools.mjs と同じ範囲）
+    return send(res, 200, {
+      ...sharedState(bot, state, needs),
+      reflex: Boolean(state.reflex),
+      pickup_ready: nearbyDrops(bot, state, PICKUP_RADIUS).length > 0,
+      skill: skill || null,
+      pending_judge: judge || null
+    })
   }
   if (req.method === 'POST' && req.url === '/abort') {
     const { reason } = await readJson(req)

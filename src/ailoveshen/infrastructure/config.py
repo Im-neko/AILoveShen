@@ -83,6 +83,7 @@ DEFAULT_THINKING_LEVELS = {
     "goal_after_failure": "medium",
     "tool": "low",
     "tool_after_failure": "medium",
+    "tool_stuck": "medium",
     "commentary": "low",
     "reply": "low",
     "live": "low",
@@ -385,10 +386,10 @@ class StreamSettings:
     speak: bool = True
     # 小目標の切れ目の実況の間合い（docs/design/34 §6）: jev（今話す価値があるかを Jev が決める）か always
     commentary_judge: str = "jev"
-    max_silence_seconds: float = 60.0
+    max_silence_seconds: float = 180.0
     commentary_record_dir: str = "logs/commentary"
     # 行動の途中の一言（docs/design/43）: 読み上げが終わってからこれだけ黙っていたら話す。0 なら話さない
-    live_interval_seconds: float = 10.0
+    live_interval_seconds: float = 30.0
 
 
 @dataclass

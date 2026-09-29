@@ -1402,6 +1402,7 @@ class Activity:
     notes: tuple[Note, ...] = ()  # 自分のメモ（確かめていない）
     intent: str = ""  # 道具で操作しているとき、今やろうとしていること（配信者が道具に添えた 1 文）
     acting: bool = False  # 行動を実行している最中か（選んでいる間・目標を決めている間は偽）
+    failing: int = 0  # 今の小目標で続けて失敗した行動の数（行き詰まりの目安。一言は黙る）
     screen_note: Optional["ScreenNote"] = None  # 画面で見たこと（確かめていない）
     lessons: tuple[Lesson, ...] = ()  # 今の状況で思い出した教訓（確かめていない。docs/design/35）
     town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6。目標の決定とボードが見る）

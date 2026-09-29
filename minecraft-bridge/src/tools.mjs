@@ -30,7 +30,7 @@ const MAX_ENTITY_DISTANCE = 24
 const MAX_CRAFT_TIMES = 16
 const FIND_RADIUS = 64
 const FIND_SHOWN = 8
-const DROP_RADIUS = 16
+export const DROP_RADIUS = 16
 const PLANTS = /^(short_grass|tall_grass|fern|large_fern|wheat|carrots|potatoes|beetroots|sweet_berry_bush|dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony)$|(_sapling|_propagule)$/
 const REPLACEABLE = new Set(['air', 'cave_air', 'water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'dead_bush'])
 // use_item で使わない物（設計書 37）と、専用の道具があるもの

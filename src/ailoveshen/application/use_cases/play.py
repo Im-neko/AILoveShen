@@ -110,6 +110,8 @@ OFFERED_SHOWN = 12  # 失敗の分析に見せる、最後に出ていた候補�
 MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら、やり直しは選べない
 UNDESIGNABLE_SECONDS = 600  # 設計できなかった建物を、中目標に足さない間（秒）
 MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
+STUCK_TOOL_FAILURES = 2  # 続けてこれだけ失敗した小目標の道具の選択は、よく考えさせる（purpose tool_stuck）
+REFLEX_POLL_SECONDS = 0.5  # 反射が動いている間、終わったかを見る間隔（その間は道具が断られるので選ばせない）
 RETHINK_POLL_SECONDS = 0.5  # 行動の間、考え直しの依頼が来たかを見る間隔（docs/design/38）
 # 目標の決定を待つ間（ローカルの LLM で数分かかる）、この間隔で飢えを確かめ、ブリッジの候補に食べる
 # 物があれば食べる（2026-09-28: 空腹 0 のまま 6 分近く決定を待って立っていた）。ほかの行動はしない
@@ -493,6 +495,19 @@ class AdvancePlayUseCase(IAdvancePlay):
             c.action_id == decision.action_id and c.description.get("also") for c in obs.candidates
         )
 
+    async def _wait_out_reflex(self) -> None:
+        """
+        反射（近くの敵への対処）が動いている間は、道具も候補も断られる。モデルに選ばせても
+        断られて 1 手を無駄にするので、反射が終わるまで待つ。
+        """
+        state = await self._bridge.state()
+        if not state.get("reflex"):
+            return
+        logger.info("反射が動いているので、終わるまで選ばせずに待つ")
+        while state.get("reflex"):
+            await asyncio.sleep(REFLEX_POLL_SECONDS)
+            state = await self._bridge.state()
+
     async def _act_with_tools(
         self, session: PlaySession, obs: GameObservation
     ) -> tuple[ActionDecision, ActionResult]:
@@ -501,6 +516,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         選び直す（MAX_QUERIES_PER_STEP 回まで。その後は行動の道具だけを出す）。行動の道具は
         見張りつきで実行し、1 ステップはそれで終わる。
         """
+        await self._wait_out_reflex()
         skills = await self._skill_list(session) if self._skills is not None else None
         picked = await self._jev_step(session, obs, skills or [])
         if picked is not None:
@@ -520,10 +536,15 @@ class AdvancePlayUseCase(IAdvancePlay):
                 obs.candidates[:SUGGESTIONS_SHOWN],
                 tuple(self._recent_tools),
                 skills=skills,
+                failing=session.consecutive_failures,
             )
             last = self._recent_tools[-1] if self._recent_tools else None
             purpose = "tool_after_failure" if last is not None and not last.ok else "tool"
+            if session.consecutive_failures >= STUCK_TOOL_FAILURES:
+                purpose = "tool_stuck"  # 行き詰まり: よく考えて別の方法を選ばせる
             offered = specs if attempt < MAX_QUERIES_PER_STEP else action_specs
+            if state.get("pickup_ready") is False:  # 拾える落とし物がなければ pickup は断られるだけ
+                offered = [t for t in offered if t.name != "pickup"]
             choice = await self._text_generator.choose_tool(
                 prompt, offered, purpose=purpose, images=images
             )

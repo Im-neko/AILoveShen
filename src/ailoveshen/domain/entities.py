@@ -656,6 +656,7 @@ class PlaySession(Entity):
             notes=self.notebook.notes,
             intent=self.intent,
             acting=self.acting,
+            failing=self.consecutive_failures if self.goal else 0,
             screen_note=self.screen_note,
             lessons=self.lessons,
             town_map=self.plan.town_map,
