@@ -1044,8 +1044,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                     and preview.current is not None
                     and not preview.current.open_jobs
                     and not decision.jobs
+                    and decision.serves == Serves.CURRENT
                 ):
-                    # 中目標がないと、次の切れ目でまた Gemini を呼ぶことになる（docs/design/26）
+                    # 中目標がないと、次の切れ目でまた Gemini を呼ぶことになる（docs/design/26）。
+                    # 身を守る小目標（夜に家へ戻るなど）は大目標のためではなく、どのみち終われば次の
+                    # 切れ目で Gemini が決めるので、ここで中目標を書かせて差し戻さない
                     raise ValueError(
                         f"write the jobs for the objective at the top ({preview.current.title})"
                     )

@@ -1161,6 +1161,22 @@ class TestJobsChosenByJev:
         assert "write the jobs" in error
 
     @pytest.mark.asyncio
+    async def test_a_survival_goal_needs_no_jobs_written(
+        self, make, text_generator, bridge
+    ):
+        """夜に家へ戻るなど身を守る小目標は、大目標に中目標がなくても差し戻さない。"""
+        bridge.observe.return_value = _obs(
+            goal=False, has_plan=True, house_complete=True, has_home=True
+        )
+        text_generator.generate_json.side_effect = [
+            {"predicate": "at_home", "serves": "survival", "reason": "夜だから帰る"}
+        ]
+        session = _session()
+        await make().execute(session)
+        assert text_generator.generate_json.await_count == 1
+        assert session.goal.spec.predicate == GoalPredicate.AT_HOME
+
+    @pytest.mark.asyncio
     async def test_failure_low_confidence_and_used_up_jobs_go_to_gemini(
         self, make, text_generator, bridge
     ):
