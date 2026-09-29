@@ -1,16 +1,16 @@
-"""TownPlanner（街の場所と定義）と、MidGoalKeeper が進める街の段階のテスト。"""
+"""TownPlanner（街の場所と定義）と、ObjectiveKeeper が進める街の段階のテスト。"""
 
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.town import MOVE_CONDITIONS, TownPlanner
-from ailoveshen.domain.entities import MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     HouseDesignedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
     TownCompletedEvent,
     TownDefinedEvent,
     TownSiteChosenEvent,
@@ -151,8 +151,8 @@ def prompt_builder():
 
 @pytest.fixture
 def keeper(bridge, events, store):
-    """モックの上で動く本物の MidGoalKeeper。"""
-    return MidGoalKeeper(bridge=bridge, event_publisher=events, store=store)
+    """モックの上で動く本物の ObjectiveKeeper。"""
+    return ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store)
 
 
 @pytest.fixture
@@ -174,13 +174,13 @@ def planner(text_generator, prompt_builder, bridge, events, store, keeper, desig
         event_publisher=events,
         character=CharacterProfile(),
         store=store,
-        mid_goals=keeper,
+        objectives=keeper,
         designer=designer,
     )
 
 
-def _sited(site: TownSite = HERE) -> MidGoalPlan:
-    plan = MidGoalPlan(mission=MISSION)
+def _sited(site: TownSite = HERE) -> ObjectivePlan:
+    plan = ObjectivePlan(mission=MISSION)
     plan.choose_site(site)
     return plan
 
@@ -257,7 +257,7 @@ class TestTownPlanner:
     @pytest.mark.asyncio
     async def test_no_town_before_the_site(self, planner, text_generator):
         """場所が決まるまでは街を定めない（街は場所に合わせる）。"""
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
 
         await planner.prepare(plan)
 
@@ -275,7 +275,7 @@ class TestTownPlanner:
         }
         done = TownStage("済んだ段階", "w", unresolved=("過去のこと",))
         waiting = TownStage("複数の建物", "街らしく", unresolved=("倉庫",))
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         plan.restore([], [], 1, town=_town(done, waiting), town_stage=1, site=HERE)
 
         await planner.prepare(plan)
@@ -299,7 +299,7 @@ class TestTownPlanner:
             "unresolved": [],
         }
         waiting = TownStage("複数の建物", "街らしく", unresolved=("倉庫",))
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         plan.restore([], [], 1, town=_town(waiting), town_stage=0, site=HERE)
 
         await planner.prepare(plan)
@@ -319,7 +319,7 @@ class TestTownPlanner:
         text_generator.generate_json.return_value = {"conditions": [], "unresolved": ["柵"]}
         now = TownStage("防壁", "守る", unresolved=("柵",), tried_with="v1")
         later = TownStage("広場", "街らしく", unresolved=("舗装",), tried_with="v0")
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         plan.restore([], [], 1, town=_town(now, later), town_stage=0, site=HERE)
 
         await planner.prepare(plan)
@@ -336,9 +336,9 @@ class TestTownPlanner:
 
 
 class TestTownStages:
-    """中目標としての街の段階のテスト（MidGoalKeeper.judge）。"""
+    """大目標としての街の段階のテスト（ObjectiveKeeper.judge）。"""
 
-    def _plan(self, *stages: TownStage) -> MidGoalPlan:
+    def _plan(self, *stages: TownStage) -> ObjectivePlan:
         plan = _sited()
         plan.add("羊毛を集める", (GoalSpec(GoalPredicate.HAVE, item="wool", count=3),))
         plan.define_town(_town(*stages))
@@ -346,7 +346,7 @@ class TestTownStages:
 
     @pytest.mark.asyncio
     async def test_the_ready_stage_goes_on_top(self, keeper, events):
-        """取り組む段階が一番上の中目標になり、配信者自身の中目標と同じように言う。"""
+        """取り組む段階が一番上の大目標になり、配信者自身の大目標と同じように言う。"""
         plan = self._plan(TownStage("備蓄", "冬に備える", conditions=(FOOD,)))
 
         await keeper.judge(plan)
@@ -358,7 +358,7 @@ class TestTownStages:
             "冬に備える",
             0,
         )
-        [added] = _published(events, MidGoalAddedEvent)
+        [added] = _published(events, ObjectiveAddedEvent)
         assert added.position == 1 and not added.requested_by
 
         await keeper.judge(plan)
@@ -366,7 +366,7 @@ class TestTownStages:
 
     @pytest.mark.asyncio
     async def test_a_stage_with_unresolved_parts_waits(self, keeper):
-        """まだできない段階は中目標にしない。"""
+        """まだできない段階は大目標にしない。"""
         plan = self._plan(TownStage("複数の建物", "街らしく", unresolved=("倉庫",)))
 
         await keeper.judge(plan)
@@ -393,7 +393,7 @@ class TestTownStages:
         bridge.check.side_effect = _check(met={FOOD, LIT})
         await keeper.judge(plan)
         assert plan.town_complete
-        assert [e.title for e in _published(events, MidGoalCompletedEvent)] == [
+        assert [e.title for e in _published(events, ObjectiveCompletedEvent)] == [
             "備蓄",
             "敷地の安全",
         ]
@@ -458,13 +458,13 @@ class TestTownStages:
 class TestTownSite:
     """街の場所: 調査 → 選択 → 引っ越し → 定義（TownPlanner.advance）。"""
 
-    def _session(self, plan: MidGoalPlan) -> PlaySession:
+    def _session(self, plan: ObjectivePlan) -> PlaySession:
         return PlaySession(blueprint=None, plan=plan)
 
     @pytest.mark.asyncio
     async def test_the_survey_waits_for_the_first_home(self, planner, events):
-        """最初の家ができてから、候補地を調べる中目標を 1 つだけ足す。"""
-        plan = MidGoalPlan(mission=MISSION)
+        """最初の家ができてから、候補地を調べる大目標を 1 つだけ足す。"""
+        plan = ObjectivePlan(mission=MISSION)
         session = self._session(plan)
 
         await planner.advance(session, _obs(has_home=False))
@@ -473,7 +473,7 @@ class TestTownSite:
         await planner.advance(session, _obs())
         [survey] = plan.pending
         assert survey.conditions == (SURVEYED,) and survey.prepares_town
-        assert [e.title for e in _published(events, MidGoalAddedEvent)] == ["街の場所を探す"]
+        assert [e.title for e in _published(events, ObjectiveAddedEvent)] == ["街の場所を探す"]
 
         await planner.advance(session, _obs(survey={"planned": 9, "sites": ROWS}))
         assert len(plan.pending) == 1
@@ -481,7 +481,7 @@ class TestTownSite:
     @pytest.mark.asyncio
     async def test_no_stage_before_the_site_or_during_the_move(self, keeper):
         """段階の条件は家を基準にする: 場所が決まり、引っ越すまでは段階を足さない。"""
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         plan.define_town(_town(TownStage("備蓄", "冬に備える", conditions=(FOOD,))))
         await keeper.judge(plan)
         assert plan.stage_goal() is None
@@ -494,7 +494,7 @@ class TestTownSite:
     @pytest.mark.asyncio
     async def test_a_town_goal_cannot_be_dropped(self, keeper):
         """調査と引っ越しは、段階と同じくやめられない。"""
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         goal = await keeper.add_town_goal(plan, "街の場所を探す", (SURVEYED,), "場所を決める")
 
         with pytest.raises(ValueError, match="prepares the town"):
@@ -510,7 +510,7 @@ class TestTownSite:
             {"site_id": "here", "reason": "動物が多い", "town_name": "ひだまり村"},
             TOWN,
         ]
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
 
         await planner.advance(self._session(plan), _obs(survey=SURVEY_DONE))
 
@@ -530,12 +530,12 @@ class TestTownSite:
     async def test_another_site_means_a_new_house_and_a_move(
         self, planner, text_generator, events, designer, bridge
     ):
-        """別の場所なら、そこに建てる家を設計して送り、引っ越しを一番上の中目標にする。"""
+        """別の場所なら、そこに建てる家を設計して送り、引っ越しを一番上の大目標にする。"""
         text_generator.generate_json.side_effect = [
             {"site_id": "E", "reason": "地表の石が多い", "town_name": "いしのまち"},
             TOWN,
         ]
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         plan.add("食料を蓄える", (GoalSpec(GoalPredicate.HAVE, item="food", count=8),))
         session = self._session(plan)
         session.completion_announced = True
@@ -564,7 +564,7 @@ class TestTownSite:
         session = self._session(plan)
         sent = {"site": {"x": 96, "z": 0}, "complete": False}
 
-        # 計画は送ったが、引っ越しの中目標を足す前に止まった
+        # 計画は送ったが、引っ越しの大目標を足す前に止まった
         await planner.advance(session, _obs(build=sent))
         designer.design.assert_not_called()
         assert plan.current.title == "いしのまちに引っ越す"
@@ -582,7 +582,7 @@ class TestTownSite:
     async def test_a_failed_choice_waits_for_the_next_goal_change(self, planner, text_generator):
         """使える選択が出なければ、代わりの場所で進めず、次の切れ目でやり直す。"""
         text_generator.generate_json.return_value = {"site_id": "NW", "reason": "", "town_name": ""}
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
 
         await planner.advance(self._session(plan), _obs(survey=SURVEY_DONE))
 

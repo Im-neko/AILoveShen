@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.dto.game_dto import PlayStepReport
-from ailoveshen.domain.entities import MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
@@ -38,14 +38,14 @@ def start():
     use_case = AsyncMock()
     use_case.execute.return_value = PlaySession(
         blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2),
-        plan=MidGoalPlan(mission=Mission("家を建てる")),
+        plan=ObjectivePlan(mission=Mission("家を建てる")),
     )
     return use_case
 
 
 def _service(start, advance, closers=None):
     closers = closers or (AsyncMock(), AsyncMock(), AsyncMock())
-    return GameService(start, advance, *closers, mid_goals=Mock())
+    return GameService(start, advance, *closers, objectives=Mock())
 
 
 class TestGameService:
@@ -180,7 +180,7 @@ async def test_the_danger_watcher_runs_with_the_play_and_stops_with_it(start):
 
     advance.execute.side_effect = step
     closers = (AsyncMock(), AsyncMock(), AsyncMock())
-    service = GameService(start, advance, *closers, mid_goals=Mock(), danger_watcher=Watcher())
+    service = GameService(start, advance, *closers, objectives=Mock(), danger_watcher=Watcher())
 
     outcome = await service.play(max_steps=2)
 

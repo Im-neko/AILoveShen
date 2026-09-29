@@ -101,7 +101,7 @@ export function createTools (deps) {
     const facility = spec?.predicate === 'facility' && state.facilities?.[spec.name]?.layout ? spec.name : null
     return workCell(bot, state, kind, facility ? { facility } : { crop, sapling })?.pos ?? null
   }
-  const NO_FACILITY = 'new farmland and saplings go only in the cells of a designed farm or tree farm (add facility(<name>) to a mid goal to design one; search_facility shows them)'
+  const NO_FACILITY = 'new farmland and saplings go only in the cells of a designed farm or tree farm (add facility(<name>) to an objective to design one; search_facility shows them)'
 
   // 行動の道具の引数から、実行するもの（PRIMITIVES の c）を作る
   const build = {

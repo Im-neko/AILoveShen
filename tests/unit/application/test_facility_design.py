@@ -6,15 +6,15 @@ import pytest
 
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner, facility_schema
 from ailoveshen.application.use_cases.goal_vocabulary import (
-    MidGoalProposal,
+    ObjectiveProposal,
     PlanChange,
     PlanOp,
     parse_decision,
 )
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.play import _without_build
 from ailoveshen.application.use_cases.town_map import apply_areas, base_zones
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import (
     FacilityAreaNotReadyError,
     FacilityNotDesignedError,
@@ -50,7 +50,7 @@ FARM = {"kind": "farm", "zones": ["A2"], "crop": "wheat", "width": 8, "depth": 4
 
 
 def _designer(answers, with_map=True, set_facility=None):
-    plan = MidGoalPlan(mission=MISSION)
+    plan = ObjectivePlan(mission=MISSION)
     if with_map:
         plan.set_town_map(apply_areas(base_zones(_rows()), PLANNED, (0, 0), 0, (), "街を定めた"))
     bridge = AsyncMock()
@@ -167,18 +167,18 @@ def test_the_schema_offers_only_the_free_zones():
 async def test_the_keeper_designs_a_new_facility_before_checking():
     bridge, facilities = AsyncMock(), AsyncMock()
     facilities.known.return_value = {"old_farm"}
-    keeper = MidGoalKeeper(
+    keeper = ObjectiveKeeper(
         bridge=bridge, event_publisher=AsyncMock(), store=Mock(), facilities=facilities
     )
     new = GoalSpec(GoalPredicate.FACILITY, name="wheat_farm")
     old = GoalSpec(GoalPredicate.FACILITY, name="old_farm")
-    proposal = MidGoalProposal("畑を作る", (new, old), "食べ物")
+    proposal = ObjectiveProposal("畑を作る", (new, old), "食べ物")
     await keeper.check_new([PlanChange(PlanOp.ADD, "r", proposal=proposal)])
     facilities.design.assert_awaited_once_with("wheat_farm", "畑を作る: 食べ物")
     bridge.check.assert_awaited_once()
 
     bridge.facilities.return_value = []
-    keeper = MidGoalKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
+    keeper = ObjectiveKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
     with pytest.raises(GoalRejectedError, match="no facility named wheat_farm"):
         await keeper.check_new([PlanChange(PlanOp.ADD, "r", proposal=proposal)])
 
@@ -200,14 +200,14 @@ def test_the_decision_without_the_facility_keeps_the_rest():
                     "reason": "食べ物",
                 }
             ],
-            "steps": [
+            "jobs": [
                 {"predicate": "have", "item": "wheat_seeds", "count": 8, "reason": "種"},
                 {"predicate": "facility", "name": "wheat_farm", "reason": "作る"},
             ],
         }
     )
     kept = _without_build(decision, "wheat_farm")
-    assert kept.changes == () and [s.spec.predicate.value for s in kept.steps] == ["have"]
+    assert kept.changes == () and [s.spec.predicate.value for s in kept.jobs] == ["have"]
 
 
 @pytest.mark.asyncio

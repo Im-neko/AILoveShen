@@ -126,12 +126,12 @@ class GoalSetEvent(DomainEvent):
     """
     新しい小目標を設定したときのイベント（例: goal="have(planks, 12)"）。
 
-    `mid_goal` は、その小目標が役立つ中目標の題名（生存のためなら ""）。
+    `objective` は、その小目標が役立つ大目標の題名（生存のためなら ""）。
     """
 
     goal: str = ""
     reason: str = ""
-    mid_goal: str = ""
+    objective: str = ""
 
 
 @dataclass(frozen=True)
@@ -154,11 +154,11 @@ class GoalEndedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
-class MidGoalAddedEvent(DomainEvent):
+class ObjectiveAddedEvent(DomainEvent):
     """
-    中目標がリストに加わったときのイベント（`position` は 1 始まり）。
+    大目標がリストに加わったときのイベント（`position` は 1 始まり）。
 
-    視聴者の中目標（`requested_by`）と採った助言（`suggested_by`）は、返答でもう伝えてある。
+    視聴者の大目標（`requested_by`）と採った助言（`suggested_by`）は、返答でもう伝えてある。
     """
 
     title: str = ""
@@ -169,8 +169,8 @@ class MidGoalAddedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
-class MidGoalCompletedEvent(DomainEvent):
-    """中目標の条件が世界で満たされたときのイベント。"""
+class ObjectiveCompletedEvent(DomainEvent):
+    """大目標の条件が世界で満たされたときのイベント。"""
 
     title: str = ""
     requested_by: str = ""
@@ -178,8 +178,8 @@ class MidGoalCompletedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
-class MidGoalDroppedEvent(DomainEvent):
-    """中目標を断念したときのイベント（必ず配信で言う）。"""
+class ObjectiveDroppedEvent(DomainEvent):
+    """大目標を断念したときのイベント（必ず配信で言う）。"""
 
     title: str = ""
     reason: str = ""
@@ -206,7 +206,7 @@ class HouseCompletedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class TownDefinedEvent(DomainEvent):
-    """大目標の街がどんなものかを、配信者が決めたときのイベント。"""
+    """最終目標の街がどんなものかを、配信者が決めたときのイベント。"""
 
     text: str = ""
     stages: tuple[str, ...] = ()  # 段階の題名（順番どおり）

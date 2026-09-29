@@ -7,9 +7,9 @@
 - key: make_farm
   title: 畑を作る・増やす
   words: farm field crops farmland till sow hoe wheat carrot potato beetroot facility 畑
-  when: 食べ物（パン、ニンジン、ジャガイモ）を毎日取れるようにしたいとき、中目標が farmed のとき
+  when: 食べ物（パン、ニンジン、ジャガイモ）を毎日取れるようにしたいとき、大目標が farmed のとき
   how: |
-    畑は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の施設名。
+    畑は作る前に設計する: 大目標の条件に facility(name) を書く（名前は街の理想図の予定の施設名。
     なければ新しい名前）。そのとき区画・作物・大きさを決め、耕すマスが決まる
     1. クワを持つ（なければ craft で wooden_hoe など。材料は recipe_of）
     2. till と sow の x,y,z を省くと、畑の次のマスを選ぶ（小目標 facility(name) ならその畑、
@@ -62,9 +62,9 @@
 - key: plant_trees
   title: 苗木を植える・植林場を作る
   words: plant trees sapling tree farm forest logs wood facility 植林場
-  when: 近くに木がない、原木を毎回遠くへ取りに行っているとき、中目標が planted のとき
+  when: 近くに木がない、原木を毎回遠くへ取りに行っているとき、大目標が planted のとき
   how: |
-    植林場は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の
+    植林場は作る前に設計する: 大目標の条件に facility(name) を書く（名前は街の理想図の予定の
     施設名。なければ新しい名前）。そのとき区画・苗木の種類・本数・間隔を決め、植えるマスが決まる
     1. 苗木は葉（*_leaves）を dig するとときどき（5%）落ちる。原木を取るときに葉も掘る
     2. plant {item} の x,y,z を省くと、植林場の次のマスを選ぶ（小目標 facility(name) ならその
@@ -104,7 +104,7 @@
   words: mine shaft stairs tunnel branch mining iron diamond deep facility 採掘場
   when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき
   how: |
-    採掘場は作る前に設計する: 中目標の条件に facility(name) を書く（名前は街の理想図の予定の
+    採掘場は作る前に設計する: 大目標の条件に facility(name) を書く（名前は街の理想図の予定の
     施設名。なければ新しい名前）。そのとき区画・底の高さ（鉄は y 16 あたり）・坑道の本数と長さを
     決める。溶岩や水に当たる深さは断られ、届く一番深い y が返る
     1. ツルハシを持つ（なければ craft。材料は recipe_of）

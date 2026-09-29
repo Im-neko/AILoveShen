@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.use_cases.builds import BUILD_SCHEMA, BuildDesigner, parse_build
-from ailoveshen.application.use_cases.goal_vocabulary import MidGoalProposal, parse_spec
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, parse_spec
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import GoalRejectedError
 from ailoveshen.domain.value_objects import (
     BlockKind,
@@ -181,11 +181,11 @@ async def test_the_keeper_designs_a_new_build_before_adding_and_widens_a_viewers
     bridge.builds.return_value = [{"name": "annex", "total": 120}]
     builder = AsyncMock()
     builder.known.return_value = set()
-    keeper = MidGoalKeeper(
+    keeper = ObjectiveKeeper(
         bridge=bridge, event_publisher=AsyncMock(), store=Mock(), builder=builder
     )
-    plan = MidGoalPlan(mission=Mission("街"))
-    proposal = MidGoalProposal(
+    plan = ObjectivePlan(mission=Mission("街"))
+    proposal = ObjectiveProposal(
         title="家を広くする",
         conditions=(GoalSpec(GoalPredicate.BUILT, name="annex"),),
         reason="ベッドを置く場所がほしい",
@@ -203,22 +203,22 @@ async def test_a_known_build_is_not_designed_again():
     bridge.builds.return_value = [{"name": "annex", "total": 10}]
     builder = AsyncMock()
     builder.known.return_value = {"annex"}
-    keeper = MidGoalKeeper(
+    keeper = ObjectiveKeeper(
         bridge=bridge, event_publisher=AsyncMock(), store=Mock(), builder=builder
     )
-    proposal = MidGoalProposal(
+    proposal = ObjectiveProposal(
         title="増築", conditions=(GoalSpec(GoalPredicate.BUILT, name="annex"),), reason=""
     )
-    await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="a")
+    await keeper.accept(ObjectivePlan(mission=Mission("街")), proposal, requested_by="a")
     builder.design.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_a_town_stage_build_is_designed_before_it_becomes_a_mid_goal():
+async def test_a_town_stage_build_is_designed_before_it_becomes_a_objective():
     from ailoveshen.domain.value_objects import TownDefinition, TownSite, TownStage
 
     storehouse = GoalSpec(GoalPredicate.BUILT, name="storehouse")
-    plan = MidGoalPlan(mission=Mission("街"))
+    plan = ObjectivePlan(mission=Mission("街"))
     plan.choose_site(TownSite("here", 0, 0, "動物が多い", "ひだまり村"))
     plan.define_town(TownDefinition("小さな街", (TownStage("倉庫", "物をしまう", (storehouse,)),)))
     bridge = AsyncMock()
@@ -226,13 +226,13 @@ async def test_a_town_stage_build_is_designed_before_it_becomes_a_mid_goal():
     builder = AsyncMock()
     builder.known.return_value = set()
     builder.design.side_effect = GoalRejectedError("no flat place")
-    keeper = MidGoalKeeper(
+    keeper = ObjectiveKeeper(
         bridge=bridge, event_publisher=AsyncMock(), store=Mock(), builder=builder
     )
 
     await keeper.judge(plan)
     builder.design.assert_awaited_once_with("storehouse", "倉庫: 物をしまう")  # 上限は 3000
-    assert plan.stage_goal() is not None  # 段階は中目標になる（設計できるまで条件は未達）
+    assert plan.stage_goal() is not None  # 段階は大目標になる（設計できるまで条件は未達）
     await keeper.judge(plan)
     await keeper.judge(plan)
     assert builder.design.await_count == 2  # 失敗した名前は 2 回まで
@@ -242,12 +242,12 @@ async def test_a_town_stage_build_is_designed_before_it_becomes_a_mid_goal():
 async def test_without_a_designer_an_unknown_build_is_rejected():
     bridge = AsyncMock()
     bridge.builds.return_value = []
-    keeper = MidGoalKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
-    proposal = MidGoalProposal(
+    keeper = ObjectiveKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
+    proposal = ObjectiveProposal(
         title="増築", conditions=(GoalSpec(GoalPredicate.BUILT, name="annex"),), reason=""
     )
     with pytest.raises(GoalRejectedError, match="no build named annex"):
-        await keeper.accept(MidGoalPlan(mission=Mission("街")), proposal, requested_by="a")
+        await keeper.accept(ObjectivePlan(mission=Mission("街")), proposal, requested_by="a")
 
 
 MAP = {
@@ -358,12 +358,12 @@ def test_the_decision_without_the_build_keeps_the_rest():
                     "reason": "街の第 2 段階",
                 }
             ],
-            "steps": [
+            "jobs": [
                 {"predicate": "have", "item": "cobblestone", "count": 30, "reason": "丸石"},
                 {"predicate": "built", "name": "storehouse", "reason": "建てる"},
             ],
         }
     )
     kept = _without_build(decision, "storehouse")
-    assert kept.changes == () and [s.spec.predicate.value for s in kept.steps] == ["have"]
+    assert kept.changes == () and [s.spec.predicate.value for s in kept.jobs] == ["have"]
     assert kept.spec == decision.spec  # 食べる小目標はそのまま

@@ -10,7 +10,7 @@ pytest.importorskip("fastapi", reason="ailoveshen[stream] not installed")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from ailoveshen.domain.entities import MidGoalPlan, PlaySession  # noqa: E402
+from ailoveshen.domain.entities import ObjectivePlan, PlaySession  # noqa: E402
 from ailoveshen.domain.events import GoalSetEvent  # noqa: E402
 from ailoveshen.domain.value_objects import (  # noqa: E402
     Candidate,
@@ -34,7 +34,7 @@ BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
 
 
 def _session() -> PlaySession:
-    plan = MidGoalPlan(mission=Mission("街にしていく"))
+    plan = ObjectivePlan(mission=Mission("街にしていく"))
     plan.add("自分の家を作る", (GoalSpec(GoalPredicate.BUILT),))
     plan.add("ベッドで寝る", (BED,), requested_by="neko")
     plan.add("剣を持つ", (GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1),))
@@ -42,7 +42,7 @@ def _session() -> PlaySession:
     plan.judged("m1", ("house blocks placed 3/72", "  have 12 log (0/12)"))
     session = PlaySession(blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2), plan=plan)
     session.set_goal(
-        Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "壁の材料", mid_goal_id="m1"),
+        Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "壁の材料", objective_id="m1"),
         "day",
     )
     session.observe(
@@ -82,7 +82,7 @@ class TestGoalsSnapshot:
             ("倉庫", "current"),
         ]
         assert town["stages"][1]["unresolved"] == ["2 軒目"]
-        assert goals_snapshot(session.activity())["mid_goals"][-1]["stage"] == 0
+        assert goals_snapshot(session.activity())["objectives"][-1]["stage"] == 0
 
     def test_not_playing(self):
         """プレイが始まる前は何も示さない。"""
@@ -92,7 +92,7 @@ class TestGoalsSnapshot:
             "town": None,
             "site": None,
             "survey": None,
-            "mid_goals": [],
+            "objectives": [],
             "goal": None,
             "home": None,
             "town_map": None,
@@ -127,23 +127,23 @@ class TestGoalsSnapshot:
         assert data["survey"] == survey
 
     def test_the_goals_from_the_mission_down(self):
-        """大目標、状態つきの中目標、小目標。"""
+        """最終目標、状態つきの大目標、小目標。"""
         data = goals_snapshot(_session().activity())
 
         assert data["mission"] == "街にしていく"
-        assert [(g["title"], g["state"], g["requested_by"]) for g in data["mid_goals"]] == [
+        assert [(g["title"], g["state"], g["requested_by"]) for g in data["objectives"]] == [
             ("自分の家を作る", "current", None),
             ("ベッドで寝る", "pending", "neko"),
             ("剣を持つ", "dropped", None),
         ]
-        assert data["mid_goals"][2]["ended_because"] == "今は要らない"
-        assert data["mid_goals"][0]["summary"] == ["house blocks placed 3/72"]
+        assert data["objectives"][2]["ended_because"] == "今は要らない"
+        assert data["objectives"][0]["summary"] == ["house blocks placed 3/72"]
         assert data["goal"] == {
             "goal": "have(log, 3)",
             "label": "原木を 3 個そろえる",
             "together": [],
             "reason": "壁の材料",
-            "mid_goal": "自分の家を作る",
+            "objective": "自分の家を作る",
             "survival": False,
             "progress": ["have 3 log (1/3)"],
         }
@@ -202,7 +202,7 @@ class TestGoalBoard:
         await board._on_event(GoalSetEvent(goal="placed(bed, home)"))
 
         data = json.loads(queue.get_nowait())
-        assert data["mid_goals"][0]["title"] == "ベッドで寝る"
+        assert data["objectives"][0]["title"] == "ベッドで寝る"
 
     @pytest.mark.asyncio
     async def test_slow_listener_keeps_only_the_latest(self):
@@ -271,7 +271,7 @@ def test_goal_labels_for_viewers():
 
 
 def test_the_vtuber_overlay_reads_the_label_and_the_intent():
-    session = PlaySession(blueprint=None, plan=MidGoalPlan(mission=Mission("街にしていく")))
+    session = PlaySession(blueprint=None, plan=ObjectivePlan(mission=Mission("街にしていく")))
     session.set_goal(
         Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), reason="壁の材料"), "day"
     )

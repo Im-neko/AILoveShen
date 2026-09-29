@@ -37,9 +37,9 @@ from ailoveshen.domain.events import (
     GameActionExecutedEvent,
     GoalEndedEvent,
     GoalSetEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
     TownMapDrawnEvent,
     TownSiteChosenEvent,
 )
@@ -49,8 +49,8 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     JobState,
-    MidGoal,
-    MidGoalState,
+    Objective,
+    ObjectiveState,
 )
 from ailoveshen.presentation.web.avatar import AvatarStage
 
@@ -64,9 +64,9 @@ QUEUE_SIZE = 16
 EVENTS: tuple[type[DomainEvent], ...] = (
     GoalSetEvent,
     GoalEndedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
     TownSiteChosenEvent,
     TownMapDrawnEvent,
     GameActionExecutedEvent,
@@ -82,14 +82,14 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             "town": None,
             "site": None,
             "survey": None,
-            "mid_goals": [],
+            "objectives": [],
             "goal": None,
             "home": None,
             "town_map": None,
         }
-    pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
-    finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
-    titles = {g.id: g.title for g in activity.mid_goals}
+    pending = [g for g in activity.objectives if g.state == ObjectiveState.PENDING]
+    finished = [g for g in activity.objectives if g.state != ObjectiveState.PENDING]
+    titles = {g.id: g.title for g in activity.objectives}
     goal = activity.goal
     obs = activity.observation
     status = obs.goal if obs else None
@@ -100,10 +100,10 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         # 決めたこと（配信者）と、調べた事実（ブリッジが測った候補地の数字）
         "site": asdict(activity.site) if activity.site else None,
         "survey": (obs.state.get("survey") if obs else None) or None,
-        "mid_goals": [
-            _mid_goal(g, "current" if i == 0 else "pending") for i, g in enumerate(pending)
+        "objectives": [
+            _objective(g, "current" if i == 0 else "pending") for i, g in enumerate(pending)
         ]
-        + [_mid_goal(g, g.state.value) for g in finished],
+        + [_objective(g, g.state.value) for g in finished],
         "goal": None
         if goal is None
         else {
@@ -113,8 +113,8 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             + (f"（ほか {len(goal.together)} つ）" if goal.together else ""),
             "together": [goal_label(s) for s in goal.together],
             "reason": goal.reason,
-            "mid_goal": titles.get(goal.mid_goal_id) if goal.mid_goal_id else None,
-            "survival": goal.mid_goal_id is None,
+            "objective": titles.get(goal.objective_id) if goal.objective_id else None,
+            "survival": goal.objective_id is None,
             "progress": list(status.lines) if status else [],
         },
         "home": _home(obs),
@@ -253,9 +253,9 @@ def _home(obs: GameObservation | None) -> dict[str, Any] | None:
     }
 
 
-def _steps(goal: MidGoal) -> list[dict[str, Any]]:
-    """手順（中目標）: done（一度満たしたら済みのまま）/ current（まだの一番先）/ waiting。"""
-    first_open = next((s for s in goal.plan_steps if s.state == JobState.PENDING), None)
+def _jobs(goal: Objective) -> list[dict[str, Any]]:
+    """中目標: done（一度満たしたら済みのまま）/ current（まだの一番先）/ waiting。"""
+    first_open = next((s for s in goal.jobs if s.state == JobState.PENDING), None)
     return [
         {
             "id": s.id,
@@ -271,20 +271,20 @@ def _steps(goal: MidGoal) -> list[dict[str, Any]]:
             "suggested_by": s.suggested_by,
             "progress": list(s.progress),
         }
-        for s in goal.plan_steps
+        for s in goal.jobs
     ]
 
 
-def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
-    steps = _steps(goal)
+def _objective(goal: Objective, state: str) -> dict[str, Any]:
+    jobs = _jobs(goal)
     return {
         "id": goal.id,
         "title": goal.title,
         "kind": goal.kind.value,  # build / facility / infrastructure
         "state": state,  # current / pending / done / dropped
-        "steps": steps,
-        "steps_done": sum(1 for s in steps if s["state"] == "done"),
-        "steps_total": len(steps),
+        "jobs": jobs,
+        "jobs_done": sum(1 for s in jobs if s["state"] == "done"),
+        "jobs_total": len(jobs),
         "requested_by": goal.requested_by,
         "suggested_by": goal.suggested_by,  # 採った助言をくれた視聴者（頼みではない）
         "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None

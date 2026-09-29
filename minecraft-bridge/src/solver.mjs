@@ -259,7 +259,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
       : []
     const more = free > 0
       ? `or fill the farms' ${free} free cells (till and sow ${seed}; a step farmed(${crop}, ${planted + free}))`
-      : `or, for more, add another ${crop} farm with a new name (facility(<new name>) in a mid goal, e.g. ${crop}_farm_2: it is designed on the town map first)`
+      : `or, for more, add another ${crop} farm with a new name (facility(<new name>) in an objective, e.g. ${crop}_farm_2: it is designed on the town map first)`
     leaf = {
       kind: 'growing',
       item,

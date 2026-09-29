@@ -11,7 +11,7 @@ from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.comment_triage import CommentTriage
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
@@ -50,7 +50,7 @@ def create_llm_service(
     character: CharacterSettings,
     event_publisher: IEventPublisher,
     conversation: Conversation,
-    mid_goals: MidGoalKeeper | None = None,
+    objectives: ObjectiveKeeper | None = None,
     history_limit: int = 10,
     generation_log: IGenerationLog | None = None,
     llm: LlmSettings | None = None,
@@ -73,7 +73,7 @@ def create_llm_service(
         character: キャラクターの設定（settings.character）
         event_publisher: ドメインイベントの発行先
         conversation: 配信で話したこと。ゲームの目標の決定と共有する
-        mid_goals: ゲームの中目標（GameService.mid_goals）。プレイ中の返答は、視聴者の
+        objectives: ゲームの大目標（GameService.objectives）。プレイ中の返答は、視聴者の
             頼みをここに受けることがある。None なら返答は話すだけ
         history_limit: モデルに渡す最近のメッセージの数
         generation_log: Gemini の呼び出しの記録（デバッグ用。create_game_service と共有する）
@@ -132,7 +132,7 @@ def create_llm_service(
         event_publisher=event_publisher,
         conversation=conversation,
         character=character_profile,
-        mid_goals=mid_goals,
+        objectives=objectives,
         history_limit=history_limit,
         readings=readings,
         notes=notes,

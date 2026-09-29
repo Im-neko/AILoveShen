@@ -10,12 +10,12 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     predicates_now,
     site_schema,
 )
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalPredicate,
     GoalSpec,
-    MidGoal,
+    Objective,
     Mission,
     TownSite,
 )
@@ -32,12 +32,12 @@ def _obs(survey=None) -> GameObservation:
 
 
 class TestSurveyed:
-    """surveyed: コードが足す調査の中目標と、それを進める小目標。"""
+    """surveyed: コードが足す調査の大目標と、それを進める小目標。"""
 
-    def test_offered_only_while_a_mid_goal_asks_for_it(self):
-        """調査の中目標がある間だけ、小目標として選べる（足した直後で、ブリッジにまだ
+    def test_offered_only_while_an_objective_asks_for_it(self):
+        """調査の大目標がある間だけ、小目標として選べる（足した直後で、ブリッジにまだ
         調査の計画がなくても）。"""
-        plan = MidGoalPlan(mission=Mission("街"))
+        plan = ObjectivePlan(mission=Mission("街"))
         assert GoalPredicate.SURVEYED not in predicates_now(_obs(), plan)
         survey = plan.add("街の場所を探す", (SURVEYED,), prepares_town=True)
         assert GoalPredicate.SURVEYED in predicates_now(_obs(), plan)
@@ -45,13 +45,13 @@ class TestSurveyed:
         assert GoalPredicate.SURVEYED not in predicates_now(_obs(), plan)
 
     def test_parsed_with_its_count(self):
-        """小目標の surveyed は数を持つ。中目標の条件にもなれる（コードが足す）。"""
+        """小目標の surveyed は数を持つ。大目標の条件にもなれる（コードが足す）。"""
         spec = parse_spec({"predicate": "surveyed", "count": 9})
         assert spec == GoalSpec(GoalPredicate.SURVEYED, count=9)
-        MidGoal("m1", "街の場所を探す", (spec,), prepares_town=True)
+        Objective("m1", "街の場所を探す", (spec,), prepares_town=True)
 
     def test_the_llm_cannot_write_it_as_a_condition(self):
-        """LLM が書く中目標の条件には出さず、書いても断る。"""
+        """LLM が書く大目標の条件には出さず、書いても断る。"""
         schema = goal_schema([GoalPredicate.HAVE], [])
         condition = schema["properties"]["plan_changes"]["items"]["properties"]["conditions"]
         assert "surveyed" not in condition["items"]["properties"]["predicate"]["enum"]
@@ -98,7 +98,7 @@ class TestDigDepth:
         assert plain.dig_depth is None and "dig_depth" not in plain.to_dict()
 
     def test_offered_on_the_small_goal_only(self):
-        """小目標のスキーマにはあり、中目標の条件（世界から判定する）にはない。"""
+        """小目標のスキーマにはあり、大目標の条件（世界から判定する）にはない。"""
         schema = goal_schema([GoalPredicate.HAVE], [])
         assert schema["properties"]["dig_depth"]["maximum"] == 384
         condition = schema["properties"]["plan_changes"]["items"]["properties"]["conditions"]
@@ -111,7 +111,7 @@ class TestDigDepth:
 
 
 def test_placed_takes_any_furniture_for_the_home():
-    """「作業台も部屋に置いたら」を中目標にできる（前は placed(bed, home) だけだった）。"""
+    """「作業台も部屋に置いたら」を大目標にできる（前は placed(bed, home) だけだった）。"""
     from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
     from ailoveshen.domain.value_objects import GoalPredicate
 
@@ -147,7 +147,7 @@ def test_placed_takes_any_item_a_place_and_a_count():
 
 
 def test_leveled_is_a_condition_around_home_or_a_spot():
-    """整地（設計書 41）: leveled(where, distance)。where を省けば家のまわり。中目標の条件。"""
+    """整地（設計書 41）: leveled(where, distance)。where を省けば家のまわり。大目標の条件。"""
     from ailoveshen.domain.value_objects import PLANNABLE_CONDITIONS
     from ailoveshen.presentation.web.goal_board import goal_label
 
@@ -157,7 +157,7 @@ def test_leveled_is_a_condition_around_home_or_a_spot():
     spot = parse_spec({"predicate": "leveled", "where": "10,64,-3", "distance": 5})
     assert spot.where == "10,64,-3"
     assert GoalPredicate.LEVELED in PLANNABLE_CONDITIONS
-    assert GoalPredicate.LEVELED in predicates_now(_obs(), MidGoalPlan(mission=Mission("m")))
+    assert GoalPredicate.LEVELED in predicates_now(_obs(), ObjectivePlan(mission=Mission("m")))
     assert goal_label(spec) == "家のまわり 8m を整地する"
     with pytest.raises(ValueError):
         GoalSpec(GoalPredicate.LEVELED, where="home")

@@ -68,7 +68,7 @@ class BuildNotDesignedError(GoalRejectedError):
 class FacilityNotDesignedError(BuildNotDesignedError):
     """
     施設（facility(name)）の設計ができなかった（答えない・使える設計が出ない・区画が読み込まれて
-    いない）。建物と同じく、しばらくその名前を中目標に足さない。`name` はその施設。
+    いない）。建物と同じく、しばらくその名前を大目標に足さない。`name` はその施設。
     """
 
 

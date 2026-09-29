@@ -8,7 +8,7 @@ import pytest
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.ports.output.self_fact_store import ISelfFactStore, SelfFact
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import CharacterProfile
@@ -113,7 +113,7 @@ async def test_a_reply_shows_what_was_said_and_remembers_what_it_says_now():
         event_publisher=events,
         conversation=Conversation(),
         character=CharacterProfile(),
-        mid_goals=MidGoalKeeper(bridge=AsyncMock(), event_publisher=events, store=AsyncMock()),
+        objectives=ObjectiveKeeper(bridge=AsyncMock(), event_publisher=events, store=AsyncMock()),
         self_facts=facts,
     )
 

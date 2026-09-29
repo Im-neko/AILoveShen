@@ -5,8 +5,8 @@
 目標の達成はブリッジが世界から判定する。
 
 配信者も話す: 目標が変わると実況し、台本（--comments）の視聴者コメントにはプレイしながら
-返事をする。頼みを引き受けた返事は、その頼みを中目標に足す（今進めている中目標の後ろ）。
-話したことは表示する（[say]、[reply]）。ミッションと中目標は設定（minecraft.mission）から
+返事をする。頼みを引き受けた返事は、その頼みを大目標に足す（今進めている大目標の後ろ）。
+話したことは表示する（[say]、[reply]）。ミッションと大目標は設定（minecraft.mission）から
 読み、実行をまたいで引き継ぐ（data/mission.json）。
 
 --control tools を付けると、候補から Jev が選ぶ代わりに、Gemini が道具を呼んで操作し、Jev は
@@ -36,7 +36,7 @@ comments.json: [{"after_seconds": 60, "user": "neko", "message": "ベッド作�
 （after_seconds はプレイ開始からの秒数。kind（request / advice / question / chat ...）を書くと、
 配信の返事の前の仕分け（Jev）の答えの代わりに返答に渡す。書かなければ配信と同じく Jev が
 仕分ける（twitch.response.triage: jev と TypeSafe のキーがあるとき）。返事のあとに、足された
-中目標と考え直しを表示する。
+大目標と考え直しを表示する。
 助言を流さないかの確かめ: examples/comments_advice.json）
 """
 
@@ -57,9 +57,9 @@ from ailoveshen.domain.events import (
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
 )
 from ailoveshen.domain.value_objects import ChatComment, SpeechPriority
 from ailoveshen.factories.game import create_game_service
@@ -115,7 +115,7 @@ async def feed_comments(
                         who = f"{g.suggested_by}の提案"
                     else:
                         who = "自分"
-                    print(f"[mid goal] {g.title} ({who})", flush=True)
+                    print(f"[objective] {g.title} ({who})", flush=True)
             if session.rethink_mark != mark:
                 print(f"[rethink] {session.rethink_reason}", flush=True)
         if speak and reply:
@@ -141,17 +141,17 @@ async def run(
         print(f"[design] {event.name}: {event.concept}", flush=True)
 
     async def on_goal(event: GoalSetEvent) -> None:
-        serves = f" [{event.mid_goal} のため]" if event.mid_goal else " [生存]"
+        serves = f" [{event.objective} のため]" if event.objective else " [生存]"
         print(f"[goal] {event.goal}{serves}: {event.reason}", flush=True)
 
-    async def on_mid_added(event: MidGoalAddedEvent) -> None:
+    async def on_objective_added(event: ObjectiveAddedEvent) -> None:
         who = f" [{event.requested_by} の頼み]" if event.requested_by else ""
         print(f"[mid+] #{event.position} {event.title}{who}: {event.reason}", flush=True)
 
-    async def on_mid_done(event: MidGoalCompletedEvent) -> None:
+    async def on_objective_done(event: ObjectiveCompletedEvent) -> None:
         print(f"[mid✓] {event.title}", flush=True)
 
-    async def on_mid_dropped(event: MidGoalDroppedEvent) -> None:
+    async def on_objective_dropped(event: ObjectiveDroppedEvent) -> None:
         print(f"[mid×] {event.title}: {event.reason}", flush=True)
 
     async def on_completed(event: HouseCompletedEvent) -> None:
@@ -183,9 +183,9 @@ async def run(
     event_bus.subscribe(HouseDesignedEvent, on_designed)
     event_bus.subscribe(GoalSetEvent, on_goal)
     event_bus.subscribe(HouseCompletedEvent, on_completed)
-    event_bus.subscribe(MidGoalAddedEvent, on_mid_added)
-    event_bus.subscribe(MidGoalCompletedEvent, on_mid_done)
-    event_bus.subscribe(MidGoalDroppedEvent, on_mid_dropped)
+    event_bus.subscribe(ObjectiveAddedEvent, on_objective_added)
+    event_bus.subscribe(ObjectiveCompletedEvent, on_objective_done)
+    event_bus.subscribe(ObjectiveDroppedEvent, on_objective_dropped)
 
     gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
     # ローカルの LLM を使うときは、ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）
@@ -217,7 +217,7 @@ async def run(
         character=settings.character,
         event_publisher=event_bus,
         conversation=conversation,
-        mid_goals=game.mid_goals,
+        objectives=game.objectives,
         generation_log=gemini_calls,
         llm=settings.llm,
         text_generator=shared_text,

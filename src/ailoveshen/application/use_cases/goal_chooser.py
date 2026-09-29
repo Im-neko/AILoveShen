@@ -1,9 +1,9 @@
 """
-次の小目標を、Gemini が書いた手順の中から Jev に選ばせる（docs/design/26_steps_and_context.md）。
+次の小目標を、Gemini が書いた中目標の中から Jev に選ばせる（docs/design/26_steps_and_context.md）。
 
-候補は、一番上の中目標の手順のうちまだ済んでいないもの（ブリッジの `/check` で判定）と、今必要な
+候補は、一番上の大目標の中目標のうちまだ済んでいないもの（ブリッジの `/check` で判定）と、今必要な
 身を守る小目標（夜、夕方、空腹）。Jev は 1 回の `Choice` で 1 つ選ぶ。選べないとき（候補がない、
-手順が全部済んだのに中目標が済んでいない、確信度が低い、Jev が失敗した）は理由を返し、呼び出し側が
+中目標が全部済んだのに大目標が済んでいない、確信度が低い、Jev が失敗した）は理由を返し、呼び出し側が
 Gemini に回す。済んだかどうかは Jev に判定させない（ブリッジが世界から判定する）。
 """
 
@@ -35,12 +35,12 @@ ASK_STREAMER = "rethink"  # 失敗の後に Jev が「Gemini に考え直させ�
 
 @dataclass(frozen=True)
 class Option:
-    """Jev に示す候補: 小目標、なぜそれか、何のためか（中目標の id。身を守るものは None）。"""
+    """Jev に示す候補: 小目標、なぜそれか、何のためか（大目標の id。身を守るものは None）。"""
 
     spec: GoalSpec
     reason: str
-    mid_goal_id: Optional[str] = None
-    # 手順が束のとき（docs/design/44）: まだ済んでいない、一緒に追う条件と進め方
+    objective_id: Optional[str] = None
+    # 中目標が束のとき（docs/design/44）: まだ済んでいない、一緒に追う条件と進め方
     together: tuple[GoalSpec, ...] = ()
     approach: str = ""
 
@@ -50,11 +50,11 @@ class Option:
 
 @dataclass(frozen=True)
 class ChosenGoal:
-    """Jev が選んだ次の小目標。`mid_goal_id` は手順なら中目標、身を守るものなら None。"""
+    """Jev が選んだ次の小目標。`objective_id` は中目標なら大目標、身を守るものなら None。"""
 
     spec: GoalSpec
     reason: str
-    mid_goal_id: Optional[str]
+    objective_id: Optional[str]
     confidence: float
     together: tuple[GoalSpec, ...] = ()
     approach: str = ""
@@ -122,7 +122,7 @@ def _hostiles_near(obs: GameObservation, radius: float = 16) -> bool:
 
 
 class GoalChooser:
-    """一番上の中目標の手順と身を守る小目標から、次の小目標を Jev に選ばせる。"""
+    """一番上の大目標の中目標と身を守る小目標から、次の小目標を Jev に選ばせる。"""
 
     def __init__(
         self,
@@ -135,7 +135,7 @@ class GoalChooser:
         """
         Args:
             judge: Jev
-            bridge: 手順が済んだかを判定する（`/check`）
+            bridge: 中目標が済んだかを判定する（`/check`）
             min_confidence: これより低ければ Gemini に回す
             timeout_seconds: Jev の答えを待つ上限
             recorder: 選択の記録（候補、選んだもの、確信度、Gemini に回した理由）
@@ -156,52 +156,52 @@ class GoalChooser:
         """
         次の小目標を選ぶ。選べなければ理由（NotChosen）。
 
-        `avoid` は行き詰まった・進まなかった小目標（docs/design/34 §7）: 同じ種類の手順は選択肢から
+        `avoid` は行き詰まった・進まなかった小目標（docs/design/34 §7）: 同じ種類の中目標は選択肢から
         外し（同じやり方を繰り返すには Gemini の分析と助言が要る）、「Gemini に考え直させる」を足す。
         """
         current = session.plan.current
-        if current is None or not current.plan_steps:
-            return self._not("the top mid goal has no steps")
-        # 一度済みにした手順は選ばない（あとで材料を使って条件が崩れても。docs/design/50 §4）
-        steps = current.open_steps
+        if current is None or not current.jobs:
+            return self._not("the top objective has no jobs")
+        # 一度済みにした中目標は選ばない（あとで材料を使って条件が崩れても。docs/design/50 §4）
+        open_jobs = current.open_jobs
         needed = survival_options(obs)
-        flat = [spec for s in steps for spec in s.specs]
+        flat = [spec for s in open_jobs for spec in s.specs]
         try:
             # 身を守る小目標も、もう済んでいれば出さない（夕方にもう家の中、など）
             statuses = await self._bridge.check(flat + [o.spec for o in needed])
         except AILoveShenError as e:
-            return self._not(f"the steps cannot be judged: {e}")
+            return self._not(f"the jobs cannot be judged: {e}")
         statuses, survival_statuses = statuses[: len(flat)], statuses[len(flat) :]
-        # 手順ごとに、まだ済んでいない条件（束なら、済んだ条件は外して追う）
+        # 中目標ごとに、まだ済んでいない条件（束なら、済んだ条件は外して追う）
         unmet: list[list[GoalSpec]] = []
         i = 0
-        for s in steps:
+        for s in open_jobs:
             judged = statuses[i : i + len(s.specs)]
             unmet.append([sp for sp, st in zip(s.specs, judged) if not st.met])
             i += len(s.specs)
-        finished = [(s.id, True, s.progress) for s, left in zip(steps, unmet) if not left]
+        finished = [(s.id, True, s.progress) for s, left in zip(open_jobs, unmet) if not left]
         if finished:
-            session.plan.judge_steps(current.id, finished)  # 満たした手順は済みのままにする
+            session.plan.judge_jobs(current.id, finished)  # 満たした中目標は済みのままにする
         survival = [o for o, st in zip(needed, survival_statuses) if not st.met]
         options = [
             Option(left[0], s.reason, current.id, tuple(left[1:]), s.approach if left[1:] else "")
-            for s, left in zip(steps, unmet)
+            for s, left in zip(open_jobs, unmet)
             if left
         ] + survival
         if not options:
-            return self._not("all the steps are done but the mid goal is not")
+            return self._not("all the jobs are done but the objective is not")
         if avoid is not None:
             options = [o for o in options if not o.spec.same_kind(avoid)]
             if not options:
-                return self._not(f"no other step than {avoid.describe()} after it failed")
-        state = self._state(session, obs, ended_because, current.plan_steps, steps, unmet)
+                return self._not(f"no other job than {avoid.describe()} after it failed")
+        state = self._state(session, obs, ended_because, current.jobs, open_jobs, unmet)
         if len(options) == 1 and avoid is None:
             return self._chosen(state, options, 0, 1.0)
         labels = [chr(ord("A") + i) for i in range(len(options))]
         criteria = {label: f"{o.describe()}: {o.reason}" for label, o in zip(labels, options)}
         instructions = (
-            "Which small goal should the streamer work on next? Follow the steps in order "
-            "unless another open step is clearly better now (it is nearer, or the inventory "
+            "Which small goal should the streamer work on next? Follow the jobs in order "
+            "unless another open job is clearly better now (it is nearer, or the inventory "
             "already has what it needs). Choose a survival goal when the night, danger or "
             "hunger requires it."
         )
@@ -212,7 +212,7 @@ class GoalChooser:
             )
             instructions = (
                 f"The last small goal {avoid.describe()} did not work out ({ended_because}). "
-                "Should the streamer move on to another open step now, or stop and rethink? "
+                "Should the streamer move on to another open job now, or stop and rethink? "
                 + instructions
             )
         question = FastQuestion(
@@ -246,7 +246,7 @@ class GoalChooser:
     def _chosen(self, state, options: list[Option], index: int, confidence: float) -> ChosenGoal:
         self._record(state, options, chosen=index, confidence=confidence)
         o = options[index]
-        return ChosenGoal(o.spec, o.reason, o.mid_goal_id, confidence, o.together, o.approach)
+        return ChosenGoal(o.spec, o.reason, o.objective_id, confidence, o.together, o.approach)
 
     def _not(self, why: str, state=None, options=()) -> NotChosen:
         if state is not None:
@@ -254,13 +254,13 @@ class GoalChooser:
         return NotChosen(why)
 
     @staticmethod
-    def _state(session, obs, ended_because, plan_steps, steps, unmet) -> dict[str, Any]:
+    def _state(session, obs, ended_because, all_jobs, open_jobs, unmet) -> dict[str, Any]:
         current = session.plan.current
         last = session.goal.describe() if session.goal else None
-        left_of = {s.id: left for s, left in zip(steps, unmet)}
+        left_of = {s.id: left for s, left in zip(open_jobs, unmet)}
         return {
-            "mid_goal": current.title if current else None,
-            "steps": [
+            "objective": current.title if current else None,
+            "jobs": [
                 f"{s.describe()}: "
                 + (
                     "done"
@@ -269,7 +269,7 @@ class GoalChooser:
                     if len(left_of[s.id]) == len(s.specs)
                     else "not yet: " + ", ".join(x.describe() for x in left_of[s.id])
                 )
-                for s in plan_steps
+                for s in all_jobs
             ],
             "last_goal": f"{last} ({ended_because})" if last else None,
             "time": obs.time_phase,

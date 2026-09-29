@@ -7,10 +7,10 @@ import pytest
 pytest.importorskip("google.genai", reason="google-genai not installed")
 pytest.importorskip("typesafe_sdk", reason="typesafe-sdk not installed")
 
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper  # noqa: E402
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper  # noqa: E402
 from ailoveshen.domain.entities import Conversation  # noqa: E402
 from ailoveshen.domain.value_objects import GoalPredicate  # noqa: E402
-from ailoveshen.factories.game import create_game_service, create_mid_goal_plan  # noqa: E402
+from ailoveshen.factories.game import create_game_service, create_objective_plan  # noqa: E402
 from ailoveshen.infrastructure.config import (  # noqa: E402
     CharacterSettings,
     GeminiSettings,
@@ -41,7 +41,7 @@ class TestCreateGameService:
         service = _create()
 
         assert isinstance(service, GameService)
-        assert isinstance(service.mid_goals, MidGoalKeeper)
+        assert isinstance(service.objectives, ObjectiveKeeper)
         await service.close()
 
     def test_missing_gemini_key_raises(self):
@@ -72,12 +72,12 @@ class TestCreateGameService:
             _create(jev_key="")
 
 
-class TestCreateMidGoalPlan:
-    """大目標の設定から作る計画のテスト。"""
+class TestCreateObjectivePlan:
+    """最終目標の設定から作る計画のテスト。"""
 
-    def test_default_mission_and_mid_goals(self):
-        """設定した中目標が、順番どおり、上限つきでリストになる。"""
-        plan = create_mid_goal_plan(MissionSettings(viewer_budget_steps=50))
+    def test_default_mission_and_objectives(self):
+        """設定した大目標が、順番どおり、上限つきでリストになる。"""
+        plan = create_objective_plan(MissionSettings(viewer_budget_steps=50))
 
         assert plan.mission.text == "生き延びながら家を建て、街にしていく"
         assert [g.describe() for g in plan.pending] == [
@@ -89,18 +89,18 @@ class TestCreateMidGoalPlan:
         assert plan.viewer_budget == 50
 
     def test_condition_not_judged_from_the_world_is_rejected(self):
-        """ブリッジが判定できない中目標は、開始時に失敗する。"""
+        """ブリッジが判定できない大目標は、開始時に失敗する。"""
         settings = MissionSettings(
-            mid_goals=[{"title": "探検", "conditions": [{"predicate": "explored", "distance": 30}]}]
+            objectives=[{"title": "探検", "conditions": [{"predicate": "explored", "distance": 30}]}]
         )
         with pytest.raises(ValueError, match="explored cannot be a condition"):
-            create_mid_goal_plan(settings)
+            create_objective_plan(settings)
 
     def test_conditions_are_parsed(self):
         """placed は拠点に置くことを表す。"""
-        plan = create_mid_goal_plan(
+        plan = create_objective_plan(
             MissionSettings(
-                mid_goals=[
+                objectives=[
                     {"title": "寝る", "conditions": [{"predicate": "placed", "item": "bed"}]}
                 ]
             )

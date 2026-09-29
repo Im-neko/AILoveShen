@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.ports.output.text_generator import ToolChoice
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase
 from ailoveshen.application.use_cases.skills import (
@@ -244,7 +244,7 @@ class TestSkillStep:
             action_selector=AsyncMock(),
             event_publisher=self.events,
             conversation=Conversation(),
-            mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=self.events, store=store),
+            objectives=ObjectiveKeeper(bridge=bridge, event_publisher=self.events, store=store),
             town=AsyncMock(),
             notes=NoteKeeper(note_store),
             control="tools",

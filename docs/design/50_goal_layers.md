@@ -1,6 +1,6 @@
 # 目標の 4 層（最終目標・大目標・中目標・小目標）
 
-作成: 2026-09-29。`13_goal_hierarchy.md`（目標の 3 層）と `26_steps_and_context.md`（手順 `plan_steps`）を置き換える。状態: 段階 2（仕組み）は実装済み（§11）。段階 3（改名と語彙）は未着手。
+作成: 2026-09-29。`13_goal_hierarchy.md`（目標の 3 層）と `26_steps_and_context.md`（手順 `plan_steps`）を置き換える。状態: 段階 2（仕組み）は実装済み（§11）、段階 3（改名と語彙）も実装済み（§12）。
 
 ## 1. 目的
 
@@ -83,7 +83,7 @@
 
 1. この設計書（コードは触らない）
 2. **仕組み**（実装済み。§11）（今の型名のまま）: `PlannedStep` に id・状態・出どころ、ラッチ、書き直しのマージ、進み具合と停滞の単位、上限。`kind` の検査。頼みの層。保存の形。テスト
-3. **改名と語彙**（1 回で）: `MidGoal` → `Objective`、`PlannedStep` → `Job`、`MidGoalPlan` → `ObjectivePlan`、`MidGoalKeeper` → `ObjectiveKeeper`、イベント、`mid_goal_id` → `objective_id`、プロンプトと日本語の表示、ブリッジのエラー文（Gemini が読む）、`abilities.yaml`、設計書 13・26・20 と CLAUDE.md。`MidGoal.steps`（予算の数）は `plan_steps` と別物なので、名前がぶつからないように `budget_used` にする
+3. **改名と語彙**（実装済み。§12）（1 回で）: `MidGoal` → `Objective`、`PlannedStep` → `Job`、`MidGoalPlan` → `ObjectivePlan`、`MidGoalKeeper` → `ObjectiveKeeper`、イベント、`mid_goal_id` → `objective_id`、プロンプトと日本語の表示、ブリッジのエラー文（Gemini が読む）、`abilities.yaml`、設計書 13・26・20 と CLAUDE.md。`MidGoal.steps`（予算の数）は `plan_steps` と別物なので、名前がぶつからないように `budget_used` にする
 
 ## 9. 確かめること
 
@@ -99,7 +99,7 @@
 
 ## 11. 段階 2 の実装（2026-09-29）
 
-型名は今のまま（`MidGoal`、`PlannedStep`）。改名は段階 3。
+型名は今のまま（`MidGoal`、`PlannedStep`）。改名は段階 3。この節は段階 2 の時点の名前と語彙で書いてある（今の名前は §12 の対応表）。
 
 | 層 | 実装 |
 |---|---|
@@ -116,3 +116,26 @@
 - 返答が手順を足したとき、`GenerateResponseResponse.mid_goal` は今の大目標（手順ではない）
 - 保存の版は `format` の 1 つ。手順の `id` の欠けなど、細かい形の食い違いも `KeyError` などで読めない形になり、同じ道で始め直す
 - 台本のコメント（§9 の 4 つ）と実機は未確認
+
+## 12. 段階 3 の実装（2026-09-29）
+
+意味は変えずに、名前と語彙を 1 回で入れ替えた。旧「大目標」は最終目標、旧「中目標」は大目標、旧「手順」は中目標。
+
+| 種類 | 旧 → 新 |
+|---|---|
+| 型 | `MidGoal` → `Objective`、`MidGoalState` → `ObjectiveState`、`MidGoalPlan` → `ObjectivePlan`、`MidGoalKeeper` → `ObjectiveKeeper`、`MidGoalProposal` → `ObjectiveProposal`、`MidGoal{Added,Completed,Dropped}Event` → `Objective*Event`、`PlannedStep` → `Job`。`Mission`、`minecraft.mission` は変えない |
+| フィールド・メソッド | `mid_goal_id` → `objective_id`、`GoalSetEvent.mid_goal` → `objective`、`Activity.mid_goals` → `objectives`、`MidGoal.plan_steps` → `Objective.jobs`、`GoalDecision.steps` → `jobs`、予算の使用数 `MidGoal.steps` / `PlannedStep.steps` → `budget_used`、`set_steps` / `add_step` / `judge_steps` / `drop_step` / `viewer_step` / `take_dropped_steps` → `set_jobs` / `add_job` / `judge_jobs` / `drop_job` / `viewer_job` / `take_dropped_jobs`、`open_steps` / `done_steps` → `open_jobs` / `done_jobs`、`next_step_id` → `next_job_id`、`MAX_OPEN_STEPS` / `MAX_STEPS` → `MAX_OPEN_JOBS` / `MAX_JOBS` |
+| 内部 | `_check_step_order` → `_check_job_order`、`_step_status` → `_job_status`（プロンプトの引数 `step_status` → `job_status`）、`_MidWatch` → `_ObjectiveWatch`、`MID_STALLED` → `OBJECTIVE_STALLED`（文言 `has made no progress` は同じ）、`_steps_with_the_bundle` → `_jobs_with_the_bundle`、`use_cases/mid_goals.py` → `use_cases/objectives.py` |
+| 設定 | `minecraft.mission.mid_goals` / `max_mid_goals` / `max_viewer_mid_goals` → `objectives` / `max_objectives` / `max_viewer_objectives`、`minecraft.agent.mid_goal_stall_steps` → `objective_stall_steps`（行動の数なので `steps` のまま） |
+| Gemini の決定 | スキーマの `steps` → `jobs`（`plan_changes` は大目標リストの編集なので名前のまま）、プロンプトの `$steps` → `$jobs` |
+| 保存 | `data/mission.json` は `format: 3`。キーは `plan_steps` → `jobs`、`steps` → `budget_used`（大目標と中目標）、`next_step_id` → `next_job_id`。旧形式は読まず、最初の大目標で始め直す（元は `.unreadable` に写す） |
+| 盤面 | `/api/goals` の `mid_goals` → `objectives`、`steps` / `steps_done` / `steps_total` → `jobs` / `jobs_done` / `jobs_total`。オーバーレイの要素 `mid` → `objective`、クラス `.step` → `.job`（街の段階の `.town .step` は別物で残す） |
+| ログの印 | `[mid+]` / `[mid✓]` / `[mid×]` → `[objective+]` / `[objective✓]` / `[objective×]` |
+| テスト | `test_job_steps.py` → `test_jobs.py`、`test_goal_board_steps.py` → `test_goal_board_jobs.py`、`test_json_mission_store_steps.py` → `test_json_mission_store_jobs.py`（中目標の意味の `step(s)` を持つ名前も `job(s)` に） |
+| 表示・プロンプト | 日本語の「大目標」→「最終目標」、「中目標」→「大目標」、「手順」→「中目標」。目標の説明は 4 層（最終目標・大目標・中目標・小目標）。活動の書式は `- 最終目標:` / `- 大目標（上から順に取り組む）:` / ` 中目標: 済:… → 今:… → 待:…`。ブリッジの Gemini が読むエラー文も "mid goal" → "objective" |
+
+意図して変えなかったもの:
+- 「手順」がやり方の意味のもの（技の手順、やり方の帳の `how`、ソルバーの細かい手順、`recent_tools` の手順の手本）
+- 小目標の「ステップ」（行動 1 回）を指す `step` / `steps`（`step_counted`、`objective_stall_steps`、`viewer_budget_steps`、`max_steps_per_goal`、`StepPicker` など）
+- 設計書 13・26・20 ほか、書いた時点の語彙で書いた設計書の本文（冒頭に対応の注記を足した）と、WORKLOG の過去の記録
+

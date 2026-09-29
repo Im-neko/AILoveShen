@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.ports.output.text_generator import ToolChoice
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase
 from ailoveshen.application.use_cases.step_picker import (
@@ -146,7 +146,7 @@ class TestJevFirstStep:
             action_selector=selector,
             event_publisher=events,
             conversation=Conversation(),
-            mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+            objectives=ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store),
             town=AsyncMock(),
             notes=NoteKeeper(notes),
             control="tools",
@@ -217,7 +217,7 @@ async def test_a_stuck_record_ends_the_goal_for_gemini(monkeypatch):
         action_selector=selector,
         event_publisher=events,
         conversation=Conversation(),
-        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store),
         town=AsyncMock(),
         notes=NoteKeeper(notes),
         stuck_check=StuckCheck(judge, every_steps=2),

@@ -111,7 +111,7 @@ class AvatarDirector:
         今の出来事（moment）と発言（line、なければ空）への反応を選ぶ。
 
         Args:
-            moment: 何が起きているか（例: "speaking"、"a mid goal was completed: 家を建てる"）
+            moment: 何が起きているか（例: "speaking"、"an objective was completed: 家を建てる"）
             line: 配信者がこれから話すこと
             fallback: Jev が答えられないときに使う、規則の答え
         """

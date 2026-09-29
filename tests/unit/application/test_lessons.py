@@ -99,7 +99,7 @@ def test_the_score_counts_what_matters_and_explicit_conditions_must_hold():
     assert score(snapshot, {"goal": "have", "item": "oak_log", "time": "day"}) == 5  # 昼・外は数えない
     assert score(snapshot, {"goal": "have", "item": "birch_log"}) == 3  # 同じ種類の物
     assert score(snapshot, {"goal": "built"}) == 0
-    # これからやる手順で当てはまる
+    # これからやる中目標で当てはまる
     assert score(snapshot, {"goal": "built"}, [{"goal": "have", "item": "oak_log"}]) == 5
     night = Lesson("L2", "夜は家で寝る", situation=(("time", "night"),), explicit=True)
     assert score(night, {"time": "day", "goal": "have"}) is None  # 昼には思い出さない

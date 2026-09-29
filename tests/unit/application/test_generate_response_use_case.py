@@ -6,9 +6,9 @@ import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
-from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
-from ailoveshen.domain.events import ChatResponseGeneratedEvent, MidGoalAddedEvent
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
+from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
+from ailoveshen.domain.events import ChatResponseGeneratedEvent, ObjectiveAddedEvent
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     Candidate,
@@ -40,12 +40,12 @@ BED_REQUEST = {
 
 def _playing(time_phase: str = "day") -> PlaySession:
     """家があり、剣（m1）、次に食料（m2）に取り組んでいるセッション。"""
-    plan = MidGoalPlan(mission=Mission("生き延びながら街にしていく"))
+    plan = ObjectivePlan(mission=Mission("生き延びながら街にしていく"))
     plan.add("剣を持つ", (SWORD,))
     plan.add("食料を蓄える", (GoalSpec(GoalPredicate.HAVE, item="food", count=8),))
     session = PlaySession(blueprint=HouseBlueprint("小屋", "c", 5, 5, 3, Side.NORTH, 2), plan=plan)
     session.set_goal(
-        Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "剣の材料", mid_goal_id="m1"),
+        Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), "剣の材料", objective_id="m1"),
         "day",
     )
     session.observe(
@@ -122,13 +122,13 @@ def use_case(
         event_publisher=mock_event_publisher,
         conversation=conversation,
         character=CharacterProfile(),
-        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
     )
 
 
-def _added(events) -> list[MidGoalAddedEvent]:
+def _added(events) -> list[ObjectiveAddedEvent]:
     return [
-        c.args[0] for c in events.publish.call_args_list if isinstance(c.args[0], MidGoalAddedEvent)
+        c.args[0] for c in events.publish.call_args_list if isinstance(c.args[0], ObjectiveAddedEvent)
     ]
 
 
@@ -217,7 +217,7 @@ class TestGenerateResponseUseCase:
 
 
 class TestReplyWhilePlaying:
-    """プレイ中の返答は「今していること」を見て、頼みを中目標として受けられる。"""
+    """プレイ中の返答は「今していること」を見て、頼みを大目標として受けられる。"""
 
     def _request(self, session, message="ベッド作って！", user_name="neko"):
         return GenerateResponseRequest(user_name=user_name, message=message, session=session)
@@ -236,23 +236,23 @@ class TestReplyWhilePlaying:
         response = await use_case.execute(self._request(session, "今なにしてるの？"))
 
         assert response.text == "剣のために木を集めてるよ"
-        assert response.mid_goal is None
+        assert response.objective is None
         kwargs = mock_prompt_builder.build_chat_response_prompt.call_args.kwargs
         assert kwargs["context"].activity.goal.spec.describe() == "have(log, 3)"
         assert kwargs["takes_requests"] is True
         assert len(session.plan.pending) == 2
 
     @pytest.mark.asyncio
-    async def test_accepted_request_joins_the_mid_goals_behind_the_current(
+    async def test_accepted_request_joins_the_objectives_behind_the_current(
         self, use_case, mock_text_generator, mock_event_publisher, store
     ):
-        """受けた頼みは（今の中目標の後ろに）中目標になり、小目標は続く。"""
+        """受けた頼みは（今の大目標の後ろに）大目標になり、小目標は続く。"""
         mock_text_generator.generate_json.return_value = BED_REQUEST
         session = _playing()
 
         response = await use_case.execute(self._request(session))
 
-        assert response.mid_goal.conditions == (BED,)
+        assert response.objective.conditions == (BED,)
         assert [(g.title, g.requested_by) for g in session.plan.pending] == [
             ("剣を持つ", None),
             ("ベッドで寝る", "neko"),
@@ -283,7 +283,7 @@ class TestReplyWhilePlaying:
         response = await use_case.execute(self._request(session, "チェスト作ったら？"))
 
         assert session.plan.current.title == "チェストを作る"
-        assert response.mid_goal.requested_by == "neko"
+        assert response.objective.requested_by == "neko"
         assert "now" in session.rethink_reason and "チェストを作る" in session.rethink_reason
 
     @pytest.mark.asyncio
@@ -301,7 +301,7 @@ class TestReplyWhilePlaying:
 
     @pytest.mark.asyncio
     async def test_request_never_cuts_in(self, use_case, mock_text_generator):
-        """先にしてと頼まれても、今の中目標の後ろに入る。"""
+        """先にしてと頼まれても、今の大目標の後ろに入る。"""
         mock_text_generator.generate_json.return_value = {**BED_REQUEST, "position": 1}
         session = _playing()
 
@@ -367,10 +367,10 @@ class TestReplyWhilePlaying:
         assert len(session.plan.pending) == 2
 
     @pytest.mark.asyncio
-    async def test_without_the_mid_goals_replies_only_talk(
+    async def test_without_the_objectives_replies_only_talk(
         self, mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation
     ):
-        """中目標を渡されないユースケースは、テキストだけで返答する。"""
+        """大目標を渡されないユースケースは、テキストだけで返答する。"""
         use_case = GenerateResponseUseCase(
             text_generator=mock_text_generator,
             prompt_builder=mock_prompt_builder,
@@ -405,7 +405,7 @@ class TestRethinkFromChat:
             event_publisher=mock_event_publisher,
             conversation=conversation,
             character=CharacterProfile(),
-            mid_goals=MidGoalKeeper(
+            objectives=ObjectiveKeeper(
                 bridge=bridge, event_publisher=mock_event_publisher, store=store
             ),
             clock=lambda: now[0],
@@ -470,7 +470,7 @@ class TestRethinkFromChat:
             event_publisher=mock_event_publisher,
             conversation=conversation,
             character=CharacterProfile(),
-            mid_goals=MidGoalKeeper(
+            objectives=ObjectiveKeeper(
                 bridge=bridge, event_publisher=mock_event_publisher, store=store
             ),
             clock=lambda: now[0],
@@ -505,13 +505,13 @@ class TestRethinkFromChat:
 
 
 class TestWithdraw:
-    """頼んだ本人の「もういいよ」で、その人の中目標をやめる。"""
+    """頼んだ本人の「もういいよ」で、その人の大目標をやめる。"""
 
     @pytest.mark.asyncio
-    async def test_the_requester_withdraws_their_own_mid_goal(
+    async def test_the_requester_withdraws_their_own_objective(
         self, use_case, mock_text_generator, mock_event_publisher
     ):
-        from ailoveshen.domain.events import MidGoalDroppedEvent
+        from ailoveshen.domain.events import ObjectiveDroppedEvent
 
         session = _playing()
         mock_text_generator.generate_json.return_value = BED_REQUEST
@@ -537,7 +537,7 @@ class TestWithdraw:
         dropped = [
             c.args[0]
             for c in mock_event_publisher.publish.call_args_list
-            if isinstance(c.args[0], MidGoalDroppedEvent)
+            if isinstance(c.args[0], ObjectiveDroppedEvent)
         ]
         assert dropped[-1].requested_by == "neko"
         assert "withdrew" in dropped[-1].reason
@@ -554,7 +554,7 @@ async def test_advice_the_streamer_agrees_with_becomes_a_lesson(
         event_publisher=mock_event_publisher,
         conversation=conversation,
         character=CharacterProfile(),
-        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
         notes=notes,
     )
     mock_text_generator.generate_json.return_value = {
@@ -582,7 +582,7 @@ async def test_with_a_lesson_book_the_advice_is_kept_with_when_it_applies(
         event_publisher=mock_event_publisher,
         conversation=conversation,
         character=CharacterProfile(),
-        mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
         notes=notes,
         lessons=lessons,
     )
@@ -620,14 +620,14 @@ class TestEmptyPromise:
             event_publisher=events,
             conversation=conversation,
             character=CharacterProfile(),
-            mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+            objectives=ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store),
             lessons=lessons,
             promise_check=check,
         )
         return use_case, check, lessons
 
     @pytest.mark.asyncio
-    async def test_a_promise_becomes_a_mid_goal_done_now(
+    async def test_a_promise_becomes_an_objective_done_now(
         self,
         mock_text_generator,
         mock_prompt_builder,
@@ -637,7 +637,7 @@ class TestEmptyPromise:
         store,
     ):
         """実例（2026-09-27 12:17）: 「目の前の牛さんからお肉を分けてもらうね」は、生存の小目標で
-        していても中目標にし、今やるなら今の小目標を区切る。返答はそのまま話す。"""
+        していても大目標にし、今やるなら今の小目標を区切る。返答はそのまま話す。"""
         use_case, check, lessons = self._use_case(
             mock_text_generator,
             mock_prompt_builder,
@@ -667,7 +667,7 @@ class TestEmptyPromise:
         )
 
         assert response.text == "今はまず目の前の牛さんからお肉を分けてもらうね！"
-        assert response.mid_goal is not None and response.mid_goal.title == "牛からお肉をもらう"
+        assert response.objective is not None and response.objective.title == "牛からお肉をもらう"
         assert session.plan.current.title == "牛からお肉をもらう"
         assert session.plan.current.requested_by == "neko"
         assert 'you told neko you would do "牛からお肉をもらう" now' in session.rethink_reason
@@ -681,7 +681,7 @@ class TestEmptyPromise:
         assert lessons.learn.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_a_promise_for_later_goes_behind_the_current_mid_goal(
+    async def test_a_promise_for_later_goes_behind_the_current_objective(
         self,
         mock_text_generator,
         mock_prompt_builder,
@@ -719,14 +719,14 @@ class TestEmptyPromise:
             GenerateResponseRequest(user_name="neko", message="牛増やそう", session=session)
         )
 
-        assert response.mid_goal is not None and response.mid_goal.title == "牛を増やす"
+        assert response.objective is not None and response.objective.title == "牛を増やす"
         assert [g.title for g in session.plan.pending][:2] == ["剣を持つ", "牛を増やす"]
         assert session.rethink_reason == ""
         _, schema = mock_text_generator.generate_json.await_args_list[1].args
         assert "now" not in schema["properties"]["decision"]["enum"]
 
     @pytest.mark.asyncio
-    async def test_a_promise_a_mid_goal_already_keeps_is_spoken_as_it_is(
+    async def test_a_promise_an_objective_already_keeps_is_spoken_as_it_is(
         self,
         mock_text_generator,
         mock_prompt_builder,
@@ -755,7 +755,7 @@ class TestEmptyPromise:
         )
 
         assert response.text == "剣を作るために木を切ってくるね！"
-        assert response.mid_goal is None
+        assert response.objective is None
         assert len(session.plan.pending) == 2 and session.rethink_reason == ""
 
     @pytest.mark.asyncio
@@ -828,7 +828,7 @@ class TestEmptyPromise:
         )
 
         assert response.text == "今作業台を作って資材保管庫を準備してるよ！"
-        assert response.mid_goal is None and len(session.plan.pending) == 2
+        assert response.objective is None and len(session.plan.pending) == 2
         assert mock_text_generator.generate_json.await_count == 2
 
     @pytest.mark.asyncio
@@ -866,7 +866,7 @@ class TestEmptyPromise:
         lessons.learn.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_a_mid_goal_the_plan_refuses_is_decided_again(
+    async def test_an_objective_the_plan_refuses_is_decided_again(
         self,
         mock_text_generator,
         mock_prompt_builder,
@@ -875,7 +875,7 @@ class TestEmptyPromise:
         bridge,
         store,
     ):
-        """中目標に入らない守り方（条件の形が違う）は、理由をつけてもう一度決めさせる。"""
+        """大目標に入らない守り方（条件の形が違う）は、理由をつけてもう一度決めさせる。"""
         use_case, _, _ = self._use_case(
             mock_text_generator,
             mock_prompt_builder,
@@ -900,7 +900,7 @@ class TestEmptyPromise:
             GenerateResponseRequest(user_name="neko", message="暗いね", session=_playing())
         )
 
-        assert response.mid_goal is not None and response.mid_goal.title == "明るく"
+        assert response.objective is not None and response.objective.title == "明るく"
         error = mock_prompt_builder.build_promise_prompt.call_args.kwargs["previous_error"]
         assert "needs conditions" in error
 
@@ -940,12 +940,12 @@ class TestEmptyPromise:
         await use_case.execute(self._request(session, "牛いるよ"))
         # 次の切れ目で小目標を決め直した（考え直しは使われた）
         session.set_goal(
-            Goal(SWORD, "剣", mid_goal_id="m1"), "day", rethinks_seen=session.rethink_mark
+            Goal(SWORD, "剣", objective_id="m1"), "day", rethinks_seen=session.rethink_mark
         )
 
         response = await use_case.execute(self._request(session, "羊もいるよ", user_name="mame"))
 
-        assert response.mid_goal is not None and response.mid_goal.title == "羊"
+        assert response.objective is not None and response.objective.title == "羊"
         assert session.rethink_reason == ""
         assert session.plan.current.title == "牛"
 
@@ -1079,26 +1079,26 @@ class TestSuggestionsAreNotBrushedOff:
         )
 
     @pytest.mark.asyncio
-    async def test_advice_becomes_her_own_mid_goal_beyond_the_viewer_limit(
+    async def test_advice_becomes_her_own_objective_beyond_the_viewer_limit(
         self, use_case, mock_text_generator
     ):
-        """採った助言は配信者の中目標（提案者つき）。同じ人が頼みを持っていても入る。"""
+        """採った助言は配信者の大目標（提案者つき）。同じ人が頼みを持っていても入る。"""
         mock_text_generator.generate_json.side_effect = [BED_REQUEST, self.FARM]
         session = _playing()
         await use_case.execute(self._request(session, "ベッド作って！", "request"))
 
         response = await use_case.execute(self._request(session, "畑広げない？", "advice"))
 
-        assert response.mid_goal is not None
-        assert response.mid_goal.suggested_by == "neko"
-        assert response.mid_goal.requested_by is None
+        assert response.objective is not None
+        assert response.objective.suggested_by == "neko"
+        assert response.objective.requested_by is None
         assert "畑を広げる" in [g.title for g in session.plan.pending]
 
     @pytest.mark.asyncio
     async def test_the_reply_may_tell_a_suggestion_the_triage_took_for_a_request(
         self, use_case, mock_text_generator
     ):
-        """「畑広げない？」を Jev は頼みと仕分けた（2026-09-28）: 返答の suggestion で自分の中目標に。"""
+        """「畑広げない？」を Jev は頼みと仕分けた（2026-09-28）: 返答の suggestion で自分の大目標に。"""
         mock_text_generator.generate_json.side_effect = [
             BED_REQUEST,
             {**self.FARM, "suggestion": True},
@@ -1108,22 +1108,22 @@ class TestSuggestionsAreNotBrushedOff:
 
         response = await use_case.execute(self._request(session, "畑広げない？", "request"))
 
-        assert response.mid_goal is not None
-        assert response.mid_goal.suggested_by == "neko"
-        assert response.mid_goal.requested_by is None
+        assert response.objective is not None
+        assert response.objective.suggested_by == "neko"
+        assert response.objective.requested_by is None
 
     @pytest.mark.asyncio
     async def test_the_same_conditions_are_not_added_twice(self, use_case, mock_text_generator):
-        """同じ整地が 2 つ並んだ（2026-09-28）: 同じ完了条件の中目標があれば、それを返す。"""
+        """同じ整地が 2 つ並んだ（2026-09-28）: 同じ完了条件の大目標があれば、それを返す。"""
         mock_text_generator.generate_json.side_effect = [self.FARM, {**self.FARM, "when": "now"}]
         session = _playing()
         first = await use_case.execute(self._request(session, "畑広げない？", "advice"))
         second = await use_case.execute(self._request(session, "畑を広げようよ", "advice", "inu"))
 
-        assert second.mid_goal is not None and first.mid_goal is not None
-        assert second.mid_goal.id == first.mid_goal.id
+        assert second.objective is not None and first.objective is not None
+        assert second.objective.id == first.objective.id
         assert [g.title for g in session.plan.pending].count("畑を広げる") == 1
-        assert session.plan.current.id == first.mid_goal.id  # 今やる: 先頭に
+        assert session.plan.current.id == first.objective.id  # 今やる: 先頭に
         assert session.rethink_reason
 
     @pytest.mark.asyncio
@@ -1140,7 +1140,7 @@ class TestSuggestionsAreNotBrushedOff:
 
         response = await use_case.execute(self._request(session, "家の前の穴を埋めて", "advice"))
 
-        assert session.plan.current.id == response.mid_goal.id
+        assert session.plan.current.id == response.objective.id
         assert session.rethink_reason
         errors = [
             c.kwargs["previous_error"]
@@ -1156,7 +1156,7 @@ class TestSuggestionsAreNotBrushedOff:
 
         response = await use_case.execute(self._request(session, "畑広げない？", "advice"))
 
-        assert response.mid_goal is not None
+        assert response.objective is not None
         assert session.plan.current.id == "m1"
         assert mock_text_generator.generate_json.await_count == 2
 
@@ -1171,7 +1171,7 @@ class TestSuggestionsAreNotBrushedOff:
 
         response = await use_case.execute(self._request(session, "畑拡張は？", "advice"))
 
-        assert response.mid_goal is not None and response.mid_goal.title == "畑を広げる"
+        assert response.objective is not None and response.objective.title == "畑を広げる"
         errors = [
             c.kwargs["previous_error"]
             for c in mock_prompt_builder.build_chat_response_prompt.call_args_list

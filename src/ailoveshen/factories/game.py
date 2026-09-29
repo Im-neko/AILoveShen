@@ -14,7 +14,7 @@ from ailoveshen.application.use_cases.stuck_check import StuckCheck
 from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
@@ -23,7 +23,7 @@ from ailoveshen.application.use_cases.skills import SkillWriter
 from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.application.use_cases.vision import ScreenReviewer, VisionPolicy
 from ailoveshen.application.use_cases.watcher import ToolWatcher, WatchPolicy
-from ailoveshen.domain.entities import Conversation, MidGoalPlan
+from ailoveshen.domain.entities import Conversation, ObjectivePlan
 from ailoveshen.domain.value_objects import Mission
 from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.factories.text import create_text_generator
@@ -53,20 +53,20 @@ from ailoveshen.infrastructure.config import (
 from ailoveshen.presentation.services.game_service import GameService
 
 
-def create_mid_goal_plan(settings: MissionSettings) -> MidGoalPlan:
+def create_objective_plan(settings: MissionSettings) -> ObjectivePlan:
     """
-    設定から、最初の中目標と上限を持つ大目標を作る。
+    設定から、最初の大目標と上限を持つ最終目標を作る。
 
     Raises:
-        ValueError: 設定の中目標か上限が不正なとき
+        ValueError: 設定の大目標か上限が不正なとき
     """
-    plan = MidGoalPlan(
+    plan = ObjectivePlan(
         mission=Mission(text=settings.text),
-        max_goals=settings.max_mid_goals,
-        max_viewer_goals=settings.max_viewer_mid_goals,
+        max_goals=settings.max_objectives,
+        max_viewer_goals=settings.max_viewer_objectives,
         viewer_budget=settings.viewer_budget_steps,
     )
-    for goal in settings.mid_goals:
+    for goal in settings.objectives:
         plan.add(
             title=goal["title"],
             conditions=tuple(parse_spec(c) for c in goal["conditions"]),
@@ -92,7 +92,7 @@ def create_game_service(
 
     Gemini（main の枠）が家を設計して目標を決め、Mineflayer のブリッジ
     （サイドカー）が目標を判定して候補を具体化し、Jev が候補を 1つずつ選ぶ。
-    大目標とその中目標は settings.minecraft.mission から取り、再起動をまたいで
+    最終目標とその大目標は settings.minecraft.mission から取り、再起動をまたいで
     引き継ぐ（store_path の JSON）。
 
     Args:
@@ -174,7 +174,7 @@ def create_game_service(
         fast_judge = JevFastJudge(
             api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
         )
-    # 小目標は Gemini が書いた手順から Jev が選ぶ（設計書 26）
+    # 小目標は Gemini が書いた中目標から Jev が選ぶ（設計書 26）
     chooser = None
     if minecraft.small_goals == "jev" and fast_judge is not None:
         chooser = GoalChooser(
@@ -293,9 +293,9 @@ def create_game_service(
         if minecraft.control == "tools"
         else None
     )
-    # 中目標のプラン: 始めるときに保存から戻す。施設の設計が理想図を読み書きするので同じものを渡す
-    plan = create_mid_goal_plan(minecraft.mission)
-    mid_goals = MidGoalKeeper(
+    # 大目標のプラン: 始めるときに保存から戻す。施設の設計が理想図を読み書きするので同じものを渡す
+    plan = create_objective_plan(minecraft.mission)
+    objectives = ObjectiveKeeper(
         bridge=bridge,
         event_publisher=event_publisher,
         store=store,
@@ -319,7 +319,7 @@ def create_game_service(
         event_publisher=event_publisher,
         character=profile,
         store=store,
-        mid_goals=mid_goals,
+        objectives=objectives,
         designer=designer,
     )
 
@@ -342,7 +342,7 @@ def create_game_service(
         action_selector=action_selector,
         event_publisher=event_publisher,
         conversation=conversation,
-        mid_goals=mid_goals,
+        objectives=objectives,
         town=town,
         notes=notes,
         control=minecraft.control,
@@ -350,7 +350,7 @@ def create_game_service(
         screen=screen,
         chooser=chooser,
         replan_minutes=minecraft.replan_minutes,
-        mid_goal_stall_steps=minecraft.mid_goal_stall_steps,
+        objective_stall_steps=minecraft.objective_stall_steps,
         step_picker=step_picker,
         failure_routing=minecraft.failure_routing,
         stuck_check=stuck_check,
@@ -374,7 +374,7 @@ def create_game_service(
         bridge=bridge,
         text_generator=text_generator,
         action_selector=action_selector,
-        mid_goals=mid_goals,
+        objectives=objectives,
         fast_judge=fast_judge,
         danger_watcher=danger_watcher,
         screen_capture=capture,

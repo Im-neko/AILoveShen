@@ -20,8 +20,8 @@ from ailoveshen.domain.value_objects import (
     Lesson,
     MessageRole,
     JobState,
-    MidGoal,
-    MidGoalState,
+    Objective,
+    ObjectiveState,
     Note,
     NoteKind,
     ScreenNote,
@@ -56,9 +56,9 @@ ABILITIES = """\
 - 建物を自分で設計して建てる: 家の増築（東西南北のどれかに部屋を足して、壁に入口を開ける）、
   家の近くの倉庫・塔・小屋・塀、大きな建物（城、大広間）など。材料は板材・原木・丸石・土。
   1 つの建物は 3000 ブロック・1 辺 48・高さ 16 まで（視聴者の頼みは 600 ブロックまで）
-  （中目標の条件に built(新しい名前) を書くと、そのあとで設計する）
+  （大目標の条件に built(新しい名前) を書くと、そのあとで設計する）
 - ほかの条件で書けない頼み（物の並び、動物をどこかに集める、特定の形）も、完了の判定を自分で
-  書いて中目標にできる（custom(name)。判定は世界を読む。進め方は道具を組み合わせて自分で考える）
+  書いて大目標にできる（custom(name)。判定は世界を読む。進め方は道具を組み合わせて自分で考える）
 - 家のまわりに苗木を植える（葉を壊して苗木を集める）、畑を作る（クワで耕し、草から取った種や
   にんじん・じゃがいもを植え、育ったら収穫してまたまく）
 - ボートで水の上を渡る: 遠くへ行くとき途中に長い水があれば、ボートを持っていれば自分で乗って渡り、
@@ -73,7 +73,7 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "built: 設計図の家を完成させる（材料集めとクラフトも含めて進むが、小目標では材料を"
         "先に have で集め、built は置くだけの仕上げに使う）。"
         "built(name): 自分で設計した建物 name を完成させる（増築、倉庫、塔など。"
-        "新しい name を中目標の条件に書くと、足すときに設計する）"
+        "新しい name を大目標の条件に書くと、足すときに設計する）"
     ),
     GoalPredicate.HAVE: (
         "have(item, count): アイテムを count 個持つ。item はアイテム名かグループ"
@@ -92,7 +92,7 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     ),
     GoalPredicate.CUSTOM: (
         "custom(name): ほかの条件で書けない、世界に残る結果（花を家の前に並べる、羊を柵に 3 匹）。"
-        "新しい name を書くと、中目標の題名と理由から判定を書く。ほかの条件で書けるならそちらを"
+        "新しい name を書くと、大目標の題名と理由から判定を書く。ほかの条件で書けるならそちらを"
         "使う。進め方は道具で選ぶ（提案は出ない）。例: custom(sheep_in_pen_3)"
     ),
     GoalPredicate.LIT: (
@@ -126,7 +126,7 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.FACILITY: (
         "facility(name): 施設（畑、植林場、採掘場）を設計どおりに作る（畑は全部耕してまく、植林場は全部植える、"
         "採掘場は底までのらせん階段と坑道を全部掘る）。"
-        "新しく耕す・植えるのは施設のマスだけなので、畑や植林場を作る・増やすときは先にこれを中目標の"
+        "新しく耕す・植えるのは施設のマスだけなので、畑や植林場を作る・増やすときは先にこれを大目標の"
         "条件にする（新しい name を書くと、街の理想図の区画に配置を設計してから作る。理想図に予定の施設が"
         "あればその名前で）。できた施設は広げられない: 増やすときは別の名前（例: wheat_farm_2）。"
         "例: facility(wheat_farm)"
@@ -163,7 +163,7 @@ def format_predicates(predicates: list[GoalPredicate]) -> str:
 
 
 def format_conditions() -> str:
-    """中目標の完了条件に使えるもの。1行に 1つ。"""
+    """大目標の完了条件に使えるもの。1行に 1つ。"""
     return format_predicates([p for p in GoalPredicate if p in PLANNABLE_CONDITIONS])
 
 
@@ -190,27 +190,27 @@ def format_site_choice(site: TownSite) -> str:
 
 def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     """
-    配信者が何をしていて、なぜか（大目標から下へ）、ゲームの状況、最近の小目標。
-    `with_ids` なら中目標とメモの ID、小目標の番号（メモの根拠）を出す（目標の決定での
+    配信者が何をしていて、なぜか（最終目標から下へ）、ゲームの状況、最近の小目標。
+    `with_ids` なら大目標とメモの ID、小目標の番号（メモの根拠）を出す（目標の決定での
     編集用。配信で読み上げられうる所では出さない）。
     """
     if activity is None:
         return "ゲームはしていない"
-    titles = {g.id: g.title for g in activity.mid_goals}
+    titles = {g.id: g.title for g in activity.objectives}
     lines = []
     if activity.mission is not None:
-        lines.append(f"- 大目標: {activity.mission.text}")
+        lines.append(f"- 最終目標: {activity.mission.text}")
     lines += _format_site(activity)
     if activity.town is not None:
         lines += _format_town(activity)
-    pending = [g for g in activity.mid_goals if g.state == MidGoalState.PENDING]
-    finished = [g for g in activity.mid_goals if g.state != MidGoalState.PENDING]
-    lines.append("- 中目標（上から順に取り組む）:")
+    pending = [g for g in activity.objectives if g.state == ObjectiveState.PENDING]
+    finished = [g for g in activity.objectives if g.state != ObjectiveState.PENDING]
+    lines.append("- 大目標（上から順に取り組む）:")
     lines += [
-        f"  {i}. {_format_mid_goal(g, with_ids, current=i == 1)}" for i, g in enumerate(pending, 1)
+        f"  {i}. {_format_objective(g, with_ids, current=i == 1)}" for i, g in enumerate(pending, 1)
     ] or ["  - なし"]
     if finished:
-        lines.append("- 最近終わった中目標:")
+        lines.append("- 最近終わった大目標:")
         lines += [f"  - {_format_finished(g)}" for g in finished]
     recent = activity.recent_goals
     now = f" [{len(recent) + 1}]" if with_ids and activity.goal is not None else ""
@@ -252,7 +252,7 @@ def _minutes(to_tick: int, tick: float) -> str:
 def format_time(time: dict) -> str:
     """
     日本語の時間帯。次に変わるまでの分数を付ける。夕方は夜まで（と朝まで）: 前は「夕方（朝まで約 9 分）」
-    とだけ書き、Gemini の代わりのモデルが「夜が明けた」と読んで外の手順を決めた（2026-09-27）。
+    とだけ書き、Gemini の代わりのモデルが「夜が明けた」と読んで外の中目標を決めた（2026-09-27）。
     """
     phase = time.get("phase", "")
     name = PHASE_NAMES.get(phase, "不明")
@@ -282,7 +282,7 @@ def format_time_en(time: dict) -> str:
     return f"{phase} ({_minutes(MORNING_TICK, tick)} minutes until morning)"
 
 
-def _requested(goal: MidGoal) -> str:
+def _requested(goal: Objective) -> str:
     if goal.requested_by:
         return f"（{goal.requested_by}さんの頼み）"
     return f"（{goal.suggested_by}さんの提案）" if goal.suggested_by else ""
@@ -372,30 +372,30 @@ def _format_town(activity: Activity) -> list[str]:
     return lines
 
 
-def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
+def _format_objective(goal: Objective, with_ids: bool, current: bool) -> str:
     conditions = ", ".join(c.describe() for c in goal.conditions)
     summary = goal.summary()
     progress = f"（{'; '.join(summary)}）" if summary else ""
     stage = f" [街の段階 {goal.stage + 1}: やめられない]" if goal.stage is not None else ""
     if goal.prepares_town:
         stage = " [街の準備: やめられない]"
-    steps = ""
-    if current and goal.plan_steps:
-        steps = " 手順: " + _format_steps(goal)
+    jobs = ""
+    if current and goal.jobs:
+        jobs = " 中目標: " + _format_jobs(goal)
     return (
         f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}{stage}"
-        f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}{steps}"
+        f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}{jobs}"
     )
 
 
-def _format_steps(goal: MidGoal) -> str:
+def _format_jobs(goal: Objective) -> str:
     """
-    手順を順に、済み（一度満たしたら済みのまま）・今（まだの一番先）・待ちで。束の手順
+    中目標を順に、済み（一度満たしたら済みのまま）・今（まだの一番先）・待ちで。束の中目標
     （docs/design/44）は [a + b] で 1 つ。視聴者の頼みと採った助言は出どころも。
     """
-    first_open = next((s for s in goal.plan_steps if s.state == JobState.PENDING), None)
+    first_open = next((s for s in goal.jobs if s.state == JobState.PENDING), None)
     parts = []
-    for s in goal.plan_steps:
+    for s in goal.jobs:
         mark = "済" if s.state == JobState.DONE else "今" if s is first_open else "待"
         text = f"[{s.describe()}]" if s.together else s.describe()
         who = (
@@ -409,15 +409,15 @@ def _format_steps(goal: MidGoal) -> str:
     return " → ".join(parts)
 
 
-def _format_finished(goal: MidGoal) -> str:
-    how = "完了" if goal.state == MidGoalState.DONE else f"断念: {goal.ended_because}"
+def _format_finished(goal: Objective) -> str:
+    how = "完了" if goal.state == ObjectiveState.DONE else f"断念: {goal.ended_because}"
     return f"{goal.title}{_requested(goal)}（{how}）"
 
 
 def _serves(goal: Goal, titles: dict[str, str]) -> str:
-    if goal.mid_goal_id is None:
+    if goal.objective_id is None:
         return "（身を守るため）"
-    title = titles.get(goal.mid_goal_id)
+    title = titles.get(goal.objective_id)
     return f"（「{title}」のため）" if title else ""
 
 

@@ -1,8 +1,8 @@
-"""プレイの domain のテスト: 家の設計、小目標の指定、中目標、PlaySession。"""
+"""プレイの domain のテスト: 家の設計、小目標の指定、大目標、PlaySession。"""
 
 import pytest
 
-from ailoveshen.domain.entities import MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.value_objects import (
     ActionResult,
     BlockKind,
@@ -12,8 +12,8 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
-    MidGoal,
-    MidGoalState,
+    Objective,
+    ObjectiveState,
     Mission,
     Side,
     TownDefinition,
@@ -54,9 +54,9 @@ SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
 MISSION = Mission("生き延びながら家を建て、街にしていく")
 
 
-def _plan(**kwargs) -> MidGoalPlan:
+def _plan(**kwargs) -> ObjectivePlan:
     """家（m1）とベッド（m2）の計画。"""
-    plan = MidGoalPlan(mission=MISSION, **kwargs)
+    plan = ObjectivePlan(mission=MISSION, **kwargs)
     plan.add("自分の家を作る", (BUILT,))
     plan.add("夜に寝られるようにする", (BED,))
     return plan
@@ -196,7 +196,7 @@ class TestPlaySession:
 
     def _session(self, **kwargs) -> PlaySession:
         session = PlaySession(blueprint=_blueprint(), plan=_plan(), **kwargs)
-        session.set_goal(Goal(PLANKS, "板材が要る", mid_goal_id="m1"), "day")
+        session.set_goal(Goal(PLANKS, "板材が要る", objective_id="m1"), "day")
         return session
 
     def test_needs_goal_initially(self):
@@ -305,48 +305,48 @@ class TestPlaySession:
         with pytest.raises(ValueError, match=field):
             PlaySession(blueprint=_blueprint(), plan=_plan(), **{field: 0})
 
-    def test_goal_ends_when_its_mid_goal_has_ended(self):
+    def test_goal_ends_when_its_objective_has_ended(self):
         session = self._session()
         session.plan.drop("m1", "もっと大事なことがある")
         assert session.goal_end_reason(_obs()) == (
-            "the mid goal m1 that goal have(planks, 12) served has ended"
+            "the objective m1 that goal have(planks, 12) served has ended"
         )
 
-    def test_survival_goal_goes_on_whatever_the_mid_goals(self):
+    def test_survival_goal_goes_on_whatever_the_objectives(self):
         session = self._session()
         session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT)), "night")
         session.plan.drop("m1", "理由")
         assert not session.needs_new_goal(_obs(phase="night"))
 
-    def test_steps_are_charged_to_the_mid_goal(self):
+    def test_steps_are_charged_to_the_objective(self):
         session = self._session()
         session.record(OK)
         session.record(FAILED)
-        assert session.plan.get("m1").steps == 2
+        assert session.plan.get("m1").budget_used == 2
 
     def test_activity_is_seen_from_the_mission_down(self):
         session = self._session()
         activity = session.activity()
         assert activity.mission == MISSION
-        assert [g.id for g in activity.mid_goals] == ["m1", "m2"]
-        assert activity.goal.mid_goal_id == "m1"
+        assert [g.id for g in activity.objectives] == ["m1", "m2"]
+        assert activity.goal.objective_id == "m1"
 
 
-class TestMidGoal:
-    """中目標の条件のテスト。"""
+class TestObjective:
+    """大目標の条件のテスト。"""
 
     def test_conditions_must_be_judged_from_the_world(self):
         with pytest.raises(ValueError, match="explored cannot be a condition"):
-            MidGoal("m1", "探検", (GoalSpec(GoalPredicate.EXPLORED, distance=30),))
+            Objective("m1", "探検", (GoalSpec(GoalPredicate.EXPLORED, distance=30),))
 
     def test_needs_conditions_and_a_title(self):
         with pytest.raises(ValueError, match="at least one condition"):
-            MidGoal("m1", "家", ())
+            Objective("m1", "家", ())
         with pytest.raises(ValueError, match="title"):
-            MidGoal("m1", "", (BUILT,))
+            Objective("m1", "", (BUILT,))
 
     def test_summary_leaves_out_the_sub_steps(self):
-        goal = MidGoal("m1", "家", (BUILT,), progress=("placed 3/70", "  have 12 log (0/12)"))
+        goal = Objective("m1", "家", (BUILT,), progress=("placed 3/70", "  have 12 log (0/12)"))
         assert goal.summary() == ("placed 3/70",)
 
     def test_survival_goals(self):
@@ -356,8 +356,8 @@ class TestMidGoal:
         assert not is_survival(BUILT)
 
 
-class TestMidGoalPlan:
-    """中目標のリストと、コードが守る上限のテスト。"""
+class TestObjectivePlan:
+    """大目標のリストと、コードが守る上限のテスト。"""
 
     def test_the_first_pending_is_worked_on(self):
         plan = _plan()
@@ -382,7 +382,7 @@ class TestMidGoalPlan:
         assert plan.current.id == goal.id
 
     def test_viewer_goal_in_an_empty_list_is_first(self):
-        plan = MidGoalPlan(mission=MISSION)
+        plan = ObjectivePlan(mission=MISSION)
         plan.add("剣", (SWORD,), requested_by="neko", position=3)
         assert plan.current.requested_by == "neko"
 
@@ -426,14 +426,14 @@ class TestMidGoalPlan:
         goal = plan.add("剣", (SWORD,), requested_by="neko")
         assert plan.charge(goal.id) is None
         dropped = plan.charge(goal.id)
-        assert dropped.state == MidGoalState.DROPPED
+        assert dropped.state == ObjectiveState.DROPPED
         assert "over the budget" in dropped.ended_because
         assert plan.get(goal.id) is None
 
     def test_own_goal_has_no_budget(self):
         plan = _plan(viewer_budget=1)
         assert plan.charge("m1") is None
-        assert plan.get("m1").steps == 1
+        assert plan.get("m1").budget_used == 1
 
     def test_a_town_stage_is_moved_not_dropped(self):
         plan = _plan()
@@ -469,14 +469,14 @@ class TestMidGoalPlan:
         plan = _plan(finished_shown=1)
         plan.complete("m1")
         plan.drop("m2", "やめた")
-        assert [(g.id, g.state) for g in plan.finished] == [("m2", MidGoalState.DROPPED)]
+        assert [(g.id, g.state) for g in plan.finished] == [("m2", ObjectiveState.DROPPED)]
         assert plan.pending == ()
 
     def test_unknown_id_is_named(self):
-        with pytest.raises(ValueError, match="no pending mid goal m9"):
+        with pytest.raises(ValueError, match="no pending objective m9"):
             _plan().move("m9", 0)
 
     def test_restore_keeps_ids(self):
-        plan = MidGoalPlan(mission=MISSION)
-        plan.restore([MidGoal("m4", "剣", (SWORD,))], [], next_id=5)
+        plan = ObjectivePlan(mission=MISSION)
+        plan.restore([Objective("m4", "剣", (SWORD,))], [], next_id=5)
         assert plan.add("板", (PLANKS,)).id == "m5"

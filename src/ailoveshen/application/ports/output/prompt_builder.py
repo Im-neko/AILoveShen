@@ -52,7 +52,7 @@ class IPromptBuilder(ABC):
             user_name: 視聴者
             message: 視聴者のチャットのメッセージ
             context: 配信者が今していることと、最近の会話
-            takes_requests: 返答で頼みを中目標として受けてよいか（JSON で出力する）
+            takes_requests: 返答で頼みを大目標として受けてよいか（JSON で出力する）
             previous_error: 前回の返答を差し戻した理由と直し方（受けた頼みが使えない、約束だけで
                 何もしない）
             name_reading: 視聴者の名前の読み（覚えていれば。docs/design/30_name_readings.md）
@@ -80,6 +80,6 @@ class IPromptBuilder(ABC):
             reply: 約束している返答
             handling: 返答の扱い（none / decline）
             context: 配信者が今していること
-            previous_error: 前回の決定を差し戻した理由（中目標に入らなかった）
+            previous_error: 前回の決定を差し戻した理由（大目標に入らなかった）
         """
         ...

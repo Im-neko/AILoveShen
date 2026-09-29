@@ -1,4 +1,4 @@
-"""中目標の管理: 世界から判定し、プランの上限の中で編集し、保存し、伝える。"""
+"""大目標の管理: 世界から判定し、プランの上限の中で編集し、保存し、伝える。"""
 
 from __future__ import annotations
 
@@ -15,16 +15,16 @@ from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
 from ailoveshen.application.use_cases.goal_vocabulary import (
-    MidGoalProposal,
+    ObjectiveProposal,
     PlanChange,
     PlanOp,
 )
-from ailoveshen.domain.entities import MidGoalPlan
+from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.events import (
     DomainEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
     TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import AILoveShenError, GoalRejectedError
@@ -32,24 +32,24 @@ from ailoveshen.domain.value_objects import (
     BuildDesign,
     GoalPredicate,
     GoalSpec,
-    MidGoal,
-    PlannedStep,
+    Objective,
+    Job,
 )
 
 MAX_STAGE_DESIGN_TRIES = 2
 
 
-class MidGoalKeeper:
+class ObjectiveKeeper:
     """
-    プランを作ったあと、中目標のリストを変える唯一の経路。
+    プランを作ったあと、大目標のリストを変える唯一の経路。
 
     2 つの呼び出し元が並行して編集する: 目標の決定（小目標の切れ目での配信者自身の
     編集）と、チャットの返答（視聴者の頼みを受けたとき）。編集は写しの上で試して
     から、await を挟まずにプランへ反映する。こうして互いに上書きしない。プランの
     オブジェクトは差し替えない（ゴールボードとナレーターが持っている）。
 
-    中目標の条件は、足す前にブリッジが確かめる。世界から判定できないことは約束
-    しない。変更はすべて保存し、発行する（MidGoalAdded/Completed/DroppedEvent）。
+    大目標の条件は、足す前にブリッジが確かめる。世界から判定できないことは約束
+    しない。変更はすべて保存し、発行する（ObjectiveAdded/Completed/DroppedEvent）。
     """
 
     def __init__(
@@ -83,16 +83,16 @@ class MidGoalKeeper:
         self._facilities = facilities
         self._design_failures: dict[str, int] = {}  # 街の段階の建物の設計に失敗した回数
 
-    async def judge(self, plan: MidGoalPlan) -> None:
+    async def judge(self, plan: ObjectivePlan) -> None:
         """
-        未完了の中目標を世界から判定する。条件がすべて満たされたものは完了にする。
+        未完了の大目標を世界から判定する。条件がすべて満たされたものは完了にする。
 
-        ブリッジが条件を拒否した中目標（そのままでは足せなかったはずだが、世界の
+        ブリッジが条件を拒否した大目標（そのままでは足せなかったはずだが、世界の
         ルールが変わったのかもしれない）は、プレイを止めずに理由をつけて断念する。
         街の段階と準備は断念しない: ログに残し、条件が直るのを待つ。
 
         次に街を進める: 取り組んでいる段階のうち今できること（まだ満たしていない
-        条件）を、リストの一番上の中目標にする。場所が決まって準備（調査、引っ越し）が
+        条件）を、リストの一番上の大目標にする。場所が決まって準備（調査、引っ越し）が
         済むまでと、まだない能力のために残した部分は待つ。最後の段階が済んだら、
         街の完成を伝える。
         """
@@ -103,7 +103,7 @@ class MidGoalKeeper:
                 statuses = await self._bridge.check(goal.conditions)
             except GoalRejectedError as e:
                 if goal.stage is not None or goal.prepares_town:
-                    logger.error(f"街の中目標 {goal.describe()} を判定できない: {e}")
+                    logger.error(f"街の大目標 {goal.describe()} を判定できない: {e}")
                 elif plan.get(goal.id) is not None:
                     events.append(
                         _dropped(plan.drop(goal.id, f"its conditions cannot be judged: {e}"))
@@ -114,9 +114,9 @@ class MidGoalKeeper:
             plan.judged(goal.id, tuple(line for s in statuses for line in s.lines))
             if all(s.met for s in statuses):
                 done = plan.complete(goal.id)
-                logger.info(f"中目標を達成した: {done.describe()}")
+                logger.info(f"大目標を達成した: {done.describe()}")
                 events.append(
-                    MidGoalCompletedEvent(
+                    ObjectiveCompletedEvent(
                         title=done.title,
                         requested_by=done.requested_by or "",
                         suggested_by=done.suggested_by or "",
@@ -132,35 +132,35 @@ class MidGoalKeeper:
         self._store.save(plan)
         await self._publish(events)
 
-    async def _judge_steps(self, plan: MidGoalPlan) -> None:
+    async def _judge_steps(self, plan: ObjectivePlan) -> None:
         """
-        一番上の中目標の、まだ済んでいない手順を判定する。満たしたものは済みにして、そのままにする
+        一番上の大目標の、まだ済んでいない中目標を判定する。満たしたものは済みにして、そのままにする
         （あとで材料を使って条件が崩れても戻さない。docs/design/50 §4）。進み具合も保つ（停滞の目安）。
         判定できなければ何もしない。
         """
         current = plan.current
-        if current is None or not current.open_steps:
+        if current is None or not current.open_jobs:
             return
-        steps = current.open_steps
+        jobs = current.open_jobs
         try:
-            statuses = list(await self._bridge.check([x for s in steps for x in s.specs]))
+            statuses = list(await self._bridge.check([x for s in jobs for x in s.specs]))
         except AILoveShenError as e:
-            logger.debug(f"手順を判定できなかった: {e}")
+            logger.debug(f"中目標を判定できなかった: {e}")
             return
         judged: list[tuple[str, bool, tuple[str, ...]]] = []
-        for step in steps:
-            mine, statuses = statuses[: len(step.specs)], statuses[len(step.specs) :]
+        for job in jobs:
+            mine, statuses = statuses[: len(job.specs)], statuses[len(job.specs) :]
             judged.append(
                 (
-                    step.id,
+                    job.id,
                     all(c.met for c in mine),
                     tuple(line for c in mine for line in c.lines),
                 )
             )
-        for step in plan.judge_steps(current.id, judged):
-            logger.info(f"手順が済んだ: {step.describe()}（中目標 {current.id}）")
+        for job in plan.judge_jobs(current.id, judged):
+            logger.info(f"中目標が済んだ: {job.describe()}（大目標 {current.id}）")
 
-    def _next_stage(self, plan: MidGoalPlan) -> list[DomainEvent]:
+    def _next_stage(self, plan: ObjectivePlan) -> list[DomainEvent]:
         # 段階の条件は家を基準に判定する: 引っ越す前の家で満たしても意味がない
         if plan.site is None or plan.preparing_town:
             return []
@@ -179,12 +179,12 @@ class MidGoalKeeper:
         except ValueError as e:
             logger.warning(f"街の段階 {plan.town_stage + 1} はリストに空きが出るのを待つ: {e}")
             return []
-        logger.info(f"街の段階 {plan.town_stage + 1} を中目標 {goal.id} にした: {goal.describe()}")
+        logger.info(f"街の段階 {plan.town_stage + 1} を大目標 {goal.id} にした: {goal.describe()}")
         return [_added(plan, goal)]
 
-    async def _design_stage_builds(self, plan: MidGoalPlan) -> None:
+    async def _design_stage_builds(self, plan: ObjectivePlan) -> None:
         """
-        今の街の段階の条件に、まだない建物（built(name)）があれば、中目標にする前に設計させる。
+        今の街の段階の条件に、まだない建物（built(name)）があれば、大目標にする前に設計させる。
         失敗した名前は MAX_STAGE_DESIGN_TRIES 回まで（毎回の切れ目で呼び続けない）。
         """
         stage = plan.current_stage
@@ -213,7 +213,7 @@ class MidGoalKeeper:
                 self._design_failures[name] = self._design_failures.get(name, 0) + 1
                 logger.error(f"街の段階の建物 {name} を設計できない: {e}")
 
-    async def _design_stage_facilities(self, plan: MidGoalPlan) -> None:
+    async def _design_stage_facilities(self, plan: ObjectivePlan) -> None:
         """今の街の段階の条件に、まだない施設（facility(name)）があれば設計させる（失敗は建物と同じく数える）。"""
         stage = plan.current_stage
         assert stage is not None
@@ -236,7 +236,7 @@ class MidGoalKeeper:
                 self._design_failures[name] = self._design_failures.get(name, 0) + 1
                 logger.error(f"街の段階の施設 {name} を設計できない: {e}")
 
-    async def _write_stage_checks(self, plan: MidGoalPlan) -> None:
+    async def _write_stage_checks(self, plan: ObjectivePlan) -> None:
         """今の街の段階の条件に、まだない判定（custom(name)）があれば書かせる（失敗は建物と同じく数える）。"""
         stage = plan.current_stage
         assert stage is not None
@@ -261,14 +261,14 @@ class MidGoalKeeper:
 
     async def add_town_goal(
         self,
-        plan: MidGoalPlan,
+        plan: ObjectivePlan,
         title: str,
         conditions: tuple[GoalSpec, ...],
         reason: str,
         position: Optional[int] = None,
-    ) -> Optional[MidGoal]:
+    ) -> Optional[Objective]:
         """
-        街の準備の中目標（候補地の調査、引っ越し）を足す。条件はコードが決めたもの。
+        街の準備の大目標（候補地の調査、引っ越し）を足す。条件はコードが決めたもの。
         リストがいっぱいなら足さずに None を返す（次の切れ目でまた試す）。
         """
         try:
@@ -282,14 +282,14 @@ class MidGoalKeeper:
         except ValueError as e:
             logger.warning(f"街の準備「{title}」はリストに空きが出るのを待つ: {e}")
             return None
-        logger.info(f"街の準備を中目標 {goal.id} にした: {goal.describe()}")
+        logger.info(f"街の準備を大目標 {goal.id} にした: {goal.describe()}")
         self._store.save(plan)
         await self._publish([_added(plan, goal)])
         return goal
 
     async def check_new(self, changes: Sequence[PlanChange]) -> None:
         """
-        変更が足す中目標の条件を、ブリッジに確かめさせる。
+        変更が足す大目標の条件を、ブリッジに確かめさせる。
 
         Raises:
             GoalRejectedError: 条件を判定できないとき（メッセージに理由がある）
@@ -301,18 +301,18 @@ class MidGoalKeeper:
                 await self._write_checks(change.proposal.conditions, _brief(change.proposal))
                 await self._bridge.check(change.proposal.conditions)
 
-    def rehearse(self, plan: MidGoalPlan, changes: Sequence[PlanChange]) -> MidGoalPlan:
+    def rehearse(self, plan: ObjectivePlan, changes: Sequence[PlanChange]) -> ObjectivePlan:
         """
         変更を反映したらどうなるかのプラン（プラン自体には触れない）。
 
         Raises:
-            ValueError: 変更が上限を破るか、未完了の中目標を指していないとき
+            ValueError: 変更が上限を破るか、未完了の大目標を指していないとき
         """
         preview = copy.deepcopy(plan)
         _apply(preview, changes)
         return preview
 
-    async def commit(self, plan: MidGoalPlan, changes: Sequence[PlanChange]) -> None:
+    async def commit(self, plan: ObjectivePlan, changes: Sequence[PlanChange]) -> None:
         """
         配信者自身の変更をプランに反映し、保存して発行する。
 
@@ -328,16 +328,16 @@ class MidGoalKeeper:
 
     async def accept(
         self,
-        plan: MidGoalPlan,
-        proposal: MidGoalProposal,
+        plan: ObjectivePlan,
+        proposal: ObjectiveProposal,
         requested_by: str,
         advice: bool = False,
-    ) -> MidGoal:
+    ) -> Objective:
         """
-        視聴者の頼みを中目標として足す（今取り組んでいるものの後ろに）。`proposal.now`
+        視聴者の頼みを大目標として足す（今取り組んでいるものの後ろに）。`proposal.now`
         （配信者が今やると判断した）なら先頭に。呼び出し側が今の小目標を区切る。
 
-        `advice`: 視聴者の助言を配信者が納得して採った。配信者自身の中目標にし（提案者は
+        `advice`: 視聴者の助言を配信者が納得して採った。配信者自身の大目標にし（提案者は
         `suggested_by`）、視聴者の頼みの上限と予算に数えない（2026-09-28: 助言をくれる人が
         1 人 1 つの上限に当たり、もっともな助言を「後で」と流していた）。
 
@@ -350,13 +350,13 @@ class MidGoalKeeper:
             return await self._accept_job(plan, proposal, requested_by, advice)
         same = plan.same_as(proposal.conditions)
         if same is not None:
-            # もう同じ完了条件の中目標がある: 足さない（2026-09-28: 同じ整地が 2 つ並んだ）。今やるなら
+            # もう同じ完了条件の大目標がある: 足さない（2026-09-28: 同じ整地が 2 つ並んだ）。今やるなら
             # それを先頭に（呼び出し側が今の小目標を区切る）
             if proposal.now:
                 plan.move(same.id, 0)
                 self._store.save(plan)
             where = "先頭に移した" if proposal.now else "そのまま"
-            logger.info(f"{requested_by} {what}は中目標 {same.id} と同じ完了条件: 足さずに{where}")
+            logger.info(f"{requested_by} {what}は大目標 {same.id} と同じ完了条件: 足さずに{where}")
             return same
         viewer = None if advice else requested_by
         plan.check_room(viewer)  # 設計（建物・施設の登録）の前に: 上限で断るなら何も残さない
@@ -377,28 +377,28 @@ class MidGoalKeeper:
             budget=max(plan.viewer_budget, 2 * blocks + 40) if blocks and not advice else None,
             now=proposal.now,
         )
-        logger.info(f"{requested_by} {what}を中目標 {goal.id} にした: {goal.describe()}")
+        logger.info(f"{requested_by} {what}を大目標 {goal.id} にした: {goal.describe()}")
         self._store.save(plan)
         await self._publish([_added(plan, goal)])
         return goal
 
     async def _accept_job(
-        self, plan: MidGoalPlan, proposal: MidGoalProposal, requested_by: str, advice: bool
-    ) -> MidGoal:
+        self, plan: ObjectivePlan, proposal: ObjectiveProposal, requested_by: str, advice: bool
+    ) -> Objective:
         """
-        頼みを、今の大目標の手順（中目標）として足す（docs/design/50 §5）。条件の先頭が手順の条件で、
-        残りは一緒に追う。今の手順の後ろに入る（`proposal.now` なら先頭。呼び出し側が小目標を区切る）。
+        頼みを、今の大目標の中目標として足す（docs/design/50 §5）。条件の先頭が中目標の条件で、
+        残りは一緒に追う。今の中目標の後ろに入る（`proposal.now` なら先頭。呼び出し側が小目標を区切る）。
         今の大目標を返す。
 
         Raises:
             GoalRejectedError: 条件を判定できないとき
-            ValueError: 上限を破るか、手順の形が正しくないとき、足す大目標がないとき
+            ValueError: 上限を破るか、中目標の形が正しくないとき、足す大目標がないとき
         """
         current = plan.current
         if current is None:
-            raise ValueError("there is no mid goal to add the step to")
+            raise ValueError("there is no objective to add the job to")
         viewer = None if advice else requested_by
-        step = PlannedStep(
+        job = Job(
             proposal.conditions[0],
             proposal.reason,
             together=proposal.conditions[1:],
@@ -412,15 +412,15 @@ class MidGoalKeeper:
         await self._design_facilities(proposal.conditions, _brief(proposal))
         await self._write_checks(proposal.conditions, _brief(proposal))
         await self._bridge.check(proposal.conditions)
-        # 今の手順のすぐ後ろで、先に頼まれた手順の後ろ（材料はそれを使う手順より前に要る）。now なら先頭
-        queued = current.open_steps
+        # 今の中目標のすぐ後ろで、先に頼まれた中目標の後ろ（材料はそれを使う中目標より前に要る）。now なら先頭
+        queued = current.open_jobs
         at = 1
         while at < len(queued) and (queued[at].requested_by or queued[at].suggested_by):
             at += 1
         position = 0 if proposal.now else at
-        added = plan.add_step(current.id, step, position=position, now=proposal.now)
+        added = plan.add_job(current.id, job, position=position, now=proposal.now)
         logger.info(
-            f"{requested_by} {'の助言' if advice else 'の頼み'}を中目標 {current.id} の手順 "
+            f"{requested_by} {'の助言' if advice else 'の頼み'}を大目標 {current.id} の中目標 "
             f"{added.id} にした: {added.describe()}"
         )
         self._store.save(plan)
@@ -428,22 +428,22 @@ class MidGoalKeeper:
         assert goal is not None
         return goal
 
-    async def withdraw(self, plan: MidGoalPlan, requested_by: str) -> MidGoal | None:
+    async def withdraw(self, plan: ObjectivePlan, requested_by: str) -> Objective | None:
         """
-        視聴者が自分の頼みを取り下げた（「もういいよ」）: その人の中目標（手順も）をやめる。なければ None。
-        やめられるのは本人の頼みだけ（ほかの人の頼みや配信者自身の中目標は変えない）。
+        視聴者が自分の頼みを取り下げた（「もういいよ」）: その人の大目標（中目標も）をやめる。なければ None。
+        やめられるのは本人の頼みだけ（ほかの人の頼みや配信者自身の大目標は変えない）。
         """
         mine = next((g for g in plan.pending if g.requested_by == requested_by), None)
         if mine is None:
-            found = plan.viewer_step(requested_by)
+            found = plan.viewer_job(requested_by)
             if found is None:
                 return None
-            goal, step = found
-            plan.drop_step(goal.id, step.id, f"{requested_by} withdrew the request")
-            logger.info(f"視聴者の頼みの手順を取り下げた: {step.describe()}（{requested_by}）")
+            goal, job = found
+            plan.drop_job(goal.id, job.id, f"{requested_by} withdrew the request")
+            logger.info(f"視聴者の頼みの中目標を取り下げた: {job.describe()}（{requested_by}）")
             self._store.save(plan)
             await self._publish(
-                [_dropped_step(step, f"{requested_by} withdrew the request")]
+                [_dropped_job(job, f"{requested_by} withdrew the request")]
             )
             return goal
         dropped = plan.drop(mine.id, f"{requested_by} withdrew the request")
@@ -453,7 +453,7 @@ class MidGoalKeeper:
         return dropped
 
     async def _design_builds(
-        self, proposal: MidGoalProposal, max_blocks: int = BuildDesign.MAX_BLOCKS
+        self, proposal: ObjectiveProposal, max_blocks: int = BuildDesign.MAX_BLOCKS
     ) -> int:
         """
         条件の built(name) のうち、まだない建物を設計させて登録する。建物のブロックの合計を返す。
@@ -531,26 +531,26 @@ class MidGoalKeeper:
             if name not in known:
                 await self._checker.write(name, brief)
 
-    async def set_steps(
-        self, plan: MidGoalPlan, mid_goal_id: str, steps: tuple[PlannedStep, ...]
+    async def set_jobs(
+        self, plan: ObjectivePlan, objective_id: str, jobs: tuple[Job, ...]
     ) -> None:
-        """中目標の手順（Gemini が書いた小目標の並び）を置き換えて保存する（docs/design/26）。"""
-        goal = plan.set_steps(mid_goal_id, steps)
-        logger.info(f"中目標 {goal.id} の手順: " + " → ".join(s.spec.describe() for s in steps))
+        """大目標の中目標（Gemini が書いた小目標の並び）を置き換えて保存する（docs/design/26）。"""
+        goal = plan.set_jobs(objective_id, jobs)
+        logger.info(f"大目標 {goal.id} の中目標: " + " → ".join(s.spec.describe() for s in jobs))
         self._store.save(plan)
 
-    async def step_counted(self, plan: MidGoalPlan, goal: MidGoal | None) -> None:
+    async def step_counted(self, plan: ObjectivePlan, goal: Objective | None) -> None:
         """
-        ステップを数えたあとにプランを保存する。予算を超えて断念した中目標（視聴者の手順も）が
+        ステップを数えたあとにプランを保存する。予算を超えて断念した大目標（視聴者の中目標も）が
         あれば伝える。
         """
         self._store.save(plan)
         events: list[DomainEvent] = []
-        for step in plan.take_dropped_steps():
-            logger.info(f"視聴者の手順を断念した: {step.describe()}（{step.ended_because}）")
-            events.append(_dropped_step(step, step.ended_because))
+        for job in plan.take_dropped_jobs():
+            logger.info(f"視聴者の中目標を断念した: {job.describe()}（{job.ended_because}）")
+            events.append(_dropped_job(job, job.ended_because))
         if goal is not None:
-            logger.info(f"中目標を断念した: {goal.describe()}（{goal.ended_because}）")
+            logger.info(f"大目標を断念した: {goal.describe()}（{goal.ended_because}）")
             events.append(_dropped(goal))
         await self._publish(events)
 
@@ -559,7 +559,7 @@ class MidGoalKeeper:
             await self._event_publisher.publish(event)
 
 
-def _apply(plan: MidGoalPlan, changes: Sequence[PlanChange]) -> list[DomainEvent]:
+def _apply(plan: ObjectivePlan, changes: Sequence[PlanChange]) -> list[DomainEvent]:
     events: list[DomainEvent] = []
     for change in changes:
         if change.op == PlanOp.ADD:
@@ -574,20 +574,20 @@ def _apply(plan: MidGoalPlan, changes: Sequence[PlanChange]) -> list[DomainEvent
             events.append(_added(plan, goal))
         elif change.op == PlanOp.MOVE:
             assert change.position is not None
-            plan.move(change.mid_goal_id, change.position)
+            plan.move(change.objective_id, change.position)
         else:
-            events.append(_dropped(plan.drop(change.mid_goal_id, change.reason)))
+            events.append(_dropped(plan.drop(change.objective_id, change.reason)))
     return events
 
 
-def _brief(proposal: MidGoalProposal) -> str:
-    """設計や判定を頼むときの、何のための中目標か（題名と理由）。"""
+def _brief(proposal: ObjectiveProposal) -> str:
+    """設計や判定を頼むときの、何のための大目標か（題名と理由）。"""
     return f"{proposal.title}: {proposal.reason}".strip(": ")
 
 
-def _added(plan: MidGoalPlan, goal: MidGoal) -> MidGoalAddedEvent:
+def _added(plan: ObjectivePlan, goal: Objective) -> ObjectiveAddedEvent:
     position = next(i for i, g in enumerate(plan.pending) if g.id == goal.id) + 1
-    return MidGoalAddedEvent(
+    return ObjectiveAddedEvent(
         title=goal.title,
         reason=goal.reason,
         requested_by=goal.requested_by or "",
@@ -596,18 +596,18 @@ def _added(plan: MidGoalPlan, goal: MidGoal) -> MidGoalAddedEvent:
     )
 
 
-def _dropped_step(step: PlannedStep, reason: str) -> MidGoalDroppedEvent:
-    """視聴者の手順の断念も、大目標の断念と同じく配信で言う（黙って約束を捨てない）。"""
-    return MidGoalDroppedEvent(
-        title=step.describe(),
+def _dropped_job(job: Job, reason: str) -> ObjectiveDroppedEvent:
+    """視聴者の中目標の断念も、大目標の断念と同じく配信で言う（黙って約束を捨てない）。"""
+    return ObjectiveDroppedEvent(
+        title=job.describe(),
         reason=reason,
-        requested_by=step.requested_by or "",
-        suggested_by=step.suggested_by or "",
+        requested_by=job.requested_by or "",
+        suggested_by=job.suggested_by or "",
     )
 
 
-def _dropped(goal: MidGoal) -> MidGoalDroppedEvent:
-    return MidGoalDroppedEvent(
+def _dropped(goal: Objective) -> ObjectiveDroppedEvent:
+    return ObjectiveDroppedEvent(
         title=goal.title,
         reason=goal.ended_because,
         requested_by=goal.requested_by or "",

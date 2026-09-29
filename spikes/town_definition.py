@@ -17,7 +17,7 @@ from ailoveshen.infrastructure.config import load_settings
 
 PROMPT = """\
 あなたは Minecraft のサバイバルで暮らす AI 配信者「シェン」の方針を決めます。
-配信の大目標は「{mission}」です。この「街」とは何か、いつ完成したと言えるかを定義してください。
+配信の最終目標は「{mission}」です。この「街」とは何か、いつ完成したと言えるかを定義してください。
 
 ## 今の状況
 - 家（5x5 の木の家、ベッドとチェストあり）が 1 軒ある。サバイバルで、夜は敵が湧く

@@ -8,19 +8,19 @@ import pytest
 
 from ailoveshen.application.ports.output.mission_store import SavedPlan
 from ailoveshen.application.use_cases.house import HOUSE_SCHEMA, HouseDesigner
-from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
-from ailoveshen.domain.entities import Conversation, MidGoalPlan, PlaySession
+from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
 )
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
@@ -36,7 +36,7 @@ from ailoveshen.domain.value_objects import (
     GoalStatus,
     HouseBlueprint,
     MessageType,
-    MidGoal,
+    Objective,
     Mission,
     Side,
 )
@@ -95,18 +95,18 @@ BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
 SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
 
 
-def _plan(**kwargs) -> MidGoalPlan:
+def _plan(**kwargs) -> ObjectivePlan:
     """家（m1）、次にベッド（m2）。"""
-    plan = MidGoalPlan(mission=MISSION, **kwargs)
+    plan = ObjectivePlan(mission=MISSION, **kwargs)
     plan.add("自分の家を作る", (BUILT,))
     plan.add("夜に寝られるようにする", (BED,))
     return plan
 
 
-def _session(goal: GoalSpec | None = None, plan: MidGoalPlan | None = None) -> PlaySession:
+def _session(goal: GoalSpec | None = None, plan: ObjectivePlan | None = None) -> PlaySession:
     session = PlaySession(blueprint=_blueprint(), plan=plan or _plan(), max_stalled_steps=2)
     if goal is not None:
-        session.set_goal(Goal(goal, mid_goal_id="m1"), "day")
+        session.set_goal(Goal(goal, objective_id="m1"), "day")
     return session
 
 
@@ -156,9 +156,9 @@ def store():
 
 
 @pytest.fixture
-def mid_goals(bridge, events, store):
-    """モックの上で動く本物の MidGoalKeeper。"""
-    return MidGoalKeeper(bridge=bridge, event_publisher=events, store=store)
+def objectives(bridge, events, store):
+    """モックの上で動く本物の ObjectiveKeeper。"""
+    return ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store)
 
 
 @pytest.fixture
@@ -288,7 +288,7 @@ class TestStartPlay:
     async def test_new_plan_comes_from_the_configuration_and_is_saved(
         self, text_generator, prompt_builder, bridge, events, store
     ):
-        """何も保存していなければ、設定の中目標から始める（保存もする）。"""
+        """何も保存していなければ、設定の大目標から始める（保存もする）。"""
         text_generator.generate_json.return_value = VALID_DESIGN
         plan = _plan()
 
@@ -304,11 +304,11 @@ class TestStartPlay:
     async def test_saved_plan_carries_on_for_the_same_mission(
         self, text_generator, prompt_builder, bridge, events, store
     ):
-        """中目標は再起動をまたいで続く。"""
+        """大目標は再起動をまたいで続く。"""
         text_generator.generate_json.return_value = VALID_DESIGN
         store.load.return_value = SavedPlan(
             mission=MISSION,
-            pending=(MidGoal("m7", "剣", (SWORD,), requested_by="neko", steps=5),),
+            pending=(Objective("m7", "剣", (SWORD,), requested_by="neko", budget_used=5),),
             finished=(),
             next_id=8,
         )
@@ -317,7 +317,7 @@ class TestStartPlay:
             text_generator, prompt_builder, bridge, events, store
         ).execute()
 
-        assert [(g.id, g.requested_by, g.steps) for g in session.plan.pending] == [
+        assert [(g.id, g.requested_by, g.budget_used) for g in session.plan.pending] == [
             ("m7", "neko", 5)
         ]
         assert session.plan.next_id == 8
@@ -326,11 +326,11 @@ class TestStartPlay:
     async def test_saved_plan_for_another_mission_is_not_used(
         self, text_generator, prompt_builder, bridge, events, store
     ):
-        """大目標が変わったら、設定の中目標から始め直す。"""
+        """最終目標が変わったら、設定の大目標から始め直す。"""
         text_generator.generate_json.return_value = VALID_DESIGN
         store.load.return_value = SavedPlan(
             mission=Mission("村を作る"),
-            pending=(MidGoal("m7", "剣", (SWORD,)),),
+            pending=(Objective("m7", "剣", (SWORD,)),),
             finished=(),
             next_id=8,
         )
@@ -375,7 +375,7 @@ class TestAdvancePlay:
         selector,
         events,
         conversation,
-        mid_goals,
+        objectives,
         town,
         notes,
     ):
@@ -386,7 +386,7 @@ class TestAdvancePlay:
             action_selector=selector,
             event_publisher=events,
             conversation=conversation,
-            mid_goals=mid_goals,
+            objectives=objectives,
             town=town,
             notes=notes,
         )
@@ -414,8 +414,8 @@ class TestAdvancePlay:
         assert [c.args[0] for c in bridge.act.await_args_list] == ["eat bread"]
 
     @pytest.mark.asyncio
-    async def test_the_chests_keep_what_the_mid_goals_store(self, use_case, text_generator, bridge):
-        """蓄える中目標の stored() の条件は小目標と一緒に送り、チェストから取り出させない。"""
+    async def test_the_chests_keep_what_the_objectives_store(self, use_case, text_generator, bridge):
+        """蓄える大目標の stored() の条件は小目標と一緒に送り、チェストから取り出させない。"""
         text_generator.generate_json.return_value = PLANKS
         plan = _plan()
         stock = GoalSpec(GoalPredicate.STORED, item="food", count=10)
@@ -423,14 +423,14 @@ class TestAdvancePlay:
 
         await use_case.execute(_session(plan=plan))
 
-        # 集める中目標の物は、そばで取れたら一緒に取る（also）
+        # 集める大目標の物は、そばで取れたら一緒に取る（also）
         bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (stock,), (stock,), together=())
 
     @pytest.mark.asyncio
     async def test_the_town_advances_after_the_judgement_before_the_decision(
         self, use_case, text_generator, bridge, town
     ):
-        """済んだ中目標（調査）を判定してから街の準備を進め、そのあとの見え方で決める。"""
+        """済んだ大目標（調査）を判定してから街の準備を進め、そのあとの見え方で決める。"""
         text_generator.generate_json.return_value = PLANKS
         session = _session()
         order = []
@@ -593,15 +593,15 @@ class TestAdvancePlay:
         assert "cannot progress now: there is no farm for wheat" in error
 
     @pytest.mark.asyncio
-    async def test_steps_before_one_already_met_are_sent_back(
+    async def test_jobs_before_one_already_met_are_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):
-        """手順は順番どおり: 後の手順が済んでいるのに前が残っていれば、前は要らない手順。"""
+        """中目標は順番どおり: 後の中目標が済んでいるのに前が残っていれば、前は要らない中目標。"""
         stone = {"predicate": "have", "item": "cobblestone", "count": 8, "reason": "石"}
         planks = {"predicate": "have", "item": "planks", "count": 4, "reason": "板"}
         text_generator.generate_json.side_effect = [
-            {**PLANKS, "steps": [stone, planks]},
-            {**PLANKS, "steps": [planks, stone]},
+            {**PLANKS, "jobs": [stone, planks]},
+            {**PLANKS, "jobs": [planks, stone]},
         ]
         bridge.check.side_effect = _judged({HAVE_PLANKS})
         session = _session()
@@ -609,15 +609,15 @@ class TestAdvancePlay:
         await use_case.execute(session)
 
         error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
-        assert "step 2 have(planks, 4) is already met now" in error
+        assert "job 2 have(planks, 4) is already met now" in error
         assert "have(cobblestone, 8)" in error
-        assert [s.spec.item for s in session.plan.current.plan_steps] == ["planks", "cobblestone"]
+        assert [s.spec.item for s in session.plan.current.jobs] == ["planks", "cobblestone"]
 
     @pytest.mark.asyncio
     async def test_a_review_that_mistakes_the_time_is_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):
-        """実測（2026-09-27）: 夕方に「夜が明けたので外に出られる」と書いて外の手順を決めた。"""
+        """実測（2026-09-27）: 夕方に「夜が明けたので外に出られる」と書いて外の中目標を決めた。"""
         bridge.observe.return_value = _obs(goal=False, time_phase="dusk")
         text_generator.generate_json.side_effect = [
             {**PLANKS, "review": "夜が明けたので外に出られる状態になった。"},
@@ -751,15 +751,15 @@ class TestAdvancePlay:
         assert kwargs["system_instruction"] == "goal system"
 
     @pytest.mark.asyncio
-    async def test_small_goal_serves_the_top_mid_goal(self, use_case, text_generator, events):
-        """小目標は今取り組む中目標のために決まり、そのことを示す。"""
+    async def test_small_goal_serves_the_top_objective(self, use_case, text_generator, events):
+        """小目標は今取り組む大目標のために決まり、そのことを示す。"""
         text_generator.generate_json.return_value = PLANKS
         session = _session()
 
         await use_case.execute(session)
 
-        assert session.goal.mid_goal_id == "m1"
-        assert _published(events, GoalSetEvent)[0].mid_goal == "自分の家を作る"
+        assert session.goal.objective_id == "m1"
+        assert _published(events, GoalSetEvent)[0].objective == "自分の家を作る"
 
     @pytest.mark.asyncio
     async def test_new_goal_is_seen_with_its_own_status(self, use_case, text_generator, bridge):
@@ -780,10 +780,10 @@ class TestAdvancePlay:
         assert seen == [("have 4 planks (0/4)",)]
 
     @pytest.mark.asyncio
-    async def test_mid_goals_are_judged_before_deciding(
+    async def test_objectives_are_judged_before_deciding(
         self, use_case, text_generator, bridge, prompt_builder, events, store
     ):
-        """もう済んでいる中目標（前の実行で建てた家）は、最初に完了にする。"""
+        """もう済んでいる大目標（前の実行で建てた家）は、最初に完了にする。"""
         bridge.check.side_effect = _judged({BUILT})
         text_generator.generate_json.return_value = PLANKS
         session = _session()
@@ -791,16 +791,16 @@ class TestAdvancePlay:
         await use_case.execute(session)
 
         assert [g.id for g in session.plan.pending] == ["m2"]
-        assert _published(events, MidGoalCompletedEvent)[0].title == "自分の家を作る"
+        assert _published(events, ObjectiveCompletedEvent)[0].title == "自分の家を作る"
         activity = prompt_builder.build_goal_prompt.call_args.kwargs["activity"]
-        assert [g.id for g in activity.mid_goals if g.state.value == "pending"] == ["m2"]
-        assert session.goal.mid_goal_id == "m2"
+        assert [g.id for g in activity.objectives if g.state.value == "pending"] == ["m2"]
+        assert session.goal.objective_id == "m2"
         assert session.plan.get("m2").progress == ("placed(bed, home): False",)
         store.save.assert_called()
 
     @pytest.mark.asyncio
-    async def test_survival_goal_serves_no_mid_goal(self, use_case, text_generator, events):
-        """生存のための小目標は、どの中目標のためでもない。"""
+    async def test_survival_goal_serves_no_objective(self, use_case, text_generator, events):
+        """生存のための小目標は、どの大目標のためでもない。"""
         text_generator.generate_json.return_value = {
             "predicate": "have",
             "item": "food",
@@ -812,14 +812,14 @@ class TestAdvancePlay:
 
         await use_case.execute(session)
 
-        assert session.goal.mid_goal_id is None
-        assert _published(events, GoalSetEvent)[0].mid_goal == ""
+        assert session.goal.objective_id is None
+        assert _published(events, GoalSetEvent)[0].objective == ""
 
     @pytest.mark.asyncio
-    async def test_only_survival_goals_may_skip_the_mid_goals(
+    async def test_only_survival_goals_may_skip_the_objectives(
         self, use_case, text_generator, prompt_builder
     ):
-        """生存に関係ない小目標は、一番上の中目標のためでなければならない。"""
+        """生存に関係ない小目標は、一番上の大目標のためでなければならない。"""
         text_generator.generate_json.side_effect = [{**PLANKS, "serves": "survival"}, PLANKS]
         session = _session()
 
@@ -827,11 +827,11 @@ class TestAdvancePlay:
 
         error = prompt_builder.build_goal_prompt.call_args.kwargs["previous_error"]
         assert "not a survival goal" in error
-        assert session.goal.mid_goal_id == "m1"
+        assert session.goal.objective_id == "m1"
 
     @pytest.mark.asyncio
-    async def test_no_mid_goal_left_needs_one_added(self, use_case, text_generator, prompt_builder):
-        """リストが空なら、小目標は中目標を足すか、生存のためのものでなければならない。"""
+    async def test_no_objective_left_needs_one_added(self, use_case, text_generator, prompt_builder):
+        """リストが空なら、小目標は大目標を足すか、生存のためのものでなければならない。"""
         text_generator.generate_json.side_effect = [
             PLANKS,
             {
@@ -846,14 +846,14 @@ class TestAdvancePlay:
                 ],
             },
         ]
-        session = _session(plan=MidGoalPlan(mission=MISSION))
+        session = _session(plan=ObjectivePlan(mission=MISSION))
 
         await use_case.execute(session)
 
         error = prompt_builder.build_goal_prompt.call_args.kwargs["previous_error"]
-        assert "no mid goal left" in error
+        assert "no objective left" in error
         assert session.plan.current.title == "剣を持つ"
-        assert session.goal.mid_goal_id == session.plan.current.id
+        assert session.goal.objective_id == session.plan.current.id
 
     @pytest.mark.asyncio
     async def test_plan_changes_are_applied_with_the_goal(
@@ -882,8 +882,8 @@ class TestAdvancePlay:
             "自分の家を作る",
             "剣を持つ",
         ]
-        assert session.goal.mid_goal_id == "m2"
-        added = _published(events, MidGoalAddedEvent)[0]
+        assert session.goal.objective_id == "m2"
+        added = _published(events, ObjectiveAddedEvent)[0]
         assert (added.title, added.position, added.requested_by) == ("剣を持つ", 3, "")
         schema = text_generator.generate_json.call_args.args[1]
         change = schema["properties"]["plan_changes"]["items"]
@@ -914,10 +914,10 @@ class TestAdvancePlay:
         assert [g.id for g in session.plan.pending] == ["m1", "m2"]
 
     @pytest.mark.asyncio
-    async def test_new_mid_goal_the_bridge_cannot_judge_is_retried(
+    async def test_new_objective_the_bridge_cannot_judge_is_retried(
         self, use_case, text_generator, prompt_builder, bridge
     ):
-        """足す中目標の条件は、先にブリッジが確かめる。"""
+        """足す大目標の条件は、先にブリッジが確かめる。"""
         judged = _judged()
 
         async def check(specs):
@@ -948,7 +948,7 @@ class TestAdvancePlay:
 
     @pytest.mark.asyncio
     async def test_request_accepted_during_a_goal_decision_is_kept(self, use_case, text_generator):
-        """LLM が決めている間に足された視聴者の中目標は、LLM の編集で上書きされない。"""
+        """LLM が決めている間に足された視聴者の大目標は、LLM の編集で上書きされない。"""
         session = _session()
 
         async def decide(*args, **kwargs):
@@ -1057,18 +1057,18 @@ class TestAdvancePlay:
         assert calls.count(True) == 1
 
     @pytest.mark.asyncio
-    async def test_viewer_mid_goal_over_budget_is_dropped_and_told(
+    async def test_viewer_objective_over_budget_is_dropped_and_told(
         self, use_case, text_generator, bridge, events, store
     ):
         """ステップの予算を超えた頼みはやめ（言う）、その小目標は次のステップで終わる。"""
-        plan = MidGoalPlan(mission=MISSION, viewer_budget=1)
+        plan = ObjectivePlan(mission=MISSION, viewer_budget=1)
         request = plan.add("剣", (SWORD,), requested_by="neko")
         session = PlaySession(blueprint=_blueprint(), plan=plan)
-        session.set_goal(Goal(HAVE_PLANKS, mid_goal_id=request.id), "day")
+        session.set_goal(Goal(HAVE_PLANKS, objective_id=request.id), "day")
 
         await use_case.execute(session)
 
-        dropped = _published(events, MidGoalDroppedEvent)[0]
+        dropped = _published(events, ObjectiveDroppedEvent)[0]
         assert (dropped.title, dropped.requested_by) == ("剣", "neko")
         assert "over the budget" in dropped.reason
         assert "served has ended" in session.goal_end_reason(bridge.observe.return_value)
@@ -1078,7 +1078,7 @@ class TestAdvancePlay:
 LOG = GoalSpec(GoalPredicate.HAVE, item="log", count=12)
 STEPS_DECISION = {
     **PLANKS,
-    "steps": [
+    "jobs": [
         {"predicate": "have", "item": "log", "count": 12, "reason": "原木を集める"},
         {"predicate": "have", "item": "planks", "count": 4, "reason": "板材にする"},
         {"predicate": "built", "reason": "家を建てる"},
@@ -1103,11 +1103,11 @@ class FakeJev:
         pass
 
 
-class TestStepsChosenByJev:
-    """小目標は Gemini が書いた手順から Jev が選ぶ（docs/design/26）。"""
+class TestJobsChosenByJev:
+    """小目標は Gemini が書いた中目標から Jev が選ぶ（docs/design/26）。"""
 
     @pytest.fixture
-    def make(self, bridge, text_generator, prompt_builder, selector, events, mid_goals):
+    def make(self, bridge, text_generator, prompt_builder, selector, events, objectives):
         from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 
         def make(jev=None, clock=lambda: 0.0):
@@ -1121,7 +1121,7 @@ class TestStepsChosenByJev:
                 action_selector=selector,
                 event_publisher=events,
                 conversation=Conversation(),
-                mid_goals=mid_goals,
+                objectives=objectives,
                 town=AsyncMock(),
                 notes=NoteKeeper(notes_store),
                 chooser=chooser,
@@ -1131,37 +1131,37 @@ class TestStepsChosenByJev:
         return make
 
     @pytest.mark.asyncio
-    async def test_gemini_writes_the_steps_once_then_jev_picks_the_next(
+    async def test_gemini_writes_the_jobs_once_then_jev_picks_the_next(
         self, make, text_generator, bridge
     ):
         text_generator.generate_json.return_value = STEPS_DECISION
         use_case = make(FakeJev("B"))
         session = _session()
 
-        await use_case.execute(session)  # 手順がない: Gemini が書く
-        assert [s.spec for s in session.plan.current.plan_steps] == [LOG, HAVE_PLANKS, BUILT]
+        await use_case.execute(session)  # 中目標がない: Gemini が書く
+        assert [s.spec for s in session.plan.current.jobs] == [LOG, HAVE_PLANKS, BUILT]
         assert text_generator.generate_json.await_count == 1
 
         bridge.observe.return_value = _obs(met=True)  # 小目標が済んだ → Jev
         bridge.check.side_effect = _judged({LOG})  # 原木は済んでいる
         await use_case.execute(session)
         assert text_generator.generate_json.await_count == 1  # Gemini は呼ばない
-        # 済んだ手順は出さない: A=板材、B=建てる
+        # 済んだ中目標は出さない: A=板材、B=建てる
         assert session.goal.spec == BUILT
-        assert session.goal.mid_goal_id == "m1"
+        assert session.goal.objective_id == "m1"
         assert session.goal.reason == "家を建てる"
 
     @pytest.mark.asyncio
-    async def test_gemini_must_write_steps_when_the_top_has_none(
+    async def test_gemini_must_write_jobs_when_the_top_has_none(
         self, make, text_generator, prompt_builder
     ):
         text_generator.generate_json.side_effect = [PLANKS, STEPS_DECISION]
         await make().execute(_session())
         error = prompt_builder.build_goal_prompt.call_args.kwargs["previous_error"]
-        assert "write the steps" in error
+        assert "write the jobs" in error
 
     @pytest.mark.asyncio
-    async def test_failure_low_confidence_and_used_up_steps_go_to_gemini(
+    async def test_failure_low_confidence_and_used_up_jobs_go_to_gemini(
         self, make, text_generator, bridge
     ):
         text_generator.generate_json.return_value = STEPS_DECISION
@@ -1173,29 +1173,29 @@ class TestStepsChosenByJev:
         assert text_generator.generate_json.await_count == 2
 
         confident = make(FakeJev("A"))
-        bridge.check.side_effect = _judged({LOG, HAVE_PLANKS, BUILT})  # 手順は全部済んだ
+        bridge.check.side_effect = _judged({LOG, HAVE_PLANKS, BUILT})  # 中目標は全部済んだ
         await confident.execute(session)
         assert text_generator.generate_json.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_each_gemini_decision_reviews_the_steps_as_they_are_now(
+    async def test_each_gemini_decision_reviews_the_jobs_as_they_are_now(
         self, make, text_generator, bridge, prompt_builder
     ):
-        """Gemini が決めるたびに、手順の今の判定を見せ、見直し（review）を毎回書かせる（31）。"""
+        """Gemini が決めるたびに、中目標の今の判定を見せ、見直し（review）を毎回書かせる（31）。"""
         text_generator.generate_json.return_value = {
             **STEPS_DECISION,
             "review": "原木はもう 12 本あるので板材から",
         }
         session = _session()
         use_case = make(FakeJev("A", confidence=0.1))
-        await use_case.execute(session)  # 手順がない: 判定するものもない
-        assert prompt_builder.build_goal_prompt.call_args.kwargs["step_status"] == ()
+        await use_case.execute(session)  # 中目標がない: 判定するものもない
+        assert prompt_builder.build_goal_prompt.call_args.kwargs["job_status"] == ()
 
         bridge.observe.return_value = _obs(met=True)
         bridge.check.side_effect = _judged({LOG})
-        await use_case.execute(session)  # 自信がない → Gemini。手順の今の判定を見せる
+        await use_case.execute(session)  # 自信がない → Gemini。中目標の今の判定を見せる
 
-        status = prompt_builder.build_goal_prompt.call_args.kwargs["step_status"]
+        status = prompt_builder.build_goal_prompt.call_args.kwargs["job_status"]
         assert [(st.spec, st.met) for st in status] == [
             (LOG, True),
             (HAVE_PLANKS, False),
@@ -1207,10 +1207,10 @@ class TestStepsChosenByJev:
         assert session.goal.review == "原木はもう 12 本あるので板材から"
 
     @pytest.mark.asyncio
-    async def test_a_mid_goal_that_does_not_progress_goes_back_to_gemini(
-        self, bridge, text_generator, prompt_builder, selector, events, mid_goals
+    async def test_an_objective_that_does_not_progress_goes_back_to_gemini(
+        self, bridge, text_generator, prompt_builder, selector, events, objectives
     ):
-        """小目標が済んでも中目標の数が変わらないまま続けば、Jev ではなく Gemini が考え直す。"""
+        """小目標が済んでも大目標の数が変わらないまま続けば、Jev ではなく Gemini が考え直す。"""
         from ailoveshen.application.use_cases.goal_chooser import GoalChooser
 
         notes_store = Mock()
@@ -1222,19 +1222,19 @@ class TestStepsChosenByJev:
             action_selector=selector,
             event_publisher=events,
             conversation=Conversation(),
-            mid_goals=mid_goals,
+            objectives=objectives,
             town=AsyncMock(),
             notes=NoteKeeper(notes_store),
             chooser=GoalChooser(FakeJev("A"), bridge),
-            mid_goal_stall_steps=4,
+            objective_stall_steps=4,
         )
         text_generator.generate_json.return_value = STEPS_DECISION
         bridge.check.side_effect = _judged()
         session = _session()
-        await use_case.execute(session)  # 手順を書く
+        await use_case.execute(session)  # 中目標を書く
         assert text_generator.generate_json.await_count == 1
 
-        for remaining in (5, 4, 3, 2):  # 小目標は進むが、中目標の数は変わらない
+        for remaining in (5, 4, 3, 2):  # 小目標は進むが、大目標の数は変わらない
             bridge.observe.return_value = _obs(remaining=remaining)
             await use_case.execute(session)
         bridge.observe.return_value = _obs(met=True)
@@ -1256,17 +1256,17 @@ class TestStepsChosenByJev:
         assert prompt_builder.build_goal_prompt.call_args.kwargs["retry_allowed"] is False
 
     def test_which_boundaries_go_to_gemini(self, make):
-        from ailoveshen.domain.value_objects import PlannedStep
+        from ailoveshen.domain.value_objects import Job
 
         session = _session()
-        assert "no steps yet" in make()._needs_gemini(session, "goal have(log, 12) is met")
-        session.plan.set_steps("m1", (PlannedStep(LOG, "原木"),))
+        assert "no jobs yet" in make()._needs_gemini(session, "goal have(log, 12) is met")
+        session.plan.set_jobs("m1", (Job(LOG, "原木"),))
         assert make()._needs_gemini(session, "goal have(log, 12) is met") is None
         assert make()._needs_gemini(session, "the time of day changed from day to dusk") is None
         assert "did not work out" in make()._needs_gemini(session, "goal x is stuck (actions)")
         assert "did not work out" in make()._needs_gemini(session, "goal x is reconsidered: y")
         assert "decided by Gemini" in make(jev=False)._needs_gemini(session, "goal x is met")
-        # 定期の見直し: 中目標が変わっていなければ 3 倍まで待つ
+        # 定期の見直し: 大目標が変わっていなければ 3 倍まで待つ
         now = [0.0]
         use_case = make(clock=lambda: now[0])
         use_case._last_gemini_at = 0.0
@@ -1289,10 +1289,10 @@ class TestStepsChosenByJev:
 
     def test_after_a_first_failure_jev_may_route_it(self, make):
         """失敗の後の振り分け（docs/design/34 §7）: 1 回目は Jev に、同じ種類が 2 回続いたら Gemini。"""
-        from ailoveshen.domain.value_objects import GoalOutcome, PlannedStep
+        from ailoveshen.domain.value_objects import GoalOutcome, Job
 
         session = _session()
-        session.plan.set_steps("m1", (PlannedStep(LOG, "原木"),))
+        session.plan.set_jobs("m1", (Job(LOG, "原木"),))
         use_case = make()
         use_case._failure_routing = "jev"
         stuck = "goal have(planks, 4) is stuck (3 failed actions)"
@@ -1310,18 +1310,18 @@ class TestStepsChosenByJev:
         assert "did not work out" in use_case._needs_gemini(session, "goal x is reconsidered: y")
 
     @pytest.mark.asyncio
-    async def test_after_a_failure_jev_picks_another_step_or_hands_it_to_gemini(self, bridge):
+    async def test_after_a_failure_jev_picks_another_job_or_hands_it_to_gemini(self, bridge):
         from ailoveshen.application.use_cases.goal_chooser import (
             ASK_STREAMER,
             ChosenGoal,
             GoalChooser,
             NotChosen,
         )
-        from ailoveshen.domain.value_objects import PlannedStep
+        from ailoveshen.domain.value_objects import Job
 
         session = _session()
-        session.plan.set_steps(
-            "m1", (PlannedStep(LOG, "原木"), PlannedStep(HAVE_PLANKS, "板材"), PlannedStep(BUILT, "建てる"))
+        session.plan.set_jobs(
+            "m1", (Job(LOG, "原木"), Job(HAVE_PLANKS, "板材"), Job(BUILT, "建てる"))
         )
         bridge.check.side_effect = _judged()
         failed_planks = GoalSpec(GoalPredicate.HAVE, item="planks", count=8)  # 数だけ違う: 同じ種類
@@ -1338,7 +1338,7 @@ class TestStepsChosenByJev:
         assert isinstance(rethink, NotChosen) and "rethink" in rethink.why
 
     @pytest.mark.asyncio
-    async def test_at_night_the_survival_goal_serves_no_mid_goal(
+    async def test_at_night_the_survival_goal_serves_no_objective(
         self, make, text_generator, bridge
     ):
         from ailoveshen.application.use_cases.goal_chooser import GoalChooser
@@ -1350,7 +1350,7 @@ class TestStepsChosenByJev:
         chooser = GoalChooser(FakeJev("D"), bridge)  # A 原木 B 板材 C 建てる D 夜を越す
         picked = await chooser.choose(session, night, "goal x is met")
         assert picked.spec == GoalSpec(GoalPredicate.THROUGH_NIGHT)
-        assert picked.mid_goal_id is None
+        assert picked.objective_id is None
 
     @pytest.mark.asyncio
     async def test_a_survival_goal_already_met_is_not_offered(self, make, text_generator, bridge):
@@ -1369,13 +1369,13 @@ class TestStepsChosenByJev:
         assert jev.asked == []
 
 
-def test_steps_must_be_conditions_the_world_can_judge():
+def test_jobs_must_be_conditions_the_world_can_judge():
     from ailoveshen.application.use_cases.goal_vocabulary import parse_decision
 
     decision = parse_decision(STEPS_DECISION)
-    assert [s.reason for s in decision.steps] == ["原木を集める", "板材にする", "家を建てる"]
-    with pytest.raises(ValueError, match="step 1: explored cannot be a step"):
-        parse_decision({**PLANKS, "steps": [{"predicate": "explored", "distance": 30}]})
+    assert [s.reason for s in decision.jobs] == ["原木を集める", "板材にする", "家を建てる"]
+    with pytest.raises(ValueError, match="job 1: explored cannot be a job"):
+        parse_decision({**PLANKS, "jobs": [{"predicate": "explored", "distance": 30}]})
 
 
 class TestFailureDiagnosis:
@@ -1496,7 +1496,7 @@ class TestDeath:
     def test_a_death_cuts_the_goal_even_if_it_looks_met(self):
         session = _session()
         session.observe(self._with_deaths(0))
-        session.set_goal(Goal(HAVE_PLANKS, mid_goal_id="m1"), "day")
+        session.set_goal(Goal(HAVE_PLANKS, objective_id="m1"), "day")
         assert session.goal_end_reason(self._with_deaths(0)) == ""
         reason = session.goal_end_reason(self._with_deaths(1, met=True))
         assert "died and respawned" in reason
@@ -1511,7 +1511,7 @@ class TestDeath:
         bridge.observe.return_value = self._with_deaths(0)
         session = _session(HAVE_PLANKS)
         session.observe(self._with_deaths(0))
-        session.set_goal(Goal(HAVE_PLANKS, mid_goal_id="m1"), "day")
+        session.set_goal(Goal(HAVE_PLANKS, objective_id="m1"), "day")
 
         bridge.observe.return_value = self._with_deaths(1)
         report = await use_case.execute(session)
@@ -1535,7 +1535,7 @@ class TestLessons:
 
     @pytest.mark.asyncio
     async def test_a_lesson_from_a_failure_is_recalled_when_the_same_goal_starts(
-        self, bridge, text_generator, prompt_builder, selector, events, conversation, mid_goals,
+        self, bridge, text_generator, prompt_builder, selector, events, conversation, objectives,
         town, notes,
     ):
         from ailoveshen.application.use_cases.lessons import LessonBook
@@ -1550,7 +1550,7 @@ class TestLessons:
             action_selector=selector,
             event_publisher=events,
             conversation=conversation,
-            mid_goals=mid_goals,
+            objectives=objectives,
             town=town,
             notes=notes,
             lessons=book,

@@ -447,7 +447,7 @@ class TestSkillsOverHttp:
         assert not run.ok and "no skill" in run.reason
 
 
-def test_what_other_mid_goals_gather_is_sent_as_also():
+def test_what_other_objectives_gather_is_sent_as_also():
     from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import (
         _gathered,
     )

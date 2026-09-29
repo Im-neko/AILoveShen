@@ -15,7 +15,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     MessageType,
-    MidGoal,
+    Objective,
     Mission,
 )
 from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
@@ -24,16 +24,16 @@ from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
 
 BUILDING = Activity(
     mission=Mission("生き延びながら家を建て、街にしていく"),
-    mid_goals=(
-        MidGoal("m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),)),
-        MidGoal(
+    objectives=(
+        Objective("m1", "自分の家を作る", (GoalSpec(GoalPredicate.BUILT),)),
+        Objective(
             "m3",
             "ベッドで寝る",
             (GoalSpec(GoalPredicate.PLACED, item="bed", where="home"),),
             requested_by="neko",
         ),
     ),
-    goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="日暮れまでに家を完成させる", mid_goal_id="m1"),
+    goal=Goal(GoalSpec(GoalPredicate.BUILT), reason="日暮れまでに家を完成させる", objective_id="m1"),
     observation=GameObservation(
         state={"time": {"phase": "day", "time_of_day": 6000}},
         candidates=(Candidate("wait", {"verb": "wait"}),),
@@ -138,7 +138,7 @@ class TestPromptTemplateBuilder:
             context=GenerationContext(activity=BUILDING),
         )
 
-        assert "- 大目標: 生き延びながら家を建て、街にしていく" in prompt
+        assert "- 最終目標: 生き延びながら家を建て、街にしていく" in prompt
         assert "1. 自分の家を作る [取り組み中] 完了条件: built()" in prompt
         assert "2. ベッドで寝る（nekoさんの頼み） 完了条件: placed(bed, home)" in prompt
         # 決まりはシステム指示の側（26 §4）。頼みを受けないときは、返答はテキストだけ
@@ -149,7 +149,7 @@ class TestPromptTemplateBuilder:
         # コメントは本文の最後（状態の部分が先頭から同じになるように）
         assert prompt.rstrip().endswith("コメント: 今なにしてるの？")
 
-    def test_chat_response_prompt_takes_requests_as_mid_goals(self):
+    def test_chat_response_prompt_takes_requests_as_objectives(self):
         """頼みを受けられる返答には、条件と規則を並べる。"""
         prompt = PromptTemplateBuilder().build_chat_response_prompt(
             user_name="neko",
@@ -169,7 +169,7 @@ class TestPromptTemplateBuilder:
         assert "explored(distance)" not in system and "cleared:" not in system
         assert "今の小目標は中断しない" in system
         assert "同じ人の頼みは同時に1つまで" in system
-        assert "大目標と今の目標は変えない" in system
+        assert "最終目標と今の目標は変えない" in system
         # やり方についての頼みには、配信者が実際にできることから答える
         assert "## 自分でできること（これ以外はできない）" in system
         assert "松明を持っていれば置いて湧き潰しする" in system
@@ -191,16 +191,16 @@ class TestPromptTemplateBuilder:
             reply="牛さんからお肉をもらうね！",
             handling="none",
             context=GenerationContext(activity=BUILDING),
-            previous_error="中目標にできなかった: x",
+            previous_error="大目標にできなかった: x",
         )
         system = builder.build_system_prompt(CharacterProfile(), "promise")
 
         assert "1. 自分の家を作る [取り組み中]" in prompt
-        assert "## 前回の決定\n中目標にできなかった: x" in prompt
+        assert "## 前回の決定\n大目標にできなかった: x" in prompt
         assert prompt.rstrip().endswith("牛さんからお肉をもらうね！")
         assert "扱い: none" in prompt
         assert "## 返答の約束を守る" in system and "have(item, count)" in system
-        assert "already でも cannot でもない。now か later で中目標にする" in system
+        assert "already でも cannot でもない。now か later で大目標にする" in system
         assert "decline（断った）のときは now にしない" in system
 
     def test_system_prompts_do_not_change_with_the_state(self):

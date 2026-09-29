@@ -8,9 +8,9 @@ from ailoveshen.domain.events import (
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
-    MidGoalAddedEvent,
-    MidGoalCompletedEvent,
-    MidGoalDroppedEvent,
+    ObjectiveAddedEvent,
+    ObjectiveCompletedEvent,
+    ObjectiveDroppedEvent,
     SkillLearnedEvent,
     SkillRevisedEvent,
     TownCompletedEvent,
@@ -63,7 +63,7 @@ class TestNarrator:
             GoalEndedEvent(goal="placed(bed, home)", ended_because="stalled", met=False)
         )
         await narrator.on_goal_set(
-            GoalSetEvent(goal="through_night()", reason="日が暮れる", mid_goal="")
+            GoalSetEvent(goal="through_night()", reason="日が暮れる", objective="")
         )
         await narrator.drain()
 
@@ -77,10 +77,10 @@ class TestNarrator:
         assert said == ["次は羊を探すよ"]
 
     @pytest.mark.asyncio
-    async def test_the_mid_goal_served_is_told(self, narrator, llm):
-        """次の小目標は、どの中目標のためかを添えて言う。"""
+    async def test_the_objective_served_is_told(self, narrator, llm):
+        """次の小目標は、どの大目標のためかを添えて言う。"""
         await narrator.on_goal_set(
-            GoalSetEvent(goal="have(log, 3)", reason="剣の材料", mid_goal="身を守る道具を持つ")
+            GoalSetEvent(goal="have(log, 3)", reason="剣の材料", objective="身を守る道具を持つ")
         )
         await narrator.drain()
 
@@ -104,7 +104,7 @@ class TestNarrator:
         current[0] = Activity(observation=obs)
         try:
             await narrator.on_goal_set(
-                GoalSetEvent(goal="at_home()", reason="夜は危ない", mid_goal="")
+                GoalSetEvent(goal="at_home()", reason="夜は危ない", objective="")
             )
             await narrator.drain()
         finally:
@@ -118,35 +118,35 @@ class TestNarrator:
         ]
 
     @pytest.mark.asyncio
-    async def test_mid_goals_ended_are_told_with_the_next_goal(self, narrator, llm):
-        """完了した中目標とやめた中目標（視聴者のものも）は言う。黙って消さない。"""
-        await narrator.on_mid_goal_completed(MidGoalCompletedEvent(title="自分の家を作る"))
-        await narrator.on_mid_goal_dropped(
-            MidGoalDroppedEvent(title="探検", reason="予算を超えた", requested_by="tori")
+    async def test_objectives_ended_are_told_with_the_next_goal(self, narrator, llm):
+        """完了した大目標とやめた大目標（視聴者のものも）は言う。黙って消さない。"""
+        await narrator.on_objective_completed(ObjectiveCompletedEvent(title="自分の家を作る"))
+        await narrator.on_objective_dropped(
+            ObjectiveDroppedEvent(title="探検", reason="予算を超えた", requested_by="tori")
         )
         await narrator.on_goal_set(
-            GoalSetEvent(goal="placed(bed, home)", reason="", mid_goal="寝る")
+            GoalSetEvent(goal="placed(bed, home)", reason="", objective="寝る")
         )
         await narrator.drain()
 
         assert _events(llm)[0][:2] == [
-            "中目標「自分の家を作る」が完了した",
-            "中目標「探検」（toriさんの頼み）をやめた（予算を超えた）",
+            "大目標「自分の家を作る」が完了した",
+            "大目標「探検」（toriさんの頼み）をやめた（予算を超えた）",
         ]
 
     @pytest.mark.asyncio
-    async def test_own_new_mid_goal_is_told_a_viewers_is_not(self, narrator, llm):
+    async def test_own_new_objective_is_told_a_viewers_is_not(self, narrator, llm):
         """受けた頼みはもう一度言わない（返答で言った）。"""
-        await narrator.on_mid_goal_added(
-            MidGoalAddedEvent(title="ベッド", reason="頼まれた", requested_by="neko", position=2)
+        await narrator.on_objective_added(
+            ObjectiveAddedEvent(title="ベッド", reason="頼まれた", requested_by="neko", position=2)
         )
-        await narrator.on_mid_goal_added(
-            MidGoalAddedEvent(title="剣を持つ", reason="夜に備える", position=3)
+        await narrator.on_objective_added(
+            ObjectiveAddedEvent(title="剣を持つ", reason="夜に備える", position=3)
         )
-        await narrator.on_goal_set(GoalSetEvent(goal="built()", reason="", mid_goal="家"))
+        await narrator.on_goal_set(GoalSetEvent(goal="built()", reason="", objective="家"))
         await narrator.drain()
 
-        assert _events(llm)[0][0] == "中目標「剣を持つ」をリストの 3 番目に足した（夜に備える）"
+        assert _events(llm)[0][0] == "大目標「剣を持つ」をリストの 3 番目に足した（夜に備える）"
         assert len(_events(llm)[0]) == 2
 
     @pytest.mark.asyncio
@@ -176,7 +176,7 @@ class TestNarrator:
         await narrator.on_house_completed(HouseCompletedEvent(name="ぽかぽか"))
         await narrator.on_goal_ended(GoalEndedEvent(goal="built()", ended_because="met", met=True))
         await narrator.on_goal_set(
-            GoalSetEvent(goal="have(wooden_sword, 1)", reason="身を守る", mid_goal="剣")
+            GoalSetEvent(goal="have(wooden_sword, 1)", reason="身を守る", objective="剣")
         )
         await narrator.drain()
 
@@ -196,12 +196,12 @@ class TestNarrator:
         )
         await narrator.on_town_defined(TownDefinedEvent(text="小さな街", stages=("備蓄", "明かり")))
         await narrator.on_town_completed(TownCompletedEvent(text="小さな街"))
-        await narrator.on_goal_set(GoalSetEvent(goal="at_home()", reason="夜", mid_goal=""))
+        await narrator.on_goal_set(GoalSetEvent(goal="at_home()", reason="夜", objective=""))
         await narrator.drain()
 
         assert _events(llm)[0][:3] == [
             "街「いしのまち」の場所を決めた（そこに家を建てて引っ越す）: 石が多い",
-            "大目標の街をこう決めた: 小さな街（段階: 備蓄 → 明かり）",
+            "最終目標の街をこう決めた: 小さな街（段階: 備蓄 → 明かり）",
             "街が完成した（小さな街）",
         ]
 
@@ -219,7 +219,7 @@ class TestNarrator:
         await narrator.on_skill_revised(
             SkillRevisedEvent(name="hunt", description="狩り", version=2, reason="no pig")
         )
-        await narrator.on_goal_set(GoalSetEvent(goal="have(food, 2)", reason="", mid_goal=""))
+        await narrator.on_goal_set(GoalSetEvent(goal="have(food, 2)", reason="", objective=""))
         await narrator.drain()
         assert _events(llm)[1][0] == "技「狩り」を直した（v2）（前の失敗: no pig）"
 
@@ -246,7 +246,7 @@ async def test_the_gate_keeps_routine_changes_for_the_next_line_but_highlights_a
         return False  # Jev: 今はいい
 
     narrator = Narrator(llm, activity=lambda: ACTIVITY, say=say, gate=gate, max_silence_seconds=60, clock=clock)
-    goal = lambda g: GoalSetEvent(goal=g, reason="r", mid_goal="家")  # noqa: E731
+    goal = lambda g: GoalSetEvent(goal=g, reason="r", objective="家")  # noqa: E731
 
     await narrator.on_goal_set(goal("a"))  # 初めては必ず話す
     await narrator.drain()
@@ -255,7 +255,7 @@ async def test_the_gate_keeps_routine_changes_for_the_next_line_but_highlights_a
     await narrator.drain()
     assert len(said) == 1 and asked[-1][1] == 10
 
-    await narrator.on_mid_goal_completed(MidGoalCompletedEvent(title="家"))
+    await narrator.on_objective_completed(ObjectiveCompletedEvent(title="家"))
     await narrator.on_goal_set(goal("c"))  # 見どころ: 聞かずに話す、取っておいたものも一緒に
     await narrator.drain()
     assert len(said) == 2 and len(asked) == 1

@@ -125,7 +125,7 @@ class TestToolStepWithScreen:
     """道具モード: look_screen の画像は同じステップの次の選択にだけ、失敗の後は画像を添える。"""
 
     def _use_case(self, screen):
-        from ailoveshen.application.use_cases.mid_goals import MidGoalKeeper
+        from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
         from ailoveshen.application.use_cases.notes import NoteKeeper
         from ailoveshen.application.use_cases.play import AdvancePlayUseCase
         from ailoveshen.domain.entities import Conversation
@@ -151,7 +151,7 @@ class TestToolStepWithScreen:
             action_selector=AsyncMock(),
             event_publisher=events,
             conversation=Conversation(),
-            mid_goals=MidGoalKeeper(bridge=bridge, event_publisher=events, store=store),
+            objectives=ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store),
             town=AsyncMock(),
             notes=NoteKeeper(notes),
             control="tools",

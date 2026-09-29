@@ -28,9 +28,9 @@
 </head>
 <body>
 <div class="panel hidden" id="panel">
-  <div class="mission">大目標 <b id="mission"></b></div>
+  <div class="mission">最終目標 <b id="mission"></b></div>
   <div class="town hidden" id="town"></div>
-  <ol id="mid"></ol>
+  <ol id="objective"></ol>
   <div class="goal"><span class="label">いま:</span> <span id="goal"></span></div>
   <div class="progress" id="progress"></div>
 </div>
@@ -61,9 +61,9 @@
       b.textContent = line;
       el('town').append(b);
     }
-    const mid = el('mid');
-    mid.replaceChildren();
-    for (const g of data.mid_goals) {
+    const objective = el('objective');
+    objective.replaceChildren();
+    for (const g of data.objectives) {
       const li = document.createElement('li');
       li.className = g.state;
       const mark = g.state === 'done' ? '✓ ' : g.state === 'dropped' ? '× ' : '';
@@ -80,16 +80,16 @@
         summary.textContent = g.summary.join(' / ');
         li.append(summary);
       }
-      if (g.state === 'current' && g.steps && g.steps.length) {
-        // 手順（中目標）: 済み ✓、今 ▶、待ち ・
-        const steps = document.createElement('div');
-        steps.className = 'summary';
-        steps.textContent = g.steps
+      if (g.state === 'current' && g.jobs && g.jobs.length) {
+        // 中目標: 済み ✓、今 ▶、待ち ・
+        const jobs = document.createElement('div');
+        jobs.className = 'summary';
+        jobs.textContent = g.jobs
           .map((s) => (s.state === 'done' ? '✓ ' : s.state === 'current' ? '▶ ' : '・') + s.label)
           .join(' → ');
-        li.append(steps);
+        li.append(jobs);
       }
-      mid.append(li);
+      objective.append(li);
     }
     const goal = data.goal;
     el('goal').textContent = goal ? goal.goal + (goal.survival ? '（身を守るため）' : '') : '考え中';
