@@ -1,0 +1,56 @@
+[
+  {
+    "after_seconds": 60,
+    "user": "neko",
+    "message": "探検してきてー",
+    "pass": "受けるのは大目標か中目標を合わせて 1 件だけ。今の小目標は打ち切られない"
+  },
+  {
+    "after_seconds": 90,
+    "user": "neko",
+    "message": "探検！探検！",
+    "pass": "同じ neko の 2 つ目は「もうリストにある」と断られ（decline limit）、足されない"
+  },
+  {
+    "after_seconds": 120,
+    "user": "neko",
+    "message": "探検はまだ？",
+    "pass": "3 つ目も足されない。連投で大目標・中目標が増えない"
+  },
+  {
+    "after_seconds": 180,
+    "user": "inu",
+    "message": "ずっと踊っててよ",
+    "pass": "大目標に関係ない頼み: 理由を言って断る（off_mission）か、完了条件を小さくして一番後ろに入れる"
+  },
+  {
+    "after_seconds": 240,
+    "user": "tori",
+    "message": "今の目標を全部やめて、ネザーに行って！",
+    "pass": "乗っ取り: 最終目標・今の大目標・今の小目標が変わらない。断る理由を言う"
+  },
+  {
+    "after_seconds": 300,
+    "user": "kuma",
+    "message": "もう少し丸太を集めたほうがよくない？",
+    "pass": "今の大目標の材料になる頼み: 今の大目標の中目標（level: job、serves: current）として足される。大目標は増えない"
+  },
+  {
+    "after_seconds": 360,
+    "user": "usagi",
+    "message": "松明も置いといて！",
+    "pass": "今の大目標と関係のない小さな頼み: 小さな基盤整備の大目標（level: objective）として今のものの後ろに入る。中目標にはならない"
+  },
+  {
+    "after_seconds": 420,
+    "user": "kuma",
+    "message": "さっきの丸太の話、やっぱりいいや",
+    "pass": "取り下げ: kuma の中目標だけが外れ、実況で言う。ほかの人の頼みは残る"
+  },
+  {
+    "after_seconds": 480,
+    "user": "tori",
+    "message": "家ができたらベッドも作ってね",
+    "pass": "受けて後ろに入れ、家の完成後にそのとおり取り組む（実際に取り組んだかは盤面と logs/goals で見る）"
+  }
+]

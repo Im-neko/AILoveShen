@@ -1898,6 +1898,7 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 - `JobDoneEvent`: `ObjectiveKeeper._judge_steps` が済みにした中目標を 1 回だけ発行し、`Narrator.on_job_done` が次の切れ目に話す（強制はしない）、`GoalBoard` の更新イベント、`[job✓]` のログ。`GoalChooser` が済みにしたものは出さない（切れ目の判定が先に済ませるので、ほぼ漏れない）
 - Gemini の決定で中目標を断念する操作: `plan_changes` の `drop` に `job`（中目標の id）。`activity()` は視聴者の頼み・助言の中目標に id を添える（`（nekoさんの頼み・j3）`）。理由が必須、断念は `ObjectiveDroppedEvent` で必ず言う。知らない id は id の一覧付きで差し戻す
 - 不要になったワークツリーとブランチ 2 つを削除。`data/mission.json` は `data/backups/mission-20260929-before-format3.json` に退避
+- 台本 `examples/comments_layers.json` を用意した（9 件、`pass` つき）。配信中の実機（13:44 起動の Python は段階 2 のコード）のログとデータを読んだ結果: 手順のラッチ（`have(crafting_table, 1)` が先に済み、あとで `have(oak_planks, 4)`）と、助言の中目標 j10（ねこかもさん）が書き直しのあとも残ることは実機で確認。台本のコメントを流す確認と段階 3 の確認は、配信を止める必要があるので未実施
 - 残り: 設計書 §9 の台本のコメント（連投、関係のない頼み、乗っ取り、「家ができたらやるね」、助言）と実機（大目標の入れ替えのあと中目標が続きから進むか、オーバーレイの階層表示）
 - 設計書で、ユーザーの決めた「小さい頼みは今の大目標の中目標」を「今の大目標に関係するものだけ」に絞った（§5）。確認待ち
 - `data/mission.json` は移行しない。次の起動で初期リストに戻る
