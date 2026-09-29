@@ -80,6 +80,15 @@
         summary.textContent = g.summary.join(' / ');
         li.append(summary);
       }
+      if (g.state === 'current' && g.steps && g.steps.length) {
+        // 手順（中目標）: 済み ✓、今 ▶、待ち ・
+        const steps = document.createElement('div');
+        steps.className = 'summary';
+        steps.textContent = g.steps
+          .map((s) => (s.state === 'done' ? '✓ ' : s.state === 'current' ? '▶ ' : '・') + s.label)
+          .join(' → ');
+        li.append(steps);
+      }
       mid.append(li);
     }
     const goal = data.goal;

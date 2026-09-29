@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +15,7 @@ from ailoveshen.domain.entities import MidGoalPlan
 from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
+    JobState,
     MidGoal,
     MidGoalState,
     Mission,
@@ -24,6 +26,9 @@ from ailoveshen.domain.value_objects import (
     TownStage,
     Zone,
 )
+
+# 保存の形の版。違うファイルは読まない（互換のための移行はしない。最初のリストで始める）
+FORMAT = 2
 
 
 class JsonMissionStore(IMissionStore):
@@ -44,31 +49,48 @@ class JsonMissionStore(IMissionStore):
         self._path = Path(path)
 
     def load(self) -> Optional[SavedPlan]:
-        """保存した計画。ファイルがまだなければ None。"""
+        """
+        保存した計画。ファイルがまだなければ None。読めない形（版が違う、壊れている）でも例外にせず
+        None にする: 最初のリストで始め、次の保存で上書きするので、その前に脇へ写しておく。
+        """
         if not self._path.exists():
             return None
-        data = json.loads(self._path.read_text(encoding="utf-8"))
-        saved = SavedPlan(
-            mission=Mission(text=data["mission"]),
-            pending=tuple(_mid_goal(g) for g in data["pending"]),
-            finished=tuple(_mid_goal(g) for g in data["finished"]),
-            next_id=int(data["next_id"]),
-            town=_town(data["town"]) if data.get("town") else None,
-            town_stage=int(data.get("town_stage", 0)),
-            stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
-            site=TownSite(**data["site"]) if data.get("site") else None,
-            town_map=_town_map(data["town_map"]) if data.get("town_map") else None,
-        )
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+            if data.get("format") != FORMAT:
+                raise ValueError(f"format {data.get('format')!r}, not {FORMAT}")
+            saved = SavedPlan(
+                mission=Mission(text=data["mission"]),
+                pending=tuple(_mid_goal(g) for g in data["pending"]),
+                finished=tuple(_mid_goal(g) for g in data["finished"]),
+                next_id=int(data["next_id"]),
+                next_step_id=int(data["next_step_id"]),
+                town=_town(data["town"]) if data.get("town") else None,
+                town_stage=int(data.get("town_stage", 0)),
+                stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
+                site=TownSite(**data["site"]) if data.get("site") else None,
+                town_map=_town_map(data["town_map"]) if data.get("town_map") else None,
+            )
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            aside = self._path.with_suffix(self._path.suffix + ".unreadable")
+            shutil.copy2(self._path, aside)
+            logger.warning(
+                f"{self._path} は今の形で読めない（{type(e).__name__}: {e}）。最初の中目標で始める"
+                f"（元のファイルは {aside} に残した）"
+            )
+            return None
         logger.info(f"中目標を {self._path} から読み込んだ")
         return saved
 
     def save(self, plan: MidGoalPlan) -> None:
         """計画を保存する。"""
         data = {
+            "format": FORMAT,
             "mission": plan.mission.text,
             "pending": [_to_dict(g) for g in plan.pending],
             "finished": [_to_dict(g) for g in plan.finished],
             "next_id": plan.next_id,
+            "next_step_id": plan.next_step_id,
             "town": _town_dict(plan.town) if plan.town else None,
             "town_stage": plan.town_stage,
             "stage_met": [c.to_dict() for c in plan.stage_met],
@@ -82,7 +104,16 @@ class JsonMissionStore(IMissionStore):
 
 
 def _step_to_dict(step: PlannedStep) -> dict[str, Any]:
-    out: dict[str, Any] = {"spec": step.spec.to_dict(), "reason": step.reason}
+    out: dict[str, Any] = {
+        "id": step.id,
+        "state": step.state.value,
+        "spec": step.spec.to_dict(),
+        "reason": step.reason,
+        "requested_by": step.requested_by,
+        "suggested_by": step.suggested_by,
+        "steps": step.steps,
+        "progress": list(step.progress),
+    }
     if step.together:
         # 小目標の束（docs/design/44）
         out["together"] = [t.to_dict() for t in step.together]
@@ -170,6 +201,12 @@ def _mid_goal(data: dict[str, Any]) -> MidGoal:
                 s.get("reason", ""),
                 together=tuple(_spec(t) for t in s.get("together", [])),
                 approach=s.get("approach", ""),
+                id=s["id"],
+                state=JobState(s["state"]),
+                requested_by=s.get("requested_by"),
+                suggested_by=s.get("suggested_by"),
+                steps=int(s.get("steps", 0)),
+                progress=tuple(s.get("progress", [])),
             )
             for s in data.get("plan_steps", [])
         ),

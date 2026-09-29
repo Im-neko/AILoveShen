@@ -7,7 +7,7 @@ import re
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Optional, TypeVar
 
 from loguru import logger
@@ -88,6 +88,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    JobState,
     Lesson,
     MessageRole,
     MessageType,
@@ -229,6 +230,7 @@ class StartPlayUseCase(IStartPlay):
                 list(saved.pending),
                 list(saved.finished),
                 saved.next_id,
+                next_step_id=saved.next_step_id,
                 town=saved.town,
                 town_stage=saved.town_stage,
                 stage_met=saved.stage_met,
@@ -349,9 +351,10 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._recent_tools: deque[ToolOutcome] = deque(maxlen=RECENT_TOOLS)
         self._chooser = chooser
         self._replan_seconds = replan_minutes * 60
-        # 一番上の中目標の進み具合の見張り: その id、進み具合の数、変わらないまま使った行動の数
+        # 一番上の中目標の進み具合の見張り（docs/design/50 §4）: その id、済んだ手順の数、条件の進み具合の
+        # 数、今の手順の id とその進み具合の数、変わらないまま使った行動の数
         self._mid_stall_steps = mid_goal_stall_steps
-        self._mid_watch: tuple[Optional[str], tuple[int, ...]] = (None, ())
+        self._mid_watch: _MidWatch = _MidWatch()
         self._mid_idle_steps = 0
         self._clock = clock
         self._last_gemini_at: float | None = None
@@ -421,7 +424,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         if self._side_work(obs, decision):
             # ついでの作業（そばの葉から苗木など）は、今の小目標の「進まない」に数えない
             session.skip_stall_once()
-        if goal.mid_goal_id is not None and goal.mid_goal_id == self._mid_watch[0]:
+        if goal.mid_goal_id is not None and goal.mid_goal_id == self._mid_watch.goal_id:
             self._mid_idle_steps += 1
         line = _step_line(decision, result)
         self._goal_steps.append(line)
@@ -864,7 +867,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         current = session.plan.current
         if current is None:
             return "there is no mid goal"
-        if not current.plan_steps:
+        if not current.open_steps:
             return f"the mid goal {current.title} has no steps yet"
         if self._last_gemini_at is not None:
             elapsed = self._clock() - self._last_gemini_at
@@ -974,7 +977,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 if failed_goal is not None:
                     _check_remedy(decision, failed_goal, same_failures)
                 _check_time(decision, obs)
-                await self._check_step_order(decision.steps)
+                await self._check_step_order(decision.steps, plan.current)
                 try:
                     await self._mid_goals.check_new(decision.changes)
                 except BuildNotDesignedError as e:
@@ -1013,10 +1016,13 @@ class AdvancePlayUseCase(IAdvancePlay):
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._mid_goals.rehearse(plan, decision.changes)
                 _serving(decision, preview)
+                if decision.steps and preview.current is not None:
+                    # 書き直しが手順の上限を破らないか（反映するときに落とさない）
+                    preview.set_steps(preview.current.id, decision.steps)
                 if (
                     self._chooser is not None
                     and preview.current is not None
-                    and not preview.current.plan_steps
+                    and not preview.current.open_steps
                     and not decision.steps
                 ):
                     # 手順がないと、次の切れ目でまた Gemini を呼ぶことになる（docs/design/26）
@@ -1040,7 +1046,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                 )
             await self._mid_goals.commit(plan, decision.changes)
             if decision.steps and plan.current is not None:
-                await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
+                try:
+                    await self._mid_goals.set_steps(plan, plan.current.id, decision.steps)
+                except ValueError as e:
+                    # 決定を確かめたあとに、返答が視聴者の手順を足して上限に届いた: 書き直しは見送る
+                    logger.warning(f"手順の書き直しを見送った: {e}")
             self._write_notes(session.notebook, data, obs.day, goals, viewers)
             self._learn(decision, situation or {})
             await self._start_goal(
@@ -1055,16 +1065,19 @@ class AdvancePlayUseCase(IAdvancePlay):
         """
         一番上の中目標が、そのための行動を mid_goal_stall_steps 続けても進んでいなければ、その理由
         （小目標は「進まない」で区切られても、同じ小目標に戻って回り続けることがあった）。
-        進み具合は中目標の条件の数（例: log (3/20) の 3）。変わったら数え直す。
+        進んだとするのは、手順が 1 つ済んだとき、条件の進み具合の数（例: log (3/20) の 3）が変わった
+        とき、今の手順の進み具合の数が変わったとき（手順を書き直して今の手順が変わっただけでは
+        数え直さない。docs/design/50 §4）。
         """
         top = session.plan.current
         if top is None or not self._mid_stall_steps:
-            self._mid_watch, self._mid_idle_steps = (None, ()), 0
+            self._mid_watch, self._mid_idle_steps = _MidWatch(), 0
             return ""
-        numbers = _progress_numbers(top)
-        if (top.id, numbers) != self._mid_watch:
-            self._mid_watch, self._mid_idle_steps = (top.id, numbers), 0
+        watch = _MidWatch.of(top)
+        if self._mid_watch.progressed_by(watch):
+            self._mid_watch, self._mid_idle_steps = watch, 0
             return ""
+        self._mid_watch = watch  # 手順を書き直して今の手順が変わっただけなら、数え直さない
         if self._mid_idle_steps < self._mid_stall_steps:
             return ""
         steps, self._mid_idle_steps = self._mid_idle_steps, 0  # 考え直した後も同じだけ待つ
@@ -1078,12 +1091,20 @@ class AdvancePlayUseCase(IAdvancePlay):
             "move this mid goal down or drop it with the reason"
         )
 
-    async def _check_step_order(self, steps: tuple[PlannedStep, ...]) -> None:
+    async def _check_step_order(
+        self, steps: tuple[PlannedStep, ...], current: Optional[MidGoal] = None
+    ) -> None:
         """
         手順は順番どおりに進む前提なので、後の手順がもう済んでいるのに前の手順が残っていれば、その前の
         手順はそこへ行くためのものでしかない（2026-09-27: かまどを持っているのに、手順に「石 8 → かまど」を
         書き、石を掘りに行った）。判定できなければ確かめない。
+        一度済みにした手順（ラッチ。docs/design/50 §4）は数えない: 書き直しの中に残っていても、済みの
+        まま残り、材料を使って今は満たしていなくても、順番の食い違いにしない。
         """
+        if current is not None:
+            steps = tuple(
+                s for s in steps if not any(d.same_as(s) for d in current.done_steps)
+            )
         if len(steps) < 2:
             return
         try:
@@ -1110,9 +1131,14 @@ class AdvancePlayUseCase(IAdvancePlay):
         if current is None or not current.plan_steps:
             return ()
         try:
-            # 束の手順は条件ごとに（docs/design/44）
-            specs = [x for s in current.plan_steps for x in s.specs]
-            return tuple(await self._bridge.check(specs))
+            # 束の手順は条件ごとに（docs/design/44）。済みにした手順は判定せず、済みのまま見せる
+            open_specs = [x for s in current.open_steps for x in s.specs]
+            judged = iter(await self._bridge.check(open_specs) if open_specs else ())
+            return tuple(
+                ConditionStatus(spec, True) if s.state == JobState.DONE else next(judged)
+                for s in current.plan_steps
+                for spec in s.specs
+            )
         except AILoveShenError as e:
             logger.debug(f"手順を判定できなかった: {e}")
             return ()
@@ -1245,7 +1271,7 @@ def _upcoming(plan: MidGoalPlan) -> list[dict[str, str]]:
     current = plan.current
     if current is None:
         return []
-    return [situation_of(spec, None) for step in current.plan_steps for spec in step.specs]
+    return [situation_of(spec, None) for step in current.open_steps for spec in step.specs]
 
 
 def _no_progress(reason: str) -> bool:
@@ -1260,6 +1286,47 @@ _PROGRESS = re.compile(r"\((\d+)/\d+\)")
 def _progress_numbers(goal: MidGoal) -> tuple[int, ...]:
     """中目標の進み具合の数（条件ごとの「(3/20)」の 3）。行き方の説明は変わっても数えない。"""
     return tuple(int(m) for line in goal.summary() for m in _PROGRESS.findall(line))
+
+
+def _job_numbers(step: Optional[PlannedStep]) -> tuple[int, ...]:
+    """手順の進み具合の数（条件ごとの「(3/20)」の 3）。"""
+    if step is None:
+        return ()
+    return tuple(
+        int(m)
+        for line in step.progress
+        if not line.startswith(" ")
+        for m in _PROGRESS.findall(line)
+    )
+
+
+@dataclass(frozen=True)
+class _MidWatch:
+    """一番上の中目標が進んでいるかの目安（docs/design/50 §4）。"""
+
+    goal_id: Optional[str] = None
+    done: int = 0
+    numbers: tuple[int, ...] = ()
+    job_id: str = ""
+    job_numbers: tuple[int, ...] = ()
+
+    @staticmethod
+    def of(goal: MidGoal) -> "_MidWatch":
+        job = next(iter(goal.open_steps), None)
+        return _MidWatch(
+            goal.id,
+            len(goal.done_steps),
+            _progress_numbers(goal),
+            job.id if job else "",
+            _job_numbers(job),
+        )
+
+    def progressed_by(self, now: "_MidWatch") -> bool:
+        """前より進んだ（別の中目標になった、手順が済んだ、数が変わった）か。"""
+        if (now.goal_id, now.done, now.numbers) != (self.goal_id, self.done, self.numbers):
+            return True
+        # 手順の id が同じで進み具合の数が変わったときだけ。手順が変わっただけは進んだとしない
+        return now.job_id == self.job_id and now.job_numbers != self.job_numbers
 
 
 def _same_failures(session: PlaySession) -> int:
@@ -1369,7 +1436,7 @@ def _also(plan: MidGoalPlan, bundle: tuple[GoalSpec, ...]) -> tuple[GoalSpec, ..
     """
     specs = [c for g in plan.pending for c in g.conditions]
     if plan.current is not None:
-        specs += [x for s in plan.current.plan_steps for x in s.specs]
+        specs += [x for s in plan.current.open_steps for x in s.specs]
     items = {b.item for b in bundle}
     out: list[GoalSpec] = []
     for s in specs:

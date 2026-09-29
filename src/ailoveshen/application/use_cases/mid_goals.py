@@ -27,7 +27,7 @@ from ailoveshen.domain.events import (
     MidGoalDroppedEvent,
     TownCompletedEvent,
 )
-from ailoveshen.domain.exceptions import GoalRejectedError
+from ailoveshen.domain.exceptions import AILoveShenError, GoalRejectedError
 from ailoveshen.domain.value_objects import (
     BuildDesign,
     GoalPredicate,
@@ -122,6 +122,7 @@ class MidGoalKeeper:
                         suggested_by=done.suggested_by or "",
                     )
                 )
+        await self._judge_steps(plan)
         await self._design_stage_builds(plan)
         events.extend(self._next_stage(plan))
         if plan.town_complete and not was_complete:
@@ -130,6 +131,34 @@ class MidGoalKeeper:
             events.append(TownCompletedEvent(text=plan.town.text))
         self._store.save(plan)
         await self._publish(events)
+
+    async def _judge_steps(self, plan: MidGoalPlan) -> None:
+        """
+        一番上の中目標の、まだ済んでいない手順を判定する。満たしたものは済みにして、そのままにする
+        （あとで材料を使って条件が崩れても戻さない。docs/design/50 §4）。進み具合も保つ（停滞の目安）。
+        判定できなければ何もしない。
+        """
+        current = plan.current
+        if current is None or not current.open_steps:
+            return
+        steps = current.open_steps
+        try:
+            statuses = list(await self._bridge.check([x for s in steps for x in s.specs]))
+        except AILoveShenError as e:
+            logger.debug(f"手順を判定できなかった: {e}")
+            return
+        judged: list[tuple[str, bool, tuple[str, ...]]] = []
+        for step in steps:
+            mine, statuses = statuses[: len(step.specs)], statuses[len(step.specs) :]
+            judged.append(
+                (
+                    step.id,
+                    all(c.met for c in mine),
+                    tuple(line for c in mine for line in c.lines),
+                )
+            )
+        for step in plan.judge_steps(current.id, judged):
+            logger.info(f"手順が済んだ: {step.describe()}（中目標 {current.id}）")
 
     def _next_stage(self, plan: MidGoalPlan) -> list[DomainEvent]:
         # 段階の条件は家を基準に判定する: 引っ越す前の家で満たしても意味がない
@@ -317,6 +346,8 @@ class MidGoalKeeper:
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
         what = "の助言" if advice else "の頼み"
+        if proposal.job:
+            return await self._accept_job(plan, proposal, requested_by, advice)
         same = plan.same_as(proposal.conditions)
         if same is not None:
             # もう同じ完了条件の中目標がある: 足さない（2026-09-28: 同じ整地が 2 つ並んだ）。今やるなら
@@ -351,14 +382,70 @@ class MidGoalKeeper:
         await self._publish([_added(plan, goal)])
         return goal
 
+    async def _accept_job(
+        self, plan: MidGoalPlan, proposal: MidGoalProposal, requested_by: str, advice: bool
+    ) -> MidGoal:
+        """
+        頼みを、今の大目標の手順（中目標）として足す（docs/design/50 §5）。条件の先頭が手順の条件で、
+        残りは一緒に追う。今の手順の後ろに入る（`proposal.now` なら先頭。呼び出し側が小目標を区切る）。
+        今の大目標を返す。
+
+        Raises:
+            GoalRejectedError: 条件を判定できないとき
+            ValueError: 上限を破るか、手順の形が正しくないとき、足す大目標がないとき
+        """
+        current = plan.current
+        if current is None:
+            raise ValueError("there is no mid goal to add the step to")
+        viewer = None if advice else requested_by
+        step = PlannedStep(
+            proposal.conditions[0],
+            proposal.reason,
+            together=proposal.conditions[1:],
+            requested_by=viewer,
+            suggested_by=requested_by if advice else None,
+        )
+        plan.check_room(viewer, job=True)  # 設計の前に: 上限で断るなら何も残さない
+        await self._design_builds(
+            proposal, BuildDesign.MAX_BLOCKS if advice else BuildDesign.VIEWER_MAX_BLOCKS
+        )
+        await self._design_facilities(proposal.conditions, _brief(proposal))
+        await self._write_checks(proposal.conditions, _brief(proposal))
+        await self._bridge.check(proposal.conditions)
+        # 今の手順のすぐ後ろで、先に頼まれた手順の後ろ（材料はそれを使う手順より前に要る）。now なら先頭
+        queued = current.open_steps
+        at = 1
+        while at < len(queued) and (queued[at].requested_by or queued[at].suggested_by):
+            at += 1
+        position = 0 if proposal.now else at
+        added = plan.add_step(current.id, step, position=position, now=proposal.now)
+        logger.info(
+            f"{requested_by} {'の助言' if advice else 'の頼み'}を中目標 {current.id} の手順 "
+            f"{added.id} にした: {added.describe()}"
+        )
+        self._store.save(plan)
+        goal = plan.get(current.id)
+        assert goal is not None
+        return goal
+
     async def withdraw(self, plan: MidGoalPlan, requested_by: str) -> MidGoal | None:
         """
-        視聴者が自分の頼みを取り下げた（「もういいよ」）: その人の中目標をやめる。なければ None。
+        視聴者が自分の頼みを取り下げた（「もういいよ」）: その人の中目標（手順も）をやめる。なければ None。
         やめられるのは本人の頼みだけ（ほかの人の頼みや配信者自身の中目標は変えない）。
         """
         mine = next((g for g in plan.pending if g.requested_by == requested_by), None)
         if mine is None:
-            return None
+            found = plan.viewer_step(requested_by)
+            if found is None:
+                return None
+            goal, step = found
+            plan.drop_step(goal.id, step.id, f"{requested_by} withdrew the request")
+            logger.info(f"視聴者の頼みの手順を取り下げた: {step.describe()}（{requested_by}）")
+            self._store.save(plan)
+            await self._publish(
+                [_dropped_step(step, f"{requested_by} withdrew the request")]
+            )
+            return goal
         dropped = plan.drop(mine.id, f"{requested_by} withdrew the request")
         logger.info(f"視聴者の頼みを取り下げた: {dropped.describe()}（{requested_by}）")
         self._store.save(plan)
@@ -453,11 +540,19 @@ class MidGoalKeeper:
         self._store.save(plan)
 
     async def step_counted(self, plan: MidGoalPlan, goal: MidGoal | None) -> None:
-        """ステップを数えたあとにプランを保存する。予算を超えて断念した中目標があれば伝える。"""
+        """
+        ステップを数えたあとにプランを保存する。予算を超えて断念した中目標（視聴者の手順も）が
+        あれば伝える。
+        """
         self._store.save(plan)
+        events: list[DomainEvent] = []
+        for step in plan.take_dropped_steps():
+            logger.info(f"視聴者の手順を断念した: {step.describe()}（{step.ended_because}）")
+            events.append(_dropped_step(step, step.ended_because))
         if goal is not None:
             logger.info(f"中目標を断念した: {goal.describe()}（{goal.ended_because}）")
-            await self._publish([_dropped(goal)])
+            events.append(_dropped(goal))
+        await self._publish(events)
 
     async def _publish(self, events: list[DomainEvent]) -> None:
         for event in events:
@@ -498,6 +593,16 @@ def _added(plan: MidGoalPlan, goal: MidGoal) -> MidGoalAddedEvent:
         requested_by=goal.requested_by or "",
         position=position,
         suggested_by=goal.suggested_by or "",
+    )
+
+
+def _dropped_step(step: PlannedStep, reason: str) -> MidGoalDroppedEvent:
+    """視聴者の手順の断念も、大目標の断念と同じく配信で言う（黙って約束を捨てない）。"""
+    return MidGoalDroppedEvent(
+        title=step.describe(),
+        reason=reason,
+        requested_by=step.requested_by or "",
+        suggested_by=step.suggested_by or "",
     )
 
 

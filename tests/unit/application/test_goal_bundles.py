@@ -121,7 +121,8 @@ class TestShape:
         plan.set_steps("m1", decision.steps)
         store = JsonMissionStore(tmp_path / "mission.json")
         store.save(plan)
-        assert store.load().pending[0].plan_steps == decision.steps
+        assert store.load().pending[0].plan_steps == plan.get("m1").plan_steps
+        assert store.load().pending[0].plan_steps[0].specs == step.specs
 
 
 class TestSession:

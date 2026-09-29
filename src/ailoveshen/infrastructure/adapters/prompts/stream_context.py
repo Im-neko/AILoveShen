@@ -19,6 +19,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     Lesson,
     MessageRole,
+    JobState,
     MidGoal,
     MidGoalState,
     Note,
@@ -380,14 +381,32 @@ def _format_mid_goal(goal: MidGoal, with_ids: bool, current: bool) -> str:
         stage = " [街の準備: やめられない]"
     steps = ""
     if current and goal.plan_steps:
-        # 束の手順（docs/design/44）は [a + b] で 1 つ
-        steps = " 手順: " + " → ".join(
-            f"[{s.describe()}]" if s.together else s.describe() for s in goal.plan_steps
-        )
+        steps = " 手順: " + _format_steps(goal)
     return (
         f"{f'[{goal.id}] ' if with_ids else ''}{goal.title}{_requested(goal)}{stage}"
         f"{' [取り組み中]' if current else ''} 完了条件: {conditions}{progress}{steps}"
     )
+
+
+def _format_steps(goal: MidGoal) -> str:
+    """
+    手順を順に、済み（一度満たしたら済みのまま）・今（まだの一番先）・待ちで。束の手順
+    （docs/design/44）は [a + b] で 1 つ。視聴者の頼みと採った助言は出どころも。
+    """
+    first_open = next((s for s in goal.plan_steps if s.state == JobState.PENDING), None)
+    parts = []
+    for s in goal.plan_steps:
+        mark = "済" if s.state == JobState.DONE else "今" if s is first_open else "待"
+        text = f"[{s.describe()}]" if s.together else s.describe()
+        who = (
+            f"（{s.requested_by}さんの頼み）"
+            if s.requested_by
+            else f"（{s.suggested_by}さんの提案）"
+            if s.suggested_by
+            else ""
+        )
+        parts.append(f"{mark}:{text}{who}")
+    return " → ".join(parts)
 
 
 def _format_finished(goal: MidGoal) -> str:

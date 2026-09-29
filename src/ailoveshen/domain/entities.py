@@ -21,8 +21,10 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     HouseBlueprint,
+    JobState,
     Lesson,
     MessageRole,
+    MAX_OPEN_STEPS,
     MessageType,
     MidGoal,
     MidGoalState,
@@ -199,6 +201,8 @@ class MidGoalPlan(Entity):
     _goals: list[MidGoal] = field(default_factory=list, init=False, repr=False)
     _finished: deque[MidGoal] = field(init=False, repr=False)
     _next_id: int = field(default=1, init=False, repr=False)
+    _next_step_id: int = field(default=1, init=False, repr=False)
+    _dropped_steps: list[PlannedStep] = field(default_factory=list, init=False, repr=False)
     _town: Optional[TownDefinition] = field(default=None, init=False, repr=False)
     _town_stage: int = field(default=0, init=False, repr=False)
     _stage_met: tuple[GoalSpec, ...] = field(default=(), init=False, repr=False)
@@ -317,18 +321,30 @@ class MidGoalPlan(Entity):
         """id で指した未完了の中目標。"""
         return next((g for g in self._goals if g.id == mid_goal_id), None)
 
-    def check_room(self, requested_by: Optional[str] = None) -> None:
+    def viewers(self) -> list[str]:
+        """今リストに頼みがある視聴者（大目標と、その手順の分を合わせて数える。docs/design/50 §5）。"""
+        names = [g.requested_by for g in self._goals if g.requested_by is not None]
+        names += [
+            s.requested_by
+            for g in self._goals
+            for s in g.open_steps
+            if s.requested_by is not None
+        ]
+        return names
+
+    def check_room(self, requested_by: Optional[str] = None, job: bool = False) -> None:
         """
-        中目標をもう 1 つ足せるか（設計などの前に確かめる）。
+        中目標をもう 1 つ足せるか（設計などの前に確かめる）。`job`: 手順として足す（リストの長さの
+        上限は受けない）。視聴者の上限は、大目標と手順を合わせて数える。
 
         Raises:
             ValueError: リストがいっぱい、その視聴者の頼みがもうある、視聴者の頼みが上限のとき
         """
-        if len(self._goals) >= self.max_goals:
+        if not job and len(self._goals) >= self.max_goals:
             raise ValueError(f"the mid goal list is full ({self.max_goals})")
         if requested_by is not None:
-            viewers = [g for g in self._goals if g.requested_by is not None]
-            if any(g.requested_by == requested_by for g in viewers):
+            viewers = self.viewers()
+            if requested_by in viewers:
                 raise ValueError(f"{requested_by} already has a request in the list")
             if len(viewers) >= self.max_viewer_goals:
                 raise ValueError(f"the list already has {self.max_viewer_goals} viewers' requests")
@@ -414,24 +430,168 @@ class MidGoalPlan(Entity):
         return done
 
     def set_steps(self, mid_goal_id: str, steps: tuple[PlannedStep, ...]) -> MidGoal:
-        """中目標の手順を置き換える（Gemini が書いた小目標の並び。docs/design/26）。"""
+        """
+        中目標の手順を書き直す（Gemini が書いた、これから残す小目標の並び。docs/design/26、50 §4）。
+
+        済んだ手順は残し（書き直しの中に同じ条件があっても足さない）、同じ条件の手順は id・出どころ・
+        使ったステップ・進み具合を引き継ぎ、視聴者と助言の手順は Gemini が書かなくても残す
+        （やめるのは `drop_step` だけ）。
+
+        Raises:
+            ValueError: まだ済んでいない手順が MAX_OPEN_STEPS を超えるとき
+        """
         goal = self._require(mid_goal_id)
-        return self._replace(goal, replace(goal, plan_steps=steps))
+        done = [s for s in goal.plan_steps if s.state == JobState.DONE]
+        old_open = list(goal.open_steps)
+        used: set[str] = set()
+        merged: list[PlannedStep] = []
+        for step in steps:
+            if any(d.same_as(step) for d in done):
+                continue
+            same = next((o for o in old_open if o.id not in used and o.same_as(step)), None)
+            if same is None:
+                merged.append(replace(step, id=self._new_step_id()))
+                continue
+            used.add(same.id)
+            merged.append(
+                replace(
+                    step,
+                    id=same.id,
+                    requested_by=same.requested_by,
+                    suggested_by=same.suggested_by,
+                    steps=same.steps,
+                    progress=same.progress,
+                )
+            )
+        merged += [o for o in old_open if o.id not in used and (o.requested_by or o.suggested_by)]
+        if len(merged) > MAX_OPEN_STEPS:
+            raise ValueError(f"a mid goal holds at most {MAX_OPEN_STEPS} steps not done yet")
+        return self._replace(goal, replace(goal, plan_steps=(*done, *merged)))
+
+    def add_step(
+        self,
+        mid_goal_id: str,
+        step: PlannedStep,
+        position: Optional[int] = None,
+        now: bool = False,
+    ) -> PlannedStep:
+        """
+        中目標に手順を 1 つ足す（視聴者の頼みや採った助言。`position` はまだ済んでいない手順の中での
+        0 始まりの位置、None: 最後）。視聴者の手順は、今取り組んでいる手順の後ろに入る（`now` を除く）。
+        同じ条件の手順がもうあれば、それを返す。
+
+        Raises:
+            ValueError: 視聴者の上限を破るか、手順が MAX_OPEN_STEPS を超えるとき
+        """
+        goal = self._require(mid_goal_id)
+        same = next((s for s in goal.plan_steps if s.same_as(step)), None)
+        if same is not None:
+            return same
+        self.check_room(step.requested_by, job=True)
+        if len(goal.open_steps) >= MAX_OPEN_STEPS:
+            raise ValueError(f"a mid goal holds at most {MAX_OPEN_STEPS} steps not done yet")
+        new = replace(step, id=self._new_step_id(), state=JobState.PENDING)
+        steps = list(goal.plan_steps)
+        open_at = [i for i, s in enumerate(steps) if s.state == JobState.PENDING]
+        earliest = 1 if step.requested_by is not None and open_at and not now else 0
+        at = (
+            len(steps)
+            if position is None or max(position, earliest) >= len(open_at)
+            else open_at[max(position, earliest)]
+        )
+        steps.insert(at, new)
+        self._replace(goal, replace(goal, plan_steps=tuple(steps)))
+        return new
+
+    def judge_steps(
+        self, mid_goal_id: str, judged: Sequence[tuple[str, bool, tuple[str, ...]]]
+    ) -> tuple[PlannedStep, ...]:
+        """
+        まだ済んでいない手順を判定した結果を反映する: (手順の id, 満たしたか, 進み具合の行)。
+        一度満たしたら済み（ラッチ）のままにする。今回済みにした手順を返す。
+        """
+        goal = self._require(mid_goal_id)
+        by_id = {step_id: (met, lines) for step_id, met, lines in judged}
+        finished: list[PlannedStep] = []
+        steps: list[PlannedStep] = []
+        for s in goal.plan_steps:
+            if s.state != JobState.PENDING or s.id not in by_id:
+                steps.append(s)
+                continue
+            met, lines = by_id[s.id]
+            s = replace(s, progress=lines, state=JobState.DONE if met else JobState.PENDING)
+            if met:
+                finished.append(s)
+            steps.append(s)
+        self._replace(goal, replace(goal, plan_steps=tuple(steps)))
+        return tuple(finished)
+
+    def drop_step(self, mid_goal_id: str, step_id: str, reason: str) -> PlannedStep:
+        """手順を断念してリストから外す。理由は必須（視聴者の手順なら配信で言う）。"""
+        if not reason:
+            raise ValueError(f"dropping step {step_id} needs a reason")
+        goal = self._require(mid_goal_id)
+        step = next((s for s in goal.open_steps if s.id == step_id), None)
+        if step is None:
+            ids = ", ".join(s.id for s in goal.open_steps) or "none"
+            raise ValueError(f"no step {step_id} to do in {mid_goal_id} (steps: {ids})")
+        self._replace(
+            goal, replace(goal, plan_steps=tuple(s for s in goal.plan_steps if s is not step))
+        )
+        return replace(step, state=JobState.DROPPED, ended_because=reason)
+
+    def viewer_step(self, requested_by: str) -> Optional[tuple[MidGoal, PlannedStep]]:
+        """その視聴者の頼みの手順（まだ済んでいないもの）と、それがある中目標。なければ None。"""
+        for g in self._goals:
+            for s in g.open_steps:
+                if s.requested_by == requested_by:
+                    return g, s
+        return None
 
     def judged(self, mid_goal_id: str, progress: tuple[str, ...]) -> None:
         """中目標の条件の進み具合を保つ。"""
         goal = self._require(mid_goal_id)
         self._replace(goal, replace(goal, progress=progress))
 
-    def charge(self, mid_goal_id: Optional[str]) -> Optional[MidGoal]:
-        """中目標のステップを 1 つ数える。予算を超えた視聴者のものは断念して返す。"""
+    def charge(
+        self, mid_goal_id: Optional[str], spec: Optional[GoalSpec] = None
+    ) -> Optional[MidGoal]:
+        """
+        中目標のステップを 1 つ数える。予算を超えた視聴者のものは断念して返す。小目標 `spec` が視聴者
+        の手順のものなら、その手順にも数える（予算は手順ごと）。手順が予算を超えたら外し、
+        `take_dropped_steps` で受け取る。
+        """
         goal = self.get(mid_goal_id) if mid_goal_id else None
         if goal is None:
             return None
-        goal = self._replace(goal, replace(goal, steps=goal.steps + 1))
+        job = next(
+            (
+                s
+                for s in goal.open_steps
+                if spec is not None and s.requested_by is not None and spec in s.specs
+            ),
+            None,
+        )
+        steps = goal.plan_steps
+        if job is not None:
+            steps = tuple(replace(s, steps=s.steps + 1) if s is job else s for s in steps)
+        goal = self._replace(goal, replace(goal, steps=goal.steps + 1, plan_steps=steps))
+        if job is not None:
+            used = next(s for s in goal.plan_steps if s.id == job.id).steps
+            if used >= self.viewer_budget:
+                self._dropped_steps.append(
+                    self.drop_step(
+                        goal.id, job.id, f"it took {used} steps, over the budget for a request"
+                    )
+                )
         if goal.requested_by is not None and goal.steps >= (goal.budget or self.viewer_budget):
             return self.drop(goal.id, f"it took {goal.steps} steps, over the budget for a request")
         return None
+
+    def take_dropped_steps(self) -> tuple[PlannedStep, ...]:
+        """予算を超えて断念した視聴者の手順を受け取る（受け取ったら空になる）。"""
+        dropped, self._dropped_steps = tuple(self._dropped_steps), []
+        return dropped
 
     def restore(
         self,
@@ -443,12 +603,14 @@ class MidGoalPlan(Entity):
         stage_met: tuple[GoalSpec, ...] = (),
         site: Optional[TownSite] = None,
         town_map: Optional[TownMap] = None,
+        next_step_id: int = 1,
     ) -> None:
         """保存したプランを戻す（id はそのまま）。"""
         self._goals = list(pending)
         self._finished.clear()
         self._finished.extend(finished)
         self._next_id = next_id
+        self._next_step_id = next_step_id
         self._town = town
         self._town_stage = town_stage
         self._stage_met = stage_met
@@ -459,6 +621,16 @@ class MidGoalPlan(Entity):
     def next_id(self) -> int:
         """次の中目標の id につく番号（保存するときに残す）。"""
         return self._next_id
+
+    @property
+    def next_step_id(self) -> int:
+        """次の手順の id につく番号（保存するときに残す）。"""
+        return self._next_step_id
+
+    def _new_step_id(self) -> str:
+        step_id = f"j{self._next_step_id}"
+        self._next_step_id += 1
+        return step_id
 
     def _require(self, mid_goal_id: str) -> MidGoal:
         goal = self.get(mid_goal_id)
@@ -839,4 +1011,6 @@ class PlaySession(Entity):
         else:
             self.consecutive_failures = 0 if result.ok else self.consecutive_failures + 1
         self.updated_at = _utc_now()
-        return self.plan.charge(self.goal.mid_goal_id if self.goal else None)
+        return self.plan.charge(
+            self.goal.mid_goal_id if self.goal else None, self.goal.spec if self.goal else None
+        )
