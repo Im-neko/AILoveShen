@@ -22,6 +22,7 @@ from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
+from ailoveshen.application.use_cases.stagnation import Stagnation
 from ailoveshen.application.use_cases.stuck_check import StuckCheck
 from ailoveshen.application.use_cases.goal_vocabulary import (
     GoalDecision,
@@ -291,6 +292,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         step_picker: Optional[StepPicker] = None,
         failure_routing: str = "gemini",
         stuck_check: Optional[StuckCheck] = None,
+        stagnation_seconds: float = 10.0,
         lessons: Optional[LessonBook] = None,
         search: Optional[KeySearch] = None,
         abilities: Sequence[dict[str, Any]] = (),
@@ -369,6 +371,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._failure_routing = failure_routing
         # 行動の記録から、行き詰まっていないかを Jev に定期的に聞く（docs/design/34 §9）
         self._stuck = stuck_check
+        self._stagnation = Stagnation(stagnation_seconds)
         # 教訓帳: 小目標の始まりと Gemini の決定の前に思い出し、実績を数える（docs/design/35）
         self._lessons = lessons
         self._in_play: tuple[Lesson, ...] = ()  # 今の小目標の始まりに思い出した教訓
@@ -428,6 +431,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             self._mid_idle_steps += 1
         line = _step_line(decision, result)
         self._goal_steps.append(line)
+        self._stagnation.record(line)
         if self._stuck is not None and not session.rethink_reason:
             self._stuck.note(line, obs)
             why = await self._stuck.check_if_due(goal, obs)
@@ -498,18 +502,19 @@ class AdvancePlayUseCase(IAdvancePlay):
             c.action_id == decision.action_id and c.description.get("also") for c in obs.candidates
         )
 
-    async def _wait_out_reflex(self) -> None:
+    async def _wait_out_reflex(self) -> dict[str, Any]:
         """
         反射（近くの敵への対処）が動いている間は、道具も候補も断られる。モデルに選ばせても
         断られて 1 手を無駄にするので、反射が終わるまで待つ。
         """
         state = await self._bridge.state()
         if not state.get("reflex"):
-            return
+            return state
         logger.info("反射が動いているので、終わるまで選ばせずに待つ")
         while state.get("reflex"):
             await asyncio.sleep(REFLEX_POLL_SECONDS)
             state = await self._bridge.state()
+        return state
 
     async def _act_with_tools(
         self, session: PlaySession, obs: GameObservation
@@ -519,9 +524,15 @@ class AdvancePlayUseCase(IAdvancePlay):
         選び直す（MAX_QUERIES_PER_STEP 回まで。その後は行動の道具だけを出す）。行動の道具は
         見張りつきで実行し、1 ステップはそれで終わる。
         """
-        await self._wait_out_reflex()
+        seen = await self._wait_out_reflex()
+        # 位置・持ち物・小目標の進み具合が 10 秒変わらないなら、Jev に任せず LLM に、その間の手と結果を
+        # 見せて別の方法を探させる（失敗が続いていなくても。成功して何も変わらない手もある）
+        stagnant = self._stagnation.observe(seen, obs)
+        session.stagnant_seconds = stagnant
+        if stagnant:
+            logger.info(f"{stagnant:.0f} 秒、状況が変わらない: Jev に任せず、失敗と結果を踏まえて選び直させる")
         skills = await self._skill_list(session) if self._skills is not None else None
-        picked = await self._jev_step(session, obs, skills or [])
+        picked = None if stagnant else await self._jev_step(session, obs, skills or [])
         if picked is not None:
             return picked
         specs = tool_specs(can_look=self._screen is not None, skills=self._skills is not None)
@@ -540,10 +551,12 @@ class AdvancePlayUseCase(IAdvancePlay):
                 tuple(self._recent_tools),
                 skills=skills,
                 failing=session.consecutive_failures,
+                stagnant_seconds=stagnant,
+                stagnant_actions=self._stagnation.actions(),
             )
             last = self._recent_tools[-1] if self._recent_tools else None
             purpose = "tool_after_failure" if last is not None and not last.ok else "tool"
-            if session.consecutive_failures >= STUCK_TOOL_FAILURES:
+            if session.consecutive_failures >= STUCK_TOOL_FAILURES or stagnant:
                 purpose = "tool_stuck"  # 行き詰まり: よく考えて別の方法を選ばせる
             offered = specs if attempt < MAX_QUERIES_PER_STEP else action_specs
             if state.get("pickup_ready") is False:  # 拾える落とし物がなければ pickup は断られるだけ
@@ -625,8 +638,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             return None
         last = self._recent_tools[-1] if self._recent_tools else None
         state, instructions = self._prompt_builder.build_action_context(session.goal, obs)
-        # 断られた提案（観測のあとで候補が消えた）は、失敗として Gemini に回さない
-        last_ok = None if last is None else last.ok or (last.refused and last.call.name == "do_suggestion")
+        # 断られた手（ブリッジが実行する前に断った。同じ手は台帳で次から出ない）は、失敗として LLM に
+        # 回さない: 決まりきった断りで 1 手（LLM の数秒）を使わず、残った候補から Jev が選ぶ
+        last_ok = None if last is None else last.ok or last.refused
         picked = await self._step_picker.pick(state, instructions, obs.candidates, skills, last_ok)
         if not isinstance(picked, PickedStep):
             logger.info(f"1 手は Gemini が決める: {picked.why}")
@@ -1202,6 +1216,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         session.lessons = recalled
         session.set_goal(goal, obs.time_phase, rethinks_seen)
         self._goal_steps.clear()
+        self._stagnation.reset()
+        session.stagnant_seconds = 0.0
         if self._stuck is not None:
             self._stuck.reset()
         # これから見えるもの（このイベントの語り、返答）は、終わった目標ではなく

@@ -13,6 +13,7 @@ import { needsOutside } from './candidates.mjs'
 import { leaveHome, houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
 import { brokeSince } from './wear.mjs'
+import { noteRefusal } from './refusals.mjs'
 
 const NEED_CHECK_MS = 500
 // 夕方・夜になっても止めない行動（夜を過ごす、家に入る、戦う・逃げる、食べる）
@@ -31,7 +32,7 @@ export function createRunner (bot, state, deps = {}) {
 
   // c: 実行するもの（候補か、道具が作ったもの）。c.verb が PRIMITIVES の名前。
   // label: 履歴に残す名前（候補の id か、道具の呼び出し）
-  return async function run (c, label) {
+  async function runOnce (c, label) {
     if (state.reflex) return { ok: false, interrupted: true, result: 'not started: the reflex is handling a nearby threat', seconds: 0 }
     if (state.busy) return { ok: false, result: 'not started: another action is running', seconds: 0 }
     state.busy = true
@@ -120,6 +121,13 @@ export function createRunner (bot, state, deps = {}) {
     // 数えない
     const interrupted = !ok && NOT_A_FAILURE.test(result)
     return { ok, result, seconds, ...(interrupted ? { interrupted: true } : {}) }
+  }
+
+  // 同じ場所への同じ手が、断られた・着けなかったなら台帳に載せる（refusals.mjs。1 回で、期限まで）
+  return async function run (c, label) {
+    const r = await runOnce(c, label)
+    if (!r.ok && !r.interrupted && c.pos) noteRefusal(state, c.verb, c.pos, r.result)
+    return r
   }
 }
 

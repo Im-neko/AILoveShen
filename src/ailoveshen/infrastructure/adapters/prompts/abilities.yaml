@@ -129,13 +129,14 @@
 
 - key: cook_food
   title: 肉を焼く・食べる
-  words: food eat cook meat beef porkchop chicken mutton hunger bread
-  when: おなかが減ったとき、食べ物を蓄えたいとき
+  words: food eat edible cook meat beef porkchop chicken mutton hunger bread recipe 食べ物 食べられる 食料 料理
+  when: おなかが減ったとき、食べ物を蓄えたいとき、何が食べられるか・どう作るか分からないとき
   how: |
+    何が食べられて、どう手に入るかは find_foods {query?, have?}（満腹度、レシピの材料、かまどで焼く元、畑、狩り。持ち物で食べられる・作れる物が先。小麦のように食べられない物は出ない）
     eat {item} で食べる。焼いた物を先に食べる。生肉は飢えているとき（満腹度 6 以下）だけ
     生肉は smelt {input: beef, count} で焼く（かまどが要る）。小麦 3 つでパン（craft {item: bread}）
     食べ物は動物を狩る、畑で育てる、チェストから withdraw
-  tools: [eat, smelt, craft, withdraw]
+  tools: [find_foods, eat, smelt, craft, withdraw]
   see: [hunt, smelt, harvest_crops]
 
 - key: hunt

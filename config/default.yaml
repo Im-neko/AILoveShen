@@ -110,6 +110,9 @@ llm:
     # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9), facility_design lays out
     # a farm or tree farm (47 §7); [] = never think
     thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "tool_stuck", "town_plan", "facility_design"]
+    # Output cap (thinking included) per purpose that thinks; when the cap is hit without an answer the
+    # call is asked again without thinking (a long think of tool_stuck held the play for minutes)
+    thinking_max_tokens: {tool_stuck: 8000}
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.
@@ -451,6 +454,14 @@ minecraft:
     # action record (design 27). 0: off (docs/design/34 §9)
     stuck_check_steps: 6
     stuck_min_confidence: 0.75
+    # Also when the small goal's progress (remaining and the progress lines) has not changed for this
+    # many minutes: Jev is given the action record then, without waiting for the next multiple of
+    # stuck_check_steps (0: not by time)
+    stuck_check_quiet_minutes: 5
+    # Position, inventory, health, time of day and the small goal's progress unchanged for this many
+    # seconds (after 2+ actions; waiting and sleeping do not count): no Jev, the LLM chooses again with
+    # the failures and results in view (purpose tool_stuck). 0: off
+    stagnation_seconds: 10
     stuck_record_dir: "logs/stuck"
     # Lesson book (docs/design/35): lessons from viewers' advice and own failures, with the situation
     # (goal, item, time, place, body, pickaxe, how the last goal ended), recalled in similar situations.

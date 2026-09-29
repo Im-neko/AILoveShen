@@ -10,7 +10,9 @@ Gemini は行動の記録を見て原因を分析する: 27）。Jev が答え�
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import deque
+from collections.abc import Callable
 from typing import Any, Optional
 
 from loguru import logger
@@ -32,7 +34,8 @@ QUESTION = FastQuestion(
     kind=FastQuestionKind.CHOICE,
     instructions=(
         "Look at the streamer's recent actions for the current goal (oldest first, with results) "
-        "and where they stood. Is the play stuck, and how?"
+        "and where they stood. Is the play stuck, and how? When minutes_without_progress is given, "
+        "the goal's progress has not changed for that long: look for what went wrong."
     ),
     criteria=PATTERNS,
 )
@@ -49,6 +52,8 @@ class StuckCheck:
         min_confidence: float = 0.75,
         timeout_seconds: float = 3.0,
         recorder: Optional[IWatchRecorder] = None,
+        quiet_seconds: float = 300.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """
         Args:
@@ -57,6 +62,9 @@ class StuckCheck:
             min_confidence: 行き詰まっているという答えがこれ以上のときだけ考え直させる
             timeout_seconds: Jev の答えを待つ上限（過ぎたら何もしない）
             recorder: 判断の記録
+            quiet_seconds: 小目標の進み具合（残りと進捗の行）がこれだけ変わらなければ、数ステップを
+                待たずに聞く（0: 時間では聞かない）。聞いたあとも変わらなければ、また同じだけたって聞く
+            clock: 時計（テストで差し替える）
         """
         self._judge = judge
         self._every = max(1, every_steps)
@@ -65,29 +73,53 @@ class StuckCheck:
         self._recorder = recorder
         self._steps: deque[dict[str, Any]] = deque(maxlen=HISTORY)
         self._since = 0
+        self._quiet = quiet_seconds
+        self._clock = clock
+        self._progress: Any = None
+        self._changed_at = clock()
+        self._asked_at: Optional[float] = None
 
     def reset(self) -> None:
         """小目標が変わった（記録を消す）。"""
         self._steps.clear()
         self._since = 0
+        self._progress = None
+        self._changed_at = self._clock()
+        self._asked_at = None
 
     def note(self, line: str, obs: GameObservation) -> None:
         """1 ステップの行動と結果、そのときいた位置を覚える。"""
         pos = (obs.state.get("self") or {}).get("position")
         self._steps.append({"action": line, **({"at": pos} if pos else {})})
         self._since += 1
+        status = obs.goal
+        progress = (status.remaining, tuple(status.lines)) if status else None
+        if progress != self._progress:  # 進み具合が変わった: 変わらない時間の数え直し
+            self._progress = progress
+            self._changed_at = self._clock()
+            self._asked_at = None
 
     async def check_if_due(self, goal: Goal, obs: GameObservation) -> Optional[str]:
         """聞く時なら Jev に聞き、行き詰まっていれば理由（考え直させる）。そうでなければ None。"""
-        if self._since < self._every:
+        now = self._clock()
+        still = now - self._changed_at
+        long_quiet = (
+            self._quiet > 0
+            and still >= self._quiet
+            and (self._asked_at is None or now - self._asked_at >= self._quiet)
+        )
+        if self._since < self._every and not long_quiet:
             return None
         self._since = 0
+        if long_quiet:
+            self._asked_at = now
         status = obs.goal
         state = {
             "goal": goal.describe(),
             "progress": list(status.lines) if status else [],
             "remaining": status.remaining if status else None,
             "recent_actions": list(self._steps),
+            **({"minutes_without_progress": round(still / 60, 1)} if long_quiet else {}),
         }
         try:
             verdict = await asyncio.wait_for(self._judge.ask(state, (QUESTION,)), timeout=self._timeout)

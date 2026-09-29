@@ -241,6 +241,22 @@ async def test_an_answer_cut_by_thinking_is_a_clear_error_not_a_retry():
 
 
 @pytest.mark.asyncio
+async def test_a_capped_thinking_purpose_is_asked_again_without_thinking_when_it_hits_the_cap():
+    """tool_stuck の長い思考でプレイが数分止まった（2026-09-29）: 上限で切れたら、思考なしで聞き直す。"""
+    cut = _answer("")
+    cut["choices"][0]["finish_reason"] = "length"
+    server = _Server(cut, _answer("ok"))
+    local = _local(
+        server, thinking_purposes=["tool_stuck"], thinking_max_tokens={"tool_stuck": 3000}
+    )
+    assert await local.generate("pick", purpose="tool_stuck") == "ok"
+    first, second = server.requests
+    assert first["max_tokens"] == 3000 and first["chat_template_kwargs"] == {"enable_thinking": True}
+    assert second["chat_template_kwargs"] == {"enable_thinking": False}
+    assert second["max_tokens"] > 3000
+
+
+@pytest.mark.asyncio
 async def test_the_output_budget_shrinks_to_what_the_context_leaves():
     server = _Server(_answer("ok"))
     local = _local(server, max_output_tokens=16000, context_tokens=8000)

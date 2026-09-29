@@ -196,8 +196,8 @@ class LiveNarration:
             # 行動を実行している間だけ話す。次の行動や目標を選んでいる間は黙る（2026-09-28: 目標の
             # 決定を 4 分待つ間、終わった行動の結果から「パンにするね」を何度も作って話した）
             return
-        if activity.failing >= STUCK_FAILURES:
-            return  # 行き詰まっている間は黙る（考え直して別の手を選ぶ。切れ目の実況がそれを話す）
+        if activity.failing >= STUCK_FAILURES or activity.stagnant_seconds > 0:
+            return  # 行き詰まっている（失敗が続く、状況が動かない）間は黙る（考え直して別の手を選ぶ。切れ目の実況がそれを話す）
         changes = self._changes(activity)
         if changes is None:  # 比べる前の状態がまだない: 今を基準にする
             self._mark(activity)

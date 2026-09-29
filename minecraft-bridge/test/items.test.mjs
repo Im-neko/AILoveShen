@@ -50,3 +50,32 @@ test('uses_of: 素材を使うレシピ、今の持ち物で作れるものが�
   assert.ok(now.recipes.some((r) => r.result === 'stone_pickaxe'))
   assert.equal(new Set(all.recipes.map((r) => r.result)).size, all.recipes.length, '同じ物は 1 つだけ')
 })
+
+test('find_foods: 持っている物、今作れる・焼ける物が先。取り方と、悪い効果の注意', async () => {
+  const { foodsInfo } = await import('../src/items.mjs')
+  const r = foodsInfo(deps, { wheat: 3, beef: 1, cooked_beef: 2 })
+  const by = Object.fromEntries(r.foods.map((f) => [f.name, f]))
+  assert.equal(r.foods[0].name, 'cooked_beef') // 持っている物が先（満腹度の大きい順）
+  assert.equal(by.cooked_beef.carried, 2)
+  assert.equal(by.bread.can_craft_now, true) // 小麦 3
+  assert.match(by.bread.how[0], /^craft 3 wheat/)
+  assert.equal(by.beef.can_smelt_now, undefined) // 燃料は見ない（かまどで焼ける印は材料だけ）
+  assert.ok(r.foods.findIndex((f) => f.name === 'bread') < r.foods.findIndex((f) => f.name === 'golden_carrot'))
+  const flesh = foodsInfo(deps, {}, { query: 'rotten' }).foods[0]
+  assert.match(flesh.caution, /starving/)
+  const mixed = foodsInfo(deps, { rotten_flesh: 5, apple: 1 }).foods
+  assert.deepEqual(mixed.slice(0, 2).map((f) => f.name), ['apple', mixed[1].name]) // 悪い効果の物を持っていても、先には出さない
+  assert.notEqual(mixed[1].name, 'rotten_flesh')
+  assert.equal(foodsInfo(deps, {}, { query: 'wheat', limit: 30 }).foods.some((f) => f.name === 'wheat'), false) // 小麦は食べられない
+})
+
+test('find_foods: 検索語は名前・日本語・材料に含まれる語。have は今の持ち物で食べる・作れる物だけ', async () => {
+  const { foodsInfo } = await import('../src/items.mjs')
+  const bread = foodsInfo(deps, {}, { query: 'パン' }).foods.map((f) => f.name)
+  assert.ok(bread.includes('bread'))
+  const fromWheat = foodsInfo(deps, {}, { query: 'wheat' }).foods.map((f) => f.name)
+  assert.ok(fromWheat.includes('bread') && fromWheat.includes('cookie'))
+  assert.deepEqual(foodsInfo(deps, {}, { have: true }).foods, [])
+  const now = foodsInfo(deps, { wheat: 3, apple: 1 }, { have: true }).foods.map((f) => f.name)
+  assert.ok(now.includes('bread') && now.includes('apple') && !now.includes('cookie'))
+})

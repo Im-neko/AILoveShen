@@ -2,7 +2,7 @@
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-29
-**Test Status**: `python -m pytest tests/` 885 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 272 件
+**Test Status**: `python -m pytest tests/` 947 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 280 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
@@ -31,7 +31,9 @@
 - 実況: 状況が変わったときだけ（`LiveNarration._changes`）、続けて 2 回失敗している間は黙る（`Activity.failing`）、`live_interval_seconds` 10 → 30、`max_silence_seconds` 60 → 180。`tests/unit/presentation/test_live_narration.py`
 - 行き詰まり: 2 回続けて失敗すると道具の選択は `purpose=tool_stuck`（考える）でプロンプトに「行き詰まっている」の節。`config/default.yaml`、`config/development.yaml`（ユーザーの手元の `thinking_purposes: []` に `tool_stuck` だけ足した）
 - FreeToken の調査（`/v1/stats`、`/v1/cache/status`。設定は変えていない）: 部分一致のキャッシュはクライアントから有効にできない
-- テスト: `pytest tests/` 885 passed（`test_no_channel_no_chat_and_the_board_is_served` は配信がポート 8765 を使っているので除く）、ブリッジ `npm test` 272 件
+- テスト: `pytest tests/` 885 passed（`test_no_channel_no_chat_and_the_board_is_served` は配信がポート 8765 を使っているので除く）、ブリッジ `npm test` 280 件
+- 断られた手の台帳・動かないとき・5 分の確認（設計書 51 §6）: `refusals.mjs`（1 回で 5 分、候補・`find_blocks`・道具の呼び出しから外す、`/state` の `refusals`）、家・建物のブロックを記憶・`find_blocks` に出さない、断りの後も Jev が選ぶ、`Stagnation`（10 秒動かなければ Jev を飛ばして LLM に選び直させる）、`StuckCheck` に 5 分無進捗の確認、`thinking_max_tokens`（上限で思考なしに聞き直す）。`test/refusals.test.mjs`、`tests/unit/application/test_stagnation.py`、`test_stuck_check.py`、`test_tool_control.py`
+- `find_foods`（食べられる物とその取り方。ブリッジ `items.mjs` `foodsInfo`、`tools.mjs`、`tool_catalog.py`、能力帳 `cook_food`、設計書 47 追記）: 持ち物で食べられる・作れる物が先、レシピ・かまど・畑・狩り・掘る場所、悪い効果の注意。`tool_stuck` の思考の上限を 3000 → 8000 に（3000 は 2 回とも 43 秒考えて切れ無駄になった。上限なしの実測は 2,920 / 6,494 / 11,408 トークン）
 - 夜の家の中にベッドがあれば、小目標が収集などでも `sleep in the bed` を候補に出す（`candidates.mjs` `waitsInside`。敵がそばにいる・眠れる時刻の前・ベッドなしは今までどおり `wait inside until morning`）。Jev が収集の小目標の夜に「待つ」だけを約 10 回選んでいた。`test/shelter.test.mjs`
 - 未確認: 実機（ブリッジ・Python の再起動後）での 1 手の秒数、`tool_stuck` の考える時間、実況の頻度。見送り: 引数の欠けの検査（聞き直すしかない）、`find_blocks` の保護の印
 

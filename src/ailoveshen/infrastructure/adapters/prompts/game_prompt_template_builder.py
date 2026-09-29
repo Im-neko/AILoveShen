@@ -545,6 +545,7 @@ $recent
   英語でもよく、名前でも目的でもよい。返った座標や名前をそのまま使う
   - search_abilities: やり方が分からない・初めてのこと（例: 畑を作る、水を渡る、肉を焼く）
   - item_info: 物の取り方・要る道具・使い道（例: 鉄、iron_ingot）。uses_of: その素材で作れる物
+  - find_foods: 食べられる物とその取り方（レシピ、かまど、畑、狩り）。食べ物を探す・作る前に、食べられるか分からない物は eat の前に
   - search_facility: 自分の施設（畑、植林場、建物）の場所と中身。行く・使う前に
   - search_memory: 前に見た場所（鉱石、木、動物、チェストの中身）。遠くへ探しに行く前に
 - 夜に家の中にいるときは、外に出る道具は断られる
@@ -557,8 +558,8 @@ $recent
 # 続けて失敗しているとき（STUCK_FAILURES 回以上）に足す節: 同じ手を繰り返さず、原因を考えて別の方法を選ばせる
 STUCK_FAILURES = 2
 TOOL_STUCK_SECTION = """
-## 行き詰まっている（続けて $failing 回失敗）
-- 「直近の道具」の失敗の理由を読み、なぜ失敗したかを考える。同じ道具を同じ引数（近い座標）でもう一度は
+## 行き詰まっている（$why）
+$record- 「直近の道具」の失敗の理由を読み、なぜ失敗したかを考える。同じ道具を同じ引数（近い座標）でもう一度は
   呼ばない。言い換えた intent で同じことを繰り返すのも同じ
 - 原因ごとの別の方法: 経路がない・遠い → 別の場所や別の木・鉱石を find_blocks / search_memory で探す、
   足場を置く・掘って進む / 材料や道具が足りない → 先にそれを集める・作る / 断られた → 断られた理由の
@@ -566,6 +567,40 @@ TOOL_STUCK_SECTION = """
 - 何をすればよいか分からなければ、動く前に search_abilities / item_info / search_facility で調べる
 - 小目標そのものが今は進められないと考えたなら、家に戻って安全に別のことをする（小目標は自分で決め直される）
 """
+
+TOOL_REFUSED_SECTION = """
+## しばらく使えない手（同じ場所へ同じ手は、また断られる・着けない。選ばない）
+$refused
+"""
+
+
+def _refused_section(refusals: Sequence[dict[str, Any]] | None) -> str:
+    """ブリッジが断った・着けなかった手の台帳（理由と何分前か）。なければ空。"""
+    if not refusals:
+        return ""
+    lines = "\n".join(
+        f"- {r['tool']} ({r['x']}, {r['y']}, {r['z']}): {r['reason']}（{r['minutes_ago']} 分前）"
+        for r in refusals
+    )
+    return Template(TOOL_REFUSED_SECTION).substitute(refused=lines)
+
+
+def _stuck_section(failing: int, stagnant_seconds: float, actions: Sequence[str]) -> str:
+    """行き詰まりの節: 続けて失敗しているか、状況が動かない（その間の手と結果を見せる）とき。"""
+    why = []
+    if failing >= STUCK_FAILURES:
+        why.append(f"続けて {failing} 回失敗")
+    if stagnant_seconds > 0:
+        why.append(f"{stagnant_seconds:.0f} 秒、位置・持ち物・目標の進み具合が変わらない")
+    if not why:
+        return ""
+    record = (
+        "その間にした手と結果（古い順）:\n" + "\n".join(f"- {a}" for a in actions) + "\n"
+        if stagnant_seconds > 0 and actions
+        else ""
+    )
+    return Template(TOOL_STUCK_SECTION).substitute(why="、".join(why), record=record)
+
 
 # 技（docs/design/22）: 道具の選択に足す節（技を使うときだけ）
 TOOL_SKILLS_SECTION = """
@@ -599,7 +634,7 @@ export default async function (t, args) {
   （plant / till / sow は場所を省くとブリッジが家のまわりから選ぶ）
 - 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed,
   props?}] か文 },
-  t.recipe_of({item}), t.find_recipes({query, limit?}), t.how_to_get({item, count?}),
+  t.recipe_of({item}), t.find_recipes({query, limit?}), t.find_foods({query?, have?, limit?}), t.how_to_get({item, count?}),
   t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
   hostile, distance_m, direction}], surroundings, needs, time, action },
   t.block_at({x, y, z}) → { name, props? }（props はブロックの状態で値は文字列: 耕地の moisture
@@ -955,6 +990,8 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         recent_tools: Sequence[ToolOutcome],
         skills: Sequence[SkillInfo] | None = None,
         failing: int = 0,
+        stagnant_seconds: float = 0.0,
+        stagnant_actions: Sequence[str] = (),
     ) -> str:
         """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
         around = state.get("surroundings") or {}
@@ -986,7 +1023,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             )
             if skills is not None
             else ""
-        ) + (Template(TOOL_STUCK_SECTION).substitute(failing=failing) if failing >= STUCK_FAILURES else "")
+        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions)
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""

@@ -59,3 +59,49 @@ async def test_the_record_starts_over_for_a_new_goal():
     check.reset()
     assert await _steps(check, 2) is None
     judge.ask.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_five_minutes_without_progress_asks_jev_even_before_the_step_count():
+    """小目標の進み具合が 5 分変わらなければ、数ステップを待たず行動の記録を Jev に渡す。"""
+    clock = {"now": 0.0}
+    judge = AsyncMock()
+    judge.ask.return_value = FastVerdict({"stuck": FastAnswer("stuck", "no_progress", 0.9)}, 30)
+    check = StuckCheck(judge, every_steps=6, quiet_seconds=300, clock=lambda: clock["now"])
+    obs = _obs()
+
+    check.note("goto → ok", obs)
+    clock["now"] = 299
+    assert await check.check_if_due(GOAL, obs) is None  # まだ 5 分たたない
+    judge.ask.assert_not_awaited()
+
+    clock["now"] = 301
+    check.note("goto → ok", obs)
+    why = await check.check_if_due(GOAL, obs)
+    assert "no_progress" in why
+    assert judge.ask.await_args.args[0]["minutes_without_progress"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_progress_that_moves_restarts_the_five_minutes():
+    clock = {"now": 0.0}
+    judge = AsyncMock()
+    judge.ask.return_value = FastVerdict({"stuck": FastAnswer("stuck", "fine", 0.9)}, 30)
+    check = StuckCheck(judge, every_steps=6, quiet_seconds=300, clock=lambda: clock["now"])
+    obs = _obs()
+    check.note("dig", obs)
+    clock["now"] = 250
+    from dataclasses import replace
+
+    moved = replace(obs, goal=replace(obs.goal, remaining=obs.goal.remaining - 1))  # 進んだ
+    check.note("dig", moved)
+    clock["now"] = 400  # 最初から 400 秒だが、進んだのは 150 秒前
+    assert await check.check_if_due(GOAL, moved) is None
+    judge.ask.assert_not_awaited()
+    clock["now"] = 560  # 進んでから 310 秒
+    await check.check_if_due(GOAL, moved)
+    judge.ask.assert_awaited_once()
+    # 聞いたあとの 5 分は聞き直さない
+    clock["now"] = 600
+    await check.check_if_due(GOAL, moved)
+    judge.ask.assert_awaited_once()

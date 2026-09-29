@@ -51,6 +51,7 @@
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
 import { plantingStatus, cropOf } from './farming.mjs'
 import { aroundMe } from './around.mjs'
+import { listRefusals } from './refusals.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops, installAutoJump } from './move.mjs'
 import http from 'node:http'
@@ -193,7 +194,8 @@ const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remain
 const run = createRunner(bot, state, {
   afterRun () {
     // 途中で見えたもの（変わるのは移動したあと）
-    remember(state.memory, sightings(bot), bot.entity.position, worldAge())
+    // 家・建物・建てている家のブロックは、材料としては覚えない（掘れと言われて断られる）
+    remember(state.memory, sightings(bot).filter((s) => bot.blockAt(s.pos)?.name !== s.kind || !protectedReason(state, s.pos, 0, bot.blockAt(s.pos))), bot.entity.position, worldAge())
     persist()
   }
 })
@@ -356,6 +358,7 @@ async function handle (req, res) {
       ...sharedState(bot, state, needs),
       reflex: Boolean(state.reflex),
       pickup_ready: nearbyDrops(bot, state, PICKUP_RADIUS).length > 0,
+      refusals: listRefusals(state),
       skill: skill || null,
       pending_judge: judge || null
     })

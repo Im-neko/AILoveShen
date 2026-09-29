@@ -7,6 +7,7 @@
 import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing, blockProps, fillItem } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
+import { refusalAt, noteRefusal } from './refusals.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
 import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
 import { inHomeRoom } from './builds.mjs'
@@ -16,7 +17,7 @@ import { homeChests, chestWith } from './memory.mjs'
 import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
-import { usesOf } from './items.mjs'
+import { usesOf, foodsInfo, loadNames } from './items.mjs'
 import { workCell, layoutAt } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { levelTarget, levelStatus, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
@@ -46,7 +47,7 @@ const MAX_HOLD_S = 3
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
   'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait',
   'use_item', 'ride_boat', 'level']
-export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of']
+export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of', 'find_foods']
 
 class Refused extends Error {}
 const refuse = (why) => { throw new Refused(why) }
@@ -56,6 +57,12 @@ function position (args) {
   const [x, y, z] = [args.x, args.y, args.z].map(Number)
   if (![x, y, z].every(Number.isFinite)) refuse('x, y and z must be numbers')
   return new Vec3(Math.floor(x), Math.floor(y), Math.floor(z))
+}
+
+// 道具の引数の座標（なければ null）
+function positionOf (args) {
+  const [x, y, z] = [args.x, args.y, args.z].map(Number)
+  return [x, y, z].every(Number.isFinite) && args.x != null ? { x, y, z } : null
 }
 
 function within (bot, p, max, what) {
@@ -78,6 +85,8 @@ function entity (bot, args) {
 
 // deps: { bot, state, knowledge, run(c, label), candidates(): 今の候補（ソルバーの提案）,
 //         check(specs): 条件の判定（goals.mjs の checkConditions） }
+let names = null // 日本語名（find_foods。初めて使うとき読む）
+
 export function createTools (deps) {
   const { bot, state, knowledge } = deps
 
@@ -357,7 +366,9 @@ export function createTools (deps) {
       if (id == null) refuse(`unknown block ${args.block}`)
       const radius = Math.max(4, Math.min(FIND_RADIUS, Number(args.radius ?? 32)))
       const me = bot.entity.position
+      // 断られる場所（家・建物）と、前に断られた・着けなかった場所は出さない（掘れと言われて断られる）
       const found = bot.findBlocks({ matching: id, maxDistance: radius, count: 64 })
+        .filter((p) => !protectedReason(state, p, 0, bot.blockAt(p)) && !refusalAt(state, 'dig', p))
         .sort((a, b) => a.distanceTo(me) - b.distanceTo(me)).slice(0, FIND_SHOWN)
         .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...details(p) }))
       return found.length ? found : `no ${args.block} within ${radius}m`
@@ -386,6 +397,14 @@ export function createTools (deps) {
       if (!recipes.length) return args.have ? `nothing can be made now with ${item} and what you carry (${total} recipes use it)` : `no recipe uses ${item}`
       return { total, shown: recipes.length, recipes }
     },
+    // 食べられる物と取り方（持ち物で食べられる・作れる物が先。query: 名前・日本語・材料に含まれる語）
+    find_foods (args) {
+      names ??= loadNames()
+      const r = foodsInfo({ md: knowledge.md, knowledge, index: knowledge.index, names }, inventoryCounts(bot), {
+        query: args.query, have: Boolean(args.have), limit: args.limit ?? undefined
+      })
+      return r.foods.length ? r : `no food matches "${args.query ?? ''}"${args.have ? ' among what you carry or can make now' : ''}`
+    },
     how_to_get (args) {
       const count = Math.max(1, Math.floor(Number(args.count ?? 1)))
       const [r] = deps.check([{ predicate: 'have', item: args.item, count }])
@@ -400,6 +419,9 @@ export function createTools (deps) {
       if (!build[name]) refuse(`unknown tool ${name}`)
       if (state.reflex) refuse('the reflex is handling a nearby threat')
       if (state.busy) refuse('another action is running')
+      // 前に同じ場所へ同じ手を断られた・着けなかったなら、やり直さない（理由と、別の手を選ぶよう返す）
+      const tried = refusalAt(state, name, positionOf(args))
+      if (tried) refuse(`${name} at ${fmt(tried.pos)} was tried before and will not work: ${tried.reason}; choose another place or another way`)
       const { c, label } = build[name](args)
       const home = state.home
       if (home && needsOutside(c, home)) {
@@ -420,6 +442,7 @@ export function createTools (deps) {
       // 実行の失敗は run() が結果として返す。ここに来るのは、断ったときと、引数が知識と合わない
       // とき（知らないアイテムなど）: どちらも理由を返し、プレイは止めない
       if (!(e instanceof Refused)) console.log(`[tool] ${name} の引数を使えなかった: ${e.stack}`)
+      else noteRefusal(state, name, positionOf(args), e.message)
       return { ok: false, refused: true, result: `refused: ${e.message}`, seconds: 0 }
     }
   }

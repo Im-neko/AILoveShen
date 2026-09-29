@@ -19,6 +19,7 @@ import { isInside, exitSpots, shelterOf, hasBed } from './home.mjs'
 import { recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
 const FRONTIER_SLACK = 8
 import { cooking, isRawMeat } from './cooking.mjs'
+import { refusalAt } from './refusals.mjs'
 import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -48,14 +49,21 @@ export function ground (bot, state, knowledge, world, status) {
   const home = state.home
   const { inside, day, danger, sheltering } = shelterOf(bot, home)
   // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている
-  const unique = [...out.reduce((m, c) => m.has(c.id) ? m : m.set(c.id, c), new Map()).values()]
+  const distinct = [...out.reduce((m, c) => m.has(c.id) ? m : m.set(c.id, c), new Map()).values()]
+  // 断られた・着けなかった場所への同じ手は出さない（refusals.mjs）。何を外したかは withheld に
+  const refused = distinct.filter((c) => c.pos && refusalAt(state, c.verb, c.pos))
+  const unique = distinct.filter((c) => !refused.includes(c))
   const safe = sheltering ? unique.filter((c) => c.confront || !needsOutside(c, home)) : unique
   const held = unique.length - safe.length
   let withheld = null
-  if (held && !day) withheld = `staying inside for the night: ${held} actions outside are held back until morning`
+  if (refused.length) {
+    withheld = `left out (refused or unreachable a moment ago): ${refused.map((c) => `${c.id} (${refusalAt(state, c.verb, c.pos).reason})`).join('; ')}`
+  }
+  const also = (text) => { withheld = withheld ? `${withheld}; ${text}` : text }
+  if (held && !day) also(`staying inside for the night: ${held} actions outside are held back until morning`)
   if (held && day) {
-    withheld = `staying inside while ${danger.map(({ e }) => e.name).join(', ')} wait near the door: ${held} actions outside are held back ` +
-      '(cleared() goes out to fight them; an exit can be dug through another wall)'
+    also(`staying inside while ${danger.map(({ e }) => e.name).join(', ')} wait near the door: ${held} actions outside are held back ` +
+      '(cleared() goes out to fight them; an exit can be dug through another wall)')
     if (!home.breach.length) {
       for (const spot of exitSpots(bot, home, danger.map(({ e }) => e))) {
         safe.push({ id: `exit through the ${spot.side} wall`, verb: 'exit_wall', target: `${spot.side} wall`, inPlace: true, spot, nearest_hostile: round(spot.distance) })

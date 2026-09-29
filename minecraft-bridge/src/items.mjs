@@ -109,3 +109,74 @@ export function usesOf (index, name, inventory = {}, have = false) {
   }
   return { total: new Set(all.map((x) => x.r.result)).size, recipes: out }
 }
+
+// find_foods: 食べられる物と、その取り方（レシピ、かまど、畑、狩り、掘る）。今の持ち物で食べられる物・
+// 作れる物を先に。プレイする LLM が食料の名前を知らず、小麦を食べようとして断られた
+// （wheat is not food）ので、一覧から引けるようにする。
+export const FOODS_SHOWN = 12
+export const FOODS_MAX = 30
+// 食べると悪い効果がある物（飢えているときだけ）
+const RISKY = new Map([
+  ['rotten_flesh', 'hunger effect: only when starving'],
+  ['spider_eye', 'poison'],
+  ['poisonous_potato', 'poison'],
+  ['pufferfish', 'poison'],
+  ['suspicious_stew', 'random effect'],
+  ['chicken', 'raw: may cause hunger (cook it first)']
+])
+
+// レシピにも掘る・落とす表にも出ない取り方（ソルバーの知識にない物）
+const FOOD_EXTRA = {
+  apple: 'dig oak_leaves / dark_oak_leaves (small chance)',
+  sweet_berries: 'pick from a sweet_berry_bush (taiga)',
+  glow_berries: 'pick from cave vines (lush caves)',
+  chorus_fruit: 'chorus plants in the End (out of reach for now)',
+  enchanted_golden_apple: 'rare loot only'
+}
+
+export function foodsInfo (deps, inventory = {}, { query = '', have = false, limit = FOODS_SHOWN } = {}) {
+  const { md, index, names } = deps
+  const q = String(query ?? '').trim().toLowerCase()
+  const count = (n) => inventory[n] ?? 0
+  const has = (i) => i.alts.reduce((n, a) => n + count(a), 0) >= i.count
+  const foods = []
+  for (const f of md.foodsArray) {
+    const recipes = index ? index.recipesFor(f.name) : []
+    const craft = recipes.filter((r) => r.station === 'crafting')
+    const smelt = recipes.filter((r) => r.station === 'furnace')
+    const carried = count(f.name)
+    const canCraft = craft.some((r) => r.ingredients.every(has))
+    const canSmelt = smelt.some((r) => r.ingredients.every(has))
+    const ja = names.items[f.name] ?? ''
+    if (q) {
+      const inRecipe = [...craft, ...smelt].some((r) => r.ingredients.some((i) => i.alts.some((a) => a.includes(q)) || (i.tag ?? '').includes(q)))
+      if (!f.name.includes(q) && !ja.includes(q) && !inRecipe) continue
+    }
+    if (have && !carried && !canCraft && !canSmelt) continue
+    const how = itemInfo(f.name, { ...deps, index }).how_to_get
+    const ways = []
+    if (typeof how === 'object') {
+      if (how.craft) ways.push(`craft ${how.craft[0].ingredients.join(' + ')}${how.craft[0].station === 'crafting_table' ? ' (crafting table)' : ''}`)
+      if (how.smelt_from) ways.push(`smelt ${how.smelt_from.slice(0, 3).join(' / ')} in a furnace`)
+      if (how.farm) ways.push('grow it: farmed(crop) — till, sow, harvest')
+      if (how.dig) ways.push(`dig ${how.dig.slice(0, 2).map((d) => d.block).join(' / ')}`)
+      if (how.mob_drop) ways.push(`from ${how.mob_drop.slice(0, 3).map((m) => m.mob).join(' / ')}`)
+    }
+    foods.push({
+      name: f.name,
+      ...(ja ? { ja } : {}),
+      hunger: f.foodPoints,
+      saturation: f.saturation,
+      ...(carried ? { carried } : {}),
+      ...(canCraft ? { can_craft_now: true } : {}),
+      ...(canSmelt ? { can_smelt_now: true } : {}),
+      ...(RISKY.has(f.name) ? { caution: RISKY.get(f.name) } : {}),
+      how: ways.length ? ways : [FOOD_EXTRA[f.name] ?? 'no known way']
+    })
+  }
+  // 持っている物、今作れる・焼ける物、それ以外。悪い効果のある物は最後。それぞれ満腹度の大きい順
+  const rank = (f) => f.caution ? 3 : f.carried ? 0 : (f.can_craft_now || f.can_smelt_now) ? 1 : 2
+  foods.sort((a, b) => rank(a) - rank(b) || b.hunger - a.hunger || b.saturation - a.saturation)
+  const shown = foods.slice(0, Math.max(1, Math.min(FOODS_MAX, Math.floor(limit))))
+  return { total: foods.length, shown: shown.length, foods: shown }
+}

@@ -135,6 +135,8 @@ class LocalLlmSettings:
     thinking_purposes: list[str] = field(
         default_factory=lambda: ["skill_write", "house", "town", "site"]
     )
+    # 思考させる用途の出力（思考を含む）の上限。上限で答えが出なければ、思考なしで聞き直す
+    thinking_max_tokens: dict[str, int] = field(default_factory=lambda: {"tool_stuck": 8000})
     max_concurrent: int = 2
     timeout_seconds: float = 180.0
 
@@ -266,6 +268,11 @@ class MinecraftSettings:
     # 行動の記録から行き詰まりを Jev が定期的に確かめる（docs/design/34 §9）。0 で確かめない
     stuck_check_steps: int = 6
     stuck_min_confidence: float = 0.75
+    # 小目標の進み具合がこの分数変わらなければ、行動の記録を Jev に渡して確かめる（0: 時間では確かめない）
+    stuck_check_quiet_minutes: float = 5.0
+    # 位置・持ち物・小目標の進み具合がこの秒数変わらなければ（2 手以上したのに）、Jev に任せず LLM に
+    # 失敗と結果を踏まえて選び直させる（0: しない）
+    stagnation_seconds: float = 10.0
     stuck_record_dir: str = "logs/stuck"
     # 教訓帳（docs/design/35）: jev（コードで絞って Jev が確かめる）、rules（コードの上位だけ）、
     # off（使わない: 視聴者の教訓はメモへ）
@@ -630,6 +637,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 thinking_purposes=[
                     str(p) for p in (local_data.get("thinking_purposes", d.thinking_purposes) or [])
                 ],
+                thinking_max_tokens={
+                    str(k): int(v)
+                    for k, v in (local_data.get("thinking_max_tokens", d.thinking_max_tokens) or {}).items()
+                },
                 max_concurrent=int(local_data.get("max_concurrent", d.max_concurrent)),
                 timeout_seconds=float(local_data.get("timeout_seconds", d.timeout_seconds)),
             ),
@@ -713,6 +724,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             stuck_check_steps=int(agent_data.get("stuck_check_steps", defaults.stuck_check_steps)),
             stuck_min_confidence=float(
                 agent_data.get("stuck_min_confidence", defaults.stuck_min_confidence)
+            ),
+            stagnation_seconds=float(agent_data.get("stagnation_seconds", defaults.stagnation_seconds)),
+            stuck_check_quiet_minutes=float(
+                agent_data.get("stuck_check_quiet_minutes", defaults.stuck_check_quiet_minutes)
             ),
             stuck_record_dir=agent_data.get("stuck_record_dir", defaults.stuck_record_dir),
             lessons=str(agent_data.get("lessons", defaults.lessons)),

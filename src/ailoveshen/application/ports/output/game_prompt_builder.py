@@ -291,6 +291,8 @@ class IGamePromptBuilder(ABC):
         recent_tools: Sequence[ToolOutcome],
         skills: Sequence[SkillInfo] | None = None,
         failing: int = 0,
+        stagnant_seconds: float = 0.0,
+        stagnant_actions: Sequence[str] = (),
     ) -> str:
         """
         配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。
@@ -302,6 +304,8 @@ class IGamePromptBuilder(ABC):
             recent_tools: 直近の道具の呼び出しと結果（古い順）
             skills: 覚えた技（None: 技を使わない。docs/design/22）
             failing: 今の小目標で続けて失敗した行動の数（行き詰まっていれば、別の方法を考えさせる）
+            stagnant_seconds: 位置・持ち物・小目標の進み具合が変わらない秒数（0: 動いている）
+            stagnant_actions: 変わらない間にした手と結果（古い順）
         """
         ...
 

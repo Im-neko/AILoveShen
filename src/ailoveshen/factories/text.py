@@ -63,6 +63,7 @@ def create_text_generator(
         thinking_levels=gemini.thinking_levels,
         default_thinking_level=gemini.main_thinking_level,
         thinking_purposes=local.thinking_purposes,
+        thinking_max_tokens=local.thinking_max_tokens,
         max_concurrent=local.max_concurrent,
         timeout_seconds=local.timeout_seconds,
         generation_log=generation_log,

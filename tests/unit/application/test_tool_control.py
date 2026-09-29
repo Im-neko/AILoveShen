@@ -422,6 +422,56 @@ class TestToolStep:
         failing = [c.kwargs["failing"] for c in self.prompt_builder.build_tool_prompt.call_args_list]
         assert failing == [0, 2]
 
+    @pytest.mark.asyncio
+    async def test_when_nothing_changes_the_model_chooses_again_with_the_record_and_jev_is_skipped(
+        self, use_case, monkeypatch
+    ):
+        from ailoveshen.application.use_cases.stagnation import Stagnation
+        from ailoveshen.application.use_cases.step_picker import StepToGemini
+
+        clock = {"now": 0.0}
+        monkeypatch.setattr(use_case, "_stagnation", Stagnation(10, lambda: clock["now"]))
+        use_case._step_picker = Mock()
+        use_case._step_picker.pick = AsyncMock()
+        use_case._step_picker.note = Mock()
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})] * 3
+        session = _session(HAVE_PLANKS)
+        self.prompt_builder.build_action_context.return_value = ({}, "")
+        use_case._step_picker.pick.return_value = StepToGemini("test: not sure")
+        for now in (0, 8, 16):
+            clock["now"] = now
+            _, result = await use_case._act_with_tools(session, _obs())
+            use_case._stagnation.record(f"dig → ok: {result.result}")  # execute が手ごとにすること
+
+        purposes = [c.kwargs["purpose"] for c in self.text_generator.choose_tool.call_args_list]
+        assert purposes[-1] == "tool_stuck" and purposes[0] != "tool_stuck"
+        assert use_case._step_picker.pick.await_count == 2  # 3 回目は Jev に聞かない
+        kw = self.prompt_builder.build_tool_prompt.call_args.kwargs
+        assert kw["stagnant_seconds"] == 16 and len(kw["stagnant_actions"]) == 2
+        assert session.activity().stagnant_seconds == 16
+
+    @pytest.mark.asyncio
+    async def test_jev_still_chooses_after_a_refusal_but_not_after_a_real_failure(self, use_case):
+        """断られた手は台帳で次から出ないので、決まりきった断りで LLM に回さず Jev が残りから選ぶ。"""
+        from ailoveshen.application.use_cases.step_picker import StepToGemini
+
+        use_case._step_picker = Mock()
+        use_case._step_picker.pick = AsyncMock(return_value=StepToGemini("test"))
+        use_case._step_picker.note = Mock()
+        self.prompt_builder.build_action_context.return_value = ({}, "")
+        session = _session(HAVE_PLANKS)
+        call = ToolCall("dig", {"x": 1, "y": 2, "z": 3}, intent="掘る")
+        obs = _obs()
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})] * 2
+
+        use_case._recent_tools.append(ToolOutcome(call, False, "refused: will not dig", 0.0, refused=True))
+        await use_case._act_with_tools(session, obs)
+        assert use_case._step_picker.pick.await_args.args[-1] is True
+
+        use_case._recent_tools.append(ToolOutcome(call, False, "failed: No path", 1.0))
+        await use_case._act_with_tools(session, obs)
+        assert use_case._step_picker.pick.await_args.args[-1] is False
+
     def test_tools_control_needs_a_watcher(self, bridge):
         with pytest.raises(ValueError, match="needs a tool_watcher"):
             AdvancePlayUseCase(
@@ -457,3 +507,24 @@ def test_the_tool_prompt_asks_for_another_way_only_while_the_small_goal_keeps_fa
     stuck = builder.build_tool_prompt(Activity(), state, (), (), failing=3)
     assert "行き詰まっている（続けて 3 回失敗）" in stuck
     assert "同じ道具を同じ引数" in stuck
+    # 状況が動かないときは、その間の手と結果を見せる
+    still = builder.build_tool_prompt(
+        Activity(), state, (), (), stagnant_seconds=12.4, stagnant_actions=["goto(x=1, y=2, z=3) (1.00) → ok: arrived"]
+    )
+    assert "12 秒、位置・持ち物・目標の進み具合が変わらない" in still
+    assert "- goto(x=1, y=2, z=3) (1.00) → ok: arrived" in still
+    assert "行き詰まっている" not in builder.build_tool_prompt(Activity(), state, (), ())
+
+
+def test_the_tool_prompt_lists_the_moves_the_bridge_refused():
+    from ailoveshen.domain.value_objects import Activity
+    from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
+        GamePromptTemplateBuilder,
+    )
+
+    builder = GamePromptTemplateBuilder()
+    refusal = {"tool": "dig", "x": -73, "y": 65, "z": -151, "reason": "will not dig oak_log at -73,65,-151: it is part of the current home", "minutes_ago": 2}
+    prompt = builder.build_tool_prompt(Activity(), {"surroundings": {}, "mobs": [], "refusals": [refusal]}, (), ())
+    assert "しばらく使えない手" in prompt
+    assert "- dig (-73, 65, -151): will not dig oak_log at -73,65,-151: it is part of the current home（2 分前）" in prompt
+    assert "しばらく使えない手" not in builder.build_tool_prompt(Activity(), {"surroundings": {}, "mobs": [], "refusals": []}, (), ())

@@ -240,6 +240,7 @@ def create_game_service(
             judge=fast_judge,
             every_steps=minecraft.stuck_check_steps,
             min_confidence=minecraft.stuck_min_confidence,
+            quiet_seconds=minecraft.stuck_check_quiet_minutes * 60,
             recorder=JsonlWatchRecorder(minecraft.stuck_record_dir)
             if minecraft.stuck_record_dir
             else None,
@@ -354,6 +355,7 @@ def create_game_service(
         step_picker=step_picker,
         failure_routing=minecraft.failure_routing,
         stuck_check=stuck_check,
+        stagnation_seconds=minecraft.stagnation_seconds,
         lessons=lessons,
         search=search,
         abilities=load_abilities(),

@@ -60,6 +60,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         thinking_levels: Optional[Mapping[str, str]] = None,
         default_thinking_level: str = "low",
         thinking_purposes: Optional[Sequence[str]] = None,
+        thinking_max_tokens: Optional[Mapping[str, int]] = None,
         max_concurrent: int = 2,
         timeout_seconds: float = 180.0,
         generation_log: Optional[IGenerationLog] = None,
@@ -79,6 +80,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
             default_thinking_level: 表にない用途の深さ
             thinking_purposes: 思考させる用途（与えれば thinking_levels より優先。ローカルは思考が
                 遅いので、ふだんの操作の判断は思考なしにする）
+            thinking_max_tokens: 思考させる用途ごとの出力の上限（思考を含む）。上限で答えが出なければ
+                思考なしで聞き直す（長い思考でプレイが数分止まらないように）
             max_concurrent: 同時に送る数の上限
             timeout_seconds: 1 回の上限
             generation_log: デバッグの記録の残し先
@@ -96,6 +99,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._thinking_param = thinking_param
         self._levels = {"default": default_thinking_level, **dict(thinking_levels or {})}
         self._think_purposes = set(thinking_purposes) if thinking_purposes is not None else None
+        self._think_caps = dict(thinking_max_tokens or {})
         self._slots = asyncio.Semaphore(max(1, max_concurrent))
         self._log = generation_log
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -233,9 +237,10 @@ class OpenAICompatTextGenerator(ITextGenerator):
         purpose: Optional[str],
         schema: Optional[dict[str, Any]] = None,
         tools: Sequence[ToolSpec] = (),
+        allow_thinking: bool = True,
     ) -> dict[str, Any]:
         model = await self._model_id()
-        think = self._thinking(purpose)
+        think = allow_thinking and self._thinking(purpose)
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -259,6 +264,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
             ]
             body["tool_choice"] = self._tool_choice
         body["max_tokens"] = self._output_budget(messages, tools)
+        cap = self._think_caps.get(purpose or "default")
+        if think and cap:
+            body["max_tokens"] = min(body["max_tokens"], cap)
         data = await self._post(body, purpose, think)
         try:
             choice = data["choices"][0]
@@ -270,7 +278,14 @@ class OpenAICompatTextGenerator(ITextGenerator):
             and not (message.get("content") or "").strip()
             and not message.get("tool_calls")
         ):
-            # 思考で出力の上限を使い切った: 同じことを頼み直しても同じ
+            if think and cap:
+                # 上限（thinking_max_tokens）を思考で使い切った: 思考なしで聞き直す。上限を決めていない用途は、
+                # 同じことを頼み直しても同じなのでエラーにする
+                logger.warning(
+                    f"ローカルの思考が上限（{body['max_tokens']} トークン）で答えに届かなかった: "
+                    f"思考なしで聞き直す（{purpose}）"
+                )
+                return await self._chat(messages, purpose, schema, tools, allow_thinking=False)
             raise TextGenerationError(
                 f"local LLM output was cut at {body['max_tokens']} tokens with no answer "
                 f"({purpose}): raise llm.local.max_output_tokens or think less for this purpose"

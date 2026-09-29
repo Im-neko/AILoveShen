@@ -270,3 +270,25 @@ test('家具を動かす: 前の家のベッドは家に運べる、今の家の
   assert.match((await callTool('move_furniture', { x: 1, y: 70, z: 3 })).result, /still holds oak_log 5/)
   assert.match((await callTool('move_furniture', { x: 10, y: 69, z: 10 })).result, /no bed, crafting table, furnace or chest/)
 })
+
+test('断られた場所へ同じ手を呼び直すと、実行せずに前の理由と別の手を返す（台帳）', async () => {
+  const { callTool, runs, state } = setup()
+  const first = await callTool('dig', { x: 0, y: 70, z: 2 })
+  assert.match(first.result, /will not dig oak_planks at 0,70,2: it is part of the current home/)
+  const again = await callTool('dig', { x: 0, y: 70, z: 2 })
+  assert.equal(again.refused, true)
+  assert.match(again.result, /was tried before and will not work: will not dig oak_planks.*choose another place/)
+  assert.equal(runs.length, 0)
+  assert.equal(state.refusals.size, 1) // 呼び直しで期限を延ばさない
+})
+
+test('find_blocks は、家の壁と断られた場所を出さない', async () => {
+  const { callTool, bot, state } = setup()
+  bot.findBlocks = () => [v(0, 70, 2), v(30, 70, 30), v(31, 70, 30)]
+  const found = (await callTool('find_blocks', { block: 'oak_planks', radius: 64 })).result
+  assert.deepEqual(found.map((f) => f.x), [30, 31].sort((a, b) => a - b)) // 家の壁（0,70,2）は出ない
+  state.refusals = new Map()
+  const { noteRefusal } = await import('../src/refusals.mjs')
+  noteRefusal(state, 'dig', v(30, 70, 30), 'refused: nothing to dig')
+  assert.deepEqual((await callTool('find_blocks', { block: 'oak_planks', radius: 64 })).result.map((f) => f.x), [31])
+})

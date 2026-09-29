@@ -783,6 +783,8 @@ class PlaySession(Entity):
     intent: str = field(default="", init=False)
     # 行動を実行している間だけ真（選んでいる間・目標を決めている間は偽）。一言の実況はこの間だけ話す
     acting: bool = field(default=False, init=False)
+    # 位置・持ち物・小目標の進み具合が変わらない時間（秒。動かないと数えるときだけ 0 より大きい。一言は黙る）
+    stagnant_seconds: float = field(default=0.0, init=False)
     # 定期の見直しで画面について書いたこと（確かめていない。docs/design/23）
     screen_note: Optional[ScreenNote] = field(default=None, init=False)
     # 次の切れ目で今の小目標を終わらせる理由（コメントの指摘、画面の見直し、行き詰まりの確認）。
@@ -829,6 +831,7 @@ class PlaySession(Entity):
             intent=self.intent,
             acting=self.acting,
             failing=self.consecutive_failures if self.goal else 0,
+            stagnant_seconds=self.stagnant_seconds,
             screen_note=self.screen_note,
             lessons=self.lessons,
             town_map=self.plan.town_map,
