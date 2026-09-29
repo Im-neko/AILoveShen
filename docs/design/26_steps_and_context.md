@@ -91,3 +91,7 @@ Gemini の暗黙のキャッシュは、リクエストの先頭から同じ部�
 
 - 単体テスト: 手順の解析と保存、Jev に回す・Gemini に回す条件（6 通り）、済んだ手順を出さない、身を守る候補、確信度が低いと Gemini、プロンプトの長さ
 - 実機: `tools/gemini_usage.py` で 1 時間あたりの回数と費用を前後比較、`logs/goals/` で Jev の選び方が妥当か
+
+## 追記（2026-09-29、設計書 50 段階 2）
+
+手順（`plan_steps`）は id・状態（pending / done）・出どころを持つ。一度 `/check` で満たした手順は済みのままで（`MidGoalKeeper.judge` と `GoalChooser` が済みにする）、Jev が選ぶのは未達成の手順だけ。Gemini が書く `steps` は「これから残すもの」で、`MidGoalPlan.set_steps` が既存の手順とマージする（済みと視聴者・助言の手順は残す。未達成は 8 個まで）。`_check_step_order` は済みにした手順を数えない。停滞は手順単位（手順が済む、条件や今の手順の `(n/m)` が動く）で数える。`MidGoal.steps`（予算の数）と `plan_steps` は別物のまま。

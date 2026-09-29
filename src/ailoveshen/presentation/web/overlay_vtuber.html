@@ -83,6 +83,10 @@
     background: #fff; border: 2px solid var(--accent-soft); color: var(--accent-deep); font-size: 13px; font-weight: 700;
   }
   .sub { font-size: 14px; font-weight: 500; color: var(--ink-soft); margin-top: 2px; }
+  .steps { margin-top: 4px; display: flex; flex-direction: column; gap: 1px; }
+  .step { font-size: 15px; font-weight: 500; color: var(--ink-soft); }
+  .step.current { font-weight: 700; color: var(--ink); }
+  .step.done { color: var(--done); font-size: 13px; }
 
   .bar { height: 10px; margin-top: 6px; border-radius: 999px; background: rgba(0,0,0,.08); overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent);
@@ -213,6 +217,20 @@
     return null
   }
 
+  // 今の大目標の手順（中目標）: 済んだ数、今の手順、待っている手順（多いときは先の 2 つまで）
+  function stepList (steps) {
+    const box = el('div', 'steps')
+    const done = steps.filter((s) => s.state === 'done').length
+    if (done) box.append(el('div', 'step done', `✓ 済み ${done}`))
+    for (const s of steps.filter((x) => x.state !== 'done').slice(0, 3)) {
+      const line = el('div', `step ${s.state}`, `${s.state === 'current' ? '▶' : '・'} ${s.label}`)
+      if (s.requested_by) line.append(el('span', 'req', `💌 ${s.requested_by}さん`))
+      else if (s.suggested_by) line.append(el('span', 'req', `💡 ${s.suggested_by}さん`))
+      box.append(line)
+    }
+    return box
+  }
+
   function renderMid (list) {
     const ol = $('mid')
     ol.replaceChildren()
@@ -224,13 +242,16 @@
       if (g.requested_by) li.append(el('span', 'req', `💌 ${g.requested_by}さんのおねがい`))
       else if (g.suggested_by) li.append(el('span', 'req', `💡 ${g.suggested_by}さんの提案`))
       if (g.state === 'current') {
-        const f = fraction(g.progress, false)
+        // 条件の数（ブロック 30/70 など）があればそれ、なければ済んだ手順 / 手順の数
+        let f = fraction(g.progress, false)
+        if (!f && g.steps && g.steps.length) f = { got: g.steps_done, need: g.steps_total }
         if (f) {
           const b = el('div', 'bar'); b.append(el('i'))
           li.append(el('span', 'bar-label', `${f.got}/${f.need}`), b)
           bar(b, f)
         }
         if (g.summary.length && !compact) li.append(el('div', 'sub', g.summary.join(' / ')))
+        if (g.steps && g.steps.length && !compact) li.append(stepList(g.steps))
       }
       ol.append(li)
     }
@@ -311,7 +332,7 @@
     }
     const frames = [
       { ...base,
-        mid_goals: [mid('m3', '食べ物をチェストにためる', 'current', { progress: ['stored 16 food (5/16)'], summary: ['焼いた肉 5/16'] }), mid('m4', '松明で家のまわりを明るくする', 'pending'), mid('m2', 'ベッドで寝られるようにする', 'done')],
+        mid_goals: [mid('m3', '食べ物をチェストにためる', 'current', { progress: ['stored 16 food (5/16)'], summary: ['焼いた肉 5/16'], steps: [{ label: '牛を 4 頭狩る', state: 'done' }, { label: '焼いた肉を 16 個そろえる', state: 'current' }, { label: 'チェストに食べ物を 16 個ためる', state: 'waiting' }] }), mid('m4', '松明で家のまわりを明るくする', 'pending'), mid('m2', 'ベッドで寝られるようにする', 'done')],
         goal: { goal: 'have(cooked_beef, 4)', label: 'ステーキを 4 個そろえる', reason: '備蓄の食べ物が足りないから', survival: false, progress: ['have 4 cooked_beef (1/4)'] },
         intent: '近くの牛を見つけて狩りにいく' },
       { ...base,

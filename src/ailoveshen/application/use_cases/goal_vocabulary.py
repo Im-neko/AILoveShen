@@ -28,6 +28,7 @@ from ailoveshen.domain.value_objects import (
     TownSite,
     TownStage,
     check_bundle,
+    objective_kind,
 )
 
 MAX_GOAL_COUNT = 64
@@ -138,6 +139,9 @@ class MidGoalProposal:
     position: Optional[int] = None
     # 視聴者の頼みを、配信者が待っている間（夜に家の中）に今やる（docs/design/13 §8）
     now: bool = False
+    # 大目標ではなく、今の大目標の手順（中目標）として足す（docs/design/50 §5）。条件の先頭が手順の
+    # 条件、残りが一緒に追う条件
+    job: bool = False
 
 
 @dataclass(frozen=True)
@@ -255,7 +259,9 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
 def _conditions_schema() -> dict[str, Any]:
     return {
         "type": "array",
-        "description": "All must hold for the mid goal to be done (judged from the world)",
+        "description": "All must hold for the mid goal to be done (judged from the world). A mid "
+        "goal that builds (built) or lays out a facility (facility) holds only that one kind of "
+        "condition: put its materials, leveling and furnishing in the steps",
         "minItems": 1,
         "maxItems": MAX_CONDITIONS,
         "items": {
@@ -501,6 +507,14 @@ def reply_schema() -> dict[str, Any]:
                 "own wish. A suggestion becomes her own mid goal and does not count toward the "
                 "viewers' limits",
             },
+            "level": {
+                "type": "string",
+                "enum": ["objective", "job"],
+                "description": "accept: objective = a mid goal of its own (a named build or "
+                "facility, or a small thing unrelated to the mid goal worked on now); job = a step "
+                "of the mid goal worked on now (materials or a step it needs; the first condition "
+                "is the step, the others are chased with it). Default objective",
+            },
             "title": {"type": "string", "description": "accept: the mid goal's title"},
             "conditions": _conditions_schema(),
             "position": {
@@ -677,6 +691,11 @@ def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
     for c in conditions:
         if c.predicate not in PLANNABLE_CONDITIONS:
             raise ValueError(f"{c.predicate.value} cannot be a condition of a mid goal")
+    job = data.get("level") == "job"
+    if job:
+        check_bundle(conditions[0], conditions[1:])
+    else:
+        objective_kind(conditions)  # 設計や判定の前に、建てる・施設に材料を混ぜていないか確かめる
     position = data.get("position")
     return MidGoalProposal(
         title=title,
@@ -684,6 +703,7 @@ def parse_proposal(data: dict[str, Any]) -> MidGoalProposal:
         reason=str(data.get("reason", "")),
         position=int(position) - 1 if position is not None else None,
         now=data.get("when") == "now",
+        job=job,
     )
 
 

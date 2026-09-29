@@ -7,6 +7,19 @@
 
 ## Completed Work
 
+### 目標の 4 層 段階 2: 手順（中目標）を第一級に（設計書 50） (2026-09-29)
+
+**Commit**: （下に追記）
+
+ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。段階 2 は仕組みだけ（型名・呼び名は今のまま。改名は段階 3）。
+- domain: `PlannedStep` に id・状態・出どころ・予算・進み具合、`MidGoal.kind`（`objective_kind`。built だけ / facility だけ / それ以外。混ぜると差し戻し。街の段階と準備は除く）、`MidGoalPlan` の `set_steps`（マージ）・`add_step`・`judge_steps`（ラッチ）・`drop_step`・`charge(id, spec)`。視聴者の上限は大目標と手順を合わせて数える
+- application: `MidGoalKeeper.judge` が手順を判定して済みにする、`accept` の `job`、`withdraw` と予算切れの手順の断念、`GoalChooser` は未達成の手順から、`_check_step_order` は済みを数えない、停滞は手順単位（`_MidWatch`）、書き直しが 8 個を超えると差し戻し、返答の `level`
+- 保存: `JsonMissionStore` の `format: 2`。読めない形は初期リストで始め、元を `mission.json.unreadable` に残す（**今の `data/mission.json` は次の起動で初期リストに戻る。着手前に `data/backups/` へ退避すること**）
+- 表示: `stream_context`（済: / 今: / 待:）、`/api/goals` の `kind` と `steps`、2 つのオーバーレイ、プロンプト
+- テスト: `test_job_steps.py`（21）、`test_goal_layers.py`（24）、`test_json_mission_store_steps.py`（4）、`test_goal_board_steps.py`（2）。Python 937 passed（`test_stream_factory.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジは触っていない（`npm test` はこのワークツリーでは未実行: node_modules がない）
+- 未実装（設計書 50 §11）: `JobDoneEvent` の実況、Gemini の決定で手順を断念する操作、台本のコメントと実機での確認
+- 次: 段階 3（改名と語彙）
+
 ### 判断のサイクルの遅さ（設計書 51） (2026-09-29)
 
 **Commit**: なし（未コミット）
@@ -1863,10 +1876,9 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
-### 目標の 4 層（設計書 50、2026-09-29 時点。設計のみ、実装は未着手）
+### 目標の 4 層（設計書 50、2026-09-29 時点。段階 2 は実装済み。段階 3（改名と語彙）は未着手）
 
-ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。設計書 `docs/design/50_goal_layers.md`（未コミット）。段階: 2 仕組み（型名はそのまま。ラッチ、書き直しのマージ、`kind` の検査、頼みの層）→ 3 改名と語彙（1 回で）。
-- **止まっている理由**: 作業ツリーに別件の未コミットの変更がある（`play.py`、`entities.py`、`value_objects.py`、`game_prompt_template_builder.py`、`config.py`、`live_narration.py` ほか。反射待ち・行き詰まり時の道具選択・実況）。段階 2 と重なるので、コミットか整理が済むまで着手しない
+ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。設計書 `docs/design/50_goal_layers.md`。段階: 2 仕組み（実装済み。上の Completed Work）→ 3 改名と語彙（1 回で: `MidGoal` → `Objective`、`PlannedStep` → `Job`、`MidGoalPlan` → `ObjectivePlan`、`MidGoalKeeper` → `ObjectiveKeeper`、イベント、`mid_goal_id` → `objective_id`、プロンプトと日本語の表示、ブリッジのエラー文、`abilities.yaml`、設計書 13・26・20、CLAUDE.md。`MidGoal.steps`（予算）は `budget_used` に）。
 - 設計書で、ユーザーの決めた「小さい頼みは今の大目標の中目標」を「今の大目標に関係するものだけ」に絞った（§5）。確認待ち
 - `data/mission.json` は移行しない。着手前に `data/backups/` へ退避
 

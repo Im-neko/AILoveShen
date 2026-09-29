@@ -114,5 +114,6 @@ def test_the_steps_of_a_mid_goal_survive_a_restart(tmp_path):
     store = JsonMissionStore(tmp_path / "mission.json")
     store.save(plan)
     saved = store.load().pending[0]
-    assert saved.plan_steps == steps
+    assert saved.plan_steps == plan.get(goal.id).plan_steps
+    assert [s.spec for s in saved.plan_steps] == [s.spec for s in steps]
     assert saved.conditions == (annex,)

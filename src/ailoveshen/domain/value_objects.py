@@ -601,6 +601,43 @@ class MidGoalState(str, Enum):
     DROPPED = "dropped"
 
 
+class ObjectiveKind(str, Enum):
+    """
+    中目標（大目標になる）の種類。コードが条件から決める（docs/design/50 §3）。build と facility は
+    成果物だけを条件にし、資材・整地・内装は手順に置く。
+    """
+
+    BUILD = "build"
+    FACILITY = "facility"
+    INFRASTRUCTURE = "infrastructure"
+
+
+_DELIVERABLE_KINDS = {
+    GoalPredicate.BUILT: ObjectiveKind.BUILD,
+    GoalPredicate.FACILITY: ObjectiveKind.FACILITY,
+}
+
+
+def objective_kind(conditions: tuple[GoalSpec, ...]) -> ObjectiveKind:
+    """
+    条件から中目標の種類を決める。
+
+    Raises:
+        ValueError: 建てる・施設と、ほかの条件が混ざっているとき（材料は手順に書く）
+    """
+    kinds = {
+        _DELIVERABLE_KINDS[c.predicate] for c in conditions if c.predicate in _DELIVERABLE_KINDS
+    }
+    if not kinds:
+        return ObjectiveKind.INFRASTRUCTURE
+    if len(kinds) > 1 or any(c.predicate not in _DELIVERABLE_KINDS for c in conditions):
+        raise ValueError(
+            "a mid goal that builds (built) or lays out a facility (facility) holds only that "
+            "one kind of condition; put the materials, leveling and furnishing in its steps"
+        )
+    return next(iter(kinds))
+
+
 @dataclass(frozen=True)
 class MidGoal:
     """
@@ -632,7 +669,8 @@ class MidGoal:
     prepares_town: bool = False
     # 視聴者の頼みのステップの予算（None: プランの既定。建物は大きさに合わせて広げる）
     budget: Optional[int] = None
-    # Gemini が書いた、この中目標のための手順（小目標の並び）。Jev が次を選ぶ（docs/design/26）
+    # Gemini が書いた、この中目標のための手順（小目標の並び。済んだものも残る）。Jev が次を選ぶ
+    # （docs/design/26、50 §4）
     plan_steps: tuple["PlannedStep", ...] = ()
 
     def __post_init__(self) -> None:
@@ -647,6 +685,26 @@ class MidGoal:
                 raise ValueError(
                     f"{c.predicate.value} cannot be a condition of a mid goal; use {allowed}"
                 )
+        if self.stage is None and not self.prepares_town:
+            objective_kind(self.conditions)  # 街の段階と準備は、段階の定義が条件を決める
+
+    @property
+    def kind(self) -> ObjectiveKind:
+        """種類（条件から決まる）。街の段階の混ぜた条件は基盤整備として扱う。"""
+        try:
+            return objective_kind(self.conditions)
+        except ValueError:
+            return ObjectiveKind.INFRASTRUCTURE
+
+    @property
+    def open_steps(self) -> tuple["PlannedStep", ...]:
+        """まだ済んでいない手順（順番どおり）。"""
+        return tuple(s for s in self.plan_steps if s.state == JobState.PENDING)
+
+    @property
+    def done_steps(self) -> tuple["PlannedStep", ...]:
+        """済んだ手順（一度満たしたら済みのまま）。"""
+        return tuple(s for s in self.plan_steps if s.state == JobState.DONE)
 
     def summary(self) -> tuple[str, ...]:
         """細かい手順（字下げした進み具合の行）を除いた、条件の進み具合。"""
@@ -832,11 +890,29 @@ class HouseBlueprint:
         return counts
 
 
+class JobState(str, Enum):
+    """手順（大目標の中目標になる）の状態。断念した手順はリストから外す。"""
+
+    PENDING = "pending"
+    DONE = "done"
+    DROPPED = "dropped"
+
+
+# 1 つの中目標の、まだ済んでいない手順の数の上限（Gemini の 6 つ + 視聴者・助言の分）
+MAX_OPEN_STEPS = 8
+
+
 @dataclass(frozen=True)
 class PlannedStep:
     """
     中目標のための手順の 1 つ: 小目標の条件と、なぜそれか（ゴールボードと実況が使う）。
     条件は世界から判定できるもの（`/check` で済んだかを見る）。
+
+    `id` はプランが付ける（Gemini が書いたときは空）。`state` は、一度 `/check` で満たしたら済み
+    のまま（あとで材料を使って条件が崩れても戻さない。docs/design/50 §4）。`requested_by` は
+    頼んだ視聴者、`suggested_by` は納得して採った助言をくれた視聴者（どちらも書き直しで消さない）。
+    `steps` は視聴者の手順がこれまでに使った小目標のステップ数（予算）、`progress` は最後に
+    判定したときの進み具合の行、`ended_because` は断念した理由。
 
     Raises:
         ValueError: 世界から判定できない条件のとき。
@@ -847,6 +923,13 @@ class PlannedStep:
     # 小目標の束（docs/design/44）: 一緒に追う条件と、進め方
     together: tuple[GoalSpec, ...] = ()
     approach: str = ""
+    id: str = ""
+    state: JobState = JobState.PENDING
+    requested_by: Optional[str] = None
+    suggested_by: Optional[str] = None
+    steps: int = 0
+    progress: tuple[str, ...] = ()
+    ended_because: str = ""  # 断念した理由
 
     def __post_init__(self) -> None:
         for spec in (self.spec, *self.together):
@@ -861,6 +944,10 @@ class PlannedStep:
     def specs(self) -> tuple[GoalSpec, ...]:
         """束の条件すべて（先頭が spec）。"""
         return (self.spec, *self.together)
+
+    def same_as(self, other: "PlannedStep") -> bool:
+        """条件が同じか（順番は問わない）。書き直しで同じ手順を見分ける。"""
+        return {s.describe() for s in self.specs} == {s.describe() for s in other.specs}
 
     def describe(self) -> str:
         return " + ".join(s.describe() for s in self.specs)

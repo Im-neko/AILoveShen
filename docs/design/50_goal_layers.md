@@ -1,6 +1,6 @@
 # 目標の 4 層（最終目標・大目標・中目標・小目標）
 
-作成: 2026-09-29。`13_goal_hierarchy.md`（目標の 3 層）と `26_steps_and_context.md`（手順 `plan_steps`）を置き換える。状態: 設計のみ、未実装。
+作成: 2026-09-29。`13_goal_hierarchy.md`（目標の 3 層）と `26_steps_and_context.md`（手順 `plan_steps`）を置き換える。状態: 段階 2（仕組み）は実装済み（§11）。段階 3（改名と語彙）は未着手。
 
 ## 1. 目的
 
@@ -36,7 +36,7 @@
   | `facility` | `facility(name)` だけ | 小麦畑を作る |
   | `infrastructure` | `have` / `placed` / `stored` / `planted` / `farmed` / `leveled` / `lit` / `custom` | 石のツルハシと松明を持つ、食料を蓄える |
 - `build` と `facility` の大目標は、資材・整地・内装を条件に書けない（中目標に置く）。混ぜた条件は差し戻す: 「材料は中目標に書く」
-- 街の段階（`stage`、`prepares_town`）は大目標の属性のまま。段階の大目標は `build` / `facility` の形（段階が決める）。断念できないのも今と同じ
+- 街の段階（`stage`、`prepares_town`）は大目標の属性のまま。段階の条件は段階の定義が決めるので、`kind` の検査は受けない（混ざった条件は `infrastructure` として扱う）。断念できないのも今と同じ
 - 視聴者の頼みは、大きいもの（自分の名前を持つ建物・施設）を大目標として、待ち行列の後ろに入れる（13 §4 のとおり、今取り組んでいるものより後ろ。`when: now` の例外も同じ）。小さいものは §5
 - 上限（コードが守る）: 大目標 6 個、視聴者が出どころのもの同時 2 人、1 人 1 件（§5 の中目標と合わせて数える）、予算 80 ステップ。助言（`suggested_by`）は数えない（49）
 
@@ -73,16 +73,16 @@
 
 ## 7. 保存とオーバーレイ
 
-- `data/mission.json` は移行しない（リリース前）。新形式で読めないときは、例外にせず設定の初期リストで始める（今の `_load_plan` の、最終目標の文が違うときの経路と同じ）。今のファイルは `data/backups/` に退避してから始める
+- `data/mission.json` は移行しない（リリース前）。保存に `format`（版。今は 2）を持たせ、版が違う・壊れている・今の検査に通らないファイルは、例外にせず設定の初期リストで始める（今の `_load_plan` の、最終目標の文が違うときの経路と同じ）。次の保存で上書きされるので、読めなかったファイルは `mission.json.unreadable` に写して残す。今のファイルは着手前に `data/backups/` にも退避しておく
 - `GET /api/goals` とオーバーレイ: 最終目標 → 大目標のリスト（進み具合、視聴者の頼み）→ 今の大目標の中目標（済み・今・待ち）→ 小目標（吹き出し）。中目標が済むとトースト
-- `Narrator`: 大目標の完了・断念（今の `MidGoal*Event`）に加えて、中目標の完了を次の実況に混ぜる（`JobDoneEvent`）。小さな中目標の完了ごとには話さず、大目標の境目と長い中目標の完了だけ話す
+- `Narrator`: 大目標の完了・断念（今の `MidGoal*Event`）に加えて、中目標の完了を次の実況に混ぜる（`JobDoneEvent`）。小さな中目標の完了ごとには話さず、大目標の境目と長い中目標の完了だけ話す（**段階 2 では出していない**。手順の状態は `activity()` とボードに出る。視聴者の手順の断念だけは、大目標と同じ `MidGoalDroppedEvent` で必ず言う）
 
 ## 8. 段階
 
 1 つの変更で意味の変更と改名を混ぜない。
 
 1. この設計書（コードは触らない）
-2. **仕組み**（今の型名のまま）: `PlannedStep` に id・状態・出どころ、ラッチ、書き直しのマージ、進み具合と停滞の単位、上限。`kind` の検査。頼みの層。保存の形。テスト
+2. **仕組み**（実装済み。§11）（今の型名のまま）: `PlannedStep` に id・状態・出どころ、ラッチ、書き直しのマージ、進み具合と停滞の単位、上限。`kind` の検査。頼みの層。保存の形。テスト
 3. **改名と語彙**（1 回で）: `MidGoal` → `Objective`、`PlannedStep` → `Job`、`MidGoalPlan` → `ObjectivePlan`、`MidGoalKeeper` → `ObjectiveKeeper`、イベント、`mid_goal_id` → `objective_id`、プロンプトと日本語の表示、ブリッジのエラー文（Gemini が読む）、`abilities.yaml`、設計書 13・26・20 と CLAUDE.md。`MidGoal.steps`（予算の数）は `plan_steps` と別物なので、名前がぶつからないように `budget_used` にする
 
 ## 9. 確かめること
@@ -96,3 +96,23 @@
 - 設計書 20（最終目標を Gemini が決め直す）。語彙だけ「最終目標」に合わせる
 - 中目標の自動生成（ロードマップからの展開）
 - 大目標の依存関係（大目標同士の順序は優先順位のみ）
+
+## 11. 段階 2 の実装（2026-09-29）
+
+型名は今のまま（`MidGoal`、`PlannedStep`）。改名は段階 3。
+
+| 層 | 実装 |
+|---|---|
+| domain | `PlannedStep` に `id`（`j1` …）・`state`（`JobState`）・`requested_by` / `suggested_by`・`steps`（視聴者の手順が使った予算）・`progress`・`ended_because`。`MidGoal.kind`（`ObjectiveKind`、`objective_kind(conditions)` が混ぜた条件を `ValueError`）、`open_steps` / `done_steps`。`MidGoalPlan.set_steps`（マージ）、`add_step`、`judge_steps`（ラッチ）、`drop_step`、`viewer_step`、`viewers`、`check_room(job=)`、`charge(id, spec)`、`take_dropped_steps`、`next_step_id` |
+| application | `MidGoalKeeper.judge` が一番上の中目標の未達成の手順を判定して済みにし、進み具合を保つ（`_judge_steps`）。`accept` は `proposal.job` なら `_accept_job`（今の手順のすぐ後ろで、先に頼まれた手順の後ろ。`now` は先頭。今の大目標を返す）、`withdraw` は手順も、`step_counted` は予算を超えた視聴者の手順の断念も伝える。`GoalChooser` は未達成の手順から選び、満たした手順は済みにする。`AdvancePlay`: `_check_step_order` は済みの手順を数えない、`_step_status` は済みを判定せず済みのまま見せる、決定の検証で書き直しが 8 個を超えるなら差し戻す、`_MidWatch`（停滞は手順が済む・条件の数が動く・今の手順の数が動くと進んだ。手順を書き直して今の手順が変わっただけでは数え直さない） |
+| 語彙 | 返答の `level`（`objective` / `job`）→ `MidGoalProposal.job`。`parse_proposal` は大目標の混ぜた条件と、手順の束の形を、設計や判定の前に確かめる。約束（promise）の経路は `level` を持たず、いつも大目標 |
+| infrastructure | `JsonMissionStore`（`format: 2`、手順の欄、`next_step_id`、読めない形は `None` にして `.unreadable` に写す）、`stream_context`（手順を 済: / 今: / 待: と出どころで）、プロンプト（手順の見方、`kind` の決まり、返答の `level`） |
+| presentation | `/api/goals` の中目標に `kind`・`steps`（`id` / `label` / `state` done・current・waiting / 出どころ / `progress`）・`steps_done`・`steps_total`。2 つのオーバーレイに今の大目標の手順、条件の数がなければ済んだ手順 / 手順の数のバー |
+
+設計書から変えたこと・決めたこと:
+- 視聴者の手順の位置は「今の手順のすぐ後ろ」だと、後から頼んだ人が先の人を追い越すので、「先に頼まれた手順の後ろ」にした
+- `drop_step` はコードの操作だけ（Gemini の決定のスキーマには `drop` の手順版を足していない）。視聴者と助言の手順は、大目標が終わるか、済むか、予算切れか、本人の取り下げでなくなる
+- 手順の判定は `MidGoalKeeper.judge`（小目標の切れ目ごと、決定の前）が持つ。`GoalChooser` は同じ結果を見て、満たした手順は済みにする（判定できなかったときの保険）
+- 返答が手順を足したとき、`GenerateResponseResponse.mid_goal` は今の大目標（手順ではない）
+- 保存の版は `format` の 1 つ。手順の `id` の欠けなど、細かい形の食い違いも `KeyError` などで読めない形になり、同じ道で始め直す
+- 台本のコメント（§9 の 4 つ）と実機は未確認

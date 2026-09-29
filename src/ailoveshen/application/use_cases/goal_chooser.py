@@ -26,6 +26,7 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    JobState,
 )
 
 FOOD_WHEN_HUNGRY = GoalSpec(GoalPredicate.HAVE, item="food", count=4)
@@ -161,7 +162,8 @@ class GoalChooser:
         current = session.plan.current
         if current is None or not current.plan_steps:
             return self._not("the top mid goal has no steps")
-        steps = current.plan_steps
+        # 一度済みにした手順は選ばない（あとで材料を使って条件が崩れても。docs/design/50 §4）
+        steps = current.open_steps
         needed = survival_options(obs)
         flat = [spec for s in steps for spec in s.specs]
         try:
@@ -177,6 +179,9 @@ class GoalChooser:
             judged = statuses[i : i + len(s.specs)]
             unmet.append([sp for sp, st in zip(s.specs, judged) if not st.met])
             i += len(s.specs)
+        finished = [(s.id, True, s.progress) for s, left in zip(steps, unmet) if not left]
+        if finished:
+            session.plan.judge_steps(current.id, finished)  # 満たした手順は済みのままにする
         survival = [o for o, st in zip(needed, survival_statuses) if not st.met]
         options = [
             Option(left[0], s.reason, current.id, tuple(left[1:]), s.approach if left[1:] else "")
@@ -189,7 +194,7 @@ class GoalChooser:
             options = [o for o in options if not o.spec.same_kind(avoid)]
             if not options:
                 return self._not(f"no other step than {avoid.describe()} after it failed")
-        state = self._state(session, obs, ended_because, steps, unmet)
+        state = self._state(session, obs, ended_because, current.plan_steps, steps, unmet)
         if len(options) == 1 and avoid is None:
             return self._chosen(state, options, 0, 1.0)
         labels = [chr(ord("A") + i) for i in range(len(options))]
@@ -249,21 +254,22 @@ class GoalChooser:
         return NotChosen(why)
 
     @staticmethod
-    def _state(session, obs, ended_because, steps, unmet) -> dict[str, Any]:
+    def _state(session, obs, ended_because, plan_steps, steps, unmet) -> dict[str, Any]:
         current = session.plan.current
         last = session.goal.describe() if session.goal else None
+        left_of = {s.id: left for s, left in zip(steps, unmet)}
         return {
             "mid_goal": current.title if current else None,
             "steps": [
                 f"{s.describe()}: "
                 + (
                     "done"
-                    if not left
+                    if s.state == JobState.DONE or not left_of[s.id]
                     else "not yet"
-                    if len(left) == len(s.specs)
-                    else "not yet: " + ", ".join(x.describe() for x in left)
+                    if len(left_of[s.id]) == len(s.specs)
+                    else "not yet: " + ", ".join(x.describe() for x in left_of[s.id])
                 )
-                for s, left in zip(steps, unmet)
+                for s in plan_steps
             ],
             "last_goal": f"{last} ({ended_because})" if last else None,
             "time": obs.time_phase,

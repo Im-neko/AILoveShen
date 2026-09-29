@@ -48,6 +48,7 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    JobState,
     MidGoal,
     MidGoalState,
 )
@@ -252,11 +253,38 @@ def _home(obs: GameObservation | None) -> dict[str, Any] | None:
     }
 
 
+def _steps(goal: MidGoal) -> list[dict[str, Any]]:
+    """手順（中目標）: done（一度満たしたら済みのまま）/ current（まだの一番先）/ waiting。"""
+    first_open = next((s for s in goal.plan_steps if s.state == JobState.PENDING), None)
+    return [
+        {
+            "id": s.id,
+            "label": goal_label(s.spec)
+            + (f"（ほか {len(s.together)} つ）" if s.together else ""),
+            "state": "done"
+            if s.state == JobState.DONE
+            else "current"
+            if s is first_open
+            else "waiting",
+            "reason": s.reason,
+            "requested_by": s.requested_by,
+            "suggested_by": s.suggested_by,
+            "progress": list(s.progress),
+        }
+        for s in goal.plan_steps
+    ]
+
+
 def _mid_goal(goal: MidGoal, state: str) -> dict[str, Any]:
+    steps = _steps(goal)
     return {
         "id": goal.id,
         "title": goal.title,
+        "kind": goal.kind.value,  # build / facility / infrastructure
         "state": state,  # current / pending / done / dropped
+        "steps": steps,
+        "steps_done": sum(1 for s in steps if s["state"] == "done"),
+        "steps_total": len(steps),
         "requested_by": goal.requested_by,
         "suggested_by": goal.suggested_by,  # 採った助言をくれた視聴者（頼みではない）
         "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None

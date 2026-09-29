@@ -25,6 +25,7 @@ class SavedPlan:
     pending: tuple[MidGoal, ...]
     finished: tuple[MidGoal, ...]
     next_id: int
+    next_step_id: int = 1  # 次の手順の id の番号（docs/design/50）
     town: Optional[TownDefinition] = None
     town_stage: int = 0
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
@@ -42,7 +43,7 @@ class IMissionStore(ABC):
 
     @abstractmethod
     def load(self) -> Optional[SavedPlan]:
-        """保存したプラン。何も保存していなければ None。"""
+        """保存したプラン。何も保存していないか、読めない形なら None（最初のリストで始める）。"""
         ...
 
     @abstractmethod
