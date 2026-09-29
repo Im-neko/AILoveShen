@@ -81,3 +81,7 @@ Gemini の支出の上限に達した（403 Spend cap breached）。ユーザー
 - `llm.local.context_tokens: 130000`（サーバーの `/v1/models` は `max_model_len` 262144）
 - Gemini に行くのは、画面の画像つきの呼び出しと、130000 トークンに入らないプロンプト（`RoutingTextGenerator._pick`。ローカルでは受けられないので残した）だけ
 - §7 で測ったとおり、goal / reply / promise はローカルで schema を崩しやすく、返答は遅い（6.6 秒対 1.9 秒）。ローカルで考える（thinking）のは `thinking_purposes`: 目標の決定（goal、goal_after_failure。ユーザー「目標の決定は多少考えて良い」）と skill_write、house、town、site。道具・実況・返答は考えずに答える
+
+## 追記（2026-09-29）: 先頭のキャッシュは部分一致では効かない
+
+§4 のプローブ（A→B→A で先頭のキャッシュが残る）は、完全に同じプロンプトの比較だった。本番のプロンプトは毎手変わるので、`cached=0` が 3,617 行、1.2 万トークン超で 2.5 秒未満だった呼び出しは 1,313 回中 0 回。FreeToken に末尾へ 1 行足して送ると 1.8 秒が 6.2 秒に戻った（`docs/design/51_decision_latency.md` §2）。設計書 26 §4 のキャッシュに向く並べ方は、この構成では効かない。効くのは入力を小さくすること。

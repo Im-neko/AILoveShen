@@ -1,11 +1,25 @@
 ## Current Status
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
-**Last Updated**: 2026-09-28
-**Test Status**: `python -m pytest tests/` 874 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 270 件
+**Last Updated**: 2026-09-29
+**Test Status**: `python -m pytest tests/` 885 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 271 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 判断のサイクルの遅さ（設計書 51） (2026-09-29)
+
+**Commit**: なし（未コミット）
+
+ユーザー:「判断のサイクルが遅い。時間がかかっている箇所を特定してほしい。単純に LLM が遅いなら仕方ない」→ 調べたあと「1・2 をやって、3 を調べて、実況は頻度を下げ、スタック中に似た発言を続けず、違う方法を考えるように」。
+- 測定: 1 手 24.6 秒のうち LLM が約 80%（ブリッジの行動は 16%、Jev は 0.5%）。呼び出しの時間は入力の大きさでほぼ決まる（読み込み約 3,100 トークン/秒）。道具の選択の入力 1.6 万トークンの 7 割が道具の定義。FreeToken は同じプロンプトのときだけキャッシュが効き、部分一致では全部読み直す（`cached=0` が本番の全行）。設計書 36 の「先頭のキャッシュを複数持てる」は誤読だったので追記
+- 道具の定義 11,337 → 6,839 トークン: `watch` を `"<on_yes>: <質問>"` の文字列にし、説明は道具の選択のプロンプトの「決まり」に 1 回だけ（`tool_catalog.py`、`game_prompt_template_builder.py`）
+- 失敗を LLM に戻す前に防ぐ: 反射が動いている間は選ばせず待つ（`_wait_out_reflex`）、`pickup_ready`（`GET /state`）で `pickup` を出さない、`around.mjs` から断られる場所（家・建物）を外す。`test/around.test.mjs`、`tests/unit/application/test_tool_control.py`
+- 実況: 状況が変わったときだけ（`LiveNarration._changes`）、続けて 2 回失敗している間は黙る（`Activity.failing`）、`live_interval_seconds` 10 → 30、`max_silence_seconds` 60 → 180。`tests/unit/presentation/test_live_narration.py`
+- 行き詰まり: 2 回続けて失敗すると道具の選択は `purpose=tool_stuck`（考える）でプロンプトに「行き詰まっている」の節。`config/default.yaml`、`config/development.yaml`（ユーザーの手元の `thinking_purposes: []` に `tool_stuck` だけ足した）
+- FreeToken の調査（`/v1/stats`、`/v1/cache/status`。設定は変えていない）: 部分一致のキャッシュはクライアントから有効にできない
+- テスト: `pytest tests/` 885 passed（`test_no_channel_no_chat_and_the_board_is_served` は配信がポート 8765 を使っているので除く）、ブリッジ `npm test` 271 件
+- 未確認: 実機（ブリッジ・Python の再起動後）での 1 手の秒数、`tool_stuck` の考える時間、実況の頻度。見送り: 引数の欠けの検査（聞き直すしかない）、`find_blocks` の保護の印
 
 ### 家に入れない（ドアの前の穴）、言うことと行動を合わせる (2026-09-28)
 
@@ -1848,6 +1862,13 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 ---
 
 ## Next Steps
+
+### 目標の 4 層（設計書 50、2026-09-29 時点。設計のみ、実装は未着手）
+
+ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。設計書 `docs/design/50_goal_layers.md`（未コミット）。段階: 2 仕組み（型名はそのまま。ラッチ、書き直しのマージ、`kind` の検査、頼みの層）→ 3 改名と語彙（1 回で）。
+- **止まっている理由**: 作業ツリーに別件の未コミットの変更がある（`play.py`、`entities.py`、`value_objects.py`、`game_prompt_template_builder.py`、`config.py`、`live_narration.py` ほか。反射待ち・行き詰まり時の道具選択・実況）。段階 2 と重なるので、コミットか整理が済むまで着手しない
+- 設計書で、ユーザーの決めた「小さい頼みは今の大目標の中目標」を「今の大目標に関係するものだけ」に絞った（§5）。確認待ち
+- `data/mission.json` は移行しない。着手前に `data/backups/` へ退避
 
 ### 暗い所で松明を自動で置く（2026-09-28 時点、未着手。ユーザーが 1・2 の実装を了承済み）
 
