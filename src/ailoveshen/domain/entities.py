@@ -540,11 +540,16 @@ class ObjectivePlan(Entity):
         )
         return replace(job, state=JobState.DROPPED, ended_because=reason)
 
-    def viewer_job(self, requested_by: str) -> Optional[tuple[Objective, Job]]:
-        """その視聴者の頼みの中目標（まだ済んでいないもの）と、それがある大目標。なければ None。"""
+    def viewer_job(
+        self, viewer: str, advice: bool = False
+    ) -> Optional[tuple[Objective, Job]]:
+        """
+        その視聴者の頼みの中目標（advice なら、採った助言の中目標。まだ済んでいないもの）と、
+        それがある大目標。なければ None。
+        """
         for g in self._goals:
             for s in g.open_jobs:
-                if s.requested_by == requested_by:
+                if (s.suggested_by if advice else s.requested_by) == viewer:
                     return g, s
         return None
 

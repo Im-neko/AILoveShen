@@ -543,6 +543,24 @@ class TestWithdraw:
         assert "withdrew" in dropped[-1].reason
 
 
+    @pytest.mark.asyncio
+    async def test_a_withdrawal_answered_with_none_is_sent_back(
+        self, use_case, mock_text_generator
+    ):
+        """取り下げの仕分けなのに request が none だと、「要らない」と言うだけでリストに残る。"""
+        session = _playing()
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "丸太はいらないんだね、助かった～", "request": "none"},
+            {"reply": "わかった、丸太はやめておくね", "request": "withdraw"},
+        ]
+        await use_case.execute(
+            GenerateResponseRequest(
+                user_name="kuma", message="やっぱりいいや", session=session, kind="withdraw"
+            )
+        )
+        assert mock_text_generator.generate_json.await_count == 2
+
+
 @pytest.mark.asyncio
 async def test_advice_the_streamer_agrees_with_becomes_a_lesson(
     mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store

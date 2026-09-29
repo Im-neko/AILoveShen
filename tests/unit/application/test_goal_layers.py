@@ -218,6 +218,19 @@ class TestAcceptAsJob:
         assert await keeper.withdraw(plan, "neko") is None
 
     @pytest.mark.asyncio
+    async def test_the_adviser_withdraws_advice_that_was_taken(self, keeper, events):
+        """助言で採った中目標も、言った本人が取り下げれば外す（言ったこととリストを合わせる）。"""
+        plan = _plan(Job(LOG, "原木"))
+        await keeper.accept(plan, self._proposal(), requested_by="kuma", advice=True)
+        assert [s.suggested_by for s in plan.current.open_jobs] == [None, "kuma"]
+        assert await keeper.withdraw(plan, "inu") is None  # ほかの人では外れない
+        goal = await keeper.withdraw(plan, "kuma")
+        assert goal.id == "m1"
+        assert [s.spec for s in plan.current.open_jobs] == [LOG]
+        dropped = events.publish.call_args.args[0]
+        assert (dropped.suggested_by, "withdrew" in dropped.reason) == ("kuma", True)
+
+    @pytest.mark.asyncio
     async def test_a_job_over_its_budget_is_dropped_and_said(self, keeper, events):
         plan = _plan(Job(LOG, "原木"), viewer_budget=2)
         await keeper.accept(plan, self._proposal(), requested_by="neko")

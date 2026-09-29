@@ -133,7 +133,17 @@ export class Knowledge {
     const re = GROUP_PATTERNS[spec]
     if (re) return { label: spec, members: this.md.itemsArray.map((i) => i.name).filter((n) => re.test(n)) }
     if (this.md.itemsByName[spec]) return { label: spec, members: [spec] }
-    throw new Error(`unknown item or group: ${spec}`)
+    throw new Error(`unknown item or group: ${spec}${this.didYouMean(spec)}`)
+  }
+
+  // 知らない名前の直し方: 最後の語がグループ名（oak_bed → bed）ならそのグループ、そうでなければ
+  // 同じ語で終わるアイテム（モデルが色や木の名前を付けた名前を作ることが多い）
+  didYouMean (spec) {
+    const tail = spec.split('_').at(-1)
+    if (GROUP_PATTERNS[tail]) return `; did you mean the group "${tail}" (any of them)?`
+    const names = this.md.itemsArray.map((i) => i.name)
+    const like = [...names.filter((n) => n === tail), ...names.filter((n) => n.endsWith(`_${tail}`))].slice(0, 5)
+    return like.length ? `; items like ${tail}: ${like.join(', ')}` : ''
   }
 
   isMember (spec, name) {

@@ -117,6 +117,10 @@ test('道具が要るブロックは、先に道具を求める', () => {
 
 test('知らないアイテムは受け付けない', () => {
   assert.throws(() => k.resolve('unobtainium'), /unknown item/)
+
+  // 直し方を添える（oak_bed はグループ bed、iron_shovel のような実在の名前は通る）
+  assert.throws(() => k.resolve('oak_bed'), /did you mean the group "bed"/)
+  assert.throws(() => k.resolve('golden_stick'), /items like stick: stick, carrot_on_a_stick/)
 })
 
 test('青いベッド: 青い羊毛 3 つ（白い羊毛＋ヤグルマギクの青の染料）と板材から作れる', () => {

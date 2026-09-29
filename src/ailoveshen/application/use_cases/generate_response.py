@@ -56,9 +56,17 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
     頼み・助言への答えが、何も残さずに流しているか（2026-09-28: 「今は○○中だから後で」と
     none / decline にして、大目標にも考え直しにも教訓にもならなかった）。差し戻す理由か空文字列。
     """
+    handling = data.get("request")
+    if kind == "withdraw":
+        if handling == RequestHandling.WITHDRAW.value:
+            return ""
+        return (
+            "このコメントは、視聴者が自分の頼みや助言を取り下げたもの。request は withdraw にする"
+            "（その人のものだけが大目標・中目標から外れる。ないときは何も起きない）。返答で"
+            "「要らない」と言うなら、リストからも外す。"
+        )
     if kind not in ACTIONABLE:
         return ""  # 仕分けがない・Jev が答えなかった: 今までどおり（約束の確かめが後ろで拾う）
-    handling = data.get("request")
     if handling == RequestHandling.DECLINE.value:
         reason = data.get("decline_reason")
         allowed = [r.value for r in DeclineReason]
@@ -269,7 +277,9 @@ class GenerateResponseUseCase(IGenerateResponse):
         kind = request.kind
         advice = kind == "advice"
         attempts = (
-            max(self._max_attempts, ACTIONABLE_ATTEMPTS) if kind in ACTIONABLE else self._max_attempts
+            max(self._max_attempts, ACTIONABLE_ATTEMPTS)
+            if kind in (*ACTIONABLE, "withdraw")
+            else self._max_attempts
         )
         for attempt in range(1, attempts + 1):
             prompt = self._prompt_builder.build_chat_response_prompt(

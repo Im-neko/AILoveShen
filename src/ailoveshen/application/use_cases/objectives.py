@@ -442,27 +442,36 @@ class ObjectiveKeeper:
 
     async def withdraw(self, plan: ObjectivePlan, requested_by: str) -> Objective | None:
         """
-        視聴者が自分の頼みを取り下げた（「もういいよ」）: その人の大目標（中目標も）をやめる。なければ None。
-        やめられるのは本人の頼みだけ（ほかの人の頼みや配信者自身の大目標は変えない）。
+        視聴者が自分の頼みや助言を取り下げた（「もういいよ」「やっぱりいいや」）: その人の大目標
+        （中目標も）をやめる。頼みが先で、なければ採った助言。なければ None。やめられるのは本人の
+        ものだけ（ほかの人のものや配信者自身の大目標は変えない）。言ったこと（「要らないんだね」）と
+        リストを合わせるので、助言で採ったものも本人が取り下げれば外す。
         """
-        mine = next((g for g in plan.pending if g.requested_by == requested_by), None)
-        if mine is None:
-            found = plan.viewer_job(requested_by)
-            if found is None:
-                return None
-            goal, job = found
-            plan.drop_job(goal.id, job.id, f"{requested_by} withdrew the request")
-            logger.info(f"視聴者の頼みの中目標を取り下げた: {job.describe()}（{requested_by}）")
-            self._store.save(plan)
-            await self._publish(
-                [_dropped_job(job, f"{requested_by} withdrew the request")]
+        for advice in (False, True):
+            mine = next(
+                (
+                    g
+                    for g in plan.pending
+                    if (g.suggested_by if advice else g.requested_by) == requested_by
+                ),
+                None,
             )
-            return goal
-        dropped = plan.drop(mine.id, f"{requested_by} withdrew the request")
-        logger.info(f"視聴者の頼みを取り下げた: {dropped.describe()}（{requested_by}）")
-        self._store.save(plan)
-        await self._publish([_dropped(dropped)])
-        return dropped
+            if mine is not None:
+                dropped = plan.drop(mine.id, f"{requested_by} withdrew the request")
+                logger.info(f"視聴者の頼みを取り下げた: {dropped.describe()}（{requested_by}）")
+                self._store.save(plan)
+                await self._publish([_dropped(dropped)])
+                return dropped
+            found = plan.viewer_job(requested_by, advice=advice)
+            if found is not None:
+                goal, job = found
+                reason = f"{requested_by} withdrew the request"
+                plan.drop_job(goal.id, job.id, reason)
+                logger.info(f"視聴者の頼みの中目標を取り下げた: {job.describe()}（{requested_by}）")
+                self._store.save(plan)
+                await self._publish([_dropped_job(job, reason)])
+                return goal
+        return None
 
     async def _design_builds(
         self, proposal: ObjectiveProposal, max_blocks: int = BuildDesign.MAX_BLOCKS
