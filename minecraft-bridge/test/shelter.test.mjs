@@ -45,8 +45,11 @@ const skeletonAtDoor = { name: 'skeleton', position: v(2.5, 70, 6.5) }
 const digOutside = { leaves: [{ kind: 'dig', sources: ['oak_log'] }] }
 const snap = { dig: () => [v(10, 70, 10)], hunt: () => [] }
 
-function run ({ time = DAY, mobs = [skeletonAtDoor], status = digOutside, blocked, sky, health } = {}) {
-  const { home, blockAt } = world({ blocked, sky })
+function run ({ time = DAY, mobs = [skeletonAtDoor], status = digOutside, blocked, sky, health, bed = false } = {}) {
+  const { home, blockAt: base } = world({ blocked, sky })
+  const bedAt = v(1, 70, 1)
+  if (bed) home.bed = bedAt
+  const blockAt = (p) => bed && p.equals(bedAt) ? { name: 'red_bed', boundingBox: 'block' } : base(p)
   const bot = fakeBot({ time, at: v(2.5, 70, 2.5), mobs, blockAt, health })
   const state = { home, plan: null, unreachableDrops: new Set() }
   return ground(bot, state, null, snap, status)
@@ -99,6 +102,16 @@ test('夜は外での作業も出口も出さず、朝を待つことだけを�
   const { candidates, withheld } = run({ time: NIGHT, mobs: [] })
   assert.deepEqual(candidates.map((c) => c.id), ['wait inside until morning'])
   assert.match(withheld, /staying inside for the night/)
+})
+
+test('夜の家の中にベッドがあれば、待たずに寝る候補を出す（収集の小目標でも）', () => {
+  const ids = (opts) => run({ time: NIGHT, mobs: [], ...opts }).candidates.map((c) => c.id)
+  assert.deepEqual(ids({ bed: true }), ['sleep in the bed'])
+  assert.deepEqual(ids({ bed: true, status: { leaves: [{ kind: 'sleep' }] } }), ['sleep in the bed'])
+  // ベッドがなければ待つ、敵がそばにいれば眠れないので待つ、眠れる時刻の前（夕方）も待つ
+  assert.deepEqual(ids({ bed: false }), ['wait inside until morning'])
+  assert.deepEqual(ids({ bed: true, mobs: [skeletonAtDoor] }), ['wait inside until morning'])
+  assert.deepEqual(ids({ bed: true, time: 12000 }), ['wait inside until morning'])
 })
 
 test('外でしたいことがなければ、何も控えない', () => {

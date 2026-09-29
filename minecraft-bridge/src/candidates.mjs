@@ -15,11 +15,11 @@ import { workCell, mineStatus, HOME_FARM } from './facilities.mjs'
 import { cropBySeed } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
 import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
-import { isInside, exitSpots, shelterOf } from './home.mjs'
+import { isInside, exitSpots, shelterOf, hasBed } from './home.mjs'
 import { recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
 const FRONTIER_SLACK = 8
 import { cooking, isRawMeat } from './cooking.mjs'
-import { reachableThreats, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
+import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
@@ -70,7 +70,8 @@ export function ground (bot, state, knowledge, world, status) {
     const room = `no room here to place the ${station.item}: move to flat open ground`
     withheld = withheld ? `${withheld}; ${room}` : room
   }
-  safe.push(...(inside ? waitsInside(bot, danger) : []))
+  // 目標の葉が同じ候補（through_night の sleep in the bed）を出していれば重ねない
+  safe.push(...(inside ? waitsInside(bot, state, danger) : []).filter((c) => !safe.some((o) => o.id === c.id)))
   if (!safe.length) {
     safe.push({ id: inside ? 'wait inside' : 'wait', verb: 'wait', target: inside ? 'inside the house' : 'here', inPlace: true, inside, seconds: 10, purpose: 'nothing else can be done now' })
   }
@@ -84,10 +85,19 @@ export { shelterOf }
 const REGEN_FOOD = 18
 const MAX_HEALTH = 20
 
-function waitsInside (bot, danger) {
+function waitsInside (bot, state, danger) {
   const wait = (id, purpose) => ({ id, verb: 'wait', target: 'inside the house', inPlace: true, inside: true, seconds: 10, purpose })
   const out = []
-  if (dayPhase(bot.time.timeOfDay) !== 'day') out.push(wait('wait inside until morning', 'the night passes'))
+  if (dayPhase(bot.time.timeOfDay) !== 'day') {
+    // 家にベッドがあって眠れる時刻（敵がそばにいなければ）なら、朝まで待たずに寝る（through_night の葉と同じ候補。小目標が
+    // 収集などのときも、夜の家の中で「待つ」だけを出して 10 秒待つ手を繰り返した）
+    const tod = bot.time.timeOfDay
+    if (!danger.length && hasBed(bot, state.home) && tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping) {
+      out.push({ id: 'sleep in the bed', verb: 'sleep', target: 'bed', inPlace: true, effect: 'skips the night' })
+    } else {
+      out.push(wait('wait inside until morning', 'the night passes'))
+    }
+  }
   if (bot.health < MAX_HEALTH && bot.food >= REGEN_FOOD) out.push(wait('wait inside to heal', `health ${round(bot.health)}/${MAX_HEALTH} regenerates`))
   const burning = danger.filter(({ e }) => burningInDaylight(bot, e)).map(({ e }) => e.name)
   if (burning.length) out.push(wait('wait inside while they burn', `${burning.join(', ')} at the door burn in the sunlight`))
