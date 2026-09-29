@@ -9,7 +9,7 @@
 
 ### 目標の 4 層 段階 3: 改名と語彙の入れ替え（設計書 50 §12） (2026-09-29)
 
-**Commit**: COMMIT3
+**Commit**: `6ba8a7f`
 
 ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。段階 3 は意味を変えずに名前と語彙だけを 1 回で入れ替えた（段階 2 は仕組み）。
 - 型・名前: `MidGoal` → `Objective`、`MidGoalPlan` / `MidGoalKeeper` / `MidGoalState` / `MidGoalProposal` / `MidGoal*Event` → `Objective*`、`PlannedStep` → `Job`、`mid_goal_id` → `objective_id`、`plan_steps` → `jobs`、予算の使用数 `steps` → `budget_used`、`set_steps` などの手順系 → `*_jobs`、`use_cases/mid_goals.py` → `objectives.py`、設定 `minecraft.mission.{mid_goals,max_mid_goals,max_viewer_mid_goals}` → `{objectives,max_objectives,max_viewer_objectives}`、`minecraft.agent.mid_goal_stall_steps` → `objective_stall_steps`。旧→新の全部は設計書 50 §12
