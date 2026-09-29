@@ -59,6 +59,21 @@ function position (args) {
   return new Vec3(Math.floor(x), Math.floor(y), Math.floor(z))
 }
 
+// item を times 回作る材料が持ち物にあるか。なければ、一番近いレシピの何がいくつ足りないかで断る
+function short (knowledge, recipes, inventory, item, times) {
+  const held = (spec) => knowledge.resolve(spec).members.reduce((n, m) => n + (inventory[m] ?? 0), 0)
+  const crafts = (r) => Math.min(...Object.entries(r.ingredients).map(([spec, per]) => Math.floor(held(spec) / per)))
+  const best = recipes.map((r) => ({ r, n: crafts(r) })).sort((a, b) => b.n - a.n)[0]
+  if (!best || best.n >= times) return
+  const need = Object.entries(best.r.ingredients).map(([spec, per]) => {
+    const { label } = knowledge.resolve(spec)
+    return { label, per, total: per * times, have: held(spec) }
+  })
+  const lacks = need.filter((n) => n.have < n.total).map((n) => `${n.total} ${n.label} (${n.per} per craft; you have ${n.have}, ${n.total - n.have} short)`)
+  refuse(`cannot craft ${item} x${times}: needs ${lacks.join(' and ')}; ` +
+    (best.n > 0 ? `what you carry makes only ${best.n} (${best.r.count} ${item} per craft)` : `what you carry makes none (one craft gives ${best.r.count} ${item})`))
+}
+
 // 道具の引数の座標（なければ null）
 function positionOf (args) {
   const [x, y, z] = [args.x, args.y, args.z].map(Number)
@@ -165,6 +180,9 @@ export function createTools (deps) {
       const times = Math.max(1, Math.min(MAX_CRAFT_TIMES, Math.floor(Number(args.times ?? 1))))
       const needsTable = recipes.every((r) => r.needsTable)
       if (needsTable && !findTable(bot, state)) refuse(`${item} needs a crafting table within reach; craft one (4 planks) and place it`)
+      // 材料が足りなければ、実行する前に、何がいくつ足りないかを返す（「材料が足りない?」だけでは、
+      // 小麦 2 個でパン 2 個と思い込んだまま作れなかった）
+      short(knowledge, recipes, inventoryCounts(bot), item, times)
       return { c: { verb: 'craft', target: item, item, times, needsTable, inPlace: true } }
     },
     pickup () {

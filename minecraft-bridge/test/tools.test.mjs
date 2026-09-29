@@ -115,7 +115,7 @@ test('置く道具は空いたセルに、隣のブロックの面を借りて�
 })
 
 test('クラフトはレシピから作業台が要るかを決め、近くに作業台がなければ断る', async () => {
-  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5) })
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), items: [['oak_planks', 4]] })
   assert.match((await callTool('craft', { item: 'wooden_pickaxe' })).result, /needs a crafting table within reach/)
   assert.equal((await callTool('craft', { item: 'stick', times: 2 })).ok, true)
   assert.deepEqual([runs[0].c.needsTable, runs[0].c.times], [false, 2])
@@ -291,4 +291,17 @@ test('find_blocks は、家の壁と断られた場所を出さない', async ()
   const { noteRefusal } = await import('../src/refusals.mjs')
   noteRefusal(state, 'dig', v(30, 70, 30), 'refused: nothing to dig')
   assert.deepEqual((await callTool('find_blocks', { block: 'oak_planks', radius: 64 })).result.map((f) => f.x), [31])
+})
+
+test('クラフトは材料が足りなければ実行せず、何がいくつ足りないか・持ち物で何回作れるかを返す', async () => {
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), items: [['oak_planks', 3]] })
+  // 棒: 板材 2 個から 4 本。3 個では 1 回だけ
+  const two = await callTool('craft', { item: 'stick', times: 2 })
+  assert.equal(two.refused, true)
+  assert.match(two.result, /cannot craft stick x2: needs 4 oak_planks \(2 per craft; you have 3, 1 short\)/)
+  assert.match(two.result, /what you carry makes only 1 \(4 stick per craft\)/)
+  assert.equal((await callTool('craft', { item: 'stick', times: 1 })).ok, true)
+  assert.equal(runs.length, 1)
+  const none = setup({ at: v(10.5, 70, 10.5), items: [] })
+  assert.match((await none.callTool('craft', { item: 'stick' })).result, /what you carry makes none \(one craft gives 4 stick\)/)
 })

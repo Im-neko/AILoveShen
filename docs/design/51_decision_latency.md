@@ -61,3 +61,9 @@
 - **10 秒動かなければ選び直させる**（`Stagnation`、`minecraft.agent.stagnation_seconds`）: 位置・持ち物・体力・満腹度・時間帯・小目標の進み具合が 10 秒変わらず、その間に 2 手以上した（待つ・寝るは数えない）とき、Jev に任せず（`_jev_step` を飛ばす）`purpose=tool_stuck` で、その間の手と結果を「行き詰まっている」の節に見せる。失敗が続かない空回り（成功して何も変わらない）にも効く。一言も黙る（`Activity.stagnant_seconds`）
 - **5 分の確認**（`StuckCheck`、`minecraft.agent.stuck_check_quiet_minutes`）: 小目標の進み具合（残りと進捗の行）が 5 分変わらなければ、6 手ごとを待たずに行動の記録を Jev に渡して確かめる（`minutes_without_progress` つき）。行き詰まりと確かに答えたら（0.75 以上）従来どおり Gemini が考え直す。答えたあとも変わらなければ、また 5 分後
 - **考える長さの上限**（`llm.local.thinking_max_tokens: {tool_stuck: 8000}`（最初は 3000 にしたが、上限なしの思考は 2,920 / 6,494 / 11,408 トークンで、3000 は 2 回とも 43 秒考えて切れ、思考を捨てて無駄になった。8000 なら約 2 分が最悪））: 思考で上限に届いたら、思考なしで聞き直す（思考なしの用途・上限のない用途は従来どおり）。12:57 の `tool_stuck` は思考だけで 2,920 トークン、57 秒、その次は数分止まった
+
+## 7. 追加（2026-09-29）: レシピの数を思い込まない
+
+目標の決定が「小麦 2 個でパン 2 個作れる」と書いた（実際は小麦 3 個でパン 1 個）。レシピのデータ（`index.recipesFor` / `knowledge.recipes` / minecraft-data）はどれも正しく、目標の決定のプロンプトには 1 回のレシピの数がなかった。ソルバーの行は `craft bread x2 at a crafting table` と `have 6 wheat (2/6)` だけで、数の対応が読めなかった。また `craft` の失敗は `produced nothing (missing ingredients?)` で、材料と作業台のどちらが足りないか分からなかった。
+- ソルバーのクラフトの行に 1 回のレシピを書く: `craft bread x2 (one craft: 3 wheat -> 1 bread) at a crafting table`（`solver.mjs` `describe`。目標の決定・中目標の状態・道具のプロンプトの行すべてに出る）
+- 道具 `craft` は、材料が足りなければ実行せず（作業台の確認の後）、`cannot craft bread x2: needs 6 wheat (3 per craft; you have 2, 4 short); what you carry makes none (one craft gives 1 bread)` と返す（`tools.mjs` `short`）。持ち物で作れる回数も返すので、`times` を選び直せる

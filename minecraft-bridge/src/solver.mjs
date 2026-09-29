@@ -154,7 +154,7 @@ function craftOption (k, world, item, n, recipe, ledger, path, depth) {
     units,
     children,
     method: 'craft',
-    leaf: { kind: 'craft', item, times, needsTable: recipe.needsTable, ready, unlocked: world.unlocked(item) }
+    leaf: { kind: 'craft', item, times, needsTable: recipe.needsTable, ready, unlocked: world.unlocked(item), makes: recipe.count, ingredients: recipe.ingredients }
   }
 }
 
@@ -330,7 +330,8 @@ function lines (node, indent) {
 function describe (leaf, method) {
   if (!leaf) return method ?? ''
   switch (leaf.kind) {
-    case 'craft': return `craft ${leaf.item} x${leaf.times}${leaf.needsTable ? ' at a crafting table' : ''}`
+    // 1 回のクラフトのレシピも書く（材料の数と、できる数。小麦 3 個でパン 1 個を、1 対 1 と思い込まれた）
+    case 'craft': return `craft ${leaf.item} x${leaf.times}${leaf.ingredients ? ` (one craft: ${Object.entries(leaf.ingredients).map(([n, c]) => `${c} ${n}`).join(' + ')} -> ${leaf.makes} ${leaf.item})` : ''}${leaf.needsTable ? ' at a crafting table' : ''}`
     case 'dig': return `dig ${leaf.sources.join('/')}`
     case 'kill': return `hunt ${leaf.sources.join('/')}`
     case 'explore': return `find ${leaf.sources.join('/')}`

@@ -125,3 +125,9 @@ test('青いベッド: 青い羊毛 3 つ（白い羊毛＋ヤグルマギクの
   const ks = kinds(r)
   assert.ok(ks.some((x) => x.startsWith('dig:cornflower')) || ks.some((x) => x.startsWith('kill:')), ks.join(', '))
 })
+
+test('クラフトの行に 1 回のレシピ（材料の数とできる数）を書く: 小麦 3 個でパン 1 個', () => {
+  const r = solve(k, world({ inventory: { wheat: 2 }, table: { position: { x: 0, y: 0, z: 0 } } }), [{ spec: 'bread', count: 2 }])
+  assert.match(r.lines[0], /^have 2 bread \(0\/2\): craft bread x2 \(one craft: 3 wheat -> 1 bread\)/)
+  assert.ok(r.lines.some((l) => /have 6 wheat \(2\/6\)/.test(l)))
+})
