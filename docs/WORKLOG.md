@@ -9,7 +9,7 @@
 
 ### 目標の 4 層 段階 2: 手順（中目標）を第一級に（設計書 50） (2026-09-29)
 
-**Commit**: （下に追記）
+**Commit**: `eba4cd9`
 
 ユーザーの依頼: 大目標を最終目標に、中目標を大目標に、手順（`plan_steps`）を中目標に。段階 2 は仕組みだけ（型名・呼び名は今のまま。改名は段階 3）。
 - domain: `PlannedStep` に id・状態・出どころ・予算・進み具合、`MidGoal.kind`（`objective_kind`。built だけ / facility だけ / それ以外。混ぜると差し戻し。街の段階と準備は除く）、`MidGoalPlan` の `set_steps`（マージ）・`add_step`・`judge_steps`（ラッチ）・`drop_step`・`charge(id, spec)`。視聴者の上限は大目標と手順を合わせて数える
