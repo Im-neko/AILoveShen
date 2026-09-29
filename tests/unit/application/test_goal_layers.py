@@ -12,7 +12,7 @@ from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, _ObjectiveWatch
 from ailoveshen.domain.entities import Conversation, ObjectivePlan
-from ailoveshen.domain.events import ObjectiveDroppedEvent
+from ailoveshen.domain.events import JobDoneEvent, ObjectiveDroppedEvent
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
@@ -100,6 +100,17 @@ class TestJudgeLatchesJobs:
         await keeper.judge(plan)
         assert plan.current.jobs[0].state == JobState.DONE
         assert [s.spec for s in plan.current.open_jobs] == [STONE]
+
+    @pytest.mark.asyncio
+    async def test_a_job_done_is_published_once_with_who_it_is_for(self, keeper, bridge, events):
+        plan = _plan(Job(LOG, "原木", suggested_by="neko"), Job(STONE, "石"))
+        bridge.check.side_effect = _checked({LOG})
+        await keeper.judge(plan)
+        await keeper.judge(plan)  # 済みのものは、もう出さない
+        done = [c.args[0] for c in events.publish.call_args_list if isinstance(c.args[0], JobDoneEvent)]
+        assert [(e.objective, e.job, e.reason, e.suggested_by) for e in done] == [
+            (plan.current.title, LOG.describe(), "原木", "neko")
+        ]
 
     @pytest.mark.asyncio
     async def test_a_bundle_job_is_done_only_when_every_member_holds(self, keeper, bridge):
@@ -434,6 +445,52 @@ class TestChooserUsesOpenJobs:
         bridge.check.side_effect = _checked(set())
         picked = await GoalChooser(FakeJev("A"), bridge).choose(_session(plan=plan), _obs(), "met")
         assert "all the jobs are done" in picked.why
+
+
+class TestDropAJob:
+    def test_the_schema_lets_a_drop_name_a_job(self):
+        from ailoveshen.application.use_cases.goal_vocabulary import goal_schema
+
+        change = goal_schema([GoalPredicate.HAVE], ["m1"])["properties"][
+            "plan_changes"
+        ]["items"]["properties"]
+        assert "job" in change
+
+    def test_a_drop_with_a_job_is_parsed_only_for_drop(self):
+        from ailoveshen.application.use_cases.goal_vocabulary import PlanOp, parse_decision
+
+        base = {"predicate": "have", "item": "planks", "count": 4, "serves": "current"}
+        ok = parse_decision(
+            {**base, "plan_changes": [{"op": "drop", "id": "m1", "job": "j2", "reason": "要らない"}]}
+        )
+        assert (ok.changes[0].op, ok.changes[0].job_id) == (PlanOp.DROP, "j2")
+        with pytest.raises(ValueError, match="only drop can name a job"):
+            parse_decision(
+                {
+                    **base,
+                    "plan_changes": [
+                        {"op": "move", "id": "m1", "job": "j2", "position": 2, "reason": "x"}
+                    ],
+                }
+            )
+
+    def test_it_drops_a_viewers_job_and_says_so(self):
+        from ailoveshen.application.use_cases.goal_vocabulary import PlanChange, PlanOp
+        from ailoveshen.application.use_cases.objectives import _apply
+
+        plan = _plan(Job(LOG, "原木"))
+        plan.add_job("m1", Job(TORCH, "暗い", requested_by="neko"))
+        (event,) = _apply(plan, [PlanChange(PlanOp.DROP, "もう要らない", "m1", job_id="j2")])
+        assert (event.requested_by, event.reason) == ("neko", "もう要らない")
+        assert [j.spec for j in plan.current.open_jobs] == [LOG]
+
+    def test_an_unknown_job_is_refused_with_the_ids_there_are(self):
+        from ailoveshen.application.use_cases.goal_vocabulary import PlanChange, PlanOp
+        from ailoveshen.application.use_cases.objectives import _apply
+
+        plan = _plan(Job(LOG, "原木"))
+        with pytest.raises(ValueError, match="no job j9"):
+            _apply(plan, [PlanChange(PlanOp.DROP, "x", "m1", job_id="j9")])
 
 
 class TestDecisionRewrite:

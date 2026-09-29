@@ -398,10 +398,11 @@ def _format_jobs(goal: Objective) -> str:
     for s in goal.jobs:
         mark = "済" if s.state == JobState.DONE else "今" if s is first_open else "待"
         text = f"[{s.describe()}]" if s.together else s.describe()
+        # 頼み・提案の中目標は、書き直しでは消えない。やめるときは id で drop する
         who = (
-            f"（{s.requested_by}さんの頼み）"
+            f"（{s.requested_by}さんの頼み・{s.id}）"
             if s.requested_by
-            else f"（{s.suggested_by}さんの提案）"
+            else f"（{s.suggested_by}さんの提案・{s.id}）"
             if s.suggested_by
             else ""
         )

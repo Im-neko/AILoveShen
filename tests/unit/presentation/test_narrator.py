@@ -8,6 +8,7 @@ from ailoveshen.domain.events import (
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
+    JobDoneEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
@@ -116,6 +117,20 @@ class TestNarrator:
                 "夜は危ない）。今いる場所: 家の外（家まで 263m）"
             ]
         ]
+
+    @pytest.mark.asyncio
+    async def test_a_job_done_is_kept_for_the_next_line_and_does_not_force_one(self, narrator, llm):
+        """済んだ中目標は次の切れ目に話す。中目標が済むだけでは話さない。"""
+        await narrator.on_job_done(
+            JobDoneEvent(objective="倉庫", job="have(oak_log, 8)", reason="壁の材料", suggested_by="neko")
+        )
+        await narrator.drain()
+        llm.generate_commentary.assert_not_called()
+        await narrator.on_goal_set(GoalSetEvent(goal="have(stone, 4)", reason="", objective="倉庫"))
+        await narrator.drain()
+        assert _events(llm)[0][0] == (
+            "大目標「倉庫」の中目標 have(oak_log, 8)（nekoさんの提案）が済んだ（壁の材料）"
+        )
 
     @pytest.mark.asyncio
     async def test_objectives_ended_are_told_with_the_next_goal(self, narrator, llm):

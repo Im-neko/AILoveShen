@@ -14,6 +14,7 @@ from ailoveshen.domain.events import (
     GoalMemberMetEvent,
     GoalSetEvent,
     HouseCompletedEvent,
+    JobDoneEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
@@ -84,6 +85,7 @@ class Narrator:
         bus.subscribe(ObjectiveAddedEvent, self.on_objective_added)
         bus.subscribe(ObjectiveCompletedEvent, self.on_objective_completed)
         bus.subscribe(ObjectiveDroppedEvent, self.on_objective_dropped)
+        bus.subscribe(JobDoneEvent, self.on_job_done)
         bus.subscribe(HouseCompletedEvent, self.on_house_completed)
         bus.subscribe(TownSiteChosenEvent, self.on_town_site_chosen)
         bus.subscribe(TownDefinedEvent, self.on_town_defined)
@@ -161,6 +163,16 @@ class Narrator:
             f"大目標「{event.title}」{_requested(event.requested_by, event.suggested_by)}が完了した"
         )
         self._must_speak = True
+
+    async def on_job_done(self, event: JobDoneEvent) -> None:
+        """
+        済んだ中目標を取っておき、次の小目標の切れ目に話す（間合いは gate が決める）。頼みや助言の
+        中目標は、誰のものかも添える。中目標が済むたびに話さなければならないわけではない。
+        """
+        self._pending.append(
+            f"大目標「{event.objective}」の中目標 {event.job}"
+            f"{_requested(event.requested_by, event.suggested_by)}が済んだ（{event.reason}）"
+        )
 
     async def on_objective_dropped(self, event: ObjectiveDroppedEvent) -> None:
         """やめた大目標を取っておき、次の目標と一緒に話す（黙ってやめない）。"""

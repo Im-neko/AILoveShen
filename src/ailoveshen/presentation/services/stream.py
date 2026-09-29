@@ -14,6 +14,7 @@ from ailoveshen.domain.events import (
     GoalSetEvent,
     HouseCompletedEvent,
     HouseDesignedEvent,
+    JobDoneEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
@@ -87,10 +88,13 @@ class Stream:
             logger.info(f"[objective+] #{e.position} {e.title}{who}: {e.reason}")
 
         async def objective_done(e: ObjectiveCompletedEvent) -> None:
-            logger.info(f"[mid✓] {e.title}")
+            logger.info(f"[objective✓] {e.title}")
 
         async def objective_dropped(e: ObjectiveDroppedEvent) -> None:
-            logger.info(f"[mid×] {e.title}: {e.reason}")
+            logger.info(f"[objective×] {e.title}: {e.reason}")
+
+        async def job_done(e: JobDoneEvent) -> None:
+            logger.info(f"[job✓] {e.objective}: {e.job}")
 
         async def house(e: HouseCompletedEvent) -> None:
             logger.info(f"[done] {e.name} が完成")
@@ -100,6 +104,7 @@ class Stream:
         bus.subscribe(ObjectiveAddedEvent, objective_added)
         bus.subscribe(ObjectiveCompletedEvent, objective_done)
         bus.subscribe(ObjectiveDroppedEvent, objective_dropped)
+        bus.subscribe(JobDoneEvent, job_done)
         bus.subscribe(HouseCompletedEvent, house)
 
         async def skill_learned(e: SkillLearnedEvent) -> None:

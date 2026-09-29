@@ -178,6 +178,17 @@ class ObjectiveCompletedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class JobDoneEvent(DomainEvent):
+    """中目標（大目標の中の 1 つの仕事）の条件が世界で満たされたときのイベント。"""
+
+    objective: str = ""
+    job: str = ""
+    reason: str = ""
+    requested_by: str = ""
+    suggested_by: str = ""
+
+
+@dataclass(frozen=True)
 class ObjectiveDroppedEvent(DomainEvent):
     """大目標を断念したときのイベント（必ず配信で言う）。"""
 

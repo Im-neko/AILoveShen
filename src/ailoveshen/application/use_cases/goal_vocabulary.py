@@ -146,11 +146,15 @@ class ObjectiveProposal:
 
 @dataclass(frozen=True)
 class PlanChange:
-    """大目標リストの 1 つの編集（add は `proposal`、move と drop は `objective_id`）。"""
+    """
+    大目標リストの 1 つの編集（add は `proposal`、move と drop は `objective_id`）。
+    drop に `job_id` があれば、その大目標の中目標だけをやめる。
+    """
 
     op: PlanOp
     reason: str
     objective_id: str = ""
+    job_id: str = ""
     position: Optional[int] = None  # 0 始まり
     proposal: Optional[ObjectiveProposal] = None
 
@@ -330,6 +334,12 @@ def goal_schema(
                 "type": "integer",
                 "minimum": 1,
                 "description": "add / move: its place in the list, 1 = worked on first",
+            },
+            "job": {
+                "type": "string",
+                "description": "drop only: the id of one job (e.g. j3) of the objective in id, "
+                "to give up just that job (the id is shown next to the jobs viewers asked for or "
+                "suggested); omit to drop the whole objective",
             },
             "reason": {"type": "string", "description": "Why, in one short sentence"},
         },
@@ -734,11 +744,15 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
             raise ValueError(f"{op.value} needs the id of an objective")
         if op == PlanOp.MOVE and position is None:
             raise ValueError(f"move {objective_id} needs a position")
+        job_id = str(raw.get("job") or "")
+        if job_id and op != PlanOp.DROP:
+            raise ValueError(f"only drop can name a job, not {op.value}")
         changes.append(
             PlanChange(
                 op=op,
                 reason=reason,
                 objective_id=objective_id,
+                job_id=job_id,
                 position=int(position) - 1 if position is not None else None,
             )
         )

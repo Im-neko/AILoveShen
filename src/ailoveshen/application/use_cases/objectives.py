@@ -22,6 +22,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.events import (
     DomainEvent,
+    JobDoneEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
@@ -122,7 +123,7 @@ class ObjectiveKeeper:
                         suggested_by=done.suggested_by or "",
                     )
                 )
-        await self._judge_steps(plan)
+        events.extend(await self._judge_steps(plan))
         await self._design_stage_builds(plan)
         events.extend(self._next_stage(plan))
         if plan.town_complete and not was_complete:
@@ -132,21 +133,21 @@ class ObjectiveKeeper:
         self._store.save(plan)
         await self._publish(events)
 
-    async def _judge_steps(self, plan: ObjectivePlan) -> None:
+    async def _judge_steps(self, plan: ObjectivePlan) -> list[DomainEvent]:
         """
         一番上の大目標の、まだ済んでいない中目標を判定する。満たしたものは済みにして、そのままにする
         （あとで材料を使って条件が崩れても戻さない。docs/design/50 §4）。進み具合も保つ（停滞の目安）。
-        判定できなければ何もしない。
+        判定できなければ何もしない。済みにしたものは JobDoneEvent にして返す。
         """
         current = plan.current
         if current is None or not current.open_jobs:
-            return
+            return []
         jobs = current.open_jobs
         try:
             statuses = list(await self._bridge.check([x for s in jobs for x in s.specs]))
         except AILoveShenError as e:
             logger.debug(f"中目標を判定できなかった: {e}")
-            return
+            return []
         judged: list[tuple[str, bool, tuple[str, ...]]] = []
         for job in jobs:
             mine, statuses = statuses[: len(job.specs)], statuses[len(job.specs) :]
@@ -157,8 +158,19 @@ class ObjectiveKeeper:
                     tuple(line for c in mine for line in c.lines),
                 )
             )
+        events: list[DomainEvent] = []
         for job in plan.judge_jobs(current.id, judged):
             logger.info(f"中目標が済んだ: {job.describe()}（大目標 {current.id}）")
+            events.append(
+                JobDoneEvent(
+                    objective=current.title,
+                    job=job.describe(),
+                    reason=job.reason,
+                    requested_by=job.requested_by or "",
+                    suggested_by=job.suggested_by or "",
+                )
+            )
+        return events
 
     def _next_stage(self, plan: ObjectivePlan) -> list[DomainEvent]:
         # 段階の条件は家を基準に判定する: 引っ越す前の家で満たしても意味がない
@@ -575,6 +587,9 @@ def _apply(plan: ObjectivePlan, changes: Sequence[PlanChange]) -> list[DomainEve
         elif change.op == PlanOp.MOVE:
             assert change.position is not None
             plan.move(change.objective_id, change.position)
+        elif change.job_id:
+            job = plan.drop_job(change.objective_id, change.job_id, change.reason)
+            events.append(_dropped_job(job, change.reason))
         else:
             events.append(_dropped(plan.drop(change.objective_id, change.reason)))
     return events

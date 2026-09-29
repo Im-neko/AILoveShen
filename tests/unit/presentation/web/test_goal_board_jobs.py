@@ -50,4 +50,4 @@ def test_the_prompts_show_done_now_and_waiting_with_who_asked():
     text = format_activity(_session().activity())
 
     assert "中目標: 済:have(log, 12) → 今:have(cobblestone, 32) → 待:placed(torch, home)" in text
-    assert "（nekoさんの頼み）" in text
+    assert "（nekoさんの頼み・j3）" in text

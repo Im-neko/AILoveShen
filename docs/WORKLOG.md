@@ -2,7 +2,7 @@
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-09-29
-**Test Status**: `python -m pytest tests/` 947 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 280 件
+**Test Status**: `python -m pytest tests/` 947 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 282 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
@@ -29,7 +29,7 @@
 - 保存: `JsonMissionStore` の `format: 2`。読めない形は初期リストで始め、元を `mission.json.unreadable` に残す（**今の `data/mission.json` は次の起動で初期リストに戻る。着手前に `data/backups/` へ退避すること**）
 - 表示: `stream_context`（済: / 今: / 待:）、`/api/goals` の `kind` と `steps`、2 つのオーバーレイ、プロンプト
 - テスト: `test_job_steps.py`（21）、`test_goal_layers.py`（24）、`test_json_mission_store_steps.py`（4）、`test_goal_board_steps.py`（2）。Python 937 passed（`test_stream_factory.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジは触っていない（`npm test` はこのワークツリーでは未実行: node_modules がない）
-- 未実装（設計書 50 §11）: `JobDoneEvent` の実況、Gemini の決定で手順を断念する操作、台本のコメントと実機での確認
+- 未実装（設計書 50 §11）: 台本のコメントと実機での確認（`JobDoneEvent` の実況と、Gemini の決定で中目標を断念する操作は 2026-09-29 に実装した。下の「目標の 4 層」）
 - 次: 段階 3（改名と語彙）
 
 ### 判断のサイクルの遅さ（設計書 51） (2026-09-29)
@@ -43,9 +43,10 @@
 - 実況: 状況が変わったときだけ（`LiveNarration._changes`）、続けて 2 回失敗している間は黙る（`Activity.failing`）、`live_interval_seconds` 10 → 30、`max_silence_seconds` 60 → 180。`tests/unit/presentation/test_live_narration.py`
 - 行き詰まり: 2 回続けて失敗すると道具の選択は `purpose=tool_stuck`（考える）でプロンプトに「行き詰まっている」の節。`config/default.yaml`、`config/development.yaml`（ユーザーの手元の `thinking_purposes: []` に `tool_stuck` だけ足した）
 - FreeToken の調査（`/v1/stats`、`/v1/cache/status`。設定は変えていない）: 部分一致のキャッシュはクライアントから有効にできない
-- テスト: `pytest tests/` 885 passed（`test_no_channel_no_chat_and_the_board_is_served` は配信がポート 8765 を使っているので除く）、ブリッジ `npm test` 280 件
+- テスト: `pytest tests/` 885 passed（`test_no_channel_no_chat_and_the_board_is_served` は配信がポート 8765 を使っているので除く）、ブリッジ `npm test` 282 件
 - 断られた手の台帳・動かないとき・5 分の確認（設計書 51 §6）: `refusals.mjs`（1 回で 5 分、候補・`find_blocks`・道具の呼び出しから外す、`/state` の `refusals`）、家・建物のブロックを記憶・`find_blocks` に出さない、断りの後も Jev が選ぶ、`Stagnation`（10 秒動かなければ Jev を飛ばして LLM に選び直させる）、`StuckCheck` に 5 分無進捗の確認、`thinking_max_tokens`（上限で思考なしに聞き直す）。`test/refusals.test.mjs`、`tests/unit/application/test_stagnation.py`、`test_stuck_check.py`、`test_tool_control.py`
 - `find_foods`（食べられる物とその取り方。ブリッジ `items.mjs` `foodsInfo`、`tools.mjs`、`tool_catalog.py`、能力帳 `cook_food`、設計書 47 追記）: 持ち物で食べられる・作れる物が先、レシピ・かまど・畑・狩り・掘る場所、悪い効果の注意。`tool_stuck` の思考の上限を 3000 → 8000 に（3000 は 2 回とも 43 秒考えて切れ無駄になった。上限なしの実測は 2,920 / 6,494 / 11,408 トークン）
+- レシピの数の思い込み（設計書 51 §7）: ソルバーのクラフトの行に 1 回のレシピ（`3 wheat -> 1 bread`）、道具 `craft` は材料不足を実行前に何がいくつ足りないか・何回作れるかで断る。`test/solver.test.mjs`、`test/tools.test.mjs`
 - 夜の家の中にベッドがあれば、小目標が収集などでも `sleep in the bed` を候補に出す（`candidates.mjs` `waitsInside`。敵がそばにいる・眠れる時刻の前・ベッドなしは今までどおり `wait inside until morning`）。Jev が収集の小目標の夜に「待つ」だけを約 10 回選んでいた。`test/shelter.test.mjs`
 - 未確認: 実機（ブリッジ・Python の再起動後）での 1 手の秒数、`tool_stuck` の考える時間、実況の頻度。見送り: 引数の欠けの検査（聞き直すしかない）、`find_blocks` の保護の印
 
@@ -1891,11 +1892,15 @@ TypeSafe AI の System One モデル **Jev** + **Mineflayer** ブリッジ構成
 
 ## Next Steps
 
-### 目標の 4 層（設計書 50、2026-09-29 時点。段階 2・3 は実装済み。台本のコメントと実機での確認が残り）
+### 目標の 4 層（設計書 50、2026-09-29 時点。段階 2・3 と残りの実装は済み。台本のコメントと実機での確認が残り）
 
-ユーザーの依頼: 最終目標・大目標・中目標・小目標の 4 層にする。設計書 `docs/design/50_goal_layers.md`。段階 2（仕組み）と 3（改名と語彙）は実装済み（上の Completed Work）。残り: 設計書 §9 の台本のコメント（連投、関係のない頼み、乗っ取り、「家ができたらやるね」、助言）と実機（大目標の入れ替えのあと中目標が続きから進むか、オーバーレイの階層表示）、中目標の完了の実況（`JobDoneEvent`）、Gemini の決定で中目標を断念する操作。
+ユーザーの依頼: 最終目標・大目標・中目標・小目標の 4 層にする。設計書 `docs/design/50_goal_layers.md`。段階 2（仕組み）と 3（改名と語彙）は実装済み（上の Completed Work）。その後の仕上げ（2026-09-29）:
+- `JobDoneEvent`: `ObjectiveKeeper._judge_steps` が済みにした中目標を 1 回だけ発行し、`Narrator.on_job_done` が次の切れ目に話す（強制はしない）、`GoalBoard` の更新イベント、`[job✓]` のログ。`GoalChooser` が済みにしたものは出さない（切れ目の判定が先に済ませるので、ほぼ漏れない）
+- Gemini の決定で中目標を断念する操作: `plan_changes` の `drop` に `job`（中目標の id）。`activity()` は視聴者の頼み・助言の中目標に id を添える（`（nekoさんの頼み・j3）`）。理由が必須、断念は `ObjectiveDroppedEvent` で必ず言う。知らない id は id の一覧付きで差し戻す
+- 不要になったワークツリーとブランチ 2 つを削除。`data/mission.json` は `data/backups/mission-20260929-before-format3.json` に退避
+- 残り: 設計書 §9 の台本のコメント（連投、関係のない頼み、乗っ取り、「家ができたらやるね」、助言）と実機（大目標の入れ替えのあと中目標が続きから進むか、オーバーレイの階層表示）
 - 設計書で、ユーザーの決めた「小さい頼みは今の大目標の中目標」を「今の大目標に関係するものだけ」に絞った（§5）。確認待ち
-- `data/mission.json` は移行しない。着手前に `data/backups/` へ退避
+- `data/mission.json` は移行しない。次の起動で初期リストに戻る
 
 ### 暗い所で松明を自動で置く（2026-09-28 時点、未着手。ユーザーが 1・2 の実装を了承済み）
 
