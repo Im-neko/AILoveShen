@@ -9,6 +9,7 @@ import { riding } from './boat.mjs'
 import { round, bearing, nearbyEntities, isHostile, canSee } from './observe.mjs'
 import { reachableThreats, bestWeapon, fight, flee } from './primitives.mjs'
 import { enterHome, isInside } from './home.mjs'
+import { inBurrow } from './burrow.mjs'
 
 const REFLEX_RADIUS = 5
 const CREEPER_RADIUS = 7 // 膨らみ始める前に逃げる
@@ -43,7 +44,8 @@ function attackerOf (bot) {
 // 選べるもの（ブリッジが今できるものだけ）。家の中にいるなら外に出ない（夜の決まり）
 export function optionsFor (bot, state, target) {
   const home = state.home
-  const inside = isInside(bot, home)
+  // 家の中と、塞いだ穴の中（docs/design/61）は、外に出ない
+  const inside = isInside(bot, home) || inBurrow(bot)
   if (inside) return ['fight', 'ignore']
   const homeNear = home && bot.entity.position.distanceTo(home.door) <= HOME_REACH
   return [

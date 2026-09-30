@@ -3,24 +3,35 @@
 
 import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
-import { findTable, findFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
+import { liquidReason } from './liquid.mjs'
+import { gatherableLog, isNaturalLogName } from './trees.mjs'
+import { findTable, findFurnace, knownFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms, finishedMine } from './facilities.mjs'
-import { REMEMBERED_BLOCK, REMEMBERED_STONE, REMEMBERED_ANIMALS, storedCounts, smeltingCounts, recallableKinds } from './memory.mjs'
+import { cropFarms, finishedMine, mineSummaries } from './facilities.mjs'
+import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
+import { rememberedKinds } from './worldmap-places.mjs'
+import { isQuarryKind, quarrySpot, usableShaft, QUARRY_RADIUS } from './quarry.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
 const MAX_LOG_HEIGHT = 5 // 地面に立って手が届く、地面からの原木の高さ（目の高さ 1.6 ＋ 届く距離 4.5）
-const MAX_LOG_HEIGHT_TOWER = 8 // 土を持っていれば、足元に積んで（1x1 の塔）ここまで届く
+const MAX_LOG_HEIGHT_TOWER = 16 // 土を積んで（1x1 の塔）届く上限。積める高さは持っている土の数まで
+const MIN_TOWER = 3 // 土が少なくても、この高さまでは届くとする（前は土があれば地面から 8 = 5 + 3 まで）
 const HUNT_RADIUS = 32
 const TARGETS_PER_KIND = 3
+
+// 地面から何段上の原木まで届くか: 立って届く高さに、積める土の分を足す
+export function reachableLogHeight (dirt) {
+  if (dirt <= 0) return MAX_LOG_HEIGHT
+  return Math.min(MAX_LOG_HEIGHT_TOWER, MAX_LOG_HEIGHT + Math.max(MIN_TOWER, dirt))
+}
 
 // 原木に届くか: 下へ、原木と空気を通り越して最初の地面（葉でない固いブロック）までの高さで決める。
 // 前は地面から原木が続いていることを求めていたので、下の原木を切った後の浮いた幹や、段差の上に
 // 張り出した木は、近くにあっても木と見なさなかった（2026-09-26）
 function logReachable (bot, block) {
-  const max = (inventoryCounts(bot).dirt ?? 0) > 0 ? MAX_LOG_HEIGHT_TOWER : MAX_LOG_HEIGHT
+  const max = reachableLogHeight(inventoryCounts(bot).dirt ?? 0)
   for (let dy = 1; dy <= max; dy++) {
     const below = bot.blockAt(block.position.offset(0, -dy, 0))
     if (!below) return false
@@ -38,14 +49,35 @@ const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 
 const AIR = new Set(['air', 'cave_air'])
 export const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => AIR.has(bot.blockAt(p.offset(x, y, z))?.name))
 
-// この種類のうちボットが掘れるブロック: 近い順。家の一部は含めない
+// すくえる水（流れていない水源。空気に面したもの）: 一番近いもの。バケツで水を汲む先（solver の fill）
+export function waterSource (bot, state) {
+  const id = bot.registry.blocksByName.water?.id
+  if (id == null) return null
+  const me = bot.entity.position
+  return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
+    .filter((p) => {
+      const b = bot.blockAt(p)
+      return Number(b?.getProperties?.().level ?? b?.metadata ?? 1) === 0 && !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p)
+    })
+    .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
+}
+
+// この種類のうちボットが掘れるブロック: 近い順。家の一部は含めない。石・土などの地形は、採掘の場所が
+// あればその近くを先に、場所に近い順（毎回違う所から掘って穴だらけにしない。quarry.mjs、設計書 64）
 export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
   const id = bot.registry.blocksByName[name]?.id
   if (id == null) return []
   const me = bot.entity.position
+  const ok = (p) => !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && isRipe(bot.blockAt(p)) &&
+    !liquidReason(bot, p, bot.blockAt(p)) && (!isNaturalLogName(name) || gatherableLog(bot, state, p)) &&
+    (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY)
+  const spot = isQuarryKind(name) ? quarrySpot(state, me) : null
+  if (spot) {
+    const there = bot.findBlocks({ matching: id, point: spot, maxDistance: QUARRY_RADIUS, count: 64 }).filter(ok)
+    if (there.length) return there.sort((a, b) => a.distanceTo(spot) - b.distanceTo(spot) || a.distanceTo(me) - b.distanceTo(me)).slice(0, limit)
+  }
   return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
-    .filter((p) => !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && isRipe(bot.blockAt(p)) &&
-      (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY))
+    .filter(ok)
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
     .slice(0, limit)
 }
@@ -59,7 +91,12 @@ export function buriedTargets (bot, state, name, surfaceY, limit = TARGETS_PER_K
   return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 256 })
     .filter((p) => p.y < Math.floor(me.y) && !inHouse(state, p) && !exposed(bot, p) && !isUnreachable(state, p))
     .map((p) => ({ pos: p, depth: Math.max(1, surfaceY - p.y) }))
-    .sort((a, b) => a.depth - b.depth || a.pos.distanceTo(me) - b.pos.distanceTo(me))
+    // 前に掘った階段の底から続けて届く鉱石（底より下）を先に（毎回新しい階段を掘らない）: 底に近い順
+    .map((t) => ({ ...t, shaft: usableShaft(state, me, t.pos.y) }))
+    .sort((a, b) => (a.shaft ? 0 : 1) - (b.shaft ? 0 : 1) ||
+      (a.shaft ? Math.hypot(a.pos.x - a.shaft.bottom.x, a.pos.z - a.shaft.bottom.z) - Math.hypot(b.pos.x - b.shaft.bottom.x, b.pos.z - b.shaft.bottom.z) : 0) ||
+      a.depth - b.depth || a.pos.distanceTo(me) - b.pos.distanceTo(me))
+    .map(({ pos, depth }) => ({ pos, depth }))
     .slice(0, limit)
 }
 
@@ -70,22 +107,13 @@ export function huntTargets (bot, names, limit = TARGETS_PER_KIND) {
     .slice(0, limit)
 }
 
-// いまのまわりにある、覚えておく価値のあるもの（memory.mjs）: [{ kind, pos }]。ブロックはボットが
-// 掘れる、空気に接しているものだけ: 埋まった鉱石も数えると探索に出てしまった（town2: 「家のまわり」に
-// 石炭鉱石が 64 個あったが、どれにも届かなかった）
+// いまのまわりにいる、覚えておく動物（memory.mjs）: [{ kind, pos }]。ブロックは視界の地図が持つ
+// （worldmap.mjs、docs/design/59_world_map.md）。前はここで、行動の終わりに周囲 32 m の決まった種類の
+// ブロックを調べていた
 export function sightings (bot) {
-  const seen = (pattern, count) => {
-    const ids = Object.values(bot.registry.blocksByName).filter((b) => pattern.test(b.name)).map((b) => b.id)
-    return bot.findBlocks({ matching: ids, maxDistance: DIG_RADIUS, count })
-      .filter((p) => exposed(bot, p))
-      .map((p) => ({ kind: bot.blockAt(p)?.name, pos: p }))
-      .filter((s) => s.kind)
-  }
-  const blocks = [...seen(REMEMBERED_BLOCK, 512), ...seen(REMEMBERED_STONE, 64)]
-  const animals = nearbyEntities(bot)
+  return nearbyEntities(bot)
     .filter(({ e, dist }) => REMEMBERED_ANIMALS.has(e.name) && dist <= HUNT_RADIUS)
     .map(({ e }) => ({ kind: e.name, pos: e.position }))
-  return [...blocks, ...animals]
 }
 
 // チェストから取り出してよいもの: 大目標がそこに取っておくもの以外すべて（備蓄として取っておく
@@ -123,16 +151,19 @@ export function snapshot (bot, state) {
   return {
     inventory: inventoryCounts(bot),
     stored: takeable(storedCounts(state.memory ?? {}), state.goal?.keep ?? [], bot.food <= HUNGER_URGENT),
-    remembered: state.memory ? recallableKinds(state.memory, bot.entity.position, Number(bot.time.age)) : new Set(),
+    remembered: state.memory ? rememberedKinds(state, bot.entity.position, Number(bot.time.age)) : new Set(),
     blocks: new Proxy({}, { get: (_, name) => typeof name === 'string' ? dig(name).length : undefined }),
     mobs: new Proxy({}, { get: (_, name) => typeof name === 'string' ? hunt(name).length : undefined }),
     table: findTable(bot, state) ? 'near' : null,
     furnace: findFurnace(bot) ? 'near' : null,
+    // 近くにはないが、最後に見た（家の）かまど: そこまで歩いて焼ける
+    furnaceAway: knownFurnace(bot, state)?.near === false,
     smelting: smeltingCounts(state.memory ?? {}),
     unlocked: (item) => state.recipeBook.recipesFor(item).length > 0,
     dig,
     hunt,
     buried,
+    water: () => waterSource(bot, state),
     // 畑（設計した畑と家の畑）のその作物（ブロック名で）。作物でないか、植わっていなければ null
     farm: (block) => {
       const crop = cropByBlock(block)
@@ -141,6 +172,7 @@ export function snapshot (bot, state) {
     },
     // 下りきった採掘場（設計書 47 §16）: 埋まった石・鉱石はそこから下りて探す
     mine: finishedMine(bot, state),
+    mines: mineSummaries(state),
     // 深さの上限は付けない（安全の決まりは掘るときに見る）。dig_depth があればそこまで
     digDepth: state.goal?.spec?.dig_depth ?? Infinity
   }

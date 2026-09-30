@@ -168,6 +168,35 @@ class TestGenerateResponseUseCase:
         assert reply.message_type == MessageType.RESPONSE
 
     @pytest.mark.asyncio
+    async def test_the_chat_is_not_in_the_conversation_while_the_reply_is_written(
+        self, use_case, mock_text_generator, conversation
+    ):
+        """返事を書く間に実況が書かれても、返事のないコメントを見て先に答えない（逆を言った）。"""
+        seen: list[list[str]] = []
+
+        async def generate(**_kwargs):
+            seen.append([m.content for m in conversation.recent_messages()])
+            return "nekoさん、ありがとう！"
+
+        mock_text_generator.generate = AsyncMock(side_effect=generate)
+
+        await use_case.execute(_request())
+
+        assert seen == [[]]
+        assert [m.content for m in conversation.recent_messages()] == ["がんばれ", "nekoさん、ありがとう！"]
+
+    @pytest.mark.asyncio
+    async def test_the_chat_is_recorded_even_when_the_reply_fails(
+        self, use_case, mock_text_generator, conversation
+    ):
+        mock_text_generator.generate = AsyncMock(side_effect=TextGenerationError("x"))
+
+        response = await use_case.execute(_request())
+
+        assert response.success is False
+        assert [m.content for m in conversation.recent_messages()] == ["がんばれ"]
+
+    @pytest.mark.asyncio
     async def test_history_excludes_current_chat(self, use_case, mock_prompt_builder, conversation):
         """返答するコメントが履歴に重複して入らない。"""
         conversation.add_streamer_message("洞窟だ！", MessageType.COMMENTARY)
@@ -1088,6 +1117,8 @@ class TestSuggestionsAreNotBrushedOff:
         "position": 2,
         "reason": "食べ物が安定する",
         "when": "next",
+        "relevance": "partly",
+        "relevance_reason": "a bigger farm serves the objective, not the current step",
     }
 
     @staticmethod
@@ -1235,3 +1266,152 @@ class TestSuggestionsAreNotBrushedOff:
         await use_case.execute(self._request(session, "がんばれ", "chat"))
         await use_case.execute(self._request(session, "ねこ好き？", None))
         assert mock_text_generator.generate_json.await_count == 2
+
+
+class TestAdviceIsComparedWithTheCurrentGoal:
+    """
+    助言が来たら、今の目標との関わりを見て、関わると納得したなら今の小目標を決め直す
+    （docs/design/49 §8。助言が教訓や後ろの大目標になるだけで、今の小目標が見直されなかった）。
+    """
+
+    LESSON = {"reply": "たしかに、覚えておくね", "request": "none", "lesson": "木の近くで作業台を作る"}
+
+    @staticmethod
+    def _request(session, message="そこに木あるよ", kind="advice"):
+        return GenerateResponseRequest(user_name="neko", message=message, session=session, kind=kind)
+
+    @staticmethod
+    def _errors(mock_prompt_builder):
+        return [
+            c.kwargs["previous_error"]
+            for c in mock_prompt_builder.build_chat_response_prompt.call_args_list
+        ]
+
+    @pytest.mark.asyncio
+    async def test_advice_without_a_relevance_is_sent_back(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        judged = {**self.LESSON, "relevance": "unrelated", "relevance_reason": "for later"}
+        mock_text_generator.generate_json.side_effect = [self.LESSON, judged]
+        session = _playing()
+
+        await use_case.execute(self._request(session))
+
+        assert "relevance" in self._errors(mock_prompt_builder)[1]
+        assert not session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_related_advice_agreed_with_needs_a_rethink(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        related = {**self.LESSON, "relevance": "related", "relevance_reason": "a tree is right here"}
+        rethought = {**related, "rethink": "chop the tree right here instead of walking"}
+        mock_text_generator.generate_json.side_effect = [related, rethought]
+        session = _playing()
+
+        await use_case.execute(self._request(session))
+
+        assert "rethink" in self._errors(mock_prompt_builder)[1]
+        assert "chop the tree right here" in session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_a_related_suggestion_accepted_for_later_needs_a_rethink_too(
+        self, use_case, mock_text_generator
+    ):
+        farm = TestSuggestionsAreNotBrushedOff.FARM
+        related = {**farm, "relevance": "related", "relevance_reason": "the farm is the current job"}
+        mock_text_generator.generate_json.side_effect = [related, {**related, "rethink": "expand the farm first"}]
+        session = _playing()
+
+        response = await use_case.execute(self._request(session, "畑広げない？"))
+
+        assert response.objective is not None
+        assert session.rethink_reason
+        assert mock_text_generator.generate_json.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_partly_or_unrelated_advice_needs_no_rethink(self, use_case, mock_text_generator):
+        partly = {**self.LESSON, "relevance": "partly", "relevance_reason": "a later job"}
+        mock_text_generator.generate_json.side_effect = [partly]
+        session = _playing()
+
+        await use_case.execute(self._request(session))
+
+        assert mock_text_generator.generate_json.await_count == 1
+        assert not session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_a_declined_advice_needs_no_relevance(self, use_case, mock_text_generator):
+        wrong = {"reply": "もうあるよ", "request": "decline", "decline_reason": "wrong"}
+        mock_text_generator.generate_json.side_effect = [wrong]
+        await use_case.execute(self._request(_playing()))
+        assert mock_text_generator.generate_json.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_no_rethink_is_demanded_while_the_chat_cap_holds(
+        self, use_case, mock_text_generator
+    ):
+        """前の指摘から 60 秒たっていないと rethink は使えない: 使えないものを書かせて詰まらせない。"""
+        related = {**self.LESSON, "relevance": "related", "relevance_reason": "a tree is right here"}
+        first = {**related, "rethink": "chop the tree"}
+        mock_text_generator.generate_json.side_effect = [first, related]
+        session = _playing()
+        await use_case.execute(self._request(session))
+        session._rethinks.clear()  # 前の考え直しはもう使われた
+
+        await use_case.execute(self._request(session, "こっちにも木あるよ"))
+
+        assert mock_text_generator.generate_json.await_count == 2
+
+
+class TestProducerInstruction:
+    """管理画面のディレクターの指示は、視聴者の頼みの上限に数えない自分の大目標になる（設計書 54）。"""
+
+    NOW = {
+        "reply": "了解、先に畑を広げるね！",
+        "request": "accept",
+        "title": "畑を広げる",
+        "conditions": [{"predicate": "farmed", "item": "wheat", "count": 16}],
+        "position": 1,
+        "reason": "ディレクターの指示",
+        "when": "now",
+        "rethink": "ディレクターの指示で畑を先にする",
+    }
+
+    @staticmethod
+    def _request(session, message="畑を先に広げて", producer=True):
+        return GenerateResponseRequest(
+            user_name="ディレクター", message=message, session=session, producer=producer
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_instruction_is_her_own_objective_at_the_top_and_cuts_the_small_goal(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        session = _playing()
+        mock_text_generator.generate_json.side_effect = [BED_REQUEST]
+        # 視聴者の頼みが 1 つ入っている（1 人 1 つの上限）: ディレクターはそれに数えない
+        await use_case.execute(GenerateResponseRequest(
+            user_name="neko", message="ベッド作って！", session=session, kind="request"))
+        mock_text_generator.generate_json.side_effect = [self.NOW]
+
+        response = await use_case.execute(self._request(session))
+
+        assert response.success and response.text == "了解、先に畑を広げるね！"
+        assert response.objective is not None
+        assert response.objective.suggested_by == "ディレクター"
+        assert response.objective.requested_by is None
+        assert session.plan.current.title == "畑を広げる"
+        assert session.rethink_reason  # 今やる: 小目標を次の切れ目で決め直す
+        assert mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["producer"] is True
+
+    @pytest.mark.asyncio
+    async def test_a_viewer_comment_is_not_a_producer_instruction(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "うん", "request": "none"},
+        ]
+        await use_case.execute(GenerateResponseRequest(
+            user_name="neko", message="こんにちは", session=_playing(), kind="chat"))
+        assert mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["producer"] is False

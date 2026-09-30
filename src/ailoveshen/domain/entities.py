@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC
 from collections import deque
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -223,8 +223,8 @@ class ObjectivePlan(Entity):
 
     @property
     def finished(self) -> tuple[Objective, ...]:
-        """最近完了した、または断念した大目標（古い順）。"""
-        return tuple(self._finished)
+        """最近完了した、または断念した大目標（古い順）。終わった大目標に残った中目標は閉じて見せる。"""
+        return tuple(g.closed() for g in self._finished)
 
     @property
     def current(self) -> Optional[Objective]:
@@ -429,13 +429,21 @@ class ObjectivePlan(Entity):
             self.settle_stage()
         return done
 
-    def set_jobs(self, objective_id: str, jobs: tuple[Job, ...]) -> Objective:
+    def set_jobs(
+        self,
+        objective_id: str,
+        jobs: tuple[Job, ...],
+        planned: Optional[bool] = None,
+        keep_done_steps: bool = True,
+    ) -> Objective:
         """
         大目標の中目標を書き直す（Gemini が書いた、これから残す小目標の並び。docs/design/26、50 §4）。
 
         済んだ中目標は残し（書き直しの中に同じ条件があっても足さない）、同じ条件の中目標は id・出どころ・
         使ったステップ・進み具合を引き継ぎ、視聴者と助言の中目標は Gemini が書かなくても残す
-        （やめるのは `drop_job` だけ）。
+        （やめるのは `drop_job` だけ）。計画（名前・小目標）は、書き直しに書いてなければ前のものを残し、
+        済みにした小目標は今の計画に残っているものだけ引き継ぐ（`keep_done_steps` が偽なら捨てる:
+        死んで持ち物を失ったあとなど）。`planned` を渡すと、計画を書いたかの印もそれにする。
 
         Raises:
             ValueError: まだ済んでいない中目標が MAX_OPEN_JOBS を超えるとき
@@ -453,6 +461,8 @@ class ObjectivePlan(Entity):
                 merged.append(replace(job, id=self._new_job_id()))
                 continue
             used.add(same.id)
+            steps = job.steps or same.steps
+            keys = {x.key for s in steps for x in s.walk()}
             merged.append(
                 replace(
                     job,
@@ -461,12 +471,56 @@ class ObjectivePlan(Entity):
                     suggested_by=same.suggested_by,
                     budget_used=same.budget_used,
                     progress=same.progress,
+                    title=job.title or same.title,
+                    steps=steps,
+                    steps_done=tuple(k for k in same.steps_done if k in keys)
+                    if keep_done_steps
+                    else (),
                 )
             )
         merged += [o for o in old_open if o.id not in used and (o.requested_by or o.suggested_by)]
         if len(merged) > MAX_OPEN_JOBS:
             raise ValueError(f"an objective holds at most {MAX_OPEN_JOBS} jobs not done yet")
-        return self._replace(goal, replace(goal, jobs=(*done, *merged)))
+        return self._replace(
+            goal,
+            replace(
+                goal,
+                jobs=(*done, *merged),
+                planned=goal.planned if planned is None else planned,
+            ),
+        )
+
+    def set_planned(self, objective_id: str, planned: bool) -> Objective:
+        """計画を書いたかの印を付け替える（中目標が尽きた大目標は、また書かせる）。"""
+        goal = self._require(objective_id)
+        return self._replace(goal, replace(goal, planned=planned))
+
+    def reconcile(self, objective_id: str, met: Mapping[str, Sequence[str]]) -> None:
+        """
+        世界と照合した結果を反映する（中目標の id → 今満たしていた条件の名前）。済みの中目標も、
+        一番上でない大目標の中目標も。済み（ラッチ）は変えない。表示が使う（docs/design/50 §19）。
+        """
+        goal = self._require(objective_id)
+        jobs = tuple(replace(j, met_now=tuple(met.get(j.id, ()))) for j in goal.jobs)
+        if jobs != goal.jobs:
+            self._replace(goal, replace(goal, jobs=jobs))
+
+    def judge_steps(self, objective_id: str, met: Mapping[str, Sequence[str]]) -> None:
+        """
+        計画の小目標を判定した結果を反映する（中目標の id → 今満たしていた小目標の `Step.key`）。
+        一度満たしたら済み（ラッチ）のままにする。
+        """
+        goal = self._require(objective_id)
+        jobs = []
+        for job in goal.jobs:
+            keys = met.get(job.id)
+            if job.state != JobState.PENDING or not keys:
+                jobs.append(job)
+                continue
+            valid = set(job.step_keys())
+            done = tuple(dict.fromkeys((*job.steps_done, *(k for k in keys if k in valid))))
+            jobs.append(replace(job, steps_done=done))
+        self._replace(goal, replace(goal, jobs=tuple(jobs)))
 
     def add_job(
         self,
@@ -655,7 +709,7 @@ class ObjectivePlan(Entity):
     def _finish(self, objective_id: str, state: ObjectiveState, because: str) -> Objective:
         goal = self._require(objective_id)
         self._goals.remove(goal)
-        ended = replace(goal, state=state, ended_because=because)
+        ended = replace(goal, state=state, ended_because=because).closed()
         self._finished.append(ended)
         self.updated_at = _utc_now()
         return ended
@@ -957,6 +1011,26 @@ class PlaySession(Entity):
         self.intent = ""
         seen = self._rethink_seq if rethinks_seen is None else rethinks_seen
         self._rethinks = [r for r in self._rethinks if r[0] > seen]
+        self.updated_at = _utc_now()
+
+    def resume_goal(
+        self,
+        goal: Goal,
+        time_phase: str,
+        steps_in_goal: int,
+        consecutive_failures: int,
+        stalled_steps: int,
+        least_remaining: Optional[int],
+        deaths_at_goal: Optional[int],
+    ) -> None:
+        """再起動のあとに、保存しておいた小目標を、歩みの数えごと続きから追う。"""
+        self.goal = goal
+        self.goal_phase = time_phase
+        self.steps_in_goal = steps_in_goal
+        self.consecutive_failures = consecutive_failures
+        self.stalled_steps = stalled_steps
+        self.least_remaining = least_remaining
+        self.deaths_at_goal = deaths_at_goal
         self.updated_at = _utc_now()
 
     @property

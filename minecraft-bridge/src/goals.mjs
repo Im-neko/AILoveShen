@@ -20,7 +20,7 @@
 //   custom(name)             Gemini が書いた判定（conditions.mjs）が成り立っている（設計書 42。候補は出さない: 道具で進める）
 
 import vec3Pkg from 'vec3'
-import { solve } from './solver.mjs'
+import { solve, nextStep, isGather } from './solver.mjs'
 import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillItem } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
@@ -28,7 +28,7 @@ import { darkGround } from './lighting.mjs'
 import { levelStatus, levelTarget, describeLevel, toolsMissing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
-import { placedBedToTake, HOME_FURNITURE, furnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
+import { placedToTake, takeableItem, HOME_FURNITURE, ownFurnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, plantingStatus, isSaplingItem, saplingMatches } from './farming.mjs'
 import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
@@ -37,9 +37,11 @@ import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
 import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
 import { boatItem, riding } from './boat.mjs'
+import { inBurrow, burrowSpotCached } from './burrow.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
+const BURROW_HOME_DISTANCE = 64 // 家がこれより遠い夜は、帰る代わりに穴を掘る手も出す
 const MAX_DIG_DEPTH = 384 // 任意の上限（省けば上限なし）
 const MIN_EXPLORE = 8
 const MIN_LIT = 8
@@ -328,8 +330,24 @@ function evaluateOne (bot, state, knowledge, world) {
   }
   switch (goal.spec.predicate) {
     case 'have': {
+      // 家具（ベッド、作業台、かまど、チェスト）は、近くに置いてあるものを拾えば足りる: 作らずに拾う
+      // （材料集めからやり直さない）。1 つ持てば足りるときだけ
+      const furniture = goal.spec.count <= 1 ? takeableItem(goal.spec.item) : null
+      const held = furniture && (furniture === 'bed'
+        ? Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))
+        : (inventoryCounts(bot)[furniture] ?? 0) > 0)
+      const taken = furniture && !held ? placedToTake(bot, state, furniture) : null
+      if (taken) {
+        out.lines.push(`have ${goal.spec.count} ${goal.spec.item}: a placed ${taken.block} at ${taken.pos.x},${taken.pos.y},${taken.pos.z} can be taken instead of made`)
+        out.leaves.push({ kind: 'take_placed', ...taken })
+        out.remaining += goal.spec.count
+        break
+      }
       const r = addSolved([{ spec: goal.spec.item, count: goal.spec.count }])
       out.met = r.met
+      // 仕事の次の一歩（小目標にする。設計書 50 §13）
+      if (!r.met) out.next = nextStep(r.nodes[0], world, knowledge)
+      out.gather = isGather(r.nodes[0])
       break
     }
     case 'built': {
@@ -380,12 +398,12 @@ function evaluateOne (bot, state, knowledge, world) {
         // 色つきのベッド（blue_bed）: その色のベッドが家にあること。部屋が前のベッドでふさがって
         // いれば、前のベッドを拾う候補も出す（拾ったベッドは白なら染められる）
         const item = goal.spec.item
-        const at = furnitureInHome(bot, state.home, item)
+        const at = ownFurnitureInHome(bot, state, item)
         out.met = !!at
         out.lines.push(`a ${item} in the house: ${at ? 'yes' : 'no'}`)
         if (out.met) break
         const held = (inventoryCounts(bot)[item] ?? 0) > 0
-        const old = furnitureInHome(bot, state.home, 'bed')
+        const old = ownFurnitureInHome(bot, state, 'bed')
         if (!held) addSolved([{ spec: item, count: 1 }])
         else if (bedSpot(bot, state.home)) out.leaves.push({ kind: 'place_bed', item })
         else if (!old) out.blocked.push(`no free spot for the ${item} in the house`)
@@ -396,25 +414,29 @@ function evaluateOne (bot, state, knowledge, world) {
       if (goal.spec.item !== 'bed') {
         // 作業台・かまど・チェスト・松明を家の中に置く
         const item = goal.spec.item
-        const at = furnitureInHome(bot, state.home, item)
+        const at = ownFurnitureInHome(bot, state, item)
         out.met = !!at
         out.lines.push(`a ${item} in the house: ${at ? `yes (${at.x},${at.y},${at.z})` : 'no'}`)
         if (out.met) break
         const held = (inventoryCounts(bot)[item] ?? 0) > 0
-        if (!held) addSolved([{ spec: item, count: 1 }])
+        // 家の外に置いてある同じ物（作業台、かまど、チェスト）は、拾って運べる。作らない
+        const placed = held ? null : placedToTake(bot, state, item)
+        if (placed) out.leaves.push({ kind: 'take_placed', ...placed })
+        else if (!held) addSolved([{ spec: item, count: 1 }])
         else out.leaves.push({ kind: 'place_in_home', item })
         out.remaining += 1
         break
       }
-      out.met = hasBed(bot, state.home)
-      out.lines.push(`a bed in the house: ${out.met ? 'yes' : 'no'}`)
+      // 見つけた拠点のベッドは村人の物: 自分で置いた物だけ数える
+      out.met = state.home?.found ? !!ownFurnitureInHome(bot, state, 'bed') : hasBed(bot, state.home)
+      out.lines.push(`a bed in the house: ${out.met ? 'yes' : 'no'}${state.home?.found && !out.met && hasBed(bot, state.home) ? ' (only the bed that was there already: it is not yours)' : ''}`)
       if (out.met) break
       const bed = Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))
       // 近くに置いてあるベッド（家の外）は、拾って運べる（作るのと並べて出す: どちらかは選ぶ側）
-      const placedBed = bed ? null : placedBedToTake(bot, state)
+      const placedBed = bed ? null : placedToTake(bot, state, 'bed')
       if (placedBed) out.leaves.push({ kind: 'take_placed', ...placedBed })
-      if (!bed) addSolved([{ spec: 'bed', count: 1 }])
-      else if (bedSpot(bot, state.home)) out.leaves.push({ kind: 'place_bed' })
+      // 拾えるベッドが近くにあれば作らない（材料集めからやり直していた）。拾えなければ（断られた・遠い）作る
+      if (!bed) { if (!placedBed) addSolved([{ spec: 'bed', count: 1 }]) } else if (bedSpot(bot, state.home)) out.leaves.push({ kind: 'place_bed' })
       else out.blocked.push('no free spot for the bed in the house')
       out.remaining += 1
       break
@@ -450,6 +472,11 @@ function evaluateOne (bot, state, knowledge, world) {
       // 持っているベッドをここに置いて寝る、地下ならそのまま（地下は夜も昼も同じ）
       // さっき行けなかった家とベッドはしばらく出さない（ほかの越し方を選ばせる: 2026-09-27 一晩中「No path」）
       const homeCut = state.home && isNoPathTo(state, state.home.outside)
+      // 穴の中（掘って塞いだ）なら、朝までそのまま。ほかの越し方は出さない（出ると穴を捨てることになる）
+      if (inBurrow(bot)) {
+        out.leaves.push({ kind: 'stay_burrowed' })
+        break
+      }
       if (state.home && !homeCut) out.leaves.push({ kind: 'go_home' })
       if (homeCut) out.blocked.push('home: no path to its door a moment ago (see the last result); try another way through the night')
       if (sleepy) {
@@ -459,6 +486,13 @@ function evaluateOne (bot, state, knowledge, world) {
         if (Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed'))) out.leaves.push({ kind: 'bed_here' })
       }
       if (isUnderground(bot)) out.leaves.push({ kind: 'stay_underground' })
+      // 家がない・行けない・遠い夜は、足元に穴を掘って塞ぐ（docs/design/61）。ベッドで寝るのとは別の選択肢
+      const homeFar = state.home && bot.entity.position.distanceTo(state.home.outside) > BURROW_HOME_DISTANCE
+      if (!state.home || homeCut || homeFar) {
+        const { spot, why } = burrowSpotCached(bot, state)
+        if (spot) out.leaves.push({ kind: 'dig_in', pos: spot.feet })
+        else out.blocked.push(`digging in for the night: ${why}`)
+      }
       break
     }
     case 'explored': {
@@ -614,18 +648,28 @@ function evaluateOne (bot, state, knowledge, world) {
       out.met = f.done === f.total
       out.remaining = f.total - f.done
       const what = fac.kind === 'farm' ? `farm ${fac.name} (${fac.layout.crop})` : `tree farm ${fac.name} (${fac.layout.sapling})`
-      out.lines.push(`${what}: ${f.done}/${f.total} cells done${f.till.length ? `, to till ${f.till.length}` : ''}${f.sow.length ? `, to sow ${f.sow.length}` : ''}${f.plant.length ? `, to plant ${f.plant.length}` : ''}${f.unseen ? `, out of view ${f.unseen}` : ''}`)
+      out.lines.push(`${what}: ${f.done}/${f.total} cells done${f.till.length ? `, to till ${f.till.length}` : ''}${f.sow.length ? `, to sow ${f.sow.length}` : ''}${f.plant.length ? `, to plant ${f.plant.length}` : ''}${f.water.length ? `, water to place ${f.water.length}` : ''}${f.unseen ? `, out of view ${f.unseen}` : ''}`)
       if (out.met) break
       const inv = inventoryCounts(bot)
       if (fac.kind === 'farm') {
         const seed = CROPS[fac.layout.crop].seed
+        const seeds = inv[seed] ?? 0
+        // 水のマス（掘って水のバケツを置く）が先。水が届けば、耕しただけの地面も土に戻らない。バケツがなければ
+        // 水のバケツを手に入れる（鉄でバケツを作り、水を汲む）。耕す・まくは、待たずに進めてよい
+        if (f.water.length) {
+          if (inv.water_bucket > 0) out.leaves.push({ kind: 'water', facility: fac.name })
+          else addSolved([{ spec: 'water_bucket', count: 1 }])
+        }
         if (f.sow.length) {
-          if (inv[seed] > 0) out.leaves.push({ kind: 'sow', item: seed, facility: fac.name })
+          if (seeds > 0) out.leaves.push({ kind: 'sow', item: seed, facility: fac.name })
           else addSolved([{ spec: seed, count: Math.min(f.sow.length + f.till.length, 16) }])
         }
         if (f.till.length) {
-          if (Object.keys(inv).some((n) => n.endsWith('_hoe'))) out.leaves.push({ kind: 'till', facility: fac.name })
-          else addSolved([{ spec: 'hoe', count: 1 }])
+          // 耕すのは、まく種が耕し済みのマスより多いときだけ: 水が近くにない畑は、耕しただけで何も植わって
+          // いない地面が土に戻る（種のないまま耕し続け、最初に耕した所が土に戻った）。耕す → まく を順に
+          if (!Object.keys(inv).some((n) => n.endsWith('_hoe'))) addSolved([{ spec: 'hoe', count: 1 }])
+          else if (seeds > f.sow.length) out.leaves.push({ kind: 'till', facility: fac.name })
+          else if (!f.sow.length) addSolved([{ spec: seed, count: Math.min(f.till.length, 16) }])
         }
       } else if (f.plant.length) {
         const held = Object.entries(inventoryCounts(bot)).find(([n, c]) => c > 0 && saplingMatches(fac.layout.sapling, n))
@@ -691,6 +735,8 @@ function evaluateOne (bot, state, knowledge, world) {
         if (!f.free) { out.impossible.push(why); break }
       }
       const inv = inventoryCounts(bot)
+      // 水のバケツを持っていれば、畑の水のマスにも置く（湿った耕地は育ちが速い）。バケツを集めはしない（それは facility の目標）
+      if (f.water > 0 && inv.water_bucket > 0) out.leaves.push({ kind: 'water', crop })
       if (!(inv[info.seed] > 0)) {
         addSolved([{ spec: info.seed, count: Math.min(out.remaining, 16) }])
         break
@@ -822,6 +868,8 @@ function stashLeaf (bot, state) {
 
 // 家のものでない、近くに置いてあるベッド（村など）の足側
 const BED_SEARCH = 32
+const isBedItem = (item) => item === 'bed' || item.endsWith('_bed')
+
 function nearbyBed (bot, state) {
   const ids = Object.values(bot.registry.blocksByName).filter((b) => b.name.endsWith('_bed')).map((b) => b.id)
   const me = bot.entity.position
@@ -848,7 +896,7 @@ export function checkConditions (specs, bot, state, knowledge, world) {
       throw e
     }
     const r = evaluate(bot, { ...state, goal }, knowledge, world)
-    return { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)] }
+    return { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)], next_step: r.next ? { predicate: 'have', item: r.next.item, count: r.next.count } : null, gather: !!r.gather }
   })
 }
 
@@ -861,7 +909,11 @@ export function needs (bot, state) {
   const phase = dayPhase(bot.time.timeOfDay)
   if (phase === 'dusk') out.push('night is coming: hostile mobs spawn outside in the dark')
   if (phase === 'night' && !isInside(bot, state.home)) out.push('it is night and you are outside')
-  if (isDark(bot)) out.push('dark here (covered, no light near): hostile mobs can spawn around you')
+  if (isDark(bot)) {
+    const torches = inventoryCounts(bot).torch ?? 0
+    out.push('dark here (covered, no light near): hostile mobs can spawn around you' +
+      (torches ? '' : '; you carry no torch: turn back and make torches (a torch is 1 coal or charcoal + 1 stick)'))
+  }
   for (const { e, dist } of reachableThreats(bot, state)) out.push(`hostile ${e.name} ${Math.round(dist)}m away`)
   for (const { e } of dangerOutside(bot, state.home)) out.push(`${e.name} waiting outside the door`)
   for (const b of state.home?.breach ?? []) out.push(`the house wall has a hole at ${b.x},${b.y},${b.z}`)

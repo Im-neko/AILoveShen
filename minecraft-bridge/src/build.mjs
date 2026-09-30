@@ -195,6 +195,7 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   const fr = goal.getFaceAndRef(eye)
   if (!fr) throw new Error(`no reference face for ${b.block} at ${pos}`)
   const item = findItem(bot, b.block)
+  if (!item) throw new Error(`no ${b.block} left in the inventory (gather more, then continue the build)`)
   await bot.equip(item, 'hand')
   // Paper は 300ms に 8 個を超えるアイテム使用のパケットを、何も返さずに捨てる。代わりに、
   // バニラのクライアントの右クリックの連打（4ティック）と同じ間隔で置く。

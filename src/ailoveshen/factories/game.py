@@ -12,10 +12,12 @@ from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.step_picker import StepPicker
 from ailoveshen.application.use_cases.stuck_check import StuckCheck
 from ailoveshen.application.use_cases.goal_chooser import GoalChooser
+from ailoveshen.application.use_cases.job_planner import JobPlanner
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
+from ailoveshen.application.use_cases.moves import MoveBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.search import KeySearch
@@ -40,6 +42,8 @@ from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder imp
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
 from ailoveshen.infrastructure.adapters.storage.json_note_store import JsonNoteStore
 from ailoveshen.infrastructure.adapters.storage.json_lesson_store import JsonLessonStore
+from ailoveshen.infrastructure.adapters.storage.json_goal_store import JsonGoalStore
+from ailoveshen.infrastructure.adapters.storage.json_move_store import JsonMoveStore
 from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import JsonlWatchRecorder
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
@@ -267,6 +271,18 @@ def create_game_service(
             else None,
         )
         lessons.load()
+    # 手の帳: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（設計書 52）
+    moves = None
+    if minecraft.control == "tools" and minecraft.moves:
+        moves = MoveBook(
+            JsonMoveStore(minecraft.moves_path),
+            shown=minecraft.moves_shown,
+            max_moves=minecraft.max_moves,
+            recorder=JsonlWatchRecorder(minecraft.moves_record_dir)
+            if minecraft.moves_record_dir
+            else None,
+        )
+        moves.load()
     # 検索の道具: 一覧から検索語に合うキーを Jev が選ぶ（設計書 47 §3）
     search = None
     if minecraft.control == "tools":
@@ -324,6 +340,7 @@ def create_game_service(
         designer=designer,
     )
 
+    goal_store = JsonGoalStore(minecraft.goal_path) if minecraft.goal_path else None
     start = StartPlayUseCase(
         bridge=bridge,
         event_publisher=event_publisher,
@@ -335,6 +352,7 @@ def create_game_service(
         max_steps_per_goal=minecraft.max_steps_per_goal,
         max_consecutive_failures=minecraft.max_consecutive_failures,
         max_stalled_steps=minecraft.max_stalled_steps,
+        goal_store=goal_store,
     )
     advance = AdvancePlayUseCase(
         bridge=bridge,
@@ -350,6 +368,17 @@ def create_game_service(
         tool_watcher=tool_watcher,
         screen=screen,
         chooser=chooser,
+        # 大目標の計画は、小目標を中目標から選ぶ（chooser）ときだけ（docs/design/50 §18）
+        planner=(
+            JobPlanner(
+                text_generator=text_generator,
+                prompt_builder=prompt_builder,
+                bridge=bridge,
+                objectives=objectives,
+            )
+            if chooser is not None
+            else None
+        ),
         replan_minutes=minecraft.replan_minutes,
         objective_stall_steps=minecraft.objective_stall_steps,
         step_picker=step_picker,
@@ -357,6 +386,8 @@ def create_game_service(
         stuck_check=stuck_check,
         stagnation_seconds=minecraft.stagnation_seconds,
         lessons=lessons,
+        moves=moves,
+        goal_store=goal_store,
         search=search,
         abilities=load_abilities(),
         skills=(

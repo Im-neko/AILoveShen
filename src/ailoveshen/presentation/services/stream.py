@@ -127,6 +127,7 @@ class Stream:
                 base = f"http://127.0.0.1:{self._board_port}"
                 logger.info(f"[obs] 目標: {base}/overlay/vtuber  アバター: {base}/avatar")
                 logger.info(f"[debug] Gemini の思考: {base}/debug/gemini")
+                logger.info(f"[admin] 管理画面（このマシンからだけ）: {base}/admin")
             if self._chat is not None and self._responder is not None:
                 chat = asyncio.create_task(self._responder.run(self._chat))
                 chat.add_done_callback(_report_end("チャットへの返事"))

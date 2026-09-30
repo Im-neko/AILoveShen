@@ -122,3 +122,38 @@ test('時間では止めない: 夕方になった・空腹になったときだ
   setTimeout(() => { bot3.food = 6 }, 100)
   assert.match((await run3({ verb: 'explore' }, 'explore')).result, /^failed: stopped: hungry \(food 6\/20\)/)
 })
+
+test('暗くて松明がないと止める（引き返して松明を作らせる）。松明を持っていれば、暗い所で始めたのなら、松明や作る手なら止めない', async () => {
+  const walking = (bot, state, c, signal) => {
+    bot.actionPhase = 'walking toward the ore'
+    return waitsForAbort(bot, state, c, signal)
+  }
+  const roofed = (bot) => { bot.blockAt = () => ({ boundingBox: 'block', name: 'stone' }); bot.registry = { blocksByName: { stone: { filterLight: 15 } } }; bot.findBlock = () => null }
+  // 屋根が付いた（坑道に入った）: 松明がなければ止める
+  const a = setup({ dig: walking })
+  a.bot.registry = { blocksByName: {} }
+  a.bot.findBlock = () => null
+  setTimeout(() => roofed(a.bot), 100)
+  const stopped = await a.run({ verb: 'dig' }, 'dig stone')
+  assert.equal(stopped.interrupted, true)
+  assert.match(stopped.result, /^failed: stopped: too dark to see and no torch/)
+  // 松明を持っていれば止めない（置く手が出る）
+  const b = setup({ dig: walking })
+  b.bot.inventory = { items: () => [{ name: 'torch', count: 3 }] }
+  b.bot.registry = { blocksByName: {} }
+  b.bot.findBlock = () => null
+  setTimeout(() => roofed(b.bot), 100)
+  const carrying = b.run({ verb: 'dig' }, 'dig stone')
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  assert.ok(b.state.current, 'keeps digging with torches in the pack')
+  await abortCurrent(b.state, 'stop')
+  await carrying
+  // 松明を作る手・置く手は、暗くても止めない
+  const c = setup({ craft: walking })
+  roofed(c.bot)
+  const crafting = c.run({ verb: 'craft' }, 'craft torch')
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  assert.ok(c.state.current, 'crafting torches is not stopped in the dark')
+  await abortCurrent(c.state, 'stop')
+  await crafting
+})

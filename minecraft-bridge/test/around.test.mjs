@@ -61,3 +61,14 @@ test('断られる場所（今の家など）は出さず、ほかの同じ種�
   assert.equal(log.count, 1)
   assert.equal(log.nearest.x, 5)
 })
+
+test('作物は熟したものだけが「一番近いもの」になる。熟したものがなければ座標を出さない（育ち途中を掘って断られていた）', () => {
+  const bot = world({
+    '1,70,0': { name: 'wheat', props: { age: 3 } },
+    '2,70,0': { name: 'wheat', props: { age: 7 } },
+    '0,70,1': { name: 'carrots', props: { age: 2 } }
+  })
+  const by = Object.fromEntries(aroundMe(bot).blocks.map((b) => [b.name, b]))
+  assert.deepEqual([by.wheat.count, by.wheat.ripe, by.wheat.nearest.x], [2, 1, 2]) // 近い育ち途中でなく、熟したもの
+  assert.deepEqual([by.carrots.count, by.carrots.ripe, by.carrots.nearest], [1, 0, null])
+})

@@ -203,13 +203,100 @@ function replayWorld (viewer, rec, bot) {
 
 const itemClass = (bot) => require('prismarine-item')(bot.registry ?? VERSION)
 
-// ボットがウィンドウ（チェスト、かまど、作業台）を閉じるのはサーバーへのパケットで、サーバーは
-// 何も返さない: これがないと、視聴者の画面には一度表示されたウィンドウがすべて開いたまま残った
-export function relayCloses (client, viewers) {
+// 視聴者に見せる画面（チェスト、かまど、作業台）は、ボットが閉じてもしばらく開けておく
+export const WINDOW_HOLD_MS = 2000
+
+// チェストや作業台の画面が視聴者に映らなかった理由（設計書 53）:
+//  - ボットは開いて、数十ミリ秒で操作して、すぐ閉じる。閉じたことをそのまま中継すると、画面は一瞬で消える
+//  - ボット自身のクリック（取り出す、入れる、クラフトの結果を取る）はサーバーが送り返さない
+//    （クライアントが結果のハッシュを付けて送るため）。視聴者の開いた画面の中身が変わらなかった
+// そこで、開いた画面ごとに: ボットのクリックの後に画面の今の中身を送り、閉じるのは最後の変化から
+// `holdMs` 後にする。待つのは視聴者に送る分だけで、ボットの操作は待たせない。
+// ウィンドウ 0（持ち物、2x2 のクラフト）は視聴者のクライアントが開かないので、そのまま（閉じるだけ即送る）。
+export function windowPacket (window, Item) {
+  return {
+    windowId: window.id,
+    stateId: 0,
+    items: window.slots.map((i) => safeSlot(Item.toNotch(i ?? null))),
+    carriedItem: safeSlot(Item.toNotch(null))
+  }
+}
+
+export function relayWindows (bot, viewers, Item, { holdMs = WINDOW_HOLD_MS, delayMs = INVENTORY_SYNC_MS, now = Date.now } = {}) {
+  const client = bot._client
   const write = client.write.bind(client)
+  const shown = new Map() // windowId -> { opened: バッファ, at: 開いた／最後に変わった時刻, window, timer, closing }
+  const send = (name, params) => { for (const v of viewers) v.write(name, params) }
+
+  const sync = (entry) => {
+    if (entry.window && viewers.size) send('window_items', windowPacket(entry.window, Item()))
+  }
+  const forget = (id) => {
+    const entry = shown.get(id)
+    if (!entry) return
+    clearTimeout(entry.timer)
+    clearTimeout(entry.syncTimer)
+    shown.delete(id)
+  }
+  const finish = (id) => {
+    if (!shown.has(id)) return
+    forget(id)
+    send('close_window', { windowId: id })
+  }
+  const requestClose = (id) => {
+    const entry = shown.get(id)
+    if (!entry || entry.closing) return
+    entry.closing = true
+    clearTimeout(entry.syncTimer)
+    sync(entry) // 閉じる前の最後の中身
+    const wait = entry.at + holdMs - now()
+    if (wait <= 0) finish(id)
+    else entry.timer = setTimeout(() => finish(id), wait)
+  }
+  const touch = (id) => {
+    const entry = shown.get(id)
+    if (!entry || entry.closing) return
+    // ボットの window はこの時点で currentWindow（閉じた後は null になるので、ここで覚える）
+    if (bot.currentWindow?.id === id) entry.window = bot.currentWindow
+    entry.at = now()
+    if (entry.syncTimer) return
+    entry.syncTimer = setTimeout(() => { entry.syncTimer = null; sync(entry) }, delayMs)
+  }
+
   client.write = (name, params) => {
     write(name, params)
-    if (name === 'close_window') for (const v of viewers) v.write('close_window', { windowId: params.windowId })
+    if (name === 'window_click' && params.windowId) touch(params.windowId)
+    if (name === 'close_window') {
+      if (params.windowId) {
+        const entry = shown.get(params.windowId)
+        if (entry && bot.currentWindow?.id === params.windowId) entry.window = bot.currentWindow
+        requestClose(params.windowId)
+      } else send('close_window', { windowId: 0 })
+    }
+  }
+
+  return {
+    // サーバーのパケット。true なら、そのまま中継しない
+    fromServer (name, data, buffer) {
+      if (name === 'open_window') {
+        // 開いている画面は新しい画面に置き換わる
+        for (const id of [...shown.keys()]) forget(id)
+        shown.set(data.windowId, { opened: buffer, at: now(), window: null, timer: null, syncTimer: null, closing: false })
+        return false
+      }
+      if (name === 'close_window') { requestClose(data.windowId); return true }
+      if (name === 'respawn' || name === 'login') for (const id of [...shown.keys()]) forget(id)
+      return false
+    },
+    // あとから参加した視聴者にも、開いている画面を見せる
+    replay (viewer) {
+      for (const entry of shown.values()) {
+        viewer.writeRaw(entry.opened)
+        if (entry.window) viewer.write('window_items', windowPacket(entry.window, Item()))
+      }
+    },
+    open: () => [...shown.keys()],
+    dispose: () => { for (const id of [...shown.keys()]) forget(id) }
   }
 }
 
@@ -261,18 +348,34 @@ export function relayOwnState (bot, viewers, Item, { delayMs = INVENTORY_SYNC_MS
 }
 
 // 装備の表示（set_equipment）に部品（附呪、名前、NBT など）つきのアイテムがあると、視聴者が
-// 「74 bytes extra whilst reading packet set_equipment」で切れた。部品のある装備は、数だけの部品に
-// 絞って書き直して送る（部品がなければそのまま中継）。持ち物と同じ扱い（safeSlot）
+// 「74 bytes extra whilst reading packet set_equipment」で切れた。数だけの部品（damage など）に絞って
+// 書き直しても、また「6 bytes extra」で切れた（2026-09-30 16:42）。装備の見た目に部品は要らないので、
+// 部品のある装備は部品を全部外して書き直して送る（部品がなければそのまま中継）。持ち物（safeSlot）とは別
 export function sanitizedEquipment (data) {
   const risky = (data.equipments ?? []).some((e) => (e.item?.addedComponentCount ?? 0) > 0 || (e.item?.removedComponentCount ?? 0) > 0)
   if (!risky) return null
-  return { entityId: data.entityId, equipments: data.equipments.map((e) => ({ slot: e.slot, item: safeSlot(e.item) })) }
+  const bare = (item) => (item && Array.isArray(item.components)
+    ? { ...item, addedComponentCount: 0, components: [], removedComponentCount: 0, removeComponents: [] }
+    : item)
+  return { entityId: data.entityId, equipments: data.equipments.map((e) => ({ slot: e.slot, item: bare(e.item) })) }
 }
+
+// 視聴者が切れたときの手がかり: 最近中継した装備のパケット（どのアイテムか、書き直したか、先頭のバイト列）
+const RECENT_EQUIPMENT = 6
+const summarizeEquipment = (data, path, buffer) => ({
+  at: new Date().toISOString().slice(11, 19),
+  entity: data.entityId,
+  path,
+  items: (data.equipments ?? []).map((e) => `${e.slot}:${e.item?.itemId ?? '-'}x${e.item?.itemCount ?? 0}[${(e.item?.components ?? []).map((c) => c.type).join(',')}]`),
+  hex: buffer.subarray(0, 48).toString('hex')
+})
 
 export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}) {
   const rec = new WorldRecorder()
   const viewers = new Set()
   let equipmentSerializer = null
+  const recentEquipment = []
+  const windows = relayWindows(bot, viewers, () => itemClass(bot))
   const encodeEquipment = (params) => {
     equipmentSerializer ??= mc.createSerializer({ state: 'play', isServer: true, version: VERSION })
     return equipmentSerializer.createPacketBuffer({ name: 'entity_equipment', params })
@@ -289,13 +392,15 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
           return // 書き直せなければ送らない（装備の見た目だけ）
         }
       }
+      recentEquipment.push(summarizeEquipment(data, safe ? 'rewritten' : 'raw', buffer))
+      if (recentEquipment.length > RECENT_EQUIPMENT) recentEquipment.shift()
     }
     rec.record(data, meta, buffer)
     if (meta.state !== 'play' || NOT_RELAYED.has(meta.name)) return
+    if (windows.fromServer(meta.name, data, buffer)) return
     for (const v of viewers) v.writeRaw(buffer)
   })
 
-  relayCloses(bot._client, viewers)
   relayOwnState(bot, viewers, () => itemClass(bot))
 
   // registryCodec: {} -> nmp は自前の registry_data を書かない。代わりに、記録したボットの
@@ -318,8 +423,14 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
     log(`[mirror] 視聴者 ${viewer.username} が参加した`)
     viewer.write('login', { ...rec.login.data, maxPlayers: 4 })
     replayWorld(viewer, rec, bot)
+    windows.replay(viewer)
     viewers.add(viewer)
-    viewer.on('end', () => { viewers.delete(viewer); log(`[mirror] 視聴者 ${viewer.username} が退出した`) })
+    viewer.on('end', () => {
+      viewers.delete(viewer)
+      log(`[mirror] 視聴者 ${viewer.username} が退出した`)
+      // 装備のパケットで切れたとき（クライアントのエラーは、ここでは「退出した」としか分からない）の手がかり
+      if (recentEquipment.length) log(`[mirror] 直近の装備パケット: ${JSON.stringify(recentEquipment)}`)
+    })
     viewer.on('error', (e) => log(`[mirror] 視聴者のエラー: ${e.message}`))
   })
 
@@ -355,7 +466,7 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
   })
 
   server.on('listening', () => log(`[mirror] 127.0.0.1:${port} で待ち受け中`))
-  return { server, viewers, recorder: rec, close: () => { clearInterval(timer); server.close() } }
+  return { server, viewers, recorder: rec, close: () => { clearInterval(timer); windows.dispose(); server.close() } }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

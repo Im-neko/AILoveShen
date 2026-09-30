@@ -14,12 +14,26 @@ stream:
   commentary_judge: "jev"
   max_silence_seconds: 180
   commentary_record_dir: "logs/commentary"
+  # Every spoken line with the state at that moment, and what the TTS did with it (docs/design/65 §2). "": off
+  spoken_record_dir: "logs/spoken"
+  # Before a narration line or a live line is read, Jev checks it against the state now (in / out of the
+  # home, the small goal done or not, the plan) and a mismatch is written again once, then dropped
+  # (docs/design/65 §4): jev | off
+  speech_check: "jev"
+  # The admin page (docs/design/54_admin_panel.md, http://127.0.0.1:<board_port>/admin): saved lines to speak
+  presets_path: "data/presets.json"
   # A line in the middle of an action (docs/design/43): after this many seconds of quiet (from the
   # end of the last spoken line) say the tool's new intent, or a new line (purpose live, not kept in
   # the conversation). Lines like the last few are never spoken. 0: off. Only when something changed
   # since the last line (items, position, health, time of day, in / out of the home), and never
   # while the small goal keeps failing (2026-09-29: fewer lines; think and try another way instead)
   live_interval_seconds: 30
+  # Nothing changed and this many seconds of quiet (waiting out the night in a hole, a long walk):
+  # a line of small talk about how things are now (purpose live), nothing new promised. 0: off
+  live_idle_seconds: 60
+  # While the next move or goal is being decided, or the small goal keeps failing, and this many seconds
+  # of quiet: a line of thinking aloud about the state (nothing started, nothing promised). 0: off
+  live_thinking_seconds: 40
 
 # Twitch Integration
 twitch:
@@ -108,11 +122,19 @@ llm:
     # everyday calls (tool_after_failure, commentary, live, reply) do not think; the goal decisions do
     # (they are few and plan the next minutes; user 2026-09-27), and so does the tool choice (user
     # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9), facility_design lays out
-    # a farm or tree farm (47 §7); [] = never think
-    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "tool_stuck", "town_plan", "facility_design"]
+    # a farm or tree farm (47 §7); [] = never think. plan (an objective's jobs and small goals, 50 §18) does
+    # not think locally: measured 2026-09-30, the thinking hit a 6000-token cap after 85 s and the answer
+    # came from the second call without it (142 s in all; the answer without thinking was usable)
+    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "town_plan", "facility_design"]
     # Output cap (thinking included) per purpose that thinks; when the cap is hit without an answer the
-    # call is asked again without thinking (a long think of tool_stuck held the play for minutes)
-    thinking_max_tokens: {tool_stuck: 8000}
+    # call is asked again without thinking (a long think of tool_stuck held the play for minutes;
+    # tool_stuck no longer thinks: see config/development.yaml)
+    thinking_max_tokens: {tool_stuck: 16000}
+    # Output cap per purpose that does not think: a call that keeps writing is cut here (2026-09-30: 4 of
+    # 22 replies wrote 2,125-4,462 tokens, 248 s in all, and 12 of 552 tool choices wrote 600-2,498;
+    # the usual answer is 90 for a tool, 217 for a reply, 250-350 for a goal, 1,000 for a plan; the caps
+    # are above the 99th percentile of 2026-09-29/30)
+    output_max_tokens: {tool: 800, tool_after_failure: 800, tool_stuck: 1200, goal: 1600, goal_after_failure: 1600, reply: 1200, commentary: 300, live: 200, plan: 3500, promise: 600}
     max_concurrent: 2
     timeout_seconds: 180
   # purpose -> local | gemini (default: purposes not listed). Images always go to Gemini.
@@ -145,6 +167,7 @@ gemini:
     site: "high"               # choosing the town site
     town_plan: "high"          # the town's master plan (docs/design/47 §6)
     facility_design: "high"    # a farm or tree farm's zones and size (docs/design/47 §7)
+    plan: "high"               # an objective's jobs and their small goals with prerequisites (docs/design/50 §18)
     house: "medium"            # designing the house
     build_design: "high"       # designing a named build (docs/design/25_builds.md)
     goal: "low"                # the small goal (with objective edits and notes)
@@ -442,7 +465,7 @@ minecraft:
     step_timeout_seconds: 3.0
     step_max_failures: 2
     step_gemini_every: 8
-    step_record_dir: "logs/steps"   # options, chosen, confidence, why Gemini
+    step_record_dir: "logs/steps"   # per step: pick (options, chosen, confidence, probabilities, why Gemini) + result
     # After a small goal is stuck or stalled (docs/design/34 §7): jev = Jev first picks another
     # open job of the top objective (not the same kind) or "rethink" (Gemini analyses the failure);
     # Gemini always after 2 failures of the same kind, a death, a stalled objective or a screen
@@ -458,9 +481,10 @@ minecraft:
     # many minutes: Jev is given the action record then, without waiting for the next multiple of
     # stuck_check_steps (0: not by time)
     stuck_check_quiet_minutes: 5
-    # Position, inventory, health, time of day and the small goal's progress unchanged for this many
-    # seconds (after 2+ actions; waiting and sleeping do not count): no Jev, the LLM chooses again with
-    # the failures and results in view (purpose tool_stuck). 0: off
+    # Position, inventory, health, time of day and the small goal's progress unchanged while the actions
+    # took this many seconds (after 2+ actions; waiting and sleeping do not count, nor does the time the
+    # model takes to choose): no Jev, the LLM chooses again with the failures and results in view
+    # (purpose tool_stuck). 0: off
     stagnation_seconds: 10
     stuck_record_dir: "logs/stuck"
     # Lesson book (docs/design/35): lessons from viewers' advice and own failures, with the situation
@@ -475,6 +499,17 @@ minecraft:
     lesson_min_confidence: 0.6
     lesson_timeout_seconds: 2.0
     max_lessons: 200
+    # Move book (docs/design/52): a step the LLM chose that worked (a tool call with no coordinates:
+    # craft, equip, withdraw, smelt, ...) is remembered with the situation (goal, item, place) and
+    # offered to Jev as "remembered ..." in a similar situation; moves that stop working are dropped
+    moves: true
+    moves_path: "data/moves.json"
+    moves_record_dir: "logs/moves"
+    moves_shown: 3
+    max_moves: 100
+    # The current small goal and its step counts (docs/design/63): after a restart, resumed when the
+    # bridge is still on the same small goal. Empty = not saved
+    goal_path: "data/goal.json"
     # Search tools (docs/design/47 §3): search_facility / search_memory. Code narrows the list by
     # word overlap to 16, Jev picks the entry matching the query (or none); below
     # search_min_confidence or no answer → the 3 closest by words are returned as unsure
@@ -496,7 +531,7 @@ minecraft:
     goal_record_dir: "logs/goals"  # Jev's choices (options, chosen, confidence, why Gemini)
     # Skills (docs/design/22_skills.md, control: tools only): Gemini writes JS skills over the
     # tools, the bridge runs them in a sandbox and keeps the ones that worked
-    # (minecraft-bridge/data/skills, kept across world resets; clean with npm run skills:clean)
+    # (minecraft-bridge/data/skills, set aside by world:reset; clean with npm run skills:clean)
     skills: true
     skill_rewrites_per_hour: 3   # rewrites of one skill (a cost cap)
 

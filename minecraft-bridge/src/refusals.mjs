@@ -27,7 +27,12 @@ const FUTILE = [
   /nothing to dig/i,
   /is not ripe/i,
   /is taken by/i,
-  /cannot be (dug|placed)/i
+  /cannot be (dug|placed)/i,
+  /holds back (water|lava)/i,
+  /no furnace at/i,
+  /nothing to till/i,
+  /no free (farmland|ground)/i,
+  /did not turn into farmland/i
 ]
 
 export function isFutile (reason) {

@@ -66,11 +66,11 @@ export function isPlaceableItem (bot, item) {
 export function parseWhere (where, state) {
   const w = String(where ?? '').trim()
   if (w === 'home') {
-    if (!state.home) throw new Error('placed(…, home) needs a home')
+    if (!state.home) throw new Error('placed(…, home) needs a home: there is none yet (the house is not finished). Use build:<name> or x,y,z, or build the house first')
     return { kind: 'home', label: 'in the home' }
   }
   if (w === 'near_home') {
-    if (!state.home) throw new Error('placed(…, near_home) needs a home')
+    if (!state.home) throw new Error('placed(…, near_home) needs a home: there is none yet (the house is not finished). Use build:<name> or x,y,z, or build the house first')
     return { kind: 'near_home', label: 'around the home' }
   }
   const b = /^build:(.+)$/.exec(w)

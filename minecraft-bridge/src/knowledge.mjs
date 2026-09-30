@@ -139,6 +139,9 @@ export class Knowledge {
   // 知らない名前の直し方: 最後の語がグループ名（oak_bed → bed）ならそのグループ、そうでなければ
   // 同じ語で終わるアイテム（モデルが色や木の名前を付けた名前を作ることが多い）
   didYouMean (spec) {
+    // 複数形（oak_logs、cobblestones）は単数の名前にする。計画の書き直しが「oak_logs」で 2 回落ちた
+    const singular = spec.endsWith('s') ? spec.slice(0, -1) : null
+    if (singular && (this.md.itemsByName[singular] || GROUP_PATTERNS[singular])) return `; did you mean ${singular} (singular)?`
     const tail = spec.split('_').at(-1)
     if (GROUP_PATTERNS[tail]) return `; did you mean the group "${tail}" (any of them)?`
     const names = this.md.itemsArray.map((i) => i.name)

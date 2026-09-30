@@ -10,7 +10,7 @@ from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChoose
 from ailoveshen.application.use_cases.goal_vocabulary import parse_proposal
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
-from ailoveshen.application.use_cases.play import AdvancePlayUseCase, _ObjectiveWatch
+from ailoveshen.application.use_cases.play import AdvancePlayUseCase, _check_remedy, _ObjectiveWatch
 from ailoveshen.domain.entities import Conversation, ObjectivePlan
 from ailoveshen.domain.events import JobDoneEvent, ObjectiveDroppedEvent
 from ailoveshen.domain.value_objects import (
@@ -18,6 +18,7 @@ from ailoveshen.domain.value_objects import (
     ActionResult,
     CharacterProfile,
     ConditionStatus,
+    GameObservation,
     Goal,
     GoalPredicate,
     GoalSpec,
@@ -324,20 +325,24 @@ class TestReplyAsJob:
         assert len(plan.pending) == 2
 
 
+def _job_checker(bridge, events, keeper):
+    return AdvancePlayUseCase(
+        bridge=bridge,
+        text_generator=AsyncMock(),
+        prompt_builder=Mock(),
+        action_selector=AsyncMock(),
+        event_publisher=events,
+        conversation=Conversation(),
+        objectives=keeper,
+        town=AsyncMock(),
+        notes=NoteKeeper(Mock(load=Mock(return_value=None))),
+    )
+
+
 class TestOrderCheckUsesTheLatch:
     @pytest.fixture
     def use_case(self, bridge, events, keeper):
-        return AdvancePlayUseCase(
-            bridge=bridge,
-            text_generator=AsyncMock(),
-            prompt_builder=Mock(),
-            action_selector=AsyncMock(),
-            event_publisher=events,
-            conversation=Conversation(),
-            objectives=keeper,
-            town=AsyncMock(),
-            notes=NoteKeeper(Mock(load=Mock(return_value=None))),
-        )
+        return _job_checker(bridge, events, keeper)
 
     @pytest.mark.asyncio
     async def test_a_job_already_done_is_not_a_disorder_when_the_materials_are_gone(
@@ -360,6 +365,43 @@ class TestOrderCheckUsesTheLatch:
             await use_case._check_job_order(
                 (Job(LOG, "原木"), Job(STONE, "石")), plan.current
             )
+
+
+class TestJobGrain:
+    """中目標が素材の採集そのものなら差し戻す（小目標と同じ文が 2 つ並ぶ。設計書 50 §14）。"""
+
+    @pytest.fixture
+    def use_case(self, bridge, events, keeper):
+        return _job_checker(bridge, events, keeper)
+
+    @staticmethod
+    def _gathering(*gather: GoalSpec):
+        async def check(specs):
+            return [ConditionStatus(s, False, gather=s in gather) for s in specs]
+
+        return check
+
+    @pytest.mark.asyncio
+    async def test_a_raw_material_job_is_sent_back_with_what_the_objective_needs(
+        self, use_case, bridge
+    ):
+        plan = _plan()
+        bridge.check.side_effect = self._gathering(STONE)
+        with pytest.raises(ValueError, match="only gathering a raw material") as e:
+            await use_case._check_job_grain((Job(STONE, "石"),), plan.current)
+        assert "built" in str(e.value)  # 大目標が要るもの（何のための素材か）を添える
+
+    @pytest.mark.asyncio
+    async def test_a_bundle_a_product_the_objective_itself_and_a_written_job_pass(
+        self, use_case, bridge
+    ):
+        plan = _plan(Job(STONE, "石"))
+        bridge.check.side_effect = self._gathering(STONE, LOG)
+        together = Job(LOG, "森へ", together=(STONE,))
+        await use_case._check_job_grain((together,), plan.current)  # 束は同じ外出でまとめて取る
+        await use_case._check_job_grain((Job(STONE, "石"),), plan.current)  # もう書いてある
+        bridge.check.side_effect = self._gathering()
+        await use_case._check_job_grain((Job(GoalSpec(GoalPredicate.HAVE, item="stone_pickaxe", count=1), "道具"),), plan.current)
 
 
 class TestObjectiveProgress:
@@ -458,6 +500,59 @@ class TestChooserUsesOpenJobs:
         bridge.check.side_effect = _checked(set())
         picked = await GoalChooser(FakeJev("A"), bridge).choose(_session(plan=plan), _obs(), "met")
         assert "all the jobs are done" in picked.why
+
+
+class TestNextStep:
+    """設計書 50 §13: 中目標の次の一歩が、小目標になる。"""
+
+    @pytest.mark.asyncio
+    async def test_a_single_have_job_becomes_its_next_step(self, bridge):
+        pickaxe = GoalSpec(GoalPredicate.HAVE, item="stone_pickaxe", count=1)
+        cobble = GoalSpec(GoalPredicate.HAVE, item="cobblestone", count=3)
+        plan = _plan(Job(pickaxe, "石を掘る道具"))
+
+        async def check(specs):
+            return [ConditionStatus(s, False, next_step=cobble) for s in specs]
+
+        bridge.check.side_effect = check
+        picked = await GoalChooser(FakeJev("A"), bridge).choose(_session(plan=plan), _obs(), "met")
+        assert picked.spec == cobble
+        assert picked.reason == f"石を掘る道具（{pickaxe.describe()} の一歩）"
+        assert picked.objective_id == "m1"
+
+    @pytest.mark.asyncio
+    async def test_a_job_with_no_step_or_a_bundle_stays_as_it_is(self, bridge):
+        cobble = GoalSpec(GoalPredicate.HAVE, item="cobblestone", count=3)
+        bundle = Job(LOG, "森へ", together=(STONE,), approach="回る")
+
+        async def check(specs):
+            return [ConditionStatus(s, False, next_step=cobble) for s in specs]
+
+        bridge.check.side_effect = check
+        # 束: 一歩には分けない（同じ外出で全部を追う）
+        picked = await GoalChooser(FakeJev("A"), bridge).choose(
+            _session(plan=_plan(bundle)), _obs(), "met"
+        )
+        assert picked.spec == LOG and picked.together == (STONE,)
+        # 一歩がなければ（仕事そのものが 1 回の遠征）仕事のまま
+        bridge.check.side_effect = _checked(set())
+        picked = await GoalChooser(FakeJev("A"), bridge).choose(
+            _session(plan=_plan(Job(LOG, "原木"))), _obs(), "met"
+        )
+        assert picked.spec == LOG
+
+    @pytest.mark.asyncio
+    async def test_a_step_of_the_same_kind_as_the_job_is_not_a_step(self, bridge):
+        few = GoalSpec(GoalPredicate.HAVE, item="log", count=2)
+
+        async def check(specs):
+            return [ConditionStatus(s, False, next_step=few) for s in specs]
+
+        bridge.check.side_effect = check
+        picked = await GoalChooser(FakeJev("A"), bridge).choose(
+            _session(plan=_plan(Job(LOG, "原木"))), _obs(), "met"
+        )
+        assert picked.spec == LOG
 
 
 class TestDropAJob:
@@ -561,3 +656,79 @@ class TestDecisionRewrite:
         error = prompt_builder.build_goal_prompt.call_args.kwargs["previous_error"]
         assert "at most 8" in error
         assert len(plan.current.open_jobs) == 8
+
+
+class TestTorchStock:
+    """松明を切らさず持つ。暗くて松明がなければ引き返して作る（docs/design/50 §14）。"""
+
+    @staticmethod
+    def _stock(inventory, needs=()):
+        return GameObservation(
+            state={"inventory": inventory},
+            candidates=(),
+            health=20.0,
+            food=20,
+            needs=tuple(needs),
+        )
+
+    @pytest.mark.asyncio
+    async def test_dark_without_a_torch_makes_torches_without_asking_jev(self, bridge):
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        jev = FakeJev("A")
+        obs = self._stock({"stick": 2}, ["dark here: no light source around"])
+        picked = await GoalChooser(jev, bridge).choose(session, obs, "met")
+        assert picked.spec == GoalSpec(GoalPredicate.HAVE, item="torch", count=4)
+        assert jev.asked == []
+
+    @pytest.mark.asyncio
+    async def test_coal_and_sticks_at_hand_make_the_stock_up_without_asking(self, bridge):
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        obs = self._stock({"torch": 1, "coal": 1, "stick": 4})
+        picked = await GoalChooser(FakeJev("A"), bridge).choose(session, obs, "met")
+        assert picked.spec == GoalSpec(GoalPredicate.HAVE, item="torch", count=5)
+
+    @pytest.mark.asyncio
+    async def test_without_materials_the_stock_is_only_offered_by_day(self, bridge):
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        jev = FakeJev("A")
+        picked = await GoalChooser(jev, bridge).choose(session, self._stock({"torch": 2}), "met")
+        assert picked.spec == LOG  # Jev が中目標を選ぶ
+        assert len(jev.asked[0][1][0].criteria) == 3  # 原木、石、松明の在庫
+
+    @pytest.mark.asyncio
+    async def test_enough_torches_offer_nothing(self, bridge):
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        jev = FakeJev("A")
+        await GoalChooser(jev, bridge).choose(session, self._stock({"torch": 4}), "met")
+        assert len(jev.asked[0][1][0].criteria) == 2
+
+
+class TestCheckRemedy:
+    """失敗の後の決定: retry / change の札ではなく、小目標そのものと助言で判断する。"""
+
+    def _decision(self, spec, remedy, advice=""):
+        from ailoveshen.application.use_cases.goal_vocabulary import GoalDecision, Remedy, Serves
+
+        return GoalDecision(spec, "理由", Serves.CURRENT, diagnosis="原因", remedy=Remedy(remedy), advice=advice)
+
+    def test_another_goal_labelled_retry_passes(self):
+        # 板材が失敗 → 原木を採る: 札が retry でも別の小目標なら通す（2026-09-30 に 3 回差し戻された）
+        failed = GoalSpec(GoalPredicate.HAVE, item="oak_planks", count=59)
+        log = GoalSpec(GoalPredicate.HAVE, item="oak_log", count=2)
+        _check_remedy(self._decision(log, "retry"), failed, 1)
+
+    def test_same_goal_labelled_change_needs_advice(self):
+        failed = GoalSpec(GoalPredicate.HAVE, item="oak_planks", count=59)
+        same = GoalSpec(GoalPredicate.HAVE, item="oak_planks", count=1)
+        with pytest.raises(ValueError, match="advice"):
+            _check_remedy(self._decision(same, "change"), failed, 1)
+        _check_remedy(self._decision(same, "change", "Bring logs first."), failed, 1)
+
+    def test_same_goal_after_repeated_failures_is_refused(self):
+        failed = GoalSpec(GoalPredicate.HAVE, item="oak_planks", count=59)
+        with pytest.raises(ValueError, match="different small goal"):
+            _check_remedy(self._decision(failed, "retry", "x"), failed, 2)

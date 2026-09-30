@@ -42,6 +42,10 @@ def _int(description: str) -> dict[str, Any]:
     return {"type": "integer", "description": description}
 
 
+def _bool(description: str) -> dict[str, Any]:
+    return {"type": "boolean", "description": description}
+
+
 def _str(description: str) -> dict[str, Any]:
     return {"type": "string", "description": description}
 
@@ -71,9 +75,10 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         ["x", "y", "z"],
     ),
     "dig": (
-        "その位置のブロックを掘って拾う。今の家と建てている家は掘れない（前の家は掘れる）。"
+        "その位置のブロックを掘って拾う。今の家・建てている家・建物は、ふつうは掘らない（断られる）。"
+        "それを壊すこと自体が目的のときだけ demolish を true にする。"
         "草（種がときどき落ちる）、葉（苗木がときどき落ちる）、育った作物（収穫）も掘れる",
-        _POS,
+        {**_POS, "demolish": _bool("家や建物を壊すのが目的のときだけ true（既定 false）")},
         ["x", "y", "z"],
     ),
     "place": (
@@ -113,6 +118,13 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"item": _str("アイテム"), "count": _int("個数")},
         ["item"],
     ),
+    "toss": (
+        "余った物を捨てて、持ち物の空きを作る（持ち物がいっぱいで、落とし物が拾えないとき。家にチェストが"
+        "なくてもできる）。item を書かなければ余り全部（道具、食料、松明、目標に要る物は捨てない。土と丸石は"
+        "64 個ずつ残す）。item は自然の地形（土、石、花崗岩など）、丸石、花、羊毛だけ",
+        {"item": _str("捨てるアイテム（省略: 余り全部）"), "count": _int("個数（省略: 残す数を超えた分）")},
+        [],
+    ),
     "withdraw": (
         "それが入っているチェストから取り出す",
         {"item": _str("アイテム"), "count": _int("個数")},
@@ -133,9 +145,13 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         ["x", "y", "z"],
     ),
     "build_next": (
-        "家の設計図、または名前付きの建物の次のブロックを 1 つ置く（空けるマスなら掘る）。"
-        "name を省くと、今の目標が built(name) ならその建物、でなければ家",
-        {"name": _str("建物の名前（built(name) の name。省略可）")},
+        "家の設計図、または名前付きの建物の次のブロックから続けて置く（空けるマスなら掘る）。"
+        "count を省くと、材料が尽きるか、襲われる・夕方になる・空腹になるまで置き続ける（最大 60 個。"
+        "1 個ずつ呼び直さない）。name を省くと、今の目標が built(name) ならその建物、でなければ家",
+        {
+            "name": _str("建物の名前（built(name) の name。省略可）"),
+            "count": _int("続けて置く個数（省略すると最大 60 個）"),
+        },
         [],
     ),
     # 植林と畑（設計書 33）。耕す・植えるのは設計した施設のマスだけ（設計書 47 §14）。場所を省くと、
@@ -156,6 +172,14 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         "耕地に種をまく（wheat_seeds / carrot / potato / beetroot_seeds。その位置は耕地のブロック）。"
         "位置を省くとその作物の畑の空いた耕地。育った作物は dig で収穫し、またまく",
         {"item": _str("種（省略すると持っているもの）"), **_POS},
+        [],
+    ),
+    # 畑の水のマス（設計書 47 §17）。水のバケツは、鉄 3 つでバケツを作り（craft）、水源の水を use_item で汲んで用意する
+    "water": (
+        "水のバケツを持って、設計した畑の水のマスに水を置く（地面のブロックを掘って穴にし、その底に置く。"
+        "その位置は畑の水のマスの地面のブロック）。位置を省くと次の水のマス。水が届いた耕地は、何も植わって"
+        "いなくても土に戻らず、作物が速く育つ",
+        _POS,
         [],
     ),
     "wait": ("その場で 10 秒ほど待つ（家の中ならドアを向いて）", {}, []),
@@ -220,7 +244,8 @@ SKILL_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
     "find_blocks": (
         "近くのそのブロックの位置を近い順に調べる（すぐ返る）。ブロックの状態 props も付く"
-        "（耕地の moisture: \"7\" が湿っている、作物の age など）",
+        "（耕地の moisture: \"7\" が湿っている、作物の age など）。読み込まれていない所や半径の外は、"
+        "前に見た記録（source: map、seen_minutes_ago）から補う",
         {"block": _str("ブロック名"), "radius": _int("半径（既定 32、最大 64）")},
         ["block"],
     ),
@@ -360,7 +385,9 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
     for item in raw_watch if isinstance(raw_watch, list) else []:
         try:
             on_yes, _, question = str(item).partition(":")
-            watch.append(WatchQuestion(question=question.strip(), on_yes=WatchAction(on_yes.strip())))
+            watch.append(
+                WatchQuestion(question=question.strip(), on_yes=WatchAction(on_yes.strip(" <>")))
+            )
         except ValueError as e:
             logger.warning(f"見張りの質問を捨てた（{item!r}）: {e}")
         if len(watch) == MAX_WATCH_QUESTIONS:

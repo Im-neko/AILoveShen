@@ -44,6 +44,7 @@ class IPromptBuilder(ABC):
         previous_error: str = "",
         name_reading: str = "",
         self_facts: Sequence[SelfFact] = (),
+        producer: bool = False,
     ) -> str:
         """
         視聴者のチャットへの返答のプロンプトを組み立てる。
@@ -57,6 +58,7 @@ class IPromptBuilder(ABC):
                 何もしない）
             name_reading: 視聴者の名前の読み（覚えていれば。docs/design/30_name_readings.md）
             self_facts: 自分について前に話したこと（守らせる。docs/design/40_small_talk.md）
+            producer: 視聴者ではなく、配信の運営（ディレクター）の指示か（従う。docs/design/54）
         """
         ...
 

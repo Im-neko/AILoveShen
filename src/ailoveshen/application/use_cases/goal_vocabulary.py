@@ -31,7 +31,8 @@ from ailoveshen.domain.value_objects import (
     objective_kind,
 )
 
-MAX_GOAL_COUNT = 64
+# ブリッジの MAX_COUNT（goals.mjs）と同じ。家の板材は 95 枚要る（64 では計画の書き直しが 2 回落ちた）
+MAX_GOAL_COUNT = 256
 MIN_EXPLORE_DISTANCE = 8  # explored の下限（lit はブリッジが 8〜32、leveled は 3〜16 を確かめる）
 MIN_DISTANCE = 3
 MAX_EXPLORE_DISTANCE = 128
@@ -117,6 +118,17 @@ class DeclineReason(str, Enum):
     UNSAFE = "unsafe"  # 死ぬ・家や持ち物を失うおそれ
     OFF_MISSION = "off_mission"  # 頼みだけ: 最終目標に関係なく、後の作業も楽にならない
     LIMIT = "limit"  # 視聴者の頼みの上限、大目標のリストがいっぱい
+
+
+class AdviceRelevance(str, Enum):
+    """
+    助言・提案が今の目標にどれだけ関わるか（docs/design/49 §8）。related で返答が納得したなら、
+    今の小目標を決め直す（rethink）: 助言が来ても今の小目標が見直されなかった。
+    """
+
+    RELATED = "related"  # 今の小目標・中目標のやり方や成否が変わる（近道、よい道具、間違い、失敗の理由）
+    PARTLY = "partly"  # 今の大目標や、あとの中目標に関わる。今の一歩は変わらない
+    UNRELATED = "unrelated"  # あとのこと・ほかのこと
 
 
 class PromiseHandling(str, Enum):
@@ -253,7 +265,8 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
             "type": "string",
             "description": "placed: where to place the item: home (inside the home's room), "
             "near_home (around the home, 3-12 m), build:<name> (at a named build), or x,y,z "
-            "(within 2 m of a spot you know, e.g. from find_blocks). Default home. leveled: home "
+            "(within 2 m of a spot you know, e.g. from find_blocks). Default home. home and "
+            "near_home need a finished home: before that use build:<name> or x,y,z. leveled: home "
             "(the ground around the home at its floor) or x,y,z (the ground around it; y is the "
             "height you stand at there, the ground is y-1)",
         },
@@ -315,6 +328,7 @@ def goal_schema(
     viewers: list[str] | None = None,
     after_failure: bool = False,
     retry_allowed: bool = True,
+    plan_owns_jobs: bool = False,
 ) -> dict[str, Any]:
     """
     目標の決定の JSON スキーマ: 小目標、大目標リストの編集、自分のメモの編集。
@@ -322,7 +336,8 @@ def goal_schema(
     `goals` は示した小目標の数（lesson の根拠に使える）、`viewers` は示した会話にいる
     視聴者。`after_failure` なら、先頭に原因の分析、次に対処と助言（docs/design/27。
     出力はスキーマの順に書かれるので、分析してから決める）。`retry_allowed` が False なら
-    同じ小目標のやり直しは選べない。
+    同じ小目標のやり直しは選べない。`plan_owns_jobs` なら、一番上の大目標の中目標は計画（LLM が
+    段階と小目標の並びとして書いた。docs/design/50 §18）が持つので、`jobs` は書かせない。
     """
     change: dict[str, Any] = {
         "type": "object",
@@ -370,8 +385,8 @@ def goal_schema(
                 "the objective at the top and the other objectives' conditions) by trip: what one "
                 "trip or place gets together (the same direction, on the way, the same place), in "
                 "order, e.g. 1) north: have(cobblestone, 48) + have(oak_log, 16) 2) home: built. "
-                "The jobs and the small goal follow these groups (one group = one job, "
-                "together)",
+                "The small goal (together) follows the first group; the jobs stay what the "
+                "objective needs (things to have, states to reach), not trips",
             },
             "plan_changes": {
                 "type": "array",
@@ -406,10 +421,11 @@ def goal_schema(
             "jobs": {
                 "type": "array",
                 "maxItems": MAX_JOBS,
-                "description": "The jobs (small goals, in order) to reach the objective at the top "
-                "of the list after the edits, one job per trip or place: what one trip gets goes "
-                "into one job with together (4 conditions at most), even when the review only "
-                "says so. Write them when it has no jobs yet, they are not "
+                "description": "The jobs (in order) to reach the objective at the top of the list "
+                "after the edits, one job per thing to have or state to reach (a tool, a food "
+                "stock, a part of the build), not per trip: the trip that gathers a job's raw "
+                "materials is chosen automatically as its next step, and a job that is only a raw "
+                "material (have(oak_log, 4)) is sent back. Write them when it has no jobs yet, they are not "
                 "working, or the review finds a faster way (a job already done, materials at hand "
                 "or in a chest, a nearer source); otherwise leave empty (the jobs stay and the "
                 "fast model picks the next one itself)",
@@ -426,6 +442,8 @@ def goal_schema(
         },
         "required": ["review", "trips", "predicate", "serves", "reason"],
     }
+    if plan_owns_jobs:
+        del schema["properties"]["jobs"]
     if not after_failure:
         return schema
     remedies = [Remedy.RETRY.value, Remedy.CHANGE.value] if retry_allowed else [Remedy.CHANGE.value]
@@ -516,6 +534,21 @@ def reply_schema() -> dict[str, Any]:
                 "even when it is phrased as a question or a request; false when it is the viewer's "
                 "own wish. A suggestion becomes her own objective and does not count toward the "
                 "viewers' limits",
+            },
+            "relevance": {
+                "type": "string",
+                "enum": [r.value for r in AdviceRelevance],
+                "description": "advice or suggestion only (required then): how much it bears on "
+                "what you are doing now (the current small goal, the job and the objective in "
+                "'what you are doing now'). related = it changes how or whether to do the current "
+                "small goal or job (a shortcut, a better tool, a mistake, why it fails); partly = "
+                "it bears on the objective or a later job, not the current step; unrelated = it "
+                "is for later or for something else",
+            },
+            "relevance_reason": {
+                "type": "string",
+                "description": "advice or suggestion only: why, in one English sentence, naming "
+                "the current small goal or job it is compared with",
             },
             "level": {
                 "type": "string",

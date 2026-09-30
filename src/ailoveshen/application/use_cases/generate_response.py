@@ -17,6 +17,7 @@ from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_vocabulary import (
+    AdviceRelevance,
     DeclineReason,
     ObjectiveProposal,
     PromiseHandling,
@@ -94,6 +95,39 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
         "あれば accept（今やるほうがよければ when=now、そうでなければ when=next で後ろに入れ、返答で"
         "いつやるか言う）、今の小目標や計画の問題の指摘に納得したら rethink、これからのやり方の助言なら"
         " lesson、できない・当たっていない・危ないなら decline（decline_reason つき）。"
+    )
+
+
+def unjudged(kind: str | None, data: dict[str, object], can_rethink: bool) -> str:
+    """
+    助言・提案への答えが、今の目標との関わりを見ていないか、関わると認めたのに今の小目標を決め直さ
+    ないか（助言が来ても、教訓や後ろの大目標になるだけで、今の小目標が見直されなかった）。差し戻す
+    理由か空文字列。`can_rethink`: 荒らし対策の間が空いていて rethink が使える。
+    """
+    handling = data.get("request")
+    if handling not in (RequestHandling.ACCEPT.value, RequestHandling.NONE.value):
+        return ""  # 断りには理由がある。取り下げは助言ではない
+    if kind != "advice" and not (handling == RequestHandling.ACCEPT.value and data.get("suggestion") is True):
+        return ""
+    relevance = data.get("relevance")
+    allowed = [r.value for r in AdviceRelevance]
+    if relevance not in allowed:
+        return (
+            f"助言には relevance（{' / '.join(allowed)}）が要る。「今していること」の今の小目標・"
+            "中目標・大目標と比べて、どれだけ関わるかを relevance_reason に 1 文で書く。"
+        )
+    if relevance != AdviceRelevance.RELATED.value or not can_rethink:
+        return ""
+    if data.get("when") == "now":
+        return ""  # 小目標はその大目標のために区切られる
+    point = data.get("rethink")
+    if isinstance(point, str) and point.strip():
+        return ""
+    return (
+        "この助言は今の小目標か中目標に関わる（related）と見ていて、納得して受けるなら、今の小目標を"
+        "そのまま続けない: rethink に何を考え直すかを英語 1 文で書く（大目標にするなら when=now でもよい）。"
+        "今の小目標が実は続けるべきなら、relevance を partly か unrelated にして、返答で理由を言う。"
+        "当たっていなければ decline（wrong）にする。"
     )
 
 
@@ -197,20 +231,14 @@ class GenerateResponseUseCase(IGenerateResponse):
         チャット返答生成のユースケースを実行する。
 
         流れ:
-        1. 視聴者のチャットを記録する
-        2. 生成の文脈（セッションの activity を含む）とプロンプトを組み立てる
-        3. 返答を生成する。頼みを受けたときは、それを大目標に足す
-        4. 返答を記録し、ChatResponseGeneratedEvent を発行する
+        1. 生成の文脈（セッションの activity を含む）とプロンプトを組み立てる
+        2. 返答を生成する。頼みを受けたときは、それを大目標に足す
+        3. 視聴者のチャットと返答を記録し、ChatResponseGeneratedEvent を発行する
         """
         try:
             # モデルに渡す履歴には、返答するチャットを含めない。
             # そのチャットはプロンプトが別に示す。
             history = self._conversation.recent_messages(self._history_limit)
-            self._conversation.add_viewer_message(
-                content=request.message,
-                user_name=request.user_name,
-                user_id=request.user_id,
-            )
 
             session = request.session
             activity = session.activity() if session is not None else None
@@ -221,7 +249,17 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
 
             logger.debug(f"返答を生成する: {request.message[:50]}...")
-            text, objective = await self._generate(request, context, session)
+            try:
+                text, objective = await self._generate(request, context, session)
+            finally:
+                # 返事を書いている間は会話に入れない: 入れると、その間に書く実況が、返事のない
+                # コメントを見て先に答える（2026-09-30: 実況が「ごめんね、あとで」と言った 7 秒後に
+                # 返事が「その通り、変更するね」と逆を言った）
+                self._conversation.add_viewer_message(
+                    content=request.message,
+                    user_name=request.user_name,
+                    user_id=request.user_id,
+                )
 
             if text:
                 self._conversation.add_streamer_message(text, MessageType.RESPONSE)
@@ -274,7 +312,7 @@ class GenerateResponseUseCase(IGenerateResponse):
         system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply_requests")
         error = ""
         asked_now = False
-        kind = request.kind
+        kind = request.kind or ("request" if request.producer else None)
         advice = kind == "advice"
         attempts = (
             max(self._max_attempts, ACTIONABLE_ATTEMPTS)
@@ -290,13 +328,15 @@ class GenerateResponseUseCase(IGenerateResponse):
                 previous_error=error,
                 name_reading=name_reading,
                 self_facts=self_facts,
+                producer=request.producer,
             )
             data = await self._text_generator.generate_json(
                 prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
             )
             text = str(data.get("reply", "")).strip()
             handling = data.get("request")
-            wait = self._rethink_wait(session, data.get("rethink"))
+            # 運営の指示は、視聴者の指摘のように間引かない
+            wait = 0.0 if request.producer else self._rethink_wait(session, data.get("rethink"))
             if handling != RequestHandling.WITHDRAW.value and wait:
                 # 同意して考え直すと言っても、間引かれて何も起きない: それは言わせない
                 error = (
@@ -306,7 +346,9 @@ class GenerateResponseUseCase(IGenerateResponse):
                 )
                 logger.warning(f"返答 {attempt} の rethink は間が短くて使えない: {data!r}")
                 continue
-            problem = unanswered(kind, data)
+            problem = unanswered(kind, data) or unjudged(
+                kind, data, not self._rethink_wait(session, "check")
+            )
             if problem and attempt < attempts:
                 error = problem
                 logger.warning(f"返答 {attempt} は{kind}を流している: {data!r}")
@@ -314,12 +356,18 @@ class GenerateResponseUseCase(IGenerateResponse):
             if problem:
                 # 最後の試しでも直らない: 黙るよりは話す（流したことは記録に残す）
                 logger.warning(f"返答は{kind}を流したまま話す（{attempts} 回直らなかった）: {data!r}")
+            if data.get("relevance"):
+                logger.info(
+                    f"{request.user_name} の助言は今の目標と {data.get('relevance')}: "
+                    f"{data.get('relevance_reason', '')}"
+                )
             if handling == RequestHandling.ACCEPT.value:
                 try:
                     proposal = parse_proposal(data)
                     # 助言か: 仕分けの答えか、返答自身の見立て（Jev の仕分けは頼み・質問・助言の
                     # 境目で迷う: 「畑広げない？」が頼み、「畑拡張は？」が質問だった。2026-09-28）
-                    suggestion = advice or data.get("suggestion") is True
+                    # 運営の指示は、自分の大目標にする（視聴者の頼みの上限に数えない）
+                    suggestion = advice or request.producer or data.get("suggestion") is True
                     failing = session.consecutive_failures if session.goal else 0
                     if (
                         suggestion

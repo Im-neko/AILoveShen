@@ -11,7 +11,9 @@ const NOW = 1_000_000
 test('同じことをしても同じ結果になる理由だけ載せる（一時的な理由・遠すぎる・持っていないは載せない）', () => {
   for (const why of ['failed: No path to the goal!', 'failed: Took to long to decide path to goal!', 'failed: could not walk to (1, 2, 3)',
     'refused: will not dig oak_log at 1,2,3: it is part of the current home', 'refused: there is air at 1,2,3, nothing to dig',
-    'refused: the wheat at 1,2,3 is not ripe yet (age 1/7)', 'refused: 1,2,3 is taken by dirt']) assert.ok(isFutile(why), why)
+    'refused: the wheat at 1,2,3 is not ripe yet (age 1/7)', 'refused: 1,2,3 is taken by dirt',
+    'failed: nothing to till at 1,2,3 any more (oak_leaves is on top of the dirt)', 'failed: no free farmland at 1,2,3 any more',
+    'failed: the ground at 1,2,3 did not turn into farmland']) assert.ok(isFutile(why), why)
   for (const why of ['refused: the reflex is handling a nearby threat', 'refused: another action is running', 'failed: interrupted: took damage',
     'refused: the block at 1,2,3 is 30m away (at most 5m)', 'refused: you have no dirt', 'failed: stopped by watch: x']) assert.ok(!isFutile(why), why)
 })

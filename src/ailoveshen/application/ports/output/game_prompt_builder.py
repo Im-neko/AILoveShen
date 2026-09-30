@@ -17,6 +17,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     HouseBlueprint,
     Mission,
+    Objective,
     SkillInfo,
     ToolOutcome,
     TownDefinition,
@@ -179,6 +180,25 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_plan_prompt(
+        self,
+        objective: Objective,
+        activity: Activity,
+        replan_reason: str = "",
+        previous_error: str = "",
+    ) -> str:
+        """
+        大目標の計画（中目標と、その小目標の並び）を書かせるプロンプト（docs/design/50 §18）。
+
+        Args:
+            objective: 計画を立てる大目標（一番上のもの）
+            activity: 今していることと状況
+            replan_reason: 書き直すときの理由（失敗、行き詰まり、死んだこと。初めてなら空）
+            previous_error: 前回の出力が使えなかった理由（あれば）
+        """
+        ...
+
+    @abstractmethod
     def build_facility_prompt(
         self,
         name: str,
@@ -293,6 +313,9 @@ class IGamePromptBuilder(ABC):
         failing: int = 0,
         stagnant_seconds: float = 0.0,
         stagnant_actions: Sequence[str] = (),
+        repeated: Sequence[str] = (),
+        repeated_times: int = 0,
+        repeated_skill: str = "",
     ) -> str:
         """
         配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。
@@ -306,6 +329,9 @@ class IGamePromptBuilder(ABC):
             failing: 今の小目標で続けて失敗した行動の数（行き詰まっていれば、別の方法を考えさせる）
             stagnant_seconds: 位置・持ち物・小目標の進み具合が変わらない秒数（0: 動いている）
             stagnant_actions: 変わらない間にした手と結果（古い順）
+            repeated: 続けて成功した同じ手の並び（技にする機会。空: 繰り返していない）
+            repeated_times: その並びを続けた回数
+            repeated_skill: その並びに合う、すでに覚えた技の名前（なければ空）
         """
         ...
 

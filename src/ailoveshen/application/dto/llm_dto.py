@@ -62,6 +62,9 @@ class GenerateResponseRequest:
     session: Optional[PlaySession] = None
     # 返事の前の仕分け（Jev）が答えたコメントの種類（request / advice / ...）。None: 分からない
     kind: Optional[str] = None
+    # 配信の運営（管理画面のディレクター）の指示: 視聴者ではない。従い、大目標は視聴者の上限に数えず、
+    # 今やるなら小目標も決め直す（docs/design/54_admin_panel.md）
+    producer: bool = False
 
 
 @dataclass

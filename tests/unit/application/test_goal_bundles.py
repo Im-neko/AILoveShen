@@ -281,3 +281,24 @@ async def test_the_client_sends_the_bundle_and_reads_each_member():
         BundleMember("have(log, 16)", True, 0),
         BundleMember("planted(sapling, 4)", False, 4),
     )
+
+
+def test_a_member_met_on_the_way_is_not_shown_as_the_goal():
+    """かまどを持っているのに、小目標が「かまどを手に入れる」と出た: 先頭（決めたまま）が済んでいれば、
+    まだ済んでいない条件を見せる。"""
+    furnace = GoalSpec(GoalPredicate.HAVE, item="furnace", count=1)
+    coal = GoalSpec(GoalPredicate.HAVE, item="coal", count=1)
+    goal = Goal(furnace, "石炭を燃やすため", together=(coal,))
+    status = GoalStatus(
+        met=False,
+        remaining=1,
+        members=(BundleMember("have(furnace, 1)", True, 0), BundleMember("have(coal, 1)", False, 1)),
+    )
+    assert goal.unmet(status) == (coal,)
+    assert goal.unmet(None) == goal.specs
+    both_met = GoalStatus(
+        met=True,
+        remaining=0,
+        members=(BundleMember("have(furnace, 1)", True, 0), BundleMember("have(coal, 1)", True, 0)),
+    )
+    assert goal.unmet(both_met) == goal.specs

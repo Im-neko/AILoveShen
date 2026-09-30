@@ -1,3 +1,6 @@
+import os from 'node:os'
+import path from 'node:path'
+process.env.STUCK_WALKS_FILE = path.join(os.tmpdir(), `stuck-walks-${process.pid}.jsonl`)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
@@ -69,6 +72,20 @@ test('歩いているのに動けないときは、跳ぶ・慎重に歩く・�
   assert.ok(log.includes('jump=true'))
   assert.ok(log.includes('movements parkour=false'))
   assert.equal(bot.pathfinder.movements, original) // 元の歩き方に戻す
+})
+
+test('動いているのに目標へ近づかない（水に流されて泳ぎ続ける）なら、動けないとみなして失敗にする', async () => {
+  const { bot } = stuckBot()
+  let t
+  bot.pathfinder.goto = function () {
+    // 目標（x=50）から遠いまま、位置は動き続ける（近づく向きには動かない）
+    t = setInterval(() => { bot.entity.position = new Vec3(-Math.random() * 3, 64, 0) }, 50)
+    return new Promise((resolve, reject) => { this.reject = reject })
+  }
+  const setGoal = bot.pathfinder.setGoal
+  bot.pathfinder.setGoal = function (g) { if (g === null) clearInterval(t); setGoal.call(this, g) }
+  const goal = { x: 50, y: 64, z: 0 }
+  await assert.rejects(walkTo(bot, goal, new AbortController().signal, 2000, 600), /stuck: did not get closer to the goal in 0\.6s/)
 })
 
 test('跳んで抜け出せたら、そのまま目的地へ歩く', async () => {

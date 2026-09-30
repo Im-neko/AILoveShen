@@ -66,6 +66,17 @@ export function rememberDeath (memory, pos, now) {
   memory.deaths.splice(MAX_DEATHS)
 }
 
+// 死んで落とした持ち物は 5 分で消える: 余裕を見て 4 分半まで取りに戻る。2 回行って取れなければ諦める
+const DEATH_ITEMS_TICKS = 4.5 * TICKS_PER_MINUTE
+const RECOVER_TRIES = 2
+
+// 取りに戻れる直近の死（なければ null）
+export function recoverableDeath (memory, now) {
+  const d = memory?.deaths?.[0]
+  if (!d || d.recovered || (d.tries ?? 0) >= RECOVER_TRIES || now - d.seen > DEATH_ITEMS_TICKS) return null
+  return d
+}
+
 const stale = (kind, place, now) => REMEMBERED_ANIMALS.has(kind) && now - place.seen > ANIMAL_STALE_TICKS
 
 const worthATrip = (kind, p, me, now) => !stale(kind, p, now) && flatDistance(p, me) > RECALL_BEYOND

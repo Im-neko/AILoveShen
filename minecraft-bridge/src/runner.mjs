@@ -6,7 +6,7 @@
 // 動けない・経路がないのは移動が失敗にする（move.mjs）。中断すると経路移動と採掘を取り消し、実行関数が本当に止まるまで
 // 待つので、行動が重なることはない。実行中は state.current を持ち（反射の割り込みと POST /abort が
 // 使う）、進み具合（state.mjs の共通の状態）を記録する。
-import { threats, round, dayPhase } from './observe.mjs'
+import { threats, round, dayPhase, isDark, inventoryCounts } from './observe.mjs'
 import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark } from './primitives.mjs'
 import { riding } from './boat.mjs'
 import { needsOutside } from './candidates.mjs'
@@ -18,9 +18,12 @@ import { noteRefusal } from './refusals.mjs'
 const NEED_CHECK_MS = 500
 // 夕方・夜になっても止めない行動（夜を過ごす、家に入る、戦う・逃げる、食べる）
 const NIGHT_VERBS = new Set(['sleep', 'sleep_at', 'bed_here', 'place_bed', 'go_home', 'wait', 'repair_wall', 'exit_wall',
-  'attack', 'flee', 'stash', 'eat', 'place_torch'])
+  'attack', 'flee', 'stash', 'eat', 'place_torch', 'recover_items', 'plug_hole', 'wake_sleeper', 'dig_in', 'leave_burrow'])
 // 始めたときより暗い時間帯になったら止める（明け方・朝になるのでは止めない）
 const DARKER = { day: ['dusk', 'night'], dusk: ['night'], night: [], dawn: [] }
+// 暗くて松明がないとき止めない行動（松明を置く・作る、帰る、食べる、戦う・逃げる…）。それ以外は止めて、
+// 引き返して松明を作らせる（暗い所では何も見えない。設計書 15）
+const DARK_OK_VERBS = new Set([...NIGHT_VERBS, 'craft', 'place_torch_at'])
 // 止めた理由のうち、やり方の失敗ではないもの（小目標の失敗・行き詰まりに数えない）
 const NOT_A_FAILURE = /^failed: (interrupted: took damage|reflex: |stopped: |rethink: )/
 
@@ -49,12 +52,14 @@ export function createRunner (bot, state, deps = {}) {
     // 止めた理由に、そのとき何をしていたか（bot.actionPhase。プリミティブが書く）を添える
     bot.actionPhase = ''
     const startPos = bot.entity.position.clone()
-    const start = { phase: dayPhase(bot.time.timeOfDay), food: bot.food, health: bot.health }
+    const tooDark = () => isDark(bot) && !(inventoryCounts(bot).torch > 0) && !(state.home && houseAround(bot, state))
+    const start = { phase: dayPhase(bot.time.timeOfDay), food: bot.food, health: bot.health, tooDark: tooDark() }
     // 必要が出たか: 始めたときになかったものだけ（空腹のまま食料を探す行動を毎回止めない）
     const needNow = () => {
       if (riding(bot)) return null // 水の上: 岸まで漕ぐ
       const phase = dayPhase(bot.time.timeOfDay)
       if (DARKER[start.phase]?.includes(phase) && !NIGHT_VERBS.has(c.verb)) return `it is ${phase} now`
+      if (!DARK_OK_VERBS.has(c.verb) && !start.tooDark && tooDark()) return 'too dark to see and no torch'
       if (c.verb !== 'eat' && bot.food <= HUNGER_URGENT && start.food > HUNGER_URGENT) return `hungry (food ${bot.food}/20)`
       if (!DAMAGE_TOLERANT.has(c.verb) && bot.health <= HEALTH_CRITICAL && start.health > HEALTH_CRITICAL) return `health is low (${round(bot.health)}/20)`
       return null

@@ -123,7 +123,7 @@ tts:
 
 表示の調整（URL の後ろに付ける）:
 
-- 目標: `?pos=right`、`?theme=mint|sky|lemon`（既定はピンク）、`?scale=0.8`、`?compact=1`、`?toast=0`（クリアの知らせを出さない）
+- 目標: `?pos=right`、`?theme=mint|sky|lemon`（既定はピンク）、`?scale=0.8`、`?compact=1`（最終目標・今の大目標・小目標だけ。中目標のカードを出さない）、`?toast=0`（クリアの知らせを出さない）
 - アバター: 既定は全身が収まる表示で中央（OBS のクロップで好きな部分を切り抜く）。`?view=bust`（胸から上）、`?pos=left|center|right`（既定 center）、`?scale=1.2`
 - 見た目だけ確かめる: `?demo=1`（プレイの処理がなくても動く）
 
@@ -174,6 +174,7 @@ python -m ailoveshen.stream
 [chat] Twitch #<チャンネル> のチャットを読む（読むだけ）
 [obs] 目標: http://127.0.0.1:8765/overlay/vtuber  アバター: http://127.0.0.1:8765/avatar
 [debug] Gemini の思考: http://127.0.0.1:8765/debug/gemini
+[admin] 管理画面（このマシンからだけ）: http://127.0.0.1:8765/admin
 Twitch のチャット #<チャンネル> を読み始めた
 ```
 
@@ -181,7 +182,7 @@ Twitch のチャット #<チャンネル> を読み始めた
 - Gemini・Jev・ブリッジが失敗しても止まらない。「… 秒待ってやり直す」と出して 5 秒から倍々（最長 60 秒）に待ち、やり直す。ブリッジを再起動しても配信はそのまま続く
 - TTS サーバーにつながらなければ始めない（黙った配信を防ぐ）。直し方が出る
 - チャットのコメントには 1 つずつ声で返事をする。返事の間は 5 秒以上。作っている間に来たコメントは新しい 3 件だけ取っておく（`twitch.response`）。`!` で始まるコメントには返事をしない。コマンドは `!yomi よみ`（その人の名前の読みを覚える）と `!commands`（`!help` / `!コマンド`。使えるコマンドの一覧をチャットに書く。書けなければ声で。30 秒に 1 回まで）。配信者自身（チャンネルのアカウント）と `TWITCH_BOT_LOGIN` のコメントには返事をしない（コマンドは使える）。ボット（`twitch.ignore_users`、既定 `[streamelements]`）には何も反応しない。頼みごとは大目標に足す（今の大目標の材料や一歩になる小さな頼みは、その大目標の中目標に足す）ことがある。視聴者の名前の読み（`data/readings.json`、設計書 30）は、返答のときに Gemini が推測するか本人の `!yomi` で覚え、読み上げのときだけ名前を置き換える。辞書は `http://127.0.0.1:8765/api/readings`（`?name=` で 1 人）
-- 行動の途中でも、読み上げが終わってから 10 秒黙っていたら一言話す（`stream.live_interval_seconds`、0 で話さない。設計書 43）。道具に添えた新しい「今やろうとしていること」はそのまま読み、なければ変わったこと（行動の結果、持ち物の増減、動いた距離）から一言を作る（purpose `live`）。直前の数行と似た実況は読まない（ログに `[say] 直前と同じ内容なので言わない`）。ローカルの LLM がなければ Gemini で 1 時間に最大 360 回呼ぶ
+- 行動の途中でも、読み上げが終わってから 10 秒黙っていたら一言話す（`stream.live_interval_seconds`、0 で話さない。設計書 43）。道具に添えた新しい「今やろうとしていること」はそのまま読み、なければ変わったこと（行動の結果、持ち物の増減、動いた距離）から一言を作る（purpose `live`）。直前の数行と似た実況は読まない（ログに `[say] 直前と同じ内容なので言わない`）。状況が何も変わらないまま `stream.live_idle_seconds`（60、0 で話さない）黙っていたら、待ち時間の雑談を 1 行（新しくやることは約束しない。夜の穴の中で朝を待つ間など）。ローカルの LLM がなければ Gemini で 1 時間に最大 360 回呼ぶ
 - ほかのゲーム（LoL など）やゲームの外の雑談にも乗る。自分のこと（使っているキャラ、好きなもの）をその場で決めたら `data/self_facts.json` に覚え、次からの返事はそれに合わせる（設計書 40。手で直してもよい。ワールドを作り直しても残る）
 - 画面のログ（`[say]` 実況、`[chat]`、`[reply]`、`[goal]` 小目標、`[objective+]` / `[objective✓]` / `[objective×]` 大目標）は、設定の `logging.file` のファイルにも残る（`.env` の `APP_ENV=development` なら `data/logs/ailoveshen-dev.log`）。ログは INFO まで（`--debug` で DEBUG も）
 
@@ -249,6 +250,7 @@ Minecraft のワールドは Docker のボリューム（`minecraft-data`）に�
 
 | もの | 場所 | 中身 |
 |---|---|---|
+| 今の小目標と歩みの数え | `data/goal.json` | 再起動のあと、ブリッジが同じ小目標を追っていれば続きから追う（設計書 63）。ワールドのリセットで取っておく |
 | ミッションと大目標 | `data/mission.json` | 大目標の一覧と、その中目標の状態と進み具合。最初のミッションは `config/default.yaml` の `minecraft.mission`。形式の版（`format`）が違うファイルは読まず、最初の大目標で始め直す（元は `mission.json.unreadable` に残る） |
 | 家と記憶 | `minecraft-bridge/data/state.json` | 家（名前、設計図、場所）、前に見た場所、チェストの中身 |
 | 覚えた技 | `minecraft-bridge/data/skills/*.json` | 技のコード、版、成功と失敗の数。ワールドを作り直しても残す |
@@ -267,14 +269,30 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 
 ## ワールドを作り直す
 
-ワールドと、ボットが覚えていること（家、記憶、大目標、建物）は別々に保存されている。ワールドだけ変えると、ボットは前のワールドの家を探しに行ってしまうので、両方をそろえて作り直す。
+ワールドと、ボットが覚えていること（家、記憶、大目標、建物、メモ、技、動きの帳）は別々に保存されている。ワールドだけ変えると、ボットは前のワールドの家を探しに行ってしまうので、両方をそろえて作り直す。
+
+**mise のタスク**（初めてなら `mise trust`）: 配信とブリッジを Ctrl-C で止めてから、
+
+```bash
+mise run world:reset -- --dry-run          # やることだけ出す（何も変えない）
+mise run world:reset                       # 名前の末尾の数字を 1 増やす（world2 → world3）、シードは今のまま
+mise run world:reset -- --level world5 --seed random --yes
+mise run world:reset -- --level world  --existing   # 前のワールドに戻る（取っておいた state-*.json、skills-*、worldmap-*、mission-*.json、notes-*.json、moves-*.json は自分で戻す）
+```
+
+下の 1〜4 をまとめてやる（`scripts/reset_world.sh`。同じ日にもう取ってあれば、名前に時刻をつける）。動いている配信やブリッジは止めずに断る。ボリュームにすでにある名前は、`--existing` を付けなければ断る（前のワールドに入ってしまうため）。途中で失敗したら戻し方を出す。終わったら 5 の起動だけ自分でやる。手でやるなら下のとおり:
 
 1. 配信とブリッジを止める（Ctrl-C）
-2. ボットが覚えていることを取っておく（消さずに名前を変える）:
+2. ワールドについての覚えを取っておく（消さずに名前を変える）。教訓（`data/lessons.json`）、自分について話したこと（`data/self_facts.json`）、名前の読み（`data/readings.json`）はワールドによらないので、そのまま残す:
 
    ```bash
-   mv minecraft-bridge/data/state.json minecraft-bridge/data/state-$(date +%Y%m%d).json
-   mv data/mission.json data/mission-$(date +%Y%m%d).json
+   d=$(date +%Y%m%d)
+   mv minecraft-bridge/data/state.json minecraft-bridge/data/state-$d.json
+   mv minecraft-bridge/data/skills minecraft-bridge/data/skills-$d
+   mv minecraft-bridge/data/worldmap minecraft-bridge/data/worldmap-$d
+   mv data/mission.json data/mission-$d.json
+   mv data/notes.json data/notes-$d.json
+   mv data/moves.json data/moves-$d.json
    ```
 
 3. `.env` のワールドの名前を変え、シードを決める（空ならランダム）:
@@ -305,16 +323,19 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 
 | もの | 場所 |
 |---|---|
+| 管理画面（配信中に喋らせる・プリセット・配信者への指示。OBS には入れない。設計書 54） | `http://127.0.0.1:8765/admin`（このマシンからだけ。プリセットは `data/presets.json`） |
 | Gemini の思考（直近の呼び出し） | `http://127.0.0.1:8765/debug/gemini`（JSON: `/api/debug/gemini?limit=20`） |
 | 今の目標（JSON） | `http://127.0.0.1:8765/api/goals` |
 | 街の理想図（区画ごとの用途。設計書 47 §6） | `http://127.0.0.1:8765/town`（JSON は `/api/goals` の `town_map`、保存は `data/mission.json`） |
 | 施設と覚えた場所・アイテムの検索（Jev が選んだキー） | `logs/search/*.jsonl`、施設の一覧は `http://127.0.0.1:3000/facilities` |
 | 見張りの記録（道具モード） | `logs/watch/*.jsonl` |
-| 1 手を Jev が選んだか・Gemini に回した理由（設計書 34） | `logs/steps/*.jsonl` |
+| 1 手を Jev が選んだか・Gemini に回した理由と、その手の結果（設計書 34 §3.1） | `logs/steps/*.jsonl` |
 | コメントの仕分け（返事をしなかったコメントの文も） | `logs/chat/*.jsonl` |
 | 返事の約束の確かめ（約束だけで何もしない返事は書き直し） | `logs/promises/*.jsonl` |
 | 実況の間合い（話した・取っておいた） | `logs/commentary/*.jsonl` |
+| 読み上げた文と、そのときの状態・照合の結果・読み上げの結果（played / dropped_old）。数えるのは `python tools/speech_consistency.py lines --judge jev`、予告した小目標のその後は `... forecasts`（設計書 65） | `logs/spoken/*.jsonl` |
 | 行き詰まりの確認（Jev の答え、考え直させたか） | `logs/stuck/*.jsonl` |
+| 手の帳（LLM が選んでうまくいった手を覚え、Jev の選択肢に出す: 覚えた・効いた・効かなかった・消した）。手の帳そのものは `data/moves.json`（設計書 52） | `logs/moves/*.jsonl` |
 | 教訓を思い出した記録（状況、候補、Jev の答え、出した教訓）。教訓帳そのものは `data/lessons.json` | `logs/lessons/*.jsonl` |
 | 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |

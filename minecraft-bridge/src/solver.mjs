@@ -58,7 +58,7 @@ function need (k, world, spec, count, ledger, path, depth) {
     ledger.items[m] -= take
     have += take
   }
-  const node = { label: `have ${count} ${label}`, have, need: count, units: 0, children: [], leaf: null }
+  const node = { label: `have ${count} ${label}`, spec, have, need: count, units: 0, children: [], leaf: null }
   if (have >= count) return { node, cost: 0 }
 
   // チェストから取り出す: アイテムごとに子を1つ作り、残りだけを手に入れる
@@ -113,6 +113,7 @@ function acquire (k, world, item, n, ledger, path, depth) {
   if (blocks) options.push((l) => gatherOption(k, world, item, n, 'dig', blocks, world.blocks, 1, l, path, depth))
   const mobs = k.mobSources.get(item)
   if (mobs) options.push((l) => gatherOption(k, world, item, n, 'kill', mobs, world.mobs, KILL_COST, l, path, depth))
+  if (item === 'water_bucket') options.push((l) => fillOption(k, world, item, n, l, [...path, item], depth))
   let best = none
   let bestLedger = null
   for (const make of options) {
@@ -122,6 +123,22 @@ function acquire (k, world, item, n, ledger, path, depth) {
   }
   if (bestLedger) Object.assign(ledger, bestLedger)
   return best
+}
+
+// 水のバケツ: 空のバケツで水源の水を汲む（クラフトでも掘るでもないので、専用の手）。バケツは鉄 3 つのクラフト
+function fillOption (k, world, item, n, ledger, path, depth) {
+  const bucket = need(k, world, 'bucket', n, ledger, path, depth + 1)
+  const pos = world.water?.() ?? null
+  const ready = bucket.node.have >= bucket.node.need
+  return {
+    cost: bucket.cost + n + (pos ? 0 : EXPLORE_COST),
+    units: n + bucket.node.units,
+    children: [bucket.node],
+    method: 'fill',
+    leaf: !ready
+      ? null
+      : pos ? { kind: 'fill', item, count: n, pos } : { kind: 'explore', item, sources: ['water'], reason: `no water source nearby to fill a bucket for ${item}` }
+  }
 }
 
 function craftOption (k, world, item, n, recipe, ledger, path, depth) {
@@ -184,7 +201,12 @@ function smeltOption (k, world, item, n, input, ledger, path, depth) {
     if (cost >= IMPOSSIBLE) return { cost: IMPOSSIBLE, units, children, leaf: null, method: 'smelt' }
   }
   let furnaceReady = !!world.furnace
-  if (!world.furnace) {
+  if (!world.furnace && world.furnaceAway) {
+    // 近くにはないが、覚えているかまど（家のかまど）がある: 新しく置くより、そこまで歩くほうが安い
+    // （松明の石炭を探し回らず、木炭を焼ける。2026-09-29）
+    cost += RECALL_COST
+    furnaceReady = true
+  } else if (!world.furnace) {
     const f = station(k, world, ledger, path, depth, 'furnace', 'furnace')
     if (f) {
       children.push(f.node)
@@ -251,14 +273,31 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     // 育つ間に畑の空いたマスを埋める（次の収穫が増える）: 種があればまく、クワがあれば耕す。ついでの作業（also）。
     // 空きがなければ、別の名前の畑を足す（設計してから。施設は広げられない: 設計書 47 §14）
     const also = `fill the ${crop} farms while it grows (more ${farm.s} next harvest)`
+    // 種かクワが手元になければ、それを手に入れる手も出す（草を掘って種、クワを作る）。出さないと、クワが
+    // 壊れた・種を使い切った畑で「待つ」しか残らず、育つのを 10 秒ずつ待ち続けた（2026-09-29）
+    const seeds = world.inventory?.[seed] ?? 0
+    const hasHoe = Object.entries(world.inventory ?? {}).some(([n, c]) => n.endsWith('_hoe') && c > 0)
+    // 探しに出る手（explore）は出さない: 作物が育つ間は畑のそばにいる
+    const getting = (spec, count) => {
+      const sub = []
+      collect(need(k, world, spec, count, cloneLedger(ledger), [...path, item], depth + 1).node, sub, [], [])
+      return sub.filter((l) => l.kind !== 'explore').map((l) => ({ ...l, also }))
+    }
+    // 耕すのは、まく種が耕し済みのマス（tilled）より多いときだけ。水が近くにない畑は、耕しただけで何も
+    // 植わっていない地面が土に戻る（2026-09-29: 種がないまま耕し続け、最初に耕した所が土に戻っていた）ので、
+    // 耕す → まく を 1 マスずつ順にする
+    const tilled = farm.f.sow ?? 0
+    const tillable = seeds > tilled
     const expand = free > 0
       ? [
-          ...((world.inventory?.[seed] ?? 0) > 0 ? [{ kind: 'sow', item: seed, crop, also }] : []),
-          ...(Object.entries(world.inventory ?? {}).some(([n, c]) => n.endsWith('_hoe') && c > 0) ? [{ kind: 'till', crop, also }] : [])
+          ...(seeds > 0 ? [{ kind: 'sow', item: seed, crop, also }] : getting(seed, Math.min(free, 16))),
+          ...(!hasHoe ? getting('hoe', 1) : tillable ? [{ kind: 'till', crop, also }] : [])
         ]
       : []
     const more = free > 0
-      ? `or fill the farms' ${free} free cells (till and sow ${seed}; a step farmed(${crop}, ${planted + free}))`
+      ? `or fill the farms' ${free} free cells (till and sow ${seed}; a step farmed(${crop}, ${planted + free})` +
+        `${seeds > 0 ? '' : `; no ${seed} carried: dig grass for seeds`}${hasHoe ? '' : '; no hoe carried: make one'}` +
+        `${tillable ? '' : `; do not till more than you can sow: tilled ground with nothing planted turns back to dirt without water`})`
       : `or, for more, add another ${crop} farm with a new name (facility(<new name>) in an objective, e.g. ${crop}_farm_2: it is designed on the town map first)`
     leaf = {
       kind: 'growing',
@@ -276,14 +315,48 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     leaf = { kind: 'dig_down', item, sources: [buried.s], depth: buried.t.depth }
     cost += DIG_DOWN_COST + buried.t.depth
   } else {
-    const hint = buried && buried.t.depth > (world.digDepth ?? 0)
+    const hint = (buried && buried.t.depth > (world.digDepth ?? 0)
       ? `; ${buried.s} is buried ${buried.t.depth} blocks down (the goal's dig_depth ${world.digDepth} is shallower: leave it out to dig down)`
-      : ''
+      : '') + mineAdvice(world, kind, sources, item)
     leaf = { kind: 'explore', item, sources: sought, reason: `no ${sought.join('/')} nearby for ${item}${known.length ? ' (seen before)' : ''}${hint}` }
     cost += known.length ? RECALL_COST : EXPLORE_COST
   }
   const units = n + children.reduce((s, c) => s + c.units, 0)
   return { cost, units, children, leaf: children.every((c) => c.have >= c.need) ? leaf : null, method: kind }
+}
+
+// 地下の鉱石が見えず、下りられる採掘場もないとき: 歩き回って探すより、採掘場を作ってそこから集める
+// （設計書 47 §16）。探索の候補は残す（採掘場ができるまで、最初の 1 個が手に入らないことがないように）
+function mineAdvice (world, kind, sources, item) {
+  if (kind !== 'dig' || !sources.some((s) => UNDERGROUND.test(s)) || world.mine) return ''
+  const open = (world.mines ?? []).filter((m) => m.status !== 'done')
+  if (open.length) {
+    const names = open.map((m) => `${m.name} (${m.status})`).join(', ')
+    return `; the mine ${names} is not finished: finish it (a step facility(<its name>)), then "go down the mine" fetches ${item} from it, better than walking around`
+  }
+  return `; instead of walking around for it, add a mine: facility(<new name>, e.g. mine_1) in an objective (it is designed on the town map first: a mine near stone, and once it is done "go down the mine" fetches ${item} and other ores from it)`
+}
+
+// 集めに出る手（掘る・狩る・探す・下りる・チェストから出す）。クラフトと焼くのは自動で、出かけない
+// （node.leaf は前の材料がそろうまで null なので、入手の方法 node.method で見る）
+const TRIPS = new Set(['dig', 'kill', 'withdraw'])
+const needsTrip = (node) => node.have < node.need && (TRIPS.has(node.method) || node.children.some(needsTrip))
+
+// 仕事（have の条件）の次の一歩: 根の直接の子のうち、まだ足りず、集めに出るものを含む最初のもの
+// { item, count }。なければ null（仕事そのものが 1 回の遠征）。子の数は台帳で引いた残りなので、持ち物が
+// もう足りているものは飛ばす（足りているのに未達成の一歩を返して、同じ一歩を繰り返さない）
+// 仕事（have の条件）そのものが素材の採集か: 根の入手の方法が掘る・狩る・チェストから出す。何を作る
+// ための素材かは分からない（小目標と同じ 1 回の遠征になり、中目標にする意味が薄い。設計書 50 §14）
+export const isGather = (root) => !!root && root.have < root.need && TRIPS.has(root.method)
+
+export function nextStep (root, world, k) {
+  if (!root || root.have >= root.need) return null
+  const held = (spec) => k.resolve(spec).members.reduce((s, m) => s + (world.inventory?.[m] ?? 0), 0)
+  for (const c of root.children) {
+    if (!c.spec || !needsTrip(c) || held(c.spec) >= c.need) continue
+    return { item: c.spec, count: c.need }
+  }
+  return null
 }
 
 // いくつかのアイテムのどれか1つ（例: 石を掘れるどれかのツルハシ）。道具は使っても減らない
@@ -332,6 +405,7 @@ function describe (leaf, method) {
   switch (leaf.kind) {
     // 1 回のクラフトのレシピも書く（材料の数と、できる数。小麦 3 個でパン 1 個を、1 対 1 と思い込まれた）
     case 'craft': return `craft ${leaf.item} x${leaf.times}${leaf.ingredients ? ` (one craft: ${Object.entries(leaf.ingredients).map(([n, c]) => `${c} ${n}`).join(' + ')} -> ${leaf.makes} ${leaf.item})` : ''}${leaf.needsTable ? ' at a crafting table' : ''}`
+    case 'fill': return `fill the bucket at the water (${leaf.pos.x},${leaf.pos.y},${leaf.pos.z})`
     case 'dig': return `dig ${leaf.sources.join('/')}`
     case 'kill': return `hunt ${leaf.sources.join('/')}`
     case 'explore': return `find ${leaf.sources.join('/')}`

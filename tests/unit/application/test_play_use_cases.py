@@ -214,6 +214,43 @@ class TestStartPlay:
         assert prompt_builder.build_house_design_prompt.call_args.kwargs["site_note"] == ""
         assert _published(events, HouseDesignedEvent)[0].name == "ひだまり"
 
+    def _resumable(self, bridge, label="have(planks, 4)", store_saved=None):
+        from ailoveshen.application.ports.output.goal_store import SavedGoal
+
+        saved = store_saved or SavedGoal(Goal(HAVE_PLANKS, "板材", "m1"), "day", 6, 1, 2, 3, 0)
+        goal_store = Mock()
+        goal_store.load.return_value = saved
+        bridge.observe.return_value = replace(
+            _obs(has_plan=True, house_complete=True, has_home=True),
+            goal=GoalStatus(met=False, remaining=3, spec_label=label),
+        )
+        return goal_store
+
+    @pytest.mark.asyncio
+    async def test_the_saved_small_goal_is_resumed_when_the_bridge_still_follows_it(
+        self, text_generator, prompt_builder, bridge, events
+    ):
+        goal_store = self._resumable(bridge)
+        use_case = self._use_case(text_generator, prompt_builder, bridge, events)
+        use_case._goal_store = goal_store
+
+        session = await use_case.execute()
+
+        assert session.goal.spec == HAVE_PLANKS
+        assert (session.goal_phase, session.steps_in_goal) == ("day", 6)
+        assert (session.consecutive_failures, session.stalled_steps) == (1, 2)
+        assert session.least_remaining == 3
+
+    @pytest.mark.asyncio
+    async def test_the_saved_small_goal_is_dropped_when_the_bridge_follows_another(
+        self, text_generator, prompt_builder, bridge, events
+    ):
+        goal_store = self._resumable(bridge, label="explored(40)")
+        use_case = self._use_case(text_generator, prompt_builder, bridge, events)
+        use_case._goal_store = goal_store
+
+        assert (await use_case.execute()).goal is None
+
     @pytest.mark.asyncio
     async def test_invalid_design_is_retried_with_error(
         self, text_generator, prompt_builder, bridge, events
@@ -414,6 +451,39 @@ class TestAdvancePlay:
         assert [c.args[0] for c in bridge.act.await_args_list] == ["eat bread"]
 
     @pytest.mark.asyncio
+    async def test_it_announces_that_it_started_thinking(self, use_case, events):
+        """決定に何分もかかり、その間は無音だった: 考え始めたことを知らせる（失敗の後かも添える）。"""
+        from ailoveshen.domain.events import GoalDecidingEvent
+
+        async def quick():
+            return None
+
+        await use_case._while_deciding(quick())
+        await use_case._while_deciding(quick(), after_failure=True)
+
+        assert [e.after_failure for e in _published(events, GoalDecidingEvent)] == [False, True]
+
+    @pytest.mark.asyncio
+    async def test_it_announces_that_it_stopped_thinking_even_when_the_decision_fails(
+        self, use_case, events
+    ):
+        """考えが終わったことも知らせる（決定が失敗しても。ボードの「考え中」が残らないように）。"""
+        from ailoveshen.domain.events import GoalDecidedEvent, GoalDecidingEvent
+
+        async def broken():
+            raise RuntimeError("no answer")
+
+        with pytest.raises(RuntimeError):
+            await use_case._while_deciding(broken())
+
+        kinds = [
+            type(c.args[0])
+            for c in events.publish.call_args_list
+            if isinstance(c.args[0], (GoalDecidingEvent, GoalDecidedEvent))
+        ]
+        assert kinds == [GoalDecidingEvent, GoalDecidedEvent]
+
+    @pytest.mark.asyncio
     async def test_the_chests_keep_what_the_objectives_store(self, use_case, text_generator, bridge):
         """蓄える大目標の stored() の条件は小目標と一緒に送り、チェストから取り出させない。"""
         text_generator.generate_json.return_value = PLANKS
@@ -470,6 +540,22 @@ class TestAdvancePlay:
         assert session.steps_in_goal == 1
         assert _published(events, GoalSetEvent)[0].goal == "have(planks, 4)"
         assert _published(events, GameActionExecutedEvent)[0].confidence == 0.9
+
+    @pytest.mark.asyncio
+    async def test_the_small_goal_and_its_counts_are_saved_every_step(
+        self, use_case, text_generator
+    ):
+        """再起動のあとに続きから追えるよう、小目標を決めたときと 1 手ごとに保存する（設計書 63）。"""
+        text_generator.generate_json.return_value = PLANKS
+        use_case._goal_store = Mock()
+        session = _session()
+
+        await use_case.execute(session)
+
+        saved = use_case._goal_store.save.call_args.args[0]
+        assert saved.goal.spec == HAVE_PLANKS
+        assert saved.steps_in_goal == 1  # 1 手のあとの数え
+        assert use_case._goal_store.save.call_count == 2  # 決めたとき、1 手のあと
 
     @pytest.mark.asyncio
     async def test_predicates_offered_follow_the_house(self, use_case, text_generator, bridge):
@@ -575,6 +661,23 @@ class TestAdvancePlay:
         assert "have(planks, 4) is already met now" in error
 
     @pytest.mark.asyncio
+    async def test_a_goal_already_met_says_what_is_carried_and_that_have_is_a_total(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """11 個持っていて have(planks, 4)（「あと 4 個」の取り違え）: 持っている数と書き直し方を添える。"""
+        text_generator.generate_json.side_effect = [PLANKS, {**PLANKS, "count": 16}]
+        bridge.observe.return_value = replace(
+            _obs(), state={"self": {"health": 20}, "inventory": {"planks": 11}}
+        )
+        bridge.set_goal.side_effect = [GoalStatus(True, 0), GoalStatus(False, 5)]
+
+        await use_case.execute(_session())
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "you already carry 11 planks" in error
+        assert "n in total, not n more" in error
+
+    @pytest.mark.asyncio
     async def test_a_goal_that_cannot_progress_is_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):
@@ -612,6 +715,32 @@ class TestAdvancePlay:
         assert "job 2 have(planks, 4) is already met now" in error
         assert "have(cobblestone, 8)" in error
         assert [s.spec.item for s in session.plan.current.jobs] == ["planks", "cobblestone"]
+
+    @pytest.mark.asyncio
+    async def test_a_job_that_only_gathers_a_raw_material_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """中目標が素材の採集そのもの（小目標と同じ文になる）なら、作るものを中目標にさせる（設計書 50 §14）。"""
+        stone = {"predicate": "have", "item": "cobblestone", "count": 8, "reason": "石"}
+        planks = {"predicate": "have", "item": "planks", "count": 4, "reason": "板"}
+        text_generator.generate_json.side_effect = [
+            {**PLANKS, "jobs": [stone]},
+            {**PLANKS, "jobs": [planks]},
+        ]
+
+        async def check(specs):
+            return [
+                ConditionStatus(s, False, gather=s.item == "cobblestone") for s in specs
+            ]
+
+        bridge.check.side_effect = check
+        session = _session()
+
+        await use_case.execute(session)
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "have(cobblestone, 8) is only gathering a raw material" in error
+        assert [s.spec.item for s in session.plan.current.jobs] == ["planks"]
 
     @pytest.mark.asyncio
     async def test_a_review_that_mistakes_the_time_is_sent_back(
@@ -1369,6 +1498,31 @@ class TestJobsChosenByJev:
         assert picked.objective_id is None
 
     @pytest.mark.asyncio
+    async def test_survival_goals_are_not_sent_to_the_bridge_as_conditions(
+        self, make, text_generator, bridge
+    ):
+        """ブリッジは through_night / at_home を条件として判定しない（送ると判定全体が断られ、夜はいつも
+        Gemini に回った: 2026-09-29 から 90 回）。実物と同じに、条件でない述語を含むと断るものにする。"""
+        from ailoveshen.application.use_cases.goal_chooser import GoalChooser
+        from ailoveshen.domain.exceptions import GoalRejectedError
+        from ailoveshen.domain.value_objects import CONDITION_PREDICATES
+
+        text_generator.generate_json.return_value = STEPS_DECISION
+        session = _session()
+        await make().execute(session)
+
+        async def check(specs):
+            for s in specs:
+                if s.predicate not in CONDITION_PREDICATES:
+                    raise GoalRejectedError(f"conditions rejected: {s.predicate.value} cannot be a condition")
+            return [ConditionStatus(s, False, ()) for s in specs]
+
+        bridge.check.side_effect = check
+        night = _obs(met=True, time_phase="night", has_home=True, inside_home=True)
+        picked = await GoalChooser(FakeJev("D"), bridge).choose(session, night, "goal x is met")
+        assert picked.spec == GoalSpec(GoalPredicate.THROUGH_NIGHT)  # 判定できないで Gemini には回らない
+
+    @pytest.mark.asyncio
     async def test_a_survival_goal_already_met_is_not_offered(self, make, text_generator, bridge):
         """夕方にもう家の中なら at_home は出さない（選ぶとすぐ済んで、また選ぶことになる）。"""
         from ailoveshen.application.use_cases.goal_chooser import GoalChooser
@@ -1445,12 +1599,12 @@ class TestFailureDiagnosis:
         assert "diagnosis" not in schema["properties"]
 
     @pytest.mark.asyncio
-    async def test_retry_needs_advice_and_change_needs_another_goal(
+    async def test_the_same_goal_needs_advice_whatever_the_remedy_says(
         self, use_case, text_generator, prompt_builder
     ):
         no_advice = {**RETRY_PLANKS, "advice": ""}
-        # 数だけ変えても同じ小目標: change とは言えない
-        disguised = {**RETRY_PLANKS, "remedy": "change", "count": 2}
+        # 数だけ変えても同じ小目標: 札が change でも、助言が要る
+        disguised = {**RETRY_PLANKS, "remedy": "change", "count": 2, "advice": ""}
         text_generator.generate_json.side_effect = [no_advice, disguised, RETRY_PLANKS]
 
         await self._stall(use_case, _session(HAVE_PLANKS))
@@ -1459,7 +1613,7 @@ class TestFailureDiagnosis:
             c.kwargs["previous_error"] for c in prompt_builder.build_goal_prompt.call_args_list
         ]
         assert "retry needs advice" in errors[1]
-        assert "only the number differs" in errors[2]
+        assert "retry needs advice" in errors[2]
 
     @pytest.mark.asyncio
     async def test_the_same_goal_failing_twice_must_change(

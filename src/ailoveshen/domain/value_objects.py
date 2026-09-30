@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum, IntEnum
-from typing import Any, Optional
+from typing import Any, Iterator, Mapping, Optional
 
 
 def _utc_now() -> datetime:
@@ -519,6 +519,18 @@ class Goal:
         """ログとプロンプト用の短い形。束なら + でつなぐ。"""
         return " + ".join(s.describe() for s in self.specs)
 
+    def unmet(self, status: Optional["GoalStatus"]) -> tuple[GoalSpec, ...]:
+        """
+        束の条件のうち、まだ済んでいないもの（ブリッジの判定から。束でないか判定がなければ全部）。
+        先頭（spec）は決めたときのまま動かないので、先に済んだ条件を「手に入れる」と見せない
+        （かまどを持っているのに、小目標がかまどを手に入れる、と出た）。全部済みなら全部を返す。
+        """
+        if status is None or not status.members:
+            return self.specs
+        met = {m.label for m in status.members if m.met}
+        left = tuple(s for s in self.specs if replace(s, dig_depth=None).describe() not in met)
+        return left or self.specs
+
 
 @dataclass(frozen=True)
 class ConditionStatus:
@@ -528,6 +540,11 @@ class ConditionStatus:
     met: bool
     lines: tuple[str, ...] = ()
     impossible: tuple[str, ...] = ()  # 配信者が今できることでは手に入らないもの
+    # have の条件で、集めに出る材料があるとき、その次の一歩（have の小目標。docs/design/50 §13）。なければ None
+    next_step: Optional[GoalSpec] = None
+    # have の条件そのものが素材の採集（掘る・狩る・チェストから出す）: 小目標と同じ 1 回の遠征で、中目標にする
+    # 意味が薄い（何のための素材かを中目標にする。docs/design/50 §14）
+    gather: bool = False
 
 
 # 世界の状態だけから判定できる: 大目標の完了条件になれる
@@ -672,6 +689,8 @@ class Objective:
     # Gemini が書いた、この大目標のための中目標（小目標の並び。済んだものも残る）。Jev が次を選ぶ
     # （docs/design/26、50 §4）
     jobs: tuple["Job", ...] = ()
+    # 一度 LLM が計画（中目標と小目標）を書いたか（docs/design/50 §18）。失敗・行き詰まりで書き直す
+    planned: bool = False
 
     def __post_init__(self) -> None:
         """条件を確かめる。"""
@@ -705,6 +724,21 @@ class Objective:
     def done_jobs(self) -> tuple["Job", ...]:
         """済んだ中目標（一度満たしたら済みのまま）。"""
         return tuple(s for s in self.jobs if s.state == JobState.DONE)
+
+    def closed(self) -> "Objective":
+        """
+        終わった大目標の、まだ済んでいない中目標を閉じる（大目標が済んだら、残りの中目標はやらなくてよい）。
+        済んだ中目標はそのまま。
+        """
+        return replace(
+            self,
+            jobs=tuple(
+                replace(s, state=JobState.CLOSED, ended_because="its objective ended")
+                if s.state == JobState.PENDING
+                else s
+                for s in self.jobs
+            ),
+        )
 
     def summary(self) -> tuple[str, ...]:
         """細かい手順（字下げした進み具合の行）を除いた、条件の進み具合。"""
@@ -742,6 +776,8 @@ class GoalStatus:
     members: tuple["BundleMember", ...] = ()
     # 進める手が 1 つもなく、今は手に入らない部分があるとき、その理由（例: 畑がない。設計書 47 §15）
     dead_end: tuple[str, ...] = ()
+    # ブリッジが今追っている小目標の名前（have(log, 16) の形）。再起動のあと、保存した小目標と同じか確かめる
+    spec_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -896,10 +932,65 @@ class JobState(str, Enum):
     PENDING = "pending"
     DONE = "done"
     DROPPED = "dropped"
+    CLOSED = "closed"  # 大目標が終わった（済んだ・断念した）ので、やらなくてよくなった
 
 
 # 1 つの大目標の、まだ済んでいない中目標の数の上限（Gemini の 6 つ + 視聴者・助言の分）
 MAX_OPEN_JOBS = 8
+
+# 中目標の下の小目標（計画。docs/design/50 §18）: 1 つの中目標に 8 つまで、前提は 2 段（2.1 の下に 2.1.1）、
+# 1 つの小目標の前提は 3 つまで
+MAX_STEPS = 8
+MAX_STEP_NEEDS = 3
+MAX_STEP_DEPTH = 2
+# 計画の小目標に書ける条件: 世界から判定できて、ほかの手を介さないもの（custom は判定を書く手間が別に要る）
+STEP_PREDICATES = PLANNABLE_CONDITIONS - {GoalPredicate.CUSTOM}
+
+
+@dataclass(frozen=True)
+class Step:
+    """
+    中目標の計画の小目標 1 つ: 条件と理由、その前にそろえる前提（`needs`）。
+
+    前提は、この小目標がまだ済んでいないときだけ、先にやる（バケツを持っていれば、バケツの前提の
+    鉄は飛ばす）。前提のさらに前提まで 2 段。条件は世界から判定できるもの（`/check`）。
+
+    Raises:
+        ValueError: 判定できない条件、前提が多すぎる・深すぎるとき。
+    """
+
+    spec: GoalSpec
+    reason: str = ""
+    needs: tuple["Step", ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.spec.predicate not in STEP_PREDICATES:
+            allowed = ", ".join(sorted(p.value for p in STEP_PREDICATES))
+            raise ValueError(f"{self.spec.predicate.value} cannot be a step (use {allowed})")
+        if len(self.needs) > MAX_STEP_NEEDS:
+            raise ValueError(f"a step has at most {MAX_STEP_NEEDS} prerequisites")
+        if self.depth > MAX_STEP_DEPTH:
+            raise ValueError(f"prerequisites go {MAX_STEP_DEPTH} levels deep at most")
+
+    @property
+    def key(self) -> str:
+        """済みを覚えるときの名前（条件の書き方）。"""
+        return self.spec.describe()
+
+    @property
+    def depth(self) -> int:
+        """前提の段数（前提がなければ 0）。"""
+        return 1 + max(n.depth for n in self.needs) if self.needs else 0
+
+    def walk(self) -> Iterator["Step"]:
+        """前提を先に、この小目標を最後に、すべて順にたどる。"""
+        for n in self.needs:
+            yield from n.walk()
+        yield self
+
+    def describe(self) -> str:
+        return self.spec.describe()
+
 
 
 @dataclass(frozen=True)
@@ -930,8 +1021,18 @@ class Job:
     budget_used: int = 0
     progress: tuple[str, ...] = ()
     ended_because: str = ""  # 断念した理由
+    # 計画（docs/design/50 §18）: 中目標の名前（日本語）と、それを達するための小目標の並び。
+    # `steps_done` は一度満たした小目標の `Step.key`（あとで材料を使って条件が崩れても戻さない）
+    title: str = ""
+    steps: tuple[Step, ...] = ()
+    steps_done: tuple[str, ...] = ()
+    # 最後に世界と照合したとき、今満たしていた条件の名前（`GoalSpec.describe()`: 中目標の条件と計画の
+    # 小目標）。済み（ラッチ）とは別: 材料を使えば外れる。表示だけが使う（docs/design/50 §19）
+    met_now: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if len(self.steps) > MAX_STEPS:
+            raise ValueError(f"a job has at most {MAX_STEPS} steps")
         for spec in (self.spec, *self.together):
             if spec.predicate not in PLANNABLE_CONDITIONS:
                 raise ValueError(
@@ -948,6 +1049,50 @@ class Job:
     def same_as(self, other: "Job") -> bool:
         """条件が同じか（順番は問わない）。書き直しで同じ中目標を見分ける。"""
         return {s.describe() for s in self.specs} == {s.describe() for s in other.specs}
+
+    def step_keys(self) -> tuple[str, ...]:
+        """計画の小目標すべての `Step.key`（重複なし、前提が先）。"""
+        return tuple(dict.fromkeys(x.key for s in self.steps for x in s.walk()))
+
+    def all_specs(self) -> tuple[GoalSpec, ...]:
+        """中目標の条件（束も）と計画の小目標すべての条件（`describe()` で重複なし）。世界と照合する対象。"""
+        seen: dict[str, GoalSpec] = {s.describe(): s for s in self.specs}
+        for step in self.steps:
+            for x in step.walk():
+                seen.setdefault(x.key, x.spec)
+        return tuple(seen.values())
+
+    def pending_steps(self) -> tuple[Step, ...]:
+        """まだ済みにしていない計画の小目標（重複なし）。判定に出す条件を集める。"""
+        done = set(self.steps_done)
+        seen: dict[str, Step] = {}
+        for s in self.steps:
+            for x in s.walk():
+                if x.key not in done:
+                    seen.setdefault(x.key, x)
+        return tuple(seen.values())
+
+    def next_step(self, met: Mapping[str, bool]) -> Optional[Step]:
+        """
+        計画の次の小目標（`met`: `Step.key` → 今満たしているか）。順に見て、済んでいない最初のもの。
+        その前提に済んでいないものがあれば、前提を先にやる。全部済んでいれば None（中目標そのものが小目標）。
+        """
+        done = set(self.steps_done)
+
+        def pick(step: Step) -> Optional[Step]:
+            if step.key in done or met.get(step.key, False):
+                return None
+            for need in step.needs:
+                found = pick(need)
+                if found is not None:
+                    return found
+            return step
+
+        for s in self.steps:
+            found = pick(s)
+            if found is not None:
+                return found
+        return None
 
     def describe(self) -> str:
         return " + ".join(s.describe() for s in self.specs)
@@ -1164,6 +1309,8 @@ class GameObservation:
     has_home: bool = False
     inside_home: bool = False
     bed_in_home: bool = False
+    # 家の中にチェストがある（預ける先。なければ持ち物がいっぱいでも預けられない）
+    chest_in_home: bool = False
     # まだできていない建物（Gemini が設計したもの）の名前
     unfinished_builds: tuple[str, ...] = ()
     busy: bool = False  # ブリッジが行動か反射を実行している
@@ -1470,6 +1617,36 @@ class Lesson:
 
 
 @dataclass(frozen=True)
+class Move:
+    """
+    手の帳の 1 件（docs/design/52）: LLM が選んで、うまくいった道具の呼び出し。似た状況で Jev の
+    選択肢にもう一度出す。世界の座標を含まない道具の呼び出しだけ（クラフト、装備、預ける・出す、
+    かまど…）で、場所によらないのでワールドを作り直しても残す。
+
+    `situation` は目標の種類・対象・場所（教訓と同じ語彙）。`worked` / `failed` は、選んだあとに持ち物か
+    小目標の進み具合が変わったかどうか。
+    """
+
+    id: str
+    situation: tuple[tuple[str, str], ...]
+    tool: str
+    args: dict[str, Any] = field(default_factory=dict)
+    intent: str = ""
+    worked: int = 1
+    failed: int = 0
+    learned_at: str = ""  # ISO 8601（実時間）
+    last_used_at: str = ""
+
+    @property
+    def keys(self) -> dict[str, str]:
+        return dict(self.situation)
+
+    def describe(self) -> str:
+        """選択肢の id と記録に使う 1 行（例: craft(item=wooden_hoe)）。座標は含まない。"""
+        return ToolCall(self.tool, self.args).describe()
+
+
+@dataclass(frozen=True)
 class Activity:
     """
     配信者が今していることとその理由: 目標の決定、実況、チャットの返答がすべて見る
@@ -1688,6 +1865,11 @@ class SkillInfo:
     last_failure: Optional[str] = None
     last_good_version: Optional[int] = None  # 一番新しい版が未成功のとき、前に成功した版
     code: str = ""  # 直すときだけ読む（一覧には入らない）
+
+    @property
+    def needs_arguments(self) -> bool:
+        """呼ぶのに要る引数があるか（params は引数がなくても {"type": "object", "properties": {}} が入る）。"""
+        return bool(self.params.get("required"))
 
     def describe(self) -> str:
         """プロンプト用の 1 行。"""

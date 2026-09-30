@@ -57,6 +57,12 @@ class TestToolCatalog:
         assert call.watch == (WatchQuestion("Is a hostile mob within 6 m?", WatchAction.WAKE),)
         assert call.describe() == "dig(x=1, y=70, z=2)"
 
+    def test_the_action_copied_with_angle_brackets_from_the_prompt_is_read(self):
+        call = parse_tool_call(
+            ToolChoice("goto", {"x": 0, "y": 70, "z": 0, "intent": "i", "watch": ["<stop>: Is there a mob?"]})
+        )
+        assert call.watch == (WatchQuestion("Is there a mob?", WatchAction.STOP),)
+
     def test_unusable_watch_questions_are_dropped_not_the_call(self):
         call = parse_tool_call(
             ToolChoice(
@@ -429,8 +435,7 @@ class TestToolStep:
         from ailoveshen.application.use_cases.stagnation import Stagnation
         from ailoveshen.application.use_cases.step_picker import StepToGemini
 
-        clock = {"now": 0.0}
-        monkeypatch.setattr(use_case, "_stagnation", Stagnation(10, lambda: clock["now"]))
+        monkeypatch.setattr(use_case, "_stagnation", Stagnation(10))
         use_case._step_picker = Mock()
         use_case._step_picker.pick = AsyncMock()
         use_case._step_picker.note = Mock()
@@ -438,10 +443,9 @@ class TestToolStep:
         session = _session(HAVE_PLANKS)
         self.prompt_builder.build_action_context.return_value = ({}, "")
         use_case._step_picker.pick.return_value = StepToGemini("test: not sure")
-        for now in (0, 8, 16):
-            clock["now"] = now
+        for _ in range(3):
             _, result = await use_case._act_with_tools(session, _obs())
-            use_case._stagnation.record(f"dig → ok: {result.result}")  # execute が手ごとにすること
+            use_case._stagnation.record(f"dig → ok: {result.result}", 8)  # execute が手ごとにすること
 
         purposes = [c.kwargs["purpose"] for c in self.text_generator.choose_tool.call_args_list]
         assert purposes[-1] == "tool_stuck" and purposes[0] != "tool_stuck"
@@ -449,6 +453,31 @@ class TestToolStep:
         kw = self.prompt_builder.build_tool_prompt.call_args.kwargs
         assert kw["stagnant_seconds"] == 16 and len(kw["stagnant_actions"]) == 2
         assert session.activity().stagnant_seconds == 16
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_pattern_goes_to_the_llm_with_the_pattern_and_jev_is_skipped(
+        self, use_case, bridge
+    ):
+        from ailoveshen.application.use_cases.step_picker import StepToGemini
+
+        bridge.skills = AsyncMock(return_value=[])
+        use_case._skills = Mock()
+        use_case._step_picker = Mock()
+        use_case._step_picker.pick = AsyncMock(return_value=StepToGemini("test: not sure"))
+        use_case._step_picker.note = Mock()
+        self.prompt_builder.build_action_context.return_value = ({}, "")
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})] * 2
+        session = _session(HAVE_PLANKS)
+
+        await use_case._act_with_tools(session, _obs())
+        assert self.prompt_builder.build_tool_prompt.call_args.kwargs["repeated"] == ()
+        for verb in ["till", "sow"] * 3:
+            use_case._repetition.record(verb, True)
+        await use_case._act_with_tools(session, _obs())
+
+        kw = self.prompt_builder.build_tool_prompt.call_args.kwargs
+        assert kw["repeated"] == ("till", "sow") and kw["repeated_times"] == 3
+        assert use_case._step_picker.pick.await_count == 1  # 2 回目は Jev に聞かない
 
     @pytest.mark.asyncio
     async def test_jev_still_chooses_after_a_refusal_but_not_after_a_real_failure(self, use_case):
@@ -471,6 +500,53 @@ class TestToolStep:
         use_case._recent_tools.append(ToolOutcome(call, False, "failed: No path", 1.0))
         await use_case._act_with_tools(session, obs)
         assert use_case._step_picker.pick.await_args.args[-1] is False
+
+    @pytest.mark.asyncio
+    async def test_a_step_the_llm_chose_is_remembered_and_offered_to_jev_next_time(self, use_case, watcher):
+        """設計書 52: LLM が選んで持ち物が変わった手は帳に入り、次の同じ状況で Jev の選択肢に出る。"""
+        from dataclasses import replace
+
+        from ailoveshen.application.use_cases.moves import MoveBook
+        from ailoveshen.application.use_cases.step_picker import PickedStep, StepToGemini
+
+        class Store:
+            def load(self):
+                return None
+
+            def save(self, moves, next_id):
+                pass
+
+        book = MoveBook(Store())
+        use_case._moves = book
+        use_case._step_picker = Mock()
+        use_case._step_picker.pick = AsyncMock(return_value=StepToGemini("test"))
+        use_case._step_picker.note = Mock()
+        self.prompt_builder.build_action_context.return_value = ({}, "")
+        session = _session(HAVE_PLANKS)
+        before = replace(_obs(), state={"inventory": {"stick": 2}})
+        after = replace(_obs(), state={"inventory": {"stick": 2, "wooden_hoe": 1}})
+        self.text_generator.choose_tool.side_effect = [
+            ToolChoice("craft", {"item": "wooden_hoe", "intent": "クワを作る"}),
+            ToolChoice("wait", {"intent": "待つ"}),
+        ]
+
+        await use_case._act_with_tools(session, before)
+        assert book.moves == ()  # まだ効いたか分からない
+        await use_case._act_with_tools(session, after)
+        (move,) = book.moves
+        assert move.tool == "craft" and move.args == {"item": "wooden_hoe"}
+        # 同じ状況の 2 手目: 覚えた手を Jev に渡す
+        assert use_case._step_picker.pick.await_args.kwargs["moves"] == [move]
+
+        # Jev が選んだら、その道具をそのまま実行し、効いたか数える
+        call = ToolCall("craft", {"item": "wooden_hoe"}, intent="クワを作る")
+        use_case._step_picker.pick = AsyncMock(
+            return_value=PickedStep(call, "remembered craft(item=wooden_hoe)", 0.9, move=move)
+        )
+        await use_case._act_with_tools(session, after)
+        assert watcher.run.await_args.args[0] == call
+        await use_case._act_with_tools(session, after)  # 持ち物は変わらなかった
+        assert book.moves[0].failed == 1 and book.moves[0].worked == 1
 
     def test_tools_control_needs_a_watcher(self, bridge):
         with pytest.raises(ValueError, match="needs a tool_watcher"):

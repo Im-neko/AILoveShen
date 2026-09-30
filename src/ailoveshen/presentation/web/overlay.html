@@ -31,7 +31,7 @@
   <div class="mission">最終目標 <b id="mission"></b></div>
   <div class="town hidden" id="town"></div>
   <ol id="objective"></ol>
-  <div class="goal"><span class="label">いま:</span> <span id="goal"></span></div>
+  <div class="goal"><span class="label">小目標:</span> <span id="goal"></span></div>
   <div class="progress" id="progress"></div>
 </div>
 <script>
@@ -84,15 +84,18 @@
         // 中目標: 済み ✓、今 ▶、待ち ・
         const jobs = document.createElement('div');
         jobs.className = 'summary';
-        jobs.textContent = g.jobs
-          .map((s) => (s.state === 'done' ? '✓ ' : s.state === 'current' ? '▶ ' : '・') + s.label)
+        jobs.textContent = '中目標 ' + g.jobs
+          .map((s) => (s.state === 'done' || s.state === 'met' ? '✓ ' : s.state === 'current' ? '▶ ' : '・') + s.label)
           .join(' → ');
         li.append(jobs);
       }
       objective.append(li);
     }
     const goal = data.goal;
-    el('goal').textContent = goal ? goal.goal + (goal.survival ? '（身を守るため）' : '') : '考え中';
+    const thinking = data.thinking ? (data.thinking.after_failure ? '考え直し中…' : '考え中…') : '';
+    el('goal').textContent = goal
+      ? goal.goal + (goal.survival ? '（身を守るため）' : '') + (thinking ? `　💭 ${thinking}` : '')
+      : (thinking ? `💭 ${thinking}` : '考え中');
     el('progress').textContent = goal ? goal.progress.join(' / ') : '';
   }
 

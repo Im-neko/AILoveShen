@@ -166,27 +166,48 @@ export function summarize (bot, history, extra = {}) {
   }
 }
 
-// 昼でも暗い: 覆われていて（洞窟、張り出し、屋根）近くに光源がない。光のデータではなくブロックから
+// 昼でも暗い: 洞窟や深い屋根の下など、空の光が届かず近くに光源もない。光のデータではなくブロックから
 // 判定する: mineflayer の 1.21.4 の光は、サーバーが明るいとした屋外で空の光 0 を読んだ
-// （location_check の述語で確認）ので信用できない
+// （location_check の述語で確認）ので信用できない。覆い（頭上の不透明ブロック）だけでは、木陰や
+// 張り出しの下まで暗いことになるので、空の光が横へ 1 ブロックごとに 1 減ることから、空が開いた柱が
+// 近くにあれば（空の光 8 以上 = モブが湧かない明るさ）暗くないとする
 const COVER_HEIGHT = 32
+const SKY_REACH = 7 // 空の光は 15 から横へ 1 ブロックごとに 1 減る: 8 以上ある距離
 const LIT_RADIUS = 8 // たいまつはそのブロックで 14、1ブロックごとに 1 下がる
 export const LIGHT_SOURCES = ['torch', 'wall_torch', 'lantern', 'soul_torch', 'soul_wall_torch', 'soul_lantern', 'glowstone',
   'jack_o_lantern', 'sea_lantern', 'shroomlight', 'lava', 'campfire', 'soul_campfire', 'redstone_lamp', 'end_rod', 'ochre_froglight', 'verdant_froglight', 'pearlescent_froglight']
-export function isCovered (bot) {
-  const head = bot.entity.position.floored().offset(0, 2, 0)
-  for (let dy = 0; dy < COVER_HEIGHT; dy++) {
-    const b = bot.blockAt(head.offset(0, dy, 0))
-    if (b?.boundingBox === 'block' && !b.name.endsWith('_leaves') && !b.name.includes('glass')) return true
+
+// 光を通さないブロック（葉、ガラス、氷などの半透明は空の光を通す）
+const blocksLight = (bot, b) => b?.boundingBox === 'block' && bot.registry.blocksByName[b.name]?.filterLight === 15
+const roofed = (bot, from) => {
+  for (let dy = 0; dy < COVER_HEIGHT; dy++) if (blocksLight(bot, bot.blockAt(from.offset(0, dy, 0)))) return true
+  return false
+}
+const headCell = (bot) => bot.entity.position.floored().offset(0, 2, 0)
+
+export const isCovered = (bot) => roofed(bot, headCell(bot))
+
+// 近くに空が開いた柱がある（読み込まれていない柱は数えない）
+function skyNear (bot) {
+  const head = headCell(bot)
+  for (let d = 1; d <= SKY_REACH; d++) {
+    for (let dx = -d; dx <= d; dx++) {
+      const rest = d - Math.abs(dx)
+      for (const dz of rest === 0 ? [0] : [-rest, rest]) {
+        const from = head.offset(dx, 0, dz)
+        if (bot.blockAt(from) && !roofed(bot, from)) return true
+      }
+    }
   }
   return false
 }
+
 // 地下にいる（頭の上がふさがっていて、海面より下）: 夜でも家に帰らなくてよい（ここは夜も昼も暗い）
 const SEA_LEVEL = 62
 export const isUnderground = (bot) => bot.entity.position.y < SEA_LEVEL - 2 && isCovered(bot)
 
 export function isDark (bot) {
-  if (!isCovered(bot)) return false
+  if (!isCovered(bot) || skyNear(bot)) return false
   const ids = LIGHT_SOURCES.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined)
   return !bot.findBlock({ matching: ids, maxDistance: LIT_RADIUS })
 }

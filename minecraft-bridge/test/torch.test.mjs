@@ -5,6 +5,7 @@ import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
 import { ground } from '../src/candidates.mjs'
 import { needs } from '../src/goals.mjs'
+import { isDark } from '../src/observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -44,4 +45,27 @@ test('明るい所、空の下、持っていないときは松明を出さな�
   assert.ok(!offered(botIn({ torchNear: true })), '前に置いた松明で明るい')
   assert.ok(!offered(botIn({ roof: null }, ['torch'], 18000)), '夜の空の下: 地上は照らさない')
   assert.ok(!offered(botIn({}, [])), '松明を持っていない')
+})
+
+// 0,70,0 に立ち、`roofAt(x, z)` がその柱の頭上のブロック名（null: 空が開けている）を返す
+function botUnder (roofAt) {
+  const bot = botIn({ roof: null })
+  bot.blockAt = (p) => {
+    if (p.y < 70) return { name: 'stone', boundingBox: 'block' }
+    const name = p.y === 73 ? roofAt(p.x, p.z) : null
+    return name ? { name, boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }
+  }
+  return bot
+}
+
+test('昼の木陰（頭上が原木でも近くに空がある）や葉・ガラスの下は暗くない', () => {
+  assert.ok(!isDark(botUnder((x, z) => (x === 0 && z === 0 ? 'oak_log' : null))), '幹や枝の下')
+  assert.ok(!isDark(botUnder(() => 'oak_leaves')), '葉の下')
+  assert.ok(!isDark(botUnder(() => 'glass')), 'ガラスの下')
+})
+
+test('空の光が届かない所（洞窟、深い屋根の下）は暗く、空が開いた柱が近ければ暗くない', () => {
+  assert.ok(isDark(botUnder(() => 'stone')), '洞窟')
+  assert.ok(isDark(botUnder((x, z) => (Math.abs(x) + Math.abs(z) <= 7 ? 'stone' : null))), '屋根が 7 ブロック先まで続く')
+  assert.ok(!isDark(botUnder((x, z) => (Math.abs(x) + Math.abs(z) < 7 ? 'stone' : null))), '7 ブロック先に空がある')
 })

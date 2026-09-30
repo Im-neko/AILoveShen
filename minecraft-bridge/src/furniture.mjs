@@ -6,10 +6,13 @@
 // だけ）、ベッドは家の中にだけ置く、中身の分かっているチェストは先に中身を出す。
 import vec3Pkg from 'vec3'
 import { isHomeCell } from './builds.mjs'
+import { refusalAt } from './refusals.mjs'
+import { protectedReason } from './home.mjs'
+import { FURNITURE_BLOCK, furniturePlacedByMe } from './ledger.mjs'
 
 const { Vec3 } = vec3Pkg
 
-export const MOVABLE = /(_bed|^crafting_table|^furnace|^blast_furnace|^smoker|^chest|^trapped_chest|^barrel)$/
+export const MOVABLE = FURNITURE_BLOCK
 const TAKE_RADIUS = 32
 
 const key = (p) => `${p.x},${p.y},${p.z}`
@@ -26,7 +29,8 @@ export const HOME_FURNITURE = {
 // 家の中に置けるものか: 種類（bed など）か、色つきのベッド（blue_bed など）
 export const isHomeFurnitureItem = (item) => !!HOME_FURNITURE[item] || /^[a-z_]+_bed$/.test(item ?? '')
 
-export function furnitureInHome (bot, home, item) {
+// accept(p): その位置の物を数えるか（省略すれば置いてあるもの全部）
+export function furnitureInHome (bot, home, item, accept = null) {
   const pattern = HOME_FURNITURE[item] ?? (isHomeFurnitureItem(item) ? new RegExp(`^${item}$`) : null)
   if (!home || !pattern) return null
   const cells = home.cells ?? []
@@ -39,10 +43,16 @@ export function furnitureInHome (bot, home, item) {
   for (const c of spots) {
     for (const dy of [0, 1]) {
       const p = new Vec3(c.x, home.min.y + dy, c.z)
-      if (pattern.test(bot.blockAt(p)?.name ?? '')) return p
+      if (pattern.test(bot.blockAt(p)?.name ?? '') && (!accept || accept(p))) return p
     }
   }
   return null
+}
+
+// 目標の判定に使う、家の家具。見つけた拠点（村の小屋など）では、自分で置いた物だけ
+export function ownFurnitureInHome (bot, state, item) {
+  const home = state.home
+  return furnitureInHome(bot, home, item, home?.found ? (p) => furniturePlacedByMe(bot, state, p) : null)
 }
 
 // 今の家の家具か（家の部屋のセルで、床の高さ）
@@ -58,15 +68,29 @@ export function knownContents (state, p) {
   return items.length ? items.map(([n, k]) => `${n} ${k}`).join(', ') : null
 }
 
-// 置いてあるベッドのうち、今の家のものでない一番近いもの（家に運ぶ候補）
-export function placedBedToTake (bot, state, radius = TAKE_RADIUS) {
-  const ids = Object.values(bot.registry.blocksByName).filter((b) => b.name.endsWith('_bed')).map((b) => b.id)
+// 拾って手に入る家具のアイテム名（ベッドは色を問わず 'bed'）。拾えないものは null
+export function takeableItem (item) {
+  if (!item) return null
+  if (/_bed$/.test(item) || item === 'bed') return 'bed'
+  return MOVABLE.test(item) ? item : null
+}
+
+// 置いてある家具のうち、今の家のものでも建物の一部でもなく、拾える（中身のあるチェストでない）
+// 一番近いもの（作らずに拾う候補。ベッドは家に運ぶ）
+export function placedToTake (bot, state, item, radius = TAKE_RADIUS) {
+  // 拾って手に入るのはそのアイテムだけ: 燻製器や溶鉱炉は furnace に数えない（ベッドは色を問わない）
+  const kind = takeableItem(item)
+  if (!kind) return null
+  const pattern = kind === 'bed' ? /_bed$/ : new RegExp(`^${kind}$`)
+  const ids = Object.values(bot.registry.blocksByName).filter((b) => pattern.test(b.name)).map((b) => b.id)
   const me = bot.entity.position
   return bot.findBlocks({ matching: ids, maxDistance: radius, count: 16 })
-    .filter((p) => !isHomeFurniture(state, p))
+    .filter((p) => !isHomeFurniture(state, p) && !refusalAt(state, 'dig', p))
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
-    .map((p) => ({ pos: p, block: bot.blockAt(p)?.name }))
-    .find((b) => b.block) ?? null
+    .map((p) => ({ pos: p, block: bot.blockAt(p) }))
+    .filter((b) => b.block && pattern.test(b.block.name) && !protectedReason(state, b.pos, 0, b.block) &&
+      !(/chest|barrel/.test(b.block.name) && knownContents(state, b.pos)))
+    .map((b) => ({ pos: b.pos, block: b.block.name }))[0] ?? null
 }
 
 // 動かしてよいか（道具の move_furniture）: 理由の文か null

@@ -96,6 +96,9 @@ export function roomFrom (bot, start) {
   return cells.length >= 2 ? cells : null
 }
 
+// 見つけた拠点の名前。保存された家の `found` が無い古いファイルは、この名前で見分ける
+export const FOUND_BASE_NAME = '見つけた拠点'
+
 // 近くのドアのうち、片側が閉じた部屋になっているもの（一番近いもの）→ 家の形 { door, inside, outside, min, max, cells }
 export function findBase (bot, radius = LANDMARK_RADIUS) {
   const me = bot.entity.position
@@ -135,7 +138,7 @@ export function adoptFoundBase (bot, state) {
   if (state.home || !bot.entity) return false
   const base = findBase(bot)
   if (!base) return false
-  base.name = '見つけた拠点'
+  base.name = FOUND_BASE_NAME
   state.home = base
   return true
 }

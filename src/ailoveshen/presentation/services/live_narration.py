@@ -12,9 +12,21 @@
 - そうでなければ、前の一言から変わったこと（行動の結果、持ち物の増減、動いた距離）と、
   直前に話したことを渡して、違う内容の 1 文を作らせる（purpose=live。会話の履歴には残さない）
 
+状況が何も変わらないまま `idle_seconds` 黙っていたら（夜の穴の中で朝を待つ、長い歩き）、状況を
+変えずに雑談を 1 行話す（今の様子への気づき、感じたこと、視聴者への一言。やることは新しく約束しない。
+人間の配信者は待ち時間を黙らない）。
+
+次の行動や目標を LLM が決めている間、続けて失敗して行き詰まっている間は、行動の一言は話さない
+（選ばれていない行動を言わない）。その代わり `thinking_seconds` 黙っていたら、考え中の独り言を
+1 行話す（今の状態から、迷っていること・気づいたこと。やることを新しく約束しない・したと言わない）。
+目標の決定や `tool_stuck` の待ちで 2〜6 分黙っていた（2026-09-30: 30 分のうち発話の空白は最大 270 秒）。
+
 同じ内容を繰り返さない: 実況の読み上げはすべて `SpokenLines.repeats` を通し、直前の数行と
 似ていれば捨てる（Narrator と一言が同時に作っても、2 行目は読まない）。作っている間に別の
 発話が始まったら、その行は捨てる（古くなる）。捨てても、次はもう 1 間隔待つ。
+
+今の状態と食い違うことを言わない（docs/design/65 §4）: 作った文（道具の intent はそのまま読むので除く）は
+読む直前に `SpeechGuard` が今の状態と照らし、食い違えば 1 回だけ作り直し、それでも食い違えば言わない。
 """
 
 from __future__ import annotations
@@ -33,6 +45,7 @@ from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.domain.events import GameActionExecutedEvent
 from ailoveshen.domain.value_objects import Activity, FastQuestion, FastQuestionKind
 from ailoveshen.presentation.services.llm_service import LLMService
+from ailoveshen.presentation.services.speech_guard import SpeechGuard
 
 SIMILAR = 0.5  # 文字の 2-gram の Jaccard がこれ以上なら同じ内容とみなす
 SEMANTIC_SIMILARITY = 0.8  # Jev が「意味的に 8 割以上同じ」と判定したら同じ
@@ -108,6 +121,9 @@ class LiveNarration:
         clock: Callable[[], float] = time.monotonic,
         judge: IFastJudge | None = None,
         semantic_similarity_threshold: float = 0.8,
+        idle_seconds: float = 0.0,
+        thinking_seconds: float = 0.0,
+        guard: SpeechGuard | None = None,
     ) -> None:
         """
         Args:
@@ -119,6 +135,10 @@ class LiveNarration:
             interval_seconds: 黙っていたら話すまでの秒数（読み上げが終わってから）
             tick_seconds: 見る間隔
             clock: 時計（テストで差し替える）
+            idle_seconds: 状況が変わらないまま黙っていたら雑談するまでの秒数（0 なら話さない）
+            thinking_seconds: 次の手や目標を決めている間・行き詰まっている間に黙っていたら、考え中の
+                独り言を話すまでの秒数（0 なら話さない）
+            guard: 作った文を、読む直前に今の状態と照らす（None なら照らさない）
         """
         self._llm = llm
         self._activity = activity
@@ -130,7 +150,11 @@ class LiveNarration:
         self._clock = clock
         self._judge = judge
         self._semantic_similarity_threshold = semantic_similarity_threshold
+        self._idle = idle_seconds
+        self._thinking = thinking_seconds
+        self._guard = guard
         self._quiet_from = clock()
+        self._waiting_since: float | None = None  # 次の手を決めている・行き詰まっている状態が続いている起点
         self._last_intent = ""
         self._actions: deque[str] = deque(maxlen=RECENT_ACTIONS)
         self._seen: dict[str, Any] = {}  # 前の一言のときの持ち物・位置・体力・時間帯・家の出入り
@@ -185,6 +209,7 @@ class LiveNarration:
     async def tick(self) -> None:
         """黙っている時間が間隔を超えていれば 1 行話す。"""
         now = self._clock()
+        self._track_waiting(now)
         if not self._is_idle():
             self._quiet_from = now
             return
@@ -192,28 +217,28 @@ class LiveNarration:
         if now - quiet_from < self._interval:
             return
         activity = self._activity()
-        if activity is None or activity.goal is None or not activity.acting:
-            # 行動を実行している間だけ話す。次の行動や目標を選んでいる間は黙る（2026-09-28: 目標の
-            # 決定を 4 分待つ間、終わった行動の結果から「パンにするね」を何度も作って話した）
+        if activity is None:
             return
-        if activity.failing >= STUCK_FAILURES or activity.stagnant_seconds > 0:
-            return  # 行き詰まっている（失敗が続く、状況が動かない）間は黙る（考え直して別の手を選ぶ。切れ目の実況がそれを話す）
+        # 行動を実行している間だけ「している」ことを話す。次の行動や目標を選んでいる間は、選ばれていない
+        # 行動を言わない（2026-09-28: 目標の決定を 4 分待つ間、終わった行動の結果から「パンにするね」を
+        # 何度も作って話した）。続けて失敗して行き詰まっている間も同じ。その間は考え中の独り言だけ
+        if self._waiting(activity):
+            await self._think_aloud(activity, now, max(quiet_from, now if self._waiting_since is None else self._waiting_since))
+            return
         changes = self._changes(activity)
         if changes is None:  # 比べる前の状態がまだない: 今を基準にする
             self._mark(activity)
             return
-        if not changes:
-            return  # 状況が変わるまで黙る
-        line = self._new_intent(activity)
+        idle = not changes
+        if idle and (self._idle <= 0 or now - quiet_from < self._idle):
+            return  # 状況が変わるまで黙る（雑談の間隔に届くまで）
+        line = None if idle else self._new_intent(activity)
         source = "intent"
+        events: list[str] = []
         if line is None:
-            line = await self._llm.generate_commentary(
-                recent_events=self._events(activity, changes),
-                activity=activity,
-                purpose="live",
-                record=False,
-            )
-            source = "live"
+            events = self._idle_events(activity) if idle else self._events(activity, changes)
+            line = await self._live_line(events, activity)
+            source = "idle" if idle else "live"
         # 話しても話さなくても、次はもう 1 間隔待つ（捨てたときにすぐ作り直さない）
         self._quiet_from = self._clock()
         self._mark(activity)
@@ -226,8 +251,94 @@ class LiveNarration:
         if previous is not None:
             logger.info(f"[live] Jev/類似度で前回と同じ判定したので捨てた: {line}（前: {previous}）")
             return
+        if source != "intent":
+            verified = await self._verified(line, events)
+            if verified is None:
+                return
+            line = verified
+            if not self._is_idle():
+                logger.info(f"[live] 照らしている間にほかの発話が始まったので捨てた: {line}")
+                return
         logger.debug(f"[live] {source}: {line}")
         await self._say(line)
+
+    async def _live_line(self, events: list[str], activity: Activity) -> str:
+        return await self._llm.generate_commentary(
+            recent_events=events, activity=activity, purpose="live", record=False
+        )
+
+    async def _verified(self, line: str, events: list[str]) -> str | None:
+        """作った文を今の状態と照らす（食い違えば作り直して、それでも食い違えば None）。"""
+        if self._guard is None:
+            return line
+
+        async def regenerate(extra: list[str]) -> str:
+            activity = self._activity()
+            if activity is None:
+                return ""
+            again = await self._live_line(events + extra, activity)
+            if again and await self._duplicate_of_recent(again) is not None:
+                return ""  # 言い直しが直前と同じ内容なら言わない
+            return again
+
+        return await self._guard.verify(line, regenerate)
+
+    @staticmethod
+    def _waiting(activity: Activity) -> bool:
+        """次の手や目標を決めている間か、続けて失敗して行き詰まっている間（体が動いていない）。"""
+        return (
+            activity.goal is None
+            or not activity.acting
+            or activity.failing >= STUCK_FAILURES
+            or activity.stagnant_seconds > 0
+        )
+
+    def _track_waiting(self, now: float) -> None:
+        """待ちが続いている起点を覚える。数秒の選び直しではなく、続いて待っているときだけ独り言にする。"""
+        activity = self._activity()
+        if activity is None or not self._waiting(activity):
+            self._waiting_since = None
+        elif self._waiting_since is None:
+            self._waiting_since = now
+
+    async def _think_aloud(self, activity: Activity, now: float, quiet_from: float) -> None:
+        """次の手を決めている間・行き詰まっている間の、考え中の独り言（状態の話だけ。行動は言わない）。"""
+        if self._thinking <= 0 or now - quiet_from < self._thinking:
+            return
+        events = self._thinking_events(activity)
+        line = await self._live_line(events, activity)
+        self._quiet_from = self._clock()
+        if not line:
+            return
+        if not self._is_idle():
+            logger.info(f"[live] 作っている間にほかの発話が始まったので捨てた: {line}")
+            return
+        previous = await self._duplicate_of_recent(line)
+        if previous is not None:
+            logger.info(f"[live] Jev/類似度で前回と同じ判定したので捨てた: {line}（前: {previous}）")
+            return
+        verified = await self._verified(line, events)
+        if verified is None:
+            return
+        line = verified
+        if not self._is_idle():
+            logger.info(f"[live] 照らしている間にほかの発話が始まったので捨てた: {line}")
+            return
+        logger.debug(f"[live] thinking: {line}")
+        await self._say(line)
+
+    def _thinking_events(self, activity: Activity) -> list[str]:
+        """独り言に渡すこと: 考え中であること、今の状態、直前に話したことと違う内容に。"""
+        goal = activity.goal
+        said = "」「".join(self._spoken.recent())
+        return [
+            f"今の小目標: {goal.describe()}（{goal.reason}）" if goal is not None else "今の小目標: 次を決めている最中",
+            "（考え中の独り言）今は次にどうするかを考えている最中で、体は止まっている。今の状態（今いる場所、"
+            "時間帯、体力・満腹度、持ち物、見えているもの、うまくいかなかったこと）から、迷っていること・気づいた"
+            "ことを、短い 1 文（40 字くらいまで）で話す。何かを始めた・やっていると言わない。やることを"
+            "新しく約束しない。今の状態にないことは言わない。"
+            + (f"直前に話したこと「{said}」と同じ内容・言い換えは言わない。" if said else ""),
+        ]
 
     def _new_intent(self, activity: Activity) -> str | None:
         """道具に添えた日本語の intent が前と違えば、それ（Jev の手の英語の id は読まない）。"""
@@ -250,8 +361,7 @@ class LiveNarration:
             "短い 1 文（40 字くらいまで）で話す。次の段取りは今の小目標と「今していること」の中目標から"
             "（そこにない予定を作らない）。"
             + (
-                f"直前に話したこと「{said}」と同じ内容・言い換えは言わない。予定を理由なく"
-                "変えない（やると言ったことをやめる・明日に延ばす、など）。ただし正しいのは今の"
+                f"直前に話したこと「{said}」と同じ内容・言い換えは言わない。正しいのは今の"
                 "状態（今いる場所、持ち物、行動の結果）で、直前に話したことがそれと違えば、状態に"
                 "合わせて言い直す（例: 家の中に入ったと言ったが、今いる場所が家の外なら、"
                 "まだ外だと言う）。"
@@ -261,6 +371,19 @@ class LiveNarration:
             + "「変わったこと」に触れる"
         )
         return events
+
+    def _idle_events(self, activity: Activity) -> list[str]:
+        """雑談に渡すこと: 今の小目標と、状況が変わっていないこと、直前に話したことと違う内容に。"""
+        goal = activity.goal
+        said = "」「".join(self._spoken.recent())
+        return [
+            f"今の小目標: {goal.describe()}（{goal.reason}）" if goal is not None else "今の小目標: なし",
+            f"今の行動: {activity.intent or 'なし'}",
+            "（待ち時間の雑談）状況は変わっていない。今の状態（今いる場所、時間帯、体力・満腹度、持ち物、"
+            "見えているもの）から、気づいたこと・感じたこと・視聴者への一言を、短い 1 文（40 字くらいまで）で"
+            "話す。やることを新しく約束しない。今の状態にないことは言わない。"
+            + (f"直前に話したこと「{said}」と同じ内容・言い換えは言わない。" if said else "")
+        ]
 
     @staticmethod
     def _snapshot(activity: Activity) -> dict[str, Any] | None:

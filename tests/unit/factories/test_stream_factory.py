@@ -71,3 +71,35 @@ async def test_a_busy_board_port_stops_the_start_with_how_to_fix(tmp_path):
         port = busy.getsockname()[1]
         with pytest.raises(StreamSetupError, match="--board-port"):
             await create_stream(_settings(board_port=port, speak=False), {}, tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_what_the_tts_did_with_a_line_is_recorded_with_the_state(tmp_path, monkeypatch):
+    """視聴者が聞いたかの記録（設計書 65 §2）: 読み上げの結果が `logs/spoken` に残る。"""
+    import json
+    from unittest.mock import AsyncMock
+
+    from ailoveshen.application.dto.speech_dto import SpeakTextRequest
+    from ailoveshen.factories import tts as tts_factory
+    from ailoveshen.presentation.services.tts_service import TTSService
+
+    service = TTSService(AsyncMock())
+
+    async def fake_tts(**kwargs):
+        return service
+
+    monkeypatch.setattr(tts_factory, "create_and_connect_tts_service", fake_tts)
+    stream = await create_stream(_settings(board_port=0, speak=True), {}, tmp_path)
+    try:
+        service.on_outcome(SpeakTextRequest(text="家に入れたよ", source="commentary"), "dropped_old", 25.0)
+    finally:
+        await stream._close()
+
+    (record,) = tmp_path.glob("logs/spoken/watch-*.jsonl")
+    (row,) = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
+    assert (row["event"], row["text"], row["outcome"], row["waited"]) == (
+        "tts",
+        "家に入れたよ",
+        "dropped_old",
+        25.0,
+    )

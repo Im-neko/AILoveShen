@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote
 
 import httpx
@@ -111,6 +111,8 @@ class MineflayerBridgeClient(IMinecraftBridge):
                 met=bool(r["met"]),
                 lines=tuple(r.get("lines", [])),
                 impossible=tuple(r.get("impossible", [])),
+                next_step=_next_step(r.get("next_step")),
+                gather=bool(r.get("gather", False)),
             )
             for spec, r in zip(specs, response.json(), strict=True)
         ]
@@ -387,6 +389,7 @@ def _to_status(data: dict[str, Any]) -> GoalStatus:
         lines=tuple(str(x) for x in data.get("lines", [])),
         blocked=tuple(str(x) for x in data.get("blocked", [])),
         dead_end=tuple(str(x) for x in data.get("dead_end", [])),
+        spec_label=_label(data["spec"]) if data.get("spec") else "",
         members=tuple(
             BundleMember(
                 label=_label(m.get("spec") or {}),
@@ -426,6 +429,7 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         has_home=home is not None,
         inside_home=bool(home and home["inside"]),
         bed_in_home=bool(home and home.get("bed")),
+        chest_in_home=bool(home and home.get("chest")),
         unfinished_builds=tuple(
             str(b["name"]) for b in obs.get("builds") or [] if not b.get("complete")
         ),
@@ -473,3 +477,10 @@ def _gathered(spec: GoalSpec) -> dict[str, object] | None:
     if spec.predicate == GoalPredicate.FARMED and spec.item in _SEEDS:
         return {"item": _SEEDS[spec.item], "count": min(spec.count, _ALSO_SEEDS_MAX)}
     return None
+
+
+def _next_step(data: Optional[dict[str, Any]]) -> Optional[GoalSpec]:
+    """`/check` の next_step（have の小目標）。なければ None。"""
+    if not data:
+        return None
+    return GoalSpec(GoalPredicate.HAVE, item=str(data["item"]), count=int(data["count"]))

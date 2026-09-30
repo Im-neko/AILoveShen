@@ -61,6 +61,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         default_thinking_level: str = "low",
         thinking_purposes: Optional[Sequence[str]] = None,
         thinking_max_tokens: Optional[Mapping[str, int]] = None,
+        output_max_tokens: Optional[Mapping[str, int]] = None,
         max_concurrent: int = 2,
         timeout_seconds: float = 180.0,
         generation_log: Optional[IGenerationLog] = None,
@@ -82,6 +83,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 遅いので、ふだんの操作の判断は思考なしにする）
             thinking_max_tokens: 思考させる用途ごとの出力の上限（思考を含む）。上限で答えが出なければ
                 思考なしで聞き直す（長い思考でプレイが数分止まらないように）
+            output_max_tokens: 思考させない用途ごとの出力の上限。書き続けて止まらない呼び出し（返事が
+                4,462 トークン、84 秒。ふつうは 200）を、この長さで切る
             max_concurrent: 同時に送る数の上限
             timeout_seconds: 1 回の上限
             generation_log: デバッグの記録の残し先
@@ -100,6 +103,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._levels = {"default": default_thinking_level, **dict(thinking_levels or {})}
         self._think_purposes = set(thinking_purposes) if thinking_purposes is not None else None
         self._think_caps = dict(thinking_max_tokens or {})
+        self._output_caps = dict(output_max_tokens or {})
         self._slots = asyncio.Semaphore(max(1, max_concurrent))
         self._log = generation_log
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -267,6 +271,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
         cap = self._think_caps.get(purpose or "default")
         if think and cap:
             body["max_tokens"] = min(body["max_tokens"], cap)
+        elif not think and (out_cap := self._output_caps.get(purpose or "default")):
+            body["max_tokens"] = min(body["max_tokens"], out_cap)
         data = await self._post(body, purpose, think)
         try:
             choice = data["choices"][0]

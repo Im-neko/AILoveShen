@@ -24,7 +24,19 @@ from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.exceptions import SkillRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import Activity, SkillDraft, SkillInfo, ToolOutcome
 
-EXPECT_PREDICATES = ["have", "stored", "built", "placed", "lit", "leveled", "custom", "progress"]
+EXPECT_PREDICATES = [
+    "have",
+    "stored",
+    "planted",
+    "farmed",
+    "built",
+    "placed",
+    "lit",
+    "leveled",
+    "custom",
+    "facility",
+    "progress",
+]
 SKILLS_SHOWN = 12  # 道具の選択と技を書く呼び出しに見せる技の数
 HOUR = 3600.0
 
@@ -48,15 +60,16 @@ def skill_schema() -> dict[str, Any]:
                 "description": "What holds in the world when the skill succeeded",
                 "properties": {
                     "predicate": {"type": "string", "enum": EXPECT_PREDICATES},
-                    "item": {"type": "string", "description": "have / stored: item or group"},
+                    "item": {"type": "string", "description": "have / stored / planted / farmed: item, crop or group"},
                     "count": {
                         "type": "string",
-                        "description": 'have / stored: a number, "+N" (N more than before) '
+                        "description": 'have / stored / planted / farmed: a number, "+N" (N more than before) '
                         'or "$param"',
                     },
                     "name": {
                         "type": "string",
-                        "description": "built: the build's name; custom: the check's name",
+                        "description": "built: the build's name; custom: the check's name; facility: the "
+                        "facility's name",
                     },
                     "where": {
                         "type": "string",

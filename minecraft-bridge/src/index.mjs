@@ -21,6 +21,7 @@
 //                             （今ある家・建物・畑・植えた苗木を先に取り込む）
 //   PUT  /facilities/<name> {kind, zones, boxes, purpose, design} -> 施設を設計どおりに登録する（畑: crop, width, depth、植林場: sapling, count, spacing、採掘場: bottom_y, tunnels, tunnel_length。設計書 47 §16）。
 //                             実際のマスはブリッジが区画の中から選ぶ。直せる理由は 400、読み込まれていない区画は 409
+//   GET  /worldmap         -> 視界の地図の様子: { sections, cells_added, cells_changed, samples, avg_ms, max_ms }（設計書 59）
 //   GET  /memory           -> 覚えている場所を座標つきで: { places（種類ごと）, chests, furnaces, deaths }（search_memory）
 //   GET  /zones?x=&z=[&cells=&size=] -> 街の理想図の区画の地形（zones.mjs、設計書 47 §6）: [{ id, min_x.., seen, water, lava, trees, built, stone, flat, height, facilities }]
 //   GET  /items            -> アイテムとブロックの名前と日本語名 [{ name, ja }]（item_info の一覧）
@@ -51,10 +52,18 @@
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
 import { plantingStatus, cropOf } from './farming.mjs'
 import { aroundMe } from './around.mjs'
+import { quarrySpot } from './quarry.mjs'
 import { listRefusals } from './refusals.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops, installAutoJump } from './move.mjs'
+import { installLedger } from './ledger.mjs'
+import { WorldMap, makeClassifier, createSampler, botReader, reflectLive, minuteOf } from './worldmap.mjs'
+import { liquidReason } from './liquid.mjs'
+import { memoryView, summaryKinds } from './worldmap-places.mjs'
+import { gatherableLog, isNaturalLogName } from './trees.mjs'
 import http from 'node:http'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import mineflayer from 'mineflayer'
 import minecraftData from 'minecraft-data'
 import pathfinderPkg from 'mineflayer-pathfinder'
@@ -66,7 +75,7 @@ import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
-import { summarize, bearing, inventoryCounts, isUnderground, blockInfo } from './observe.mjs'
+import { summarize, bearing, round, inventoryCounts, isUnderground, blockInfo } from './observe.mjs'
 import { configureMovements, DAMAGE_TOLERANT, nearbyDrops } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools, DROP_RADIUS as PICKUP_RADIUS } from './tools.mjs'
@@ -88,6 +97,14 @@ import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
 const VERSION = '1.21.4'
 
+// 視界で作る世界の地図（docs/design/59_world_map.md）: 見えたセルを座標つきで覚える。state.json とは別に保存する。
+// 読み込みが遅れて spawn の待ち受けに間に合わないことがないよう、ボットを作る前に読む
+const WORLDMAP_DIR = process.env.WORLDMAP_DIR ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'worldmap')
+const WORLDMAP_SAVE_MS = 30 * 1000
+const worldMap = await WorldMap.load(WORLDMAP_DIR, VERSION)
+const mapCells = makeClassifier(minecraftData(VERSION))
+console.log(`[worldmap] ${WORLDMAP_DIR} から断面 ${worldMap.sectionCount} を読んだ`)
+
 const bot = mineflayer.createBot({
   host: process.env.MC_HOST ?? 'localhost',
   port: Number(process.env.MC_PORT ?? 25565),
@@ -96,6 +113,7 @@ const bot = mineflayer.createBot({
   auth: 'offline'
 })
 bot.loadPlugin(pathfinderPkg.pathfinder)
+const sampler = createSampler(bot, worldMap, mapCells)
 startMirror(bot)
 watchVehicle(bot) // 降りたのに bot.vehicle が残る Mineflayer の不具合を直す（設計書 37）
 
@@ -115,6 +133,8 @@ const state = {
   conditions: {}, // Gemini が書いた判定 custom(name)（conditions.mjs）
   survey: null, // 街の候補地の調査の計画（survey.mjs）
   memory: newMemory(), // 前に見た場所（memory.mjs）。state.json に保存する
+  worldMap, // 視界の地図（worldmap.mjs）。別のファイルに保存する
+  mapCells: mapCells, // ブロックの種類とセルの値の表
   skill: null, // 実行中の技 { name, version, control }（skills.mjs）
   pendingJudge: null, // 技の judge() が Jev の答えを待っている質問 { id, question, kind, options, resolve }
   deaths: 0 // このブリッジが動いてから死んだ回数（増えたら、Python は小目標を選び直す）
@@ -149,7 +169,7 @@ function observation () {
   const extra = {}
   if (state.plan) extra.build = state.plan.status(bot)
   if (Object.keys(state.builds ?? {}).length) extra.builds = buildsStatus(bot, state)
-  extra.memory = summarizeMemory(state.memory, bot.entity.position, worldAge(), bearing)
+  extra.memory = summarizeMemory(memoryView(state, bot.entity.position, worldAge(), summaryKinds(mapCells)), bot.entity.position, worldAge(), bearing)
   // 覚えている場所のブロックから取れるアイテム（作物の wheat → wheat と wheat_seeds）
   for (const p of extra.memory.places) {
     const gives = knowledge.dropsOf(p.kind)
@@ -166,13 +186,23 @@ function observation () {
   // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
   extra.nearby = landmarks(bot, state)
   // 目の前にあるもの（半径 8、足元の高さ ±2 の、見えているブロックと落ちているアイテム）
-  extra.around = aroundMe(bot, (name) => knowledge.dropsOf(name), (p, b) => protectedReason(state, p, 0, b) !== null)
+  // 水をせき止めているブロックも出さない。木でない原木（村の畑の縁など）は、数だけ（not_trees）で座標は出さない
+  extra.around = aroundMe(
+    bot,
+    (name) => knowledge.dropsOf(name),
+    (p, b) => protectedReason(state, p, 0, b) !== null || !!liquidReason(bot, p, b),
+    (p, b) => isNaturalLogName(b.name) && !gatherableLog(bot, state, p),
+    state
+  )
+  // 石・土を掘る採掘の場所と、続きから下りられる階段（設計書 64）
+  const spot = quarrySpot(state, bot.entity.position)
+  if (spot) extra.quarry = { x: spot.x, y: spot.y, z: spot.z, distance_m: round(spot.distanceTo(bot.entity.position)), direction: bearing(bot.entity.position, spot), shafts: (state.quarry?.shafts ?? []).map((s) => ({ top: s.top, bottom: s.bottom })) }
   extra.underground = isUnderground(bot)
   // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
   const broken = recentBreaks(bot, state)
   if (broken.length) extra.broken_tools = broken
   const xyz = (v) => v && { x: v.x, y: v.y, z: v.z }
-  extra.home = state.home ? { name: state.home.name, design: state.home.design, door: xyz(state.home.door), min: xyz(state.home.min), max: xyz(state.home.max), inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), sleeping: bot.isSleeping } : null
+  extra.home = state.home ? { name: state.home.name, design: state.home.design, door: xyz(state.home.door), min: xyz(state.home.min), max: xyz(state.home.max), inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), chest: homeChests(state.memory ?? {}, state.home).length > 0, found: !!state.home.found, sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
 
@@ -193,9 +223,8 @@ const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remain
 // 候補を1つ実行する（実行の経路は runner.mjs。道具と同じ）
 const run = createRunner(bot, state, {
   afterRun () {
-    // 途中で見えたもの（変わるのは移動したあと）
-    // 家・建物・建てている家のブロックは、材料としては覚えない（掘れと言われて断られる）
-    remember(state.memory, sightings(bot).filter((s) => bot.blockAt(s.pos)?.name !== s.kind || !protectedReason(state, s.pos, 0, bot.blockAt(s.pos))), bot.entity.position, worldAge())
+    // 途中で見えた動物（ブロックは視界の地図が、歩きながら覚える）
+    remember(state.memory, sightings(bot), bot.entity.position, worldAge())
     persist()
   }
 })
@@ -470,8 +499,9 @@ async function handle (req, res) {
     if (changed) saveState(state)
     return send(res, 200, facilitiesStatus(bot, state, jaOf))
   }
+  if (req.method === 'GET' && req.url === '/worldmap') return send(res, 200, worldMapStatus())
   if (req.method === 'GET' && req.url === '/memory') {
-    return send(res, 200, memoryList(state.memory, bot.entity.position, worldAge(), bearing, (k) => knowledge.dropsOf(k), jaOf))
+    return send(res, 200, memoryList(memoryView(state, bot.entity.position, worldAge()), bot.entity.position, worldAge(), bearing, (k) => knowledge.dropsOf(k), jaOf))
   }
   if (req.method === 'GET' && req.url.startsWith('/zones?')) {
     const q = new URL(req.url, 'http://bridge').searchParams
@@ -522,8 +552,27 @@ bot.once('spawn', () => {
   watchWear(bot, state)
   guardDigLoops(bot, state)
   installAutoJump(bot)
+  installLedger(bot, state, (pos) => reflectLive(worldMap, botReader(bot), mapCells, pos, minuteOf(bot.time.age)))
+  sampler.start()
   console.log(`[bot] ${bot.entity.position} にスポーンした`)
 })
+// 地図の保存と、様子の記録（サンプリングの時間、断面の数）。ブリッジは 1 スレッドなので、重くなっていないか見える
+function worldMapStatus () {
+  const st = sampler.stats
+  return {
+    sections: worldMap.sectionCount,
+    cells_added: worldMap.total.added,
+    cells_changed: worldMap.total.changed,
+    samples: st.samples,
+    skipped: st.skipped,
+    avg_ms: st.samples ? Math.round((st.ms / st.samples) * 100) / 100 : 0,
+    max_ms: Math.round(st.maxMs * 100) / 100
+  }
+}
+setInterval(() => {
+  worldMap.save(WORLDMAP_DIR, VERSION).catch((e) => console.log('[worldmap] 保存できなかった', e.message))
+}, WORLDMAP_SAVE_MS).unref()
+setInterval(() => console.log(`[worldmap] ${JSON.stringify(worldMapStatus())}`), 5 * 60 * 1000).unref()
 // 採掘の開始をすべて記録する。pathfinder が道を開けるために掘るものも含む
 let lastDig = null
 bot.on('physicsTick', () => {
@@ -550,6 +599,9 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
       console.log('[bridge] 状態を保存できなかった', e.message)
     }
     try { bot.quit('bridge restarting') } catch {}
-    setTimeout(() => process.exit(0), 500)
+    sampler.stop()
+    const saved = worldMap.save(WORLDMAP_DIR, VERSION).catch((e) => console.log('[worldmap] 保存できなかった', e.message))
+    setTimeout(() => process.exit(0), 3000).unref()
+    saved.then(() => setTimeout(() => process.exit(0), 500))
   })
 }

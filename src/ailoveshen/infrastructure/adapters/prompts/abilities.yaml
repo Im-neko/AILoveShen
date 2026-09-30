@@ -11,13 +11,18 @@
   how: |
     畑は作る前に設計する: 大目標の条件に facility(name) を書く（名前は街の理想図の予定の施設名。
     なければ新しい名前）。そのとき区画・作物・大きさを決め、耕すマスが決まる
-    1. クワを持つ（なければ craft で wooden_hoe など。材料は recipe_of）
+    1. クワと種を持つ（クワはなければ craft で wooden_hoe など。材料は recipe_of。小麦の種は草を dig
+       すると 1 割ほど落ちる: get_seeds）
     2. till と sow の x,y,z を省くと、畑の次のマスを選ぶ（小目標 facility(name) ならその畑、
        farmed ならその作物の畑。草が生えていれば刈ってから耕す）。畑のマスの外は耕せない
     3. sow {item} で耕地に種をまく（wheat_seeds / carrot / potato / beetroot_seeds）
+    畑の四角の中には、9 x 9 ごとに 1 マス、水のマスがある（設計で決まる）。水のバケツがあれば water で置く
+    （水を置く手順は water_farm）。水が届いた耕地は、何も植わっていなくても土に戻らない
+    水が届く前は、耕すのは 1 マスずつ、耕したらすぐまく。まく種が耕し済みのマスに足りないと till は
+    断られる（何も植わっていない耕地は、水が近くにないと土に戻るから。種がないまま耕し続けない）
     畑の場所・作物・残りのマスは search_facility（例: 畑、wheat farm）
-  tools: [till, sow, craft, recipe_of, search_facility]
-  see: [get_seeds, harvest_crops, plant_trees]
+  tools: [till, sow, water, craft, recipe_of, search_facility]
+  see: [get_seeds, harvest_crops, water_farm, plant_trees]
 
 - key: harvest_crops
   title: 作物を収穫する
@@ -34,18 +39,19 @@
 
 - key: water_farm
   title: 畑に水を引く
-  words: water farm farmland moisture dry hydrate bucket irrigation 水 水路 乾いた
-  when: 畑の状態に乾いた耕地（dry）があるとき、作物の育ちが遅いとき、視聴者に水を言われたとき
+  words: water farm farmland moisture dry hydrate bucket irrigation 水 水路 乾いた 水のマス
+  when: 畑の水のマスにまだ水がないとき（search_facility の to_water）、乾いた耕地（dry）があるとき、作物の育ちが遅いとき、視聴者に水を言われたとき
   how: |
-    耕地は水から 4 マス以内（同じ高さか 1 つ上）だと湿り（moisture 7）、作物が早く育つ。乾いた耕地は
-    find_blocks {block: farmland} の props.moisture が "7" より小さい。畑の乾いたマスの数は search_facility
-    1. バケツを作る: craft {item: bucket}（鉄インゴット 3。材料は recipe_of）
-    2. 水源（流れていない水）の上で use_item {item: bucket, x,y,z}（水のブロックの座標）で汲む → water_bucket
-    3. 畑の中の 1 マスを dig して穴にし、その穴の底のブロックに use_item {item: water_bucket, x,y,z} で水を置く
-       （9x9 の真ん中に 1 つで、まわり 4 マスが湿る）
-    4. 水源を 2x2 に並べると、汲んでも減らない無限の水源になる
+    畑を設計するとき、四角の中に 9 x 9 ごとに 1 マス水のマスが決まる（そこから縦横 4 マス以内の耕地が湿る）。
+    水が届いた耕地は、何も植わっていなくても土に戻らず、作物が速く育つ。水のマスは search_facility の to_water
+    1. バケツを作る: craft {item: bucket}（鉄インゴット 3。材料は recipe_of。鉄は鉄鉱石を掘って精錬する）
+    2. 水源（流れていない水）で use_item {item: bucket, x,y,z}（水のブロックの座標）で汲む → water_bucket
+    3. water {}（x,y,z を省くと畑の次の水のマス）。水のマスの地面を掘って穴にし、その底に水を置く。
+       水のマス以外には置けない（畑の中の好きなマスを掘らない: 耕すマスが減って畑が完成しなくなる）
+    小目標 facility(name) は、水のバケツを持っていれば水のマスを先に出し、なければバケツを手に入れる手順
+    （鉄でバケツを作り、水を汲む）を出す。耕す・まくはその間も進められる
     湿ったかは find_blocks {block: farmland} の props か、search_facility の dry で確かめる
-  tools: [craft, recipe_of, use_item, dig, find_blocks, search_facility]
+  tools: [craft, recipe_of, use_item, water, find_blocks, search_facility]
   see: [make_farm, harvest_crops, use_items]
 
 - key: get_seeds
@@ -79,7 +85,10 @@
   when: 板材・棒・作業台・道具の材料が要るとき
   how: |
     1. 「目の前のブロック」に *_log があればその座標を dig。なければ find_blocks {block: oak_log}
-    2. 見えなければ search_memory（例: oak_log、木）で前に見た森、search_facility で植林場
+    2. 見えなければ search_memory（例: oak_log、木）で前に見た森、search_facility で植林場。find_blocks は
+       読み込まれていない所や半径の外も、前に見た記録（source: map）から返す
+    高い幹は土を持っていれば積んで届く（地面から 5 + 持っている土の数、最大 16 段上まで）。葉が散って
+    浮いた幹（find_blocks の leftover: true）も集めてよい
     原木 1 つで板材 4 枚、板材 2 枚で棒 4 本（craft）
   tools: [find_blocks, dig, search_memory, search_facility, craft]
   see: [plant_trees]
@@ -95,14 +104,19 @@
     2. search_memory（例: iron_ore、鉄）で前に見た鉱石へ goto
     3. 地下の鉱石はソルバーの提案（do_suggestion の dig down …）で階段を掘って下りる。
        完成した採掘場があれば、深いものは提案 go down the mine … でそこから下りる
+    石・土・砂利・鉱石は、状態の「採掘の場所」の近くから掘る（around と find_blocks の quarry: true が印）。
+    毎回別の所を掘ると家のまわりが穴だらけになる。階段は前に掘ったものの底から続けて掘られる
+    （鉱石が底より深いとき。dig down の提案が自動で底まで歩く）
     鉄鉱石は raw_iron になり、かまどで iron_ingot に焼く。何度も鉄が要るなら採掘場を作る（make_mine）
+    石炭や鉄が見えないときは、歩き回って探すより採掘場を作ってそこから集める（make_mine。探索の提案も残る）。
+    松明の石炭は、かまどがあれば木炭（原木を焼く）でもよい: ソルバーが安いほうを選ぶ
   tools: [dig, find_blocks, search_memory, goto, do_suggestion, item_info]
   see: [smelt, upgrade_tools, make_mine]
 
 - key: make_mine
   title: 採掘場を作る
   words: mine shaft stairs tunnel branch mining iron diamond deep facility 採掘場
-  when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき
+  when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき、石炭や鉄が見えず探し回っているとき
   how: |
     採掘場は作る前に設計する: 大目標の条件に facility(name) を書く（名前は街の理想図の予定の
     施設名。なければ新しい名前）。そのとき区画・底の高さ（鉄は y 16 あたり）・坑道の本数と長さを
@@ -159,6 +173,8 @@
     家があれば go_home で入ってドアを閉め、sleep で家のベッドで寝る（夜だけ）
     家から遠いときは、ベッドを持っていれば置いて寝る（小目標 through_night の提案 do_suggestion）か、地下にいる
     夜に家の中にいると、外に出る道具は断られる。家の中なら敵は来ない
+    ベッドに村人などが寝ていると「the bed is occupied」で寝られない。夜、そばのベッドに寝ている村人がいれば「wake up the sleeping … (one hit)」が候補に出る（do_suggestion）。素手で 1 回殴って起こし、ベッドが空いたら寝る。attack は倒すまで戦うので使わない
+    家もベッドもない夜（家がない・行けない・64 ブロックより遠い）は、平らな土の地面で「dig into the ground here and seal yourself in until morning」が候補に出る（do_suggestion）。足元に 3 マスの縦穴を掘って入り、上を掘った土で塞ぐ。朝まで「stay in the sealed hole until morning」で待つ。夜の外で立って待たない。朝になったら「climb out of the hole」で上がる。石や崖・水のそばでは出ない（理由は blocked に出る）
   tools: [go_home, sleep, do_suggestion]
   see: [fight]
 
@@ -191,7 +207,10 @@
     deposit {item, count} で家のチェストに入れる（チェストがなければ板材 8 枚で craft して家の中に place）
     withdraw {item, count} で入っているチェストから出す
     どのチェストに何があるかは search_memory（例: チェスト、wheat が入ったチェスト）
-  tools: [deposit, withdraw, craft, place, search_memory]
+    持ち物がいっぱいで落とし物が拾えないとき、家のチェストが遠い・ないときは、toss で余った物を捨てて空ける
+    （toss だけで余り全部。土と丸石は 64 個ずつ残す。道具、食料、松明、目標に要る物は捨てない。item は自然の地形、
+    丸石、花、羊毛だけ）。捨てた物は拾う候補に出ない
+  tools: [deposit, withdraw, toss, craft, place, search_memory]
 
 - key: place_things
   title: 物を置く（松明、家具、ブロック）
@@ -204,12 +223,45 @@
   tools: [place, move_furniture]
   see: [light_up]
 
+- key: demolish
+  title: 家や建物を壊す・置いてある家具を拾う
+  words: demolish break remove tear wall house build take furniture pick up crafting table furnace chest bed
+  when: 家や建てた物を壊すこと自体が目的のとき、置いてある作業台・かまど・チェスト・ベッドを持っていきたいとき
+  how: |
+    家・建てている家・建物は、ふつうは dig が断る。壊すのが目的のときだけ dig {x,y,z, demolish: true}
+    近くに置いてある作業台・かまど・チェスト・ベッドは、have(その物) で作らず拾う手が出る（家の家具は家の中でだけ move_furniture）
+    中身のあるチェストは先に withdraw で出す
+  tools: [dig, move_furniture, withdraw]
+  see: [place_things]
+
+- key: after_death
+  title: 死んだあと、落とした持ち物を取り戻す
+  words: death died respawn dropped items lost inventory recover
+  when: 死んで生き返った直後（持ち物が空になったとき）
+  how: |
+    死んで落とした持ち物は 5 分で消える。死んで 4 分半までは、死んだ場所へ戻る手（recover your things where you died）が候補に出て、次の小目標を決める前に、聞かずに選ばれる
+    散らばった物は pickup でも拾える
+  tools: [pickup]
+  see: []
+
+- key: keep_water_in
+  title: 水をせき止めているブロックを壊さない・流れ出た水を埋める
+  words: water leak flood farm log village edge hole plug dig demolish lava tree
+  when: 原木や土を掘るとき、畑や池のそばで掘ったあと、水が流れ出ているとき
+  how: |
+    水や溶岩に接した（横か上）固いブロックは掘れない（dig は断り、demolish でも同じ。壊すと流れ出す）。別の場所から取る
+    原木は木の幹だけを集める。find_blocks の tree: false は村の畑の縁や家の柱で、集めない。自分で置いた原木（placed_by_me: true）は片付けてよい
+    掘った跡に水が入り込んだら（10 分以内）、埋める手（plug the hole at …）が候補に出て、聞かずに選ばれる。同じ物か土・丸石で埋める
+  tools: [dig, find_blocks, place]
+  see: [find_things]
+
 - key: light_up
   title: 明るくする・湧き潰し
   words: light torch dark spawn mobs lit lighting
   when: 家のまわりに敵が湧くとき、暗い所をなくしたいとき
   how: |
     松明は石炭（か木炭）1 つと棒 1 本で 4 本（craft {item: torch}）
+    松明は 4 本を切らさず持つ。暗くて持っていなければ、何も見えないので引き返して作る
     place {item: torch, x,y,z} で暗い地面に置く。完了条件 lit(distance) はブリッジが暗い所を数える
   tools: [craft, place]
   see: [place_things]
@@ -228,7 +280,7 @@
   words: build house building construct shed tower wall blueprint
   when: 家や名前付きの建物（倉庫、塔、壁）を建てるとき
   how: |
-    build_next {name} で設計図の次のブロックを 1 つ置く（name を省くと今の目標の建物か家）
+    build_next {name, count} で設計図の次のブロックから続けて置く（省くと材料が尽きるか止められるまで、最大 60 個。name を省くと今の目標の建物か家）
     材料（板材、原木、丸石、土）を先に集めておく。建てている建物の場所は search_facility
   tools: [build_next, search_facility]
 
@@ -282,4 +334,6 @@
   how: |
     run_skill {name} で覚えた技を実行する（合う技があれば道具を 1 つずつ呼ぶより先に）
     write_skill {name, what} で新しい技を書く（すぐ 1 回試す）。失敗したら理由を読んで同じ名前で直す
+    till → sow のような同じ手の並びを 3 回続けて成功させると、「同じ手の並びを繰り返している」と出る。技にするかは自分で決める
+    1 回の実行は行動 40 回まで（超えると失敗）。長い作業は、36 回ほどで切り上げる技にして、もう一度呼んで続ける
   tools: [run_skill, write_skill]

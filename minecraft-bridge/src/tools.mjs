@@ -4,21 +4,28 @@
 // 知識から導き（掘るブロックの名前、作業台が要るか、かまどと燃料）、存在と距離を確かめる。安全の
 // 制約はここで守り、断るときは理由を返す: 家に避難している間（夜、ドアの前の敵）は外に出る道具を
 // 断る、今の家と建てている家は掘らない・置かない。調べものの道具はすぐ返り、履歴に残さない。
+import { isQuarryKind, quarrySpot, inQuarry, QUARRY_RADIUS } from './quarry.mjs'
 import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing, blockProps, fillItem } from './observe.mjs'
 import { shelterOf, needsOutside } from './candidates.mjs'
 import { refusalAt, noteRefusal } from './refusals.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
+import { liquidReason } from './liquid.mjs'
+import { isTreeLog, isLeftoverLog, isNaturalLogName } from './trees.mjs'
+import { placedByMe } from './ledger.mjs'
+import { rockBetween } from './reach.mjs'
 import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
 import { inHomeRoom } from './builds.mjs'
-import { findTable, findFurnace, nearbyDrops } from './primitives.mjs'
+import { findTable, findFurnace, nearbyDrops, blockedDrops } from './primitives.mjs'
+import { goalKeep, spareStacks, isTossable, RESERVE } from './spare.mjs'
 import { smeltingProduct, FUELS } from './knowledge.mjs'
 import { homeChests, chestWith } from './memory.mjs'
+import { mapFind } from './worldmap-places.mjs'
 import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
 import { describeRecipe } from './recipes.mjs'
 import { usesOf, foodsInfo, loadNames } from './items.mjs'
-import { workCell, layoutAt } from './facilities.mjs'
+import { workCell, layoutAt, layoutStatus, waterAt } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { levelTarget, levelStatus, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
@@ -31,6 +38,7 @@ const MAX_ENTITY_DISTANCE = 24
 const MAX_CRAFT_TIMES = 16
 const FIND_RADIUS = 64
 const FIND_SHOWN = 8
+const MAP_FIND_RADIUS = 96 // 視界の地図から探す半径（find_blocks の radius は読み込み済みの範囲の分）
 export const DROP_RADIUS = 16
 const PLANTS = /^(short_grass|tall_grass|fern|large_fern|wheat|carrots|potatoes|beetroots|sweet_berry_bush|dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony)$|(_sapling|_propagule)$/
 const REPLACEABLE = new Set(['air', 'cave_air', 'water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'dead_bush'])
@@ -45,7 +53,7 @@ const OWN_TOOL_BLOCKS = /(_bed|chest|barrel|furnace|smoker|shulker_box|crafting_
 const MAX_HOLD_S = 3
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
-  'smelt', 'deposit', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'wait',
+  'smelt', 'deposit', 'toss', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'water', 'wait',
   'use_item', 'ride_boat', 'level']
 export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of', 'find_foods']
 
@@ -60,18 +68,57 @@ function position (args) {
 }
 
 // item を times 回作る材料が持ち物にあるか。なければ、一番近いレシピの何がいくつ足りないかで断る
-function short (knowledge, recipes, inventory, item, times) {
+// 持ち物で最大何回作れるか（レシピが複数あれば、いちばん多いもの）
+function craftable (knowledge, recipes, inventory) {
   const held = (spec) => knowledge.resolve(spec).members.reduce((n, m) => n + (inventory[m] ?? 0), 0)
   const crafts = (r) => Math.min(...Object.entries(r.ingredients).map(([spec, per]) => Math.floor(held(spec) / per)))
   const best = recipes.map((r) => ({ r, n: crafts(r) })).sort((a, b) => b.n - a.n)[0]
+  return { best, held }
+}
+
+function short (knowledge, recipes, inventory, item, times) {
+  const { best, held } = craftable(knowledge, recipes, inventory)
   if (!best || best.n >= times) return
   const need = Object.entries(best.r.ingredients).map(([spec, per]) => {
     const { label } = knowledge.resolve(spec)
     return { label, per, total: per * times, have: held(spec) }
   })
+  const lacksLabels = (all) => all.filter((n) => n.have < n.total).map((n) => n.label).join(' and ')
   const lacks = need.filter((n) => n.have < n.total).map((n) => `${n.total} ${n.label} (${n.per} per craft; you have ${n.have}, ${n.total - n.have} short)`)
   refuse(`cannot craft ${item} x${times}: needs ${lacks.join(' and ')}; ` +
-    (best.n > 0 ? `what you carry makes only ${best.n} (${best.r.count} ${item} per craft)` : `what you carry makes none (one craft gives ${best.r.count} ${item})`))
+    (best.n > 0 ? `what you carry makes only ${best.n} (${best.r.count} ${item} per craft)` : `what you carry makes none (one craft gives ${best.r.count} ${item})`) +
+    `. Get the ${lacksLabels(need)} first (how_to_get)`)
+}
+
+// 括弧の中の距離と id だけが違う提案（「craft white_bed x1（7.7m）」、「flee from drowned #15165」）は同じ手。
+// 座標は手の中身なので、違えば別の手
+const withoutVolatile = (id) => String(id).replace(/[（(][^）)]*[）)]/g, '').replace(/#\d+/g, '#')
+// 種類の名前（boat）で品物を頼まれたとき、品物（oak_boat）にできる種類
+const KIND_WORDS = new Set(['boat', 'bed', 'door', 'sign', 'fence', 'fence_gate', 'trapdoor', 'button', 'pressure_plate', 'slab', 'stairs', 'wool', 'carpet'])
+const SUGGESTIONS_SHOWN = 4
+const MAX_BUILD_RUN = 60 // build_next が続けて置く上限
+
+// 何もない座標を指したとき、そのまわり（半径 3）にある固いブロックを種類ごとに近い順に添える
+// （座標が 1 ずれただけのことが多い。2026-09-30: 空気を掘れと 15 回断られた）。言い直すための座標を渡す
+const NEAR_SOLIDS_RADIUS = 3
+const NEAR_SOLIDS_SHOWN = 3
+function nearbySolids (bot, state, pos) {
+  const best = new Map()
+  for (let dx = -NEAR_SOLIDS_RADIUS; dx <= NEAR_SOLIDS_RADIUS; dx++) {
+    for (let dy = -NEAR_SOLIDS_RADIUS; dy <= NEAR_SOLIDS_RADIUS; dy++) {
+      for (let dz = -NEAR_SOLIDS_RADIUS; dz <= NEAR_SOLIDS_RADIUS; dz++) {
+        const p = pos.offset(dx, dy, dz)
+        const b = bot.blockAt(p)
+        if (b?.boundingBox !== 'block' || /^(bedrock|water|lava)$/.test(b.name)) continue
+        if (protectedReason(state, p, 0, b) || liquidReason(bot, p, b)) continue // 掘れないものは勧めない
+        const d = Math.hypot(dx, dy, dz)
+        if (!best.has(b.name) || d < best.get(b.name).d) best.set(b.name, { p, d })
+      }
+    }
+  }
+  const near = [...best].sort((a, b) => a[1].d - b[1].d).slice(0, NEAR_SOLIDS_SHOWN)
+  if (!near.length) return ''
+  return `. Solid blocks near there: ${near.map(([name, { p }]) => `${name} at ${fmt(p)}`).join(', ')} (use find_blocks for the exact coordinates)`
 }
 
 // 道具の引数の座標（なければ null）
@@ -82,7 +129,14 @@ function positionOf (args) {
 
 function within (bot, p, max, what) {
   const d = bot.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5))
-  if (d > max) refuse(`${what} is ${round(d)}m away (at most ${max}m)`)
+  if (d > max) {
+    // y は高さ（-64〜320）。y と z を取り違えた座標（y=-325, z=1 など）は、入れ替えれば近い
+    const swapped = new Vec3(p.x, p.z, p.y)
+    const hint = (p.y < -64 || p.y > 320) && bot.entity.position.distanceTo(swapped.offset(0.5, 0.5, 0.5)) <= max
+      ? `; y is the height (-64..320), did you swap y and z? ${fmt(swapped)} is ${round(bot.entity.position.distanceTo(swapped.offset(0.5, 0.5, 0.5)))}m away`
+      : ''
+    refuse(`${what} is ${round(d)}m away (at most ${max}m)${hint}`)
+  }
   return round(d)
 }
 
@@ -130,13 +184,27 @@ export function createTools (deps) {
   // 行動の道具の引数から、実行するもの（PRIMITIVES の c）を作る
   const build = {
     do_suggestion ({ id }) {
-      const c = deps.candidates().find((x) => x.id === id)
-      if (!c) refuse(`${id} is not a current suggestion`)
-      return { c, label: id }
+      const now = deps.candidates()
+      const c = now.find((x) => x.id === id)
+      if (c) return { c, label: id }
+      // 距離や id だけが違う提案が 1 つだけあれば、それを選んだこと（距離や id は歩くたびに変わる）
+      const same = now.filter((x) => withoutVolatile(x.id) === withoutVolatile(id))
+      if (same.length === 1) return { c: same[0], label: same[0].id }
+      // 同じ動詞の提案を先に見せて、言い直せるようにする（言い直しにも 1 回の判断がかかる）
+      const verb = String(id).split(' ')[0]
+      const shown = [...now.filter((x) => x.id.split(' ')[0] === verb), ...now.filter((x) => x.id.split(' ')[0] !== verb)]
+        .slice(0, SUGGESTIONS_SHOWN).map((x) => x.id.slice(0, 80))
+      refuse(`${id} is not a current suggestion${shown.length ? ` (now: ${shown.join('; ')})` : ''}`)
     },
     goto (args) {
       const pos = position(args)
       within(bot, pos, MAX_TOOL_DISTANCE, `${fmt(pos)}`)
+      // 岩に囲まれていて、目標が岩の向こうの遠い所なら、経路探索が掘る道を探して 5 秒で諦める。先に断る
+      const rock = rockBetween(bot, pos, riding(bot))
+      if (rock) {
+        refuse(`will not walk to ${fmt(pos)}: you are in a closed space (${rock.cells} cells you can walk in) and the target is about ${rock.gap} blocks of rock away. ` +
+          'The path search gives up after 5 s on that much digging. Dig your way out first (dig the blocks toward it, or a stair up), or go_home')
+      }
       const range = Math.max(0, Math.min(8, Number(args.range ?? 1)))
       return { c: { verb: 'goto_pos', target: fmt(pos), pos, range } }
     },
@@ -146,9 +214,19 @@ export function createTools (deps) {
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       // 草・作物・苗木・花は当たり判定がないが掘れる（草から種、育った作物の収穫。設計書 33）
-      if (block.boundingBox !== 'block' && !PLANTS.test(block.name)) refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig`)
-      const why = protectedReason(state, pos, 0, block)
-      if (why) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${why}`)
+      if (block.boundingBox !== 'block' && !PLANTS.test(block.name)) refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig${nearbySolids(bot, state, pos)}`)
+      // 水や溶岩をせき止めているブロックは、demolish でも掘らない（壊すと流れ出す。docs/design/55）
+      const wet = liquidReason(bot, pos, block)
+      if (wet) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${wet}. Leave it, or get the material somewhere else`)
+      // 家・建てている家・建物は、ふつうは掘らない。壊すと決めたとき（demolish）だけ掘る
+      const why = args.demolish === true ? null : protectedReason(state, pos, 0, block)
+      if (why) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${why}. If taking it down is the point of this goal, dig it again with demolish: true`)
+      // 耕地は畑の地面: 掘ると土になって畑が減る（小麦の収穫に、作物の下の耕地の座標で dig を呼んでいた）
+      if (block.name === 'farmland' && args.demolish !== true) {
+        const crop = bot.blockAt(pos.offset(0, 1, 0))
+        const above = cropByBlock(crop?.name) ? `; the ${crop.name} on it is at ${fmt(pos.offset(0, 1, 0))} (dig that one when it is ripe)` : ''
+        refuse(`will not dig farmland at ${fmt(pos)}: it is the ground of a farm and digging it turns the farm into dirt${above}. If taking the farm down is the point of this goal, dig it again with demolish: true`)
+      }
       if (!isRipe(block)) refuse(`the ${block.name} at ${fmt(pos)} is not ripe yet (age ${ageOf(block)}/${CROPS[cropByBlock(block.name)].mature}): digging it now gives only seeds and loses the crop`)
       const tools = knowledge.harvestTools(block.name)
       if (tools && !tools.some((t) => inventoryCounts(bot)[t] > 0)) refuse(`${block.name} drops nothing without one of: ${tools.join(', ')}`)
@@ -174,8 +252,17 @@ export function createTools (deps) {
       return { c: { verb: 'place_at', target: args.item, item: args.item, pos, against } }
     },
     craft (args) {
-      const item = args.item
-      const recipes = typeof item === 'string' ? knowledge.recipes(item) : []
+      let item = args.item
+      let recipes = typeof item === 'string' ? knowledge.recipes(item) : []
+      if (!recipes.length && KIND_WORDS.has(item)) {
+        // 種類の名前（boat）は品物ではない（oak_boat）: 持っている材料で作れる木の種類の物を選ぶ。
+        // 作れる物がなければ、品物の名前を教える
+        const named = Object.keys(bot.registry.itemsByName).filter((n) => n.endsWith(`_${item}`) && !n.includes('chest_') && knowledge.recipes(n).length)
+        const inv = inventoryCounts(bot)
+        const makeable = named.find((n) => craftable(knowledge, knowledge.recipes(n), inv).best?.n > 0)
+        if (makeable) { item = makeable; recipes = knowledge.recipes(item) }
+        else if (named.length) refuse(`${item} is not an item name; use one of ${named.slice(0, 6).join(', ')} (the wood of the planks you carry)`)
+      }
       if (!recipes.length) refuse(`${item} has no crafting recipe`)
       const times = Math.max(1, Math.min(MAX_CRAFT_TIMES, Math.floor(Number(args.times ?? 1))))
       const needsTable = recipes.every((r) => r.needsTable)
@@ -183,11 +270,16 @@ export function createTools (deps) {
       // 材料が足りなければ、実行する前に、何がいくつ足りないかを返す（「材料が足りない?」だけでは、
       // 小麦 2 個でパン 2 個と思い込んだまま作れなかった）
       short(knowledge, recipes, inventoryCounts(bot), item, times)
-      return { c: { verb: 'craft', target: item, item, times, needsTable, inPlace: true } }
+      // 1 回ずつ作り直させない: 持ち物であと何回作れるかを結果に添える（板材を 4 枚ずつ 5 回、7 秒ずつ作っていた）
+      const more = craftable(knowledge, recipes, inventoryCounts(bot)).best.n - times
+      return { c: { verb: 'craft', target: item, item, times, needsTable, inPlace: true, more } }
     },
     pickup () {
       const d = nearbyDrops(bot, state, DROP_RADIUS)[0]
-      if (!d) refuse(`no item on the ground within ${DROP_RADIUS}m`)
+      if (!d) {
+        if (blockedDrops(bot, state, DROP_RADIUS).length) refuse('the inventory is full and cannot take what lies on the ground: throw away spare items first (toss), or put things in the home chest (deposit)')
+        refuse(`no item on the ground within ${DROP_RADIUS}m`)
+      }
       const item = d.e.getDroppedItem()?.name ?? 'item'
       return { c: { verb: 'pickup', target: item, entityId: d.e.id, pos: d.e.position } }
     },
@@ -228,9 +320,24 @@ export function createTools (deps) {
       holding(bot, args.item)
       const me = bot.entity.position
       const chest = homeChests(state.memory ?? {}, state.home).sort((a, b) => me.distanceTo(new Vec3(a.x, a.y, a.z)) - me.distanceTo(new Vec3(b.x, b.y, b.z)))[0]
-      if (!chest) refuse('no chest in the home')
+      if (!chest) refuse('no chest in the home: to free inventory slots, throw spare items away (toss); or place a chest in the house (craft one from 8 planks)')
       const count = Math.max(1, Math.floor(Number(args.count ?? inventoryCounts(bot)[args.item])))
       return { c: { verb: 'deposit', target: args.item, item: args.item, count, pos: new Vec3(chest.x, chest.y, chest.z) } }
+    },
+    // 余った物を捨てて、持ち物の空きを作る。item を書かなければ、余り全部（目標が使う物、道具、食料、
+    // 松明は捨てない。土と丸石は 64 個ずつ残す）。item を書けば、その物を count 個（省略は残す数を超えた分）
+    toss (args) {
+      const inv = inventoryCounts(bot)
+      if (args.item === undefined) {
+        const items = spareStacks(bot, goalKeep(knowledge, state.goal?.spec))
+        if (!items.length) refuse(`nothing spare to throw away (dirt and cobblestone are kept up to ${RESERVE.dirt}; tools, food, torches and what the goal needs are never thrown)`)
+        return { c: { verb: 'toss', target: 'items', inPlace: true, items } }
+      }
+      holding(bot, args.item)
+      if (!isTossable(args.item)) refuse(`${args.item} is not thrown away by this tool (only natural ground blocks, cobblestone, flowers and wool); put it in a chest (deposit) instead`)
+      const count = args.count === undefined ? inv[args.item] - (RESERVE[args.item] ?? 0) : Math.floor(Number(args.count))
+      if (!(count >= 1)) refuse(`${args.item}: only ${inv[args.item]} held, ${RESERVE[args.item] ?? 0} are kept; pass count to throw more`)
+      return { c: { verb: 'toss', target: args.item, inPlace: true, items: [{ item: args.item, count: Math.min(count, inv[args.item]) }] } }
     },
     withdraw (args) {
       if (typeof args.item !== 'string') refuse('item is required')
@@ -250,15 +357,17 @@ export function createTools (deps) {
     build_next (args) {
       // 名前付きの建物（docs/design/25_builds.md）: 名前か、今の目標の built(name)
       const name = args?.name ?? (state.goal?.spec?.predicate === 'built' ? state.goal.spec.name : null)
+      // 続けて置く個数。省くと、材料と体力の続く限り（夕方・空腹・襲われたらランナーが止める）
+      const count = Math.max(1, Math.min(MAX_BUILD_RUN, Math.floor(Number(args?.count ?? MAX_BUILD_RUN))))
       if (name) {
         const plan = state.builds?.[name]
         if (!plan) refuse(`there is no build named ${name}`)
         if (plan.status(bot).complete) refuse(`the build ${name} is complete`)
-        return { c: { verb: 'place_plan', build: name, target: `the next block of the build ${name}`, inPlace: true } }
+        return { c: { verb: 'place_plan', build: name, target: `the next block of the build ${name}`, inPlace: true, count } }
       }
       if (!state.plan) refuse('there is no house plan')
       if (state.plan.status(bot).complete) refuse('the house plan is complete')
-      return { c: { verb: 'place_plan', target: 'the next block of the house', inPlace: true } }
+      return { c: { verb: 'place_plan', target: 'the next block of the house', inPlace: true, count } }
     },
     // 置いてある家具（ベッド、作業台、かまど、チェスト）を拾って置き直す。今の家の家具も動かせる
     // （家の中でだけ）。to を省くと、ベッドは家の中の空いた所、ほかは家の中（なければ近く）
@@ -304,6 +413,15 @@ export function createTools (deps) {
       const why = farmRefusal(state, pos)
       if (why) refuse(`will not till at ${fmt(pos)}: ${why}`)
       if (!/^(dirt|grass_block|dirt_path)$/.test(bot.blockAt(pos)?.name ?? '')) refuse(`${fmt(pos)} is not dirt or grass (give the ground block itself)`)
+      // 耕しただけで何も植わっていない地面は、水が近くになければ土に戻る: まく種がある分だけ耕す
+      const farm = layoutAt(state, 'farm', pos)
+      const seed = CROPS[farm.layout.crop].seed
+      const seeds = inventoryCounts(bot)[seed] ?? 0
+      const tilled = layoutStatus(bot, farm).sow.length
+      if (seeds <= tilled) {
+        refuse(`will not till more: you have ${seeds} ${seed} for ${tilled} tilled cells with nothing planted, and tilled ground with nothing planted turns back to dirt without water. ` +
+          `${seeds > 0 ? 'Sow the tilled cells first (sow)' : `Get ${seed} first (dig grass: about 1 in 10 drops a seed)`}, then till the next cell`)
+      }
       return { c: { verb: 'till', target: 'farmland', pos } }
     },
     sow (args) {
@@ -319,6 +437,17 @@ export function createTools (deps) {
       const fac = layoutAt(state, 'farm', pos)
       if (fac && fac.layout.crop !== crop) refuse(`the farm ${fac.name} is for ${fac.layout.crop}, not ${crop}`)
       return { c: { verb: 'sow', target: item, item, pos } }
+    },
+    // 畑の水のマス（設計書 47 §17）: 地面を掘って穴にし、水のバケツを置く。x,y,z を省くと次の水のマス
+    water (args) {
+      if (!(inventoryCounts(bot).water_bucket > 0)) {
+        refuse('you have no water_bucket (craft a bucket: 3 iron ingots, then use_item {item: bucket, x,y,z} on a water block to fill it)')
+      }
+      const pos = args.x != null ? position(args) : defaultCell('water', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
+      if (!pos) refuse('no water cell left to fill in the farms in view (search_facility shows the farms)')
+      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      if (!waterAt(state, pos)) refuse(`will not put water at ${fmt(pos)}: it is not a water cell of a designed farm (${NO_FACILITY})`)
+      return { c: { verb: 'place_water', target: 'water', item: 'water_bucket', pos } }
     },
     // 整地（設計書 41）: where（home か x,y,z: そこに立つ足の高さ）のまわり半径 radius を、近い列から
     // 次々にそろえる（1 回の呼び出しで届くところを全部）
@@ -350,6 +479,11 @@ export function createTools (deps) {
       if (args.x == null) return { c: { verb: 'use_item', target: args.item, item: args.item, hold, inPlace: true } }
       const pos = position(args)
       within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+      // 畑の中とそのまわりに、水を手で注がない: 穴の外に注ぐと水が畑の表面に流れる（水のマスは water の道具が掘って置く）
+      const farm = args.item === 'water_bucket'
+        ? Object.values(state.facilities ?? {}).find((f) => f.kind === 'farm' && f.box && pos.x >= f.box.min.x - 1 && pos.x <= f.box.max.x + 1 && pos.z >= f.box.min.z - 1 && pos.z <= f.box.max.z + 1)
+        : null
+      if (farm) refuse(`will not pour water in or beside the farm ${farm.name} by hand (it would run over the farmland): use the water tool, which digs the farm's water cell and puts the water in the hole`)
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       if (OWN_TOOL_BLOCKS.test(block.name)) refuse(`${block.name} has its own tools (sleep, deposit, withdraw, craft, smelt, move_furniture)`)
@@ -376,7 +510,11 @@ export function createTools (deps) {
   const details = (p) => {
     const b = bot.blockAt(p)
     const props = blockProps(b)
-    return { ...(cropByBlock(b?.name) ? { ripe: isRipe(b), age: ageOf(b) } : {}), ...(props ? { props } : {}) }
+    // 原木は、木の幹か（tree: false は村の畑の縁や家の柱など、人が作った物。自動では集めない）、
+    // 木の取り残しか（leftover: 葉が散った浮いた幹。集めてよい）、
+    // 自分で置いた物か（placed_by_me: 間違えて置いた物は片付けてよい）
+    const log = isNaturalLogName(b?.name) ? { tree: isTreeLog(bot, p), ...(isLeftoverLog(bot, p) ? { leftover: true } : {}), ...(placedByMe(bot, state, p) ? { placed_by_me: true } : {}) } : {}
+    return { ...(cropByBlock(b?.name) ? { ripe: isRipe(b), age: ageOf(b) } : {}), ...log, ...(props ? { props } : {}) }
   }
   const queries = {
     find_blocks (args) {
@@ -385,11 +523,29 @@ export function createTools (deps) {
       const radius = Math.max(4, Math.min(FIND_RADIUS, Number(args.radius ?? 32)))
       const me = bot.entity.position
       // 断られる場所（家・建物）と、前に断られた・着けなかった場所は出さない（掘れと言われて断られる）
-      const found = bot.findBlocks({ matching: id, maxDistance: radius, count: 64 })
-        .filter((p) => !protectedReason(state, p, 0, bot.blockAt(p)) && !refusalAt(state, 'dig', p))
-        .sort((a, b) => a.distanceTo(me) - b.distanceTo(me)).slice(0, FIND_SHOWN)
-        .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...details(p) }))
-      return found.length ? found : `no ${args.block} within ${radius}m`
+      // 石・土などの地形は、採掘の場所（quarry.mjs）の中を先に、印（quarry: true）をつけて出す
+      const spot = isQuarryKind(args.block) ? quarrySpot(state, me) : null
+      const here = spot ? bot.findBlocks({ matching: id, point: spot, maxDistance: QUARRY_RADIUS, count: 64 }) : []
+      const seen = new Set()
+      const found = [...here, ...bot.findBlocks({ matching: id, maxDistance: radius, count: 64 })]
+        .filter((p) => !seen.has(`${p.x},${p.y},${p.z}`) && seen.add(`${p.x},${p.y},${p.z}`))
+        .filter((p) => !protectedReason(state, p, 0, bot.blockAt(p)) && !liquidReason(bot, p, bot.blockAt(p)) && !refusalAt(state, 'dig', p))
+        .sort((a, b) => (inQuarry(spot, a) ? 0 : 1) - (inQuarry(spot, b) ? 0 : 1) || a.distanceTo(me) - b.distanceTo(me)).slice(0, FIND_SHOWN)
+        .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...(inQuarry(spot, p) ? { quarry: true } : {}), ...details(p) }))
+      // 読み込まれていない所と半径の外は、前に見た記録から（視界の地図。設計書 59）。読み込まれていて実物が
+      // 違えば、地図を直して出さない
+      if (found.length < FIND_SHOWN && state.worldMap) {
+        const age = Number(bot.time.age)
+        const inLive = new Set(found.map((f) => `${f.x},${f.y},${f.z}`))
+        const remembered = mapFind(state, args.block, me, MAP_FIND_RADIUS, {
+          limit: FIND_SHOWN, ticksNow: age,
+          live: (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name
+        }).filter((m) => !inLive.has(`${m.x},${m.y},${m.z}`) && !refusalAt(state, 'dig', new Vec3(m.x, m.y, m.z)))
+        for (const m of remembered.slice(0, FIND_SHOWN - found.length)) {
+          found.push({ x: m.x, y: m.y, z: m.z, distance_m: round(m.distance_m), direction: bearing(me, m), exposed: true, source: 'map', seen_minutes_ago: m.minutes_ago })
+        }
+      }
+      return found.length ? found : `no ${args.block} within ${radius}m${state.worldMap ? ' or in the map of what you have seen' : ''}`
     },
     recipe_of (args) {
       // バニラのレシピ全部から（設計書 29）: 作業台・かまど・石切台など、材料は「どれか 1 つ」も含めて
@@ -438,7 +594,8 @@ export function createTools (deps) {
       if (state.reflex) refuse('the reflex is handling a nearby threat')
       if (state.busy) refuse('another action is running')
       // 前に同じ場所へ同じ手を断られた・着けなかったなら、やり直さない（理由と、別の手を選ぶよう返す）
-      const tried = refusalAt(state, name, positionOf(args))
+      // （壊すと決めた掘り直し demolish は、家や建物を断られた台帳を通り越す）
+      const tried = args.demolish === true ? null : refusalAt(state, name, positionOf(args))
       if (tried) refuse(`${name} at ${fmt(tried.pos)} was tried before and will not work: ${tried.reason}; choose another place or another way`)
       const { c, label } = build[name](args)
       const home = state.home

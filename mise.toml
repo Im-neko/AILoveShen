@@ -1,0 +1,7 @@
+# mise のタスク（mise run <名前>）。運用の手順をここに置く。初めて使うときは mise trust。
+
+[tasks."world:reset"]
+description = "ワールドとボットのワールドの記憶（state.json / skills / mission.json / notes.json / moves.json）を作り直す（教訓・自分について話したこと・名前の読みは残る）（docs/streaming.md「ワールドを作り直す」）"
+# 引数は -- のあとに渡す: mise run world:reset -- --dry-run / --level world3 / --seed random / --existing / --yes
+# 配信とブリッジは自分で止めてから（動いていれば、このタスクは断る）
+run = "scripts/reset_world.sh"

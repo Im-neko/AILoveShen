@@ -14,6 +14,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
 import { buildAllowsDig, onBuildCell, isHomeCell, buildBox } from './builds.mjs'
 import { walkTo } from './move.mjs'
+import { FOUND_BASE_NAME } from './landmarks.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem, standingCell } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -31,7 +32,7 @@ const DOOR_DANGER_RADIUS = 8
 const toVec = (p) => new Vec3(p.x, p.y, p.z)
 const plain = (v) => ({ x: v.x, y: v.y, z: v.z })
 
-const homeToJSON = (h) => ({
+export const homeToJSON = (h) => ({
   name: h.name ?? null,
   design: h.design ?? null,
   door: plain(h.door),
@@ -41,10 +42,11 @@ const homeToJSON = (h) => ({
   max: plain(h.max),
   bed: h.bed ? plain(h.bed) : null,
   breach: h.breach,
-  cells: h.cells ?? null // 増築で広げた室内（docs/design/25_builds.md）
+  cells: h.cells ?? null, // 増築で広げた室内（docs/design/25_builds.md）
+  found: !!h.found // 見つけた拠点（自分で建てていない仮の宿。docs/design/62_found_base.md）
 })
 
-const homeFromJSON = (h) => ({ name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [], ...(h.cells ? { cells: h.cells } : {}) })
+export const homeFromJSON = (h) => ({ name: h.name ?? null, design: h.design ?? null, door: toVec(h.door), inside: toVec(h.inside), outside: toVec(h.outside), min: toVec(h.min), max: toVec(h.max), bed: h.bed ? toVec(h.bed) : null, breach: h.breach ?? [], ...(h.cells ? { cells: h.cells } : {}), ...((h.found ?? h.name === FOUND_BASE_NAME) ? { found: true } : {}) })
 
 export function saveState (state) {
   const data = {
@@ -58,7 +60,14 @@ export function saveState (state) {
     conditions: state.conditions ?? {}, // Gemini が書いた判定（conditions.mjs。設計書 42）
     // 植えた場所（設計書 33）。前は保存しておらず、再起動で planted が 0 から数え直しになった
     plantings: state.plantings ?? [],
-    facilities: state.facilities ?? {} // 施設（facilities.mjs。設計書 47）
+    facilities: state.facilities ?? {}, // 施設（facilities.mjs。設計書 47）
+    // 自分で置いた物と、最近掘った跡（ledger.mjs。docs/design/55）
+    placed: state.placed ?? {},
+    dug: state.dug ?? [],
+    // 採掘の場所と階段（quarry.mjs。設計書 64）
+    quarry: state.quarry ?? null,
+    // 捨てた物（spare.mjs。5 分は拾い直さない。再起動でも忘れない）
+    tossed: state.tossed ?? null
   }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true })
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 1))
@@ -77,6 +86,10 @@ export function loadState (state) {
   if (data.conditions) state.conditions = data.conditions
   if (data.plantings) state.plantings = data.plantings
   if (data.facilities) state.facilities = data.facilities
+  if (data.placed) state.placed = data.placed
+  if (data.dug) state.dug = data.dug
+  if (data.quarry) state.quarry = data.quarry
+  if (data.tossed) state.tossed = data.tossed
 }
 
 // 完成した計画が家になる: ドアの下半分、そのすぐ内側と外側のセル、内部（敷地から壁を除いた部分）。
@@ -202,7 +215,7 @@ export function doorstepHoles (bot, home) {
 }
 
 // 跳んで、今立っているセルに足場を置く（穴の中から 1 段上がる）
-async function jumpAndPlace (bot, cell, item) {
+export async function jumpAndPlace (bot, cell, item) {
   await bot.equip(item, 'hand')
   await bot.look(bot.entity.yaw, -Math.PI / 2, true)
   bot.setControlState('jump', true)

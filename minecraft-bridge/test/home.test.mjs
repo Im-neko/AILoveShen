@@ -95,3 +95,14 @@ test('空いた 2 マスがなければ置く場所はない', async () => {
   for (const [x, z] of [[101, 1], [101, 2], [101, 3], [102, 2], [103, 1], [103, 2], [103, 3]]) full[`${x},70,${z}`] = 'chest'
   assert.equal(bedSpot(roomBot(full), room), null)
 })
+
+test('見つけた拠点の印は保存しても消えない（再起動で自分の家と見分けがつかなくなっていた）', async () => {
+  const { homeToJSON, homeFromJSON } = await import('../src/home.mjs')
+  const h = { name: 'x', design: null, door: v(2, 70, 4), inside: v(2, 70, 3), outside: v(2, 70, 5), min: v(1, 70, 1), max: v(3, 70, 3), bed: null, breach: [] }
+  assert.equal(homeFromJSON(JSON.parse(JSON.stringify(homeToJSON({ ...h, found: true })))).found, true)
+  assert.equal(homeFromJSON(JSON.parse(JSON.stringify(homeToJSON(h)))).found, undefined)
+  // 印のない古い保存は、名前で見分ける
+  const old = JSON.parse(JSON.stringify(homeToJSON({ ...h, name: '見つけた拠点' })))
+  delete old.found
+  assert.equal(homeFromJSON(old).found, true)
+})

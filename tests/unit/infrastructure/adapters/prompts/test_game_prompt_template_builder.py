@@ -211,6 +211,17 @@ class TestGamePromptTemplateBuilder:
         assert "家: 建ててある、ベッドあり、チェスト 0\n- 今いる場所: 家の中\n" in prompt
         assert "チェストの中身: なし" in prompt
 
+    def test_goal_prompt_found_base_is_not_a_house_she_built(self):
+        """見つけた拠点（村の家など）は仮の宿と書き、建ててある家・自分のベッドとは読ませない。"""
+        obs = replace(_obs(), has_home=True, inside_home=False, bed_in_home=True)
+        obs.state["home"] = {"name": "見つけた拠点", "found": True}
+
+        prompt = _goal_prompt(obs)
+
+        assert "家: 見つけた拠点（もとからあった建物を仮の宿にしている。自分で建てた家ではない）" in prompt
+        assert "もとからあるベッド（自分の物ではない）" in prompt
+        assert "見つけた拠点（建ててある）" not in prompt
+
     def test_goal_prompt_home_name_and_chests(self):
         """拠点の名前と、チェストを最後に開けたときの中身。"""
         obs = replace(_obs(), has_home=True, inside_home=False, bed_in_home=False)
@@ -576,13 +587,26 @@ def test_what_is_right_in_front_is_shown_every_time():
     assert "目の前のブロック" not in _goal_prompt()
 
 
+def test_crops_still_growing_are_shown_without_coordinates():
+    """熟した作物がなければ座標を出さない（ここの座標をそのまま dig に使って、育ち途中を断られていた）。"""
+    obs = _obs()
+    obs.state["around"] = {
+        "radius": 8,
+        "dy": 2,
+        "blocks": [{"name": "carrots", "count": 3, "ripe": 0, "nearest": None}],
+        "items": [],
+    }
+    assert "carrots 3（熟した 0、育ち途中で、まだ掘れない）" in _goal_prompt(obs)
+
+
 class TestPromptLength:
     """代表的な状態のプロンプトの長さ。増えたら気づけるように（26 §4）。"""
 
     def test_goal_system_length(self):
         # 決まった文（システム指示、キャッシュに当たる部分）。27 の分析、家具の述語、31 の見直し、
-        # 33 の植林と畑、ついでに取る・まとめて運ぶ決まり、41 の整地、42 の custom、44 の束で増えた
-        assert len(GamePromptTemplateBuilder().build_goal_system()) < 8000
+        # 33 の植林と畑、ついでに取る・まとめて運ぶ決まり、41 の整地、42 の custom、44 の束、50 §13 の
+        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）で増えた
+        assert len(GamePromptTemplateBuilder().build_goal_system()) < 8500
 
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500
@@ -621,8 +645,42 @@ class TestReviewPrompt:
         assert "- have(planks, 40): まだ（planks 8/40）" in prompt
         assert "- have(wool, 3): まだ（今は手に入らない: wool）" in prompt
 
+    def test_the_next_step_of_a_job_is_shown(self):
+        """設計書 50 §13: 中目標の次の一歩（小目標になる）を、中目標の状態に添える。"""
+        planks = GoalSpec(GoalPredicate.HAVE, item="planks", count=40)
+        log = GoalSpec(GoalPredicate.HAVE, item="log", count=10)
+        prompt = _goal_prompt(
+            job_status=(ConditionStatus(planks, False, ("planks 8/40",), next_step=log),)
+        )
+        assert "- have(planks, 40): まだ（planks 8/40） → 次の一歩: have(log, 10)" in prompt
+        system = GamePromptTemplateBuilder().build_goal_system()
+        assert "小目標はその仕事の「次の一歩」" in system
+
     def test_no_steps_no_section_and_the_rules_ask_for_a_review_every_time(self):
         assert "中目標の今の状態" not in _goal_prompt()
         system = GamePromptTemplateBuilder().build_goal_system()
         assert "## 見直し（review。毎回、最初に）" in system
         assert "変えないのも答え" in system
+
+
+def test_logs_that_are_not_trees_are_counted_but_never_given_coordinates():
+    """村の畑の縁の原木は、数だけ。集めない（育ち途中の作物と同じ null でも、そう読ませない）。"""
+    obs = _obs()
+    obs.state["around"] = {
+        "radius": 8,
+        "dy": 2,
+        "blocks": [
+            {"name": "oak_log", "count": 0, "nearest": None, "not_trees": 3},
+            {
+                "name": "birch_log",
+                "count": 2,
+                "not_trees": 1,
+                "nearest": {"x": 5, "y": 71, "z": 0, "distance_m": 4.6, "direction": "E", "dy": 1},
+            },
+        ],
+        "items": [],
+    }
+    prompt = _goal_prompt(obs)
+    assert "oak_log（ほか木ではない3個は人が作った物で集めない。集められる木の幹は目の前にない）" in prompt
+    assert "育ち途中" not in prompt
+    assert "birch_log 2（ほか木ではない1個は人が作った物で集めない、一番近いもの 5,71,0 東 4.6m、高さ +1）" in prompt

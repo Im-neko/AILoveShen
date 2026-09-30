@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { sightings, digTargets } from '../src/world.mjs'
+import { digTargets } from '../src/world.mjs'
 
 const { Vec3 } = vec3Pkg
 const v = (x, y, z) => new Vec3(x, y, z)
@@ -22,13 +22,8 @@ const bot = {
   }
 }
 
-test('空気に触れている鉱石だけを覚える（town2: 地中の石炭を探して探索に出ていった）', () => {
-  assert.deepEqual(sightings(bot).map((s) => s.pos), [v(3, 69, 0)])
-})
-
-test('水の下の鉱石は候補に出さず、覚えもしない（town2 では掘りに行って溺れた）', () => {
+test('水の下の鉱石は候補に出さない（town2 では掘りに行って溺れた）', () => {
   const wet = { ...bot, blockAt: (p) => (bot.blockAt(p).name === 'air' ? { name: 'water', boundingBox: 'empty' } : bot.blockAt(p)) }
-  assert.deepEqual(sightings(wet), [])
   assert.deepEqual(digTargets(wet, { home: null, plan: null, unreachableBlocks: new Set() }, 'coal_ore'), [])
 })
 
@@ -52,6 +47,8 @@ test('下の原木を切った後の浮いた幹も木と見なす（近くの�
     blockAt: (p) => {
       if (logs.some((l) => l.equals(p)) || onLeaves.equals(p)) return { name: 'oak_log', boundingBox: 'block', position: p }
       if (p.x === 6 && p.y === 79) return { name: 'oak_leaves', boundingBox: 'block' }
+      // 幹の上の葉（木は葉につながっている: 葉のない原木は人工物として集めない。docs/design/55）
+      if (p.x === 2 && p.y === 76 && p.z === 0) return { name: 'oak_leaves', boundingBox: 'block' }
       return p.y < 70 ? { name: 'grass_block', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }
     }
   })

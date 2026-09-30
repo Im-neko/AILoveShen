@@ -129,7 +129,7 @@ A の道具と同じ名前・同じ引数（19 §3「A の道具は B で JS か
 - `GET /skills`: 一覧（名前、説明、引数、`expects`、版、成功 n/m、最後の失敗）
 - `PUT /skills/<name>` `{ description, params, expects, code }`: 確かめてから新しい版として保存。だめなら 400 と理由
 - `POST /skills/<name>/run` `{ args, version? }`: 1 回実行（行動が 1 つ走るのと同じ扱い: `busy`、`/state` の `action` に技の名前と今の道具、`/abort` で止まる）→ `{ ok, summary | reason, calls: [...], log: [...], expects: {met, lines}, seconds }`
-- 保存場所: `minecraft-bridge/data/skills/<name>.json`（ワールドをリセットしても残す。§8 の 3）
+- 保存場所: `minecraft-bridge/data/skills/<name>.json`（`world:reset` が `skills-<日付>` に取っておく。§8 の 3）
 
 ## 6. Jev: 技の中の判定と見張り
 
@@ -148,7 +148,7 @@ A の道具と同じ名前・同じ引数（19 §3「A の道具は B で JS か
 
 1. サンドボックス: (a) `isolated-vm`
 2. 上限（§5.2）と、直す回数（1 つの技に 1 時間 3 回）: このまま
-3. 技はワールドのリセットの後も残す
+3. 技はワールドのリセットで取っておく（日付つきの名前にして新しいワールドでは空から。`expects` の `custom(name)` は `state.json` にあるので、リセットで消える）
 4. 失敗作は消す。消すのは配信の外の掃除で（`npm run skills:clean`: 一度も成功していない版を消し、成功した版がない技はファイルごと消す。ブリッジが動いていれば断る）。配信中の Gemini は消さない
 5. 最初の技はなし（ゼロから）
 6. 技を書く呼び出しは high
@@ -179,3 +179,14 @@ A の道具と同じ名前・同じ引数（19 §3「A の道具は B で JS か
 - ブリッジ: `src/skills.mjs`（`runSkill`: isolated-vm、API、上限、止め方。`validateSkill`、`expectsBaseline` / `judgeExpects`、`SkillStore`: 版、数、一覧、`clean`）、`index.mjs`（`GET /skills`、`GET/PUT /skills/<name>`、`POST /skills/<name>/run`、`POST /judge`、`/state` の `skill` と `pending_judge`、技の実行中は `/act`・`/tool` が 409、`/abort` は技ごと止める）、`tools/clean-skills.mjs`（`npm run skills:clean`）。`npm start` と `npm test` は `--no-node-snapshot`（isolated-vm の求め）。テスト `test/skills.test.mjs`
 - Python: `tool_catalog`（`run_skill` / `write_skill`、引数は JSON の文字列）、`use_cases/skills.py`（`SkillWriter`: `skill_write` の呼び出し、受け取られなければ 3 回まで、1 時間 3 回まで。`order_skills`）、`AdvancePlay`（技の一覧を道具の選択に、`_skill_step`、失敗を直すときに見せる、`SkillLearnedEvent` / `SkillRevisedEvent`）、`ToolWatcher.run(call, execute=)` と judge の答え、`GamePromptTemplateBuilder`（`build_skill_system` / `build_skill_prompt`、道具の選択の技の節）、`Narrator`（覚えたらすぐ話す）、アバター（覚えたら喜ぶ）、設定 `minecraft.agent.skills` と `skill_rewrites_per_hour`、`gemini.thinking_levels.skill_write: high`。テスト `tests/unit/application/test_skills.py` ほか
 - 未確認（実機）: Gemini が書く技の質、技の成功率、A だけのときと比べた Gemini の回数と費用（`tools/gemini_usage.py` の `tool` と `skill_write`）
+
+## 13. 繰り返しを技にする（2026-09-29、ユーザー: 「耕す→種まきを 58 マス連続でできると思っていた。LLM が何度もやると判断してスキルにして使い回せるのが理想」）
+
+原因: 技は 09-26 に実装したが、一度も書かれなかった（`minecraft-bridge/data/skills/` がない）。書かせる仕掛けはツールプロンプトの 1 行だけで、思考なしのプレイモデルは自分の手の並びを振り返らない。さらに、Jev の選択肢には `verified and not s.params` の技だけを出していたが、ブリッジは引数のない技にも `{type: object, properties: {}}` を返すので `params` が空になることはなく、覚えた技は Jev から見えなかった。
+
+- **繰り返しを見つける**（`use_cases/repetition.py` の `Repetition`）: 今の小目標で成功した手の動詞を覚える。`do_suggestion` は候補の `verb`（till / sow など）、技・調べもの・`equip`・`wait` は数えない、失敗で切れる。2〜3 手の並びを 3 回、1 手だけなら 6 回続けて成功したら繰り返し。同じ並びは 30 分に 2 回まで見せる
+- **LLM に見せる**: 繰り返しがあるステップは Jev に聞かず LLM が選び、ツールプロンプトに「同じ手の並びを繰り返している（till → sow を 3 回）」の節を足す。その品目に合う引数の要らない技があれば `run_skill` を、なければ `write_skill` を勧める。技にするかどうかは LLM が決める（コードが `SkillWriter` を直接呼ばない）
+- **Jev の選択肢**: 引数が要る技（`params.required` がある）だけを除く（`SkillInfo.needs_arguments`）。確かめ済みで引数の要らない技は、候補と並んで Jev の選択肢に出る
+- **技の書き方**: 1 回の実行は行動 40 回まで、超えると失敗になり確かめ済みになれない。`SKILL_SYSTEM` にそれを書き、36 回ほどで切り上げて `t.done` する（残りは技をもう一度呼ぶ）。`till` / `sow` / `plant` は道具側で鍬や種を持つので `equip` は要らない。`expects` に `planted` / `farmed` / `facility` を足した（ブリッジは受けていた）
+- 例（畑 58 マス）: `till` → `sow` を約 18 組で切り上げる技を、`expects: farmed(wheat, +N)`（または `progress`）で。3 回ほど呼べば終わる
+- 未確認（実機）: 書かれる技の質、LLM が実際に `write_skill` を選ぶか（選ばなければ節の書き方か、選択肢を絞る方法を見直す）、最初の `skill_write` は thinking high で数十秒〜数分かかる

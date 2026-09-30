@@ -20,6 +20,7 @@ from ailoveshen.domain.value_objects import (
     ObjectiveState,
     Mission,
     Job,
+    Step,
     TownDefinition,
     TownMap,
     TownSite,
@@ -118,7 +119,28 @@ def _job_to_dict(job: Job) -> dict[str, Any]:
         # 小目標の束（docs/design/44）
         out["together"] = [t.to_dict() for t in job.together]
         out["approach"] = job.approach
+    if job.title:
+        out["title"] = job.title
+    if job.steps:
+        # 計画の小目標（docs/design/50 §18）
+        out["steps"] = [_step_to_dict(x) for x in job.steps]
+        out["steps_done"] = list(job.steps_done)
     return out
+
+
+def _step_to_dict(step: Step) -> dict[str, Any]:
+    out: dict[str, Any] = {"spec": step.spec.to_dict(), "reason": step.reason}
+    if step.needs:
+        out["needs"] = [_step_to_dict(n) for n in step.needs]
+    return out
+
+
+def _step(data: dict[str, Any]) -> Step:
+    return Step(
+        _spec(data["spec"]),
+        data.get("reason", ""),
+        needs=tuple(_step(n) for n in data.get("needs", [])),
+    )
 
 
 def _to_dict(goal: Objective) -> dict[str, Any]:
@@ -134,6 +156,7 @@ def _to_dict(goal: Objective) -> dict[str, Any]:
         "budget_used": goal.budget_used,
         "budget": goal.budget,
         "jobs": [_job_to_dict(s) for s in goal.jobs],
+        "planned": goal.planned,
         "progress": list(goal.progress),
         "stage": goal.stage,
         "prepares_town": goal.prepares_town,
@@ -207,9 +230,13 @@ def _objective(data: dict[str, Any]) -> Objective:
                 suggested_by=s.get("suggested_by"),
                 budget_used=int(s.get("budget_used", 0)),
                 progress=tuple(s.get("progress", [])),
+                title=s.get("title", ""),
+                steps=tuple(_step(x) for x in s.get("steps", [])),
+                steps_done=tuple(s.get("steps_done", [])),
             )
             for s in data.get("jobs", [])
         ),
+        planned=bool(data.get("planned", False)),
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),
         prepares_town=bool(data.get("prepares_town", False)),

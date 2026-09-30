@@ -257,6 +257,27 @@ async def test_a_capped_thinking_purpose_is_asked_again_without_thinking_when_it
 
 
 @pytest.mark.asyncio
+async def test_a_purpose_that_does_not_think_is_cut_at_its_output_cap():
+    """返事が 4,462 トークン（84 秒）書き続けた（2026-09-30）: 思考しない用途は、決めた長さで切る。"""
+    server = _Server(_answer("a"), _answer("b"))
+    local = _local(server, output_max_tokens={"reply": 1200})
+    await local.generate("x", purpose="reply")
+    await local.generate("x", purpose="commentary")  # 上限を決めていない用途は、そのまま
+    assert server.requests[0]["max_tokens"] == 1200
+    assert server.requests[1]["max_tokens"] > 1200
+
+
+@pytest.mark.asyncio
+async def test_the_output_cap_does_not_apply_to_a_thinking_purpose():
+    server = _Server(_answer("a"))
+    local = _local(
+        server, thinking_purposes=["tool_stuck"], thinking_max_tokens={"tool_stuck": 3000}, output_max_tokens={"tool_stuck": 500}
+    )
+    await local.generate("x", purpose="tool_stuck")
+    assert server.requests[0]["max_tokens"] == 3000
+
+
+@pytest.mark.asyncio
 async def test_the_output_budget_shrinks_to_what_the_context_leaves():
     server = _Server(_answer("ok"))
     local = _local(server, max_output_tokens=16000, context_tokens=8000)

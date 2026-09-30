@@ -8,7 +8,7 @@ const v = (x, y, z) => new Vec3(x, y, z)
 const home = { door: v(2, 70, 4), inside: v(2, 70, 3), outside: v(2, 70, 5), min: v(1, 70, 1), max: v(3, 70, 3), breach: [] }
 
 function bot (at, items = []) {
-  return { entity: { position: at }, inventory: { items: () => items.map(([name, count]) => ({ name, count })) } }
+  return { entity: { position: at }, blockAt: () => ({ name: 'air', boundingBox: 'empty' }), inventory: { items: () => items.map(([name, count]) => ({ name, count })) } }
 }
 
 test('選択肢: 外なら戦う・逃げる・家に入る・距離を取る・続ける。クリーパーとは戦わない。家の中なら外に出ない', () => {

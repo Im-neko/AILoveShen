@@ -14,6 +14,7 @@ from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
+from ailoveshen.application.use_cases.plan_lint import unregistered_builds
 from ailoveshen.application.use_cases.goal_vocabulary import (
     ObjectiveProposal,
     PlanChange,
@@ -124,6 +125,8 @@ class ObjectiveKeeper:
                     )
                 )
         events.extend(await self._judge_steps(plan))
+        await self._drop_unjudgeable(plan)
+        await self._reconcile(plan)
         await self._design_stage_builds(plan)
         events.extend(self._next_stage(plan))
         if plan.town_complete and not was_complete:
@@ -132,6 +135,72 @@ class ObjectiveKeeper:
             events.append(TownCompletedEvent(text=plan.town.text))
         self._store.save(plan)
         await self._publish(events)
+
+    async def _drop_unjudgeable(self, plan: ObjectivePlan) -> None:
+        """
+        存在しない名前の建物 `built(name)` が条件の中目標を外す（`plan_lint` が新しい計画では止める。書いて
+        あったものは、いつまでも判定できず、小目標にもできない）。視聴者の頼み・助言の中目標は外さない。
+        中目標が尽きた大目標は、次の切れ目で計画を書き直す。
+        """
+        suspects = [
+            (g, j)
+            for g in plan.pending
+            for j in g.open_jobs
+            if not (j.requested_by or j.suggested_by) and unregistered_builds(j.specs, g, ())
+        ]
+        if not suspects:
+            return
+        try:
+            builds = {str(b.get("name")) for b in await self._bridge.builds()}
+        except AILoveShenError as e:
+            logger.debug(f"建物の一覧を読めなかった: {e}")
+            return
+        for goal, job in suspects:
+            if not unregistered_builds(job.specs, goal, builds):
+                continue
+            logger.warning(
+                f"中目標 {job.describe()} を外す（大目標 {goal.id}）: その名前の建物はなく、判定できない"
+            )
+            plan.drop_job(goal.id, job.id, "it names a build that does not exist")
+
+    async def _reconcile(self, plan: ObjectivePlan) -> None:
+        """
+        すべての大目標の、すべての中目標（済みも）とその計画の小目標を、世界と照合して「今満たして
+        いるか」を残す（docs/design/50 §19）。済み（ラッチ）は変えない。今までは一番上の大目標の
+        まだ済んでいない中目標しか判定せず、ほかは印がないまま「待ち」と表示していた。
+        判定できない条件は満たしていない扱い。ブリッジにつながらなければ、前の照合のまま。
+        """
+        specs: dict[str, GoalSpec] = {}
+        for goal in plan.pending:
+            for job in goal.jobs:
+                for spec in job.all_specs():
+                    specs.setdefault(spec.describe(), spec)
+        if not specs:
+            return
+        try:
+            met = await self._met_now(list(specs.values()))
+        except AILoveShenError as e:
+            logger.debug(f"照合できなかった: {e}")
+            return
+        for goal in plan.pending:
+            plan.reconcile(
+                goal.id,
+                {
+                    job.id: [s.describe() for s in job.all_specs() if met.get(s.describe())]
+                    for job in goal.jobs
+                },
+            )
+
+    async def _met_now(self, specs: list[GoalSpec]) -> dict[str, bool]:
+        """条件を 1 回で判定する。1 つでも拒否されたら、半分ずつに分けて、拒否された条件だけ満たしていない扱いにする。"""
+        try:
+            statuses = await self._bridge.check(specs)
+        except GoalRejectedError:
+            if len(specs) == 1:
+                return {specs[0].describe(): False}
+            mid = len(specs) // 2
+            return {**await self._met_now(specs[:mid]), **await self._met_now(specs[mid:])}
+        return {s.describe(): st.met for s, st in zip(specs, statuses)}
 
     async def _judge_steps(self, plan: ObjectivePlan) -> list[DomainEvent]:
         """
@@ -553,10 +622,20 @@ class ObjectiveKeeper:
                 await self._checker.write(name, brief)
 
     async def set_jobs(
-        self, plan: ObjectivePlan, objective_id: str, jobs: tuple[Job, ...]
+        self,
+        plan: ObjectivePlan,
+        objective_id: str,
+        jobs: tuple[Job, ...],
+        planned: Optional[bool] = None,
+        keep_done_steps: bool = True,
     ) -> None:
-        """大目標の中目標（Gemini が書いた小目標の並び）を置き換えて保存する（docs/design/26）。"""
-        goal = plan.set_jobs(objective_id, jobs)
+        """
+        大目標の中目標（Gemini が書いた小目標の並び）を置き換えて保存する（docs/design/26）。
+        `planned` は、計画（中目標と小目標）を書いたかの印（docs/design/50 §18）。
+        """
+        goal = plan.set_jobs(
+            objective_id, jobs, planned=planned, keep_done_steps=keep_done_steps
+        )
         logger.info(f"大目標 {goal.id} の中目標: " + " → ".join(s.spec.describe() for s in jobs))
         self._store.save(plan)
 

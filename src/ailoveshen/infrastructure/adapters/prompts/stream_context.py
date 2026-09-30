@@ -17,6 +17,7 @@ from ailoveshen.domain.value_objects import (
     Goal,
     GoalOutcome,
     GoalPredicate,
+    Job,
     Lesson,
     MessageRole,
     JobState,
@@ -76,7 +77,8 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "新しい name を大目標の条件に書くと、足すときに設計する）"
     ),
     GoalPredicate.HAVE: (
-        "have(item, count): アイテムを count 個持つ。item はアイテム名かグループ"
+        "have(item, count): 合計 count 個持つ（あと count 個ではない。11 個持って 16 個ほしいなら 16）。"
+        "item はアイテム名かグループ"
         "（planks, log, door, bed, wool, food）。例: have(wooden_sword, 1)、have(food, 4)"
     ),
     GoalPredicate.STORED: (
@@ -398,6 +400,8 @@ def _format_jobs(goal: Objective) -> str:
     for s in goal.jobs:
         mark = "済" if s.state == JobState.DONE else "今" if s is first_open else "待"
         text = f"[{s.describe()}]" if s.together else s.describe()
+        if s.title:
+            text = f"{s.title} {text}"
         # 頼み・提案の中目標は、書き直しでは消えない。やめるときは id で drop する
         who = (
             f"（{s.requested_by}さんの頼み・{s.id}）"
@@ -406,8 +410,26 @@ def _format_jobs(goal: Objective) -> str:
             if s.suggested_by
             else ""
         )
-        parts.append(f"{mark}:{text}{who}")
+        plan = _format_steps(s) if s is first_open else ""
+        parts.append(f"{mark}:{text}{who}{plan}")
     return " → ".join(parts)
+
+
+def _format_steps(job: Job) -> str:
+    """
+    今の中目標の計画（docs/design/50 §18）: 小目標の並びを、済（一度満たしたら済みのまま）・今（次にやる）・
+    待で。前提は「小目標<前提」。書いていなければ空。
+    """
+    if not job.steps:
+        return ""
+    done = set(job.steps_done)
+    first_open = next((x for x in job.steps if x.key not in done), None)
+    parts = []
+    for step in job.steps:
+        needs = "".join(f"<{n.describe()}" for n in step.needs if n.key not in done)
+        mark = "済" if step.key in done else "今" if step is first_open else "待"
+        parts.append(f"{mark}:{step.describe()}{needs}")
+    return "（計画: " + " → ".join(parts) + "）"
 
 
 def _format_finished(goal: Objective) -> str:
@@ -425,7 +447,10 @@ def _serves(goal: Goal, titles: dict[str, str]) -> str:
 def _format_goal(goal: Goal | None, obs: GameObservation | None, titles: dict[str, str]) -> str:
     if goal is None:
         return "まだない"
-    lines = [f"{goal.describe()}{_serves(goal, titles)}: {goal.reason}"]
+    left = goal.unmet(obs.goal if obs is not None else None)
+    done = [s.describe() for s in goal.specs if s not in left]
+    head = " + ".join(s.describe() for s in left) + (f"（済み: {', '.join(done)}）" if done else "")
+    lines = [f"{head}{_serves(goal, titles)}: {goal.reason}"]
     if goal.diagnosis:
         lines.append(f"  前の小目標がうまくいかなかった理由（自分の分析）: {goal.diagnosis}")
     if goal.advice:
@@ -543,7 +568,14 @@ def _format_around(around: dict) -> list[str]:
     def block(b: dict) -> str:
         ripe = f"熟した {b['ripe']}、" if "ripe" in b else ""
         gives = f"→ {'・'.join(b['gives'])}、" if b.get("gives") else ""
-        return f"{b['name']} {b['count']}（{ripe}{gives}一番近いもの {where(b['nearest'])}）"
+        # 木でない原木（村の畑の縁、家の柱）: 数だけ。集めない（壊すと畑の水が流れ出す）
+        built = f"ほか木ではない{b['not_trees']}個は人が作った物で集めない、" if b.get("not_trees") else ""
+        if not b.get("nearest"):
+            if "ripe" in b:  # 熟した作物がない: 育ち途中は掘れない
+                return f"{b['name']} {b['count']}（{ripe}{gives}育ち途中で、まだ掘れない）"
+            return f"{b['name']}（{built.rstrip('、')}。集められる木の幹は目の前にない）"
+        mark = "採掘の場所の中の、" if b.get("quarry") else ""
+        return f"{b['name']} {b['count']}（{ripe}{gives}{built}{mark}一番近いもの {where(b['nearest'])}）"
 
     def item(i: dict) -> str:
         direction = DIRECTION_NAMES.get(i.get("direction"), i.get("direction", ""))
@@ -557,16 +589,45 @@ def _format_around(around: dict) -> list[str]:
     ]
 
 
+def _format_quarry(quarry: dict) -> list[str]:
+    """
+    採掘の場所（石・土を掘っている所。設計書 64）と、続きから下りられる階段。毎回別の所から掘って
+    家のまわりを穴だらけにしないよう、その近くから掘らせる。
+    """
+    if not quarry:
+        return []
+    direction = DIRECTION_NAMES.get(quarry.get("direction"), quarry.get("direction", ""))
+    line = (
+        f"- 採掘の場所（石・土・砂利はここの近くから掘る。別の所を新しく掘らない）: "
+        f"{quarry['x']},{quarry['y']},{quarry['z']} {direction} {quarry['distance_m']}m"
+    )
+    shafts = quarry.get("shafts") or []
+    if shafts:
+        line += "、前に掘った階段 " + "、".join(
+            f"入口 {s['top']['x']},{s['top']['y']},{s['top']['z']} → 底 y {s['bottom']['y']}" for s in shafts
+        )
+        line += "（鉱石が底より深ければ、その底から続けて掘る）"
+    return [line]
+
+
 def _format_home(obs: GameObservation) -> str:
     """
     家そのもの（建ててあるか、ベッド、チェスト）。今いる場所は別の行（_format_place）: 前は同じ行に
     「完成している（外にいる）」と書き、小目標 at_home のときに家に着いたと読まれた（2026-09-27）。
     """
     if not obs.has_home:
-        return "まだない（夜までに建てる必要がある）"
-    name = (obs.state.get("home") or {}).get("name")
-    bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
+        return "まだない（夜までに建てる必要がある。placed の home / near_home は家ができるまで使えない）"
+    home = obs.state.get("home") or {}
+    name = home.get("name")
     chests = len((obs.state.get("memory") or {}).get("chests", []))
+    if home.get("found"):
+        # 村の家など、もとからあった建物。自分で建てた家ではなく、中のベッドも自分の物ではない
+        bed = "もとからあるベッド（自分の物ではない）" if obs.bed_in_home else "ベッドなし"
+        return (
+            f"{f'{name}（もとからあった建物を仮の宿にしている。自分で建てた家ではない）' if name else '仮の宿（自分で建てた家ではない）'}"
+            f"、{bed}、チェスト {chests}"
+        )
+    bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
     return f"{f'{name}（建ててある）' if name else '建ててある'}、{bed}、チェスト {chests}"
 
 
@@ -604,9 +665,10 @@ def _format_farm(farm: dict) -> list[str]:
         grow = f"、育ち具合 {ages[0]}〜{ages[1]}/{f.get('mature')}" if ages else ""
         free = f"、空き {f['free']}" if f.get("free") else ""
         dry = f"、乾いた耕地 {f['dry']}" if f.get("dry") else ""
+        water = f"、水のマスあと {f['water']}" if f.get("water") else ""
         seen = "、前に見たとき" if f.get("remembered") else ""
         where = f" {'・'.join(f['farms'])}" if f.get("farms") else ""
-        return f"{crop}{where} {f['planted']} マス（熟した {f['ripe']}{grow}{free}{dry}{seen}）"
+        return f"{crop}{where} {f['planted']} マス（熟した {f['ripe']}{grow}{free}{water}{dry}{seen}）"
 
     parts = [one(crop, f) for crop, f in farm.items()]
     dry = "。乾いた耕地は水が 4 マス以内になく、育ちが遅い" if any(f.get("dry") for f in farm.values()) else ""
@@ -624,6 +686,7 @@ def _format_situation(obs: GameObservation) -> str:
         *([f"- 今いる場所: {format_place(obs)}"] if obs.has_home else []),
         f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
         *_format_around(s.get("around") or {}),
+        *_format_quarry(s.get("quarry") or {}),
         f"- 体力 {obs.health}/20、満腹度 {obs.food}/20",
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",

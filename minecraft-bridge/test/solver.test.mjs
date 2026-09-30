@@ -120,6 +120,7 @@ test('知らないアイテムは受け付けない', () => {
 
   // 直し方を添える（oak_bed はグループ bed、iron_shovel のような実在の名前は通る）
   assert.throws(() => k.resolve('oak_bed'), /did you mean the group "bed"/)
+  assert.throws(() => k.resolve('oak_logs'), /did you mean oak_log \(singular\)/) // 複数形
   assert.throws(() => k.resolve('golden_stick'), /items like stick: stick, carrot_on_a_stick/)
 })
 

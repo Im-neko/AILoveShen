@@ -12,6 +12,7 @@
 import vec3Pkg from 'vec3'
 import { inHouse, isDoorstepFloor } from './home.mjs'
 import { onMineCell } from './facilities.mjs'
+import { onShaftTop } from './quarry.mjs'
 
 const { Vec3 } = vec3Pkg
 export const MIN_LEVEL = 3
@@ -49,6 +50,7 @@ export function columnWork (bot, state, x, z, y) {
   if (!doorstep) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), 1)) return 'house or build'
   if ((state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
+  if (onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
   let top = null
   for (let h = floor + DY; h >= floor - DY; h--) {
     const b = bot.blockAt(new Vec3(x, h, z))

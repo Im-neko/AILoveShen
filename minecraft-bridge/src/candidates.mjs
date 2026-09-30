@@ -11,16 +11,21 @@
 // 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
-import { workCell, mineStatus, HOME_FARM } from './facilities.mjs'
+import { workCell, mineStatus, waterAt, HOME_FARM } from './facilities.mjs'
 import { cropBySeed } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
-import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts } from './observe.mjs'
+import { round, bearing, dayPhase, burningInDaylight, isDark, inventoryCounts, fillItem } from './observe.mjs'
+import { leakingHoles } from './ledger.mjs'
+import { sleepersInBeds } from './sleepers.mjs'
 import { isInside, exitSpots, shelterOf, hasBed } from './home.mjs'
-import { recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
+import { inBurrow, inOpenShaft } from './burrow.mjs'
+import { memoryView } from './worldmap-places.mjs'
+import { recoverableDeath, recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
 const FRONTIER_SLACK = 8
 import { cooking, isRawMeat } from './cooking.mjs'
 import { refusalAt } from './refusals.mjs'
-import { reachableThreats, SLEEP_FROM, SLEEP_UNTIL, bestWeapon, nearbyDrops, findTable, findFurnace, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
+import { goalKeep, spareStacks, emptySlots, TOSS_BELOW } from './spare.mjs'
+import { knownFurnace, reachableThreats, SLEEP_FROM, SLEEP_UNTIL, bestWeapon, nearbyDrops, findTable, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const DROP_RADIUS = 16
@@ -165,7 +170,7 @@ function fromLeaf (bot, state, world, leaf) {
       const me = bot.entity.position
       // 前に見た場所を先に出す。次に方角を、すでに行った場所には印をつけて出す
       const recalled = state.memory
-        ? recall(state.memory, leaf.sources, me, Number(bot.time.age)).map((p) => ({
+        ? recall(memoryView(state, me, Number(bot.time.age), leaf.sources), leaf.sources, me, Number(bot.time.age)).map((p) => ({
           id: `go to ${p.kind} seen at ${p.x},${p.z}`, verb: 'goto_memory', target: p.kind, pos: new Vec3(p.x, p.y, p.z),
           distance: p.distance, seen_minutes_ago: p.minutesAgo, count: p.count
         }))
@@ -216,7 +221,7 @@ function fromLeaf (bot, state, world, leaf) {
         const pos = new Vec3(f.x, f.y, f.z)
         return [{ id: `take ${leaf.item} from the furnace at ${fmt(pos)}`, verb: 'smelt', target: leaf.item, item: leaf.item, pos, distance: dist(bot, pos) }]
       }
-      const furnace = findFurnace(bot)
+      const furnace = knownFurnace(bot, state)
       if (!furnace) return []
       const pos = furnace.position
       const where = { pos, distance: dist(bot, pos) }
@@ -294,8 +299,22 @@ function fromLeaf (bot, state, world, leaf) {
       return [{ id: 'sleep in the bed nearby', verb: 'sleep_at', target: 'bed', pos: leaf.pos, distance: dist(bot, leaf.pos), effect: 'skips the night; sets the respawn point there' }]
     case 'bed_here':
       return [{ id: 'place your bed here and sleep', verb: 'bed_here', target: 'bed', inPlace: true, effect: 'skips the night; sets the respawn point here; pick the bed up in the morning' }]
+    case 'dig_in':
+      return [{ id: 'dig into the ground here and seal yourself in until morning', verb: 'dig_in', target: 'ground', pos: leaf.pos, distance: dist(bot, leaf.pos), effect: 'a 1x1 hole 3 deep, sealed on top with the dirt you dug: monsters cannot reach you; wait in it until morning' }]
+    case 'stay_burrowed':
+      return [{ id: 'stay in the sealed hole until morning', verb: 'wait', target: 'the hole', inPlace: true, seconds: 10, purpose: 'you are sealed in a hole in the ground: the night outside cannot reach you' }]
     case 'stay_underground':
       return [{ id: 'keep working underground through the night', verb: 'wait', target: 'here', inPlace: true, seconds: 10, purpose: 'underground it is as dark by day as by night: the night outside does not matter here' }]
+    case 'fill':
+      // 空のバケツで水源の水を汲む（use_item）。id に場所は入れない（/act は候補を作り直して id で探す）
+      return [{ id: 'fill the bucket with water', verb: 'use_item', target: 'bucket on water', item: 'bucket', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
+    case 'water': {
+      // 畑の水のマス（掘って水のバケツを置く。設計書 47 §17）
+      const only = leaf.facility && leaf.facility !== HOME_FARM ? { facility: leaf.facility } : {}
+      const cell = workCell(bot, state, 'water', { ...only, crop: leaf.crop ?? null })
+      if (!cell) return []
+      return [{ id: `place water in the farm ${cell.facility}`, verb: 'place_water', target: 'water', item: 'water_bucket', pos: cell.pos, distance: dist(bot, cell.pos) }]
+    }
     case 'plant':
     case 'till':
     case 'sow': {
@@ -366,6 +385,11 @@ function forNeeds (bot, state, knowledge) {
     out.push({ id: `cook ${count} ${input} in the furnace at ${fmt(pos)}`, verb: 'smelt', target: product, item: product, input, count, fuel, fuelCount, pos, distance: dist(bot, pos) })
   }
   out.push(...storeSpare(bot, state, knowledge))
+  out.push(...tossSpare(bot, state, knowledge))
+  // 家にチェストがなく、チェストを持っている（作ったばかり）: 置く。預ける先ができる（docs/design/66）
+  if (state.home && state.memory && !homeChests(state.memory, state.home).length && bot.inventory.items().some((i) => i.name === 'chest')) {
+    out.push({ id: 'place a chest in the house', verb: 'place_chest', target: 'chest', pos: state.home.inside, distance: dist(bot, state.home.inside) })
+  }
   const weapon = bestWeapon(bot)
   if (weapon && bot.heldItem?.name !== weapon.name) out.push({ id: `equip ${weapon.name}`, verb: 'equip', target: weapon.name, item: weapon.name, inPlace: true })
   // 体力が危険になってやめた戦い（cleared など）には、目標に関係なく帰る道が要る。まわりに危険が
@@ -379,8 +403,34 @@ function forNeeds (bot, state, knowledge) {
   if (isDark(bot) && bot.inventory.items().some((i) => i.name === 'torch') && torchSpot(bot)) {
     out.push({ id: 'place a torch here', verb: 'place_torch', target: 'torch', inPlace: true })
   }
+  // 朝になっても穴（dig_in）の中にいる: 塞ぎを壊して上がる。塞ぎが開いたままの穴（pathfinder が壊した、
+  // など）でも、昼は出る（2026-09-30: 開いた穴の中で、出る手が出ないまま昼になった）
+  if (dayPhase(bot.time.timeOfDay) === 'day' && !isInside(bot, state.home) && (inBurrow(bot) || inOpenShaft(bot))) {
+    out.push({ id: 'climb out of the hole', verb: 'leave_burrow', target: 'the hole', inPlace: true, purpose: 'it is day: dig the seal and climb up to the ground' })
+  }
   const hole = state.home?.breach[0]
   if (hole) out.push({ id: 'close the hole in the house wall', verb: 'repair_wall', target: 'house wall', inPlace: true, at: fmt(hole) })
+  // 死んで落とした持ち物（5 分で消える）: 目標に関係なく、真っ先に取りに戻る（設計書 50 §17）
+  const death = recoverableDeath(state.memory, Number(bot.time.age))
+  if (death) {
+    const pos = new Vec3(death.x, death.y, death.z)
+    // id に距離や経過時間を入れない: 歩くたびに変わり、選んだ id が実行のときに「今の提案にない」と断られた
+    out.push({ id: `recover your things where you died at ${fmt(pos)}`, verb: 'recover_items', target: 'items', pos, distance: round(dist(bot, pos)), direction: bearing(bot.entity.position, pos), minutes_ago: Math.round((Number(bot.time.age) - death.seen) / 1200 * 10) / 10 })
+  }
+  // 掘った跡に水が流れ込んでいる（畑の縁の原木を掘って水が出た、など）: 同じ物か、土・丸石で埋める
+  // （docs/design/55。id は位置と掘った物だけ: 歩いても変わらない）
+  const leak = leakingHoles(bot, state, Number(bot.time.age), (p) => !!waterAt(state, p)).sort((a, b) => dist(bot, a.pos) - dist(bot, b.pos))[0]
+  const plug = leak && (bot.inventory.items().find((i) => i.name === leak.d.name) ?? fillItem(bot))
+  if (leak && plug) {
+    out.push({ id: `plug the hole at ${fmt(leak.pos)} where ${leak.d.name} was dug: water runs into it`, verb: 'plug_hole', target: 'hole', item: plug.name, pos: leak.pos, distance: round(dist(bot, leak.pos)) })
+  }
+  // ベッドで寝ているモブ（村の家のベッドは村人が使っていて、寝ている間は寝られない）: 夜だけ、1 回殴って
+  // 起こす手を出す（docs/design/56。attack は倒すまで戦うので、別の手）
+  if (dayPhase(bot.time.timeOfDay) !== 'day') {
+    for (const { e, dist: d, bed } of sleepersInBeds(bot)) {
+      out.push({ id: `wake up the sleeping ${e.name} #${e.id} in the bed at ${fmt(bed)} (one hit)`, verb: 'wake_sleeper', target: e.name, entityId: e.id, pos: e.position, distance: round(d), effect: 'it leaves the bed: the bed is free to sleep in' })
+    }
+  }
   for (const { e, dist } of nearbyDrops(bot, state, DROP_RADIUS).slice(0, DROPS_OFFERED)) {
     const item = e.getDroppedItem()?.name ?? 'item'
     out.push({ id: `pick up ${item} #${e.id}`, verb: 'pickup', target: item, distance: round(dist), direction: bearing(bot.entity.position, e.position), pos: e.position, entityId: e.id })
@@ -406,14 +456,11 @@ function toChest (bot, state, item, count) {
 const FREE_SLOTS_WANTED = 8
 const STORE_OFFERED = 3
 const TOOL = /_(sword|pickaxe|axe|shovel|hoe)$/
-const GOAL_GROUPS = { built: ['log', 'planks', 'door'], placed: ['bed', 'wool', 'planks'] }
 
 function storeSpare (bot, state, knowledge) {
   if (!knowledge || !state.memory || !homeChests(state.memory, state.home).length || !isInside(bot, state.home)) return []
   if (bot.inventory.emptySlotCount() >= FREE_SLOTS_WANTED) return []
-  const spec = state.goal?.spec
-  const groups = ['food', ...(GOAL_GROUPS[spec?.predicate] ?? []), ...(spec?.item ? [spec.item] : [])]
-  const keep = new Set(groups.flatMap((g) => knowledge.resolve(g).members))
+  const keep = goalKeep(knowledge, state.goal?.spec)
   const counts = {}
   for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] ?? 0) + i.count
   return Object.entries(counts)
@@ -421,6 +468,19 @@ function storeSpare (bot, state, knowledge) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, STORE_OFFERED)
     .flatMap(([name, n]) => toChest(bot, state, name, n))
+}
+
+// 持ち物がほぼいっぱい（空き 0〜1）で、余っている物（土・丸石の残す数を超えた分、花崗岩、花など）があれば、
+// 捨てて空ける。家のチェストがなくても、外にいても、その場でできる。空きがなくなると、落とした肉も拾えず
+// 食料が集まらない（docs/design/66）。id に数を入れない（捨てるたびに変わり、選んだ id が「今の提案にない」と
+// 断られる）
+function tossSpare (bot, state, knowledge) {
+  if (!knowledge || emptySlots(bot) >= TOSS_BELOW) return []
+  // 家の中で、家にチェストがあれば預ける（storeSpare）。捨てるのは、預けられないとき
+  if (state.memory && homeChests(state.memory, state.home).length && isInside(bot, state.home)) return []
+  const items = spareStacks(bot, goalKeep(knowledge, state.goal?.spec))
+  if (!items.length) return []
+  return [{ id: 'throw away the spare items to free inventory slots', verb: 'toss', target: 'items', inPlace: true, items, purpose: 'the inventory is full: dropped items and drops cannot be picked up' }]
 }
 
 // 選ぶ側に見せる候補の中身（位置のオブジェクトやエンティティの参照は除く）

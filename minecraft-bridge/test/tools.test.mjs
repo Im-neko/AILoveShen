@@ -91,10 +91,22 @@ test('今の家は掘らないが、前の家（置いてきたベッド）は�
   assert.deepEqual([runs[0].c.verb, runs[0].c.block], ['dig', 'white_bed'])
 })
 
+test('今の家でも、壊すと決めたとき（demolish）は名指しで掘れる', async () => {
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5) })
+  const refused = await callTool('dig', { x: 0, y: 70, z: 2 })
+  assert.match(refused.result, /demolish: true/)
+  assert.equal(runs.length, 0)
+  const r = await callTool('dig', { x: 0, y: 70, z: 2, demolish: true })
+  assert.equal(r.ok, true, r.result)
+  assert.equal(runs[0].c.verb, 'dig')
+})
+
 test('掘る道具はブロックの名前を世界から決め、道具がなくて何も落ちないものは断る', async () => {
   const { callTool, runs } = setup({ at: v(10.5, 70, 10.5) })
   assert.match((await callTool('dig', { x: 10, y: 69, z: 10 })).result, /stone drops nothing without one of: .*pickaxe/)
   assert.match((await callTool('dig', { x: 10, y: 71, z: 10 })).result, /there is air/)
+  // 何もない座標には、そのまわりの固いブロックと座標を添える（座標が 1 ずれただけのことが多い）
+  assert.match((await callTool('dig', { x: 10, y: 71, z: 10 })).result, /Solid blocks near there: .* at \d+,\d+,\d+/)
   const { callTool: withPick } = setup({ at: v(10.5, 70, 10.5), items: [['wooden_pickaxe', 1]] })
   assert.equal((await withPick('dig', { x: 10, y: 69, z: 10 })).ok, true)
   assert.equal(runs.length, 0)
@@ -103,6 +115,14 @@ test('掘る道具はブロックの名前を世界から決め、道具がな�
 test('育ち途中の作物は掘らない（種しか出ず、畑が減る）', async () => {
   const { callTool } = setup({ at: v(10.5, 70, 10.5), extra: { '11,70,10': 'wheat' } })
   assert.match((await callTool('dig', { x: 11, y: 70, z: 10 })).result, /wheat at 11,70,10 is not ripe yet \(age 0\/7\)/)
+})
+
+test('耕地は掘らない（作物の下の座標で呼ばれたら、作物の場所を教えて断る）。壊すと決めたときだけ掘る', async () => {
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), extra: { '11,69,10': 'farmland', '11,70,10': 'wheat' } })
+  const refused = await callTool('dig', { x: 11, y: 69, z: 10 })
+  assert.match(refused.result, /will not dig farmland at 11,69,10.*the wheat on it is at 11,70,10/)
+  assert.equal(runs.length, 0)
+  assert.equal((await callTool('dig', { x: 11, y: 69, z: 10, demolish: true })).ok, true)
 })
 
 test('置く道具は空いたセルに、隣のブロックの面を借りて置く。自分が立っている所には置かない', async () => {
@@ -128,6 +148,38 @@ test('ソルバーの提案は、今ある候補の id だけ実行する', asyn
   assert.match((await callTool('do_suggestion', { id: 'dig oak_log at 9,70,9' })).result, /not a current suggestion/)
   assert.equal((await callTool('do_suggestion', { id: suggestion.id })).ok, true)
   assert.equal(runs[0].label, suggestion.id)
+})
+
+test('数字だけが違う提案は同じ手として実行し、違うものは今の提案を添えて断る', async () => {
+  const bed = { id: 'craft white_bed x1（7.5m）', verb: 'craft', item: 'white_bed' }
+  const logs = [
+    { id: 'dig oak_log at 5,70,5', verb: 'dig', pos: v(5, 70, 5), block: 'oak_log' },
+    { id: 'dig oak_log at 6,70,5', verb: 'dig', pos: v(6, 70, 5), block: 'oak_log' }
+  ]
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), candidates: [bed, ...logs] })
+  const same = await callTool('do_suggestion', { id: 'craft white_bed x1（7.7m）' })
+  assert.equal(same.ok, true)
+  assert.equal(runs[0].label, bed.id)
+  // 数字を除いても複数に当たるなら、選べない。同じ動詞の提案を先に添える
+  const many = await callTool('do_suggestion', { id: 'dig oak_log at 9,70,9' })
+  assert.match(many.result, /not a current suggestion \(now: dig oak_log at 5,70,5; dig oak_log at 6,70,5; craft white_bed/)
+  assert.equal(runs.length, 1)
+})
+
+test('boat のような種類の名前は、持っている板材で作れる品物にして作る。作れなければ品物の名前を教える', async () => {
+  const { callTool } = setup({ items: [['oak_planks', 10]] })
+  // 品物にできた（作業台がなければ、oak_boat として断られる）
+  assert.match((await callTool('craft', { item: 'boat' })).result, /oak_boat needs a crafting table/)
+  const { callTool: none } = setup({ items: [['dirt', 1]] })
+  assert.match((await none('craft', { item: 'boat' })).result, /boat is not an item name; use one of oak_boat/)
+})
+
+test('作れる回数が残っていれば、結果に times を添えるための数を渡す（1 回ずつ作り直させない）', async () => {
+  const { callTool, runs } = setup({ items: [['oak_planks', 8]] })
+  await callTool('craft', { item: 'stick' })
+  assert.equal(runs[0].c.more, 3) // 板材 8 枚は 4 回分、1 回作るので残り 3 回
+  await callTool('craft', { item: 'stick', times: 4 })
+  assert.equal(runs[1].c.more, 0)
 })
 
 test('調べものの道具はすぐ返り、行動を実行しない。how_to_get はソルバーの木を返す', async () => {
@@ -280,6 +332,7 @@ test('断られた場所へ同じ手を呼び直すと、実行せずに前の�
   assert.match(again.result, /was tried before and will not work: will not dig oak_planks.*choose another place/)
   assert.equal(runs.length, 0)
   assert.equal(state.refusals.size, 1) // 呼び直しで期限を延ばさない
+  assert.equal((await callTool('dig', { x: 0, y: 70, z: 2, demolish: true })).ok, true) // 壊すと決めたなら台帳を通り越す
 })
 
 test('find_blocks は、家の壁と断られた場所を出さない', async () => {
@@ -293,6 +346,28 @@ test('find_blocks は、家の壁と断られた場所を出さない', async ()
   assert.deepEqual((await callTool('find_blocks', { block: 'oak_planks', radius: 64 })).result.map((f) => f.x), [31])
 })
 
+test('find_blocks は、読み込まれていない所と半径の外を視界の地図から補い、実物が違うものは直して出さない', async () => {
+  const { callTool, bot, state } = setup()
+  const { WorldMap, makeClassifier, AIR } = await import('../src/worldmap.mjs')
+  const cls = makeClassifier(md)
+  const map = new WorldMap()
+  const log = cls.cellOf('oak_log')
+  const leaves = cls.cellOf('oak_leaves')
+  for (const [x, z] of [[30, 30], [80, 10]]) {
+    map.set(x, 72, z, log, 1)
+    map.set(x, 73, z, AIR, 1)
+    for (let dx = -1; dx <= 1; dx++) map.set(x + dx, 74, z, leaves, 1)
+  }
+  state.worldMap = map
+  state.mapCells = cls
+  const base = bot.blockAt
+  bot.blockAt = (p) => (p.x > 70 ? null : base(p)) // x > 70 は読み込まれていない。(30, 72, 30) は読み込まれていて空気
+  const found = (await callTool('find_blocks', { block: 'oak_log', radius: 64 })).result
+  assert.deepEqual(found.map((f) => [f.x, f.source]), [[80, 'map']])
+  assert.equal(map.get(30, 72, 30).cell, AIR, '実物が違うので地図を直した')
+  assert.match((await callTool('find_blocks', { block: 'spruce_log', radius: 64 })).result, /no spruce_log within 64m or in the map/)
+})
+
 test('クラフトは材料が足りなければ実行せず、何がいくつ足りないか・持ち物で何回作れるかを返す', async () => {
   const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), items: [['oak_planks', 3]] })
   // 棒: 板材 2 個から 4 本。3 個では 1 回だけ
@@ -300,8 +375,56 @@ test('クラフトは材料が足りなければ実行せず、何がいくつ�
   assert.equal(two.refused, true)
   assert.match(two.result, /cannot craft stick x2: needs 4 oak_planks \(2 per craft; you have 3, 1 short\)/)
   assert.match(two.result, /what you carry makes only 1 \(4 stick per craft\)/)
+  assert.match(two.result, /Get the oak_planks first \(how_to_get\)/)
   assert.equal((await callTool('craft', { item: 'stick', times: 1 })).ok, true)
   assert.equal(runs.length, 1)
   const none = setup({ at: v(10.5, 70, 10.5), items: [] })
   assert.match((await none.callTool('craft', { item: 'stick' })).result, /what you carry makes none \(one craft gives 4 stick\)/)
+})
+
+test('水をせき止めているブロックは、demolish でも掘らない（畑の縁の原木を掘って水が流れ出た）。ふつうのブロックは通る', async () => {
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), extra: { '11,70,10': 'oak_log', '12,70,10': 'water', '9,70,10': 'dirt' } })
+  const refused = await callTool('dig', { x: 11, y: 70, z: 10 })
+  assert.equal(refused.refused, true)
+  assert.match(refused.result, /holds back water or lava/)
+  assert.doesNotMatch(refused.result, /demolish/) // 壊せば直る、とは言わない
+  const forced = await callTool('dig', { x: 11, y: 70, z: 10, demolish: true })
+  assert.equal(forced.refused, true)
+  assert.equal(runs.length, 0)
+  assert.equal((await callTool('dig', { x: 9, y: 70, z: 10 })).ok, true)
+})
+
+test('岩に囲まれた所から岩の向こうの遠い所へ goto すると、経路探索の前に断り、掘って出るよう伝える', async () => {
+  // 家の外（10.5, 70, 10.5）の周りを、石の地面（y < 70）の下へ 3 マス掘った部屋に見立てる
+  const pocket = (p) => p.y >= 66 && p.y <= 68 && Math.abs(p.x - 10) <= 2 && Math.abs(p.z - 10) <= 2
+  const { callTool, runs, bot } = setup({ at: v(10.5, 66, 10.5) })
+  bot.blockAt = (p) => pocket(p)
+    ? { name: 'air', boundingBox: 'empty', position: p }
+    : { name: 'stone', boundingBox: 'block', position: p }
+  const r = await callTool('goto', { x: 10, y: 66, z: 30 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /closed space \(25 cells you can walk in\)/)
+  assert.match(r.result, /Dig your way out/)
+  assert.equal(runs.length, 0)
+  // 部屋のすぐ外なら、掘って行ける近さなので通す
+  assert.equal((await callTool('goto', { x: 10, y: 66, z: 15 })).ok, true)
+})
+
+test('build_next は続けて置く個数を渡す（省くと上限まで。1 ブロックごとに LLM を呼ばない）', async () => {
+  const plan = { status: () => ({ complete: false, placed: 0, total: 144 }) }
+  const { callTool, runs, state } = setup()
+  state.plan = plan
+  await callTool('build_next', {})
+  await callTool('build_next', { count: 5 })
+  assert.deepEqual(runs.map((r) => r.c.count), [60, 5])
+})
+
+test('goto の y が高さの範囲を超え、y と z を入れ替えると近いなら、取り違えを指摘する', async () => {
+  const { callTool, runs } = setup({ at: v(2.5, 70, -300.5) })
+  const r = await callTool('goto', { x: 3, y: -300, z: 70 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /did you swap y and z\? 3,70,-300 is/)
+  assert.equal(runs.length, 0)
+  const far = await callTool('goto', { x: 3, y: -500, z: 900 })
+  assert.doesNotMatch(far.result, /swap/)
 })

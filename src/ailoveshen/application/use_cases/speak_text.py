@@ -113,7 +113,8 @@ class SpeakTextUseCase(ISpeakText):
             # イベントのために長さを得る
             duration_ms = self._audio_player.get_duration_ms(audio_data)
 
-            # 開始のイベントを発行する
+            # 開始のイベントを発行する（同じ文が 2 回読まれたのか、記録が 2 回なのかを見分けられるように残す）
+            logger.info(f"[tts] 読み上げる（{request.source}、{duration_ms}ms）: {text[:40]}")
             await self._event_publisher.publish(
                 SpeechStartedEvent(
                     text=text,

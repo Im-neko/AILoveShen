@@ -8,11 +8,12 @@
 import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
-import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell } from './observe.mjs'
+import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell, isLog } from './observe.mjs'
+import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { shelteredFrom, enterHome, isDoorstepFloor, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
+import { jumpAndPlace, shelteredFrom, enterHome, isDoorstepFloor, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -21,6 +22,13 @@ import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
 import { levelStatus, TERRAIN } from './leveling.mjs'
+import { noteDig, noteShaft, usableShaft } from './quarry.mjs'
+import { canHold, isTossed, noteTossed, emptySlots } from './spare.mjs'
+import { liquidReason } from './liquid.mjs'
+import { supportFor } from './placing.mjs'
+import { isSleeping, sleeperOf } from './sleepers.mjs'
+import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
+import { furnitureInHome } from './furniture.mjs'
 import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody } from './facilities.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
@@ -38,8 +46,10 @@ const HOSTILE_CACHE_MS = 1000
 const LEAVES_STEP_COST = 10
 const FLEE_DISTANCE = 16
 const FIGHT_LOST_M = 24 // 相手がこれより離れたら見失った
+const FIGHT_LOST_SLACK = 4 // 始めから 24 m より遠い相手（狩りの候補は 32 m まで）は、始めの距離よりこれ以上離れたら見失った
 const PICKUP_WAIT_MS = 1500
 const DROP_COLLECT_RADIUS = 8
+const RECOVER_RADIUS = 24 // 死んだ場所のまわりに散らばった持ち物
 const WAIT_TICKS = 200
 const GLANCE_TICKS = 50
 const GLANCE_ANGLE = Math.PI / 3
@@ -102,6 +112,8 @@ export function configureMovements (bot, state) {
   // 家、前の家、建てている家は壊さないし、そこに足場も置かない。
   // 自然の地形（leveling.mjs の TERRAIN）。置いた物（丸石、板材、チェストなど）は入れない
   m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
+  // （水や溶岩に接したブロックは、mineflayer-pathfinder の dontCreateFlow（既定で真）がもともと壊さない。
+  // 同じ判定をここに足すと、壊す候補ごとの読み取りが増えるだけで、経路探索が遅くなった）
   // ただしドアの前の床の穴は埋めてよい（その上に立ってドアへ入る。home.mjs の isDoorstepFloor）
   m.exclusionAreasPlace.push((block) => block.position && (!inHouse(state, block.position, 1) || isDoorstepFloor(state, block.position)) ? 0 : 100)
   // 採掘場の空ける所には足場を置かない（階段や坑道を埋めない。設計書 47 §16）
@@ -353,10 +365,13 @@ export async function fight (bot, target, signal) {
   const follow = new goals.GoalFollow(target, 2)
   const stuck = stuckWatch(bot, () => target.position.distanceTo(bot.entity.position))
   let why = ''
+  // 狩りの候補は 32 m まで出す。始めから 24 m より遠い相手を、始めの 1 回目で「見失った」にしない
+  // （2026-09-30: 26 m の牛・羊を 0.0 秒で見失って、食料が集まらなかった）
+  const lostAt = Math.max(FIGHT_LOST_M, target.position.distanceTo(bot.entity.position) + FIGHT_LOST_SLACK)
   try {
     while (bot.entities[target.id] && !signal.aborted) {
       const d = target.position.distanceTo(bot.entity.position)
-      if (d > FIGHT_LOST_M) { why = `lost it (${round(d)}m away)`; break }
+      if (d > lostAt) { why = `lost it (${round(d)}m away)`; break }
       if (d > 3 && stuck()) { why = `could not get to it (${round(d)}m away)`; break }
       if (target.position.distanceTo(bot.entity.position) > 3) {
         if (bot.pathfinder.goal !== follow) bot.pathfinder.setGoal(follow, true)
@@ -421,19 +436,55 @@ function waitForCollect (bot, ms) {
   })
 }
 
+// 拾える落とし物。捨てた物（spare.mjs）と、持ち物に入らない物（いっぱいで、まだ入るスタックもない）は含めない:
+// 出すと拾いに行って「拾えなかった」と失敗する（2026-09-30: 土 447 で埋まったまま、拾えない肉に何度も向かった）
 export function nearbyDrops (bot, state, radius) {
+  return groundItems(bot, state, radius).filter(({ e }) => canHold(bot, e.getDroppedItem?.()?.name))
+}
+
+// 近くにあるが、持ち物に入らないもの（pickup を断る理由に使う）
+export function blockedDrops (bot, state, radius) {
+  return groundItems(bot, state, radius).filter(({ e }) => !canHold(bot, e.getDroppedItem?.()?.name))
+}
+
+function groundItems (bot, state, radius) {
   return nearbyEntities(bot).filter(({ e, dist }) => e.name === 'item' && dist <= radius &&
-    Math.abs(e.position.y - bot.entity.position.y) < 4 && !state.unreachableDrops.has(e.id))
+    Math.abs(e.position.y - bot.entity.position.y) < 4 && !state.unreachableDrops.has(e.id) && !isTossed(state, bot, e))
 }
 
 // ドロップは少し待たないと拾えない。すでにその上に立っていると、歩くのはすぐ終わる。
 // 近くに落ちたドロップを集め、それぞれ拾うのを待つ。
 // まわりのドロップを拾う。最後のドロップに届かなかったら、その理由を返す
-async function collectNearbyDrops (bot, state, signal) {
+// 落ちてくる途中のドロップ: 高い所の原木を切ると、ドロップは切った高さから落ちてくる。落とし物の位置は
+// サーバーから 1 秒に 1 回しか届かない（アイテムの追跡間隔）ので、その間は切った高さで止まって見え、
+// nearbyDrops の高さの範囲（±4）の外なら見えもしない。幹の 4 段目以上を切るたびに、ドロップが足元へ
+// 落ちて拾える前に「拾えなかった」と失敗にしていた（2026-09-30 の drop-watch: 失敗は log_above_bot 4 以上に集中）
+const FALL_WAIT_MS = 1500 // 位置が届く 1 秒 + 落ちる + 拾えるまでの 0.5 秒
+const FALL_WAITS = 2
+const FALLING_HORIZONTAL = 3
+const FALLING_MIN_ABOVE = 2.5
+const FALLING_MAX_ABOVE = 12
+function fallingDrop (bot) {
+  const me = bot.entity.position
+  return nearbyEntities(bot).find(({ e }) => e.name === 'item' &&
+    Math.hypot(e.position.x - me.x, e.position.z - me.z) <= FALLING_HORIZONTAL &&
+    e.position.y - me.y >= FALLING_MIN_ABOVE && e.position.y - me.y <= FALLING_MAX_ABOVE) ?? null
+}
+
+export async function collectNearbyDrops (bot, state, signal) {
   let why = ''
+  let waits = 0
   for (let i = 0; i < 3; i++) {
     await bot.waitForTicks(10)
     signal.throwIfAborted()
+    // 頭より上にあるドロップは追わず、足元へ落ちてくるのを待つ（追っても着かない）
+    if (fallingDrop(bot) && waits < FALL_WAITS) {
+      waits++
+      await waitForCollect(bot, FALL_WAIT_MS)
+      signal.throwIfAborted()
+      i--
+      continue
+    }
     const drop = nearbyDrops(bot, state, DROP_COLLECT_RADIUS)[0]
     if (!drop) return why
     const collected = waitForCollect(bot, PICKUP_WAIT_MS)
@@ -470,6 +521,18 @@ export function findTable (bot, state = null) {
 
 export function findFurnace (bot) {
   return bot.findBlock({ matching: bot.registry.blocksByName.furnace.id, maxDistance: TABLE_SEARCH_RADIUS })
+}
+
+// 焼けるかまど: 近くにあればそれ、なければ最後に見たかまど（家のかまどなど）まで歩いて焼く。
+// { position, near } か null（state を渡したときだけ遠くのを探す）。近くのを見たら覚える
+export function knownFurnace (bot, state = null) {
+  const near = findFurnace(bot)
+  if (near) {
+    if (state) state.lastFurnace = { x: near.position.x, y: near.position.y, z: near.position.z }
+    return { position: near.position, near: true }
+  }
+  const p = state?.lastFurnace ?? (state?.home ? furnitureInHome(bot, state.home, 'furnace') : null)
+  return p ? { position: new Vec3(p.x, p.y, p.z), near: false } : null
 }
 
 // 経路が届かなかったブロックは、このセッションでは再び出さない（town2: 何度も選ばれた）
@@ -559,6 +622,30 @@ function stairDanger (bot, state, { cells, floor }) {
 const topOf = (cells, p) => cells.filter((q) => q.x === p.x && q.z === p.z).reduce((a, b) => (b.y > a.y ? b : a))
 const bottomOf = (cells, p) => cells.filter((q) => q.x === p.x && q.z === p.z).reduce((a, b) => (b.y < a.y ? b : a))
 
+// 掘ったあとの拾い集めと結果の文（PRIMITIVES.dig から）
+async function afterDig (bot, state, c, before, signal) {
+  // 確率でしか落ちない物（草から種 1/8、葉から苗木 1/20）: 1 回の行動でまわりの同じものを続けて
+  // 刈る（1 本ずつだと、ほとんどの行動が空振りで種集めが行き詰まった）
+  if (CHANCE_DROP_BLOCKS.test(c.block)) await sweepNearby(bot, state, c.block, before, signal)
+  // 熟した作物: まわりの熟した同じ作物も続けて収穫し、拾ってから植え直す（畑を減らさない）
+  const harvested = cropByBlock(c.block) ? [c.pos, ...await harvestNearby(bot, state, c.block, signal)] : []
+  const why = await collectNearbyDrops(bot, state, signal)
+  if (harvested.length) {
+    const replanted = await replant(bot, harvested, c.block)
+    const gained = totalItems(bot) - before
+    return `harvested ${harvested.length} ${c.block}, replanted ${replanted}; ${gained >= 0 ? 'picked up' : 'net'} ${gained} items` +
+      (replanted < harvested.length ? ` (no ${CROPS[cropByBlock(c.block)].seed} left to replant ${harvested.length - replanted})` : '')
+  }
+  const gained = totalItems(bot) - before
+  // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
+  if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
+  if (gained <= 0) {
+    const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
+    throw new Error(`dug ${c.block} but picked nothing up (${dropsAround(bot)}${why ? `; path: ${why}` : ''}${full})`)
+  }
+  return `dug ${c.block}, picked up ${gained} items`
+}
+
 // 実行関数: (bot, state, candidate, signal) -> 結果の文字列。対象は候補が持っている
 export const PRIMITIVES = {
   async dig (bot, state, c, signal) {
@@ -566,6 +653,9 @@ export const PRIMITIVES = {
     if (!block || block.name !== c.block) throw new Error(`${c.block} is gone from ${c.pos}`)
     const before = totalItems(bot)
     checkHarvestable(bot, state, block) // 歩いて行く前に
+    // 水や溶岩をせき止めているブロックは掘らない（候補にも道具にも出さないが、掘る直前にも確かめる）
+    const wet = liquidReason(bot, c.pos, block)
+    if (wet) throw new Error(`will not dig ${block.name} at ${c.pos.x},${c.pos.y},${c.pos.z}: ${wet}`)
     // 近くではなく、ブロックに届く場所に立つ: そうしないと、頭より高い原木には木の葉の上からしか
     // 「近く」にならない。
     // 当たり判定のない草・花・作物は、視線の先に見える位置を探す GoalLookAtBlock が決して成り立たない
@@ -585,27 +675,18 @@ export const PRIMITIVES = {
     for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
     await equipToolFor(bot, state, block)
     await bot.dig(bot.blockAt(c.pos), true)
+    noteDig(state, c.pos, c.block, bot.entity.position) // 地形を掘った場所を採掘の場所にする（quarry.mjs）
     signal.throwIfAborted()
-    // 確率でしか落ちない物（草から種 1/8、葉から苗木 1/20）: 1 回の行動でまわりの同じものを続けて
-    // 刈る（1 本ずつだと、ほとんどの行動が空振りで種集めが行き詰まった）
-    if (CHANCE_DROP_BLOCKS.test(c.block)) await sweepNearby(bot, state, c.block, before, signal)
-    // 熟した作物: まわりの熟した同じ作物も続けて収穫し、拾ってから植え直す（畑を減らさない）
-    const harvested = cropByBlock(c.block) ? [c.pos, ...await harvestNearby(bot, state, c.block, signal)] : []
-    const why = await collectNearbyDrops(bot, state, signal)
-    if (harvested.length) {
-      const replanted = await replant(bot, harvested, c.block)
-      const gained = totalItems(bot) - before
-      return `harvested ${harvested.length} ${c.block}, replanted ${replanted}; ${gained >= 0 ? 'picked up' : 'net'} ${gained} items` +
-        (replanted < harvested.length ? ` (no ${CROPS[cropByBlock(c.block)].seed} left to replant ${harvested.length - replanted})` : '')
+    // 原木は、ドロップがどこに落ちて拾えたかを記録する（dropwatch.mjs）
+    const watch = isLog(c.block) ? watchDrop(bot, { block: c.block, pos: c.pos }) : null
+    try {
+      const result = await afterDig(bot, state, c, before, signal)
+      watch?.finish(`ok: ${result}`)
+      return result
+    } catch (e) {
+      watch?.finish(`failed: ${e.message}`)
+      throw e
     }
-    const gained = totalItems(bot) - before
-    // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
-    if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
-    if (gained <= 0) {
-      const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
-      throw new Error(`dug ${c.block} but picked nothing up (${dropsAround(bot)}${why ? `; path: ${why}` : ''}${full})`)
-    }
-    return `dug ${c.block}, picked up ${gained} items`
   },
   async pickup (bot, state, c, signal) {
     const drop = bot.entities[c.entityId]
@@ -641,6 +722,81 @@ export const PRIMITIVES = {
     const gained = totalItems(bot) - before
     return gained > 0 ? `${result}; picked up ${gained} items` : result
   },
+  // ベッドで寝ているモブ（村人）を 1 回だけ素手で殴って起こす（docs/design/56）。倒すまで戦う attack と違い、
+  // 起きてベッドが空けばよい。殴った後は追わない
+  async wake_sleeper (bot, state, c, signal) {
+    const target = bot.entities[c.entityId]
+    if (!target) throw new Error(`${c.target} is gone`)
+    if (!isSleeping(bot, target)) return `the ${c.target} is already awake`
+    await goNear(bot, target.position, 2, signal)
+    signal.throwIfAborted()
+    await bot.unequip('hand') // 素手（武器で殴ると、起きる前に倒してしまう）
+    await bot.lookAt(target.position.offset(0, target.height * 0.5, 0), true)
+    bot.attack(target)
+    for (let i = 0; i < 10 && bot.entities[c.entityId] && isSleeping(bot, target); i++) await bot.waitForTicks(4)
+    if (!bot.entities[c.entityId]) return `the ${c.target} is gone after one hit`
+    if (isSleeping(bot, target)) throw new Error(`hit the ${c.target} once but it is still asleep`)
+    return `woke the ${c.target} #${c.entityId} up with one hit: the bed is free`
+  },
+  // 家も寝床もない夜: 足元に 3 マスの縦穴を掘って入り、地面と同じ高さの上のマスを塞ぐ（docs/design/61）。
+  // 掘って出た土がそのまま塞ぐブロックになる。塞いだら朝まで穴の中で待つ
+  async dig_in (bot, state, c, signal) {
+    if (inBurrow(bot)) return 'already in a sealed hole'
+    const { spot, why } = burrowSpot(bot, state)
+    if (!spot) throw new Error(`no place to dig in within reach: ${why}`)
+    const { feet, cells, seal } = spot
+    // 掘りかけの穴の中（前に塞ぐのに失敗した）なら、掘らずに塞ぐだけ
+    if (!spot.open && !standingCell(bot).equals(feet)) await goto(bot, new goals.GoalBlock(feet.x, feet.y, feet.z), signal)
+    for (const cell of cells) {
+      signal.throwIfAborted()
+      const block = bot.blockAt(cell)
+      if (block.boundingBox === 'block') {
+        await equipToolFor(bot, state, block)
+        await bot.dig(block, true)
+      }
+      // 足元が抜けたら、落ちて穴の底へ（次のマスを掘るのはそこから）
+      for (let i = 0; i < 20 && bot.entity.position.y > cell.y + 0.1; i++) await bot.waitForTicks(1)
+    }
+    await bot.waitForTicks(6) // 掘った土を拾う
+    const support = sealSupport(bot, seal)
+    const item = fillItem(bot)
+    if (!support || !item) {
+      throw new Error(`dug the hole but could not seal it (${!item ? 'no dirt or cobblestone to seal with' : 'nothing beside the top to place against'})`)
+    }
+    await bot.equip(item, 'hand')
+    await bot.lookAt(seal.offset(0.5, 0.5, 0.5), true)
+    await bot.placeBlock(support.ref, support.face)
+    await bot.waitForTicks(4)
+    if (bot.blockAt(seal)?.boundingBox !== 'block') throw new Error(`dug the hole but the top at ${seal.x},${seal.y},${seal.z} is still open`)
+    return `dug in: a ${BURROW_DEPTH}-block hole at ${seal.x},${seal.z}, sealed on top with ${item.name}; wait here until morning`
+  },
+  // 穴から出る: 上の塞ぎを壊し、足元に土を置いて地面の高さまで上がる
+  async leave_burrow (bot, state, c, signal) {
+    if (!inBurrow(bot) && !inOpenShaft(bot)) return 'not in a hole'
+    const start = standingCell(bot)
+    let roof = start.offset(0, 2, 0)
+    let up = 0
+    while (bot.blockAt(roof)?.boundingBox === 'block' && up < BURROW_DEPTH) { // 塞ぎの上に土が続いていても掘り抜ける
+      signal.throwIfAborted()
+      await equipToolFor(bot, state, bot.blockAt(roof))
+      await bot.dig(bot.blockAt(roof), true)
+      roof = roof.offset(0, 1, 0)
+      up++
+    }
+    // 頭の上が開いたら、足場を置いて上がる。横に出られる高さ（隣が空いていて、その下に地面がある）まで
+    for (let i = 0; i < BURROW_DEPTH; i++) {
+      signal.throwIfAborted()
+      const cell = standingCell(bot)
+      if (canStepOut(bot, cell)) break
+      const item = fillItem(bot)
+      if (!item) throw new Error('opened the top but carry no dirt or cobblestone to climb out with')
+      await jumpAndPlace(bot, cell, item)
+      await bot.waitForTicks(2)
+    }
+    if (!canStepOut(bot, standingCell(bot))) throw new Error('climbed up but still cannot step out of the hole')
+    await collectNearbyDrops(bot, state, signal)
+    return `climbed out of the hole to ${standingCell(bot).x},${standingCell(bot).y},${standingCell(bot).z}`
+  },
   async flee (bot, state, c, signal) {
     const h = bot.entities[c.entityId]
     if (!h) return `${c.target} is gone`
@@ -674,7 +830,8 @@ export const PRIMITIVES = {
       signal.throwIfAborted()
       await craftWithRecipeBook(bot, state.recipeBook, c.item, { table })
     }
-    return `crafted ${itemCount(bot, c.item) - before} ${c.item}`
+    const more = c.more > 0 ? ` (you carry enough for ${c.more} more craft${c.more > 1 ? 's' : ''}: times=${c.more})` : ''
+    return `crafted ${itemCount(bot, c.item) - before} ${c.item}${more}`
   },
   // ボットのそばに作業台かかまどを置く
   // 置いてある家具を拾って置き直す（furniture.mjs）: 壊して拾い、ベッドは家に、ほかは指定の場所か
@@ -703,7 +860,29 @@ export const PRIMITIVES = {
     await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), { x: 0, y: 1, z: 0 })
     return `placed ${c.item} at ${pos}`
   },
+  // 続けて c.count 個置く（道具 build_next。1 ブロックごとに LLM が呼ばれ、144 ブロックの家が判断だけで
+  // 14 分かかっていた）。材料が尽きた・置けなかったときは、置けた分を返して止まる。候補（planBlock）は 1 個
   async place_plan (bot, state, c, signal) {
+    const total = c.planBlock ? 1 : Math.max(1, Math.floor(c.count ?? 1))
+    let placed = 0
+    let lastPlaced = ''
+    for (let i = 0; i < total; i++) {
+      signal.throwIfAborted()
+      let result
+      try {
+        result = await PRIMITIVES.place_plan_once(bot, state, c, signal)
+      } catch (e) {
+        if (!placed) throw e
+        return `${lastPlaced}; stopped after ${placed} blocks: ${e.message}`
+      }
+      if (/^the (plan|build .+) is complete$/.test(result)) return placed ? lastPlaced : result // もう置く物がなかった
+      placed++
+      lastPlaced = result
+      if (/ is complete/.test(result)) break // 最後の 1 個を置いた
+    }
+    return placed > 1 ? `${lastPlaced} — ${placed} blocks placed in a row` : lastPlaced
+  },
+  async place_plan_once (bot, state, c, signal) {
     if (c.build) return placeBuildBlock(bot, state, c.build, signal)
     const plan = state.plan
     if (!plan.origin) {
@@ -764,7 +943,7 @@ export const PRIMITIVES = {
   },
   async sleep (bot, state, c, signal) {
     await enterHome(bot, state.home, signal)
-    await bot.sleep(bot.blockAt(state.home.bed))
+    await sleepOn(bot, bot.blockAt(state.home.bed))
     // 全プレイヤーが眠ると夜が飛ばされ、サーバーがボットを起こす
     while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
     if (bot.isSleeping) await bot.wake()
@@ -862,6 +1041,22 @@ export const PRIMITIVES = {
       return `put ${n} ${c.item} in the chest`
     })
   },
+  // 余った物を捨てる（家のチェストがない・遠いとき。spare.mjs）。前に向かって捨てる: 下を向いたまま
+  // 捨てると、足元に落ちて数秒後に拾い直す。捨てた物は state.tossed に覚えて、拾う候補に出さない
+  async toss (bot, state, c, signal) {
+    await bot.look(bot.entity.yaw, 0, true)
+    const threw = []
+    for (const { item, count } of c.items) {
+      signal.throwIfAborted()
+      const n = Math.min(count, inventoryCounts(bot)[item] ?? 0)
+      if (!n) continue
+      await bot.toss(bot.registry.itemsByName[item].id, null, n)
+      noteTossed(state, bot, item)
+      threw.push(`${n} ${item}`)
+    }
+    if (!threw.length) throw new Error('nothing to throw away: it is all gone from the inventory')
+    return `threw away ${threw.join(', ')}; ${emptySlots(bot)} slots free`
+  },
   async stash (bot, state, c, signal) {
     return withOpenChest(bot, state, c, signal, async (window) => {
       const put = []
@@ -896,6 +1091,7 @@ export const PRIMITIVES = {
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
       forgetFurnace(state.memory, c.pos)
+      if (state.lastFurnace && state.lastFurnace.x === c.pos.x && state.lastFurnace.y === c.pos.y && state.lastFurnace.z === c.pos.z) delete state.lastFurnace
       throw new Error(`no furnace at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
     }
     const furnace = await bot.openFurnace(block)
@@ -978,10 +1174,26 @@ export const PRIMITIVES = {
       `stone ${numbers.stone}, coal ${numbers.coal}, iron ${numbers.iron}, logs ${numbers.logs}, animals ${numbers.animals}`
   },
   async dig_down (bot, state, c, signal) {
-    const surfaceY = state.goal?.surfaceY ?? Math.floor(bot.entity.position.y)
+    let surfaceY = state.goal?.surfaceY ?? Math.floor(bot.entity.position.y)
     const maxDepth = state.goal?.spec?.dig_depth ?? Infinity // 上限なし（溶岩・水・砂利・岩盤で止まる）
     let steps = 0
     let stop = ''
+    // 前に掘った階段の底から続ける（毎回新しい階段を掘って、家のまわりを穴だらけにしない。quarry.mjs）。
+    // 底まで歩けなければ、ここから掘る（歩けなかったのは鉱石のせいではないので、鉱石は届かない印にしない）
+    const shaft = usableShaft(state, bot.entity.position, c.pos.y)
+    let top = bot.entity.position.floored()
+    let walkedDown = false
+    if (shaft) {
+      try {
+        await goto(bot, new goals.GoalBlock(shaft.bottom.x, shaft.bottom.y, shaft.bottom.z), signal)
+        top = new Vec3(shaft.top.x, shaft.top.y, shaft.top.z)
+        surfaceY = shaft.top.y
+        walkedDown = true
+      } catch (e) {
+        if (signal.aborted) throw e
+        console.log(`[quarry] 階段の底まで歩けなかった: ${e.message}`)
+      }
+    }
     // 掘れる所が見えるか、下りられなくなるまで（dig_depth、溶岩・水・砂利・岩盤）下りる
     for (; ; steps++) {
       signal.throwIfAborted()
@@ -1004,13 +1216,14 @@ export const PRIMITIVES = {
       const [feet] = next.step.cells.slice(-1)
       await goto(bot, new goals.GoalBlock(feet.x, feet.y, feet.z), signal)
     }
-    if (!steps) {
+    if (!steps && !walkedDown) {
       markUnreachable(state, c.pos)
       throw new Error(`could not dig stairs down toward ${c.target}: ${stop}`)
     }
+    if (steps || walkedDown) noteShaft(state, top, bot.entity.position.floored())
     await collectNearbyDrops(bot, state, signal)
     const depth = surfaceY - Math.floor(bot.entity.position.y)
-    return `dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${stop ? `; stopped: ${stop}` : ''}`
+    return `${walkedDown ? 'walked down the stairs dug before, then ' : ''}dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${stop ? `; stopped: ${stop}` : ''}`
   },
   // 採掘場を設計どおりに掘る（設計書 47 §16）: 並びの次のセルから順に、隣の空いたセル（前の段）に立って
   // 上から空ける。時間では止めない（設計書 38）。危ないもの（溶岩・水・落ちる砂利・洞窟）に当たったら、
@@ -1052,6 +1265,28 @@ export const PRIMITIVES = {
     return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}`
   },
   // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
+  // 死んだ場所へ戻って、落とした持ち物を拾う（5 分で消える）。着いても何も落ちていなければ諦める
+  async recover_items (bot, state, c, signal) {
+    const death = state.memory.deaths[0]
+    if (!death) throw new Error('no death is remembered')
+    death.tries = (death.tries ?? 0) + 1
+    await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
+    await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 3), signal)
+    const before = totalItems(bot)
+    for (let i = 0; i < 6 && nearbyDrops(bot, state, RECOVER_RADIUS).length; i++) {
+      const drop = nearbyDrops(bot, state, RECOVER_RADIUS)[0]
+      const collected = waitForCollect(bot, PICKUP_WAIT_MS)
+      // 行き着けない落とし物（水の中、囲まれた所）は、ここで諦める（続けて別の物へ行くと、その分も
+      // 動けなくなるまで待つ）。行った回数（death.tries）が 2 に達すれば、もう出さない
+      const reached = await goNear(bot, drop.e.position, 0.5, signal).then(() => true, (e) => { if (signal.aborted) throw signal.reason; return false })
+      await collected
+      if (!reached) break
+    }
+    const gained = totalItems(bot) - before
+    if (!nearbyDrops(bot, state, RECOVER_RADIUS).length) death.recovered = true
+    if (gained <= 0) throw new Error(`nothing left to pick up where you died (${dropsAround(bot)})`)
+    return `recovered ${gained} items where you died`
+  },
   async goto_pos (bot, state, c, signal) {
     await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
     const goal = new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, c.range ?? 1)
@@ -1075,6 +1310,17 @@ export const PRIMITIVES = {
     const placed = bot.blockAt(c.pos)
     if (!placed || placed.name === before) throw new Error(`the ${c.item} was not placed`)
     return `placed ${placed.name} at ${c.pos.x},${c.pos.y},${c.pos.z}`
+  },
+  // 掘った跡に水が流れ込んでいる: 同じ物（なければ土や丸石）で埋める（docs/design/55）。行った回数を数え、
+  // 2 回で諦める（ledger.mjs PLUG_TRIES）
+  async plug_hole (bot, state, c, signal) {
+    const hole = (state.dug ?? []).find((d) => d.x === c.pos.x && d.y === c.pos.y && d.z === c.pos.z && !d.plugged)
+    if (hole) hole.tries = (hole.tries ?? 0) + 1
+    const against = supportFor(bot, c.pos, c.item, 'floor') ?? supportFor(bot, c.pos, c.item)
+    if (!against) throw new Error(`nothing next to ${c.pos.x},${c.pos.y},${c.pos.z} to plug against`)
+    const result = await PRIMITIVES.place_at(bot, state, { item: c.item, pos: c.pos, against }, signal)
+    if (hole) hole.plugged = true
+    return `plugged the hole at ${c.pos.x},${c.pos.y},${c.pos.z} (${result})`
   },
   // 整地（設計書 41）: c.where のまわり半径 c.radius を、近い列から次々にそろえる。出っ張りを先に
   // （土が出る）、埋めるのは持っている土で。行けない・掘れない列は飛ばす。時間では止めない
@@ -1111,6 +1357,8 @@ export const PRIMITIVES = {
         if (next.cut) {
           const block = bot.blockAt(p)
           if (!TERRAIN.test(block?.name ?? '')) throw new Error(`${block?.name} is not natural ground`)
+          const wet = liquidReason(bot, p, block)
+          if (wet) throw new Error(wet)
           if (!withinReach(bot, p)) await goto(bot, new goals.GoalLookAtBlock(p, bot.world, { reach: REACH }), signal)
           for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
           await equipToolFor(bot, state, block)
@@ -1166,8 +1414,11 @@ export const PRIMITIVES = {
     const plant = bot.blockAt(c.pos.offset(0, 1, 0))
     if (plant && CLEARABLE.test(plant.name)) await bot.dig(plant)
     const block = bot.blockAt(c.pos)
-    if (!/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') || bot.blockAt(c.pos.offset(0, 1, 0))?.name !== 'air') {
-      throw new Error(`nothing to till at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${block?.name ?? 'unloaded'})`)
+    const above = bot.blockAt(c.pos.offset(0, 1, 0))
+    if (!/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') || above?.name !== 'air') {
+      // 何が邪魔かを言う（土なのに耕せない理由は上のブロック。「土」とだけ言うと、なぜか分からない）
+      const why = !/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') ? `the ground is ${block?.name ?? 'unloaded'}` : `${above?.name ?? 'unloaded'} is on top of the ${block.name}`
+      throw new Error(`nothing to till at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${why})`)
     }
     await bot.equip(hoe, 'hand')
     await bot.activateBlock(block, { x: 0, y: 1, z: 0 })
@@ -1187,6 +1438,47 @@ export const PRIMITIVES = {
     const crop = bot.blockAt(c.pos.offset(0, 1, 0))
     if (crop?.name === 'air') throw new Error(`the ${c.item} was not sown`)
     return `sowed ${c.item} (${crop.name}) at ${c.pos.x},${c.pos.y + 1},${c.pos.z}`
+  },
+  // 畑の水のマス（設計書 47 §17）。c.pos: 水を置く地面のブロック。それを掘って穴にし、隣のマスに立って、穴の底に
+  // 水のバケツを使う。遠くから穴の底を狙うと、サーバーの視線は隣の地面の上面に当たり、水が畑の表面に流れる
+  // （隣に立てば、視線は縁を越えて穴の底に届く）。穴の横の地面が水の高さ以上でないと水が流れ出すので、先に確かめる
+  async place_water (bot, state, c, signal) {
+    const bucket = bot.inventory.items().find((i) => i.name === 'water_bucket')
+    if (!bucket) throw new Error('no water_bucket')
+    const at = `${c.pos.x},${c.pos.y},${c.pos.z}`
+    const solid = (p) => bot.blockAt(p)?.boundingBox === 'block'
+    const around = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => c.pos.offset(dx, 0, dz))
+    // 穴の横の地面が水の高さ以上か（先に確かめる。ここが欠けていると水は畑に流れ出す）
+    for (const p of around) {
+      if (!solid(p)) throw new Error(`the ground beside the hole at ${at} (${p.x},${p.y},${p.z}) is lower: the water would run out of the hole`)
+    }
+    // 立つ隣のマス: 上が空いている（作物は通れる）、近い順。穴そのものには立たない
+    const me = bot.entity.position
+    const stand = around
+      .filter((p) => bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 2, 0))?.boundingBox === 'empty')
+      .sort((a, b) => a.offset(0.5, 1, 0.5).distanceTo(me) - b.offset(0.5, 1, 0.5).distanceTo(me))[0]
+    if (!stand) throw new Error(`no free cell to stand on beside the water cell ${at}`)
+    await goto(bot, new goals.GoalBlock(stand.x, stand.y + 1, stand.z), signal)
+    signal.throwIfAborted()
+    const ground = bot.blockAt(c.pos)
+    if (!ground) throw new Error(`${at} is not loaded`)
+    if (ground.name === 'water') return `there is already water at ${at}`
+    const plant = bot.blockAt(c.pos.offset(0, 1, 0))
+    if (plant && CLEARABLE.test(plant.name)) await bot.dig(plant)
+    if (ground.boundingBox === 'block') await bot.dig(ground)
+    if (bot.blockAt(c.pos)?.boundingBox === 'block') throw new Error(`could not dig the hole at ${at}`)
+    if (!solid(c.pos.offset(0, -1, 0))) throw new Error(`no solid floor under the hole at ${at}: the water would drain away`)
+    await bot.equip(bucket, 'hand')
+    await bot.lookAt(c.pos.offset(0.5, 0.05, 0.5), true)
+    bot.activateItem()
+    await bot.waitForTicks(8)
+    const now = bot.blockAt(c.pos)?.name
+    // 水が畑の表面に出ていないか（出ていたら、バケツは空で、水が流れている）
+    const spilled = around.map((p) => p.offset(0, 1, 0)).filter((p) => bot.blockAt(p)?.name === 'water')
+    const empty = bot.inventory.items().some((i) => i.name === 'bucket')
+    if (spilled.length) throw new Error(`the water ran onto the farm at ${spilled.map((p) => `${p.x},${p.y},${p.z}`).join(' ')} instead of staying in the hole at ${at} (${empty ? 'the bucket is empty now' : 'the water_bucket is still full'})`)
+    if (now !== 'water') throw new Error(`the water was not placed at ${at} (${now ?? 'unloaded'} there; ${empty ? 'the bucket is empty now' : 'the water_bucket is still full'})`)
+    return `placed water at ${at} (the water_bucket is empty again: bucket)`
   },
   // 道具 ride_boat（設計書 37）: c.pos に向かって水の上をボートで進む（短い水でも）。岸に着いたら降りて拾う
   async ride_boat (bot, state, c, signal) {
@@ -1355,9 +1647,23 @@ async function replant (bot, positions, block) {
   return n
 }
 
+// ベッドに寝る。誰かが寝ていて断られたら、誰か・どうすればいいかを添える（「the bed is occupied」だけでは、
+// 同じ手を 4 回繰り返した。2026-09-30）
+async function sleepOn (bot, bed) {
+  try {
+    await bot.sleep(bed)
+  } catch (e) {
+    if (!/occupied/.test(e.message)) throw e
+    const s = bed?.position && sleeperOf(bot, bed.position)
+    throw new Error(s
+      ? `the bed is occupied: a ${s.e.name} #${s.e.id} is sleeping in it. Hit it once to wake it (the option "wake up the sleeping ${s.e.name}") or sleep somewhere else`
+      : 'the bed is occupied (someone is in it, out of sight): sleep somewhere else')
+  }
+}
+
 // 家のでないベッドで眠り、夜が明けるのを待つ
 async function sleepIn (bot, bed, signal) {
-  await bot.sleep(bed)
+  await sleepOn(bot, bed)
   while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
   if (bot.isSleeping) await bot.wake()
   await once(bot, 'time', { signal: AbortSignal.timeout(TIME_UPDATE_TIMEOUT_MS) })

@@ -11,7 +11,12 @@ pytest.importorskip("fastapi", reason="ailoveshen[stream] not installed")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from ailoveshen.domain.entities import ObjectivePlan, PlaySession  # noqa: E402
-from ailoveshen.domain.events import GoalSetEvent  # noqa: E402
+from ailoveshen.domain.events import (  # noqa: E402
+    GoalDecidedEvent,
+    GoalDecidingEvent,
+    GoalSetEvent,
+    SkillLearnedEvent,
+)
 from ailoveshen.domain.value_objects import (  # noqa: E402
     Candidate,
     GameObservation,
@@ -144,6 +149,7 @@ class TestGoalsSnapshot:
             "together": [],
             "reason": "壁の材料",
             "objective": "自分の家を作る",
+            "objective_id": "m1",
             "survival": False,
             "progress": ["have 3 log (1/3)"],
         }
@@ -203,6 +209,37 @@ class TestGoalBoard:
 
         data = json.loads(queue.get_nowait())
         assert data["objectives"][0]["title"] == "ベッドで寝る"
+
+    @pytest.mark.asyncio
+    async def test_a_learned_skill_is_sent_with_a_counter_the_overlay_can_compare(self):
+        """覚えた技は seq つきで送る（オーバーレイは seq が変わったときだけ「覚えた」を出す）。"""
+        board = GoalBoard(_session().activity)
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=4)
+        board._listeners.add(queue)
+        assert board.snapshot()["skill_learned"] is None
+
+        await board._on_event(SkillLearnedEvent(name="sow_farm", description="畑を耕して種をまく"))
+        await board._on_event(GoalSetEvent())  # ふつうのステップでは変わらない
+        first, second = (json.loads(queue.get_nowait())["skill_learned"] for _ in range(2))
+        assert first == second == {"seq": 1, "name": "sow_farm", "description": "畑を耕して種をまく"}
+
+        await board._on_event(SkillLearnedEvent(name="hunt", description="動物を狩る"))
+        assert json.loads(queue.get_nowait())["skill_learned"]["seq"] == 2
+
+    @pytest.mark.asyncio
+    async def test_it_says_while_the_llm_is_thinking(self):
+        """考え始めてから終わるまで thinking を送る（失敗の後の考え直しかも添える）。"""
+        board = GoalBoard(_session().activity)
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=4)
+        board._listeners.add(queue)
+        assert board.snapshot()["thinking"] is None
+
+        await board._on_event(GoalDecidingEvent(after_failure=True))
+        await board._on_event(GoalDecidedEvent())
+        during, after = (json.loads(queue.get_nowait())["thinking"] for _ in range(2))
+
+        assert during == {"after_failure": True}
+        assert after is None
 
     @pytest.mark.asyncio
     async def test_slow_listener_keeps_only_the_latest(self):
@@ -283,6 +320,20 @@ def test_the_vtuber_overlay_reads_the_label_and_the_intent():
     assert goals["intent"] == "近くの木を切りにいく"
     page = client.get("/overlay/vtuber").text
     assert "/api/goals/stream" in page and "goal.label" in page
+    assert "技を覚えた！" in page and "skill_learned" in page
+    assert "data.thinking" in page and "data.thinking" in client.get("/overlay").text
+
+
+def test_the_overlays_name_all_four_layers():
+    session = PlaySession(blueprint=None, plan=ObjectivePlan(mission=Mission("街にしていく")))
+    client = TestClient(GoalBoard(session.activity).app)
+
+    vtuber = client.get("/overlay/vtuber").text
+    for layer in ("最終目標", "大目標", "中目標", "小目標"):
+        assert layer in vtuber
+    plain = client.get("/overlay").text
+    for layer in ("最終目標", "中目標", "小目標"):
+        assert layer in plain
 
 
 def test_the_embedded_server_leaves_ctrl_c_to_the_play_process():

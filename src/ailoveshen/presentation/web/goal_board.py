@@ -35,12 +35,15 @@ from ailoveshen.application.ports.output.reading_store import NameReading
 from ailoveshen.domain.events import (
     DomainEvent,
     GameActionExecutedEvent,
+    GoalDecidedEvent,
+    GoalDecidingEvent,
     GoalEndedEvent,
     GoalSetEvent,
     JobDoneEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
+    SkillLearnedEvent,
     TownMapDrawnEvent,
     TownSiteChosenEvent,
 )
@@ -49,10 +52,13 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    Job,
     JobState,
     Objective,
     ObjectiveState,
+    Step,
 )
+from ailoveshen.presentation.web.admin import AdminPanel
 from ailoveshen.presentation.web.avatar import AvatarStage
 
 OVERLAY_HTML = Path(__file__).with_name("overlay.html")
@@ -71,7 +77,10 @@ EVENTS: tuple[type[DomainEvent], ...] = (
     JobDoneEvent,
     TownSiteChosenEvent,
     TownMapDrawnEvent,
+    SkillLearnedEvent,
     GameActionExecutedEvent,
+    GoalDecidingEvent,
+    GoalDecidedEvent,
 )
 
 
@@ -110,12 +119,13 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         if goal is None
         else {
             "goal": goal.describe(),
-            # 視聴者向けの日本語。束（docs/design/44）なら先頭と「ほか N つ」
-            "label": goal_label(goal.spec)
-            + (f"（ほか {len(goal.together)} つ）" if goal.together else ""),
-            "together": [goal_label(s) for s in goal.together],
+            # 視聴者向けの日本語。束（docs/design/44）なら、まだ済んでいない先頭と「ほか N つ」
+            "label": goal_label(goal.unmet(status)[0])
+            + (f"（ほか {len(goal.unmet(status)) - 1} つ）" if len(goal.unmet(status)) > 1 else ""),
+            "together": [goal_label(s) for s in goal.unmet(status)[1:]],
             "reason": goal.reason,
             "objective": titles.get(goal.objective_id) if goal.objective_id else None,
+            "objective_id": goal.objective_id,
             "survival": goal.objective_id is None,
             "progress": list(status.lines) if status else [],
         },
@@ -165,6 +175,8 @@ ITEM_NAMES = {
     "cooked_chicken": "焼き鳥",
     "wheat": "小麦",
     "wheat_seeds": "小麦の種",
+    "bucket": "バケツ",
+    "water_bucket": "水入りバケツ",
 }
 
 
@@ -255,19 +267,77 @@ def _home(obs: GameObservation | None) -> dict[str, Any] | None:
     }
 
 
-def _jobs(goal: Objective) -> list[dict[str, Any]]:
-    """中目標: done（一度満たしたら済みのまま）/ current（まだの一番先）/ waiting。"""
-    first_open = next((s for s in goal.jobs if s.state == JobState.PENDING), None)
+def _steps(job: Job, live: bool = False) -> list[dict[str, Any]]:
+    """
+    中目標の計画の小目標（前提を先に、depth 0 が小目標、1 以降が前提）。済み・いま満たしている・次・待ち。
+
+    済み: 一度満たした（ラッチ）、または中目標が済んでいる（中目標を満たしたなら、その小目標はもう要らない）。
+    met: 世界と照合したら今満たしている（`Job.met_now`。まだ済みにしていない、または一番上の大目標ではない）。
+    closed: 大目標が終わって、やらずに閉じた。current: `live`（今の大目標の今の中目標）の、済んでいない前提の
+    いちばん奥。
+    """
+    done = set(job.steps_done)
+    met = set(job.met_now)
+    order = [x for step in job.steps for x in _walk(step, 0)]
+    first_open = job.next_step({k: True for k in met}) if live else None  # 前提が先
+    finished = job.state == JobState.DONE
+    closed = job.state in (JobState.CLOSED, JobState.DROPPED)
+
+    def state(s: Step) -> str:
+        if finished or s.key in done:
+            return "done"
+        if s.key in met:
+            return "met"
+        if closed:
+            return "closed"
+        return "current" if s is first_open else "waiting"
+
+    return [
+        {
+            "label": goal_label(s.spec),
+            "reason": s.reason,
+            "depth": depth,
+            "state": state(s),
+        }
+        for s, depth in order
+    ]
+
+
+def _walk(step: Step, depth: int) -> list[tuple[Step, int]]:
+    """小目標を先に、その前提を続けて（画面に上から読める順）。"""
+    return [(step, depth)] + [x for n in step.needs for x in _walk(n, depth + 1)]
+
+
+def _met(job: Job) -> bool:
+    """世界と照合したら、今、中目標の条件（束も）がすべて満たされているか。"""
+    return all(s.describe() in job.met_now for s in job.specs)
+
+
+def _jobs(goal: Objective, live: bool = False) -> list[dict[str, Any]]:
+    """
+    中目標: done（一度満たしたら済みのまま）/ met（今満たしている。まだ済みにしていない）/ current（まだの
+    一番先）/ waiting / closed（大目標が終わって、やらずに閉じた）。`live` は、一番上の大目標か。
+    """
+    first_open = next(
+        (s for s in goal.jobs if s.state == JobState.PENDING and not _met(s)), None
+    )
+
+    def state(s: Job) -> str:
+        if s.state == JobState.DONE:
+            return "done"
+        if s.state != JobState.PENDING:
+            return "closed"
+        if _met(s):
+            return "met"
+        return "current" if s is first_open else "waiting"
+
     return [
         {
             "id": s.id,
-            "label": goal_label(s.spec)
-            + (f"（ほか {len(s.together)} つ）" if s.together else ""),
-            "state": "done"
-            if s.state == JobState.DONE
-            else "current"
-            if s is first_open
-            else "waiting",
+            "label": s.title
+            or goal_label(s.spec) + (f"（ほか {len(s.together)} つ）" if s.together else ""),
+            "steps": _steps(s, live and s is first_open),
+            "state": state(s),
             "reason": s.reason,
             "requested_by": s.requested_by,
             "suggested_by": s.suggested_by,
@@ -278,15 +348,15 @@ def _jobs(goal: Objective) -> list[dict[str, Any]]:
 
 
 def _objective(goal: Objective, state: str) -> dict[str, Any]:
-    jobs = _jobs(goal)
+    jobs = _jobs(goal, state == "current")
     return {
         "id": goal.id,
         "title": goal.title,
         "kind": goal.kind.value,  # build / facility / infrastructure
         "state": state,  # current / pending / done / dropped
         "jobs": jobs,
-        "jobs_done": sum(1 for s in jobs if s["state"] == "done"),
-        "jobs_total": len(jobs),
+        "jobs_done": sum(1 for s in jobs if s["state"] in ("done", "met")),
+        "jobs_total": sum(1 for s in jobs if s["state"] != "closed"),  # 閉じた中目標は数えない
         "requested_by": goal.requested_by,
         "suggested_by": goal.suggested_by,  # 採った助言をくれた視聴者（頼みではない）
         "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None
@@ -320,6 +390,7 @@ class GoalBoard:
         gemini_image: Callable[[str], tuple[bytes, str] | None] | None = None,
         avatar: AvatarStage | None = None,
         readings: Callable[[], tuple[NameReading, ...]] | None = None,
+        admin: AdminPanel | None = None,
     ) -> None:
         """
         ボードを初期化する。
@@ -332,13 +403,19 @@ class GoalBoard:
             gemini_image: 呼び出しに添えた画像（データと形式）を id で返すもの
             avatar: アバター（VRM）のページと合図。あれば同じサーバーで /avatar を出す
             readings: 視聴者の名前の読みの辞書の全部を返すもの（None: /api/readings は空）
+            admin: 管理画面（あれば同じサーバーで /admin を出す。docs/design/54_admin_panel.md）
         """
         self._activity = activity
         self._gemini_calls = gemini_calls
         self._gemini_image = gemini_image
         self._avatar = avatar
         self._readings = readings
+        self._admin = admin
         self._listeners: set[asyncio.Queue[str | None]] = set()
+        # 最後に覚えた技（seq が変わったらオーバーレイがお知らせを出す。起動してからのもの）
+        self._learned: dict[str, Any] | None = None
+        # LLM が次の小目標か大目標の計画を考えている間の {after_failure}（考えていなければ None）
+        self._thinking: dict[str, Any] | None = None
         self.app = self._create_app()
 
     def subscribe(self, bus: IEventSubscriber) -> None:
@@ -368,10 +445,21 @@ class GoalBoard:
             raise
 
     def snapshot(self) -> dict[str, Any]:
-        """今の目標。"""
-        return goals_snapshot(self._activity())
+        """今の目標と、最後に覚えた技、考え中かどうか。"""
+        return {
+            **goals_snapshot(self._activity()),
+            "skill_learned": self._learned,
+            "thinking": self._thinking,
+        }
 
     async def _on_event(self, event: DomainEvent) -> None:
+        if isinstance(event, SkillLearnedEvent):
+            seq = (self._learned["seq"] if self._learned else 0) + 1
+            self._learned = {"seq": seq, "name": event.name, "description": event.description}
+        if isinstance(event, GoalDecidingEvent):
+            self._thinking = {"after_failure": event.after_failure}
+        elif isinstance(event, GoalDecidedEvent):
+            self._thinking = None
         data = json.dumps(self.snapshot(), ensure_ascii=False)
         for queue in self._listeners:
             if queue.full():
@@ -440,6 +528,8 @@ class GoalBoard:
 
         if self._avatar is not None:
             self._avatar.install(app)
+        if self._admin is not None:
+            self._admin.install(app, self.snapshot)
 
         @app.get("/town", response_class=HTMLResponse)
         async def town_page() -> str:

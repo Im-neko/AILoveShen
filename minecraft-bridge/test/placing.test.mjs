@@ -83,6 +83,14 @@ test('置けない物、知らない場所は断る', () => {
   assert.equal(parseWhere('10, 64, -3', state).kind, 'point')
 })
 
+test('家がまだないときの home / near_home は、代わりの書き方を添えて断る', () => {
+  const { state } = setup()
+  const noHome = { ...state, home: null }
+  for (const where of ['home', 'near_home']) {
+    assert.throws(() => parseWhere(where, noHome), /needs a home: there is none yet.*build:<name> or x,y,z/)
+  }
+})
+
 test('小目標の束（設計書 44）: 条件ごとに評価して、済んだかは全部、残りは合計、候補は束全体から', () => {
   const { bot, state } = setup({ items: { torch: 1 }, blocks: { '-1,65,1': 'oak_planks' } })
   const goal = makeGoal({

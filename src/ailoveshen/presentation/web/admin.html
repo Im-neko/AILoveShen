@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配信の管理画面</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #fff; --text: #1d2330; --muted: #667085; --line: #d9dde5;
+    --accent: #3b6cf6; --accent-text: #fff; --danger: #d92d20; --ok: #12b76a; --chip: #e8edff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --panel: #1b2029; --text: #e6e9ef; --muted: #98a2b3; --line: #2e3542;
+      --accent: #6d92ff; --accent-text: #0b1020; --danger: #f97066; --ok: #47cd89; --chip: #263356;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; display: flex; gap: 12px; align-items: baseline; }
+  header h1 { font-size: 17px; margin: 0; }
+  header .now { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  textarea, input[type=text] { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  textarea { min-height: 84px; resize: vertical; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .row > .grow { flex: 1; min-width: 140px; }
+  button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .goal { display: grid; gap: 4px; }
+  .goal b { font-size: 16px; }
+  .objs { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chip { padding: 3px 10px; border-radius: 999px; background: var(--chip); border: 1px solid transparent; cursor: pointer; font-size: 13px; }
+  .chip.on { border-color: var(--accent); font-weight: 600; }
+  .preset { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 4px; }
+  .preset:first-child { border-top: 0; }
+  .preset .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .preset .title { font-weight: 600; }
+  .preset .cat { font-size: 12px; color: var(--muted); }
+  .preset .text { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+  .preset .acts { display: flex; gap: 6px; margin-top: 4px; }
+  details.tree-box > summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details.tree-box > summary .hint { font-weight: 400; margin-left: 8px; }
+  .tree { margin-top: 10px; font-size: 14px; }
+  .tree details, .tree .leaf { margin: 2px 0 2px 16px; }
+  .tree > details, .tree > .leaf { margin-left: 0; }
+  .tree summary { cursor: pointer; }
+  .tree .leaf { padding-left: 14px; }
+  .tree .layer { display: inline-block; min-width: 3.2em; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--chip); color: var(--muted); font-size: 11px; text-align: center; }
+  .tree .st-current > summary > .label, .tree .st-current > .label { font-weight: 700; }
+  .tree .st-done > summary > .label, .tree .st-done > .label, .tree .st-met > summary > .label, .tree .st-met > .label, .tree .st-dropped > summary > .label, .tree .st-dropped > .label, .tree .st-closed > summary > .label, .tree .st-closed > .label { color: var(--muted); text-decoration: line-through; }
+  .tree .mark { margin-right: 4px; color: var(--muted); }
+  .tree .st-current > summary > .mark, .tree .st-current > .mark { color: var(--accent); }
+  .tree .st-done > summary > .mark, .tree .st-done > .mark, .tree .st-met > summary > .mark, .tree .st-met > .mark { color: var(--ok); }
+  .tree .notes { color: var(--muted); font-size: 12px; margin: 2px 0 4px 3.2em; display: grid; gap: 1px; }
+  .log { font-size: 13px; display: grid; gap: 6px; }
+  .log div { display: grid; grid-template-columns: 64px 74px 1fr; gap: 8px; }
+  .log .k { color: var(--muted); }
+  .log .r { grid-column: 3; color: var(--muted); }
+  #toast { position: fixed; right: 16px; bottom: 16px; background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 80vw; }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--danger); color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>配信の管理画面</h1>
+  <span class="now" id="now">読み込み中…</span>
+</header>
+<main>
+
+  <section>
+    <h2>いまの様子</h2>
+    <div class="goal" id="goal"><span class="hint">プレイ前です</span></div>
+    <ul class="objs" id="objs"></ul>
+  </section>
+
+  <section>
+    <details class="tree-box" id="tree-box">
+      <summary>目標ツリー<span class="hint" id="tree-sum">最終目標 → 大目標 → 中目標 → 小目標</span></summary>
+      <div class="tree" id="tree"><span class="hint">プレイ前です</span></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>喋らせる</h2>
+    <textarea id="say-text" placeholder="いま喋らせたい言葉（そのまま読み上げます）"></textarea>
+    <div class="row">
+      <button class="primary" id="say-go">喋らせる</button>
+      <span class="grow"></span>
+      <input type="text" id="save-title" class="grow" placeholder="保存する見出し（空なら本文の頭）">
+      <input type="text" id="save-cat" style="width:130px" placeholder="分類（挨拶 など）" list="cats">
+      <button id="save-go">プリセットに保存</button>
+    </div>
+    <div class="hint" style="margin-top:6px">視聴者への返事と同じ優先度で、いま話している実況より先に読みます。</div>
+  </section>
+
+  <section>
+    <h2>プリセット</h2>
+    <div class="chips" id="chips"></div>
+    <div id="presets"><span class="hint">まだありません。上の「プリセットに保存」で足せます（配信のはじめ・さいごの挨拶など）。</span></div>
+    <datalist id="cats"></datalist>
+  </section>
+
+  <section>
+    <h2>介入の指示（配信者への指示）</h2>
+    <textarea id="ins-text" placeholder="例: 先に木を集めて / 夜になる前に家に戻って / 畑を広げて"></textarea>
+    <div class="row">
+      <button class="primary" id="ins-go">指示を送る</button>
+      <label><input type="checkbox" id="ins-reply" checked> 返事を喋る</label>
+    </div>
+    <div class="hint" style="margin-top:6px">視聴者の頼みと同じ仕組みで、上限なしで大目標に入ります。「いま」「すぐ」を含むと今の小目標を切って決め直します。</div>
+    <div class="row" style="margin-top:14px">
+      <input type="text" id="rt-reason" class="grow" placeholder="小目標を決め直させる理由（空でもよい）">
+      <button id="rt-go">小目標を決め直させる</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>送ったもの</h2>
+    <div class="log" id="log"><span class="hint">まだありません</span></div>
+  </section>
+
+</main>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id)
+let presets = []
+let filter = ''
+let editing = null
+
+function toast (msg, err = false) {
+  const t = $('toast')
+  t.textContent = msg
+  t.className = 'show' + (err ? ' err' : '')
+  clearTimeout(toast.timer)
+  toast.timer = setTimeout(() => { t.className = '' }, 3200)
+}
+
+async function api (method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Request': '1' },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.detail || `${res.status}`)
+  return data
+}
+
+async function act (button, fn) {
+  button.disabled = true
+  try { await fn() } catch (e) { toast(e.message, true) } finally { button.disabled = false }
+}
+
+function esc (s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+// 目標ツリー。開き閉じは、3 秒ごとの描き直しで戻らないよう key ごとに覚える
+const treeOpen = new Map()
+let treeJson = ''
+const LAYERS = { mission: '最終', objective: '大', job: '中', goal: '小' }
+const MARKS = { current: '●', done: '✓', met: '✓', dropped: '×', closed: '−', waiting: '·', pending: '·' }
+
+function defaultOpen (n) {
+  return n.layer === 'mission' || n.state === 'current' || n.children.some((c) => c.state === 'current' || c.notes.includes('いまの小目標'))
+}
+
+function treeNode (n) {
+  const head = `<span class="mark">${MARKS[n.state] || '·'}</span><span class="layer">${LAYERS[n.layer]}</span><span class="label">${esc(n.label)}</span>`
+  const notes = n.notes.length ? `<div class="notes">${n.notes.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''
+  if (!n.children.length) return `<div class="leaf st-${n.state}">${head}${notes}</div>`
+  const open = treeOpen.has(n.key) ? treeOpen.get(n.key) : defaultOpen(n)
+  return `<details class="st-${n.state}" data-key="${esc(n.key)}"${open ? ' open' : ''}><summary>${head}</summary>${notes}${n.children.map(treeNode).join('')}</details>`
+}
+
+function renderTree (tree) {
+  const json = JSON.stringify(tree)
+  if (json === treeJson) return
+  treeJson = json
+  $('tree').innerHTML = tree ? treeNode(tree) : '<span class="hint">プレイ前です</span>'
+  const count = (n) => n.children.reduce((a, c) => a + count(c), n.layer === 'objective' ? 1 : 0)
+  $('tree-sum').textContent = tree ? `大目標 ${count(tree)} 件` : '最終目標 → 大目標 → 中目標 → 小目標'
+}
+
+$('tree').addEventListener('toggle', (ev) => {
+  const box = ev.target.closest('details')
+  if (box && box.dataset.key) treeOpen.set(box.dataset.key, box.open)
+}, true)
+
+function render (state) {
+  renderTree(state.tree)
+  const g = state.goal
+  $('now').textContent = g ? g.label : 'プレイ前'
+  $('goal').innerHTML = g
+    ? `<b>${esc(g.label)}</b><span>${esc(g.reason || '')}</span><span class="hint">${esc(g.objective ? '大目標: ' + g.objective : '生存')}${g.progress?.length ? ' ／ ' + esc(g.progress[0]) : ''}</span>`
+    : '<span class="hint">プレイ前です</span>'
+  $('objs').innerHTML = (state.objectives || []).filter((o) => o.state === 'current' || o.state === 'pending')
+    .map((o) => `<li>${o.state === 'current' ? '▶ ' : ''}${esc(o.title)}</li>`).join('')
+  presets = state.presets || []
+  renderPresets()
+  const log = state.log || []
+  $('log').innerHTML = log.length
+    ? log.map((l) => `<div><span class="k">${esc(l.at)}</span><span class="k">${esc(l.kind)}</span><span>${esc(l.text)}</span>${l.result ? `<span class="r">${esc(l.result)}</span>` : ''}</div>`).join('')
+    : '<span class="hint">まだありません</span>'
+}
+
+function renderPresets () {
+  const cats = [...new Set(presets.map((p) => p.category).filter(Boolean))]
+  $('cats').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('')
+  if (filter && !cats.includes(filter)) filter = ''
+  $('chips').innerHTML = ['', ...cats].map((c) => `<span class="chip ${filter === c ? 'on' : ''}" data-cat="${esc(c)}">${c ? esc(c) : 'すべて'}</span>`).join('')
+  const shown = presets.filter((p) => !filter || p.category === filter)
+  $('presets').innerHTML = shown.length ? shown.map((p) => editing === p.id
+    ? `<div class="preset" data-id="${p.id}">
+        <input type="text" class="e-title" value="${esc(p.title)}" placeholder="見出し">
+        <input type="text" class="e-cat" value="${esc(p.category)}" placeholder="分類" list="cats">
+        <textarea class="e-text">${esc(p.text)}</textarea>
+        <div class="acts"><button class="primary" data-act="save">保存</button><button data-act="cancel">やめる</button></div>
+      </div>`
+    : `<div class="preset" data-id="${p.id}">
+        <div class="head"><span class="title">${esc(p.title)}</span>${p.category ? `<span class="cat">${esc(p.category)}</span>` : ''}</div>
+        <div class="text">${esc(p.text)}</div>
+        <div class="acts"><button class="primary" data-act="say">喋らせる</button><button data-act="fill">上の欄に入れる</button><button data-act="edit">編集</button><button class="danger" data-act="del">削除</button></div>
+      </div>`).join('')
+    : '<span class="hint">この分類にはまだありません。</span>'
+}
+
+async function refresh () {
+  try { render(await api('GET', '/api/admin/state')) } catch (e) { $('now').textContent = e.message }
+}
+
+$('say-go').onclick = (ev) => act(ev.target, async () => {
+  const text = $('say-text').value
+  const r = await api('POST', '/api/admin/say', { text })
+  toast(r.spoken ? '喋らせました' : '読み上げがオフのため声は出ません', !r.spoken)
+  await refresh()
+})
+$('save-go').onclick = (ev) => act(ev.target, async () => {
+  await api('POST', '/api/admin/presets', { title: $('save-title').value, text: $('say-text').value, category: $('save-cat').value })
+  $('save-title').value = ''
+  toast('プリセットに保存しました')
+  await refresh()
+})
+$('ins-go').onclick = (ev) => act(ev.target, async () => {
+  toast('指示を考えています…')
+  const r = await api('POST', '/api/admin/instruct', { text: $('ins-text').value, reply: $('ins-reply').checked })
+  $('ins-text').value = ''
+  toast(r.reply ? `送りました: ${r.reply}` : '送りました')
+  await refresh()
+})
+$('rt-go').onclick = (ev) => act(ev.target, async () => {
+  const r = await api('POST', '/api/admin/rethink', { reason: $('rt-reason').value })
+  $('rt-reason').value = ''
+  toast(r.ok ? '次の切れ目で決め直します' : 'まだプレイが始まっていません', !r.ok)
+  await refresh()
+})
+$('chips').onclick = (ev) => {
+  const chip = ev.target.closest('.chip')
+  if (!chip) return
+  filter = chip.dataset.cat
+  renderPresets()
+}
+$('presets').onclick = (ev) => {
+  const button = ev.target.closest('button')
+  const box = ev.target.closest('.preset')
+  if (!button || !box) return
+  const id = box.dataset.id
+  const preset = presets.find((p) => p.id === id)
+  const what = button.dataset.act
+  if (what === 'edit') { editing = id; renderPresets(); return }
+  if (what === 'cancel') { editing = null; renderPresets(); return }
+  if (what === 'fill') { $('say-text').value = preset.text; $('save-title').value = preset.title; $('save-cat').value = preset.category; return }
+  act(button, async () => {
+    if (what === 'say') {
+      const r = await api('POST', `/api/admin/presets/${id}/say`)
+      toast(r.spoken ? `「${preset.title}」を喋らせました` : '読み上げがオフのため声は出ません', !r.spoken)
+    } else if (what === 'save') {
+      await api('PUT', `/api/admin/presets/${id}`, { title: box.querySelector('.e-title').value, text: box.querySelector('.e-text').value, category: box.querySelector('.e-cat').value })
+      editing = null
+      toast('保存しました')
+    } else if (what === 'del') {
+      if (!confirm(`「${preset.title}」を削除しますか？`)) return
+      await api('DELETE', `/api/admin/presets/${id}`)
+      toast('削除しました')
+    }
+    await refresh()
+  })
+}
+
+refresh()
+setInterval(() => { if (!editing) refresh() }, 3000)
+</script>
+</body>
+</html>

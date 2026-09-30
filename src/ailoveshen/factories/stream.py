@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from ailoveshen.application.use_cases.presets import SpeechPresets
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
-from ailoveshen.domain.value_objects import SpeechPriority
+from ailoveshen.domain.value_objects import MessageType, SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import (
     create_comment_triage,
@@ -21,6 +24,7 @@ from ailoveshen.factories.llm import (
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import (
     InMemoryGenerationLog,
+    JsonPresetStore,
     JsonReadingStore,
     JsonSelfFactStore,
 )
@@ -28,6 +32,10 @@ from ailoveshen.infrastructure.config import Settings
 from ailoveshen.infrastructure.events import AsyncEventBus
 from ailoveshen.presentation.services import ChatResponder, Narrator
 from ailoveshen.presentation.services.stream import Stream
+
+
+# 管理画面の指示の送り主（視聴者ではない。docs/design/54_admin_panel.md）
+PRODUCER_NAME = "ディレクター"
 
 
 class StreamSetupError(RuntimeError):
@@ -171,23 +179,115 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
 
     spoken = SpokenLines()
 
+    # 読み上げた文と、そのときの状態（設計書 65 §2）
+    spoken_log = None
+    if settings.stream.spoken_record_dir:
+        from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
+            JsonlWatchRecorder as SpokenRecorder,
+        )
+        from ailoveshen.presentation.services.spoken_log import SpokenLog
+
+        spoken_log = SpokenLog(
+            SpokenRecorder(str(base_dir / settings.stream.spoken_record_dir)), activity
+        )
+        if tts is not None:
+            tts.on_outcome = spoken_log.tts
+
+    def log_line(text: str, source: str, outcome: str = "said") -> None:
+        if spoken_log is not None:
+            spoken_log.line(text, source, outcome)
+
+    # 話したつもりで、視聴者に聞こえなかった文（直前と同じで言わない、読み上げが古くなって捨てた）は、
+    # Narrator に知らせる: そこで話した予告は、話していないことになる（設計書 65 §3）
+    unheard: list[Callable[[str], None]] = []
+
+    def not_heard(text: str) -> None:
+        for forget in unheard:
+            forget(text)
+
+    if tts is not None:
+        recorded = tts.on_outcome
+
+        def on_tts_outcome(request: Any, outcome: str, waited: float) -> None:
+            if recorded is not None:
+                recorded(request, outcome, waited)
+            if outcome != "played":
+                not_heard(request.text)
+
+        tts.on_outcome = on_tts_outcome
+
     async def say(text: str) -> None:
         same = spoken.repeats(text)
         if same is not None:
             logger.info(f"[say] 直前と同じ内容なので言わない: {text}（前: {same}）")
+            log_line(text, "commentary", "repeat")
+            not_heard(text)
             return
         spoken.remember(text)
         logger.info(f"[say] {text}")
+        log_line(text, "commentary")
         if tts is not None:
             await tts.speak(text, emotion=await voiced(text), source="commentary")
 
-    async def say_reply(text: str) -> None:
+    async def say_notice(text: str) -> None:
+        """定型の一言（考え始めた）。同じ文を何度も言うので、繰り返しの判定は通さない。"""
         spoken.remember(text)
+        logger.info(f"[say] {text}")
+        log_line(text, "notice")
+        if tts is not None:
+            await tts.speak(text, emotion=await voiced(text), source="commentary")
+
+    async def say_reply(text: str, source: str = "reply") -> None:
+        spoken.remember(text)
+        log_line(text, source)
         if tts is not None:
             # 視聴者への返事は実況より先に読む
             await tts.speak(
                 text, priority=SpeechPriority.HIGH, emotion=await voiced(text), source="chat"
             )
+
+    # 管理画面（設計書 54）で喋らせる文。実況の重複の判定は通さない（言わせたいことを言う）。読み上げは
+    # 待たない（長い文で管理画面の操作が固まらない）
+    background: set[asyncio.Task[Any]] = set()
+
+    def spawn(work) -> None:
+        task = asyncio.ensure_future(work)
+        background.add(task)
+
+        def done(t: asyncio.Task[Any]) -> None:
+            background.discard(t)
+            if not t.cancelled() and t.exception() is not None:
+                logger.opt(exception=t.exception()).warning("管理画面で頼んだ読み上げに失敗した")
+
+        task.add_done_callback(done)
+
+    async def announce(text: str) -> bool:
+        conversation.add_streamer_message(text, MessageType.COMMENTARY)
+        if tts is None:
+            return False
+        spoken.remember(text)
+        spawn(say_reply(text, "admin"))
+        return True
+
+    async def instruct(text: str, speak_reply: bool) -> str:
+        """配信者の指示として渡す（視聴者の頼みと同じ仕組み。上限なしで大目標に、「今」なら決め直す）。"""
+        await game.refresh()
+        reply = await llm.generate_response(
+            PRODUCER_NAME, text, session=game.session, producer=True
+        )
+        if reply and speak_reply and tts is not None:
+            spawn(say_reply(reply, "admin"))
+        return reply
+
+    def rethink(reason: str) -> bool:
+        session = game.session
+        if session is None:
+            return False
+        session.request_rethink(
+            "the director asked you to decide the small goal again"
+            + (f": {reason}" if reason else "")
+        )
+        return True
 
     # 小目標の切れ目の実況は、今話す価値があるかを Jev が決める（設計書 34 §6）
     gate = None
@@ -214,13 +314,29 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
                 else None,
             )
             closers.append(gate.close)
-    Narrator(
+    # 読む前に、実況・一言を今の状態と照らす（設計書 65 §4）。Jev の判定器は間合いの判断と共有する
+    guard = None
+    if settings.stream.speech_check == "jev":
+        if live_judge is not None:
+            from ailoveshen.application.use_cases.speech_check import SpeechCheck
+            from ailoveshen.presentation.services.speech_guard import SpeechGuard
+
+            guard = SpeechGuard(SpeechCheck(live_judge), activity, spoken_log)
+            logger.info("[say] 実況と一言は、読む前に Jev が今の状態と照らす")
+        else:
+            logger.warning("[say] Jev の鍵がないので、実況と一言を今の状態と照らさない")
+    narrator = Narrator(
         llm,
         activity=activity,
         say=say,
         gate=gate.worth_speaking if gate is not None else None,
         max_silence_seconds=settings.stream.max_silence_seconds,
-    ).subscribe(bus)
+        notice=say_notice,
+        guard=guard,
+        remember=lambda text: conversation.add_streamer_message(text, MessageType.COMMENTARY),
+    )
+    narrator.subscribe(bus)
+    unheard.append(narrator.unheard)
 
     live = None
     if settings.stream.live_interval_seconds > 0:
@@ -232,6 +348,9 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             is_idle=tts.is_idle if tts is not None else (lambda: True),
             interval_seconds=settings.stream.live_interval_seconds,
             judge=live_judge,
+            idle_seconds=settings.stream.live_idle_seconds,
+            thinking_seconds=settings.stream.live_thinking_seconds,
+            guard=guard,
         )
         live.subscribe(bus)
         logger.info(f"[live] {settings.stream.live_interval_seconds:.0f} 秒黙っていたら一言話す")
@@ -250,12 +369,20 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         )
         avatar.subscribe(bus)
         closers.append(avatar.close)
+        from ailoveshen.presentation.web.admin import AdminPanel
+
         board = GoalBoard(
             activity,
             gemini_calls=gemini_calls.recent,
             gemini_image=gemini_calls.image,
             avatar=avatar,
             readings=readings.all,
+            admin=AdminPanel(
+                SpeechPresets(JsonPresetStore(base_dir / settings.stream.presets_path)),
+                speak=announce,
+                instruct=instruct,
+                rethink=rethink,
+            ),
         )
         board.subscribe(bus)
 

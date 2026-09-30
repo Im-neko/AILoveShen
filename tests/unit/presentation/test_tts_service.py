@@ -118,3 +118,51 @@ class TestStaleLines:
         assert played == ["今話している", "返事だよ"]
         assert service.is_idle()
         await service.stop()
+
+
+class TestOutcomes:
+    """視聴者が実際に聞いたかを記録に残せる（設計書 65 §2）。"""
+
+    @pytest.mark.asyncio
+    async def test_reports_played_and_dropped_lines(self):
+        played: list[str] = []
+        outcomes: list[tuple[str, str, float]] = []
+        now = {"t": 0.0}
+        service = TTSService(
+            _slow_use_case(0.05, played),
+            max_age_seconds={"commentary": 20},
+            clock=lambda: now["t"],
+            on_outcome=lambda request, outcome, waited: outcomes.append(
+                (request.text, outcome, waited)
+            ),
+        )
+        await service.start()
+        await service.speak("今話している", source="commentary")
+        await asyncio.sleep(0.01)
+        await service.speak("かまどを作るよ", source="commentary")
+        await service.speak("返事だよ", source="chat")
+        now["t"] = 30.0
+
+        await asyncio.wait_for(service.wait_until_idle(), timeout=2.0)
+
+        assert {text: (outcome, waited) for text, outcome, waited in outcomes} == {
+            "今話している": ("played", 0.0),
+            "かまどを作るよ": ("dropped_old", 30.0),
+            "返事だよ": ("played", 30.0),
+        }
+        await service.stop()
+
+    @pytest.mark.asyncio
+    async def test_a_failing_report_does_not_stop_the_reading(self):
+        played: list[str] = []
+
+        def broken(request, outcome, waited):
+            raise OSError("disk full")
+
+        service = TTSService(_slow_use_case(0.0, played), on_outcome=broken)
+        await service.start()
+        await service.speak("読むよ")
+        await asyncio.wait_for(service.wait_until_idle(), timeout=2.0)
+
+        assert played == ["読むよ"]
+        await service.stop()

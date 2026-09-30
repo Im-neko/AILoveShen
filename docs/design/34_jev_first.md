@@ -40,6 +40,15 @@ Gemini に回すとき:
 
 これで候補モード（`--control candidates`）の良いところは道具モードに入る。候補モードは比べるために残す。
 
+### 3.1 記録（`logs/steps/*.jsonl`、2026-09-29 に増やした）
+
+Gemini に回る割合が 5 割を超えていた（9/29）が、記録に残るのは Jev に聞いた回だけで、Jev が何を選ぼうとしていたか、その手が正しかったかは分からなかった。閾値（0.5）を測って直すため、1 手を 2 行で残す。`step` の番号で結ぶ。
+
+- `event: pick`（選んだとき）: `goal`、`options`（見せた選択肢）、`asked_jev`（Jev に聞いたか。失敗の直後・Jev の手が続けて失敗・8 回連続・選択肢なし・動きがない・同じ手の繰り返しは聞かずに Gemini に回すので false）、`chosen`（Jev の手にしたもの）、`confidence`、`to_gemini`（回した理由）、`streak` / `failures`。聞いたときは `jev_answer`、`top`（`ask_gemini` を除いて Jev が一番と見た選択肢）と `top_p`、`probabilities`（上位 5）、`jev_seconds`
+- `event: result`（実行し終えたとき）: `by`（jev / gemini）、`tool`、`action`、`option`（Jev の選択肢に当たるもの: 候補の id、`run_skill <name>`）、`ok`、`refused`、`seconds`、`result`（先頭 160 字）。Gemini が選んだ手には `in_options`（Jev の選択肢にあった手か）と `is_top`（Jev が一番と見た手と同じか）
+
+これで見られること: 確信度ごとの成功率（閾値を下げてよいか）、確信度が低いとき Jev の一番が Gemini の選んだ手と同じだったか（払い戻しが無駄だったか）、選択肢が割れる場面（`probabilities` の上位が同種の候補か）、Jev に聞かずに回した理由の内訳。
+
 ## 4. 読み上げの感情（`tts.emotion_judge`）
 
 今は Gemini の文から感情を取っておらず、声はいつも中立だった（`LLMService.update_emotion` を呼ぶところがない）。読み上げる前に、アバターの表情を選ぶのと同じ 1 回の Jev の呼び出し（`AvatarDirector.react`、表情・強さ・しぐさ）で感情を選び、その感情を読み上げに渡す（`TTSService.speak(emotion=)`）。表情と声がそろう。

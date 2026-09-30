@@ -81,6 +81,21 @@ test('畑の小麦が育ち途中なら遠出しない。熟していれば畑�
   const tools = solve(k, { ...world(farm({ ripe: 0, free: 7 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
   assert.deepEqual(tools.leaves.map((l) => [l.kind, l.item, l.crop, !!l.also]), [['sow', 'wheat_seeds', 'wheat', true], ['till', undefined, 'wheat', true]])
   assert.match(tools.blocked.join('\n'), /fill the farms' 7 free cells \(till and sow wheat_seeds; a step farmed\(wheat, 16\)\)/)
+  // 種もクワもなければ、それを手に入れる手も出す（クワが壊れ、種を使い切った畑で「待つ」しか残らなかった）
+  const short = solve(k, { ...world(farm({ ripe: 0, free: 7 })), blocks: { short_grass: 4 }, inventory: { stick: 2, oak_planks: 4 }, table: { x: 0, y: 64, z: 0 } }, need)
+  assert.deepEqual(short.leaves.map((l) => [l.kind, l.item, !!l.also]), [['dig', 'wheat_seeds', true], ['craft', 'wooden_hoe', true]])
+  assert.deepEqual(short.leaves[0].sources, ['short_grass'])
+  assert.match(short.blocked.join('\n'), /no wheat_seeds carried: dig grass for seeds; no hoe carried: make one/)
+  // 耕し済みのマス（sow）に足りるだけの種しかなければ耕さない: 耕しただけで何も植わっていない地面は、水が
+  // 近くにないと土に戻る（2026-09-29: 種がないまま耕し続けた）。クワだけ持っていても耕さず、種を集める
+  const kinds = (r) => r.leaves.map((l) => [l.kind, l.item])
+  assert.deepEqual(kinds(solve(k, { ...world(farm({ ripe: 0, free: 7, sow: 3 })), inventory: { wheat_seeds: 3, stone_hoe: 1 } }, need)), [['sow', 'wheat_seeds']])
+  assert.deepEqual(kinds(solve(k, { ...world(farm({ ripe: 0, free: 7, sow: 3 })), inventory: { wheat_seeds: 4, stone_hoe: 1 } }, need)), [['sow', 'wheat_seeds'], ['till', undefined]])
+  const hoeOnly = solve(k, { ...world(farm({ ripe: 0, free: 7, sow: 2 })), blocks: { short_grass: 4 }, inventory: { stone_hoe: 1 } }, need)
+  assert.deepEqual(kinds(hoeOnly), [['dig', 'wheat_seeds']])
+  assert.match(hoeOnly.blocked.join('\n'), /do not till more than you can sow/)
+  // 草が見えなければ、種を探しに畑から離れる手は出さない（育つ間は畑のそば）
+  assert.deepEqual(solve(k, { ...world(farm({ ripe: 0, free: 7 })), inventory: { stone_hoe: 1 } }, need).leaves, [])
   const full = solve(k, { ...world(farm({ ripe: 0 })), inventory: { wheat_seeds: 5, stone_hoe: 1 } }, need)
   assert.deepEqual(full.leaves, [])
 
@@ -89,4 +104,26 @@ test('畑の小麦が育ち途中なら遠出しない。熟していれば畑�
 
   const none = solve(k, world(() => null), need)
   assert.deepEqual(none.leaves.map((l) => [l.kind, l.farm]), [['explore', undefined]])
+})
+
+// 設計書 47 §17: 水のバケツは、空のバケツで水源の水を汲む（クラフトでも掘るでもない）
+test('have(water_bucket): バケツを作り、水源で汲む。水が見えなければ水を探す', async () => {
+  const { solve } = await import('../src/solver.mjs')
+  const spot = { x: 3, y: 63, z: 4 }
+  const world = (extra) => ({ inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set(), water: () => null, ...extra })
+  const need = [{ spec: 'water_bucket', count: 1 }]
+  const fill = solve(k, world({ inventory: { bucket: 1 }, water: () => spot }), need)
+  assert.deepEqual(fill.leaves.map((l) => [l.kind, l.item, l.count]), [['fill', 'water_bucket', 1]])
+  assert.deepEqual(fill.leaves[0].pos, spot)
+  assert.equal(fill.met, false)
+  // 水が見えなければ探す（バケツは持っている）
+  const seek = solve(k, world({ inventory: { bucket: 1 } }), need)
+  assert.deepEqual(seek.leaves.map((l) => [l.kind, l.sources]), [['explore', ['water']]])
+  // バケツがなければ、鉄 3 つから作る（鉄インゴットがあれば、作業台でクラフト）
+  const make = solve(k, world({ inventory: { iron_ingot: 3 }, table: { x: 0, y: 64, z: 0 }, water: () => spot }), need)
+  assert.deepEqual(make.leaves.map((l) => [l.kind, l.item]), [['craft', 'bucket']])
+  assert.doesNotMatch(make.blocked.join('\n'), /no way to get water_bucket/)
+  // 汲んだあとは持ち物のバケツが 1 つ減る（同じバケツで 2 つは作れない）
+  const two = solve(k, world({ inventory: { bucket: 1 }, water: () => spot }), [{ spec: 'water_bucket', count: 2 }])
+  assert.ok(two.leaves.every((l) => l.kind !== 'fill' || l.count === 2))
 })

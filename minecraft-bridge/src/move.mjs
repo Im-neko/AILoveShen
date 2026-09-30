@@ -18,6 +18,7 @@
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { doorOpener } from './doors.mjs'
 import { standingCell } from './observe.mjs'
+import { snapshot, where, record } from './stuck-report.mjs'
 
 const { GoalNearXZ } = pathfinderPkg.goals
 
@@ -27,6 +28,11 @@ const CHECK_MS = 250
 const ESCAPES = ['jumped out', 'walked carefully (no sprinting or parkour)', 'backed off a few blocks']
 const BACK_OFF_M = 4
 const WORKING_FACTOR = 5
+// 動いているのに近づかない: 水の中では流されて泳ぎ続け、位置が動くので「動けない」に数えられず、
+// 落とし物を取りに行く移動が 9 分終わらなかった（2026-09-30）。目標までの距離がこの間に PROGRESS_M
+// 以上縮まなければ、動けないとみなす（回り道で一時的に遠ざかる時間より十分長く）
+export const NO_PROGRESS_MS = 30 * 1000
+const PROGRESS_M = 1
 const LOOP_DIGS = 3
 const LOOP_WINDOW_MS = 60 * 1000
 const LOOP_BLOCK_MS = 3 * 60 * 1000
@@ -110,18 +116,22 @@ export function guardDigLoops (bot, state) {
   })
 }
 
-export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS) {
+export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS, noProgressMs = NO_PROGRESS_MS) {
   signal.throwIfAborted()
   const original = bot.pathfinder.movements
   const tried = []
   try {
     for (let attempt = 0; ; attempt++) {
-      if (!(await walkWatched(bot, goal, stuckMs))) return
+      const stuck = await walkWatched(bot, goal, stuckMs, noProgressMs)
+      if (!stuck) return
       signal.throwIfAborted()
       if (attempt >= ESCAPES.length) {
-        throw new Error(`stuck: did not move for ${stuckMs / 1000}s while walking (tried: ${tried.join(', ')})`)
+        const why = stuck.noProgress
+          ? `did not get closer to the goal in ${noProgressMs / 1000}s while walking`
+          : `did not move for ${stuckMs / 1000}s while walking`
+        throw new Error(`stuck: ${why} at ${where(stuck)} (tried: ${tried.join(', ')})`)
       }
-      console.log(`[move] ${stuckMs / 1000} 秒動けない: ${ESCAPES[attempt]}`)
+      console.log(`[move] ${stuck.noProgress ? '近づけない' : `${stuckMs / 1000} 秒動けない`}（${where(stuck)}）: ${ESCAPES[attempt]}`)
       tried.push(ESCAPES[attempt])
       if (attempt === 0) await jumpOut(bot)
       else if (original) bot.pathfinder.setMovements(careful(original))
@@ -133,38 +143,67 @@ export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS) {
   }
 }
 
-// 目標まで歩く（経路の先のドアは開け、通ったら閉める: doors.mjs）。動けなくなったら止めて真を返す
-async function walkWatched (bot, goal, stuckMs) {
+// 目標まで歩く（経路の先のドアは開け、通ったら閉める: doors.mjs）。動けなくなったら止めて、その場の記録を返す
+async function walkWatched (bot, goal, stuckMs, noProgressMs = NO_PROGRESS_MS) {
   const pos = () => bot.entity?.position
   let last = pos()?.clone?.()
   let since = Date.now()
-  let stuck = false
+  let stuck = null
+  let update = null
+  const onPath = (u) => { update = u }
+  bot.on?.('path_update', onPath)
+  const target = goalPoint(goal)
+  let best = target && pos() ? distanceTo(pos(), target) : Infinity
+  let closerAt = Date.now()
   const timer = last && setInterval(() => {
     const p = pos()
     const working = !!bot.targetDigBlock || !!bot.pathfinder.isMining?.() || !!bot.pathfinder.isBuilding?.()
+    if (p && target) {
+      const d = distanceTo(p, target)
+      if (d <= best - PROGRESS_M || working) {
+        best = Math.min(best, d)
+        closerAt = Date.now()
+      } else if (Date.now() - closerAt >= noProgressMs) {
+        stuck = { ...snapshot(bot, goal, update), noProgress: true }
+        record(stuck)
+        bot.pathfinder.setGoal(null)
+        return
+      }
+    }
     if (!p || p.distanceTo(last) >= MOVED_M) {
       if (p) last = p.clone()
       since = Date.now()
       return
     }
     if (Date.now() - since >= stuckMs * (working ? WORKING_FACTOR : 1)) {
-      stuck = true
+      stuck = snapshot(bot, goal, update)
+      record(stuck)
       bot.pathfinder.setGoal(null)
     }
   }, CHECK_MS)
   const doors = doorOpener(bot)
   try {
     await bot.pathfinder.goto(goal)
-    return false
+    return null
   } catch (e) {
-    if (stuck) return true
+    if (stuck) return stuck
     throw e
   } finally {
+    bot.off?.('path_update', onPath)
     if (timer) clearInterval(timer)
     bot.pathfinder.setGoal(null)
     await doors.stop()
   }
 }
+
+// 目標の場所（座標のない目標は null: 近づいたかは見ない）
+function goalPoint (goal) {
+  const at = Number.isFinite(goal?.x) && Number.isFinite(goal?.z) ? goal : goal?.pos
+  if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return null
+  return { x: at.x, y: Number.isFinite(at.y) ? at.y : null, z: at.z }
+}
+
+const distanceTo = (p, t) => Math.hypot(p.x - t.x, p.z - t.z, t.y === null ? 0 : p.y - t.y)
 
 // 向きを変えて、跳びながら前へ 1 秒
 async function jumpOut (bot) {

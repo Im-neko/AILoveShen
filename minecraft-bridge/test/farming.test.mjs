@@ -106,3 +106,16 @@ test('草は届く距離まで近づいて掘る（見える位置を探すと�
   assert.equal(dug, 3) // 1 回の行動でまわりの草も続けて刈る
   assert.match(r, /nothing dropped this time/) // 種はときどきしか落ちない: 失敗ではない
 })
+
+test('断られた耕すマスは選ばない（同じマスを耕せずに繰り返さない）。別のマスがあればそちらへ', async () => {
+  const { noteRefusal } = await import('../src/refusals.mjs')
+  const s = state()
+  s.facilities = { wheat_farm: { name: 'wheat_farm', kind: 'farm', layout: { crop: 'wheat', cells: [{ x: 2, y: 63, z: 0 }, { x: 5, y: 63, z: 0 }] } } }
+  const bot = world({ '2,63,0': 'dirt', '5,63,0': 'dirt' })
+  const first = workCell(bot, s, 'till', { crop: 'wheat' }).pos
+  noteRefusal(s, 'till', first, `failed: nothing to till at ${first.x},${first.y},${first.z} any more (oak_leaves is on top of the dirt)`)
+  const second = workCell(bot, s, 'till', { crop: 'wheat' }).pos
+  assert.notDeepEqual(second, first) // 別のマスへ
+  noteRefusal(s, 'till', second, `failed: nothing to till at ${second.x},${second.y},${second.z} any more (the ground is stone)`)
+  assert.equal(workCell(bot, s, 'till', { crop: 'wheat' }), null)
+})

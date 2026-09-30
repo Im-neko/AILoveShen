@@ -1,11 +1,324 @@
 ## Current Status
 
 **Active Phase**: 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
-**Last Updated**: 2026-09-29
-**Test Status**: `python -m pytest tests/` 947 passed（`test_stream.py::test_no_channel_no_chat_and_the_board_is_served` は除く）。ブリッジ `npm test` 282 件
+**Last Updated**: 2026-09-30
+**Test Status**: `python -m pytest tests/` 1181 passed（配信が動いていると `test_stream_factory.py` の 1 件が盤のポート使用で落ちる）。ブリッジ `npm test` 443 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
+
+### 持ち物がいっぱいで食料が拾えず 40 分進まなかった（設計書 66、2026-09-30 17:22〜、user: 「進めて良いです」）
+- 原因: 整地と採掘で土 447・丸石 320 などが溜まり 36 スロットが埋まった。落とした肉が拾えないのに `pickup` が出続け（Jev が確信度 1.00 で 6 回選んだ）、家にチェストがなく `deposit` も断られ、目標の決定は「持ち物を空ける」を書く語彙がなくて差し戻され続けた。狩りは 24〜32 m の相手を候補に出すのに `fight` が 24 m で 0.0 秒に見失っていた
+- `spare.mjs`（新）と `toss`: 余り（土・丸石は 64 個残す、地形・花・羊毛、目標が使う物は除く）を捨てる候補とツール。空き 2 未満で出て、`StepPicker` が Jev に聞かず選ぶ。捨てた物は 5 分、拾う候補と `around` に出さない。拾えない落とし物（入らない）は `pickup` の候補・`pickup_ready` から外し、ツール `pickup` / `deposit` の断り文に `toss` を添えた
+- `observation.home.chest` → `chest_in_home`。チェストなしで 20 スロット以上埋まると `placed(chest, home)` を身を守る小目標に出す（強制なし）。チェストを持っていて家になければ `place a chest in the house`
+- `fight`: 始めから 24 m より遠い相手は始めの距離 + 4 m 離れたら見失う（`HUNT_RADIUS` は縮めない）
+- テスト: `test/full-inventory.test.mjs`（10 件）、`test_step_picker.py`、`test_survival_routine.py`。Python 1181、ブリッジ 443 通過（配信が動いていると `test_stream_factory.py` の 1 件が盤のポートで落ちる）
+- 実機では未確認。ブリッジと Python の再起動が要る。見ること: 設計書 66 §4
+
+### 発言を今の状態と約束に従わせる（設計書 65、2026-09-30、user: 「視聴者が混乱するので困っています。1（言ったことと違う行動）、2（今の状態と違うことを言う）が主な問題です」「順に進めてください」）
+- 順序: 設計書 → 測る → 予告は動き出してから + やめたと言う → 発話の照合。設計書は 65（64 は採掘場）
+- **測る**: `SpokenLog`（`logs/spoken/*.jsonl`: `line` 話した文と状態、`check` 照合、`tts` 読み上げの結果）、`TTSService.on_outcome`（played / failed / dropped_old / dropped_full）、`stream.spoken_record_dir`。`tools/speech_consistency.py`: `forecasts`（予告した小目標のその後。LLM なし）、`lines --judge jev`（話した文を状態と照らして 1 と 2 に分ける）
+- **測った結果（全ログ 09-26〜30）**: 話した新しい小目標 434 件、終わりが分かる 286 件のうち 58% が未達成でやめた（半数は 60 秒以内）、行動が 1 つもないまま終わったのは 9%（09-29 以降は 3%）、話してから最初の成功まで中央値 8 秒。**私の最初の集計は 51% と出たが、`logs/steps` の古い形（`event` が無い）を読み違えた誤りだった**。「言った直後に変える」は主因ではなく、動き出したあとにやめる（stuck、時間帯の変わり目）が主因。小目標の粘りは残り（設計書 65 §6）
+- **予告は動き出してから、やめたら言う**（`Narrator`）: `on_goal_set` は持つだけ、`on_action`（`ok`）で話す。動く前に終われば言わない。話した予告を未達成でやめたら次の実況で必ず言う（gate を通さない）。話さなかった予告は小目標が終われば消す。テスト: `test_narrator.py`（`TestForecastAfterAction`）
+- **発話の照合**（`SpeechCheck` / `SpeechGuard`、`stream.speech_check: jev`）: Jev の 4 つの YES_NO を、読む直前の状態（家の中か、束の小目標の未達の条件、`goal_met`）と比べる。食い違えば理由を添えて 1 回作り直し、それでも食い違えば言わない。Narrator と LiveNarration の生成文が対象（道具の intent、定型の一言、返事は対象外）。通った文だけ `Conversation` に入れる。実 Jev で手作りの 17 文を試した（220〜250 ms、期待どおり 12 件。私が「止めない」と書いた 2 文を `contradicts_plan` が止めた: 「これから家に帰るね」0.91、「外に出て木を切ってくるね」0.77。今の小目標と別の行動なので判定としては正しいが、実況が硬くなる危険。見逃し 3、下限 0.75。`logs/spoken` が溜まってから下限と質問を見直す）。`LiveNarration._events` の「予定を理由なく変えない」は消した
+- テスト: Python 1,173 passed（`test_stream_factory.py` の 1 件は配信が動いていてポート 8765 が使用中で落ちる、元から）。新しい: `test_speech_check.py`、`test_speech_guard.py`、`test_spoken_log.py`、`tools/test_speech_consistency.py`、`test_tts_service.py::TestOutcomes`、`test_narrator.py`（予告・照合）、`test_live_narration.py`（照合）
+- 実機では未確認。Python の再起動が要る（ブリッジは変えていない）。見ること: `logs/spoken` が溜まってから `python tools/speech_consistency.py lines --judge jev`（1 と 2 の 1 時間あたりの件数）、`[say] 今の状態と食い違う` のログ、`logs/spoken` の `check` の `dropped` / `rewrite` の割合
+- 束の一部が先に済んだ（`on_member_met`）ときは、束の予告を先に出す。聞こえなかった予告（TTS が捨てた、直前と同じで言わない）は、話していないことにする（`Narrator.unheard`）。見どころが待っている間は取っておく出来事を落とさない
+- 残り: 小目標の粘り（未達成 58%、時間帯の切れ目と stuck）、返事・管理画面の発言は照らさない、道具の選択と実況の食い違い（設計書 46 §5）
+
+### POV ミラー: 装備のパケットで視聴者が切れた（「set_equipment … 6 bytes extra」、2026-09-30 16:42）
+- 視聴者（本物の Minecraft クライアント）が `Packet play/clientbound/minecraft:set_equipment was larger than I expected, found 6 bytes extra` で切れた。前に「74 bytes extra」で直した（部品つきの装備を、数だけの部品 damage などに絞って書き直す）のに、絞った書き直しでも切れた
+- 原因は確かめられていない（切れた実物のパケットを取っていない）。minecraft-data の部品の型が本物のクライアントと 1 バイトでもずれると起きる型の不具合。書き直しの検査（`back.metadata.size === buf.length`）は同じ定義で書いて読むので、ずれを見つけられない
+- 直し（推測に基づく、確かめるのはこれから）: 部品のある装備は、部品を全部外して書き直す（`sanitizedEquipment`。装備の見た目に部品は要らない。持ち物の `safeSlot` は今までどおり damage などを残す）。部品がなければ今までどおり生のまま中継
+- 手がかり: 視聴者が退出したとき、最近中継した装備のパケット 6 件（アイテムの id・部品の種類・書き直したか・先頭のバイト列）を `[mirror] 直近の装備パケット: …` に出す。また切れたら、それを見る
+- ブリッジの再起動が要る
+
+### 採掘場: 掘る場所と階段を毎回同じ所にする（設計書 64、2026-09-30、user の依頼 2・3 を合わせて）
+- `quarry.mjs`（`state.quarry = { spot, shafts }`、保存）: 地形（TERRAIN）を掘った場所を「採掘の場所」にし、そこから 12 以内を場所に近い順に掘る（`digTargets`、`find_blocks` の `quarry: true`、`around` の `nearest`。ツールモードは LLM が `around` の座標を使うので、こちらも変えた）。今いる所から 48 より遠ければ使わず、離れた所を掘れば場所が移る
+- `dig_down`: 前に下りた階段の底（鉱石が底以下のとき）まで歩いて続きから掘る。底まで歩けなければ、その場から（鉱石は届かない印にしない）。`buriedTargets` は階段の底から続けて届く鉱石を先に。`leveled` は階段の入口の列を埋めない
+- 状態の「採掘の場所」の行、ツールの規則、`abilities.yaml`（`mine_ores`）。テスト: `test/quarry.test.mjs`（10 件）、`test_stream_context_quarry.py`
+- 同じ日に直した: 束の小目標の先頭が途中で済んでも「かまどを手に入れる」と出ていた（`Goal.unmet`）
+- 実機では未確認。ブリッジの再起動が要る。見ること: 設計書 64 §4
+
+### 夜と夕方の小目標がいつも Gemini に回っていた（2026-09-30、原因は 2026-09-29 から）
+- `GoalChooser.choose` は身を守る小目標（through_night / at_home / cleared）も中目標と一緒に `POST /check` へ送っていたが、ブリッジは `CONDITION_PREDICATES` 以外を「cannot be a condition」と断り、判定全体が失敗して `the jobs cannot be judged` になっていた。夜と夕方の切り替えは全部 Gemini の決定（1 回 8〜25 秒、「済んでいる小目標」を選んで差し戻され、3 回で決定が失敗する）に回っていた（ログに 90 回）。テストのモックは何でも受けるので気づけなかった
+- 直し: 条件として判定できる述語だけを送り、それ以外は、家の中にいる at_home だけを済みとする。テストは実物と同じに、条件でない述語を断るモックで書いた（`test_survival_goals_are_not_sent_to_the_bridge_as_conditions`）。Python の再起動が要る
+
+### 水の中で 9 分間、落とし物を取りに行き続けた（2026-09-30 15:26〜15:35）
+- 死んで落とした持ち物（24 個）を取り戻した後、水の中に残った 1 つへ行く `recover_items` が 562 秒終わらず、ゲームの 1 日が過ぎた（実況は同じ「死んだ場所の近く」を繰り返し）。`/state` は `moved_1s_m 1.4`、`moved_total_m 2`、`path.updates 111`、`in_water: true`。水に流されて泳ぎ続けるので、位置が動き、`walkTo` の「動けない」（6 秒で 0.5 m 未満）に数えられなかった。その場は `POST /abort` で解いた
+- `walkTo`（`move.mjs`）: 目標の座標がある移動は、目標までの距離が `NO_PROGRESS_MS`（30 秒）で 1 m 縮まなければ動けないとみなし、跳ぶ・慎重に歩く・下がる、のあと `stuck: did not get closer to the goal in 30s while walking at …` で失敗にする（掘る・置く間は数えない。座標のない目標は見ない）
+- `recover_items`（`primitives.mjs`）: 行き着けない落とし物は 1 回で諦める（前は 6 つ分続け、それぞれ動けなくなるまで待った）。行った回数（`death.tries` 2）で、その死はもう出さない
+- なぜ死んだかは未確認（羊のいる北へ行った直後、夜明け前後の水辺）。ブリッジの再起動で反映される
+- 残り: 水から出る動き（設計書 58 の pathfinder の水からの上陸）は直していない。死んだ後の実況が同じ文を繰り返す
+
+### 再起動後のログ（14:55〜15:20）から: 資材切れの理由、見張りの書き方、y と z の取り違え（2026-09-30）
+- `build_next` が板材を使い切ると `Invalid item object in equip` と出て、何が足りないか分からなかった（4 回）。`placeOne`（`build.mjs`）が `no <block> left in the inventory (gather more, then continue the build)` と言う
+- 見張りの質問の頭を `<stop>: …` と山括弧つきで書く呼び出しを、質問ごと捨てていた（プロンプトの例の `<stop|wake|maybe_done>` を写す）。`parse_tool_call` が山括弧と空白を除いて読む
+- `goto(x=-23, y=-325, z=1)` のように y と z を取り違えた座標は「519m 先」とだけ断られていた（2 回）。y が高さの範囲外で、入れ替えると届く距離なら、`did you swap y and z? x,z,y is Nm away` と添える（`within`、`tools.mjs`）
+- `dropwatch` の記録に、掘ったマスの 0.5 / 1 / 2 秒後のブロック名（`block_after`）を足した。「掘ったのに拾えない」8 / 40 回のうち 6 回は、まわりにアイテムのエンティティが 2 秒間一つも現れない。サーバーが掘りを断って手元だけ空気になったのか、を次の記録で決める（ブリッジの再起動が要る）
+- 小目標の復元（設計書 63）は、最初の起動で `data/goal.json` がまだ無く、次の再起動で初めて動く
+- 残り: 決定が「もう済んでいる小目標」を選んで差し戻される（6 回中 4 回、1 回 8 秒）、存在しない技（`build_house`）や家（`go_home`）を呼ぶ、板材が足りないまま家を建て始める
+
+### 再起動のあとに今の小目標を続きから追う、開いた穴から昼に出る（設計書 63、2026-09-30）
+- 小目標（理由・助言・診断・見直し・教訓・束）と歩みの数え（歩数、続けて失敗、進まない歩数）を `data/goal.json` に保存し（`IGoalStore` / `JsonGoalStore`、小目標を決めたときと 1 手ごと）、`StartPlayUseCase._resume_goal` がブリッジも同じ小目標を追っているときだけ続きから追う（`GoalStatus.spec_label`。`PUT /goal` は送り直さない）。世界のリセットで日付つきの名前にする。テスト: `test_json_goal_store.py`、`test_play_use_cases.py`
+- 昼になっても穴の中: 塞ぎが開いたままの穴（`inOpenShaft`）では `climb out of the hole` が出ず、`inBurrow` でないので待つ手もなく、ずっと穴の中にいた（14:45、ブリッジの状態は `head_blocked: false`、足は地面の 3 下）。昼なら `inBurrow || inOpenShaft` で出す（`candidates.mjs`）、`leave_burrow` も開いた穴から上がる。なぜ塞ぎが開いたかは未確認（その手前で Gemini が同じ座標に `goto` している）。明け方（23000〜24000）は `dayPhase` が dawn で、まだ待つ（約 50 秒）
+- 実機では未確認。Python の再起動が要る（ブリッジも再起動）
+
+### ワールドリセット後のログ（14:25〜）から: 対処の札の食い違いと、計画の語彙違反（設計書 27 §、50 §18 追記、2026-09-30）
+- 失敗の後の決定 `goal_after_failure` が「札が retry なのに別の小目標」「札が change なのに同じ小目標」だけで 3 回差し戻され、ステップが失敗した（3 回で約 35 秒）。札（`remedy`）はログにしか使わないので、`_check_remedy`（`play.py`）はその食い違いを見ず、小目標そのもので決める（同じ小目標なら助言が要る、続けて失敗したら選べない）。テスト: `test_goal_layers.py::TestCheckRemedy`、`test_play_use_cases.py`
+- 計画（`purpose=plan`）が 13 回・185 秒で最大の LLM 時間。差し戻しの理由は、家が無いのに `near_home`、複数形やまとめ名（`oak_logs`、`planks_and_door`）、`leveled` の `distance` / `where`。プロンプトの「計画の書き方」に 2 つ足した（`PLAN_TEMPLATE`）。実機で差し戻しが減るかは未確認
+- 残り: 計画の書き直しが 3 回失敗する家の大目標、`write_memo` のスキルの失敗、原木を切って拾えない 1 件（`logs/drop-watch.jsonl` を読む）
+
+### 再起動後のログ（14:05〜）から: 高い原木のドロップの誤った失敗、複数形の名前（2026-09-30）
+
+ユーザー: 「起動したのでログみてみて」（再起動から 4 分、14 手）。
+- 効いていた: `tool_stuck` は考えなくなった（1 回 5 秒）。出力の上限で、目標の決定が 1599 トークンで切れ、書き直しは 3 秒で済んだ（上限なしなら最大 3,494）。`[tts] 読み上げる` は 1 行に 1 回
+- 見つけて直した: 原木の「拾えなかった」の原因（設計書 60 追記）。`drop-watch.jsonl` 34 件で、失敗は足元より 4 ブロック以上上の原木に集中。`collectNearbyDrops` は ±4 の外のドロップが見えず、落ちてくる前に失敗にしていた。落ちてくるのを待つ（`fallingDrop`）。`test/collect-drops.test.mjs` 2 件
+- 計画が `oak_logs`（複数形）で 3 回落ちた: `Knowledge.didYouMean` に複数形 → 単数の案内（`oak_log`）を足した
+- まだ: 計画に `there is no build named temporary_craft`、目標の決定に `explored` を束ねる・`distance` を書かない差し戻し（1 回 6 秒）。時間が足りず、次のログで頻度を見る
+- ブリッジ `npm test` 419 件、Python 1,123 件（`test_stream_factory.py` は配信が動いていて落ちる、元から）
+
+### 直近 30 分のログからの修正（設計書 51 §8、43 追記、2026-09-30）
+
+ユーザー: 「順に修正していって欲しい」（レビュー: 行動 18%、LLM 待ち 69%、`tool_stuck` 9 回で 7.9 分、返事 157 秒、矛盾した二重発話）。
+- 1. `tool_stuck` は考えさせない（`config/development.yaml`、`default.yaml`）。2. 思考しない用途の出力の上限 `llm.local.output_max_tokens`（返事が 4,462 トークン書き続けた）、開発の待ちは 90 秒。3. 拒否を減らす（`do_suggestion` の括弧内の距離・id だけの違いを同じ手に、断りに今の提案、`craft(boat)` を `oak_boat` に、craft の結果にあと何回作れるか）。4. 実況が返事のないコメントを見て逆のことを言った: `GenerateResponseUseCase` は返事を書いている間、視聴者の発言を会話に入れない（書き終えたら、失敗しても入れる）。5. 計画・目標の数の上限 64 → 256。6. `build_next` は続けて置く（`count`、省くと最大 60）。7. 待っている間の独り言（`LiveNarration.thinking_seconds`、`stream.live_thinking_seconds` 40）
+- 訂正: 「同じ文が 5 秒間隔で 2 回読まれた」は確かめられていない。`[say]` のログは 1 回で、アバターの反応の記録（`logs/avatar`）が 2 回あっただけ。どちらか分かるよう、`SpeakTextUseCase` に `[tts] 読み上げる` のログを足した（次の二重を見て決める）
+- テスト: Python 1,119 passed（`test_stream_factory.py` を除く）、ブリッジ `npm test` 417 件。新しい: `test_local_llm.py` 2 件、`test_generate_response_use_case.py` 2 件、`test_live_narration.py` 3 件、`test/tools.test.mjs` 4 件、`test/primitives-place-plan.test.mjs` 4 件
+- 未確認: 実機（Python とブリッジの再起動が要る）。`tool_stuck` の解ける率が下がらないか、出力の上限で切れた呼び出しの数（ログの「書き直させる」）、`build_next` が夕方・襲撃で止まるか
+- まだ直していない（レビューの残り）: 同じ相手からの逃げ続け（drowned）、死んだ直後の回収を敵が近いうちは後回しにする、開始直後に Jev が同じ選択肢に自信なしと 4 回答える、計画の `placed` に oak_boat を書いて 3 回差し戻される、定型の一言の繰り返し、`stored` などの判断待ち（設計書 62）
+
+### 見つけた拠点は仮の宿: 自分で置いた家具だけ数える（設計書 62、2026-09-30）
+
+ユーザー: 「勝手にそのへんにあった家を家だと思って目標達成にしちゃう」→ 案（家と仮の宿を分ける、来歴で判定、状態に書く）→ 「仮の宿判定はアリです。進めてほしい」。
+- 原因: 13:46 のログで `placed(bed, home)` の大目標が、村の小屋にもとからあった村人のベッドで達成扱いになった。判定に「自分で置いた」がなかった。保存した家に `found` の印がなく、再起動で見つけた拠点と自分の家が名前でしか見分けられなかった
+- 実装: `ledger.mjs`（家具も記録、`furniturePlacedByMe`）、`furniture.mjs`（`ownFurnitureInHome`）、`goals.mjs`（`placed` の家具の 4 つの枝）、`home.mjs`（`found` の保存と古い保存の判別）、`landmarks.mjs`（`FOUND_BASE_NAME`）、`index.mjs`（`observation.home.found`）、`stream_context.py`（家の行）。設計書 62、CLAUDE.md
+- テスト: `test/found-base.test.mjs` 5 件、`home.test.mjs` に 1 件、Python にプロンプトの 1 件。ブリッジ `npm test` 409 件、`python -m pytest tests/` 全通過（`test_stream_factory.py` は除く）
+- 未確認: 実機（ブリッジの再起動が要る）。`blockPlaced` がベッドの足側で来るか。今の `state.json` の家は印がないが名前で見つけた拠点と分かる
+- 変えていない（設計書 62「変えていないもの」）: `stored` / `farmed` / `lit` / 街の準備は見つけた拠点でも動く。判断待ち
+
+### 実ログのレビューで見つけた 6 点の修正（設計書 61、2026-09-30）
+
+ユーザー: 「実際のログやコードをみてこのプロジェクトのレビューをしてほしい。挙動をより滑らかに、かつ人に近づけるには」→ レビュー（LLM 時間の内訳、夜の 1 手ずつの追跡、失敗の原因の集計、発話の確認）→ 「治していってください」「最初に指摘していたものもやってほしい」。
+- 家がないのに `placed(…, near_home)` を書かせて目標の決定が 3 回差し戻されて落ちた（12:30）: ① 家が建つまで `state.home` はなく、`home` / `near_home` は使えない。エラー文に代わりの書き方を添え（`placing.mjs`）、状態の「家: まだない」に使えないことを、`where` のスキーマの説明にも書いた。② 差し戻しの 43 回は、`have(item, n)` を「あと n 個」と取り違えて、持っている数より小さい n を書いたもの（原木 11 個持っていて `have(oak_log, 5)`）。`have` の説明に「合計」と例を足し、差し戻しの文に持っている数と書き直し方を添えた（`play.py` `_carried_note`）
+- 1. `Stagnation` の「待つ手は数えない」が効いていなかった: 記録する行はソルバーの提案だと `do_suggestion(id=wait) …` で始まり、先頭の `wait` の判定に合わなかった。手の動詞で見分ける（`WAITING_VERBS`）。**訂正**: 最初のレビューで「`tool_stuck` の 3 分の 1 が減る」と書いたのは誤り。ログでは `tool_stuck` 103 回のうち、状況が変わらないことが理由のものは 14 回（13%）。残りは失敗が 2 回続いたことによる
+- 2. 家も寝床もない夜の緊急避難（`burrow.mjs`、`dig_in` / `leave_burrow`、設計書 61）: 足元に 3 マスの縦穴を掘って入り、上を掘った土で塞ぐ。家がない・行けない・64 ブロックより遠い夜の候補に出る。穴の中は反射も家の中と同じ（戦うか無視するだけ）。朝は「climb out of the hole」
+- 3. 待ち時間の雑談（`LiveNarration` `idle_seconds`、`stream.live_idle_seconds` 60）: 状況が変わらないまま 60 秒黙っていたら、今の様子への一言を 1 行（新しく約束しない）。行動中だけ、失敗が続く間・停滞の間は話さない
+- 4. `tool_stuck` の思考の上限は**変えていない**: 2026-09-29 にユーザーが 3000 から 16000 に上げた理由（3000 は 2 回とも 43 秒考えて切れ、思考が無駄になった）が今も当てはまる。実ログの出力トークンは中央値 2,389、90 パーセンタイル 9,889。減らすには、失敗が続く回数（下の 6）を減らすのが先
+- 5. 夜と、家がある夕方は決まった手順（`goal_chooser.survival_options`）: 外の夜は `through_night`、家がある夕方は `at_home` を Jev にも聞かず選ぶ。**家の中の夜は決めつけない**（家でできる作業や、敵を倒しに出る `cleared` を選べるように）。腹ぺこのときも、家がない夕方（家を建てている最中かもしれない）も決めつけない。forced の松明（暗くて松明がない）は夜の手順より先。決まった手順にした分、夜の外では Jev の選び直しがなくなる
+- 6. 失敗の拒否文を、言い直せるものにした（`tools.mjs`）: 何もない座標を `dig` に指したとき、そのまわり（半径 3）の固いブロックを種類ごとに座標つきで、`craft` の材料不足には足りない物と `how_to_get`
+- テスト: ブリッジ `test/burrow.test.mjs` 10 件、`night.test.mjs`・`placing.test.mjs`・`tools.test.mjs` に追加。`npm test` 402 件。Python は `test_stagnation.py`・`test_play_use_cases.py`・`test_live_narration.py` に追加と、新しい `test_survival_routine.py`。`python -m pytest tests/` 1112 passed（`test_stream_factory.py` の 1 件は配信が盤のポートを使っているため除く）
+- 未確認: 実機（ブリッジと Python の再起動が要る）。特に、実サーバーが穴の側面に土を置けるか、掘ったあとの落下と拾い集めの間合い。`have` の説明を変えたので `vocabulary_version()` が変わり、次の起動で街の段階の書けなかった部分を一度だけ書き直す
+- `goal_system` の長さの上限（8500 字）ぎりぎり: これ以上プロンプトに足す前に削ること
+
+### 木の取り残し・積む上限・ドロップの記録（設計書 60、2026-09-30）
+
+ユーザー: 「木を底から切るを見直したい」→ ログを調べて答えた（切る順番はすでに下から。原木 27 回のうち 9 回が「掘ったのに拾えなかった」で、幹の3〜5本目。届かない失敗はない。原因は待ち時間か足場の高さの差か葉かで、コードからは決められない）→ 「観察をいれつつ取り残しを集めて、且つ詰める上限も広げてほしい」。
+- 観察: `dropwatch.mjs`（掘った直後から 0.5/1/2 秒後のまわりのアイテム、ボットと足元、足場、結果を `logs/drop-watch.jsonl` に）。`PRIMITIVES.dig` の後半を `afterDig` に取り出して包んだ
+- 取り残し: `trees.mjs` の `logClusterIsTree` が `isolated`（何にも触れない塊）を返し、`isLeftoverLog` / `gatherableLog` が通す。`find_blocks` は `leftover: true`。プロンプトと `abilities.yaml` に説明
+- 積む上限: `world.mjs` `reachableLogHeight`（5 + max(3, 土の数)、最大 16）
+- テスト: `liquid-trees.test.mjs` に 5 件、`dropwatch.test.mjs` 3 件。ブリッジ `npm test` 390 件、pytest 1103（配信中は 1 件落ちるのは前から）
+- 実機では未確認（ブリッジの再起動が要る）。16 段の塔と下り方は特に。ドロップを拾えない失敗は直していない: 次の実行で `logs/drop-watch.jsonl` の `outcome: failed` の行を見て決める
+
+### 視界で作る世界の地図（設計書 59、2026-09-30、段階 1 を実装）
+
+ユーザー: 「実際に人がプレイしている時の思考回路に近づけたい。一度見ている場所を把握していない、木が見えているのに見つけられない」。前方の視界（円錐）のブロックを座標つきで地図に足し、経路探索にも使いたい。角度は Minecraft の標準（垂直 FOV 70、16:9 で水平約 102°）、遮蔽あり、上下とも含める、深度 20、座標で一致確認、と決めた。
+- 確かめたこと: 経路探索は `bot.blockAt(pos, false)`（読み込み済みチャンク、約 128 m）だけを読み、未読み込みは壁扱い。記録（`sightings`）は `afterRun` だけ、覚える種類は 4 系統と石、区域ごとに 1 点、20 m 内で見えなければ消す
+- 設計書 59: 20 ブロックのレイで通ったセル（空気も）を記録、断面ごとの Uint16 配列、`state.json` と別ファイル、再視認で上書き。段階 1 は記録と `find_blocks` / `search_memory` / 思い出した場所、経路探索は段階 2
+- 「木を底から切る」は地図では直らない（`isTreeLog` が葉のない塊を木にせず、`logReachable` が浮いた原木を落とし、`digTargets` が近い順で幹の途中から切る）。設計書 59「別件」として、ユーザーの判断待ち
+- ユーザーが「進んで良い」で段階 1 を実装。`worldmap.mjs`（地図、サンプラー、保存）、`worldmap-places.mjs`（`find_blocks` / 思い出した場所 / `remembered` / `search_memory` の引き当て）、`trees.mjs` の木の判定を共有化、`ledger.mjs` で自分の掘り置きを反映、`index.mjs` で読み込み・開始・保存・`GET /worldmap`。`sightings()` は動物だけに。`reset_world.sh` と `streaming.md` に `data/worldmap/`
+- テスト: `test/worldmap.test.mjs` 19 件（視野の内外、遮蔽、葉・ガラス・柵・水、未読み込み、空気の記録、再視認の上書き、自分の掘り置き、保存と読み込み、サンプラー）、`test/worldmap-places.test.mjs` 10 件、`tools.test.mjs` に `find_blocks` の地図。ブリッジ `npm test` 382 件、pytest 1103（配信が動いていると `test_stream_factory.py` の 1 件が落ちるのは前から）
+- 計測は合成の世界だけ（サンプリング 0.5〜3 ms、300 m 四方の保存 57 ms）。実機はブリッジの再起動のあと `GET /worldmap` の `avg_ms` / `max_ms` とログの `[worldmap]` で見る。動いているブリッジには触っていない
+- 次: 実機で重さと、見えた木が `find_blocks` / 思い出した場所に出るかを確かめる。木を底から切る件（設計書 59「別件」）はユーザーの判断待ち。段階 2（経路探索）は実データを見てから
+
+### 歩いて詰まった所の記録（設計書 58、2026-09-30）
+
+ユーザー: 「水の中で登れるのは水と同じ高さのブロックだけなのを把握できているか。水面の 1 ブロック上に上がろうとして詰まる」→ 把握していない、と答え、直し方の案（経路側で断る）→ 「まずは経路側で」。
+- 本物の `Movements` に池と岸を作って手を出させると、水面より高い所へ飛び乗る手は作っていなかった。逆に、深い水からは水面と同じ高さの岸にも手がなかった（`getMoveJumpUp` の高さの差 2 > 1.2、掘る手は `dontCreateFlow` で消える）。前の答えの「高い所へ上がる手を作る」は推測で、誤り。手を断る直し方は効かないので、実装せず報告した。ログにも水辺の詰まりがなく、原因は決められなかった。
+- ユーザーは「1（詰まった場面を取る）で進めて」。`stuck-report.mjs`: 詰まった瞬間の位置・水の中か・目標・経路の次の 3 手・周りの 4 層 5x5 を `logs/stuck-walks.jsonl` とブリッジのログに残し、失敗の文に位置を添える。動きは変えていない。
+- テスト: `test/stuck-report.test.mjs` 5 件（`move.test.mjs` は記録先を一時ファイルにした）。ブリッジ `npm test` 353 件。
+- 次: 実機で詰まりが記録されたら、`grid` と `path.next` から原因（設計書 58「見方」）を決めて直す。ブリッジの再起動が要る。
+
+### 岩に囲まれた所からの goto を先に断る（設計書 57、2026-09-30）
+
+ユーザー: 「goto が `Took to long to decide path to goal!` で失敗する。仕方ない？」→ 原因の説明（岩の中にいて目標が岩の向こう。掘って進む探索が 5 秒の `thinkTimeout` に収まらない）→ 「1、2 をやって」（`thinkTimeout` を伸ばす 3 は採らない）。
+- 1: 設計書 55 で足した `exclusionAreasBreak` のコスト 10000 の行を外した（`dontCreateFlow` が既定で同じことをしていて、経路探索が遅くなるだけ）。`primitives.mjs` の `LIQUID_BREAK_COST` と `holdsBackLiquid` の import も。
+- 2: `reach.mjs`（歩いて行ける範囲の幅優先、3000 マスまで、目標から 4 ブロック以内に届けば打ち切り）。道具 `goto` は、歩ける範囲が閉じていて目標が 4 ブロックより遠ければ、経路探索の前に「掘って出るか go_home」と断る。未読み込みに届く・水の中・船は調べない。台帳（`FUTILE`）には入れない。
+- テスト: `test/reach.test.mjs` 9 件、`tools.test.mjs` に 1 件。ブリッジ `npm test` 349 件（`conditions.test.mjs` の 1 件が全体実行のときだけ落ちることがあった。単独では毎回通る。isolated-vm の CPU 時間の制限が負荷で揺れるためと見ている）、`python -m pytest tests/` 1103 passed（`test_stream_factory.py` の 1 件を除く）。
+- 未確認: 実機（ブリッジの再起動が要る）。primitive の `goto_pos` は事前に調べない（設計書 57 の限界）。
+
+### ベッドで寝ている村人を起こす手（設計書 56、2026-09-30）
+
+ユーザー: 「人が寝てるベッドも叩けば起きて使えるようになるが、拒否された。ルールで縛られている？」→ ルールではない（mineflayer の `the bed is occupied`）と答えた → 「ベッドの上で寝てる人を攻撃する選択肢も出せるようになってると良い」。
+- 原因: ログ（01:51）で `sleep` が同じ理由で 4 回失敗。エラーは誰が寝ているかを言わず、起こす手もなかった（`attack` は倒すまで戦う）
+- 実装: `minecraft-bridge/src/sleepers.mjs`、`candidates.mjs`（夜、ベッドで寝ているモブがいれば `wake up the sleeping … (one hit)`）、`primitives.mjs`（`wake_sleeper`: 素手で 1 回だけ。`sleepOn`: 断られたら誰が寝ているかと手を添える）、`runner.mjs`（夕方でも止めない）、`abilities.yaml`
+- 判断: 「攻撃する選択肢」は、倒すまで戦う `attack` ではなく、素手で 1 回だけ殴る専用の手にした（村人を倒すと村の評判が下がるため）。1 回殴ることでも村の評判は少し下がる
+- テスト: `minecraft-bridge/test/wake-sleeper.test.mjs` 6 件。ブリッジ `npm test` 338 件、`python -m pytest tests/` 1103 passed（`test_stream_factory.py` の 1 件を除く。配信が盤のポートを使っているため）
+- 未確認: 実機（ブリッジの再起動が要る）。実際のサーバーが寝ているポーズを `pose === 2` / `sleeping_pos` で送るかは、テストでは作った値で確かめただけ
+
+### 水をせき止めているブロックと木の原木、埋め戻し（設計書 55、2026-09-30）
+
+ユーザー: 「街の畑の装飾の原木を破壊して集めてきたせいで畑の水が決壊してます。良い方法ないですか」→ 案 → 「1,2,3 やりたい。2 は間違えておいた原木を壊せなくならない？」→ 座標指定の dig は止めない、ボットが置いた物を記録する → 「足して。間違えたのはボット」。
+- 原因: 保護が名前と場所（家・建物）で、原木は `_log` の名前だけで木も村の飾りも区別しない。村の畑の縁の原木（水路の栓）が、いちばん近い原木として集められた。実機で畑の北東に流れる水（level 6〜7）を確認
+- 1（`liquid.mjs`）: 横か上に水・溶岩のある固いブロックは、道具の dig（demolish でも）、primitive の dig / level、候補、`find_blocks`、`around`、覚える場所から外す（パスファインダーは自前の `dontCreateFlow` で足りるので、足したコスト 10000 の行は設計書 57 で外した）。demolish でも断るのは、私の判断（demolish を残すと言ったのは家・建物の保護のこと）
+- 2（`trees.mjs`）: 自動の採集と覚える場所は、木の幹（葉につながった原木の塊）か、ボットが自分で置いた原木だけ。座標を指す dig は止めない。`find_blocks` に `tree` / `placed_by_me`、`around` に `not_trees`（座標なし）
+- 3（`ledger.mjs`）: `bot.dig` を包んで掘った物を記録（10 分）、`blockPlaced` で置いた物を記録（`state.json` に保存）。掘った跡に水が入り込めば `plug_hole` を出し、`StepPicker` が回収の次に聞かずに選ぶ
+- 直したこと（レビュー）: 畑の水のマス（`place_water` が掘る穴）は埋めない（水やりの直後に土で埋めるところだった）、`placed` は原木だけ記録（上限で押し出されない）、`stream_context` の目の前の一覧が `nearest: null` の原木を「育ち途中」と書かないよう `not_trees` を書く
+- テスト: ブリッジ `test/liquid-trees.test.mjs` 12 件、`tools.test.mjs` に 1 件、`diggable.test.mjs` の浮いた幹に葉を足した（葉のない原木は人工物のため）。`npm test` 332 件。Python `test_step_picker.py` に 3 件、`test_game_prompt_template_builder.py` に 1 件、`python -m pytest tests/` 1103 passed（`test_stream_factory.py` の 1 件は配信が動いていて盤のポートが使われているため。元からの失敗）
+- 未確認: 実機。動いているブリッジは古いコードのまま（`find_blocks` に `tree` が付かない）。ブリッジと Python の再起動が要る
+- 限界（設計書 55）: すでに流れ出している水は止まらない（今の決壊は縁の原木の抜けた所を手かボットで埋める）。葉がすべて消えた木の幹は人工物になる。液体に接した木は切れない
+
+### 目標の照合と計画の検査（設計書 50 §19、2026-09-30）
+
+ユーザー: 「目標の達成確認が微妙。達成済みなのに管理画面でチェックがついてない（石のツルハシ）。家を作る大目標の中に中目標として家の建築・家を建てるがある。バリデータみたいなの作れない？」→ 質問への答え（原因と案）→「A,B やって、閉じていい、負荷はしゃあない」。
+- 原因: 判定が一番上の大目標のまだ済んでいない中目標にしか走らず（`judge_steps` は済み以外を飛ばす）、表示は判定していない小目標を「待ち／今」にしていた。終わった大目標は中目標が未完了のまま。`built(house)`（そんな名前の建物はない）の中目標は、ブリッジが未達と答え続けて永遠に判定できなかった
+- A: `ObjectiveKeeper._reconcile`（`judge` の最後）が全大目標の全中目標と計画の小目標を `/check` 1 回で照合して `Job.met_now`（表示だけ・保存しない）に。拒否は半分ずつに分けて絞る。表示は done / met / current / waiting / closed（`goal_board._jobs` / `_steps`、管理画面、オーバーレイ）。済んだ中目標の小目標は全部 done。「今」は一番上の大目標だけ。大目標が終わったら中目標を `JobState.CLOSED` に（`Objective.closed()`、`ObjectivePlan.finished` が古い保存も閉じて見せる）
+- B: `use_cases/plan_lint.py` `check_plan`（`JobPlanner.plan` と `_decide_goal`）: 存在しない名前の `built(名前)`、大目標の条件を最後でない中目標に、同じ条件・同じ title の中目標。`PLAN_TEMPLATE` に 2 行。書いてあった判定できない中目標は `_drop_unjudgeable` が外す（視聴者のは除く）
+- 入れなかったもの（設計書 50 §19）: 大目標の条件と同じ中目標を全部断ること（計画の決まりと `unplanned` に反し書き直しが止まらない）、別の大目標の条件と同じ中目標を断ること、書いた時点で満たしている小目標を断ること
+- テスト: `tests/unit/application/test_plan_audit.py` 24 件、`test_job_plan.py` を `_jobs(…, True)` に。`python -m pytest tests/` 1099 passed（`test_stream_factory.py` の 1 件は配信が動いていて盤のポートが使われているため。元からの失敗）。`data/mission.json` のコピーを本物のブリッジ（`/check` `/builds`）に照合させて確かめた: 石のツルハシの小目標は済み、`built(house)` の中目標は外れ、`夜に寝られるようにする` の残りの中目標は閉じた
+- 未確認: 配信の再起動後の実機（Python の再起動が要る。ブリッジは変えていない）。`_drop_unjudgeable` で `自分の家を作る` の中目標が尽きるので、その大目標が一番上に来たとき計画を書き直す（検査つき）
+
+### 死んだあとの回収を、決め直しより先に走らせる (2026-09-30)
+
+ユーザー: 「いま死んだのに落としたアイテム全然拾いに行く気配ありませんでした。なぜかわかりますか？」→ 調査（質問のみ）→「やっちゃってください」。設計書 50 §17 に追記。
+- 原因: 拾いには行っていた（20 個回収）が、死んでから 48 秒かかった。内訳は小目標の決め直し 27 秒 + Gemini が `goto` で今の場所へ行った 1 手 + 夕方の決め直し 15 秒。直前の攻撃が `stopped: health critical` の失敗だったため、`StepPicker.pick` の「直前の手が失敗 → Gemini」が回収の強制より先だった
+- `use_cases/step_picker.py`（回収の強制を失敗判定より前に。`recovery()` / `_forced()`）、`use_cases/play.py`（`_recover_first`: 死んだ直後は小目標を決める前に回収 1 手。ステップには数えない）、`minecraft-bridge/src/candidates.mjs`（回収の `id` から距離・経過時間を外す。歩くたびに変わって「今の提案にない」と断られていた。値は `distance` / `direction` / `minutes_ago`）
+- テスト: `tests/unit/application/test_step_picker.py` に 6 件、`minecraft-bridge/test/recover.test.mjs` を新しい `id` に。`python -m pytest tests/` 1075 passed（`test_stream_factory.py` の 1 件は配信が動いていて盤のポートが使われているため。元からの失敗）、ブリッジ `npm test` 319 件
+- 未確認: 実機（ブリッジは `npm run dev` なら再起動される、Python は再起動が要る）
+- 残り: 前の周回の死 2 か所は期限切れで回収なしのまま（今回とは別）
+
+### 管理画面に目標ツリー (2026-09-30)
+
+ユーザーの依頼: 「web の管理画面で大中小で目標をツリー構造で全て確認できるように。『いまの様子』とは別で、普段は折りたたんでてよい」。設計書 54 に追記。
+- `presentation/web/admin.py`（`goal_tree`: 最終目標 → 大目標（全状態）→ 中目標 → 計画の小目標（前提は子）、いまの小目標の置き場所、生存の小目標は最終目標の直下。`/api/admin/state` に `tree`）、`admin.html`（閉じた `<details>`、開き閉じを `key` ごとに覚えて 3 秒の描き直しで戻らない、中身が変わったときだけ描く）、`goal_board.py`（`goal` に `objective_id`）
+- テスト: `tests/unit/presentation/web/test_admin_tree.py` 4 件、`test_goal_board.py` を `objective_id` に合わせた。`tests/unit/presentation/web` と `test_goal_bundles.py` 50 passed。仮サーバー（実物の `PlaySession`）を Chrome で開き、初め閉じている・ツリーが出る・閉じた枝が 3 秒の更新を 2 回またいでも閉じたままなのを確認（実機の配信では未確認）
+- 判断: 小目標がどの中目標のものかは `Goal` が持っていないので、その大目標の今の中目標の下に置く（推測を「いまの小目標」として置いているだけで、判定はしていない）
+
+### 考え始めたときの定型の一言 (2026-09-30)
+
+ユーザーの依頼: 「思考に入る時、定型文でいいので『今からちょっと次どうするか考えるね』とか喋らせてほしい」。設計書 43 追記。
+- 原因: 目標の決定と大目標の計画書き（ローカル LLM で 39 秒〜4 分）の間は、行動もなく（`Activity.acting` 偽）切れ目の実況もまだで、無音だった
+- `domain/events.py`（`GoalDecidingEvent(after_failure)`）、`use_cases/play.py`（`_while_deciding` が待つ前に発行。`_decide_goal` と `_plan_objective` の 2 か所だけが通るので、Jev の即決は含まない。失敗の後は `REPLAN_REASONS`）、`presentation/services/narrator.py`（`on_goal_deciding`、`THINKING_NOTICES` / `RETHINKING_NOTICES` を順に、90 秒以内は続けて言わない、背景で言う）、`factories/stream.py`（`say_notice`: 繰り返しの判定 `SpokenLines.repeats` を通さない。通すと定型文は 2 回目から捨てられる）
+- テスト: `test_narrator.py` に 5 件、`test_play_use_cases.py` に 1 件。`python -m pytest tests/` 1065 passed（`test_stream_factory.py` の 1 件は配信がポートを使っているので除く）
+- 未確認: 実機（配信の再起動が要る）。言う場面は LLM の目標決定と計画書きだけ。道具を選ぶ 1 手ごとの判断（数秒）では言わない（毎手になる）
+- 判断: 文言は定数で 3 + 2 種を順に使う（同じ一言が何度も続くと不自然なので。設定項目は足していない）
+
+### ワールドのリセットで忘れるもの: メモ・技・動きの帳も取っておく (2026-09-30)
+
+ユーザーの依頼: 「`world:reset` ではそのワールドに関する知識も忘れてほしい。教訓・自分について話したこと・名前の読みだけ残す？」→ 配信用に新しい世界へ移りたいだけ、実装して。
+- 調べたこと: 残していた 6 つのうち、世界に結びつくものが 3 つあった。`notes.json`（計画メモ。`written_day` / `expires_day` が旧ワールドの日数）、`skills/`（`expects` の `custom(name)` は `state.json` の `conditions` にあり、リセットで消える。`through_night` v1 は「`morning` というチェックがまだない」で失敗した記録が残っていた）、`moves.json`（24 件、大半が `worked: 1`。家の床のリードを拾う `pickup` など旧ワールドの偶然が混じる）。教訓 53 件に座標や地名はなく、残す
+- `scripts/reset_world.sh`: 取っておくものを `state.json` / `mission.json` から `state.json` / `skills/` / `mission.json` / `notes.json` / `moves.json` に（消さない。日付つき、同日は時刻つき。ディレクトリは末尾に日付）。残るのは教訓・自分について話したこと・名前の読み。戻し方の案内も同じ 5 つ
+- 文書: `CLAUDE.md`（Move book / Skills / world:reset の行）、`config/default.yaml`（skills のコメント）、設計書 22 §8 の 3 と保存場所、設計書 52 §1、`docs/streaming.md`（手でやる手順 2 と `--existing` の注意）、`mise.toml` の説明
+- 確認したこと: 偽の `docker` / `pgrep` を置いた一時ディレクトリで、dry-run（5 つの取っておく先）、通し（5 つが日付つきに変わり、教訓と読みと `.env` の `MC_LEVEL` はそのまま/更新）、同日 2 回目（時刻つき）。本物のワールドと配信には触れていない。`bash -n` 通過
+- 未確認: 実機の `mise run world:reset`（ブリッジは `skills/` がなければ起動時に作る: `skills.mjs` の `mkdirSync`。Python の各ストアはファイルがなければ空で始める）
+- 限界: `SKILLS_DIR` を環境変数で変えている場合は追わない（スクリプトは既定の `minecraft-bridge/data/skills` だけを見る）
+
+### 大目標の計画: LLM が中目標と小目標を前提つきで書く（設計書 50 §18、2026-09-30）
+- ユーザー: 「やはり今も中目標小目標がおなじ」→「大目標を決定したらソルバーに任せきらずに一度 LLM がプランを建てて小目標に並べてほしい」（畑を広げる: 土地の確保・水源・耕す・蒔く、バケツが要るなら作る、鉄がなければ確保）。答え: 小目標は前提まで LLM が書く / 大目標を決めたとき 1 回、失敗・行き詰まりで書き直す / 全部の大目標
+- 原因: §13 の次の一歩は束でない単独の `have` だけ（`goal_chooser.py` の `len(s.specs) == 1`、ブリッジの `nextStep` は `have` のみ）。`farmed` / `facility` / `placed` / 束はそのまま小目標。実測: Jev の選んだ小目標 38 件中 18 件が中目標と同じ文
+- 実装: `domain/value_objects.py`（`Step`、`Job.title` / `steps` / `steps_done` / `next_step` / `pending_steps`、`Objective.planned`）、`domain/entities.py`（`set_jobs` が計画と済みを引き継ぐ、`judge_steps`、`set_planned`）、`use_cases/job_planner.py`（新: `JobPlanner`、`plan_schema`、`parse_plan`、`unplanned`）、`use_cases/goal_chooser.py`（計画の小目標を判定してラッチし、次の小目標を選択肢にする）、`use_cases/play.py`（`_plan_objective`、`REPLAN_REASONS`、5 分の間隔、計画済みなら決定に `jobs` を書かせない）、`goal_vocabulary.py`（`goal_schema(plan_owns_jobs=)`）、`objectives.py`（`set_jobs` に `planned` / `keep_done_steps`）、`json_mission_store.py`（`title` / `steps` / `steps_done` / `planned`）、`game_prompt_template_builder.py` / `game_prompt_builder.py`（`PLAN_TEMPLATE`、`build_plan_prompt`、システム指示に 1 節）、`stream_context.py`（計画の表示）、`goal_board.py`（`label` = 名前、`steps`）、`factories/game.py`（chooser があるときだけ計画を書く）、`config/default.yaml`（`gemini.thinking_levels.plan`。ローカルは thinking なし）
+- テスト: `tests/unit/application/test_job_plan.py` 36 件（ドメイン、保存、選択、パース、書き込み、組み込み、表示）。`python -m pytest tests/` 1052 passed、`test_stream_factory.py` の 1 件は配信が動いていて盤のポートが使われているため（元からの失敗）
+- ローカル LLM で 1 回ずつ書かせた: 「畑を広げる」で前提つきの計画（39 秒、thinking なし。thinking ありは上限 6000 で 142 秒だったので外した）が `parse_plan` を通った。整地の条件の座標が抜けることがある（ブリッジの判定で差し戻し）
+- 未確認: 実機（配信の再起動が要る。古い `mission.json` は未計画として読み、次の境目で計画を書く）
+- 限界: 「耕す」「種をまく」を別に書く述語がない（`farmed` / `facility`）。オーバーレイは中目標の名前まで（小目標の並びは API のみ）
+
+### 小麦の収穫で耕地ごと掘る不具合: 道具 dig は耕地を断る (2026-09-29)
+- 原因: 収穫の処理（`PRIMITIVES.dig` / `harvestNearby`）ではなく、Gemini が道具 `dig` を作物の下の耕地の座標（`dig {y: 64}`、作物は y=65）で呼び、`dig` が耕地を断らず「dug farmland」になっていた（`around` は耕地を `gives: dirt` で座標つきに出す）
+- `minecraft-bridge/src/tools.mjs` `dig`: 耕地は断り、上の作物の座標を教える（`demolish: true` のときだけ掘る）。断りは既存の `will not dig` なので台帳（`refusals.mjs`）に載る。`test/tools.test.mjs` に追加
+
+### ワールドのリセットを mise のタスクに (2026-09-29)
+
+ユーザーの依頼: 「リセット用のスクリプトを用意してほしい。可能なら mise task に」。
+- `scripts/reset_world.sh`（本体、単体でも動く）と、リポジトリで最初の `mise.toml`（タスク `world:reset`。引数は `--` のあとに渡す）。`docs/streaming.md`「ワールドを作り直す」の 1〜4 をまとめてやる: `state.json` / `mission.json` を日付つき（同じ日は時刻つき）で取っておく、`.env` の `MC_LEVEL` / `MC_SEED` を書き換える、`docker compose up -d --force-recreate` して "Done" まで待つ。`--level`（既定: 末尾の数字を 1 増やす）、`--seed`（既定: 今のまま、`random` で空）、`--existing`、`--yes`、`--dry-run`
+- 安全: 動いている配信・ブリッジは止めずに断る（止めるのは自分。動いたままだとブリッジが `state.json` を書き戻す）。サーバーのボリュームにすでにある名前は、`--existing` がなければ断る。途中で失敗したら戻し方を出す（`set -E` が要る: 関数の中の失敗に ERR の trap が働かない）。教訓・自分について話したこと・名前の読みは触らない（メモ・技・動きの帳は同日の変更で取っておく側に移した）
+- 確認したこと: 偽の `docker` / `pgrep` を PATH に置いた一時ディレクトリで、dry-run、確認で n、名前の重複、`--existing`、不正な名前とシード、日付の衝突、docker の失敗と戻し方、通しの実行。本物のリポジトリでは、動いている配信とブリッジを断ることと、`mise run world:reset -- --help` で引数が渡ることを確認（ワールドには触れていない）。bash が変数名の直後の全角括弧を名前の一部に読む（`$CONTAINER（` が unbound）ので `${}` で囲んだ。実際のサーバーでの通しは未実行（リセットするときに初めて動く）。コミットはしていない
+
+### 畑の水: 水のマスを設計に入れ、水のバケツを作って置く (2026-09-29)
+
+ユーザーの依頼: 「水を置く能力はアイテムを使う能力で代替できると思っていた。1 から（鉄は足りなければ集めてもらえる）、既存の畑は作り直し（B）。この機会にワールドと目標を 0 から」。設計書 47 §17。
+- 調べたこと: `use_item` でバケツの水汲みは実機確認済み（設計書 37）。LLM も中目標 `farmed(wheat, 54) + have(water_bucket, 1)` を書いていたが、ソルバーが `water_bucket` を「no way to get」と判定し（バケツを持っていても）、進まなかった。設計の畑には水のマスがなく、能力の帳の「畑の中の 1 マスを掘って水」は、水になったマスが「耕すマス」に数えられ続けて畑が完成しなくなる形だった
+- 直し: 畑の設計に水のマス（9 x 9 ごとに 1 つ、作物は水から縦横 4 マス以内・水と同じ高さか 1 段低い所だけ、穴の横の地面が水の高さ以上の所だけ）、`layoutStatus` の `water`、`facility` の水の葉（水が先、バケツがなければ `have(water_bucket, 1)`、耕す・まくは待たずに進める）、ソルバーの `fill`（バケツ ＋ 水源）、`place_water`（候補・道具 `water`）、Python の道具の仕様・moves・オーバーレイの名前・畑の表示・施設の設計の説明。`test/facility-design.test.mjs`（9 x 9 / 16 x 9 / 16 x 16 の水の数、低い隣の地面、water の道具、水が先の順）、`test/crops.test.mjs`（`have(water_bucket)`）。設計書 47 §7 §14 §17、`abilities.yaml`（`make_farm`、`water_farm`）、CLAUDE.md
+- **未確認（実機）**: 水を置く動作（`place_water`: 穴を掘り、穴の底を見て `activateItem`）。汲む方は確認済み。ワールドをリセットしたあとに、水のバケツを持たせて試す（`water` の道具か、候補 `place water in the farm NAME`）。水が流れ出したら穴の横の確かめ（`solid`）を見直す
+- 直したこと（レビュー）: `place_water` は隣のマスに立つ（離れた位置から穴の底を狙うと、サーバーの視線が隣の地面の上面に当たり、水が畑の表面に流れる）、置いたあとに水が隣の地面の上に出ていないかも確かめる。`use_item` で水のバケツを畑の中とそのまわりに使うのは断る。畑の辺の下限は 1 のまま（1 x 1 は「小さすぎる」と理由つきで断る。設計の LLM が使う理由はないので、そのままにした）
+- テスト: ブリッジ `npm test` 291 件、Python 988 件（`test_stream_factory.py::test_no_channel_no_chat_and_the_board_is_served` は配信がポートを使っているので除く）全通過。コミットはしていない
+
+### 種のないまま耕し続ける不具合: 耕すのは種の数だけ (2026-09-29)
+
+ユーザーの報告: 「畑を耕していますが、種がなくて無限に耕す人になっている。種も蒔かず水場もなく、耕している間に最初に耕した所が土に戻っていた」。
+- 実機のログ（`logs/steps/watch-20260929T064339Z.jsonl`）: 目標 `have(bread, 8) + have(wheat, 24)` で `till the ground of the farm wheat_farm_2` を 25 回近く続けて選んでいた（確信度 0.6〜0.9 なので Gemini に回らない）。種は `farmed(wheat, 54)` の途中で使い切っていた
+- 原因（3 つの重なり）: (1) `solver.mjs` の `growing` の `expand` が、クワがあれば種がなくても `till` を出していた。耕しても `free`（耕す + まく）は減らないので、候補が出続けた。`goals.mjs` の `facility` の枝も同じ。(2) 畑の設計は水を置かず（設計書 47 §14）、何も植わっていない耕地は水が近くにないと土に戻る。設計書の「乾いても土に戻らない」は植わっていればの話だった。(3) `StuckCheck` は `repeating` と答えていたが、確信度 0.48〜0.66 で閾値 0.75 に届かず、`Stagnation` は耕す場所（位置）が毎回変わるので動かないと数えなかった
+- 直し: 耕すのは、まく種が耕し済みで未まきのマスより多いときだけ（耕す → まく を 1 マスずつ）。`cropFarms` に `sow`（耕し済みで空のマス）を足し、`solver.mjs` の `expand`、`goals.mjs` の `facility`、道具 `till`（理由つきで断る）が同じ規則。種がなければ草を掘って集める（別の作業で先に入っていた `getting` に重ねた）。`getting` は探しに出る手（`explore`）を出さない（育つ間は畑のそば）。`test/crops.test.mjs`、`test/facility-design.test.mjs`（規則を外すと 3 件が落ちることを確認）
+- 設計書 47 §14、`abilities.yaml` の `make_farm`、CLAUDE.md を更新
+- 直さなかったこと（ユーザーの判断待ち）: (C) 同じ手の繰り返しを打ち切る仕組みは足していない。根は上で断てる。確信度の閾値を下げる、同じ手が進捗なしで続いたら打ち切る、のどちらも、耕す → まく の正当な連続（ついでの作業）と区別しにくく、誤って小目標を切る。(D) 畑に水を引く: 水辺を選ぶ設計か、水を置く能力か。方式が未決で、別の設計書にする。今の畑は水がないので、種があっても乾いたまま（育ちは遅い）
+- テスト: ブリッジ `npm test` 291 件全通過。Python は未変更。コミットはしていない（作業ツリーには別の作業の変更もある）
+
+### 中目標と小目標の粒度をそろえる（設計書 50 §13） (2026-09-29)
+
+ユーザーの依頼: 「中目標と小目標がほぼ同じ内容になる。目標設定時の基準を見直してほしい」→ 案 A・B の両方。原因: 中目標が「小目標の並び」と指示され、実際も 1 回のクラフトや 1 種類の素材集めで、Jev が中目標を選ぶだけの小目標は同じ条件になっていた。
+- A: プロンプト（`GOAL_SYSTEM_TEMPLATE`）の粒度の基準を、大目標（何ができた状態か）・中目標（仕事の単位）・小目標（次の一歩）にそろえ、jobs の書き方に良い例と悪い例を示す。システム指示の上限 8000 → 8300（`test_game_prompt_template_builder.py`）
+- B: ブリッジ `/check` の `next_step`（`solver.mjs` `nextStep`、`goals.mjs`）: ソルバーの根の直接の子で、まだ足りず集めに出る（dig / kill / withdraw）最初のもの。持ち物が足りている子は飛ばす。`ConditionStatus.next_step`、`GoalChooser` が束でない have の中目標を一歩の小目標にして Jev に出す（`_option`）。「中目標の今の状態」に `→ 次の一歩` を添える。板材 16 枚 → 原木 4 個、石のツルハシ → 丸石 3 個
+- テスト: `test/next-step.test.mjs`（新規 5 件）、`test_goal_layers.py` `TestNextStep`（3 件）、プロンプトのテスト。`pytest tests/` 993 passed（ポートが使用中の 1 件を除く）、ブリッジ `npm test` 301 件。実機は未確認: 小目標が中目標と違う文になるか（`logs/goals` の `options`、オーバーレイ）、小目標が短くなって境目が増え、実況や Jev の呼び出しが増えすぎないか。コミットはしていない
+- 限界: `have` の中目標だけ（placed / built / farmed は今までどおり）。一歩は根の直接の子の 1 段だけ
+
+### 松明は木炭でも作る、地下の鉱石は採掘場から集める (2026-09-29)
+
+ユーザーの依頼: 「松明を作るとなると必ず石炭を探してしまう。木炭の選択肢は出しているか（入手が易しい）。石炭を探すときも、探索より採掘場を作って集めてほしい」。調べたこと: 木炭のレシピはソルバーにあり、かまどが 32 m 以内にあるときだけ選ばれていた（遠いかまどは「無い」扱いで、新しく置く費用が石炭探しの 100 を上回る）。採掘場は完成していれば `go down the mine` で使うが、無いときに「作る」へ促す仕組みが無かった。探索は残す（ユーザー: 「残します」）。
+- A（木炭）: `knownFurnace`（近く → 最後に見た `state.lastFurnace` → 家のかまど）。`world.furnaceAway` のとき、ソルバーはかまどを置く代わりに歩く費用（`RECALL_COST`）で数え、`smelt` の候補も遠いかまどまで歩く。壊れて無くなったかまどは覚えを消し、台帳に載せる（`no furnace at`）
+- B（採掘場）: 地下の鉱石（石炭・鉄など）が見えず、完成した採掘場もないとき、探索の葉の理由に「採掘場を足す（`facility(<新しい名前>)`）」を書く。作りかけの採掘場があれば、それを続けるよう言う（`solver.mjs` `mineAdvice`、`world.mines`、`facilities.mjs` `mineSummaries`）。LLM は `blocked` の行としてこれを読む
+- `test/charcoal.test.mjs`（新規 3 件）、`abilities.yaml`（mine_ores、make_mine）。ブリッジ `npm test` 296 件。実機は未確認: 石炭が要る小目標で、家のかまどがあれば木炭の候補（`smelt 1 log into charcoal`）が出るか、鉱石が見えないとき LLM が `facility(...)` を大目標に足すか
+- 限界: 採掘場を足すかどうかは LLM の判断のまま（促すだけ）。かまどを覚える `lastFurnace` は、近くで見たとき（世界の観測のたび）に更新される
+
+### 実機の 2 回目の確認で見つけた 2 件を直す (2026-09-29)
+
+手の帳の 2 回目の実機（9 分、18 手）: 手の帳は 0 件（覚える対象の手が出なかった）、畑は Jev だけで進んだ（クワを作る・耕す・まく）、待つ手は 0。気づいた 2 件を直した。
+- 耕せないマスを繰り返す: `till` の失敗 `nothing to till at … (dirt)` が同じマスで 2 回続いた。エラー文が原因（上のブロック）を言わず、断られた手の台帳にも載らなかった。→ `primitives.mjs` のエラーが理由を言う（`oak_leaves is on top of the dirt` / `the ground is stone`）、台帳に載せる理由に `nothing to till` / `no free farmland|ground` / `did not turn into farmland` を足す、`workCell` が断られたマスを選ばない（別のマスがあればそちらへ）。`test/refusals.test.mjs`、`test/farming.test.mjs`
+- 育ち途中の作物を掘ろうとする: 「目の前のブロック」の作物の「一番近いもの」が育ち途中でも座標つきで出て、LLM がそれを `dig` に使い断られていた（この回で 4 回）。→ 作物の一番近いものは熟したものから選ぶ。熟したものがなければ座標を出さず「育ち途中で、まだ掘れない」（`around.mjs`、`stream_context.py`）。`test/around.test.mjs`、`test_game_prompt_template_builder.py`
+- テスト: `pytest tests/` 989 passed（ポートが使用中の 1 件を除く）、ブリッジ `npm test` 293 件。コミットはしていない。残り: LLM が 256 m 以上先へ `goto` して断られる（ツールが断るので 1 手の無駄だけ）
+
+### 手の帳: LLM が思いついてうまくいった手を覚えて Jev に出す（設計書 52） (2026-09-29)
+
+ユーザーの依頼: 「なにかが足りなくなったときに LLM が判断して出した手を永続化して、同様の状況では再提示できるように」→ 方針に「その方向で進めていってほしい」。
+- `MoveBook`（`use_cases/moves.py`）、`Move`（`domain/value_objects.py`）、`IMoveStore` / `JsonMoveStore`（`data/moves.json`）。LLM が選んだ座標を含まない道具の呼び出し（craft、equip、withdraw、deposit、smelt、eat、use_item、till / sow / plant の座標なし…）が成功し、次のステップで持ち物か進み具合が変わっていたら、状況（目標・対象・場所）といっしょに覚える。同じ状況で `StepPicker` が `remembered craft(item=wooden_hoe)` として Jev の選択肢に足す（`options(moves=)`、`pick(moves=)`。選ばれたら元の道具をそのまま実行）。帳から選んだ手も次のステップで数え、効かない手（`failed > worked`）は消す。上限 100
+- 組み込み: `play.py` `_act_with_tools`（`settle` → `recall` → `_jev_step(moves, situation)`、LLM の手のあとに `begin`）。設定 `minecraft.agent.moves` / `moves_path` / `moves_record_dir` / `moves_shown` / `max_moves`、`factories/game.py`
+- テスト: `test_moves.py`（新規 11 件）、`test_tool_control.py`（LLM の手が帳に入り Jev に出る流れ）。`pytest tests/` 986 passed
+- 実機 5 分（3 件、`withdraw` の `count` だけ違う 2 件と、選択肢が 12 個の場面で覚えた 1 件。8 回出て 0 回選ばれ、選択肢が増えて Jev の確信度が 0.1 に）を受けて直した: `withdraw` / `deposit` は覚えない、`count` / `times` は保存しない、状況の照合に `offers`（そのとき選択肢に出ていた手の種類）を足す、古い形の手は読み込むときに捨てる。`test_moves.py` 14 件、`pytest tests/` 988 passed（ポートが使用中の 1 件を除く）
+- 限界: 座標のある手（掘る・歩く・置く）は覚えられない（畑の草掘りはブリッジの候補で直した）。破損などの出来事は LLM には出ているが、Jev の状態にはまだ入れていない（設計書 52 §7）。実機は未確認: 数十分流して `logs/moves`（`remember` が出るか、何が覚えられるか）、`logs/steps` の `remembered …` の選択を見る。コミットはしていない
+
+### 待ちの原因の調査: 畑の「育つのを待つ」、ベッドは作らず拾う (2026-09-29)
+
+ユーザーの依頼: 「Jev が wait を選びがち。プロンプトで待ちは最後にできないか」→ 調査（`logs/steps`、選択肢が wait だけだったのが待ちの 77%）。ユーザーの指摘「待っていたのは小麦の成長を見ていただけ。畑を耕している途中で、種も足りなくなっていた」で原因が分かった。
+- 原因: `solver.mjs` の `growing`（畑の作物が育ち途中）の葉が、耕す手を「クワを持っているとき」、まく手を「種を持っているとき」だけ出す。クワが壊れ（耕す手を約 30 回続けた後に `craft stick` が出ていた）、種も使い切ると、選択肢が `wait` だけになり、10 秒ずつ待ち続けた。LLM は 06:59 に草を掘って種を集める手を自分で思いついた（Jev の選択肢には無かった）
+- 直し: 種がなければ種を手に入れる手（草を掘る）、クワがなければクワを作る手を `expand`（`also`）に足す（`getting`: 同じ `need` で計画し葉を取り出す）。`test/crops.test.mjs`
+- ベッド（ユーザー「近くにベッドがあるのにベッドを作ろうとする」）: `placed(bed, home)` は、拾えるベッド（家の外、32 m 以内、断られていない）があれば作る手を出さず拾う手だけにする。`have(bed)` も同じ。断られた手（`refusalAt(dig)`）は拾えるものに数えないので、拾えなければ作る。`goals.mjs`、`furniture.mjs`、`test/furniture.test.mjs`
+- 直さなかったこと: 夜に家で待つのは、外の作業しかない `have` の目標を夜に選ぶため（家の中でできることが本当に無い）。「寝られるなら待ちを外す」は逆（両方出るのは敵が近くて眠れないとき）、「wait だけなら Jev を飛ばして LLM」は 10 秒ごとに LLM を呼ぶので却下、指示文に「待ちは最後」は設計書 11 の測定（優先順位を書くと過剰反応）から却下。夜の小目標の選び方（`GoalChooser`）は未着手
+- テスト: ブリッジ `npm test` 全通過。Python は未変更。コミットはしていない
+
+### Jev の選択の記録を増やす (2026-09-29)
+
+ユーザーの依頼: 「Jev の確信度が低く LLM へのフォールバックが多い。まずログを増やして」（分析は `logs/steps` の 2,617 件: Gemini に回った割合が 9/26 18% → 9/29 53%、`have` の目標 52%、同種の候補が並ぶと 63%、回ると 1 手 10〜17 秒余分。ただし記録が足りず閾値の当否は測れなかった）。
+- `StepPicker`（`use_cases/step_picker.py`）: 1 手を `event: pick` と `event: result` の 2 行にして `step` で結ぶ。Jev に聞かずに回した手（失敗の直後、連続失敗、8 連続、選択肢なし）も理由つきで記録、Jev の一番と見た選択肢と確率の上位 5、Jev の所要時間、結果（ok / refused / 秒 / 先頭 160 字）、Gemini が選んだ手が Jev の選択肢・一番と同じか。`note(by_jev, outcome)`（`ok` は `outcome` から）、`skip(goal, why)`（動きがない・同じ手の繰り返しを `play.py` から記録）
+- 設計書 34 §3.1、CLAUDE.md、`streaming.md`、`default.yaml` のコメント。`test_step_picker.py` に 4 件
+- 閾値や候補は変えていない。次: 数十分流してから `logs/steps` で確信度ごとの成功率、`is_top` の割合、`probabilities` の割れ方を見て、候補の絞り込み・閾値を決める。コミットはしていない
+
+### 思考の上限を緩める (2026-09-29)
+
+ユーザーの依頼: 「思考時の上限トークン数をもうちょっと緩和してほしい。130k あるので余裕がある」。`llm.local.thinking_max_tokens` の `tool_stuck` を 8000 → 16000（`config/default.yaml`、設計書 51 §6）。上限のない他の思考の用途は `max_output_tokens`（16384）で頭打ちなので、それ以上に緩めるならそちらも上げる。最悪の待ちは約 4 分（71 トークン/秒）。テストは 3000 を自分で渡しているので影響なし。コミットはしていない
+
+### 繰り返しを技にする、行き詰まりの数え方の修正 (2026-09-29)
+
+ユーザーの依頼: 「耕す→種まきを 58 マス連続でできると思っていた。LLM が何度もやると判断してスキルにして使い回せるのが理想」（方針 1: 繰り返しを検出して技を書く機会を作る）。
+- 遅さの原因（実機のログ）: 耕したあと `Stagnation` が「10 秒動かない」と判定し、`tool_stuck`（思考あり）が 4955 トークン・約 77 秒。判定が LLM が手を選ぶ時間まで数えていたため、正しい手の途中でも誤作動し、判定が遅さを呼ぶ循環だった。技は一度も書かれていなかった
+- `Stagnation`: 手の実行にかかった秒だけを数える（`record(line, seconds)`。時計とコンストラクタの `clock` は廃止）。`test_stagnation.py`、設計書 51、`default.yaml` のコメント
+- 技: `Repetition`（新規 `use_cases/repetition.py`）と `play.py` への組み込み（繰り返しのステップは Jev を飛ばして LLM に、ツールプロンプトに節）、`SkillInfo.needs_arguments`（Jev に覚えた技が見えていなかった不具合の修正）、`expects` に planted / farmed / facility、`SKILL_SYSTEM` に 40 回の上限と till / sow の書き方、`abilities.yaml`、設計書 22 §13、CLAUDE.md
+- テスト: `pytest tests/` 968 passed（`test_stream_factory.py::test_no_channel_no_chat_and_the_board_is_served` は配信がポートを使っているので除く）。`test_repetition.py`（新規）、`test_step_picker.py`、`test_tool_control.py`
+- オーバーレイに「技を覚えた！」（ユーザーの依頼）: `GoalBoard` が `SkillLearnedEvent` を受けて、スナップショットに `skill_learned {seq, name, description}` を足す。`overlay_vtuber.html` は seq が変わったらトースト「技を覚えた！／「説明」」（`?toast=0` で出さない）。トーストは上書きせず順に出す（技を覚えた瞬間に大目標が終わることがある）。見本（`?demo=1`）の 3 枚目で確認できる。`test_goal_board.py`。ヘッドレス Chrome で DOM の文言と順序は確認したが、アニメーションは撮影に写らず見た目は未確認
+- 未確認（実機）: Python の再起動後、畑の小目標で LLM が `write_skill` を選ぶか、技が確かめ済みになり Jev が選ぶか。ログの印: 「を N 回続けた: 技にする機会を LLM に見せる」、`技を書いた:`、`SkillLearnedEvent`。コミットはしていない
+
+### オーバーレイに 4 層を名前付きで出す (2026-09-29)
+
+ユーザーの依頼: 「オーバーレイから中目標が消えちゃったので最終・大・中・小を表示できるように」。`/api/goals` は `jobs` を返していた（実機で確認）。表示側で、中目標が大目標の中の名前のない小さい行だったこと（`compact=1` では出ない）が「消えた」ように見えた原因。
+- `overlay_vtuber.html`: 中目標を独立したカード（リボン「中目標」、済み n/m・今・待ち 3 つまで）に。小目標の吹き出しのラベルを「いま」→「小目標」。`compact=1` は中目標のカードを隠す。見本（`?demo=1`）の 2 枚目にも中目標
+- `overlay.html`: 「いま:」→「小目標:」、中目標の行に「中目標」を前置
+- テスト: `test_goal_board.py` に 4 層の表示の確認。実機の配信中データで表示を確認（コミット前）
 
 ### 目標の 4 層 段階 3: 改名と語彙の入れ替え（設計書 50 §12） (2026-09-29)
 
@@ -2166,3 +2479,47 @@ Refer to design document: `docs/design/07_phase7_obs_integration.md`
 - Pushed to main branch
 - Issue #8 closed with completion comment
 - Updated CLAUDE.md and design document with completion status
+
+### 2026-09-29 (暗さと松明の在庫、設計書 50 §14)
+- ユーザーから「また画面真っ暗。一定の暗さで松明を置くルールは？常に一定数持ちたい」「暗すぎたら引き返して松明を作る」。既存は暗いとき松明を持っていれば置く候補が出るだけで、在庫の規則はなかった
+- ブリッジ: `needs()` の暗さの文に松明がない場合の言い方、`runner.mjs` の `tooDark`（暗くなり松明もなければ `stopped: too dark to see and no torch`、`craft` / `place_torch_at` / 夜の動詞は除く）、`test/runner.test.mjs` に 3 場面
+- Python: `goal_chooser.py` `torch_options`（4 本未満で `have(torch, n)`、材料が手元にあれば `Option.forced` で聞かずに選ぶ）、`step_picker.py` は `place_torch` の候補を聞かずに選ぶ。テスト `TestTorchStock`、`test_a_torch_is_placed_without_asking_jev_when_it_is_dark`
+- 実機では未確認（ブリッジと Python の再起動が要る）
+
+### 2026-09-29 (破壊禁止の緩和、家具を拾う、助言と今の目標、開いた画面を視聴者に)
+- ユーザーから「破壊禁止は全部。ただ家・建築・施設の場所は覚えてなるべく壊さない。明確に壊すなら壊せるように。近くの家具やアイテムも必要なときは回収」「助言が来たら今の目標との関わりを見直し、合理的なら目標を再設定」「チェストや作業台を開いた画面をクライアントにも」
+- 破壊禁止: 自動の作業（経路探し・集める・整地・候補・`around`）は今までどおり家・建物・建築中の家を避ける。道具 `dig` は断るが、`demolish: true` で名指しすれば掘れる（断りの台帳も通り越す）。`tools.mjs`、`tool_catalog.py`、`abilities.yaml` に `demolish`。限界: 家の壁を掘ると、夜の避難で `repairWall` が直すことがある
+- 家具を拾う: `furniture.mjs` の `placedBedToTake` を `placedToTake(bot, state, item)` に一般化（作業台・かまど・チェスト・ベッド）、`goals.mjs` の `have`（1 個）と `placed(item, home)` で作らず拾う手を出す。テスト `furniture.test.mjs`、`tools.test.mjs`
+- 助言と今の目標（設計書 49 §8）: 返答に `relevance` / `relevance_reason`、`unjudged` が差し戻す。テスト `TestAdviceIsComparedWithTheCurrentGoal`
+- 開いた画面（設計書 53）: `mirror.mjs` `relayWindows`（クリック後に中身を送り、閉じるのは最後の変化から 2 秒後）。テスト `mirror.test.mjs`。作業台なしの 2x2 クラフトは映らない
+- どれも実機では未確認。ブリッジと Python の再起動が要る。pytest 1004、ブリッジ 311
+
+### 2026-09-29 (中目標と小目標が同じ、設計書 50 §16)
+- ユーザーから「やっぱり中目標と小目標が同じ」。`logs/goals` と `data/mission.json`: 中目標が have(raw_iron, 3) / have(wheat, 6) / have(oak_log, 4) など素材の採集で、小目標もそのまま。次の一歩（§13 B）は作るものの中目標にしか効かない
+- 原因: プロンプトの決まりを local モデルが守らず、しかも決定のスキーマの説明が「jobs = 外出ごとに 1 つ」「trips: 1 グループ = 1 中目標」と逆を指していた。スキーマを直し、`/check` の `gather`（`isGather`）で `_check_job_grain` が素材だけの中目標を差し戻す（束・大目標の条件・書いてある中目標・最後の試行は通す）
+- テスト: `TestJobGrain`、`test_a_job_that_only_gathers_a_raw_material_is_sent_back`、`next-step.test.mjs` に 2 件。実機では未確認（再起動が要る）
+
+### 2026-09-29 (小麦を待っている？→ 3 回死んで持ち物が空、設計書 50 §17)
+- ユーザーから「ずっと小麦の成長待ってる？」。`logs/steps` は待ってはいない（`wait` は 1 回）。畑 wheat_farm_2 は 64 マス（17 マス耕し済み・47 マス未耕・水 0）で、鍬と木がなくて広げられない。ボットは今の走りで 3 回死んでいて（5 分前が最新）持ち物が空、体力 1/20・満腹度 0〜3 のまま外に出ていた。最初に「畑が小さい」と言ったのは誤り
+- 死んで落とした持ち物を取りに戻す `recover_items`（4.5 分以内、2 回まで、聞かずに選ぶ）。テスト `recover.test.mjs`、`test_step_picker.py`
+- ユーザーの問い「生活インフラの構築・効率化の指示ではダメだったか」: 指示は既にあり（効率化優先、見直しの表）、畑 2 つ・植林場・倉庫は設計されていたが、植林場は植える苗がなく、畑は鍬の木がなく、街の段階 2「Automated Resources」は今の段階ではない。指示より、木・食料・体力の悪循環（死ぬと空になる）が原因
+- 中目標と小目標が同じ: 動いている Python は 22:11 起動で、素材だけの中目標の差し戻し（§16）を含まない。再起動が要る。保存済みの単一素材の中目標（済み 7 件）はそのまま表示される
+
+### 2026-09-29 (管理画面、設計書 54)
+- ユーザーから「web の管理画面がほしい。任意の言葉を喋らせる、介入の指示、プリセット（配信のはじめ・さいごの挨拶）」。確認して決めた: 介入の指示は配信者の指示として扱う、アクセスはこのマシンからだけ
+- `/admin`（目標ボードと同じポート）: 喋らせる、プリセットの作成・編集・削除・使用（`data/presets.json`）、介入の指示（返事の経路に `producer=True`。大目標は視聴者の上限に数えない、「今」なら小目標を決め直す）、小目標を決め直させる、いまの様子、送ったもの。ループバックだけ・`Host` / `Origin` の確認・書き込みのヘッダー
+- ファイル: `presentation/web/admin.py` / `admin.html`、`application/use_cases/presets.py`、`ports/output/preset_store.py`、`storage/json_preset_store.py`、`generate_response.py` / `llm_service.py` / プロンプト（`producer`）、`factories/stream.py`。テスト `test_presets.py`、`test_admin.py`、`TestProducerInstruction`。ブラウザで表示を確かめた（127.0.0.1 の別ポートで起動）
+- 実機の配信では未確認（Python の再起動が要る）。トークンは付けていない
+
+
+### 2026-09-30 (昼の木陰で暗いと判定しない、設計書 50 §14.1)
+- ユーザーから「トーチの条件が昼の木の下でも発動する。夜または半透明ブロックを除くブロックの下（地下・洞窟）で明るさが一定以下の場合にできるか」。確認して決めた: 夜の地上は暗いとしない（今のまま）、覆いの判定と空の光の推定の両方を直す
+- 原因: `isCovered` が頭上の `boundingBox === 'block'` を何でも覆いにし（除外は葉とガラスだけ）、幹・枝の原木、ハーフブロック、階段まで覆いになっていた。光の値は屋外で空の光 0 を返すので使えない
+- `observe.mjs`: 覆いは `filterLight === 15` のブロックだけ、`skyNear`（マンハッタン距離 7 以内に空が開いた柱があれば暗くない）を `isDark` に足した。テスト `torch.test.mjs` に 2 件（木陰・葉・ガラス、洞窟・深い屋根・7 ブロック先の空）、`runner.test.mjs` のモックの registry に `stone.filterLight`。ブリッジ 319 通る
+- 実機の木陰・洞窟では未確認（ブリッジの再起動が要る）
+
+### 2026-09-30 (オーバーレイに「考え中」、設計書 43 追記)
+- ユーザーから「思考中はそのことが分かるようにオーバーレイに考え中...みたいななにか出したい」。目標の決定・計画の作成の間だけ出す（ステップごとの道具選択は数秒なので対象外）
+- `GoalDecidedEvent`（`domain/events.py`）を足し、`_while_deciding` の `finally` で発行。`GoalBoard` のスナップショットに `thinking`、`overlay_vtuber.html`（跳ねる点つきの帯、`?demo=1` の 2 枚目に例）と `overlay.html`
+- テスト: `test_it_announces_that_it_stopped_thinking_even_when_the_decision_fails`、`test_it_says_while_the_llm_is_thinking`、ページに `data.thinking`。実機では未確認（Python の再起動が要る）
+

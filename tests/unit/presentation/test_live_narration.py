@@ -153,11 +153,10 @@ async def test_a_long_action_gets_new_lines_with_what_changed_and_no_repeats():
     assert "行動の結果: dig oak_log → 成功: got" in events
     assert "持ち物の増減: oak_log +4" in events
     assert "北の森で原木を集めてくるね" in events[-1]  # 直前に話したこととは違う内容に
-    # 予定を理由なく変えない
-    # （2026-09-27:「パンをクラフトするよ」の 30 秒後に「パンは明日作れる」）。
-    # ただし正しいのは今の状態（直前の誤り「家の中に入った」を、外にいるのに繰り返した）
-    assert "予定を理由なく変えない" in events[-1]
+    # 正しいのは今の状態（直前の誤り「家の中に入った」を、外にいるのに繰り返した）。「予定を理由なく
+    # 変えない」の指示は、状態より直前の誤りを優先させたので消した（設計書 65 §5: 食い違いはコードが見る）
     assert "正しいのは今の状態" in events[-1]
+    assert "予定を理由なく変えない" not in events[-1]
     assert events[0] == f"今の小目標: {GOAL.describe()}（{GOAL.reason}）"
 
 
@@ -262,3 +261,180 @@ async def test_nothing_is_said_while_the_small_goal_keeps_failing():
     clock.now = 50
     await live.tick()
     assert said == ["北の森で原木を集めてくるね"]
+
+
+@pytest.mark.asyncio
+async def test_small_talk_fills_a_long_quiet_when_nothing_changes():
+    """夜の穴の中で朝を待つ間、状況は変わらない。idle_seconds 黙っていたら、状況を渡して雑談を作らせる。"""
+    live, clock, said, _, llm, state = _setup(lines=["穴の中は静かで、ちょっと落ち着くなあ"], intent="")
+    live._idle = 60
+    clock.now = 10
+    await live.tick()  # 基準
+    clock.now = 50
+    await live.tick()
+    assert said == []  # 変わらず、まだ 60 秒黙っていない
+    clock.now = 75
+    await live.tick()
+    assert said == ["穴の中は静かで、ちょっと落ち着くなあ"]
+    kwargs = llm.generate_commentary.await_args.kwargs
+    assert kwargs["purpose"] == "live" and kwargs["record"] is False
+    events = kwargs["recent_events"]
+    assert "状況は変わっていない" in events[-1] and "新しく約束しない" in events[-1]
+    # 話したあとは、また idle_seconds 待つ
+    clock.now = 100
+    await live.tick()
+    assert len(said) == 1
+
+
+@pytest.mark.asyncio
+async def test_small_talk_is_off_by_default_and_never_while_failing_or_not_acting():
+    live, clock, said, _, llm, state = _setup(lines=["今日はいい天気だね"], intent="")
+    clock.now = 10
+    await live.tick()
+    clock.now = 500
+    await live.tick()
+    assert said == []  # idle_seconds 0: 変わるまで黙る（従来どおり）
+    live._idle = 60
+    state["activity"] = Activity(acting=True, goal=GOAL, intent="", failing=2, observation=_obs({}))
+    await live.tick()
+    state["activity"] = Activity(acting=False, goal=GOAL, intent="", observation=_obs({}))
+    await live.tick()
+    assert said == [] and llm.generate_commentary.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_thinking_aloud_fills_the_wait_for_the_next_goal():
+    """目標の決定や行き詰まりで 2〜6 分黙っていた（2026-09-30）: 独り言を話す。行動は言わない。"""
+    live, clock, said, _, llm, state = _setup(lines=["どうしようかな、水の上は落ち着かないなあ"], intent="")
+    live._thinking = 40
+    state["activity"] = Activity(goal=GOAL, intent="北の森で原木を集めてくるね", observation=_obs({}))
+    clock.now = 0
+    await live.tick()  # 待ち始め
+    clock.now = 30
+    await live.tick()
+    assert said == []  # まだ 40 秒待っていない
+    clock.now = 45
+    await live.tick()
+    assert said == ["どうしようかな、水の上は落ち着かないなあ"]
+    kwargs = llm.generate_commentary.await_args.kwargs
+    assert kwargs["purpose"] == "live" and kwargs["record"] is False
+    assert "考え中の独り言" in kwargs["recent_events"][-1] and "やっていると言わない" in kwargs["recent_events"][-1]
+    assert "北の森" not in " ".join(kwargs["recent_events"])  # 選ばれていない行動は渡さない
+    clock.now = 60
+    await live.tick()
+    assert len(said) == 1  # 話したあとは、また 40 秒待つ
+
+
+@pytest.mark.asyncio
+async def test_thinking_aloud_also_fills_a_stuck_small_goal_and_is_off_by_default():
+    live, clock, said, _, llm, state = _setup(lines=["うーん、うまくいかないなあ"], intent="")
+    state["activity"] = _acting(_obs({}), failing=2)
+    clock.now = 500
+    await live.tick()
+    assert said == [] and llm.generate_commentary.await_count == 0  # thinking_seconds 0: 従来どおり黙る
+    live._thinking = 40
+    clock.now = 510
+    await live.tick()  # 待ち始め
+    clock.now = 600
+    await live.tick()
+    assert said == ["うーん、うまくいかないなあ"]
+
+
+@pytest.mark.asyncio
+async def test_thinking_aloud_needs_a_sustained_wait_not_a_short_gap_between_actions():
+    """数秒の選び直し（行動と行動の間）では話さない。待ちが thinking_seconds 続いてから。"""
+    live, clock, said, _, llm, state = _setup(lines=["どうしようかな"], intent="")
+    live._thinking = 40
+    clock.now = 0
+    state["activity"] = _acting(_obs({}))
+    await live.tick()
+    for t in (50, 60, 70):  # 行動している。選び直しの隙間ごとに待ち始めが戻る
+        clock.now = t
+        state["activity"] = Activity(goal=GOAL, intent="", observation=_obs({}))
+        await live.tick()
+        clock.now = t + 1
+        state["activity"] = _acting(_obs({}))
+        await live.tick()
+    assert said == [] and llm.generate_commentary.await_count == 0
+
+
+class _Guard:
+    """照合の代わり: 決めた文だけ通す。作り直す文を返す。"""
+
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.seen = []
+
+    async def verify(self, text, regenerate):
+        self.seen.append(text)
+        return await self.verdict(text, regenerate)
+
+
+@pytest.mark.asyncio
+async def test_a_generated_line_is_checked_before_it_is_said_but_a_tool_intent_is_not():
+    async def pass_through(text, regenerate):
+        return text
+
+    live, clock, said, _, llm, state = _setup(lines=["ここは静かだね"])
+    live._guard = _Guard(pass_through)
+    live._mark(state["activity"])
+    live._last_intent = "北の森で原木を集めてくるね"  # intent は読み終わった
+    state["activity"] = Activity(
+        acting=True, goal=GOAL, intent="北の森で原木を集めてくるね", observation=_obs({"oak_log": 4})
+    )
+    clock.now = 20
+    await live.tick()
+
+    assert said == ["ここは静かだね"]
+    assert live._guard.seen == ["ここは静かだね"]
+
+    live, clock, said, _, llm, state = _setup(lines=["使われない"], intent="北の森で原木を集めてくるね")
+    live._guard = _Guard(pass_through)
+    live._mark(state["activity"])
+    state["activity"] = Activity(
+        acting=True, goal=GOAL, intent="南の洞窟で鉄を掘るよ", observation=_obs({"oak_log": 4})
+    )
+    clock.now = 20
+    await live.tick()
+
+    assert said == ["南の洞窟で鉄を掘るよ"]  # 道具の intent は行動そのものなので、照らさない
+    assert live._guard.seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_line_that_fails_the_check_is_rewritten_from_the_same_events_or_dropped():
+    calls = []
+
+    async def rewrite(text, regenerate):
+        calls.append(text)
+        return await regenerate(["前の案は食い違っている"])
+
+    live, clock, said, _, llm, state = _setup(lines=["家に入れたよ", "まだ外だよ"])
+    live._guard = _Guard(rewrite)
+    live._mark(state["activity"])
+    live._last_intent = "北の森で原木を集めてくるね"
+    state["activity"] = Activity(
+        acting=True, goal=GOAL, intent="北の森で原木を集めてくるね", observation=_obs({"oak_log": 4})
+    )
+    clock.now = 20
+    await live.tick()
+
+    assert calls == ["家に入れたよ"] and said == ["まだ外だよ"]
+    first, second = llm.generate_commentary.await_args_list
+    assert second.kwargs["recent_events"] == first.kwargs["recent_events"] + ["前の案は食い違っている"]
+    assert second.kwargs["purpose"] == "live" and second.kwargs["record"] is False
+
+    async def drop(text, regenerate):
+        return None
+
+    live, clock, said, _, llm, state = _setup(lines=["家に入れたよ"])
+    live._guard = _Guard(drop)
+    live._mark(state["activity"])
+    live._last_intent = "北の森で原木を集めてくるね"
+    state["activity"] = Activity(
+        acting=True, goal=GOAL, intent="北の森で原木を集めてくるね", observation=_obs({"oak_log": 4})
+    )
+    clock.now = 20
+    await live.tick()
+
+    assert said == []

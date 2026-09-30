@@ -6,6 +6,7 @@
 import vec3Pkg from 'vec3'
 import { round, bearing, isLog } from './observe.mjs'
 import { buildBox } from './builds.mjs'
+import { refusalAt } from './refusals.mjs'
 import { CROPS, cropByBlock, cropOf, cropStatus, ageOf, isDry, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -95,7 +96,7 @@ function contents (bot, state, fac, jaOf) {
     const s = layoutStatus(bot, fac)
     // 畑は、湿っていない耕地の数も（知らせるだけ: 水を引くかどうかは判断に任せる）
     const work = fac.kind === 'farm'
-      ? { to_till: s.till.length, to_sow: s.sow.length, dry: fac.layout.cells.filter((c) => isDry(bot.blockAt(new Vec3(c.x, c.y, c.z)))).length }
+      ? { to_till: s.till.length, to_sow: s.sow.length, to_water: s.water.length, dry: fac.layout.cells.filter((c) => isDry(bot.blockAt(new Vec3(c.x, c.y, c.z)))).length }
       : { to_plant: s.plant.length }
     const what = fac.kind === 'farm' ? { crop: fac.layout.crop, crop_ja: jaOf(fac.layout.crop) } : { sapling: fac.layout.sapling, spacing: fac.layout.spacing }
     return { ...what, cells: s.total, done: s.done, ...work, ...(s.unseen ? { out_of_view: s.unseen } : {}) }
@@ -166,6 +167,8 @@ export function facilitiesStatus (bot, state, jaOf = () => '') {
 export const DESIGNABLE = ['farm', 'tree_farm', 'mine']
 export const FACILITY_NAME = /^[a-z][a-z0-9_]{1,31}$/
 export const FARM_SIDE = { min: 1, max: 16 }
+const WATER_SPAN = 9 // 水 1 マスが湿らせる四角（縦横 9）
+const HYDRATION = 4 // 水から耕地までの距離（縦横）
 export const TREES = { min: 1, max: 32 }
 export const SPACING = { min: TREE_GAP, max: 6 } // 苗木どうしの間（farming.mjs の TREE_GAP 以上: 植える規則と同じ）
 const USABLE_SHARE = 0.6 // 畑の四角のうち耕せるマスがこれ未満なら、そこには作れない
@@ -233,7 +236,8 @@ function groundWithPlants (bot, x, z, y0) {
   return null
 }
 
-// 畑: 幅 x 奥行きの四角（向きは両方試す）のうち、耕せる地面が同じ高さ（±1）に一番多く並ぶ所
+// 畑: 幅 x 奥行きの四角（向きは両方試す）のうち、耕せる地面が同じ高さ（±1）に一番多く並ぶ所。
+// 四角の中に水のマスを 9 マスごとに 1 つ置く（水から縦横 4 マス以内の耕地が湿る）: { cells: 作物のマス, water: 水のマス }
 function farmLayout (bot, cells, area, width, depth) {
   const byXZ = new Map(cells.filter((c) => TILLABLE.test(c.ground.name) || c.ground.name === 'farmland')
     .filter((c) => !nearName(bot, c.cell, LOGS, 1)).map((c) => [cellKey(c.cell), c]))
@@ -247,7 +251,7 @@ function farmLayout (bot, cells, area, width, depth) {
         const ys = inside.map((c) => c.cell.y).sort((a, b) => a - b)
         const mid = ys[Math.floor(ys.length / 2)]
         const level = inside.filter((c) => Math.abs(c.cell.y - mid) <= 1)
-        if (!best || level.length > best.cells.length) best = { cells: level, size: w * d }
+        if (!best || level.length > best.cells.length) best = { cells: level, size: w * d, x0, z0, w, d }
       }
     }
   }
@@ -255,7 +259,45 @@ function farmLayout (bot, cells, area, width, depth) {
     const most = best ? best.cells.length : 0
     throw new FacilityError(`not enough flat dirt or grass for a ${width}x${depth} farm in these zones (at most ${most} of ${width * depth} cells): choose a smaller size or other zones`)
   }
-  return best.cells.map((c) => ({ x: c.cell.x, y: c.cell.y - 1, z: c.cell.z })) // 耕すのは地面のブロック
+  const { crops, water } = waterCells(bot, best)
+  if (crops.length + water.length < best.size * USABLE_SHARE) {
+    throw new FacilityError(`not enough ground for a ${width}x${depth} farm with water in these zones (${crops.length} crop cells and ${water.length} water of ${width * depth}: the rest is uneven or out of the water's reach): choose a smaller size or other zones`)
+  }
+  // 耕すのは地面のブロック（y は地面）。水も地面のブロックを掘ってそこに置く
+  const at = (c) => ({ x: c.cell.x, y: c.cell.y - 1, z: c.cell.z })
+  return { cells: crops.map(at), water: water.map(at) }
+}
+
+// 水のマスを選ぶ。四角を縦横 9 マスずつに区切り、それぞれで一番多く湿らせるマス（同じなら真ん中に近いマス）に 1 つ。
+// 水から縦横 HYDRATION マス以内で、水と同じ高さか 1 段低い耕地が湿る。どの水も届かないマスは畑に入れない。
+// 水は地面のブロックを掘った穴に置くので、穴の横 4 マスの地面が水の高さ以上でなければ水が流れ出す（そういうマスは選ばない）
+function waterCells (bot, { cells, x0, z0, w, d }) {
+  const solid = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.boundingBox === 'block'
+  const reach = (wet, c) => c !== wet && Math.max(Math.abs(c.cell.x - wet.cell.x), Math.abs(c.cell.z - wet.cell.z)) <= HYDRATION &&
+    [0, 1].includes(wet.cell.y - c.cell.y)
+  const water = []
+  let unsafe = false
+  for (let sx = 0; sx < w; sx += WATER_SPAN) {
+    for (let sz = 0; sz < d; sz += WATER_SPAN) {
+      const cw = Math.min(WATER_SPAN, w - sx)
+      const cd = Math.min(WATER_SPAN, d - sz)
+      const [cx, cz] = [x0 + sx + Math.floor(cw / 2), z0 + sz + Math.floor(cd / 2)]
+      const chunk = cells.filter((c) => c.cell.x >= x0 + sx && c.cell.x < x0 + sx + cw && c.cell.z >= z0 + sz && c.cell.z < z0 + sz + cd)
+      if (chunk.length < 2) continue // 水だけになる区切りは、まわりの水が届くなら届く
+      const pick = chunk
+        .filter((c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dz]) => solid(c.cell.x + dx, c.cell.y - 1, c.cell.z + dz)))
+        .map((c) => ({ c, covered: chunk.filter((o) => reach(c, o)).length }))
+        .sort((a, b) => b.covered - a.covered || Math.hypot(a.c.cell.x - cx, a.c.cell.z - cz) - Math.hypot(b.c.cell.x - cx, b.c.cell.z - cz))[0]
+      if (pick) water.push(pick.c)
+      else unsafe = true
+    }
+  }
+  if (!water.length) {
+    throw new FacilityError(unsafe
+      ? 'there is no safe place for water in this farm (the ground around every cell is uneven: water would run out of its hole): choose other zones or a flatter place'
+      : 'the farm is too small: one cell in every 9x9 is water, so it needs at least 2 cells (a 2x1 farm is 1 water and 1 crop)')
+  }
+  return { crops: cells.filter((c) => !water.includes(c) && water.some((wet) => reach(wet, c))), water }
 }
 
 // 植林場: 間隔 spacing の格子で、苗木を植えられる地面（範囲の中心に近い順に count か所）
@@ -301,7 +343,7 @@ export function registerFacility (bot, state, name, body) {
       if (!Number.isInteger(n) || n < FARM_SIDE.min || n > FARM_SIDE.max) throw new FacilityError(`${k} must be ${FARM_SIDE.min}-${FARM_SIDE.max}`)
       return n
     }
-    layout = { crop, cells: farmLayout(bot, cells, area, side('width'), side('depth')) }
+    layout = { crop, ...farmLayout(bot, cells, area, side('width'), side('depth')) }
   } else if (kind === 'mine') {
     layout = mineLayout(bot, state, area, name, design)
   } else {
@@ -315,7 +357,7 @@ export function registerFacility (bot, state, name, body) {
   }
   // 採掘場の範囲は地表の輪（4 x 4）。坑道は地下なので、上の区画はほかの施設に使える
   const e = layout.cells[0]
-  const box = kind === 'mine' ? boxOf(RING.map(([dx, dz]) => ({ x: e.x + dx, y: e.y, z: e.z + dz }))) : boxOf(layout.cells)
+  const box = kind === 'mine' ? boxOf(RING.map(([dx, dz]) => ({ x: e.x + dx, y: e.y, z: e.z + dz }))) : boxOf([...layout.cells, ...(layout.water ?? [])])
   state.facilities[name] = {
     name,
     kind,
@@ -332,7 +374,16 @@ export function registerFacility (bot, state, name, body) {
 
 // 設計した施設の今: 済んだマス、耕す・まく・植えるマス、見えていないマス
 export function layoutStatus (bot, fac) {
-  const out = { total: fac.layout.cells.length, done: 0, till: [], sow: [], plant: [], unseen: 0 }
+  const water = fac.layout.water ?? []
+  const out = { total: fac.layout.cells.length + water.length, done: 0, till: [], sow: [], plant: [], water: [], unseen: 0 }
+  // 水のマス（畑）: 水が置いてあれば済み。掘って水を置くマスなので、耕すマスには数えない
+  for (const c of water) {
+    const p = new Vec3(c.x, c.y, c.z)
+    const b = bot.blockAt(p)
+    if (!b) out.unseen++
+    else if (b.name === 'water') out.done++
+    else out.water.push(p)
+  }
   for (const c of fac.layout.cells) {
     const p = new Vec3(c.x, c.y, c.z)
     const b = bot.blockAt(p)
@@ -391,6 +442,11 @@ export function layoutAt (state, kind, pos) {
   return Object.values(state.facilities ?? {}).find((f) => f.layout && f.kind === kind && f.layout.cells.some((c) => sameCell(c, pos))) ?? null
 }
 
+// 畑の水のマス（掘って水を置く地面のブロック）を持つ畑
+export function waterAt (state, pos) {
+  return Object.values(state.facilities ?? {}).find((f) => f.layout && f.kind === 'farm' && (f.layout.water ?? []).some((c) => sameCell(c, pos))) ?? null
+}
+
 // 家のまわりの、設計した畑の外の、上が空いた耕地（前からある畑の空き）
 function homeFreeFarmland (bot, state) {
   const home = state.home
@@ -401,8 +457,9 @@ function homeFreeFarmland (bot, state) {
     .filter((p) => bot.blockAt(p.offset(0, 1, 0))?.name === 'air' && !designed.some((d) => inBox(d.box, p)))
 }
 
-// 1 つの畑の、その作物: 植わった位置（作物のブロック）から { planted, ripe, ages, pos, free }
-function measureCrops (bot, crop, positions, free) {
+// 1 つの畑の、その作物: 植わった位置（作物のブロック）から { planted, ripe, ages, pos, free, sow }。
+// sow は free のうち、耕し済みでまだ何も植わっていないマス
+function measureCrops (bot, crop, positions, free, sow = free, water = 0) {
   const mature = CROPS[crop].mature
   const ages = positions.map((p) => ageOf(bot.blockAt(p)))
   const ripe = positions.filter((_, i) => ages[i] >= mature)
@@ -413,12 +470,15 @@ function measureCrops (bot, crop, positions, free) {
     dry: positions.filter((p) => isDry(bot.blockAt(p.offset(0, -1, 0)))).length,
     ages: ages.length ? [Math.min(...ages), Math.max(...ages)] : null,
     free,
+    sow,
+    water,
     pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : null
   }
 }
 
-// その作物の畑の合計: { planted, ripe, dry, ages, mature, free, pos, remembered, farms: [{ name, planted, ripe,
-// dry, free, remembered }] }。free は、まだまける・耕せるマス（設計した畑の残りと、家の畑の空いた耕地）。
+// その作物の畑の合計: { planted, ripe, dry, ages, mature, free, sow, water, pos, remembered, farms: [{ name, planted,
+// ripe, dry, free, sow, water, remembered }] }。free は、まだまける・耕せるマス（設計した畑の残りと、家の畑の空いた耕地）、
+// sow はそのうち耕し済みでまだまいていないマス、water はまだ水を置いていない水のマス。
 // dry は、植わっているマスのうち下の耕地が湿っていないもの（知らせるだけ。目標の判定には使わない）。
 // pos は熟したもの（なければ植わったもの）がある、ボットに一番近い畑の 1 マス
 export function cropFarms (bot, state, crop) {
@@ -439,7 +499,7 @@ export function cropFarms (bot, state, crop) {
     if (s.unseen === s.total) { recall(fac.name); continue }
     const positions = fac.layout.cells.map((c) => new Vec3(c.x, c.y + 1, c.z))
       .filter((p) => bot.blockAt(p.offset(0, -1, 0))?.name === 'farmland' && cropByBlock(bot.blockAt(p)?.name) === crop)
-    keep(fac.name, measureCrops(bot, crop, positions, s.till.length + s.sow.length))
+    keep(fac.name, measureCrops(bot, crop, positions, s.till.length + s.sow.length, s.sow.length, s.water.length))
   }
   if (state.home) {
     if (!bot.blockAt(state.home.inside)) recall(HOME_FARM)
@@ -460,9 +520,11 @@ export function cropFarms (bot, state, crop) {
     ages: planted.length ? [Math.min(...planted.map((f) => f.ages[0])), Math.max(...planted.map((f) => f.ages[1]))] : null,
     mature: CROPS[crop].mature,
     free: farms.reduce((n, f) => n + f.free, 0),
+    sow: farms.reduce((n, f) => n + (f.sow ?? f.free), 0),
+    water: farms.reduce((n, f) => n + (f.water ?? 0), 0),
     pos: at?.pos ?? null,
     remembered: farms.length > 0 && farms.every((f) => f.remembered),
-    farms: farms.map(({ name, planted, ripe, dry, free, remembered }) => ({ name, planted, ripe, dry: dry ?? 0, free, ...(remembered ? { remembered } : {}) }))
+    farms: farms.map(({ name, planted, ripe, dry, free, sow, water, remembered }) => ({ name, planted, ripe, dry: dry ?? 0, free, sow: sow ?? free, water: water ?? 0, ...(remembered ? { remembered } : {}) }))
   }
 }
 
@@ -473,7 +535,7 @@ export function farmSummary (bot, state) {
   for (const crop of Object.keys(CROPS)) {
     const f = cropFarms(bot, state, crop)
     if (!f.planted && !designedFarms(state, crop).length) continue
-    out[crop] = { planted: f.planted, ripe: f.ripe, dry: f.dry, ages: f.ages, mature: f.mature, free: f.free, farms: f.farms.map((x) => x.name), ...(f.remembered ? { remembered: true } : {}) }
+    out[crop] = { planted: f.planted, ripe: f.ripe, dry: f.dry, ages: f.ages, mature: f.mature, free: f.free, water: f.water, farms: f.farms.map((x) => x.name), ...(f.remembered ? { remembered: true } : {}) }
   }
   return out
 }
@@ -493,7 +555,8 @@ export function workCell (bot, state, kind, { facility = null, crop = null, sapl
   if (kind === 'sow' && !facility) {
     for (const p of homeFreeFarmland(bot, state)) cells.push({ pos: p, facility: HOME_FARM })
   }
-  return cells.sort((a, b) => a.pos.distanceTo(me) - b.pos.distanceTo(me))[0] ?? null
+  // さっき断られたマス（耕せなかった、まけなかった）は選ばない。別のマスがあればそちらへ
+  return cells.filter((c) => !refusalAt(state, kind, c.pos)).sort((a, b) => a.pos.distanceTo(me) - b.pos.distanceTo(me))[0] ?? null
 }
 
 // ---- 採掘場（設計書 47 §16）: 4 x 4 の輪を回って下りるらせん階段、下の部屋、そこから横へ延びる坑道 ----
@@ -659,6 +722,9 @@ function mineIndex (fac) {
   return index
 }
 const mines = (state) => Object.values(state.facilities ?? {}).filter((f) => f.kind === 'mine' && f.layout)
+
+// 設計した採掘場の名前と状態（planned / building / done）。地下の鉱石が見つからないとき、作るか続けるかを言う材料
+export const mineSummaries = (state) => mines(state).map((f) => ({ name: f.name, status: f.status }))
 
 // 採掘場のセルか（空けておく所: 足場も土も置かない、整地で埋めない）
 export function onMineCell (state, p) {

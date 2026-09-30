@@ -22,6 +22,7 @@ from ailoveshen.domain.value_objects import (
     GoalPredicate,
     HouseBlueprint,
     Mission,
+    Objective,
     SkillInfo,
     ToolOutcome,
     TownDefinition,
@@ -259,7 +260,9 @@ $brief
 $where
 ## 種類
 - farm（畑）: crop（wheat / carrots / potatoes / beetroots）と大きさ width x depth（各 1〜16）。
-  全部のマスを耕して種をまくと完成。区画の平らな地面に収まる大きさにする（1 区画は 8 x 8）
+  四角の中の 9 x 9 ごとに 1 マスは水のマスになり（水のバケツを置く。水が届いた耕地だけが湿って、
+  何も植わっていなくても土に戻らず、作物が速く育つ）、残りを耕して種をまくと完成。作物のマスは
+  幅 x 奥行き − 水のマス（9 x 9 なら 80 マス、2 x 1 なら 1 マス）。区画の平らな地面に収まる大きさにする（1 区画は 8 x 8）
 - tree_farm（植林場）: sapling（苗木の種類。何でもよければ sapling）と本数 count（1〜32）、
   苗木どうしの間 spacing（4〜6。木が育つ間隔）。全部のマスに植えると完成。1 区画に 4 本ほど
 - mine（採掘場）: 底の高さ bottom_y と、底の部屋から横へ延びる坑道の本数 tunnels（0〜4）と長さ
@@ -274,6 +277,56 @@ $where
 $previous_error
 ## 出力
 指定の JSON で出力してください。
+""")
+
+# 大目標の計画（docs/design/50 §18）: 段階（中目標）と、それぞれの小目標の並び、前提つき（purpose=plan）
+PLAN_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者の、大目標を進める計画を立てます。
+大目標を段階（中目標）に分け、それぞれを小目標（今やる 1 つの具体的な作業）の並びにします。
+計画は一度立てたら、失敗や行き詰まりがあるまでこのとおりに進めます。材料の作り方の分解と細かい操作は
+自動ですが、何を先にそろえるか、どの順に進めるかはここで決めます。
+
+## 大目標
+$objective
+
+## 今していること
+$activity
+$town_map
+$replan
+## 計画の書き方
+- 中目標（jobs）: 大目標を達する段階を、順番どおりに 1〜6 個。title は段階の名前（日本語の名詞句。
+  例: 水源の確保、種の用意）で、条件（predicate…）は「その段階が終わった状態」。条件で書けない段階
+  （例: 土地の確保）は、その段階の最後の小目標の条件を書く。最後の中目標は大目標の完了条件に達する
+  もの（完了条件そのものでよい）
+- 小目標（steps）: 中目標を進める具体的な一歩を順番どおりに（8 個まで）。条件は世界から判定される
+  （持つ、置く、植える、整地する…）。今もう満たしている小目標は自動で飛ばされるので、要るなら
+  持っている物も書いてよい
+- 前提（needs）: 小目標の前に要るもの（2 段まで）。小目標がもう済んでいれば前提も飛ばされる。材料が
+  なければ集める小目標を前提に書く（バケツの前に鉄。鉄がなければその前に鉄鉱石）。前提のない
+  小目標は空にする
+- 今の持ち物・近くにあるもの・覚えている場所を見て、集め直しや遠回りをしない。1 つの小目標は数分
+  で終わる大きさ。素材の採集だけの中目標は作らない（何のための素材かを中目標にする）
+- 済んだ中目標は書き直さない。視聴者の頼みの中目標は書かなくても残る
+- 中目標に大目標の完了条件を書くのは最後の 1 つだけ。途中の段階は、その前にそろえるものにする。
+  同じ条件の中目標や、同じ title の中目標を並べない
+- built(名前) は、大目標の完了条件に入っている名前の建物か、もう建ててある建物だけ。家そのものは
+  名前なしの built で、存在しない名前（built(house) など）は判定できないので書かない
+- 品目は Minecraft の正式な名前 1 つ（oak_log、oak_planks、oak_door）。複数形（oak_logs）、まとめた
+  名前や造語（planks_and_door、wooden_tool_materials）は判定できない。いくつもの物は小目標を分ける
+- 家がまだ無い間（「家:」に建ててあると書かれていない間）は、placed(…, near_home) や placed(…, home)、
+  at_home を書かない（家ができてから）。場所は x,y,z か、大目標の built の名前（build:名前）だけ。
+  leveled は where が home か x,y,z（座標）で、distance が要る
+
+## 例（畑を広げる: facility(wheat_farm_3)）
+1. 水の用意 have(water_bucket, 1): 小目標 have(water_bucket, 1)（前提 have(bucket, 1)（前提 have(iron_ingot, 3)））
+2. 農具と種の用意 have(wheat_seeds, 16): 小目標 have(hoe, 1)、have(wheat_seeds, 16)（近くの草を刈る）
+3. 畑を耕してまく facility(wheat_farm_3): 小目標 facility(wheat_farm_3)
+
+## 使える条件
+$conditions
+$previous_error
+## 出力
+指定の JSON で出力してください（outline、jobs）。
 """)
 
 _GRID_FIXED = {
@@ -411,10 +464,11 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
 - 例外は身を守る小目標（through_night、at_home、cleared、have(food, n)）で、serves: survival なら
   大目標に関係なく選べる（夜や空腹は待ってくれない）
 - 食べ物を探すときも have(food, n) を選ぶ。近くになければ、畑や狩りなど手に入れる方法を考える
-- 大目標は「何ができた状態か」（数十分）、小目標はその手前の「次の一歩」（数分）。同じ条件にするのは
-  材料がそろって仕上げだけのとき（配信の画面に 2 つ並ぶので、同じ文では伝わらない）。例:
-  家を建てる (built) → have(log, 12) → have(planks, 40) → built、
-  食料を蓄える (stored(food, 16)) → have(food, 8) → stored(food, 16)
+- 大目標は「何ができた状態か」（数十分）、中目標はそのための仕事の単位（数分〜10 分: 道具を持つ、
+  食料を 8 個）、小目標はその仕事の「次の一歩」（数分: 材料を集めに出る）。小目標が中目標と同じになる
+  のは、仕事そのものが 1 回の遠征のときだけ（画面に 2 つ並ぶので同じ文では伝わらない）。中目標を選べば
+  その次の一歩（「中目標の今の状態」に「次の一歩」と出る）が小目標になる。例: 家 (built) → 中目標
+  have(planks, 40) → 小目標 have(log, 10) → 仕上げ built
 - 分解（ベッドには羊毛 3・板材 3・作業台）と細かい操作（何を掘る・どこへ行く）は自動。小目標は
   下の述語の形で出す（達成はゲームの状態から判定）
 - 夜は地上が危険。近ければ家、遠ければ近くのベッドか持っているベッドを置いて寝る（そこが復活地点）、
@@ -427,16 +481,21 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
   返事で約束したことを今やるか大目標に足す。しないなら reason に理由を書く（黙って戻らない）
 
 ## 大目標の中目標（jobs）
-- 一番上の大目標の中目標を、小目標の並び（1〜6 個、順番どおり）で書く。次にどれをやるかは速いモデルが
-  選び、済んだかはゲームの状態で判定される
+- 一番上の大目標の中目標を、仕事の並び（1〜6 個、順番どおり）で書く。仕事は成果物や状態の単位
+  （石のツルハシを持つ、食料 8 個）で、1 回のクラフトや 1 種類の素材集めだけにしない（分解と次の一歩は
+  自動）。良い書き方 have(stone_pickaxe, 1)、悪い書き方 have(cobblestone, 3) → have(stick, 2) →
+  have(stone_pickaxe, 1)。素材の採集だけ（have(raw_iron, 3)）の中目標は差し戻される: 鉄のツルハシ
+  のように、それを使って作るものを書く。次にどれをやるかは速いモデルが選び、済んだかはゲームの状態で判定される
 - 書くのは、中目標がない（「今していること」の大目標に「中目標:」がない）、うまくいっていない、見直しで
   もっとよい中目標が見つかったとき。それ以外は空にする
+- 中目標に「計画:」（小目標の並び。今:・待:・済:、<は前提）が付いているときは、別の計画が書いてある。
+  jobs は書かず（欄がない）、小目標は「計画」の今: を選ぶのが基本。計画が合わないときは reason に書く
 - 中目標は完了条件の述語で書き、各中目標に理由を 1 文付ける（配信に出る）。最後は大目標の完了条件そのもの
 - 「今していること」の中目標は 済:（一度満たしたら済みのまま。あとで材料を使っても戻らない）・今:
   （まだの一番先）・待: で出る。書くのはこれから残す中目標だけ（済んだものは書かない）。視聴者の頼みや
   提案の中目標は、書かなくても残る（やめるのは理由を付けた drop だけ）。中目標は全部で 8 個まで
 - 束: together で 4 つまで同時に追える（全部そろって終わり）。同じ外出・場所・道具で取れるものを
-  まとめ（例: 森へ → have(log, 16) と planted(sapling, 4)）、approach に回り方を 1 文。順番が要る
+  まとめる（素材どうしの束は許される。例: 森へ → have(log, 16) と planted(sapling, 4)）、approach に回り方を 1 文。順番が要る
   もの（作業台 → ツルハシ）は別の中目標。束の中目標を小目標にするときは together と approach も書く
 
 ## 大目標リストの編集（plan_changes。変える理由があるときだけ）
@@ -541,7 +600,12 @@ $recent
   maybe_done（止める。完了はワールドで確かめる）。完了の判定には使われない
 - 同じ失敗を繰り返さない。断られた・失敗した理由を読んで、別の手を選ぶ
 - 「目の前のブロック」「目の前に落ちている物」に要る物があれば、遠くへ探しに行く前にそれを使う
-  （一番近いものの座標をそのまま dig などに使える）
+  （一番近いものの座標をそのまま dig などに使える）。原木は木の幹だけを集める: find_blocks の tree: false
+  は村の畑の縁や家の柱など人が作った物（not_trees は目の前にあるその数）で、壊すと畑の水が流れ出る。
+  水や溶岩に接したブロックは掘れない（断られる）ので、別の木を探す。自分で置いた原木（placed_by_me）と、
+  葉が散って何にも触れずに浮いた幹（leftover: true。tree は false でも取り残しなので）は集めてよい
+- 石・土・砂利・鉱石などの地形は、「採掘の場所」の近くから掘る（around と find_blocks の quarry: true。
+  毎回別の所を掘ると、家のまわりが穴だらけになる）。鉱石へ下りるときは、前に掘った階段の底から続ける
 - 分からないことは検索の道具で調べてから動く（すぐ返る。1 ステップ 5 回まで）。検索語は日本語でも
   英語でもよく、名前でも目的でもよい。返った座標や名前をそのまま使う
   - search_abilities: やり方が分からない・初めてのこと（例: 畑を作る、水を渡る、肉を焼く）
@@ -603,6 +667,32 @@ def _stuck_section(failing: int, stagnant_seconds: float, actions: Sequence[str]
     return Template(TOOL_STUCK_SECTION).substitute(why="、".join(why), record=record)
 
 
+# 同じ手の並びを続けて成功させているとき（技にする機会。docs/design/22 §13）
+TOOL_REPEAT_SECTION = """
+## 同じ手の並びを繰り返している（$steps を $times 回、成功が続いている）
+$advice"""
+REPEAT_NEW_SKILL = """\
+- この並びは、技にすれば 1 回の呼び出しで続きまで動く（1 手ずつ選ぶより速い）。技にしたほうが速くて
+  確かなら write_skill を呼ぶ（name は英小文字と _、what は並びが何をするか。書いたらすぐ 1 回試す）。
+  技にしないなら、そのまま続けてよい
+"""
+REPEAT_KNOWN_SKILL = """\
+- この並びには、覚えた技 $skill がある。run_skill で呼ぶと、1 回で続きまで動く
+"""
+
+
+def _repeat_section(steps: Sequence[str], times: int, skill: str) -> str:
+    """繰り返しの節: 技にする（まだない）か、ある技を呼ぶ。"""
+    if not steps:
+        return ""
+    advice = (
+        Template(REPEAT_KNOWN_SKILL).substitute(skill=skill) if skill else REPEAT_NEW_SKILL
+    )
+    return Template(TOOL_REPEAT_SECTION).substitute(
+        steps=" → ".join(steps), times=times, advice=advice
+    )
+
+
 # 技（docs/design/22）: 道具の選択に足す節（技を使うときだけ）
 TOOL_SKILLS_SECTION = """
 ## 覚えた技（run_skill で呼ぶ。今の小目標に合うものが先）
@@ -631,10 +721,10 @@ export default async function (t, args) {
   t.pickup(), t.attack({entity}), t.flee({entity}), t.eat({item}), t.equip({item}),
   t.smelt({input, count?}), t.deposit({item, count?}), t.withdraw({item, count?}), t.go_home(),
   t.sleep(), t.build_next({name?}), t.move_furniture({x, y, z, to_x?, to_y?, to_z?}),
-  t.plant({item?, x?, y?, z?}), t.till({x?, y?, z?}), t.sow({item?, x?, y?, z?}), t.wait()
-  （plant / till / sow は場所を省くとブリッジが家のまわりから選ぶ）
+  t.plant({item?, x?, y?, z?}), t.till({x?, y?, z?}), t.sow({item?, x?, y?, z?}), t.water({x?, y?, z?}), t.wait()
+  （plant / till / sow / water は場所を省くとブリッジが設計した施設から選ぶ）
 - 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed,
-  props?}] か文 },
+  props?, source?: 'map'（前に見た記録）, seen_minutes_ago?}] か文 },
   t.recipe_of({item}), t.find_recipes({query, limit?}), t.find_foods({query?, have?, limit?}), t.how_to_get({item, count?}),
   t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
   hostile, distance_m, direction}], surroundings, needs, time, action },
@@ -650,7 +740,10 @@ export default async function (t, args) {
   ワールドでも使う）
 - 行動の結果の ok を確かめ、だめなら理由を t.log して別の手か t.fail(理由) にする
 - ループには上限を付ける。上限: 1 回に行動 40 回、調べもの 200 回、judge 10 回（時間の上限はない）。
-  await せずに回るループは止められる
+  上限を超えると技は失敗になり、覚えられない。繰り返す手順は、上限より前（行動が 36 回ほど）で自分で
+  切り上げて t.done する（残りは、技をもう一度呼んで続ける）。await せずに回るループは止められる
+- 場所を省いた till / sow / plant は、断られる（マスがもうない、種がない）まで毎回次のマスを選ぶ。
+  それらの前に equip は要らない（道具側が持つ）。断られたら（refused）、繰り返しを終えて t.done する
 - 行動を同時に呼ばない（Promise.all で行動を並べない。1 つずつ）
 - 安全の制約（夜に家の外へ出ない、家を壊さない）は道具の側にあり、断られる。回り道をしない
 - 1 つの技は 1 つのこと（狩る、木を切って板材にする、家のまわりに松明を置く）。大きな目標は小さな
@@ -945,6 +1038,38 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         text = format_conditions() + ABILITIES
         return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
+    def build_plan_prompt(
+        self,
+        objective: Objective,
+        activity: Activity,
+        replan_reason: str = "",
+        previous_error: str = "",
+    ) -> str:
+        """大目標の計画（中目標と、その小目標の並び）を書かせるプロンプト（docs/design/50 §18）。"""
+        progress = "\n".join(f"  {line}" for line in objective.progress[:12])
+        replan = (
+            "\n## 前の計画を書き直す理由\n"
+            f"{replan_reason}\n"
+            "同じやり方を繰り返さない。原因になった小目標の前に要るものを前提に足す、別の入手方法にする、"
+            "段階の順を変える。今の計画は「今していること」の中目標に出ている\n"
+            if replan_reason
+            else ""
+        )
+        error = (
+            f"\n## 前回の出力が使えなかった理由\n{previous_error}\n計画を書き直してください。\n"
+            if previous_error
+            else ""
+        )
+        return PLAN_TEMPLATE.substitute(
+            objective=f"{objective.describe()}\n理由: {objective.reason or '（なし）'}"
+            + (f"\n今の進み具合:\n{progress}" if progress else ""),
+            activity=format_activity(activity),
+            town_map=format_town_map(activity.town_map),
+            replan=replan,
+            conditions=format_conditions(),
+            previous_error=error,
+        )
+
     def build_goal_system(self) -> str:
         """目標の決定の決まり（毎回同じ文。システム指示に渡す）。"""
         return GOAL_SYSTEM_TEMPLATE.substitute(
@@ -993,6 +1118,9 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         failing: int = 0,
         stagnant_seconds: float = 0.0,
         stagnant_actions: Sequence[str] = (),
+        repeated: Sequence[str] = (),
+        repeated_times: int = 0,
+        repeated_skill: str = "",
     ) -> str:
         """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
         around = state.get("surroundings") or {}
@@ -1024,7 +1152,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             )
             if skills is not None
             else ""
-        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions)
+        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions) + _repeat_section(repeated, repeated_times, repeated_skill)
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""
@@ -1131,7 +1259,8 @@ def _format_job_status(statuses: Sequence[ConditionStatus]) -> str:
         if st.impossible:
             detail = f"{detail}; " if detail else ""
             detail += "今は手に入らない: " + ", ".join(st.impossible)
-        lines.append(f"- {st.spec.describe()}: まだ" + (f"（{detail}）" if detail else ""))
+        step = f" → 次の一歩: {st.next_step.describe()}" if st.next_step else ""
+        lines.append(f"- {st.spec.describe()}: まだ" + (f"（{detail}）" if detail else "") + step)
     return "\n".join(lines) + "\n"
 
 

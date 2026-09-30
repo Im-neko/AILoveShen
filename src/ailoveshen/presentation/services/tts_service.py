@@ -34,6 +34,7 @@ class TTSService:
         max_queue_size: int = 10,
         max_age_seconds: Optional[Mapping[str, float]] = None,
         clock: Callable[[], float] = time.monotonic,
+        on_outcome: Optional[Callable[[SpeakTextRequest, str, float], None]] = None,
     ) -> None:
         """
         TTS サービスを初期化する。
@@ -44,11 +45,14 @@ class TTSService:
             max_age_seconds: 出どころ（source）→ キューで待ってよい秒数。超えたら読まずに捨てる
                 （例: {"commentary": 20}。視聴者への返事は遅れても読むので入れない）
             clock: 時計（テストで差し替える）
+            on_outcome: 発話の結果を知らせる（発話, played / failed / dropped_old / dropped_full, 待った秒数）。
+                視聴者が実際に聞いたことの記録に使う（docs/design/65 §2）
         """
         self._use_case = speak_text_use_case
         self._max_queue_size = max_queue_size
         self._max_age = dict(max_age_seconds or {})
         self._clock = clock
+        self.on_outcome = on_outcome
         self._queue: asyncio.PriorityQueue[
             tuple[tuple[int, int], float, SpeakTextRequest]
         ] = asyncio.PriorityQueue(maxsize=max_queue_size)
@@ -143,7 +147,9 @@ class TTSService:
             logger.debug(f"割り込みの発話を処理する: {text[:30]}...")
             self._active += 1
             try:
-                return await self._use_case.execute(request)
+                response = await self._use_case.execute(request)
+                self._report(request, response, 0.0)
+                return response
             finally:
                 self._active -= 1
 
@@ -166,6 +172,7 @@ class TTSService:
                 f"発話のキューがいっぱい（{self._max_queue_size}）なので、"
                 f"リクエストを捨てる: {text[:30]}..."
             )
+            self._notify(request, "dropped_full", 0.0)
             return SpeakTextResponse.error_response("Queue full")
 
     async def speak_now(
@@ -220,6 +227,18 @@ class TTSService:
         """サービスが動いているかを返す。"""
         return self._running
 
+    def _report(self, request: SpeakTextRequest, response: SpeakTextResponse, waited: float) -> None:
+        self._notify(request, "played" if response.success else "failed", waited)
+
+    def _notify(self, request: SpeakTextRequest, outcome: str, waited: float) -> None:
+        """発話の結果を知らせる（記録の失敗で読み上げを止めない）。"""
+        if self.on_outcome is None:
+            return
+        try:
+            self.on_outcome(request, outcome, waited)
+        except Exception as e:  # noqa: BLE001 - 記録の失敗で読み上げを止めない
+            logger.warning(f"発話の結果を記録できなかった: {e}")
+
     async def _process_loop(self) -> None:
         """
         メインの処理ループ。
@@ -247,6 +266,7 @@ class TTSService:
                         f"[tts] {waited:.0f} 秒待って古くなったので読まない（{request.source}）: "
                         f"{request.text[:40]}"
                     )
+                    self._notify(request, "dropped_old", waited)
                     self._queue.task_done()
                     continue
 
@@ -254,7 +274,8 @@ class TTSService:
                 logger.debug(f"キューの発話を処理する: {request.text[:30]}...")
                 self._active += 1
                 try:
-                    await self._use_case.execute(request)
+                    response = await self._use_case.execute(request)
+                    self._report(request, response, waited)
                 finally:
                     self._active -= 1
                     self._queue.task_done()

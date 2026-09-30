@@ -12,8 +12,8 @@
     ?pos=right       右上に出す（既定は左上）
     ?theme=mint      色: pink（既定）/ mint / sky / lemon
     ?scale=0.8       大きさ
-    ?compact=1       最終目標・今の大目標・小目標だけ（次の大目標、終わった大目標、中目標、理由を出さない）
-    ?toast=0         大目標クリアなどのお知らせ（画面の真ん中に 4 秒）を出さない
+    ?compact=1       最終目標・今の大目標・小目標だけ（次の大目標、終わった大目標、中目標のカード、理由を出さない）
+    ?toast=0         大目標クリア・技を覚えたなどのお知らせ（画面の真ん中に 4 秒）を出さない
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -83,10 +83,14 @@
     background: #fff; border: 2px solid var(--accent-soft); color: var(--accent-deep); font-size: 13px; font-weight: 700;
   }
   .sub { font-size: 14px; font-weight: 500; color: var(--ink-soft); margin-top: 2px; }
-  .jobs { margin-top: 4px; display: flex; flex-direction: column; gap: 1px; }
-  .job { font-size: 15px; font-weight: 500; color: var(--ink-soft); }
-  .job.current { font-weight: 700; color: var(--ink); }
-  .job.done { color: var(--done); font-size: 13px; }
+  /* 中目標: 今の大目標の作業単位。済んだ数、今のもの、待っているもの */
+  #job-card ol { gap: 4px; }
+  #job-card li { padding: 5px 12px 5px 34px; font-size: 18px; }
+  #job-card li::before { left: 10px; top: 5px; font-size: 17px; }
+  #job-card li.waiting { color: var(--ink-soft); font-size: 16px; font-weight: 500; }
+  #job-card li.waiting::before { content: "・"; color: var(--ink-soft); }
+  #job-card li.done-count { color: var(--done); font-size: 15px; font-weight: 500; }
+  #job-card li.done-count::before { content: "✓"; color: var(--done); font-weight: 800; }
 
   .bar { height: 10px; margin-top: 6px; border-radius: 999px; background: rgba(0,0,0,.08); overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent);
@@ -116,6 +120,17 @@
   .intent { font-size: 17px; font-weight: 700; color: var(--accent-deep); margin-top: 4px; }
   .intent::before { content: "💭 "; }
   .why { font-size: 14px; color: var(--ink-soft); margin-top: 4px; }
+  /* LLM が次の目標を考えている間（数十秒から数分、行動も声もない） */
+  .thinking {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 4px 14px;
+    background: var(--accent-soft); border-radius: 999px; font-size: 18px; font-weight: 800; color: var(--accent-deep);
+  }
+  .thinking .dots i {
+    display: inline-block; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; background: var(--accent-deep);
+    animation: think 1.2s ease-in-out infinite;
+  }
+  .thinking .dots i:nth-child(2) { animation-delay: .2s; }
+  .thinking .dots i:nth-child(3) { animation-delay: .4s; }
   .pop { animation: pop .55s cubic-bezier(.2,1.6,.4,1); }
 
   /* 大目標クリアなどのお知らせ */
@@ -134,6 +149,7 @@
 
   @keyframes bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-3px) rotate(8deg) } }
   @keyframes twinkle { 0%, 100% { opacity: .35; transform: scale(.8) } 50% { opacity: 1; transform: scale(1.15) } }
+  @keyframes think { 0%, 80%, 100% { transform: translateY(0); opacity: .35 } 40% { transform: translateY(-6px); opacity: 1 } }
   @keyframes pop { 0% { transform: scale(.92) } 60% { transform: scale(1.04) } 100% { transform: scale(1) } }
   @keyframes newtag { 0% { opacity: 0; transform: translateY(4px) } 15% { opacity: 1; transform: none } 80% { opacity: 1 } 100% { opacity: 0 } }
   @keyframes toast {
@@ -156,12 +172,17 @@
     <div class="ribbon"><span class="icon">🌸</span>大目標</div>
     <ol id="objective"></ol>
   </section>
+  <section class="card hidden" id="job-card">
+    <div class="ribbon"><span class="icon">🌼</span>中目標</div>
+    <ol id="job"></ol>
+  </section>
   <section class="bubble" id="now">
     <div class="now-head">
-      <span class="now-label">いま</span>
+      <span class="now-label">小目標</span>
       <span class="badge hidden" id="survival">身を守るため</span>
       <span class="new" id="new">NEW!</span>
     </div>
+    <div class="thinking hidden" id="thinking"><span id="thinking-text"></span><span class="dots"><i></i><i></i><i></i></span></div>
     <div class="now-text" id="now-text"></div>
     <div class="intent hidden" id="intent"></div>
     <div class="bar hidden" id="now-bar"><i></i></div>
@@ -217,18 +238,20 @@
     return null
   }
 
-  // 今の大目標の中目標: 済んだ数、今の中目標、待っている中目標（多いときは先の 2 つまで）
-  function jobList (jobs) {
-    const box = el('div', 'jobs')
-    const done = jobs.filter((s) => s.state === 'done').length
-    if (done) box.append(el('div', 'job done', `✓ 済み ${done}`))
-    for (const s of jobs.filter((x) => x.state !== 'done').slice(0, 3)) {
-      const line = el('div', `job ${s.state}`, `${s.state === 'current' ? '▶' : '・'} ${s.label}`)
-      if (s.requested_by) line.append(el('span', 'req', `💌 ${s.requested_by}さん`))
-      else if (s.suggested_by) line.append(el('span', 'req', `💡 ${s.suggested_by}さん`))
-      box.append(line)
+  // 今の大目標の中目標: 済んだ数、今の中目標、待っている中目標（多いときは先の 3 つまで）
+  function renderJobs (jobs) {
+    const ol = $('job')
+    ol.replaceChildren()
+    const finished = (s) => s.state === 'done' || s.state === 'met'
+    const done = jobs.filter(finished).length
+    if (done) ol.append(el('li', 'done-count', `済み ${done} / ${jobs.length}`))
+    for (const s of jobs.filter((x) => !finished(x)).slice(0, 3)) {
+      const li = el('li', s.state, s.label)
+      if (s.requested_by) li.append(el('span', 'req', `💌 ${s.requested_by}さん`))
+      else if (s.suggested_by) li.append(el('span', 'req', `💡 ${s.suggested_by}さん`))
+      ol.append(li)
     }
-    return box
+    $('job-card').classList.toggle('hidden', compact || !ol.children.length)
   }
 
   function renderObjectives (list) {
@@ -251,11 +274,11 @@
           bar(b, f)
         }
         if (g.summary.length && !compact) li.append(el('div', 'sub', g.summary.join(' / ')))
-        if (g.jobs && g.jobs.length && !compact) li.append(jobList(g.jobs))
       }
       ol.append(li)
     }
     $('objective-card').classList.toggle('hidden', !ol.children.length)
+    renderJobs(current.length ? (current[0].jobs || []) : [])
   }
 
   let last = null
@@ -271,7 +294,9 @@
     renderObjectives(data.objectives)
 
     const goal = data.goal
-    $('now-text').textContent = goal ? goal.label : 'つぎにやることを考え中…'
+    $('thinking').classList.toggle('hidden', !data.thinking)
+    if (data.thinking) $('thinking-text').textContent = data.thinking.after_failure ? '🤔 うまくいかなかったから考え直し中' : '🤔 つぎにやることを考え中'
+    $('now-text').textContent = goal ? goal.label : (data.thinking ? '' : 'つぎにやることを考え中…')
     $('survival').classList.toggle('hidden', !(goal && goal.survival))
     $('intent').classList.toggle('hidden', !data.intent)
     $('intent').textContent = data.intent ?? ''
@@ -283,8 +308,12 @@
     last = data
   }
 
-  // 前の状態と比べて、目標が変わった・大目標が終わった・頼みを受けたことを知らせる
+  // 前の状態と比べて、目標が変わった・大目標が終わった・頼みを受けた・技を覚えたことを知らせる
   function announce (before, after) {
+    const learned = after.skill_learned
+    if (learned && learned.seq !== (before.skill_learned && before.skill_learned.seq)) {
+      toast('技を覚えた！', `「${learned.description || learned.name}」`, true)
+    }
     if ((before.goal && before.goal.goal) !== (after.goal && after.goal.goal)) {
       restart($('now'), 'pop'); restart($('new'), 'show')
     }
@@ -296,8 +325,20 @@
     }
     if (after.town && after.town.complete && !(before.town && before.town.complete)) toast('街がかんせい！', after.site ? after.site.name : '', true)
   }
+  // 同時に起きたお知らせ（技を覚えた瞬間に大目標が終わる、など）は上書きせず、順に出す
+  const toasts = []
+  let toasting = false
   function toast (title, sub, sparkle) {
     if (params.get('toast') === '0') return
+    toasts.push([title, sub, sparkle])
+    if (!toasting) nextToast()
+  }
+  function nextToast () {
+    const next = toasts.shift()
+    toasting = !!next
+    if (!next) return
+    const [title, sub, sparkle] = next
+    setTimeout(nextToast, 4200)
     const t = $('toast')
     t.replaceChildren(document.createTextNode(title), el('small', null, sub))
     restart(t, 'show')
@@ -336,13 +377,15 @@
         goal: { goal: 'have(cooked_beef, 4)', label: 'ステーキを 4 個そろえる', reason: '備蓄の食べ物が足りないから', survival: false, progress: ['have 4 cooked_beef (1/4)'] },
         intent: '近くの牛を見つけて狩りにいく' },
       { ...base,
-        objectives: [objective('m3', '食べ物をチェストにためる', 'current', { progress: ['stored 16 food (12/16)'], summary: ['焼いた肉 12/16'] }), objective('m4', '松明で家のまわりを明るくする', 'pending'), objective('m5', '羊毛のじゅうたん', 'pending', { requested_by: 'neko' }), objective('m2', 'ベッドで寝られるようにする', 'done')],
+        objectives: [objective('m3', '食べ物をチェストにためる', 'current', { progress: ['stored 16 food (12/16)'], summary: ['焼いた肉 12/16'], jobs: [{ label: '牛を 4 頭狩る', state: 'done' }, { label: '焼いた肉を 16 個そろえる', state: 'done' }, { label: 'チェストに食べ物を 16 個ためる', state: 'current' }] }), objective('m4', '松明で家のまわりを明るくする', 'pending'), objective('m5', '羊毛のじゅうたん', 'pending', { requested_by: 'neko' }), objective('m2', 'ベッドで寝られるようにする', 'done')],
         goal: { goal: 'stored(food, 16)', label: 'チェストに食べ物を 16 個ためる', reason: '夜にお腹がすかないように', survival: false, progress: ['stored 16 food (12/16)'] },
-        intent: '焼いたお肉をチェストに入れる' },
+        intent: '焼いたお肉をチェストに入れる',
+        thinking: { after_failure: false } },
       { ...base,
         objectives: [objective('m4', '松明で家のまわりを明るくする', 'current', { progress: ['lit 16 (3/10)'] }), objective('m5', '羊毛のじゅうたん', 'pending', { requested_by: 'neko' }), objective('m3', '食べ物をチェストにためる', 'done')],
         goal: { goal: 'through_night()', label: '夜を越す', reason: '暗くなってきたので家にこもる', survival: true, progress: [] },
-        intent: null }
+        intent: null,
+        skill_learned: { seq: 1, name: 'sow_farm', description: '畑を耕して種をまく' } }
     ]
     let i = 0
     render(frames[0])

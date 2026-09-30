@@ -135,6 +135,21 @@ class GoalSetEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class GoalDecidingEvent(DomainEvent):
+    """
+    LLM が次の小目標（または大目標の計画）を考え始めた。決まるまで何十秒も何分もかかり、その間は行動も
+    実況もないので、考えていることを知らせるために使う。`after_failure` は、うまくいかなかった後の考え直し。
+    """
+
+    after_failure: bool = False
+
+
+@dataclass(frozen=True)
+class GoalDecidedEvent(DomainEvent):
+    """`GoalDecidingEvent` の考えが終わった（決まった・失敗した・取り消された、いずれでも）。"""
+
+
+@dataclass(frozen=True)
 class GoalMemberMetEvent(DomainEvent):
     """小目標の束（docs/design/44）の条件が 1 つ済んだ（束全体はまだ）。"""
 

@@ -137,6 +137,8 @@ class LocalLlmSettings:
     )
     # 思考させる用途の出力（思考を含む）の上限。上限で答えが出なければ、思考なしで聞き直す
     thinking_max_tokens: dict[str, int] = field(default_factory=lambda: {"tool_stuck": 8000})
+    # 思考させない用途の出力の上限。止まらずに書き続ける呼び出しを切る（用途を書かなければ上限なし）
+    output_max_tokens: dict[str, int] = field(default_factory=dict)
     max_concurrent: int = 2
     timeout_seconds: float = 180.0
 
@@ -284,6 +286,16 @@ class MinecraftSettings:
     lesson_min_confidence: float = 0.6
     lesson_timeout_seconds: float = 2.0
     max_lessons: int = 200
+    # 手の帳（docs/design/52）: LLM が選んでうまくいった手（座標を含まない道具）を覚え、似た状況で
+    # Jev の選択肢に出す（道具モードだけ）。moves: false で使わない
+    moves: bool = True
+    moves_path: str = "data/moves.json"
+    moves_record_dir: str = "logs/moves"
+    moves_shown: int = 3
+    max_moves: int = 100
+    # 今の小目標と歩みの数え（docs/design/63）: 再起動のあと、ブリッジが同じ小目標を追っていれば
+    # 続きから追う。空にすると保存しない
+    goal_path: str = "data/goal.json"
     # 検索の道具（docs/design/47 §3）: 一覧から検索語に合うキーを Jev が選ぶ
     search_min_confidence: float = 0.5
     search_timeout_seconds: float = 3.0
@@ -395,8 +407,18 @@ class StreamSettings:
     commentary_judge: str = "jev"
     max_silence_seconds: float = 180.0
     commentary_record_dir: str = "logs/commentary"
+    # 読み上げた文と、そのときの状態の記録（docs/design/65 §2）。空なら残さない
+    spoken_record_dir: str = "logs/spoken"
+    # 実況・一言を読む前に今の状態と照らす（docs/design/65 §4）: jev（Jev に聞く）か off
+    speech_check: str = "jev"
     # 行動の途中の一言（docs/design/43）: 読み上げが終わってからこれだけ黙っていたら話す。0 なら話さない
     live_interval_seconds: float = 30.0
+    # 状況が何も変わらないまま黙っていたら雑談を 1 行話すまでの秒数（待つ、長い歩き。0 なら話さない）
+    live_idle_seconds: float = 60.0
+    # 次の手や目標を決めている間・行き詰まっている間に黙っていたら、考え中の独り言を話すまでの秒数（0 なら話さない）
+    live_thinking_seconds: float = 40.0
+    # 管理画面（docs/design/54）で喋らせる文章のプリセットの保存先
+    presets_path: str = "data/presets.json"
 
 
 @dataclass
@@ -582,9 +604,20 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             commentary_record_dir=str(
                 stream_data.get("commentary_record_dir", StreamSettings.commentary_record_dir)
             ),
+            spoken_record_dir=str(
+                stream_data.get("spoken_record_dir", StreamSettings.spoken_record_dir)
+            ),
+            speech_check=str(stream_data.get("speech_check", StreamSettings.speech_check)),
             live_interval_seconds=float(
                 stream_data.get("live_interval_seconds", StreamSettings.live_interval_seconds)
             ),
+            live_idle_seconds=float(
+                stream_data.get("live_idle_seconds", StreamSettings.live_idle_seconds)
+            ),
+            live_thinking_seconds=float(
+                stream_data.get("live_thinking_seconds", StreamSettings.live_thinking_seconds)
+            ),
+            presets_path=str(stream_data.get("presets_path", StreamSettings.presets_path)),
         )
 
     if "gemini" in data:
@@ -640,6 +673,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 thinking_max_tokens={
                     str(k): int(v)
                     for k, v in (local_data.get("thinking_max_tokens", d.thinking_max_tokens) or {}).items()
+                },
+                output_max_tokens={
+                    str(k): int(v)
+                    for k, v in (local_data.get("output_max_tokens", d.output_max_tokens) or {}).items()
                 },
                 max_concurrent=int(local_data.get("max_concurrent", d.max_concurrent)),
                 timeout_seconds=float(local_data.get("timeout_seconds", d.timeout_seconds)),
@@ -742,6 +779,11 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("lesson_timeout_seconds", defaults.lesson_timeout_seconds)
             ),
             max_lessons=int(agent_data.get("max_lessons", defaults.max_lessons)),
+            moves=bool(agent_data.get("moves", defaults.moves)),
+            moves_path=agent_data.get("moves_path", defaults.moves_path),
+            moves_record_dir=agent_data.get("moves_record_dir", defaults.moves_record_dir),
+            moves_shown=int(agent_data.get("moves_shown", defaults.moves_shown)),
+            max_moves=int(agent_data.get("max_moves", defaults.max_moves)),
             search_min_confidence=float(
                 agent_data.get("search_min_confidence", defaults.search_min_confidence)
             ),

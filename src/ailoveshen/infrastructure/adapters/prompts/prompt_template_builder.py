@@ -100,6 +100,15 @@ $plan
 $output
 """)
 
+# 配信の運営（管理画面のディレクター）の指示（docs/design/54_admin_panel.md）
+PRODUCER_SOURCE = "配信の運営（ディレクター）からの指示"
+PRODUCER_NOTICE = (
+    "\nこれは視聴者ではなく、この配信を運営しているディレクターの指示です。従ってください: 条件で書ける"
+    "指示は accept にし、「今」「すぐ」「いったん」などなら when=now にして rethink も書く。断るのは"
+    "ゲームで本当にできないときだけ（reason に理由）。返事は配信者の言葉で短く、視聴者に向けて話す"
+    "（ディレクターへの返事ではなく、やることを配信で伝える）。\n"
+)
+
 CHAT_RESPONSE_TEMPLATE = Template("""\
 ## 自分について話したこと
 $self_facts
@@ -113,10 +122,10 @@ $recent_messages
 ## あなたの感情状態
 $emotion
 $previous_error
-## 視聴者からのコメント
+## $source
 ユーザー名: $user_name
 コメント: $message
-""")
+$notice""")
 
 PROMISE_TEMPLATE = Template("""\
 ## 今していること
@@ -195,6 +204,18 @@ $conditions
 - 今の小目標がうまくいっていない理由や解き方の指摘（家に入れない → 家の前の穴を埋める）は、
   後回しにしない。大目標にするなら when=now にして rethink も書き、返答でも今やると言う
 - 確かめられない・もっともでない・最終目標から外れる指摘には書かない（返答で理由を言う）
+
+## 助言と今の目標（relevance）
+- 助言・提案（「〜したら」「〜のほうが早いよ」、問いかけの形も）には、必ず relevance を書く。「今して
+  いること」の今の小目標・中目標・大目標と比べて、どれだけ関わるか（relevance_reason に 1 文）:
+  - related: 今の小目標・中目標のやり方や成否が変わる（近道、よい道具、間違い、うまくいかない理由）
+  - partly: 今の大目標やあとの中目標に関わる。今の一歩は変わらない
+  - unrelated: あとのこと、ほかのこと
+- related で、もっともだと思って受けるなら、今の小目標を続けない。rethink（何を考え直すか）を書く。
+  大目標にして今やるなら when=now。今の小目標を続けるほうが合理的なら、partly か unrelated にして
+  返答で理由を言う（同意して、そのまま続けることはしない）
+- partly / unrelated は、accept（when=next で後ろに）か lesson で残す。関わらないことは、断る理由には
+  ならない
 
 ## 視聴者のアドバイス（lesson）
 - アドバイスでも、その結果が完了条件で書けるなら（「部屋を明るくしておこう」→ placed(torch, home, 2)、
@@ -316,6 +337,7 @@ class PromptTemplateBuilder(IPromptBuilder):
         previous_error: str = "",
         name_reading: str = "",
         self_facts: Sequence[SelfFact] = (),
+        producer: bool = False,
     ) -> str:
         """
         視聴者のチャットへの返答の本文。決まりはシステム指示の側（build_system_prompt）。
@@ -334,6 +356,8 @@ class PromptTemplateBuilder(IPromptBuilder):
             emotion=_format_emotion(context.emotion_state),
             previous_error=error,
             self_facts="\n".join(f"- {f.topic}: {f.fact}" for f in self_facts) or NO_INFORMATION,
+            source=PRODUCER_SOURCE if producer else "視聴者からのコメント",
+            notice=PRODUCER_NOTICE if producer else "",
         )
 
     def build_promise_prompt(

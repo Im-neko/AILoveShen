@@ -10,8 +10,14 @@ llm:
     # (they are few and plan the next minutes; user 2026-09-27), and so does the tool choice (user
     # 2026-09-28); town_plan draws the town's master plan (docs/design/47 §9), facility_design lays out
     # a farm or tree farm (47 §7); [] = never think
-    # tool_stuck: the tool choice while the small goal keeps failing thinks even here
-    thinking_purposes: ["tool_stuck"]
+    # tool_stuck (the tool choice while the small goal keeps failing) does not think: measured over
+    # 2026-09-29/30, 108 calls took 55 s on average (99 minutes, a third of all LLM time) and 48% of
+    # them worked, against 44% for tool_after_failure (6 s, no thinking); the last 30 minutes of
+    # 2026-09-30 13:19-13:49 had 9 calls of 52 s (max 133 s) and a death during a 39 s one
+    thinking_purposes: []
+    # Nothing thinks and every purpose has an output cap (default.yaml), so a call over 90 s is hung; before, a
+    # request waited its 180 s and the play stood still (2026-09-30 13:23)
+    timeout_seconds: 90
 logging:
   level: "DEBUG"
   file: "data/logs/ailoveshen-dev.log"

@@ -80,6 +80,7 @@ class LLMService:
         user_id: Optional[str] = None,
         session: Optional[PlaySession] = None,
         kind: Optional[str] = None,
+        producer: bool = False,
     ) -> str:
         """
         視聴者のチャットへの返答を生成する。
@@ -91,6 +92,7 @@ class LLMService:
             session: プレイ中ならそのプレイセッション。返答は配信者が何をしているかを
                 見て、視聴者の頼みを次の目標として受けることがある
             kind: 返事の前の仕分けが答えたコメントの種類（request / advice / ...。None: 分からない）
+            producer: 配信の運営（管理画面）の指示か（視聴者ではない。従う）
 
         Returns:
             生成した返答。失敗したときは空文字列
@@ -103,6 +105,7 @@ class LLMService:
                 emotion_state=self._current_emotion,
                 session=session,
                 kind=kind,
+                producer=producer,
             )
         )
         return response.text if response.success else ""

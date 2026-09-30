@@ -5,6 +5,8 @@
 // 探しに行くことがあった（2026-09-27）。ここで種類ごとにまとめて、毎回の観測に入れる。
 import { round, bearing } from './observe.mjs'
 import { exposed } from './world.mjs'
+import { isQuarryKind, quarrySpot, inQuarry } from './quarry.mjs'
+import { isTossed } from './spare.mjs'
 import { cropByBlock, isRipe } from './farming.mjs'
 import vec3Pkg from 'vec3'
 
@@ -18,8 +20,9 @@ const EMPTY = new Set(['air', 'cave_air', 'void_air'])
 // dropsOf(name): そのブロックから取れるアイテム（Knowledge.dropsOf。同じ名前だけなら []）
 // untouchable(p, block): 断られる場所（今の家、建物、建てている家）なら真。ここに出すと、掘れと
 // 言われて断られる（配信者はここの座標をそのまま dig に使う）ので出さない
-export function aroundMe (bot, dropsOf = () => [], untouchable = () => false) {
+export function aroundMe (bot, dropsOf = () => [], untouchable = () => false, notGatherable = () => false, state = null) {
   const me = bot.entity.position
+  const spot = state ? quarrySpot(state, me) : null
   const feet = me.floored()
   const kinds = new Map()
   for (let dy = -AROUND_DY; dy <= AROUND_DY; dy++) {
@@ -31,10 +34,22 @@ export function aroundMe (bot, dropsOf = () => [], untouchable = () => false) {
         if (!b || EMPTY.has(b.name) || !exposed(bot, p) || untouchable(p, b)) continue
         const dist = p.offset(0.5, 0.5, 0.5).distanceTo(me)
         let k = kinds.get(b.name)
-        if (!k) kinds.set(b.name, (k = { name: b.name, count: 0, dist: Infinity, at: null }))
+        if (!k) kinds.set(b.name, (k = { name: b.name, count: 0, dist: Infinity, rank: 2, at: null }))
+        // 木でない原木（村の畑の縁、家の柱）: 数だけ。一番近いものには選ばない（docs/design/55）
+        if (notGatherable(p, b)) {
+          k.notTrees = (k.notTrees ?? 0) + 1
+          continue
+        }
         k.count++
-        if (cropByBlock(b.name)) k.ripe = (k.ripe ?? 0) + (isRipe(b) ? 1 : 0)
-        if (dist < k.dist) { k.dist = dist; k.at = p }
+        if (cropByBlock(b.name)) {
+          // 作物は熟したものだけ掘れる（育ち途中は断られる）ので、一番近いものは熟したものの中から選ぶ
+          const ripe = isRipe(b)
+          k.ripe = (k.ripe ?? 0) + (ripe ? 1 : 0)
+          if (!ripe) continue
+        }
+        // 石・土などの地形は、採掘の場所があればその中のいちばん近いものを先に（場所の外は、その次）
+        const rank = spot && isQuarryKind(b.name) && !inQuarry(spot, p) ? 1 : 0
+        if (rank < k.rank || (rank === k.rank && dist < k.dist)) { k.rank = rank; k.dist = dist; k.at = p }
       }
     }
   }
@@ -46,14 +61,17 @@ export function aroundMe (bot, dropsOf = () => [], untouchable = () => false) {
       return {
         name: k.name,
         count: k.count,
-        nearest: { x: k.at.x, y: k.at.y, z: k.at.z, distance_m: round(k.dist), direction: bearing(me, k.at), dy: k.at.y - feet.y },
+        // 熟した作物が 1 つもなければ座標は出さない（ここの座標をそのまま dig に使って、育ち途中を断られていた）
+        nearest: k.at ? { x: k.at.x, y: k.at.y, z: k.at.z, distance_m: round(k.dist), direction: bearing(me, k.at), dy: k.at.y - feet.y } : null,
         ...(gives.length ? { gives } : {}),
-        ...(k.ripe !== undefined ? { ripe: k.ripe } : {})
+        ...(k.at && spot && isQuarryKind(k.name) && inQuarry(spot, k.at) ? { quarry: true } : {}),
+        ...(k.ripe !== undefined ? { ripe: k.ripe } : {}),
+        ...(k.notTrees ? { not_trees: k.notTrees } : {})
       }
     })
   const items = new Map()
   for (const e of Object.values(bot.entities ?? {})) {
-    if (e === bot.entity || e.name !== 'item' || !e.position) continue
+    if (e === bot.entity || e.name !== 'item' || !e.position || isTossed(state, bot, e)) continue
     const d = e.position.minus(me)
     if (Math.hypot(d.x, d.z) > AROUND_RADIUS || Math.abs(d.y) > AROUND_DY) continue
     const drop = e.getDroppedItem?.()
