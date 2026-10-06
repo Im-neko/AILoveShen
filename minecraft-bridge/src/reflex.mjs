@@ -10,6 +10,9 @@ import { round, bearing, nearbyEntities, isHostile, canSee } from './observe.mjs
 import { reachableThreats, bestWeapon, fight, flee } from './primitives.mjs'
 import { enterHome, isInside } from './home.mjs'
 import { inBurrow } from './burrow.mjs'
+import { breathTrigger, surface } from './breath.mjs'
+import { isSwimming } from './swim.mjs'
+import { reachLand } from './land.mjs'
 
 const REFLEX_RADIUS = 5
 const CREEPER_RADIUS = 7 // 膨らみ始める前に逃げる
@@ -20,6 +23,18 @@ const APPROACH_WINDOW_MS = 2000
 const KEEP_DISTANCE = 10 // 距離を取る: この距離まで離れて様子を見る
 const HOME_REACH = 48 // 家に入る: この距離までなら選べる
 const CHECK_EVERY_TICKS = 4
+const BREATH_EVERY_MS = 500 // 息の道を調べる間隔（幅優先探索は軽くない）
+// 同じ相手から逃げても離れられない・戦っても倒せないまま、また発火する繰り返し（2026-10-01: 壁際のスケルトンから
+// 20 分、6 秒ごとに「逃げる」）。2 回続けたら逃げるのをやめて戦い、4 回続けたらその相手には 1 分反応しない
+export const LOOP_FIGHT = 2
+export const LOOP_GIVE_UP = 4
+export const MUTE_MS = 60000
+export const FIGHT_MS = 20000 // 反射の戦いはこれ以上続けない（また発火すれば、続きは数える）
+// 武器がなくても殴り合ってよい相手と体力（docs/design/89: 夜に家も道具もないとき、逃げ続けるだけにしない）。クリーパーは近づかない。
+// 体力が FIST_MIN_HEALTH を切ったら殴るのをやめて逃げる（素手は弱い）
+export const FIST_MOBS = new Set(['zombie', 'husk', 'zombie_villager', 'drowned', 'spider', 'cave_spider', 'skeleton', 'stray'])
+export const FIST_START_HEALTH = 12
+export const FIST_MIN_HEALTH = 8
 
 export const CHOICES = ['fight', 'flee', 'go_home', 'keep_distance', 'ignore']
 
@@ -41,17 +56,20 @@ function attackerOf (bot) {
   return nearbyEntities(bot).filter(({ e, dist }) => dist <= ATTACKER_RADIUS && isHostile(bot, e))[0] ?? null
 }
 
-// 選べるもの（ブリッジが今できるものだけ）。家の中にいるなら外に出ない（夜の決まり）
+// 選べるもの（ブリッジが今できるものだけ）。家の中にいるなら外に出ない（夜の決まり）。クリーパーは
+// 戦わず、家へも連れて帰らない
 export function optionsFor (bot, state, target) {
   const home = state.home
   // 家の中と、塞いだ穴の中（docs/design/61）は、外に出ない
   const inside = isInside(bot, home) || inBurrow(bot)
   if (inside) return ['fight', 'ignore']
   const homeNear = home && bot.entity.position.distanceTo(home.door) <= HOME_REACH
+  // クリーパーは追ってきて、壁のそばで膨らむ: 家へ連れて帰ると壁と床を吹き飛ばされる（docs/design/88）
+  const creeper = target?.name === 'creeper'
   return [
-    ...(target?.name === 'creeper' ? [] : ['fight']),
+    ...(creeper ? [] : ['fight']),
     'flee',
-    ...(homeNear ? ['go_home'] : []),
+    ...(homeNear && !creeper ? ['go_home'] : []),
     'keep_distance',
     'ignore'
   ]
@@ -59,7 +77,9 @@ export function optionsFor (bot, state, target) {
 
 // コードの規則（Jev の答えを待つ間と、Jev がないとき）: 武器があり相手が 1 体でクリーパーでなければ戦う
 export function ruleChoice (bot, target, count, options) {
-  const fightIt = bestWeapon(bot) && target.name !== 'creeper' && count === 1
+  // 水の中では素手で戦わない（足場がなく、ドロウンドは水の中のほうが強い）: 先に陸へ（flee が陸へ泳ぐ）
+  const fist = FIST_MOBS.has(target.name) && bot.health >= FIST_START_HEALTH && !isSwimming(bot)
+  const fightIt = (bestWeapon(bot) || fist) && target.name !== 'creeper' && count === 1
   const choice = fightIt ? 'fight' : 'flee'
   return options.includes(choice) ? choice : options[0]
 }
@@ -73,7 +93,11 @@ export function startReflex (bot, state, hooks) {
   let ids = 0
   let hurtAt = 0
   let lastHealth = null
+  let lastBreath = 0
   const seen = new Map() // モブの id -> [{ t, pos }]（向かってくるかを見る）
+  const stalls = new Map() // モブの id -> 続けて離れられなかった・倒せなかった回数
+  const muted = new Map() // モブの id -> この時刻まで、近づいても反応しない（ダメージを受けたときは反応する）
+  state.reflexMuteAll = 0 // この時刻まで、近づいた相手には反応しない（POST /reflex/release。ダメージは別）
 
   bot.on('entityHurt', (entity) => {
     if (entity !== bot.entity) return
@@ -94,13 +118,48 @@ export function startReflex (bot, state, hooks) {
     }
     // ボートで水の上にいる間は反射で戦い・逃げない: 漕いで離れる方が速い（ボートは毎秒 7m ほど）
     if (++ticks % CHECK_EVERY_TICKS || state.reflex || !bot.entity || bot.health <= 0 || riding(bot)) return
+    // 溺れる前に、息のできる所へ（敵より先。設計書 69）
+    if (bot.entity.isInWater && Date.now() - lastBreath >= BREATH_EVERY_MS) {
+      lastBreath = Date.now()
+      const breath = breathTrigger(bot)
+      if (breath) {
+        gasp(breath).catch((e) => console.log(`[reflex] 息のエラー: ${e.message}`))
+        return
+      }
+    }
     const trigger = triggerNow()
     if (trigger) react(trigger).catch((e) => console.log(`[reflex] エラー: ${e.message}`))
   })
 
+  // 息が続かなくなりそう: 動いている行動を止めて、息のできる所へ泳ぐ。Jev には聞かない（相手がいない）
+  async function gasp ({ path, air }) {
+    state.reflex = true
+    const t0 = Date.now()
+    try {
+      if (!(await hooks.preempt(`reflex: running out of breath (air ${air}/20)`, true))) return
+      bot.pathfinder.setGoal(null)
+      bot.clearControlStates()
+      let result
+      let ok = true
+      try {
+        result = await surface(bot, path)
+      } catch (err) {
+        ok = false
+        result = `failed: ${err.message}`
+      }
+      console.log(`[reflex] 息 ${air}/20: ${result}`)
+      hooks.record({ action: 'reflex_surface', ok, result: `air ${air}/20: ${result}`, seconds: round((Date.now() - t0) / 1000) })
+    } finally {
+      floating = false // 制御を離したので、水の中ならまたジャンプを押し直す
+      state.reflex = false
+    }
+  }
+
   // きっかけ → { why, target, count } か null
+  const isMuted = (e) => Date.now() < state.reflexMuteAll || Date.now() < (muted.get(e.id) ?? 0)
+
   function triggerNow () {
-    const near = dangers(bot, state)
+    const near = dangers(bot, state).filter(({ e }) => !isMuted(e))
     if (near.length) return { why: 'close', target: near[0].e, count: near.length }
     if (Date.now() - hurtAt < 1000) {
       hurtAt = 0
@@ -121,7 +180,7 @@ export function startReflex (bot, state, hooks) {
       const track = (seen.get(e.id) ?? []).filter((s) => now - s.t <= APPROACH_WINDOW_MS)
       track.push({ t: now, pos: e.position.clone() })
       seen.set(e.id, track)
-      if (inside || !canSee(bot, e)) continue // 家の中は壁が守る
+      if (inside || !canSee(bot, e) || isMuted(e)) continue // 家の中は壁が守る
       if (movedToward(track[0].pos, e.position, me) >= APPROACH_METERS) {
         seen.delete(e.id)
         return e
@@ -131,11 +190,21 @@ export function startReflex (bot, state, hooks) {
     return null
   }
 
-  async function perform (choice, target, signal) {
+  // voluntary: 逃げる手が残っているうちに選んだ戦い。逃げても離れられなかった後の戦い（stalls）は、ほかに手がないので、
+  // 体力が低くても殴る（下限を付けると、1 回目から殴らずに立ったまま叩かれ続ける）
+  async function perform (choice, target, signal, voluntary = false) {
     if (choice === 'fight') {
       const weapon = bestWeapon(bot)
       if (weapon) await bot.equip(weapon, 'hand')
-      return await fight(bot, target, signal)
+      return await fight(bot, target, signal, FIGHT_MS, weapon || !voluntary ? 0 : FIST_MIN_HEALTH)
+    }
+    // 水の中で逃げる: 水の中は離れても追われる（ドロウンドは泳いで戻ってくる）。陸へ泳いで上がる。陸が見つからなければ、これまでの逃げ方
+    if (choice === 'flee' && isSwimming(bot)) {
+      try {
+        return await reachLand(bot, signal)
+      } catch (e) {
+        if (signal.aborted) throw e
+      }
     }
     if (choice === 'flee') return await flee(bot, target, signal)
     if (choice === 'keep_distance') return await flee(bot, target, signal, KEEP_DISTANCE)
@@ -150,8 +219,16 @@ export function startReflex (bot, state, hooks) {
     state.reflex = true
     const t0 = Date.now()
     const dist = round(target.position.distanceTo(bot.entity.position))
-    const options = optionsFor(bot, state, target)
-    const rule = ruleChoice(bot, target, count, options)
+    // 逃げても離れられない繰り返し（stalls）: 1 回目は逃げる手を外して、家が近ければ帰る（逃げ続けるより安全。
+    // 2026-10-01 user: 「やむを得ない場合は逃走よりも帰宅を優先してもいい」）、帰れなければ戦う。2 回続いたら
+    // 帰る手も外して戦う。クリーパーは戦えないので、逃げる手を残す
+    const n = stalls.get(target.id) ?? 0
+    const all = optionsFor(bot, state, target)
+    const strip = (drop) => (n >= 1 && target.name !== 'creeper' ? all.filter((o) => !drop.includes(o)) : all)
+    const options = n >= LOOP_FIGHT ? strip(['flee', 'keep_distance', 'go_home']) : strip(['flee', 'keep_distance'])
+    const rule = n >= 1 && target.name !== 'creeper'
+      ? (options.includes('go_home') ? 'go_home' : options.includes('fight') ? 'fight' : ruleChoice(bot, target, count, options))
+      : ruleChoice(bot, target, count, options)
     const danger = {
       id: ++ids,
       trigger: why,
@@ -177,7 +254,7 @@ export function startReflex (bot, state, hooks) {
         let result
         let ok = true
         try {
-          result = await perform(choice, target, danger.controller.signal)
+          result = await perform(choice, target, danger.controller.signal, n === 0)
         } catch (err) {
           ok = false
           result = `failed: ${err.message}`
@@ -194,6 +271,23 @@ export function startReflex (bot, state, hooks) {
         }
         break
       }
+      // 終わっても相手が射程にいる（逃げても離れられない、戦っても倒せない）なら数える。続いたら反応をやめる
+      const choiceDone = steps.at(-1).choice
+      const radius = target.name === 'creeper' ? CREEPER_RADIUS : REFLEX_RADIUS
+      const stalled = ['flee', 'keep_distance', 'fight', 'go_home'].includes(choiceDone) && bot.entities[target.id] &&
+        target.position.distanceTo(bot.entity.position) < radius
+      if (stalled) {
+        const n = (stalls.get(target.id) ?? 0) + 1
+        stalls.set(target.id, n)
+        if (n >= LOOP_GIVE_UP) {
+          muted.set(target.id, Date.now() + MUTE_MS)
+          stalls.delete(target.id)
+          steps.push({ choice: 'ignore', ok: true, result: `gave up on ${target.name} after ${n} rounds that changed nothing: no reaction to it for ${MUTE_MS / 1000}s` })
+        }
+      } else {
+        stalls.delete(target.id)
+      }
+      for (const [id, until] of muted) if (Date.now() >= until) muted.delete(id)
       const last = steps.at(-1)
       const by = danger.judged ? `jev ${danger.judged.choice} (${danger.judged.confidence})` : 'rule'
       const summary = steps.map((s) => `${s.choice}: ${s.result}`).join(' → ')
@@ -204,6 +298,17 @@ export function startReflex (bot, state, hooks) {
       state.reflex = false
     }
   }
+}
+
+// POST /reflex/release: Python が待ち続けた反射を手放す。動いている反射を止め、seconds の間は近づいた相手に
+// 反応しない（ダメージを受けたときは反応する）→ { released }
+export function releaseReflex (state, seconds) {
+  const until = Date.now() + Math.max(1, Math.min(300, Number(seconds) || 30)) * 1000
+  state.reflexMuteAll = until
+  const d = state.danger
+  d?.controller?.abort(new Error('released: the reflex ran too long'))
+  if (d) d.next = null
+  return { released: !!d, until }
 }
 
 // POST /reflex: 見張り（Jev）が選んだものに切り替える → { accepted, why? }

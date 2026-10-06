@@ -2,9 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import vec3Pkg from 'vec3'
+import minecraftData from 'minecraft-data'
 import { createRunner, abortCurrent } from '../src/runner.mjs'
 
 const { Vec3 } = vec3Pkg
+const md = minecraftData('1.21.4')
 
 // 家のない昼のボット（runner が使うものだけ）
 function fakeBot () {
@@ -121,6 +123,39 @@ test('時間では止めない: 夕方になった・空腹になったときだ
   const { run: run3, bot: bot3 } = setup({ explore: walking })
   setTimeout(() => { bot3.food = 6 }, 100)
   assert.match((await run3({ verb: 'explore' }, 'explore')).result, /^failed: stopped: hungry \(food 6\/20\)/)
+  // 帰る・戦う・逃げる・食べる・夜を過ごす行動は、空腹になっても止めない（食べ物がなければ、帰る歩きを途中で
+  // 止めるだけ。2026-09-30 18:07: 家まで 64 m の帰り道を 14 m で止め、夜の外で死んだ）
+  const { run: run4, state: state4, bot: bot4 } = setup({ go_home: walking })
+  const going = run4({ verb: 'go_home' }, 'go_home')
+  setTimeout(() => { bot4.food = 6 }, 100)
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  assert.ok(state4.current, 'still walking home while hungry')
+  await abortCurrent(state4, 'stop')
+  assert.match((await going).result, /^failed: stop$/)
+})
+
+test('食べ物を持っているなら、夜の帰り道も空腹になったら止めて食べさせる（満腹度 0 で肉を持ったまま 11 分歩いた）', async () => {
+  const walking = (bot, state, c, signal) => {
+    bot.actionPhase = 'walking toward home'
+    return waitsForAbort(bot, state, c, signal)
+  }
+  const carrying = (name) => {
+    const s = setup({ go_home: walking })
+    s.bot.registry = { foodsByName: { beef: {}, rotten_flesh: {} } }
+    s.bot.inventory = { items: () => [{ name, count: 2 }] }
+    setTimeout(() => { s.bot.food = 6 }, 100)
+    return s
+  }
+  // 牛肉があれば止めて食べる
+  const a = carrying('beef')
+  assert.match((await a.run({ verb: 'go_home' }, 'go_home')).result, /^failed: stopped: hungry \(food 6\/20\)/)
+  // 腐った肉は食べ物に数えない: 止めない
+  const b = carrying('rotten_flesh')
+  const going = b.run({ verb: 'go_home' }, 'go_home')
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  assert.ok(b.state.current, 'still walking home')
+  await abortCurrent(b.state, 'stop')
+  assert.match((await going).result, /^failed: stop$/)
 })
 
 test('暗くて松明がないと止める（引き返して松明を作らせる）。松明を持っていれば、暗い所で始めたのなら、松明や作る手なら止めない', async () => {
@@ -156,4 +191,34 @@ test('暗くて松明がないと止める（引き返して松明を作らせ�
   assert.ok(c.state.current, 'crafting torches is not stopped in the dark')
   await abortCurrent(c.state, 'stop')
   await crafting
+})
+
+test('深い地下では、夕方・夜になっても止めない。浅い所（空が近い）では止める', async () => {
+  const walking = (bot, state, c, signal) => {
+    bot.actionPhase = 'digging the mine'
+    return waitsForAbort(bot, state, c, signal)
+  }
+  // 頭の上 2〜6 マスが石（どの柱も同じ: 空が開いた柱はない）
+  const deep = (open = () => false) => {
+    const { bot, state, run } = setup({ dig_mine: walking })
+    bot.registry = md
+    bot.findBlock = () => null
+    bot.inventory = { items: () => [{ name: 'torch', count: 4 }] } // 暗いのは地下では当たり前: 松明があれば止めない
+    bot.entity.position = new Vec3(0, 30, 0)
+    bot.blockAt = (p) => (p.y > 31 && p.y < 37 && !open(p) ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' })
+    return { bot, state, run }
+  }
+  const { bot, state, run } = deep()
+  const mining = run({ verb: 'dig_mine' }, 'dig the mine')
+  setTimeout(() => { bot.time.timeOfDay = 12500 }, 100)
+  setTimeout(() => { bot.time.timeOfDay = 14000 }, 300)
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  assert.ok(state.current, 'still digging at night underground')
+  await abortCurrent(state, 'stop')
+  assert.match((await mining).result, /^failed: stop$/)
+  // 空が開いた柱が近くにある（洞窟の入口など）: いつもどおり止める
+  const shallow = deep((p) => p.x >= 3)
+  const cave = shallow.run({ verb: 'dig_mine' }, 'dig the mine')
+  setTimeout(() => { shallow.bot.time.timeOfDay = 12500 }, 100)
+  assert.match((await cave).result, /^failed: stopped: it is dusk now/)
 })

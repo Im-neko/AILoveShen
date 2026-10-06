@@ -46,6 +46,8 @@ stream = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "obsws-python>=1.7",
+    "httpx>=0.25",
+    "websockets>=12",
 ]
 all = [
     "ailoveshen[dev,tts,llm,game,stream]",

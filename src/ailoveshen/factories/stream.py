@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -14,23 +15,25 @@ from ailoveshen.application.use_cases.presets import SpeechPresets
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
-from ailoveshen.domain.value_objects import MessageType, SpeechPriority
+from ailoveshen.domain.value_objects import EmotionState, EmotionType, MessageType, SpeechPriority
 from ailoveshen.factories.game import create_game_service
 from ailoveshen.factories.llm import (
     create_comment_triage,
+    create_fact_check,
     create_llm_service,
     create_promise_check,
 )
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.storage import (
     InMemoryGenerationLog,
+    JsonlGenerationLog,
     JsonPresetStore,
     JsonReadingStore,
     JsonSelfFactStore,
 )
 from ailoveshen.infrastructure.config import Settings
 from ailoveshen.infrastructure.events import AsyncEventBus
-from ailoveshen.presentation.services import ChatResponder, Narrator
+from ailoveshen.presentation.services import ChatResponder, Narrator, SupportResponder
 from ailoveshen.presentation.services.stream import Stream
 
 
@@ -63,7 +66,15 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         _check_port_free(settings.stream.board_port)
     bus = AsyncEventBus()
     conversation = Conversation()
-    gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
+    gemini_calls = (
+        JsonlGenerationLog(
+            str(base_dir / settings.gemini.generation_log_dir),
+            settings.gemini.debug_log_size,
+            settings.gemini.generation_log_keep_days,
+        )
+        if settings.gemini.generation_log_dir
+        else InMemoryGenerationLog(settings.gemini.debug_log_size)
+    )
     # 視聴者の名前の読み（docs/design/30_name_readings.md）: 返答で覚え、読み上げで使う
     readings = NameReadings(JsonReadingStore(base_dir / settings.twitch.readings_path))
     # 自分について話したこと（docs/design/40_small_talk.md）: 返答で覚え、次の返答で守る
@@ -92,6 +103,12 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         if settings.twitch.enabled and settings.twitch.channel.strip()
         else None
     )
+    # 返事が持っている物を「ない」と言っていないか（持ち物とチェストの事実と照らす）
+    fact_check = (
+        create_fact_check(settings.twitch, settings.jev, base_dir)
+        if settings.twitch.enabled and settings.twitch.channel.strip()
+        else None
+    )
     llm = create_llm_service(
         gemini=settings.gemini,
         character=settings.character,
@@ -105,9 +122,12 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         notes=game.notes,
         lessons=game.lessons,
         promise_check=promise_check,
+        fact_check=fact_check,
         self_facts=self_facts,
     )
     closers: list[Any] = [promise_check.close] if promise_check is not None else []
+    if fact_check is not None:
+        closers.append(fact_check.close)
 
     tts = None
     if settings.stream.speak:
@@ -289,6 +309,15 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         )
         return True
 
+    async def reset_goals() -> bool:
+        """大目標を最初のリストに戻し、今の小目標を切って決め直させる（管理画面）。"""
+        session = game.session
+        if session is None:
+            return False
+        await game.objectives.reset(session.plan)
+        session.request_rethink("the director reset every objective to the starting list")
+        return True
+
     # 小目標の切れ目の実況は、今話す価値があるかを Jev が決める（設計書 34 §6）
     gate = None
     live_judge = None
@@ -382,6 +411,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
                 speak=announce,
                 instruct=instruct,
                 rethink=rethink,
+                reset=reset_goals,
             ),
         )
         board.subscribe(bus)
@@ -411,11 +441,74 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             ignore=twitch.ignore_users,
             refresh=game.refresh,
             triage=triage.triage if triage is not None else None,
+            remember=lambda c: conversation.add_viewer_message(
+                c.message, c.user_name, c.user_id, c.received_at
+            ),
         )
         how = f"{chat.login} で書き込みもする" if chat.login else "読むだけ"
         logger.info(f"[chat] Twitch #{chat.channel} のチャットを読む（{how}）")
     else:
         logger.info("[chat] Twitch のチャットは読まない（.env の TWITCH_CHANNEL が空か、オフ）")
+
+    # 配信への応援（フォロー、サブスク、ギフト、ビッツ、レイド）: お礼を言い、アバターも動く（設計書 71）。
+    # サブスク・ギフト・ビッツ・レイドはチャットの接続から、フォローは EventSub（トークンが要る）
+    supports: tuple[Any, ...] = ()
+    thanker = None
+    if chat is not None and twitch.support.enabled:
+        sources: list[Any] = [chat]
+        if twitch.support.follows:
+            from ailoveshen.infrastructure.adapters.twitch import TwitchEventSub
+            from ailoveshen.infrastructure.adapters.twitch.twitch_auth import FOLLOW_SCOPES, build_token_source
+
+            async def say_authorize() -> None:
+                await say_notice("Twitch の許可が必要だよ。ブラウザに出た画面で、許可を押してね")
+
+            # 手で書いたトークンがあればそのまま、なければ Client-Id から自動で取って更新する
+            # （許可が要るときは、ブラウザで許可の画面を開き、声で知らせる）
+            token_source = build_token_source(
+                twitch.client_id,
+                twitch.eventsub_token,
+                twitch.token_path,
+                FOLLOW_SCOPES,
+                client_secret=twitch.client_secret,
+                open_url=webbrowser.open if twitch.open_browser else None,
+                notify=say_authorize,
+            )
+            if token_source is not None:
+                sources.append(TwitchEventSub(twitch.channel, twitch.client_id, token_source))
+            else:
+                logger.warning(
+                    "[support] フォロー通知は受けない（TWITCH_CLIENT_ID が要る。許可は初回の起動でログに出る URL を"
+                    "開くだけ: docs/streaming.md）"
+                )
+
+        async def say_support(text: str) -> None:
+            spoken.remember(text)
+            logger.info(f"[say] {text}")
+            log_line(text, "support")
+            conversation.add_streamer_message(text, MessageType.COMMENTARY)
+            if tts is not None:
+                # 応援へのお礼は実況より先に、喜んだ声で（Jev の判断は待たない）
+                await tts.speak(
+                    text,
+                    priority=SpeechPriority.HIGH,
+                    emotion=EmotionState(EmotionType.HAPPY, 0.9),
+                    source="support",
+                )
+
+        thanker = SupportResponder(
+            say=say_support,
+            publish=bus.publish,
+            min_interval_seconds=twitch.support.min_interval_seconds,
+            batch_seconds=twitch.support.batch_seconds,
+            backlog=twitch.support.backlog,
+            dedupe_seconds=twitch.support.dedupe_seconds,
+            # 配信者自身と書き込むアカウント、ボットの応援には何も言わない
+            ignore=(chat.channel, chat.login, *twitch.ignore_users),
+        )
+        supports = tuple(sources)
+        kinds = "サブスク・ギフト・ビッツ・レイド" + ("・フォロー" if len(sources) > 1 else "")
+        logger.info(f"[support] {kinds}にお礼を言う")
 
     stream = Stream(
         game,
@@ -426,6 +519,8 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         responder=responder,
         closers=tuple(closers),
         live=live,
+        supports=supports,
+        thanker=thanker,
     )
     stream.subscribe(bus)
     logger.info(f"[control] {settings.minecraft.control}")

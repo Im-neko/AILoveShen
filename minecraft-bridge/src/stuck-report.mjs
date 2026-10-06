@@ -7,6 +7,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isSwimming } from './swim.mjs'
 
 const DEFAULT_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'logs', 'stuck-walks.jsonl')
 const LAYERS = [2, 1, 0, -1] // 足元のセルから見た高さ（上から）
@@ -60,7 +61,7 @@ export function snapshot (bot, goal, update) {
   return {
     at: [one(p.x), one(p.y), one(p.z)],
     cell: [cell.x, cell.y, cell.z],
-    in_water: !!bot.entity.isInWater,
+    in_water: isSwimming(bot),
     on_ground: !!bot.entity.onGround,
     feet: bot.blockAt?.(cell)?.name ?? null,
     below: bot.blockAt?.(cell.offset(0, -1, 0))?.name ?? null,

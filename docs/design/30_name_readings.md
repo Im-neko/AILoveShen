@@ -14,6 +14,7 @@ Twitch の名前は英字や漢字が多く、読み上げ（Style-Bert-VITS2）
 - **使う所は読み上げだけ**: `SpeakTextUseCase` が合成に渡すテキストだけ、名前を読みに置き換える（長い名前から。英数字の途中は置き換えない）。ログ、イベント、表示は元の名前のまま
 - **覚え方**
   - 本人のコマンド `!yomi よみ`（`!読み` / `!よみ`）: 覚えて「〇〇さん、読み方覚えたよ！」と応える（返事の順番は待たない）。かなでなければ何もしない
+  - 本人のコマンド `!yomi 言葉 よみ`（2026-10-04、user: 「引数を2個受け取れるようにして物の読み方を直せるように」）: 名前でなく言葉（`小麦` → `こむぎ`）の読みを、同じ辞書に `viewer` で入れて「〇〇は△△って読むんだね、覚えたよ！」と応える。引数は空白（全角も）で区切り、1 つなら自分の名前の読み、2 つなら言葉と読み（読みの中に空白は置けない）。言葉はひらがなだけのもの（もう読める上に文の途中まで置き換わる）と、漢字を含まない 1 文字は受けない。誰でも直せ、あとから言い直した人が勝つ（荒らしへの歯止めは読みがかなだけであることのみ）
   - 返答のとき（プレイ中の JSON の返答）: プロンプトのユーザー名に「（読み: …）」を出す。読みがなければ `name_reading` に推測を出させる（`guess`）。本人が読み方を言ったら（コメントに「読み」「よみ」「呼んで」）その読み（`viewer`）
   - 推測は本人の読みを上書きしない。本人の読みは何でも上書きする
 - **引く**: 目標ボードの `GET /api/readings`（全部）、`?name=` で 1 人
@@ -21,7 +22,7 @@ Twitch の名前は英字や漢字が多く、読み上げ（Style-Bert-VITS2）
 ## 3. 部品
 
 - `application/ports/output/reading_store.py`: `NameReading`、`IReadingStore`
-- `application/use_cases/readings.py`: `NameReadings`（get / all / learn / apply）、`valid_reading`、`tells_reading`、`COMMAND`
+- `application/use_cases/readings.py`: `NameReadings`（get / all / learn / learn_word / apply）、`valid_reading`、`valid_word`、`tells_reading`、`COMMAND`
 - `infrastructure/adapters/storage/json_reading_store.py`: `JsonReadingStore`
 - つなぐ所: `GenerateResponseUseCase(readings=)`、`ChatResponder(readings=)`、`SpeakTextUseCase(pronounce=)`、`GoalBoard(readings=)`、`factories/stream.py`
 
@@ -32,5 +33,5 @@ Twitch の名前は英字や漢字が多く、読み上げ（Style-Bert-VITS2）
 
 ## 5. 検証
 
-- 単体テスト: かなだけを受ける、推測が本人の読みを上書きしない、置き換え（長い名前から、英数字の途中は除く）、JSON の保存と読み込み、合成には読み・イベントには名前、返答での推測と本人の読み、`!yomi`、`/api/readings`
+- 単体テスト: かなだけを受ける、推測が本人の読みを上書きしない、置き換え（長い名前から、英数字の途中は除く）、JSON の保存と読み込み、合成には読み・イベントには名前、返答での推測と本人の読み、`!yomi`（名前 1 つ / 言葉と読み 2 つ）、`/api/readings`
 - 実機: 英字の名前で返答したときの読み、`!yomi` の後の読み

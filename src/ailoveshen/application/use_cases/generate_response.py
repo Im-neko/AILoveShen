@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from loguru import logger
 
@@ -30,6 +31,7 @@ from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook, clean_keys, situation_of
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
+from ailoveshen.application.use_cases.reply_facts import ReplyFactCheck
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation, PlaySession
@@ -175,11 +177,13 @@ class GenerateResponseUseCase(IGenerateResponse):
         character: CharacterProfile,
         objectives: ObjectiveKeeper | None = None,
         history_limit: int = 10,
+        commentary_limit: int = 3,
         max_attempts: int = 2,
         readings: NameReadings | None = None,
         notes: NoteKeeper | None = None,
         lessons: LessonBook | None = None,
         promise_check: PromiseCheck | None = None,
+        fact_check: ReplyFactCheck | None = None,
         self_facts: SelfFacts | None = None,
         rethink_interval_seconds: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
@@ -194,7 +198,8 @@ class GenerateResponseUseCase(IGenerateResponse):
             conversation: 実況と目標の決定と共有する会話履歴
             character: 配信者のキャラクターのプロフィール
             objectives: 受けた頼みを大目標に足す（None: 返答は話すだけ）
-            history_limit: モデルに渡す最近の会話のメッセージの数
+            history_limit: モデルに渡す、視聴者のコメントと自分の返事の最近の数
+            commentary_limit: それに加えて渡す、自分の実況（独り言）の最近の数
             max_attempts: 受けた頼みが使えないとき、あきらめるまでに生成する回数
             readings: 視聴者の名前の読みの辞書（プロンプトに出し、返答の name_reading で覚える。
                 docs/design/30_name_readings.md）
@@ -204,6 +209,8 @@ class GenerateResponseUseCase(IGenerateResponse):
             promise_check: 返答が行動を約束しているのに大目標にも考え直しにもならないかを
                 確かめる（Jev）。約束していれば Gemini が守り方（今やる / 後でやる）を決めて
                 大目標にし、できなければ書き直させる（docs/design/34 §10。None なら確かめない）
+            fact_check: 返答が、持っている物を「ない・見つからない」と言っていないかを確かめる（Jev）。
+                言っていれば事実を添えて書き直させる（None なら確かめない）
             self_facts: 自分について話したこと（プロンプトに出して守らせ、返答の self_facts で
                 覚える。docs/design/40。None なら覚えない）
             rethink_interval_seconds: コメントの指摘で小目標を決め直す最短の間（荒らし対策）
@@ -216,11 +223,13 @@ class GenerateResponseUseCase(IGenerateResponse):
         self._character = character
         self._objectives = objectives
         self._history_limit = history_limit
+        self._commentary_limit = commentary_limit
         self._max_attempts = max_attempts
         self._readings = readings
         self._notes = notes
         self._lessons = lessons
         self._promise_check = promise_check
+        self._fact_check = fact_check
         self._self_facts = self_facts
         self._rethink_interval = rethink_interval_seconds
         self._clock = clock
@@ -238,7 +247,11 @@ class GenerateResponseUseCase(IGenerateResponse):
         try:
             # モデルに渡す履歴には、返答するチャットを含めない。
             # そのチャットはプロンプトが別に示す。
-            history = self._conversation.recent_messages(self._history_limit)
+            # 視聴者との往復を、実況に押し出されないように取り、時刻の順に並べる（設計書 80 の下の
+            # 設計書 81: コメントとの会話の流れと時系列）
+            history = self._conversation.recent_chat_flow(
+                self._history_limit, self._commentary_limit
+            )
 
             session = request.session
             activity = session.activity() if session is not None else None
@@ -246,6 +259,9 @@ class GenerateResponseUseCase(IGenerateResponse):
                 emotion_state=request.emotion_state,
                 activity=activity,
                 recent_messages=history,
+                now=datetime.now(timezone.utc),
+                comment_received_at=request.received_at,
+                waiting_comments=request.waiting,
             )
 
             logger.debug(f"返答を生成する: {request.message[:50]}...")
@@ -259,10 +275,13 @@ class GenerateResponseUseCase(IGenerateResponse):
                     content=request.message,
                     user_name=request.user_name,
                     user_id=request.user_id,
+                    received_at=request.received_at,
                 )
 
             if text:
-                self._conversation.add_streamer_message(text, MessageType.RESPONSE)
+                self._conversation.add_streamer_message(
+                    text, MessageType.RESPONSE, addressed_to=request.user_name
+                )
                 await self._event_publisher.publish(
                     ChatResponseGeneratedEvent(
                         text=text,
@@ -432,6 +451,14 @@ class GenerateResponseUseCase(IGenerateResponse):
                 if kept is None or not kept.now:
                     self._rethink(session, request.user_name, data.get("rethink"))
                 return text, kept.objective if kept is not None else None
+            # 持っている物を「ない・見つからない」と言っている: 事実を添えて 1 回だけ書き直させる
+            # （最後の試しでも直らなければ話す）
+            if self._fact_check is not None and attempt < attempts:
+                wrong = await self._fact_check.problem(text, context.activity)
+                if wrong:
+                    error = wrong
+                    logger.warning(f"返答 {attempt} は持ち物の事実と食い違う: {data!r}")
+                    continue
             self._learn(session, request, data)
             self._rethink(session, request.user_name, data.get("rethink"))
             return text, None

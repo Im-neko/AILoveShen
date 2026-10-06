@@ -171,30 +171,19 @@ test('作り直して送るアイテムは数だけの部品に絞る（視聴�
   assert.equal(back.data.params.items[36].components[0].data, 7)
 })
 
-test('部品つきの装備（set_equipment）は部品を全部外して送る（視聴者が「74 bytes extra」「6 bytes extra」で切れた）', async () => {
-  const { sanitizedEquipment } = await import('../src/mirror.mjs')
-  const plain = { entityId: 5, equipments: [{ slot: 0, item: { itemCount: 1, itemId: 866, addedComponentCount: 0, removedComponentCount: 0, components: [], removeComponents: [] } }] }
-  assert.equal(sanitizedEquipment(plain), null) // そのまま中継
-  const fancy = {
-    entityId: 5,
-    equipments: [{
-      slot: 0,
-      item: {
-        itemCount: 1,
-        itemId: 866,
-        addedComponentCount: 2,
-        removedComponentCount: 0,
-        components: [{ type: 'damage', data: 3 }, { type: 'custom_name', data: { type: 'string', value: 'x' } }],
-        removeComponents: []
-      }
-    }]
-  }
-  const safe = sanitizedEquipment(fancy)
-  assert.deepEqual(safe.equipments[0].item.components, []) // 装備の見た目に部品は要らない: 全部外す
-  assert.equal(safe.equipments[0].item.addedComponentCount, 0)
+test('装備（set_equipment）は、サーバーから届いたのと同じバイト列で視聴者へ送る（nmp の読み取りが先頭ビットを消す）', async () => {
+  const { encodeEquipment } = await import('../src/mirror.mjs')
   const { createRequire } = await import('node:module')
   const mc = createRequire(import.meta.url)('minecraft-protocol')
-  const buf = mc.createSerializer({ state: 'play', isServer: true, version: '1.21.4' }).createPacketBuffer({ name: 'entity_equipment', params: safe })
-  const back = mc.createDeserializer({ state: 'play', isServer: false, version: '1.21.4' }).parsePacketBuffer(buf)
-  assert.equal(back.metadata.size, buf.length)
+  // 実際に切れたパケット（logs/bridge.log 2026-10-03 07:56）の、サーバーが送った形: 手 2 つ、1 つ目の slot は 0x80（続きがある）
+  const wire = Buffer.from('60a3a901' + '8001d8090000' + '0101d9090000', 'hex')
+  const deserializer = mc.createDeserializer({ state: 'play', isServer: false, version: '1.21.4' })
+  const received = Buffer.from(wire)
+  const parsed = deserializer.parsePacketBuffer(received) // nmp は received の先頭ビットを消す
+  assert.equal(received[4], 0x00, '前提: nmp が読んだバッファの先頭ビットを消す')
+  const sent = encodeEquipment(parsed.data.params)
+  assert.equal(sent.toString('hex'), wire.toString('hex'))
+  const back = deserializer.parsePacketBuffer(Buffer.from(sent))
+  assert.equal(back.metadata.size, sent.length)
+  assert.deepEqual(back.data.params.equipments.map((e) => [e.slot, e.item.itemId]), [[0, 1240], [1, 1241]])
 })

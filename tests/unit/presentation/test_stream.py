@@ -72,6 +72,44 @@ async def test_runs_until_cancelled_then_closes_everything():
     assert closed == ["tts"]  # 1 つ閉じられなくても残りを閉じる
 
 
+def test_supports_and_thanker_go_together():
+    with pytest.raises(ValueError):
+        Stream(_game(), Mock(), supports=(Mock(),))
+    with pytest.raises(ValueError):
+        Stream(_game(), Mock(), thanker=Mock())
+
+
+@pytest.mark.asyncio
+async def test_the_thanks_run_with_the_stream_and_their_sources_are_closed():
+    game = _game()
+    chat, responder = Mock(close=AsyncMock()), Mock()
+    follows = Mock(close=AsyncMock())
+    thanker = Mock()
+
+    async def forever(_):
+        await asyncio.sleep(3600)
+
+    thanker.run = AsyncMock(side_effect=forever)
+    responder.run = AsyncMock(side_effect=forever)
+    stream = Stream(
+        game,
+        Mock(close=AsyncMock()),
+        chat=chat,
+        responder=responder,
+        supports=(chat, follows),
+        thanker=thanker,
+    )
+    task = asyncio.create_task(stream.run())
+    for _ in range(20):
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    thanker.run.assert_awaited_once_with((chat, follows))
+    chat.close.assert_awaited_once()  # チャットと共有する出どころは 1 回だけ
+    follows.close.assert_awaited_once()
+
+
 def test_chat_and_responder_go_together():
     with pytest.raises(ValueError):
         Stream(_game(), Mock(), chat=Mock())

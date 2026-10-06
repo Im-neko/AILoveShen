@@ -20,8 +20,12 @@
     （水を置く手順は water_farm）。水が届いた耕地は、何も植わっていなくても土に戻らない
     水が届く前は、耕すのは 1 マスずつ、耕したらすぐまく。まく種が耕し済みのマスに足りないと till は
     断られる（何も植わっていない耕地は、水が近くにないと土に戻るから。種がないまま耕し続けない）
+    畑は、四角と柵の輪の地面の高さをそろえてから耕し（整地）、四角の 1 マス外側を柵で囲い、1 か所に柵のゲートを
+    付ける。整地・柵・ゲートは、小目標 facility(name) の候補（do_suggestion: 「level the ground of the farm」
+    「put up the fence around the farm」「put the fence gate of the farm」）で進める。柵は板と棒で作る
+    （craft {item: oak_fence}、ゲートは oak_fence_gate）。全部そろって、畑が済みになる
     畑の場所・作物・残りのマスは search_facility（例: 畑、wheat farm）
-  tools: [till, sow, water, craft, recipe_of, search_facility]
+  tools: [till, sow, water, craft, recipe_of, search_facility, do_suggestion]
   see: [get_seeds, harvest_crops, water_farm, plant_trees]
 
 - key: harvest_crops
@@ -102,13 +106,22 @@
     （item_info {query: raw_iron} で要る道具と、どのブロックから取れるかが分かる）
     1. 目の前や find_blocks で見える鉱石を dig
     2. search_memory（例: iron_ore、鉄）で前に見た鉱石へ goto
-    3. 地下の鉱石はソルバーの提案（do_suggestion の dig down …）で階段を掘って下りる。
-       完成した採掘場があれば、深いものは提案 go down the mine … でそこから下りる
-    石・土・砂利・鉱石は、状態の「採掘の場所」の近くから掘る（around と find_blocks の quarry: true が印）。
-    毎回別の所を掘ると家のまわりが穴だらけになる。階段は前に掘ったものの底から続けて掘られる
-    （鉱石が底より深いとき。dig down の提案が自動で底まで歩く）
-    鉄鉱石は raw_iron になり、かまどで iron_ingot に焼く。何度も鉄が要るなら採掘場を作る（make_mine）
-    石炭や鉄が見えないときは、歩き回って探すより採掘場を作ってそこから集める（make_mine。探索の提案も残る）。
+    3. 地下の鉱石と石は、家があるとき採掘場から取る（自分で建てた家。設計書 68。do_suggestion で選ぶ）: 提案 make a mine down to y … は、
+       家の外周（壁から 10〜30 m）に、鉱石の高さまで下りるらせん階段と、底の部屋から東西へ延びる坑道（幹）に
+       3 マスおきの枝（左右へ 10 マス）をつけたブランチマイニングを設計して掘る。
+       途中なら dig the mine …（探している鉱石が壁に出たらそこで止まるので、見えた鉱石を dig）、
+       下りきったら go down the mine … で底へ行く。底まで掘り尽くして鉱石が出なければ、別の入口に新しい採掘場を作る。
+       採掘場のほかの岩を掘って近道しない（経路探索は採掘場の坑道と枝以外の深い岩を掘らない）。
+       坑道や枝が洞窟（空洞）に出たら、手元の丸石で床・壁・天井を作って塞ぐ（丸石が足りなければ、その枝は打ち切る）
+       家がない間は、提案 dig down …（階段を掘って下りる）
+    石は、家があるとき地表から 10 マス以上下でないと掘れない（地表の石は around の shallow に数だけ出て、dig は断られる）。
+       採掘場の壁の石を掘る。土・砂利・鉱石は地表でもよい
+    採掘場の階段と坑道には松明を置く（12 段・8 マスおき）。松明を持っていないと dig_mine は始まらず、
+    掘っている途中で尽きればそこで止まる（理由に出る）。先に作る（暗い所で 4 本未満なら、状態の needs にも出る）
+    石・土・砂利は、状態の「採掘の場所」の近くから掘る（around と find_blocks の quarry: true が印）。
+    毎回別の所を掘ると家のまわりが穴だらけになる。家がなく階段を掘るとき、前に掘った階段の底から続けて掘られる
+    鉄鉱石は raw_iron になり、かまどで iron_ingot に焼く。
+    石炭や鉄が見えないときは、歩き回って探すより採掘場から集める（make_mine。家がなければ探索の提案）。
     松明の石炭は、かまどがあれば木炭（原木を焼く）でもよい: ソルバーが安いほうを選ぶ
   tools: [dig, find_blocks, search_memory, goto, do_suggestion, item_info]
   see: [smelt, upgrade_tools, make_mine]
@@ -118,6 +131,11 @@
   words: mine shaft stairs tunnel branch mining iron diamond deep facility 採掘場
   when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき、石炭や鉄が見えず探し回っているとき
   how: |
+    家があるとき、採掘場はブリッジが自分で設計する（提案 make a mine down to y …。書かなくてよい）。
+    家の外周の 10〜30 m、入口は前の採掘場と同じ行に揃え、鉱石の高さ（石炭・銅 y 32、鉄 16、ラピス 0、金 -16、
+    レッドストーン・ダイヤ -58）まで階段で下りて、東西の坑道（長さ 32、危なければ短く）と 3 マスおきの枝（長さ 10）を掘る。
+    坑道と枝が洞窟に出たら丸石で塞ぐ。個数の上限はない。
+    次のは、大目標の条件で名前を決めて設計するとき:
     採掘場は作る前に設計する: 大目標の条件に facility(name) を書く（名前は街の理想図の予定の
     施設名。なければ新しい名前）。そのとき区画・底の高さ（鉄は y 16 あたり）・坑道の本数と長さを
     決める。溶岩や水に当たる深さは断られ、届く一番深い y が返る
@@ -129,13 +147,29 @@
     採掘場の場所・深さ・掘った数は search_facility（例: 採掘場、mine）
   tools: [do_suggestion, craft, recipe_of, search_facility]
   see: [mine_ores]
+- key: breath
+  title: 水の中で息を続ける
+  words: water underwater swim breath air drown ocean lake river 水 泳ぐ 息 溺れる 水面
+  when: 水の中にいる、潜る、水を渡るとき（欲求に「your head is underwater (air N/20)」が出る）
+  how: |
+    頭が水の中にいる間、息（気泡 20 = 15 秒）が減る。0 になると毎秒 2 ダメージ。
+    息が続かなくなりそうになると、反射が自動で動いている行動を止め、息のできる所（水面、天井の穴、空気のある所）へ
+    泳ぐ（頭の上が塞がっていれば横へ）。その間は道具や行動が断られる。浮いたら、選び直し。
+    水を長く渡るなら泳がず、ボートを使う（12 m 以上の水は自動）。長く潜る用がなければ、水の中の掘りや歩きは避け、
+    goto で水の外の場所を選ぶ
+  tools: [goto]
+  see: []
+
 - key: smelt
   title: かまどで焼く・精錬する
   words: smelt furnace cook ingot iron glass charcoal stone fuel
   when: 鉄のインゴット、焼いた肉、木炭、ガラス、石が要るとき
   how: |
-    1. かまどがなければ丸石 8 個で craft {item: furnace} して place で置く（家の中でも外でもよい）
-    2. smelt {input, count} で近くのかまどで焼く。燃料は持ち物から選ぶ（石炭・木炭は 8 個、板材・原木は 1.5 個焼ける）
+    精錬・調理は家の中のかまどだけ（地下や野外で置いて立ち止まると、モブに撃たれ続けて死ぬ。家がまだないときだけ、
+    地上で置いてよい。地下では置かない・使わない）。生鉄や生肉は持って帰り、家で焼く
+    1. かまどがなければ丸石 8 個で craft {item: furnace} して、家の中に place する（外では place が断られ、
+       提案は「go home to place the furnace inside the house」になる）
+    2. 家に着いたら smelt {input, count} で家のかまどで焼く。燃料は持ち物から選ぶ（石炭・木炭は 8 個、板材・原木は 1.5 個焼ける）
     例: raw_iron → iron_ingot、beef → cooked_beef、oak_log → charcoal、sand → glass、cobblestone → stone
     焼いている途中のかまどは search_memory（例: furnace）で見られる
   tools: [craft, place, smelt, search_memory]
@@ -146,8 +180,11 @@
   words: food eat edible cook meat beef porkchop chicken mutton hunger bread recipe 食べ物 食べられる 食料 料理
   when: おなかが減ったとき、食べ物を蓄えたいとき、何が食べられるか・どう作るか分からないとき
   how: |
+    食べ物が要るときは、まず find_foods（query なし）の now: 足りない満腹度（満タンは 20、体力が減っているなら 18 以上で回復する）、
+    持ち物と家のチェストの満腹度の合計、見えている動物（落とす物と満腹度）、熟した作物、覚えている動物の場所。歩くと 40〜70 m で 1 減るので、
+    遠い牛より近い作物やチェストが得
     何が食べられて、どう手に入るかは find_foods {query?, have?}（満腹度、レシピの材料、かまどで焼く元、畑、狩り。持ち物で食べられる・作れる物が先。小麦のように食べられない物は出ない）
-    eat {item} で食べる。焼いた物を先に食べる。生肉は飢えているとき（満腹度 6 以下）だけ
+    eat {item} で食べる。足りない満腹度に合う物から食べる（満腹に近いときに焼いた肉は食べない）。体力が減っているときは満腹度 18 以上まで食べる。生肉は飢えているとき（満腹度 6 以下）か、かまどがなくて満腹度 12 以下のときだけ
     生肉は smelt {input: beef, count} で焼く（かまどが要る）。小麦 3 つでパン（craft {item: bread}）
     食べ物は動物を狩る、畑で育てる、チェストから withdraw
   tools: [find_foods, eat, smelt, craft, withdraw]
@@ -175,6 +212,10 @@
     夜に家の中にいると、外に出る道具は断られる。家の中なら敵は来ない
     ベッドに村人などが寝ていると「the bed is occupied」で寝られない。夜、そばのベッドに寝ている村人がいれば「wake up the sleeping … (one hit)」が候補に出る（do_suggestion）。素手で 1 回殴って起こし、ベッドが空いたら寝る。attack は倒すまで戦うので使わない
     家もベッドもない夜（家がない・行けない・64 ブロックより遠い）は、平らな土の地面で「dig into the ground here and seal yourself in until morning」が候補に出る（do_suggestion）。足元に 3 マスの縦穴を掘って入り、上を掘った土で塞ぐ。朝まで「stay in the sealed hole until morning」で待つ。夜の外で立って待たない。朝になったら「climb out of the hole」で上がる。石や崖・水のそばでは出ない（理由は blocked に出る）
+    縦穴が掘れない所（砂浜・石の上・水のそば）の家もベッドもない夜は、「wall yourself in with dirt here and wait until morning」が候補に出る（do_suggestion）。立った所の四方と真上を土・丸石・板で囲む（13 ブロックほど。持っていなければ近くの土を素手で掘って集める）。囲んだら「stay in the sealed hole until morning」で朝まで待ち、朝は「climb out of the hole」で壁の 1 方を掘って出る
+    剣も斧もないなら、見えている木から剣を作る手（素手で原木を殴る）も候補に出る。夜に木を探して歩く手は出ない
+    家のドアがなく、そのマスの床もないときは go_home は出ない（落ちる）。家の足元を埋める built() を先に選ぶ
+    水の中にいるときは、まず陸へ泳ぐ（do_suggestion の「swim to the nearest land at …」。聞かずに実行される）。水の中では goto も explore も進まない
   tools: [go_home, sleep, do_suggestion]
   see: [fight]
 
@@ -186,6 +227,7 @@
     剣か斧を equip してから attack {entity}。体力が少ない・武器がないときは flee {entity}
     クリーパーは近づくと爆発する: 離れるか、離れた所から戦う
     近くの敵には反射（自動の戦う・逃げる）が先に動く
+    武器がなくても、体力が 12 以上なら、ゾンビ・ドロウンド・クモ・スケルトンとは 1 体のときに素手で殴り合う（体力が 8 を切ったらやめて逃げる）。クリーパーとは戦わない。水の中では素手で戦わず、陸へ泳いで上がってから
   tools: [equip, attack, flee]
   see: [survive_night, upgrade_tools]
 
@@ -206,7 +248,15 @@
   how: |
     deposit {item, count} で家のチェストに入れる（チェストがなければ板材 8 枚で craft して家の中に place）
     withdraw {item, count} で入っているチェストから出す
+    作った物・集めた物は、使わないなら家に戻ったときにチェストへ（個数に関わらない。ダイヤ 1 個も）。家の中にいて、目標に要らない物
+    （武器・防具・つるはし・食べ物・松明とその材料以外。種・クワ・バケツは目標が使うときだけ持つ）を持っていれば、提案に
+    「put the things you do not need now in the home's chest」が出る（聞かずに実行される）。外でも、価値の高い物（ダイヤ・金・エメラルド
+    など）を持っている・持ち物がほぼいっぱいのときは、家から遠くても一度戻って預ける。地下へ出る直前に家が近ければ先に預ける
     どのチェストに何があるかは search_memory（例: チェスト、wheat が入ったチェスト）
+    預けるとき、最初のチェストがいっぱいなら次のチェストへ入れる。家のチェストの空きが少なくなると（総スロットの 2 割か 4 スロット以下）、
+    placed(chest, home, 今の数 + 1) が小目標の候補に出る（上限は 6 ブロック。ラージチェストは 2）。家にチェストが 2 つ以上あって、同じ物が
+    散らばっている・半端なスタックがあるときは、提案に「put the home's chests in order」が出る（家の中で。同じ物を 1 つのチェストに集め、
+    半端なスタックを詰める。中身が変わるまで 2 回は出ない）
     持ち物がいっぱいで落とし物が拾えないとき、家のチェストが遠い・ないときは、toss で余った物を捨てて空ける
     （toss だけで余り全部。土と丸石は 64 個ずつ残す。道具、食料、松明、目標に要る物は捨てない。item は自然の地形、
     丸石、花、羊毛だけ）。捨てた物は拾う候補に出ない
@@ -262,6 +312,11 @@
   how: |
     松明は石炭（か木炭）1 つと棒 1 本で 4 本（craft {item: torch}）
     松明は 4 本を切らさず持つ。暗くて持っていなければ、何も見えないので引き返して作る
+    持つ量は生活インフラの段階で変わる（設定 minecraft.supplies）: 序盤は 16 本まで、畑ができたら 16 本（備蓄 32）、採掘の段階では 1 スタック（64 本）を手に持つ。
+    手持ちと家のチェストの合計で数え、家の中ではチェストから手に取る。食べ物も同じ（満腹度で数える。序盤は 24 点まで）
+    洞窟の中では石炭や棒が集まらないことが多い。地下で松明が 4 本より少なく、作る材料もなければ、集めずに地上へ出る（提案の「get out to the surface」、または家へ帰る）。家のチェストの松明や材料はそこで使う
+    暗い所か深い地下で 4 本未満のとき、材料（石炭か木炭と棒）があれば、提案に craft torch が出る。needs に
+    「only N torches left」と出たら、置き切る前に作り足す
     place {item: torch, x,y,z} で暗い地面に置く。完了条件 lit(distance) はブリッジが暗い所を数える
   tools: [craft, place]
   see: [place_things]
@@ -273,7 +328,9 @@
   how: |
     level {where, radius} で where（home か x,y,z）のまわりを 1 つの高さにそろえる
     出っ張った土や石を掘り、穴を土で埋める。家・建物・木・畑・水・置いた物は触らない
-  tools: [level]
+    穴だけ残ったときは、穴の数だけ土を持ってから呼ぶ（足りないと断られる）。土は整地する土地の外から取る:
+    その土地の床より下の地面は、dig でも断られる（掘ると、そろえた地面の下が穴だらけになる）
+  tools: [level, dig]
 
 - key: build
   title: 建物を建てる
@@ -325,7 +382,24 @@
     use_item {item, entity?} でそのモブに（餌、ハサミ、リード）、use_item {item, x,y,z} でそのブロックに（骨粉、バケツ、斧）
     どちらもなければ向いている方へ（雪玉、釣り竿）。食べ物は eat、ボートは ride_boat、チェストは deposit / withdraw
   tools: [use_item, eat, ride_boat, deposit, withdraw]
-  see: [water_farm]
+  see: [water_farm, experiment]
+
+- key: experiment
+  title: 原因が分からない失敗を実験で調べる
+  words: experiment stuck door inspect diagnostics sneak face trial error repeat
+  when: 同じ理由で失敗し続けるとき、ドアが開かない・閉まらない、置けない、歩けない、理由を読んでも直し方が分からないとき
+  how: |
+    失敗が続くと（2 回続けて失敗、同じ理由が 3 回、状況が動かない）、道具に inspect と diagnostics が加わり、use_item が拡張される
+    0. 家に入れない・歩けないときは、まず inspect（座標なし）で自分を見る: closed_space（歩いて出られない閉じた所か）と home_door
+       （ドアまで何ブロック離れ、何ブロック下か）。ドアから遠ければ、ドアを調べても意味がない（ドアの前に立っていない）
+    1. diagnostics {kind: door|place|stuck} でブリッジが残した失敗の記録を読む。inspect {x,y,z} でそのマス（ブロックの状態 props、
+       6 方向の隣、届くか、間にある物、断られる理由）を、inspect（座標なし）で自分（スニーク・手の物・視線の先）を見る
+    2. 仮説を 1 つ立て、変えるものを 1 つだけ変えて試す: use_item {x,y,z, face: up|down|north|south|east|west, sneak: true|false}
+       item を省くと素手で押す（ドア・レバー・ボタン）。家のドアは座標の代わりに target: home_door
+    3. もう一度 inspect で変わったかを確かめる。変われば続ける（うまくいった座標なしの手は覚えた候補になる）。変わらなければ別の 1 つを変える
+    4. 3 つ試して通らなければ別の手（家に戻る・小目標を変える）へ
+  tools: [inspect, diagnostics, use_item]
+  see: [use_items]
 
 - key: skills
   title: 技を使う・覚える
@@ -337,3 +411,46 @@
     till → sow のような同じ手の並びを 3 回続けて成功させると、「同じ手の並びを繰り返している」と出る。技にするかは自分で決める
     1 回の実行は行動 40 回まで（超えると失敗）。長い作業は、36 回ほどで切り上げる技にして、もう一度呼んで続ける
   tools: [run_skill, write_skill]
+
+- key: collect_on_the_way
+  title: 探索中に見つけた鉱石や素材を、目標外でも集める
+  words: ore coal iron copper gold diamond emerald lapis redstone obsidian clay sugar_cane collect windfall pickaxe tier 鉱石 ついで 黒曜石
+  when: 探索中・移動中に、目標に関係ない鉱石や素材が近くに見えたとき。ダイヤや黒曜石を見つけたが、掘れないとき
+  how: |
+    近く（12 m 以内）にある鉱石（石炭・銅・鉄・ラピス・レッドストーン・金・ダイヤ・エメラルド）と、設定の一覧
+    （黒曜石・粘土・サトウキビなど）は、掘れる道具があり安全なら、ブリッジが候補に出し、聞かずに掘る
+    （do_suggestion「collect <block> at x,y,z」。自分で掘るなら dig {x,y,z}）。持っている数が 1 スタックに届いたものは掘らない（目的外の素材は 1 スタックまで）
+    家に帰る・夜を越す・戦う小目標の間と、武器なしの地下では出ない。聞かずに掘るのは、その小目標の目標の手と同じ数まで（寄り道ばかりにならない）
+    掘れるかはツルハシの階級で決まる: 石炭・銅・鉄・ラピスは石以上、金・ダイヤ・エメラルド・レッドストーンは鉄以上、
+    黒曜石はダイヤ。掘れない物は掘らず、場所は地図が覚えている。道具を作ったあと、12〜48 m 先の覚えている場所には
+    「go to the <block> seen at x,y,z and mine it」の候補が出る（地下へは松明が足りるときだけ）
+    ダイヤを見つけたら、鉄のツルハシを作る理由になる（craft {item: iron_pickaxe}）。離れた場所へは goto
+  tools: [do_suggestion, dig, goto, craft]
+  see: [make_farm]
+
+- key: climb_down
+  title: 自分で積んだ柱の頂上から、足元を掘って降りる
+  words: climb down pillar tower top stuck high dig down drop cliff tall
+  when: 高い柱・塔の頂上にいて、まわりが崖で歩いて降りられない。climb_out を繰り返しても出られない（積むほど高くなる）
+  how: |
+    まわりが崖で（3 ブロックより下まで床がない）足元が 1 本の柱なら、候補 `climb down the pillar you stand on by digging it away`
+    が出る（do_suggestion で実行する。昼は聞かずに実行される）。足元のブロックを 1 つずつ掘って落ち、歩いて降りられる高さになったら止まる。
+    掘ったブロックは拾えるので、降りるほど土や丸石が戻る。道具はいらない（素手でも壊せる）
+    - 柱でない所（自然の崖の縁、横に壁がある所）は掘らない。積んで出る climb_out は柱の頂上では出ない（閉じた所ではないため）
+    - inspect（座標なし）の over_a_drop で、柱の頂上かどうかが分かる
+  tools: [do_suggestion, inspect]
+  see: [climb_out]
+
+- key: climb_out
+  title: 閉じた所（出られない穴）から土か丸石を積んで出る
+  words: climb out closed space stuck pocket trapped shut pile pillar tower dirt cobblestone stairs shaft hole pickaxe broke
+  when: go_home や goto が「No path」「closed space」で失敗する、深い穴・採掘場の底・岩に囲まれた所から出られない、ツルハシが壊れて石を掘れない
+  how: |
+    歩いて出られない閉じた所にいて、土か丸石を持っていれば、候補 `climb out of the closed space by piling up dirt or cobblestone` が出る
+    （do_suggestion で実行する。昼は聞かずに実行される）。足元に積んで、歩いて出られる高さまで上がる。頭の上が岩なら素手でも掘る（閉じ込められたときだけ）
+    - 積むものがなければ、素手でも掘って出る道を空ける（go_home が閉じ込められたときだけ素手で掘ってよい）
+    - 出たら go_home や surface で戻る。ツルハシが壊れていたら、家に戻って作る（候補 `go home to make a new pickaxe`）
+    - ドアの前でなければ、ドアは原因ではない: inspect（座標なし）の closed_space と home_door で確かめる
+    - 水が入った小部屋（空気が数マスの水たまり）でも出る。水の中では夜も聞かずに実行される。reflex_surface という skill はない（息の反射はブリッジが自分でやる）
+  tools: [do_suggestion, inspect]
+  see: [experiment]

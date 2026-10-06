@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from ailoveshen.domain.events import (  # noqa: E402
     CommentaryGeneratedEvent,
     GameActionExecutedEvent,
+    GoalDecidingEvent,
     GoalEndedEvent,
     ObjectiveCompletedEvent,
     SpeechCompletedEvent,
@@ -67,6 +68,9 @@ def test_game_events_become_expressions_and_gestures():
         )
     )
     assert stuck["emotion"] == "sad"
+    [again] = stage.cues_for(GoalDecidingEvent(after_failure=True))
+    assert (again["emotion"], again["gesture"]) == ("sad", "tilt")
+    assert stage.cues_for(GoalDecidingEvent(after_failure=False)) == []
     assert stage.cues_for(GameActionExecutedEvent(action_id="dig", ok=True, result="dug")) == []
 
 
@@ -181,3 +185,31 @@ async def test_a_reaction_chosen_before_speaking_is_reused_without_asking_jev_ag
     assert (sent[1]["emotion"], sent[1]["gesture"], sent[1]["source"]) == ("happy", "cheer", "jev")
     assert director.calls == []
     assert reactions.take("やった！") is None  # 一度使ったら忘れる
+
+
+def test_support_makes_the_avatar_happy_and_wave_or_cheer():
+    from ailoveshen.domain.events import SupportReceivedEvent
+    from ailoveshen.domain.value_objects import SupportEvent, SupportKind
+
+    stage = AvatarStage()
+    for kind, gesture in (
+        (SupportKind.FOLLOW, "wave"),
+        (SupportKind.RAID, "wave"),
+        (SupportKind.SUBSCRIBE, "cheer"),
+        (SupportKind.GIFT, "cheer"),
+        (SupportKind.CHEER, "cheer"),
+    ):
+        [cue] = stage.cues_for(SupportReceivedEvent(support=SupportEvent(kind, "ねこ")))
+        assert (cue["type"], cue["emotion"], cue["gesture"]) == ("emote", "happy", gesture)
+    assert stage.cues_for(SupportReceivedEvent(support=None)) == []
+
+
+def test_jev_is_told_who_supported():
+    from ailoveshen.domain.events import SupportReceivedEvent
+    from ailoveshen.domain.value_objects import SupportEvent, SupportKind
+    from ailoveshen.presentation.web.avatar import moment_of
+
+    one = moment_of(SupportReceivedEvent(support=SupportEvent(SupportKind.FOLLOW, "ねこ")))
+    assert "follow" in one and "ねこ" in one
+    many = moment_of(SupportReceivedEvent(support=SupportEvent(SupportKind.FOLLOW, "ねこ"), count=4))
+    assert "4 viewers" in many

@@ -364,8 +364,8 @@ class TestGamePromptTemplateBuilder:
         )
 
         assert "「シェン」" in prompt
-        assert "- here: 最初の家の場所（0,0、家から 0m）: 家を建てられる平らな区画 12" in prompt
-        assert "- E: 東（96,0、家から 96m）" in prompt
+        assert "- here: 最初の家の場所（x=0 z=0、家から 0m）: 家を建てられる平らな区画 12" in prompt
+        assert "- E: 東（x=96 z=0、家から 96m）" in prompt
         assert "x\n選び直してください" in prompt
 
     def test_design_prompt_for_the_new_site(self):
@@ -384,7 +384,7 @@ class TestGamePromptTemplateBuilder:
         )
         prompt = _goal_prompt(obs=surveying)
         assert "- 街の場所: まだ決めていない（候補地を調べた数 1/9）" in prompt
-        assert "  - 最初の家の場所（0,0、家から 0m）" in prompt
+        assert "  - 最初の家の場所（x=0 z=0、家から 0m）" in prompt
 
         chosen = Activity(mission=MISSION, site=EAST, goal=PLANKS, observation=surveying)
         prompt = _goal_prompt(activity=chosen)
@@ -580,8 +580,8 @@ def test_what_is_right_in_front_is_shown_every_time():
     prompt = _goal_prompt(obs)
     assert (
         "- 目の前のブロック（半径 8m、足元の高さ ±2、見えているもの）: "
-        "wheat 6（熟した 2、→ wheat・wheat_seeds、一番近いもの 1,70,2 南 2.1m、高さ +0）、"
-        "oak_log 4（一番近いもの 5,71,0 東 4.6m、高さ +1）" in prompt
+        "wheat 6（熟した 2、→ wheat・wheat_seeds、一番近いもの x=1 y=70 z=2 南 2.1m、高さ +0）、"
+        "oak_log 4（一番近いもの x=5 y=71 z=0 東 4.6m、高さ +1）" in prompt
     )
     assert "- 目の前に落ちている物: oak_sapling 3（西 2.0m）" in prompt
     assert "目の前のブロック" not in _goal_prompt()
@@ -605,8 +605,8 @@ class TestPromptLength:
     def test_goal_system_length(self):
         # 決まった文（システム指示、キャッシュに当たる部分）。27 の分析、家具の述語、31 の見直し、
         # 33 の植林と畑、ついでに取る・まとめて運ぶ決まり、41 の整地、42 の custom、44 の束、50 §13 の
-        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）で増えた
-        assert len(GamePromptTemplateBuilder().build_goal_system()) < 8500
+        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）、74 の定石で増えた
+        assert len(GamePromptTemplateBuilder().build_goal_system()) < 9000
 
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500
@@ -683,4 +683,13 @@ def test_logs_that_are_not_trees_are_counted_but_never_given_coordinates():
     prompt = _goal_prompt(obs)
     assert "oak_log（ほか木ではない3個は人が作った物で集めない。集められる木の幹は目の前にない）" in prompt
     assert "育ち途中" not in prompt
-    assert "birch_log 2（ほか木ではない1個は人が作った物で集めない、一番近いもの 5,71,0 東 4.6m、高さ +1）" in prompt
+    assert "birch_log 2（ほか木ではない1個は人が作った物で集めない、一番近いもの x=5 y=71 z=0 東 4.6m、高さ +1）" in prompt
+
+
+def test_jev_sees_the_last_eight_actions_in_order():
+    """預けては取り出す往復のような、前の手を打ち消す選択に気づけるよう、直近 8 件を古い順に見せる。"""
+    obs = _obs()
+    actions = [{"action": f"step {i}", "ok": True, "result": "done", "seconds": 1} for i in range(12)]
+    obs = replace(obs, state={**obs.state, "recent_actions": actions})
+    state, _ = GamePromptTemplateBuilder().build_action_context(PLANKS, obs)
+    assert [a["action"] for a in state["recent_actions"]] == [f"step {i}" for i in range(4, 12)]

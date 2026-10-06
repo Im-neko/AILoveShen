@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from ailoveshen.application.dto.llm_dto import (
@@ -12,7 +13,7 @@ from ailoveshen.application.ports.input.generate_commentary import IGenerateComm
 from ailoveshen.application.ports.input.generate_response import IGenerateResponse
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.entities import PlaySession
-from ailoveshen.domain.value_objects import Activity, EmotionState
+from ailoveshen.domain.value_objects import Activity, ConversationMessage, EmotionState
 
 
 class LLMService:
@@ -81,6 +82,8 @@ class LLMService:
         session: Optional[PlaySession] = None,
         kind: Optional[str] = None,
         producer: bool = False,
+        received_at: Optional[datetime] = None,
+        waiting: tuple[ConversationMessage, ...] = (),
     ) -> str:
         """
         視聴者のチャットへの返答を生成する。
@@ -93,6 +96,8 @@ class LLMService:
                 見て、視聴者の頼みを次の目標として受けることがある
             kind: 返事の前の仕分けが答えたコメントの種類（request / advice / ...。None: 分からない）
             producer: 配信の運営（管理画面）の指示か（視聴者ではない。従う）
+            received_at: コメントが届いた時刻（会話の時系列に使う。None: 今届いた）
+            waiting: 同じとき、ほかに届いてまだ返事していないコメント
 
         Returns:
             生成した返答。失敗したときは空文字列
@@ -106,6 +111,8 @@ class LLMService:
                 session=session,
                 kind=kind,
                 producer=producer,
+                received_at=received_at,
+                waiting=waiting,
             )
         )
         return response.text if response.success else ""

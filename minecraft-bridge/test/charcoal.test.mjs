@@ -43,14 +43,14 @@ test('焼けるかまどは、近くのもの、なければ最後に見たか�
 })
 
 test('地下の鉱石が見えず採掘場もなければ、探索の候補は残したまま、採掘場を作るよう促す', () => {
-  const r = solve(k, world({ wooden_pickaxe: 1 }, {}, { mines: [] }), [{ spec: 'coal', count: 2 }])
+  const r = solve(k, world({ wooden_pickaxe: 1, torch: 8, wooden_sword: 1 }, {}, { mines: [] }), [{ spec: 'coal', count: 2 }])
   assert.equal(r.leaves[0].kind, 'explore') // 探索は残す
   assert.match(r.blocked.join('\n'), /instead of walking around for it, add a mine: facility\(<new name>/)
   // 作りかけの採掘場があれば、それを続けるよう言う
-  const building = solve(k, world({ wooden_pickaxe: 1 }, {}, { mines: [{ name: 'mine_1', status: 'building' }] }), [{ spec: 'coal', count: 2 }])
+  const building = solve(k, world({ wooden_pickaxe: 1, torch: 8, wooden_sword: 1 }, {}, { mines: [{ name: 'mine_1', status: 'building' }] }), [{ spec: 'coal', count: 2 }])
   assert.match(building.blocked.join('\n'), /the mine mine_1 \(building\) is not finished: finish it/)
   // 完成した採掘場があれば、そこから下りる（促さない）
-  const done = solve(k, world({ wooden_pickaxe: 1 }, {}, { mine: { name: 'mine_1', bottom: { x: 0, y: 30, z: 0 }, above: true }, mines: [{ name: 'mine_1', status: 'done' }] }), [{ spec: 'coal', count: 2 }])
+  const done = solve(k, world({ wooden_pickaxe: 1, torch: 8, wooden_sword: 1 }, {}, { mine: { name: 'mine_1', bottom: { x: 0, y: 30, z: 0 }, above: true }, mines: [{ name: 'mine_1', status: 'done' }] }), [{ spec: 'coal', count: 2 }])
   assert.equal(done.leaves[0].kind, 'go_mine')
   assert.doesNotMatch(done.blocked.join('\n'), /add a mine/)
   // 地下でない物（原木）には促さない

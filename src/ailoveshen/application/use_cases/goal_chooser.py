@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import math
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Collection, Optional, Sequence
 
 from loguru import logger
 
@@ -30,9 +30,15 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     JobState,
     Step,
+    Supply,
+    SupplyTier,
 )
 
-FOOD_WHEN_HUNGRY = GoalSpec(GoalPredicate.HAVE, item="food", count=4)
+# 食べ物の量は満腹度で決める（個数でなく。じゃがいも 8 個は 8、焼いた肉 8 個は 64）。目標は個数
+# （`have(food, n)`）なので、足りない満腹度を 1 個あたりの見積もりで割って個数にする。見積もりが外れても、
+# 次の切れ目で満腹度がまだ足りなければ、また出る（docs/design/84 §8）
+FOOD_ITEM_POINTS = 5  # 生の肉（3）と焼いた肉（8）の間、パン（5）
+FOOD_FULL = 20  # 満腹度の満タン
 ASK_STREAMER = "rethink"  # 失敗の後に Jev が「Gemini に考え直させる」を選ぶときの答え
 
 
@@ -75,9 +81,16 @@ class NotChosen:
     why: str
 
 
-TORCH_LOW = 4  # これより少なければ、松明を作り足す
-TORCH_STOCK = 8  # 作り足すときの本数（材料が足りれば。1 回のクラフトで 4 本）
+# 手持ちのストック（2026-10-01、user: 「食料や松明はその時必要なぶんじゃなくて、ある程度手持ちに
+# ストックするようにしてほしい」）。切らしてから集めに行くと、暗い所で動けなくなり、空腹で飢えた。
+# 量は生活インフラの整い方で変える（`SupplyTier`、設定 `minecraft.supplies`、2026-10-02、docs/design/84）。
+# TORCH_LOW はブリッジの知らせと同じ「もう危ない」本数（段階によらない）
+TORCH_LOW = 4  # これより少なければ、暗い所で置けない: 切らしかけている
 CHEST_SLOTS_USED = 20  # 持ち物のスロットがこれだけ埋まって、家にチェストがなければ、置く小目標を出す
+MAX_HOME_CHESTS = 6  # 家に置くチェストの上限（ブロック数。ラージチェストは 2）
+CHEST_FREE_MIN = 4  # 家のチェストの空きがこれ以下（か総スロットの CHEST_FREE_RATIO 以下）になったら増やす
+CHEST_FREE_RATIO = 0.2
+CHEST_DEFRAG_ENOUGH = 3  # まとめると、これだけ空くなら増やさない（先にまとめる）
 SLOT_ITEMS = 64  # 1 スロットに入る数（16 個や 1 個のものは少なく見積もる）
 
 
@@ -85,32 +98,179 @@ def _count(inventory: dict, *names: str) -> int:
     return sum(int(inventory.get(n) or 0) for n in names)
 
 
-def torch_options(obs: GameObservation) -> list[Option]:
+def current_tier(
+    tiers: Sequence[SupplyTier], done: Collection[str], has_mine: bool
+) -> Optional[SupplyTier]:
+    """着いている段階のうち、一覧で一番後ろのもの（どれにも着いていなければ None: ストックの小目標は出さない）。"""
+    reached = [t for t in tiers if t.reached(done, has_mine)]
+    return reached[-1] if reached else None
+
+
+def _stored(obs: GameObservation, key: str) -> int:
+    """家のチェストにある数（最後に開けたときの中身）。チェストがなければ 0。"""
+    if not obs.chest_in_home:
+        return 0
+    return int((obs.state.get("supplies") or {}).get(f"{key}_stored") or 0)
+
+
+def _reserve_options(
+    obs: GameObservation,
+    tier: SupplyTier,
+    supply: Supply,
+    item: str,
+    label: str,
+    carried: int,
+    stored: int,
+    *,
+    have_items: Optional[int] = None,
+    stored_items: Optional[int] = None,
+    items_for=lambda n: n,
+    show=str,
+) -> list[Option]:
     """
-    松明を常に一定数持つ（`TORCH_LOW` 本を切らさない）。暗い所では何も見えないので、暗くて松明がなければ
-    引き返して作る。材料（石炭か木炭と、棒か板材・原木）が手元にあれば、作るだけなので Jev に聞かずに
-    選ぶ。材料がなければ、集めに戻る小目標を身を守るものとして出す（暗くて持っていなければ聞かずに）。
+    合計が足りているときの 2 つ: 出かける前にチェストから手に取る、手に持つぶんを超えるぶんをチェストに貯める。
+    どちらも昼に、家のチェストがあるときだけ。強制はしない（Jev が中目標と比べて選ぶ）。
+
+    `carried` / `stored` は段階の `Supply` と同じ単位（松明は本数、食べ物は満腹度）。目標は個数なので、
+    単位が個数でないとき（食べ物）は、`have_items` / `stored_items`（今の個数）と `items_for`（その単位の
+    量を個数にする）で目標の個数を出す。
     """
-    if "inventory" not in obs.state:
+    if not obs.chest_in_home or obs.time_phase != "day":
+        return []
+    have_items = carried if have_items is None else have_items
+    stored_items = stored if stored_items is None else stored_items
+    out = []
+    if obs.inside_home and stored > 0 and carried <= supply.carry // 2:
+        count = have_items + min(stored_items, items_for(supply.carry - carried))
+        out.append(
+            Option(
+                GoalSpec(GoalPredicate.HAVE, item=item, count=count),
+                f"家のチェストに{label}が {show(stored)}: 出かける前に手に取っておく"
+                f"（手持ち {show(carried)}、{tier.name} の段階では {show(supply.carry)} を持つ）",
+            )
+        )
+    reserve = supply.stock - supply.carry
+    if reserve > 0 and carried >= supply.carry and stored < reserve:
+        out.append(
+            Option(
+                GoalSpec(GoalPredicate.STORED, item=item, count=stored_items + items_for(reserve - stored)),
+                f"{label}を家のチェストに {show(reserve)} まで貯めておく（今 {show(stored)}、{tier.name} の段階の備蓄）",
+            )
+        )
+    return out
+
+
+def torch_options(obs: GameObservation, tier: Optional[SupplyTier]) -> list[Option]:
+    """
+    松明を多めに持つ（手持ちと家のチェストの合計が段階の `low` を下回ったら、手に `carry` 本まで）。暗い所では
+    何も見えないので、暗くて松明がなければ引き返して作る。材料（石炭か木炭と、棒か板材・原木）が手元に
+    あれば、作るだけなので Jev に聞かずに選ぶ。材料がなければ、集める小目標を身を守るものとして出す
+    （暗くて持っていなければ聞かずに）。足りているときは、チェストから手に取る・チェストに貯める小目標を出す。
+    """
+    if tier is None or "inventory" not in obs.state:
         return []
     inventory = obs.state["inventory"] or {}
+    supply = tier.torch
     torches = _count(inventory, "torch")
-    dark = any("dark here" in n for n in obs.needs)
-    if torches >= TORCH_LOW and not (dark and torches == 0):
-        return []
+    stored = _stored(obs, "torch")
+    # 深い地下は、暗くて松明がなければ引き返して作る（採掘場は松明がないと掘り進めない）
+    dark = any("dark here" in n for n in obs.needs) or (obs.underground and torches == 0)
     fuel = _count(inventory, "coal", "charcoal")
     sticks = _count(inventory, "stick") + 2 * _count(inventory, "oak_planks", "birch_planks", "spruce_planks")
     sticks += 8 * _count(inventory, "oak_log", "birch_log", "spruce_log")
     crafts = min(fuel, sticks)  # 1 回（石炭か木炭 1 つと棒 1 本）で 4 本
+    # 地下で松明が足りず、作る材料もない: 洞窟の中では石炭や棒が集まらないことが多いので、集めようとせず
+    # 地上に出る（家のチェストにあれば、そこで取れる。2026-10-03: 深い地下で持ち物が空のまま、松明 128 本を集めようとした）
+    if obs.underground and torches < TORCH_LOW and not crafts:
+        have = f"、家のチェストに {stored} 本" if stored else ""
+        return [
+            Option(
+                GoalSpec(GoalPredicate.AT_HOME),
+                f"地下で松明が {torches} 本しかなく{have}、作る材料もない: 洞窟では石炭や棒が集まりにくい。地上に出て、家で松明を用意する",
+                forced=True,
+            )
+        ]
+    if torches + stored >= supply.low and not (dark and torches == 0):
+        return _reserve_options(obs, tier, supply, "torch", "松明", torches, stored)
+    # 暗くて松明がなく引き返すときは、備蓄の数まで作る（4 本では 40 m で尽きて、また止まって引き返した: 2026-10-03）
+    want = supply.stock if dark and torches == 0 else supply.carry
     if crafts:
-        target = min(TORCH_STOCK, torches + 4 * crafts)
+        target = min(want, torches + stored + 4 * crafts)
+    elif stored:
+        target = min(want, torches + stored)  # チェストにあるぶんを取りに行く
     else:
-        target = 4 if dark else TORCH_STOCK
+        target = supply.carry  # 材料がなければ、備蓄の数でなく、手に持つ数まで
     if dark and torches == 0:
         reason = "暗くて先が見えず、松明がない: 引き返して松明を作る（石炭か木炭と棒）"
-    else:
+    elif torches < TORCH_LOW:
         reason = f"松明が {torches} 本しかない: 暗い所で置けるよう、切らさず持つ"
+    else:
+        have = f"手持ち {torches} 本とチェスト {stored} 本" if stored else f"{torches} 本"
+        reason = f"松明が {have}: {supply.low} 本を下回ったので、{supply.carry} 本まで多めに持っておく（{tier.name} の段階）"
     return [Option(GoalSpec(GoalPredicate.HAVE, item="torch", count=target), reason, forced=bool(crafts) or (dark and torches == 0))]
+
+
+def _items_for(points: int) -> int:
+    """満腹度 `points` ぶんの食べ物の個数の見積もり（1 個もいらなければ 0）。"""
+    return math.ceil(points / FOOD_ITEM_POINTS) if points > 0 else 0
+
+
+def _food(obs: GameObservation) -> tuple[int, int, int, int]:
+    """手持ちの満腹度と個数、家のチェストの満腹度と個数。"""
+    supplies = obs.state.get("supplies") or {}
+    return (
+        int(supplies.get("food_points") or 0),
+        int(supplies.get("food") or 0),
+        _stored(obs, "food_points"),
+        _stored(obs, "food"),
+    )
+
+
+def food_options(obs: GameObservation, tier: Optional[SupplyTier]) -> list[Option]:
+    """
+    食べ物を多めに持つ（手持ちと家のチェストの満腹度の合計が段階の `low` を下回ったら、手に `carry` まで）。
+    量は個数でなく満腹度（食べ物の種類で 1 個の回復量が 1 から 8 まで違う）。空腹になってから探すと、遠い牛
+    まで走るぶんの空腹で食べ物の得が残らず、夜に外で飢えた（2026-10-01）。昼で、地下でないときだけ（夜・
+    夕方は家へ、地下は掘る手を止めない）。空腹の食べ物集めは別（`hungry_option`）。1 個もなければ聞かずに
+    選ぶ。足りているときは、チェストから手に取る・チェストに貯める小目標を出す。
+    """
+    supplies = obs.state.get("supplies") or {}
+    if tier is None or "food_points" not in supplies or obs.underground or obs.time_phase != "day":
+        return []
+    if any("hunger" in n for n in obs.needs):
+        return []
+    supply = tier.food
+    points, items, stored, stored_items = _food(obs)
+    show = lambda n: f"満腹度 {n}"  # noqa: E731
+    if points + stored >= supply.low:
+        return _reserve_options(
+            obs, tier, supply, "food", "食べ物", points, stored,
+            have_items=items, stored_items=stored_items, items_for=_items_for, show=show,
+        )
+    if points + stored == 0:
+        reason = "食べ物が 1 個もない: 空腹になる前に、昼のうちに集めておく"
+    else:
+        have = f"手持ち {show(points)}とチェスト {show(stored)}" if stored else show(points)
+        reason = (
+            f"食べ物が{have}しかない（満腹は 20、歩くと 40〜70 m で 1 減る）: 空腹になる前に、昼のうちに"
+            f"{show(supply.carry)}ぶんまで集めておく（{tier.name} の段階）"
+        )
+    count = items + max(1, _items_for(supply.carry - points))
+    return [Option(GoalSpec(GoalPredicate.HAVE, item="food", count=count), reason, forced=points + stored == 0)]
+
+
+def hungry_option(obs: GameObservation, tier: Optional[SupplyTier]) -> Option:
+    """
+    お腹が空いたときの食べ物集め: 満タン（20）にしたうえで、段階の `low` に届くぶん（歩く分の余裕）。
+    いま手に持っている個数に足す。
+    """
+    points, items, _, _ = _food(obs)
+    want = max(FOOD_FULL, tier.food.low if tier is not None else 0)
+    count = items + max(1, _items_for(want - points))
+    return Option(
+        GoalSpec(GoalPredicate.HAVE, item="food", count=count),
+        f"お腹が空いたので食べ物を集める（満腹度 {obs.food}/{FOOD_FULL}、手持ち {points}）",
+    )
 
 
 def chest_options(obs: GameObservation) -> list[Option]:
@@ -118,6 +278,8 @@ def chest_options(obs: GameObservation) -> list[Option]:
     家に預けるチェストがなく、持ち物が溜まってきたら、チェストを作って置く小目標を出す（強制はしない）。
     整地や採掘で土や石が溜まり続け、預ける先がなくて食料も拾えなくなった（2026-09-30: 土 447、丸石 320）。
     """
+    if obs.has_home and obs.chest_in_home:
+        return _more_chests(obs)
     if not obs.has_home or obs.chest_in_home or "inventory" not in obs.state:
         return []
     used = sum(math.ceil(int(n) / SLOT_ITEMS) for n in (obs.state["inventory"] or {}).values() if n)
@@ -131,9 +293,29 @@ def chest_options(obs: GameObservation) -> list[Option]:
     ]
 
 
-def survival_options(obs: GameObservation) -> list[Option]:
+def _more_chests(obs: GameObservation) -> list[Option]:
     """
-    今必要な身を守る小目標（夜を越す、夕方は家に入る、空腹なら食料）。夜の越し方は決めつけない
+    家のチェストがいっぱいになってきたら、チェストを増やす小目標を出す（強制はしない。2026-10-04, user:
+    「チェストいっぱいになってきたらチェスト増やしてほしい」）。まとめれば（デフラグ）空くときは、先にそちら。
+    """
+    if obs.chest_free is None or obs.chest_slots is None or obs.chest_blocks is None:
+        return []
+    if obs.chest_blocks >= MAX_HOME_CHESTS or (obs.chest_saving or 0) >= CHEST_DEFRAG_ENOUGH:
+        return []
+    if obs.chest_free > max(CHEST_FREE_MIN, int(obs.chest_slots * CHEST_FREE_RATIO)):
+        return []
+    return [
+        Option(
+            GoalSpec(GoalPredicate.PLACED, item="chest", where="home", count=obs.chest_blocks + 1),
+            f"家のチェストが埋まってきた（空き {obs.chest_free}/{obs.chest_slots} スロット）: "
+            "チェストをもう 1 つ作って家に置く",
+        )
+    ]
+
+
+def survival_options(obs: GameObservation, tier: Optional[SupplyTier] = None) -> list[Option]:
+    """
+    今必要な身を守る小目標（夜を越す、夕方は家に入る、空腹なら食料、松明と食料のストック）。夜の越し方は決めつけない
     （家、近くのベッド、持っているベッド。2026-09-26）。地下にいるなら夜の選択肢は出さない
     （地下は夜も昼も同じ暗さ: そのまま作業を続けてよい）。
     """
@@ -153,7 +335,19 @@ def survival_options(obs: GameObservation) -> list[Option]:
             )
         )
     elif obs.has_home and obs.time_phase == "dusk" and not obs.underground:
-        out.append(Option(GoalSpec(GoalPredicate.AT_HOME), "暗くなる前に家に入る", forced=routine))
+        if obs.inside_home:
+            # もう家の中: at_home は済んでいて選べない。外の作業を選ばせず、夜が明けるまで家で過ごす
+            # （2026-09-30 18:08: 死んで家で生き返った夕方、at_home が済みで差し戻され続け、3 回目に
+            # 外の作業が通って外へ出て、また死んだ）
+            out.append(
+                Option(
+                    GoalSpec(GoalPredicate.THROUGH_NIGHT),
+                    "夕方で、もう家の中: 外に出ず、夜が明けるまで家で過ごす（眠れる時間になればベッドで寝る）",
+                    forced=routine,
+                )
+            )
+        else:
+            out.append(Option(GoalSpec(GoalPredicate.AT_HOME), "暗くなる前に家に入る", forced=routine))
     if obs.time_phase == "dusk" and not obs.underground and not obs.inside_home:
         out.append(
             Option(
@@ -171,10 +365,29 @@ def survival_options(obs: GameObservation) -> list[Option]:
             )
         )
     if any("hunger" in n for n in obs.needs):
-        out.append(Option(FOOD_WHEN_HUNGRY, "お腹が空いたので食べ物を集める"))
+        # 地下で空腹、食べ物を 1 個も持っていない: 洞窟には動物がいない（牛や豚は地上）。探しに歩かず、地上に出る
+        # （家のチェストに食べ物があればそこで取れる。2026-10-03: 地下で「メロンを探す」を続けて地上に戻れなかった）
+        if obs.underground and obs.has_home and _food(obs)[1] == 0:
+            out.append(
+                Option(
+                    GoalSpec(GoalPredicate.AT_HOME),
+                    "地下で空腹なのに食べ物がない: 洞窟には動物がいない。地上に出て、家のチェストの食べ物か、地上の動物を探す",
+                    forced=True,
+                )
+            )
+        else:
+            out.append(hungry_option(obs, tier))
     # 暗くて松明がない・作れる（forced）は、夜の手順より先（暗いと外の行動は止まるので、松明が先）
-    torches = torch_options(obs)
-    return [o for o in torches if o.forced] + out + [o for o in torches if not o.forced] + chest_options(obs)
+    torches = torch_options(obs, tier)
+    food = food_options(obs, tier)
+    return (
+        [o for o in torches if o.forced]
+        + [o for o in food if o.forced]
+        + out
+        + [o for o in torches if not o.forced]
+        + [o for o in food if not o.forced]
+        + chest_options(obs)
+    )
 
 
 def _option(job, left: list[GoalSpec], step: Optional[GoalSpec], objective_id: str) -> Option:
@@ -219,6 +432,7 @@ class GoalChooser:
         min_confidence: float = 0.4,
         timeout_seconds: float = 10.0,
         recorder: Optional[IWatchRecorder] = None,
+        supply_tiers: Sequence[SupplyTier] = (),
     ) -> None:
         """
         Args:
@@ -227,12 +441,14 @@ class GoalChooser:
             min_confidence: これより低ければ Gemini に回す
             timeout_seconds: Jev の答えを待つ上限
             recorder: 選択の記録（候補、選んだもの、確信度、Gemini に回した理由）
+            supply_tiers: 松明と食べ物のストックの段階（設定 `minecraft.supplies`。空ならストックの小目標は出さない）
         """
         self._judge = judge
         self._bridge = bridge
         self._min_confidence = min_confidence
         self._timeout = timeout_seconds
         self._recorder = recorder
+        self._tiers = tuple(supply_tiers)
 
     async def choose(
         self,
@@ -252,7 +468,9 @@ class GoalChooser:
             return self._not("the top objective has no jobs")
         # 一度済みにした中目標は選ばない（あとで材料を使って条件が崩れても。docs/design/50 §4）
         open_jobs = current.open_jobs
-        needed = survival_options(obs)
+        mines = int((obs.state.get("supplies") or {}).get("mines") or 0)
+        tier = current_tier(self._tiers, session.plan.playbook_done, mines > 0)
+        needed = survival_options(obs, tier)
         flat = [spec for s in open_jobs for spec in s.specs]
         # 計画の小目標（docs/design/50 §18）: まだ済みにしていないものを、同じ条件は 1 つにして一緒に判定する
         planned = {x.key: x.spec for s in open_jobs for x in s.pending_steps()}

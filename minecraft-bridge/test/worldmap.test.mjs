@@ -286,3 +286,23 @@ test('保存が重なっても、書き合わず順に走る', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('見た時刻だけが変わった地域は、5 分あけてから書く。ブロックが変わった地域はすぐ、停止のときは全部', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'worldmap-'))
+  try {
+    const map = new WorldMap()
+    map.set(3, 64, -5, 9, 12)
+    assert.equal(await map.save(dir, '1.21.4'), 1)
+    map.set(3, 64, -5, 9, 13) // 同じブロックを、あとの時刻に見た
+    assert.equal(await map.save(dir, '1.21.4'), 0, '時刻だけなら、まだ書かない')
+    map.set(3, 65, -5, 11, 13) // ブロックが変わった
+    assert.equal(await map.save(dir, '1.21.4'), 1, 'ブロックが変われば書く（同じ地域の時刻もいっしょに）')
+    map.set(3, 64, -5, 9, 14)
+    assert.equal(await map.save(dir, '1.21.4'), 0)
+    assert.equal(await map.save(dir, '1.21.4', { final: true }), 1, '停止のときは時刻も書く')
+    const back = await WorldMap.load(dir, '1.21.4')
+    assert.deepEqual(back.get(3, 64, -5), { cell: 9, minute: 14 })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

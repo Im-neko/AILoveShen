@@ -55,6 +55,30 @@ class TwitchSettings:
     # 返事が行動を約束しているのに大目標にも考え直しにもならないとき書き直させる（docs/design/34 §10）: jev か off
     promise_check: str = "jev"
     promise_record_dir: str = "logs/promises"
+    # 返事が持っている物を「ない・見つからない」と言っているのを、持ち物とチェストの事実と照らして書き直させる: jev か off
+    fact_check: str = "jev"
+    fact_record_dir: str = "logs/facts"
+    # フォロー通知（EventSub）に使う、手で作ったトークン。空なら client_id から自動で取って更新し、
+    # token_path に残す（docs/design/71_support_thanks.md の追記）
+    eventsub_token: str = ""
+    token_path: str = "data/twitch_token.json"
+    # 許可が要るとき、この PC のブラウザで許可の画面を開く（声でも知らせる）
+    open_browser: bool = True
+    # 配信への応援（フォロー、サブスク、ギフト、ビッツ、レイド）にお礼を言う
+    support: "TwitchSupportSettings" = field(default_factory=lambda: TwitchSupportSettings())
+
+
+@dataclass
+class TwitchSupportSettings:
+    """配信への応援へのお礼の設定（docs/design/71_support_thanks.md）。"""
+
+    enabled: bool = True
+    # フォローを EventSub で受ける（client_id と、スコープ moderator:read:followers のトークンが要る）
+    follows: bool = True
+    min_interval_seconds: float = 3.0
+    batch_seconds: float = 2.0
+    backlog: int = 20
+    dedupe_seconds: float = 3600.0
 
 
 @dataclass
@@ -111,6 +135,10 @@ class GeminiSettings:
     # デバッグ: 思考の要約も返させ、直近の呼び出しを目標ボードの /api/debug/gemini に出す
     include_thoughts: bool = False
     debug_log_size: int = 50
+    # 呼び出しの記録（プロンプト全文、出力、道具の呼び出し、トークン）を JSON Lines で残すディレクトリ
+    # （リポジトリの直下から。空ならメモリだけ）と、古い記録のファイルを消すまでの日数（docs/design/90）
+    generation_log_dir: str = "logs/generations"
+    generation_log_keep_days: int = 3
     # 画像を添えるときの解像度（low / medium / high。低いほど画像のトークンが少ない）
     media_resolution: str = "low"
     # 用途ごとの解像度（建物の設計の地図は、細かい色を読むので medium）
@@ -163,28 +191,7 @@ class JevSettings:
 
 
 def _default_objectives() -> list[dict[str, Any]]:
-    return [
-        {
-            "title": "自分の家を作る",
-            "conditions": [{"predicate": "built"}],
-            "reason": "夜を安全に過ごす拠点",
-        },
-        {
-            "title": "夜に寝られるようにする",
-            "conditions": [{"predicate": "placed", "item": "bed"}],
-            "reason": "夜を飛ばして昼に活動する",
-        },
-        {
-            "title": "身を守る道具を持つ",
-            "conditions": [{"predicate": "have", "item": "wooden_sword", "count": 1}],
-            "reason": "敵と戦えるようにする",
-        },
-        {
-            "title": "食料を蓄える",
-            "conditions": [{"predicate": "have", "item": "food", "count": 8}],
-            "reason": "空腹で動けなくならないように",
-        },
-    ]
+    return []
 
 
 @dataclass
@@ -194,6 +201,9 @@ class MissionSettings:
     text: str = "生き延びながら家を建て、街にしていく"
     # [{title, conditions: [{predicate, item?, count?}], reason}]: 保存したものがないときのリスト
     objectives: list[dict[str, Any]] = field(default_factory=_default_objectives)
+    # 定石: この順に、前の段が済むまで次の段の大目標を先頭に出さない（コードが守る）。
+    # [{name, title, conditions: [{predicate, item?, count?, where?, name?}], reason}]（docs/design/74）
+    playbook: list[dict[str, Any]] = field(default_factory=list)
     max_objectives: int = 6
     max_viewer_objectives: int = 2
     viewer_budget_steps: int = 80
@@ -248,8 +258,13 @@ class MinecraftSettings:
     max_steps_per_goal: int = 40
     max_consecutive_failures: int = 3
     max_stalled_steps: int = 8
+    # 松明と食べ物のストックの段階（docs/design/84）: [{name, after?, or_mine?, torch: {low, carry, stock}, food: {...}}]
+    supplies: list[dict[str, Any]] = field(default_factory=list)
     # 自分のメモ（docs/design/18_notes.md）。再起動をまたいで残す
     notes_path: str = "data/notes.json"
+    # Blocks to collect when found nearby even if no goal needs them (the bridge always collects ores;
+    # which tool can mine a block is the bridge's rule: docs/design/79_windfall.md)
+    collect: list[str] = field(default_factory=lambda: ["obsidian", "clay", "sugar_cane"])
     mission: MissionSettings = field(default_factory=MissionSettings)
     # 行動の決め方（docs/design/21）: tools（既定。Gemini が道具を呼ぶ）か candidates（候補から Jev が
     # 選ぶ。前の方式、比べるときだけ）
@@ -286,13 +301,13 @@ class MinecraftSettings:
     lesson_min_confidence: float = 0.6
     lesson_timeout_seconds: float = 2.0
     max_lessons: int = 200
-    # 手の帳（docs/design/52）: LLM が選んでうまくいった手（座標を含まない道具）を覚え、似た状況で
-    # Jev の選択肢に出す（道具モードだけ）。moves: false で使わない
-    moves: bool = True
-    moves_path: str = "data/moves.json"
-    moves_record_dir: str = "logs/moves"
-    moves_shown: int = 3
-    max_moves: int = 100
+    # 覚えた候補（docs/design/52）: LLM が選んでうまくいった手（座標を含まない道具）を覚え、似た状況で
+    # Jev の選択肢（候補）に出す（道具モードだけ）。learned_candidates: false で使わない
+    learned_candidates: bool = True
+    learned_candidates_path: str = "data/learned_candidates.json"
+    learned_candidates_record_dir: str = "logs/learned_candidates"
+    learned_candidates_shown: int = 3
+    max_learned_candidates: int = 100
     # 今の小目標と歩みの数え（docs/design/63）: 再起動のあと、ブリッジが同じ小目標を追っていれば
     # 続きから追う。空にすると保存しない
     goal_path: str = "data/goal.json"
@@ -305,6 +320,10 @@ class MinecraftSettings:
     # 一番上の大目標が、そのための行動をこれだけ続けても進まなければ Gemini が考え直す（0: 見ない）
     objective_stall_steps: int = 60
     goal_record_dir: str = "logs/goals"
+    # 小目標が終わるたびの成績（終わり方、ステップ数、秒数。集計は tools/goal_outcomes.py。docs/design/82）
+    goal_end_record_dir: str = "logs/goal_ends"
+    # 実行の始まりごとの条件（commit、設定、モデル）。成績を実行ごとに比べるため（空: 残さない）
+    run_record_dir: str = "logs/runs"
     # 技（docs/design/22）: 道具モードで、Gemini が JS の技を書いて覚え、直して使い回す
     skills_enabled: bool = True
     skill_rewrites_per_hour: int = 3  # 1 つの技を書き直せる回数（費用の上限）
@@ -549,6 +568,19 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return result
 
 
+def _support_settings(data: dict[str, Any]) -> TwitchSupportSettings:
+    """twitch.support の辞書を設定にする。"""
+    d = TwitchSupportSettings()
+    return TwitchSupportSettings(
+        enabled=bool(data.get("enabled", d.enabled)),
+        follows=bool(data.get("follows", d.follows)),
+        min_interval_seconds=float(data.get("min_interval_seconds", d.min_interval_seconds)),
+        batch_seconds=float(data.get("batch_seconds", d.batch_seconds)),
+        backlog=int(data.get("backlog", d.backlog)),
+        dedupe_seconds=float(data.get("dedupe_seconds", d.dedupe_seconds)),
+    )
+
+
 def _dict_to_settings(data: dict[str, Any]) -> Settings:
     """辞書を Settings データクラスに変換する。"""
     settings = Settings()
@@ -567,6 +599,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             client_id=twitch_data.get("client_id", ""),
             client_secret=twitch_data.get("client_secret", ""),
             access_token=twitch_data.get("access_token", ""),
+            eventsub_token=str(twitch_data.get("eventsub_token") or ""),
+            token_path=str(twitch_data.get("token_path", TwitchSettings.token_path)),
+            open_browser=bool(twitch_data.get("open_browser", TwitchSettings.open_browser)),
+            support=_support_settings(twitch_data.get("support") or {}),
             min_interval_seconds=float(
                 response_data.get("min_interval_seconds", TwitchSettings.min_interval_seconds)
             ),
@@ -587,6 +623,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             promise_check=str(response_data.get("promise_check", TwitchSettings.promise_check)),
             promise_record_dir=str(
                 response_data.get("promise_record_dir", TwitchSettings.promise_record_dir)
+            ),
+            fact_check=str(response_data.get("fact_check", TwitchSettings.fact_check)),
+            fact_record_dir=str(
+                response_data.get("fact_record_dir", TwitchSettings.fact_record_dir)
             ),
         )
 
@@ -637,6 +677,8 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             },
             include_thoughts=gemini_data.get("include_thoughts", False),
             debug_log_size=gemini_data.get("debug_log_size", 50),
+            generation_log_dir=gemini_data.get("generation_log_dir", "logs/generations"),
+            generation_log_keep_days=gemini_data.get("generation_log_keep_days", 3),
             media_resolution=gemini_data.get("media_resolution", "low"),
             media_resolutions={
                 "build_design": "medium",
@@ -732,10 +774,13 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 "max_consecutive_failures", defaults.max_consecutive_failures
             ),
             max_stalled_steps=agent_data.get("max_stalled_steps", defaults.max_stalled_steps),
+            supplies=list(mc_data.get("supplies", defaults.supplies) or []),
             notes_path=agent_data.get("notes_path", defaults.notes_path),
+            collect=list(agent_data.get("collect", defaults.collect)),
             mission=MissionSettings(
                 text=mission_data.get("text", mission_defaults.text),
                 objectives=mission_data.get("objectives", mission_defaults.objectives),
+                playbook=mission_data.get("playbook", mission_defaults.playbook),
                 max_objectives=mission_data.get("max_objectives", mission_defaults.max_objectives),
                 max_viewer_objectives=mission_data.get(
                     "max_viewer_objectives", mission_defaults.max_viewer_objectives
@@ -779,11 +824,11 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("lesson_timeout_seconds", defaults.lesson_timeout_seconds)
             ),
             max_lessons=int(agent_data.get("max_lessons", defaults.max_lessons)),
-            moves=bool(agent_data.get("moves", defaults.moves)),
-            moves_path=agent_data.get("moves_path", defaults.moves_path),
-            moves_record_dir=agent_data.get("moves_record_dir", defaults.moves_record_dir),
-            moves_shown=int(agent_data.get("moves_shown", defaults.moves_shown)),
-            max_moves=int(agent_data.get("max_moves", defaults.max_moves)),
+            learned_candidates=bool(agent_data.get("learned_candidates", defaults.learned_candidates)),
+            learned_candidates_path=agent_data.get("learned_candidates_path", defaults.learned_candidates_path),
+            learned_candidates_record_dir=agent_data.get("learned_candidates_record_dir", defaults.learned_candidates_record_dir),
+            learned_candidates_shown=int(agent_data.get("learned_candidates_shown", defaults.learned_candidates_shown)),
+            max_learned_candidates=int(agent_data.get("max_learned_candidates", defaults.max_learned_candidates)),
             search_min_confidence=float(
                 agent_data.get("search_min_confidence", defaults.search_min_confidence)
             ),
@@ -799,6 +844,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("objective_stall_steps", defaults.objective_stall_steps)
             ),
             goal_record_dir=agent_data.get("goal_record_dir", defaults.goal_record_dir),
+            goal_end_record_dir=agent_data.get(
+                "goal_end_record_dir", defaults.goal_end_record_dir
+            ),
+            run_record_dir=agent_data.get("run_record_dir", defaults.run_record_dir),
             skills_enabled=bool(agent_data.get("skills", defaults.skills_enabled)),
             skill_rewrites_per_hour=int(
                 agent_data.get("skill_rewrites_per_hour", defaults.skill_rewrites_per_hour)

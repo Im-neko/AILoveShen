@@ -18,6 +18,9 @@ const SITE_RETRY_DISTANCE = 16 // 探索に失敗したら、そこからこの�
 const PLACE_RANGE = 4
 const PLACE_INTERVAL_MS = 200
 const UNSUITABLE_GROUND = /(_leaves|_log|_planks|_door|water|lava|ice|snow$|sand$|gravel$)/
+// 家の足元（床の下）が抜けたとき、固い地面に届くまでこの深さまで土で埋める。これより深い穴・溶岩・
+// 埋めるのが家を建て直すより高くつく穴は、直さずに別の場所へ建てる（docs/design/88_house_repair.md）
+const FOUNDATION_DEPTH = 8
 
 // 計画のブロックの種類 -> インベントリのアイテム名・ワールドのブロック名に対する判定
 const KINDS = {
@@ -31,6 +34,9 @@ const KINDS = {
 }
 // 名前付きの建物で、置く前に掘ってよい自然のブロック（守るものは別に確かめる）
 const NATURAL = /^(dirt|grass_block|coarse_dirt|podzol|stone|granite|diorite|andesite|gravel|sand|clay|mud|tuff|deepslate|short_grass|tall_grass|fern|snow)$/
+
+// 足場になるブロック（足元が抜けているかの判定）。水・溶岩・植物・空気は足場にならない
+const supports = (block) => block.boundingBox === 'block'
 
 // 敷地にあってよいブロック: 空気、植物、葉（置く前に掘る）
 // 仮設の作業台・かまど（建築予定地に置いてよい）は、建てる番が来たら壊して置く
@@ -53,6 +59,9 @@ export class BuildPlan {
     this.site = site && { x: Math.floor(site.x), z: Math.floor(site.z) }
     this.origin = null
     this.siteSearchFailedAt = null
+    // 置いてあると最後に見たブロックの世界座標。読み込まれていないブロック（遠く離れたとき）は、これで答える
+    // （2026-10-01: 離れると家が「0/88」に見えて built() が未達になり、引っ越しの大目標が 10 回以上足された）
+    this.seen = new Set()
   }
 
   // 敷地の探索に失敗した場所の近くにまだいる間は false
@@ -61,12 +70,13 @@ export class BuildPlan {
   }
 
   toJSON () {
-    return { blocks: this.blocks, ...this.size, design: this.design, site: this.site, kind: this.kind, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z } }
+    return { blocks: this.blocks, ...this.size, design: this.design, site: this.site, kind: this.kind, origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z }, seen: [...this.seen] }
   }
 
   static fromJSON (data) {
     const plan = new BuildPlan(data)
     if (data.origin) plan.origin = new Vec3(data.origin.x, data.origin.y, data.origin.z)
+    plan.seen = new Set(data.seen ?? [])
     return plan
   }
 
@@ -75,8 +85,22 @@ export class BuildPlan {
   }
 
   isPlaced (bot, b) {
-    const block = bot.blockAt(this.worldPos(b))
-    if (!block) return false
+    const pos = this.worldPos(b)
+    // 足元の土: 読み込まれていなければ埋まっているとみなす（見えていない所は直さない）
+    if (b.foundation) {
+      const ground = bot.blockAt(pos)
+      return !ground || supports(ground)
+    }
+    const key = `${pos.x},${pos.y},${pos.z}`
+    const block = bot.blockAt(pos)
+    if (!block) return this.seen.has(key) // 読み込まれていない: 最後に見たとおり
+    const placed = this.looksPlaced(b, block)
+    if (placed) this.seen.add(key)
+    else this.seen.delete(key)
+    return placed
+  }
+
+  looksPlaced (b, block) {
     if (b.block === 'air') return block.boundingBox === 'empty' && !/water|lava/.test(block.name)
     if (!KINDS[b.block](block.name)) return false
     // ドアは壁と直角に向いていないと、開けたときに板が通り道をふさぐ（town4: 西向きのドアで入れなかった）
@@ -96,20 +120,70 @@ export class BuildPlan {
     return { x: b.x === 0 ? -1 : 1, z: 0, facings: ['east', 'west'] }
   }
 
-  pending (bot) {
-    if (!this.origin) return this.blocks
+  // 家の足元（床の下）で、埋める土のマスと、埋められない列。爆発などで地面が抜けると、壁を元に戻しても
+  // 床がなく、ドアも置けない。足元（原点の 1 段下）が固くない列は、固い地面に届くまで土で埋める（下から）。
+  // 読み込まれていない列は見ない。家の計画だけ（名前付きの建物は、設計に床を含める）
+  foundation (bot) {
+    const fills = []
+    const unfillable = []
+    if (this.kind !== 'house' || !this.origin) return { fills, unfillable, tooMany: false }
+    for (let x = 0; x < this.size.width; x++) {
+      for (let z = 0; z < this.size.depth; z++) {
+        const column = []
+        let why = `no solid ground within ${FOUNDATION_DEPTH} blocks`
+        for (let y = -1; y >= -FOUNDATION_DEPTH; y--) {
+          const block = bot.blockAt(this.origin.offset(x, y, z))
+          if (!block || supports(block)) { why = null; break }
+          if (block.name === 'lava') { why = 'lava'; break }
+          column.unshift({ x, y, z, block: 'dirt', foundation: true })
+        }
+        if (why) unfillable.push({ x, z, why })
+        else fills.push(...column)
+      }
+    }
+    fills.sort((a, b) => a.y - b.y)
+    return { fills, unfillable, tooMany: fills.length > this.blocks.length }
+  }
+
+  unplaced (bot) {
     return this.blocks.filter((b) => !this.isPlaced(bot, b))
   }
 
+  // 置く順: 足元の土（下から）、次に設計のブロック
+  pending (bot) {
+    if (!this.origin) return this.blocks
+    return [...this.foundation(bot).fills, ...this.unplaced(bot)]
+  }
+
+  // 地面が直せない家（別の場所に建て直す）の理由。直せるなら null
+  ruined (bot) {
+    const { unfillable, fills, tooMany } = this.foundation(bot)
+    if (unfillable.length) return `the ground under the house cannot be filled (${unfillable.length} columns: ${unfillable[0].why})`
+    if (tooMany) return `filling the ground under the house takes ${fills.length} blocks, more than the house itself (${this.blocks.length})`
+    return null
+  }
+
+  // 敷地を捨てて、次に置くときに新しい敷地を探す（置いたブロックの記憶も捨てる）
+  relocate () {
+    this.origin = null
+    this.seen = new Set()
+    this.siteSearchFailedAt = null
+  }
+
   status (bot) {
-    const pending = this.pending(bot)
+    const unplaced = this.origin ? this.unplaced(bot) : this.blocks
+    const foundation = this.foundation(bot)
+    const pending = [...foundation.fills, ...unplaced]
+    const ruined = this.origin ? this.ruined(bot) : null
     return {
       origin: this.origin && { x: this.origin.x, y: this.origin.y, z: this.origin.z },
       site: this.site,
       design: this.design,
       total: this.blocks.length,
-      placed: this.blocks.length - pending.length,
-      complete: !!this.origin && pending.length === 0,
+      placed: this.blocks.length - unplaced.length,
+      foundation: foundation.fills.length,
+      ruined,
+      complete: !!this.origin && pending.length === 0 && !foundation.unfillable.length,
       missing_blocks: pending.slice(0, 10).map((b) => ({ ...b, ...(this.origin ? { world: this.worldPos(b) } : {}) }))
     }
   }
@@ -164,7 +238,38 @@ function findItem (bot, kind) {
 
 let lastPlaceAt = 0
 
+// サーバーのプレイヤーの当たり判定は幅 0.6F（float）で、半幅は 0.30000001。Mineflayer の物理は 0.3 ちょうどなので、
+// 置くマスの縁にぴったり張り付いた位置（壁に押されて x=62.3 など）では、サーバーから見ると約 1.2e-8 だけ
+// ボットがそのマスに入っていて、「置けない」と断られる（壁を壊して出たあとの補修が、同じマスで 3 回断られた:
+// logs/place-refusals.jsonl の x=62.3 の記録。docs/design/70_leveling_dirt.md 追記）
+const BOX_HALF = 0.30000001192092896
+const BOX_HEIGHT = 1.8
+const FLUSH_BAND = 0.02
+
+// `cell` の縁にボットの当たり判定が触れているか（縁から 2cm 以内で、中には入っていない）
+export function flushWith (position, cell) {
+  if (!(position.y < cell.y + 1 && position.y + BOX_HEIGHT > cell.y)) return false
+  const gap = Math.max(0, cell.x - position.x, position.x - (cell.x + 1), cell.z - position.z, position.z - (cell.z + 1))
+  return gap >= BOX_HALF - FLUSH_BAND && gap < BOX_HALF + FLUSH_BAND
+}
+
+// 縁に張り付いているなら、自分のマスの真ん中へ寄る（置くマスの縁から 0.5 離れる）
+export async function backOffFrom (bot, cell) {
+  const me = bot.entity.position
+  if (!flushWith(me, cell)) return
+  const centre = new Vec3(Math.floor(me.x) + 0.5, me.y, Math.floor(me.z) + 0.5)
+  await bot.lookAt(centre, true)
+  bot.setControlState('forward', true)
+  try {
+    for (let i = 0; i < 15 && bot.entity.position.xzDistanceTo(centre) > 0.1; i++) await bot.waitForTicks(1)
+  } finally {
+    bot.setControlState('forward', false)
+  }
+}
+
 const occupied = (block) => block && block.name !== 'air' && block.name !== 'cave_air'
+// 水のマスは、掘らずにブロックを置いて置き換える
+const isWater = (block) => block?.name === 'water'
 
 // 名前付きの建物で、置くマスにあってもよい（掘ってから置く）ブロック
 export const removable = (plan, block, pos, allowDig) =>
@@ -176,7 +281,7 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   if (b.block === 'air') return clearCell(bot, plan, b, signal, allowDig)
   const pos = plan.worldPos(b)
   const found = bot.blockAt(pos)
-  if (occupied(found) && !removable(plan, found, pos, allowDig)) throw new Error(`site blocked by ${found.name} at ${pos}`)
+  if (occupied(found) && !isWater(found) && !removable(plan, found, pos, allowDig)) throw new Error(`site blocked by ${found.name} at ${pos}`)
   // サーバーが確かめるのは届く距離とカーソルで、視線は確かめない。なので、例えば屋根の最初の
   // ブロックを家の中から壁の上に置ける。
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
@@ -187,10 +292,11 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   }
   // 草などは届く所に来てから刈る（遠くから掘るとサーバーは断り、手元の世界だけが空気になる）
   const current = bot.blockAt(pos)
-  if (occupied(current)) {
+  if (occupied(current) && !isWater(current)) {
     if (!removable(plan, current, pos, allowDig)) throw new Error(`site blocked by ${current.name} at ${pos}`)
     await bot.dig(current, true)
   }
+  await backOffFrom(bot, pos)
   const eye = bot.entity.position.floored().offset(0.5, 1.6, 0.5)
   const fr = goal.getFaceAndRef(eye)
   if (!fr) throw new Error(`no reference face for ${b.block} at ${pos}`)

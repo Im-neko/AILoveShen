@@ -115,6 +115,7 @@ class TestMineflayerBridgeClient:
                 "count": 12,
                 "keep": [{"item": "food", "count": 10}],
                 "also": [],
+                "level_areas": [],
             },
         }
         assert status.remaining == 4

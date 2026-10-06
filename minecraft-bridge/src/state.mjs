@@ -3,6 +3,8 @@
 // 状態は作らない: 作ると、場面ごとのコードに戻る（設計書 19 §11.2、21 §4）。
 import { round, bearing, dayPhase, nearbyEntities, isHostile, inventoryCounts } from './observe.mjs'
 import { isInside } from './home.mjs'
+import { underwater } from './breath.mjs'
+import { isSwimming } from './swim.mjs'
 import vec3Pkg from 'vec3'
 
 const { Vec3 } = vec3Pkg
@@ -90,7 +92,8 @@ export function sharedState (bot, state, needsOf) {
       health: round(bot.health),
       food: bot.food,
       held_item: bot.heldItem?.name ?? null,
-      in_water: !!bot.entity.isInWater,
+      in_water: isSwimming(bot),
+      ...(underwater(bot) ? { head_in_water: true, air: underwater(bot).air } : {}),
       in_home: isInside(bot, state.home)
     },
     surroundings: lookAround(bot),

@@ -17,6 +17,7 @@ from ailoveshen.infrastructure.adapters.prompts.stream_context import (
     NO_INFORMATION,
     format_activity,
     format_conditions,
+    format_age,
     format_messages,
 )
 
@@ -88,6 +89,19 @@ REPLY_RULES = Template("""
 - 断るとき・後にするときは、本当の理由を言う（「もともと平らだから」のような、確かめていない理由を
   作らない）
 
+## 会話の流れと時系列
+- 「最近の会話」は古い順で、行頭の [ ] はそのときから今まで経った時間。コメントの「（N 秒前に
+  届いた）」は、そのコメントが届いてから経った時間（返事を作る間に、今していることは変わっている）
+- コメントは、それが届いた時点の流れへの発言として読む。直前までの自分の返事・実況を踏まえて、
+  「それ」「さっきの」「そうだね」は流れから何を指すか決める。同じ人の前のコメントと、ほかの人の
+  コメントを取り違えない
+- 「あなた（○○さんへの返事）」はその人に言ったこと、「あなた（実況）」は独り言。もう答えたことを
+  繰り返さない。前の返事で約束したことと食い違うことは言わない
+- 「まだ返事していないコメント」があれば、今のコメントへの返事の中で触れてよい（返事そのものは
+  今のコメントに対してだけ書く）
+- 「今していること」は今この時の状況。古い会話の時点の状況とは違うことがあるので、時間の順を見て
+  言う（済んだことを今していると言わない）
+
 ## 雑談
 - Minecraft 以外の話題（LoL などほかのゲーム、アニメ、食べ物、日常）にも、自分の好みや意見を
   交えて乗る。「Minecraft の実況者だから分からない」とかわさない。知っていることは答えてよい
@@ -118,13 +132,13 @@ $activity
 
 ## 最近の会話
 $recent_messages
-
+$waiting
 ## あなたの感情状態
 $emotion
 $previous_error
 ## $source
 ユーザー名: $user_name
-コメント: $message
+コメント$arrived: $message
 $notice""")
 
 PROMISE_TEMPLATE = Template("""\
@@ -226,7 +240,8 @@ $conditions
   lesson に自分の言葉で 1 文書く。次からの目標の決定や行動で守る。lesson だけのときの返答は
   「覚えておくね」まで。「〜しておくね」「〜するね」と行動を約束しない
 - lesson を書くときは lesson_when に、どんなときの教訓か（短い文と、本当に関係するものだけ:
-  目標の種類、物、時間帯、場所、体の状態）を書く。似た状況になったときに思い出す
+  目標の種類、物、時間帯、場所、体の状態、暗い所か）を書く。似た状況になったときに思い出す。
+  暗い所の教訓（松明を置く、明るくする）は dark=yes で書く（洞窟は昼も暗い。夜・屋外で代用しない）
 - もっともなアドバイスを「今は別の作業中だから」で断らない・流さない。結果が完了条件で書けるなら
   accept（今の作業の後なら when=next）、今に当てはまるなら rethink も書き、後で使うやり方なら
   lesson に書いて「覚えておくね」と言う。どれもしない none は、何も残らない
@@ -272,6 +287,9 @@ PROMISE_RULES = """
   「羊を狩る」→ have(mutton, 2)。food のようなまとめた名前より、言った物）
 """
 
+
+# コメントが届いてから、これだけ経っていたら「N 秒前に届いた」と本文に書く
+ARRIVED_SHOWN_SECONDS = 5
 
 OUTPUT_TEXT = "返答テキストのみを出力してください。"
 OUTPUT_PROMISE = (
@@ -348,11 +366,24 @@ class PromptTemplateBuilder(IPromptBuilder):
             if takes_requests and previous_error
             else ""
         )
+        now = context.now
+        arrived = ""
+        if now is not None and context.comment_received_at is not None:
+            seconds = (now - context.comment_received_at).total_seconds()
+            if seconds >= ARRIVED_SHOWN_SECONDS:
+                arrived = f"（{format_age(seconds)}に届いた）"
+        waiting = (
+            f"\n## このあとに届いた、まだ返事していないコメント\n{format_messages(context.waiting_comments, now)}\n"
+            if context.waiting_comments
+            else ""
+        )
         return CHAT_RESPONSE_TEMPLATE.substitute(
             user_name=f"{user_name}（読み: {name_reading}）" if name_reading else user_name,
             message=message,
+            arrived=arrived,
+            waiting=waiting,
             activity=format_activity(context.activity),
-            recent_messages=format_messages(context.recent_messages),
+            recent_messages=format_messages(context.recent_messages, now),
             emotion=_format_emotion(context.emotion_state),
             previous_error=error,
             self_facts="\n".join(f"- {f.topic}: {f.fact}" for f in self_facts) or NO_INFORMATION,

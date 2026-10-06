@@ -14,7 +14,8 @@ Minecraft サーバー (Docker, :25565)
    ↑ HTTP
 配信 (Python, python -m ailoveshen.stream)
    ├─ Gemini（目標、実況、返事）/ Jev（行動の選択、見張り、アバターの表情）
-   ├─ Twitch のチャット（IRC、匿名で読むだけ）→ 返事
+   ├─ Twitch のチャット（IRC、匿名で読むだけ）→ 返事 / 応援（サブスク・ギフト・ビッツ・レイド）→ お礼
+   ├─ Twitch のフォロー通知（EventSub。トークンが要る）→ お礼
    ├─ TTS サーバー (Docker, Style-Bert-VITS2, :5001) → 音声 → 仮想オーディオ → OBS
    ├─ OBS WebSocket (:4455) で画面を撮って Gemini に見せる
    └─ 目標ボード (HTTP :8765) → OBS のブラウザソース（目標の表示、アバター）
@@ -68,8 +69,13 @@ cp .env.example .env
 | `TWITCH_CHANNEL` | 配信するチャンネル名（`twitch.tv/<ここ>`）。チャットを読む。空なら読まない |
 | `TWITCH_ACCESS_TOKEN` | 任意。チャットに書き込むとき（`!commands` の一覧）: `chat:edit` 付きのユーザーアクセストークン（`oauth:` はあってもなくてもよい） |
 | `TWITCH_BOT_LOGIN` | 任意。そのトークンのアカウントのログイン名。空ならチャンネル名（配信者のアカウント） |
+| `TWITCH_CLIENT_ID` | 任意。フォロー通知（EventSub）に使うアプリの Client-Id（開発者コンソールで登録。public でよい）。これだけで、トークンは自動で取って更新する（下） |
+| `TWITCH_CLIENT_SECRET` | 任意。confidential クライアントのときだけ（トークンの更新に付ける）。public なら空 |
+| `TWITCH_EVENTSUB_TOKEN` | 任意。手で作ったフォロー通知のトークン（スコープ `moderator:read:followers`、同じ Client-Id で作ったもの）をそのまま使うとき。**更新されない**（4 時間で切れる）ので、普通は空にする |
 
 Twitch のチャットを読むだけならトークンやアプリの登録は要らない（匿名で読む。返事は声で返す）。トークンがあれば、そのアカウントでログインしてチャットに書き込める。ログインに失敗したら（`Twitch に … でログインできない` のログ）匿名で読むだけに戻り、一覧は声で言う。
+
+**応援へのお礼**（設計書 71）: サブスク、ギフト、ビッツ、レイドは、チャットの接続から**トークンなしで**届く（フォローだけが別の仕組み）。フォローを受けるには、Twitch の開発者コンソール（https://dev.twitch.tv/console）でアプリを登録して（クライアントの種類は「公開」でよい。Client Secret は要らない）、その Client-Id を `TWITCH_CLIENT_ID` に書くだけでよい。**トークンは自動で取って更新する**（デバイスコード方式）: 初回の起動でログに `[twitch] フォロー通知のトークンを取るため、配信者本人が次の URL を開いて許可してください: https://www.twitch.tv/activate?… （コード XXXXXXXX、30 分以内）` と出て、**この PC の既定のブラウザで許可の画面が開き**（`twitch.open_browser: false` で開かない）、声でも「Twitch の許可が必要だよ」と知らせる（どちらも許可を求め始めたとき 1 回だけ。コードが切れて取り直すときはログだけ）ので、配信者本人のアカウントで許可を押す（ここだけ人の操作。許可されるまで、フォロー通知以外は普通に動く。既定のブラウザが配信者本人でログインしていないときは、別のアカウントで許可しないこと: フォロー通知の持ち主が変わる）。許可されると `data/twitch_token.json`（`twitch.token_path`、git に入らない。権限 600）に残り、次からは何もしなくてよい。アクセストークンは 4 時間で切れるので、期限の 10 分前と、Twitch が無効と言ったとき（1 時間ごとに確かめる）に、更新トークンで自動で更新する（更新トークンは使い捨てで、更新のたびに新しいものを保存する。**30 日つないでいないと失効する**ので、そのときは許可からやり直す）。コードを 30 分以内に許可しないと新しいコードを取り直してもう一度ログに出す。`TWITCH_EVENTSUB_TOKEN` に手で作ったトークンを書くと、それをそのまま使う（更新はしない）。トークンを取り直したいときは `data/twitch_token.json` を消して起動する。`chat:edit` だけのトークン（`TWITCH_ACCESS_TOKEN`）はチャットへの書き込み用で、フォロー通知には使わない。
 
 `.env` は git に入らない。Python とブリッジの両方が読む（シェルで `export` した値が優先）。
 
@@ -181,7 +187,8 @@ Twitch のチャット #<チャンネル> を読み始めた
 - Ctrl-C まで止まらない（ステップの上限はない）
 - Gemini・Jev・ブリッジが失敗しても止まらない。「… 秒待ってやり直す」と出して 5 秒から倍々（最長 60 秒）に待ち、やり直す。ブリッジを再起動しても配信はそのまま続く
 - TTS サーバーにつながらなければ始めない（黙った配信を防ぐ）。直し方が出る
-- チャットのコメントには 1 つずつ声で返事をする。返事の間は 5 秒以上。作っている間に来たコメントは新しい 3 件だけ取っておく（`twitch.response`）。`!` で始まるコメントには返事をしない。コマンドは `!yomi よみ`（その人の名前の読みを覚える）と `!commands`（`!help` / `!コマンド`。使えるコマンドの一覧をチャットに書く。書けなければ声で。30 秒に 1 回まで）。配信者自身（チャンネルのアカウント）と `TWITCH_BOT_LOGIN` のコメントには返事をしない（コマンドは使える）。ボット（`twitch.ignore_users`、既定 `[streamelements]`）には何も反応しない。頼みごとは大目標に足す（今の大目標の材料や一歩になる小さな頼みは、その大目標の中目標に足す）ことがある。視聴者の名前の読み（`data/readings.json`、設計書 30）は、返答のときに Gemini が推測するか本人の `!yomi` で覚え、読み上げのときだけ名前を置き換える。辞書は `http://127.0.0.1:8765/api/readings`（`?name=` で 1 人）
+- チャットのコメントには 1 つずつ声で返事をする。返事の間は 5 秒以上。作っている間に来たコメントは新しい 3 件だけ取っておく（`twitch.response`）。`!` で始まるコメントには返事をしない。コマンドは `!yomi よみ`（その人の名前の読みを覚える）と `!yomi 言葉 よみ`（言葉の読みを直す。例: `!yomi 小麦 こむぎ`）と `!commands`（`!help` / `!コマンド`。使えるコマンドの一覧をチャットに書く。書けなければ声で。30 秒に 1 回まで）。配信者自身（チャンネルのアカウント）と `TWITCH_BOT_LOGIN` のコメントには返事をしない（コマンドは使える）。ボット（`twitch.ignore_users`、既定 `[streamelements]`）には何も反応しない。頼みごとは大目標に足す（今の大目標の材料や一歩になる小さな頼みは、その大目標の中目標に足す）ことがある。視聴者の名前の読み（`data/readings.json`、設計書 30）は、返答のときに Gemini が推測するか本人の `!yomi` で覚え、読み上げのときだけ名前を置き換える。辞書は `http://127.0.0.1:8765/api/readings`（`?name=` で 1 人）
+- 配信への応援（フォロー、サブスク、ギフト、ビッツ、レイド）にお礼を言い、アバターも喜ぶ（表情はハッピー、フォローとレイドは手を振り、贈り物とビッツは万歳。設計書 71）。お礼は決まった言い方から選ぶ（LLM は待たない）。フォローは 2 秒待って溜まった分を 1 回にまとめ（「A さん、B さん、C さんほか 2 人」）、同じ人のフォローは 1 時間は繰り返さない。お礼の間は 3 秒以上（`twitch.support`、`enabled: false` で言わない）。ログに `[support] follow: …` と `[say] …`。ログに `[support] フォロー通知は受けない` と出たら、`TWITCH_CLIENT_ID` がない（上）
 - 行動の途中でも、読み上げが終わってから 10 秒黙っていたら一言話す（`stream.live_interval_seconds`、0 で話さない。設計書 43）。道具に添えた新しい「今やろうとしていること」はそのまま読み、なければ変わったこと（行動の結果、持ち物の増減、動いた距離）から一言を作る（purpose `live`）。直前の数行と似た実況は読まない（ログに `[say] 直前と同じ内容なので言わない`）。状況が何も変わらないまま `stream.live_idle_seconds`（60、0 で話さない）黙っていたら、待ち時間の雑談を 1 行（新しくやることは約束しない。夜の穴の中で朝を待つ間など）。ローカルの LLM がなければ Gemini で 1 時間に最大 360 回呼ぶ
 - ほかのゲーム（LoL など）やゲームの外の雑談にも乗る。自分のこと（使っているキャラ、好きなもの）をその場で決めたら `data/self_facts.json` に覚え、次からの返事はそれに合わせる（設計書 40。手で直してもよい。ワールドを作り直しても残る）
 - 画面のログ（`[say]` 実況、`[chat]`、`[reply]`、`[goal]` 小目標、`[objective+]` / `[objective✓]` / `[objective×]` 大目標）は、設定の `logging.file` のファイルにも残る（`.env` の `APP_ENV=development` なら `data/logs/ailoveshen-dev.log`）。ログは INFO まで（`--debug` で DEBUG も）
@@ -277,7 +284,7 @@ npm run skills:clean                # 消す（ブリッジが動いていると
 mise run world:reset -- --dry-run          # やることだけ出す（何も変えない）
 mise run world:reset                       # 名前の末尾の数字を 1 増やす（world2 → world3）、シードは今のまま
 mise run world:reset -- --level world5 --seed random --yes
-mise run world:reset -- --level world  --existing   # 前のワールドに戻る（取っておいた state-*.json、skills-*、worldmap-*、mission-*.json、notes-*.json、moves-*.json は自分で戻す）
+mise run world:reset -- --level world  --existing   # 前のワールドに戻る（取っておいた state-*.json、skills-*、worldmap-*、mission-*.json、notes-*.json、learned_candidates-*.json は自分で戻す）
 ```
 
 下の 1〜4 をまとめてやる（`scripts/reset_world.sh`。同じ日にもう取ってあれば、名前に時刻をつける）。動いている配信やブリッジは止めずに断る。ボリュームにすでにある名前は、`--existing` を付けなければ断る（前のワールドに入ってしまうため）。途中で失敗したら戻し方を出す。終わったら 5 の起動だけ自分でやる。手でやるなら下のとおり:
@@ -292,7 +299,7 @@ mise run world:reset -- --level world  --existing   # 前のワールドに戻�
    mv minecraft-bridge/data/worldmap minecraft-bridge/data/worldmap-$d
    mv data/mission.json data/mission-$d.json
    mv data/notes.json data/notes-$d.json
-   mv data/moves.json data/moves-$d.json
+   mv data/learned_candidates.json data/learned_candidates-$d.json
    ```
 
 3. `.env` のワールドの名前を変え、シードを決める（空ならランダム）:
@@ -319,6 +326,28 @@ mise run world:reset -- --level world  --existing   # 前のワールドに戻�
 
 ワールドを全部消したいときは `docker compose -f docker/docker-compose.minecraft.yml down -v`（ボリュームごと消える。元に戻せない）。
 
+## ベンチマーク（変更が効いたかを測る）
+
+直した変更が効いたのかは、配信の成績の数字（`python tools/goal_outcomes.py`、設計書 82）か、再現できる課題（設計書 83）で見る。後者は、**配信とは別のサーバー（Docker の `ailoveshen-bench`、ポート 25566）とブリッジ（ポート 3001）**で、毎回新しいワールド（`.env` の `MC_SEED` と同じシード = 同じ地形）に素手で入り、課題 1 つを上限の時間まで追う。成否はブリッジが世界から判定するので、人は見ない。配信のワールド、`state.json`、`data/`、`logs/` には触れない。
+
+**配信とブリッジを Ctrl-C で止めてから**（ローカルの LLM を共有すると時間の測定が意味をなさない。動いていれば断る）:
+
+```bash
+mise run bench -- --dry-run                      # やることだけ出す（何も起動しない）
+mise run bench                                   # 食料 8 個・石のツルハシ・家 x 3 回、1 回 最長 15 分（最悪で約 2 時間強）
+mise run bench -- --tasks food --repeats 1 --cap-minutes 5   # 手始めの確かめ
+mise run bench -- report logs/bench/<バッチ>.jsonl
+mise run bench -- compare 前.jsonl 後.jsonl      # 変更の前後を並べる
+```
+
+- **ボットの視点を見るなら `127.0.0.1:25579`**（Minecraft 1.21.4 でダイレクト接続。ブリッジの視点ミラーで、見るだけ）。**25566（サーバー本体）には繋がない**: 別のプレイヤーとして入って普通に操作でき、ボットの成績に混ざる（モブの湧きも変わる）
+- 課題と既定（繰り返し、上限、ポート）は `config/benchmark.yaml`。定石は空にし、大目標をその課題 1 つにする
+- 昼のまま時間と天気を止める（15 分の途中で夜が来て結果が揺れないように）。夜も含めるなら `--no-freeze-day`
+- 起きた事故の再現（`config/benchmark.yaml` の `scenarios`）は、既定では走らない。`mise run bench -- --tasks night,pond,cage` と名前で指定する（どれも条件は `have(log, 4)`。`night`: 夕方から始めて夜を越す、昼固定なし、**死亡の数を見る**。`pond`: 半径 12 の池の真ん中から陸に上がる。`cage`: 水の入った土の小部屋から素手で出る。終わりまで続けて 3 回以上 LLM の呼び出しが失敗した回は、サーバー停止として `error`（成否に数えない）。設計書 90 §5）
+- 結果は `logs/bench/<バッチ>.jsonl` に 1 回 1 行、各回の記録（ステップ、小目標の終わり、ブリッジの出力、プレイのログ）は `logs/bench/<バッチ>/<課題>-<回>/`
+- サーバーの起動に失敗した、ブリッジが落ちた、プレイが途中で終わった回は `error` で、成功率に数えない
+- 後片づけ（サーバーとブリッジを止め、ボリュームを捨てる）は途中で失敗しても行う。Ctrl-C で止めたあとに残っていれば `docker compose -p ailoveshen-bench -f docker/docker-compose.bench.yml down -v`
+
 ## 見るところ・記録
 
 | もの | 場所 |
@@ -329,17 +358,22 @@ mise run world:reset -- --level world  --existing   # 前のワールドに戻�
 | 街の理想図（区画ごとの用途。設計書 47 §6） | `http://127.0.0.1:8765/town`（JSON は `/api/goals` の `town_map`、保存は `data/mission.json`） |
 | 施設と覚えた場所・アイテムの検索（Jev が選んだキー） | `logs/search/*.jsonl`、施設の一覧は `http://127.0.0.1:3000/facilities` |
 | 見張りの記録（道具モード） | `logs/watch/*.jsonl` |
+| ブリッジの標準出力（`[move]` など。端末を閉じても残る。20 MB で 1 世代） | `logs/bridge.log` |
 | 1 手を Jev が選んだか・Gemini に回した理由と、その手の結果（設計書 34 §3.1） | `logs/steps/*.jsonl` |
 | コメントの仕分け（返事をしなかったコメントの文も） | `logs/chat/*.jsonl` |
 | 返事の約束の確かめ（約束だけで何もしない返事は書き直し） | `logs/promises/*.jsonl` |
 | 実況の間合い（話した・取っておいた） | `logs/commentary/*.jsonl` |
 | 読み上げた文と、そのときの状態・照合の結果・読み上げの結果（played / dropped_old）。数えるのは `python tools/speech_consistency.py lines --judge jev`、予告した小目標のその後は `... forecasts`（設計書 65） | `logs/spoken/*.jsonl` |
 | 行き詰まりの確認（Jev の答え、考え直させたか） | `logs/stuck/*.jsonl` |
-| 手の帳（LLM が選んでうまくいった手を覚え、Jev の選択肢に出す: 覚えた・効いた・効かなかった・消した）。手の帳そのものは `data/moves.json`（設計書 52） | `logs/moves/*.jsonl` |
+| 覚えた候補（LLM が選んでうまくいった手を覚え、Jev の選択肢に出す: 覚えた・効いた・効かなかった・消した）。覚えた候補そのものは `data/learned_candidates.json`（設計書 52） | `logs/learned_candidates/*.jsonl` |
 | 教訓を思い出した記録（状況、候補、Jev の答え、出した教訓）。教訓帳そのものは `data/lessons.json` | `logs/lessons/*.jsonl` |
 | 覚えた技（一覧: 成功 n/m、最後の失敗） | `http://127.0.0.1:3000/skills`（1 つのコード: `/skills/<名前>`）、書いたときのコードは `/debug/gemini`（`skill_write`） |
 | アバターの表情の判断（Jev と規則） | `logs/avatar/*.jsonl` |
 | 小目標の選択（Jev が選んだもの、Gemini に回した理由） | `logs/goals/*.jsonl` |
+| 小目標が終わるたびの成績（達成・失敗・死亡・切った、ステップ、秒数）と、実行ごとの条件（commit・設定・モデル）。集計は `python tools/goal_outcomes.py`（設計書 82） | `logs/goal_ends/*.jsonl`、`logs/runs/*.jsonl` |
+| ベンチマークの結果（課題 x 回）と各回の記録（設計書 83） | `logs/bench/*.jsonl`、`logs/bench/<バッチ>/` |
+| LLM の呼び出しの全文（システム指示、プロンプト、出力、道具の呼び出し、トークン、答えたモデル。3 日で消える）。再生は `python tools/replay_decisions.py`、プロンプトの内訳は `python tools/prompt_budget.py`（設計書 90） | `logs/generations/gen-*.jsonl` |
+| 断られた手の集計（理由の種類ごと）と、まだ確かめていないことの一覧（設計書 90） | `python tools/refusal_report.py`、`python tools/unverified.py`（ログのファイルではなく、`logs/steps` と `docs/WORKLOG.md` から作る） |
 | 襲われたときの反射（規則と Jev の選択、確信度） | `logs/reflex/*.jsonl`（ブリッジのターミナルにも `[reflex] …` と出る） |
 | Gemini の費用（用途ごとの回数とトークン） | `python tools/gemini_usage.py data/logs/ailoveshen-dev.log`（価格を渡すと円の目安） |
 | 配信のログ | ターミナルと `data/logs/ailoveshen-dev.log`（`APP_ENV=development` のとき。設定の `logging.file`） |
@@ -356,6 +390,12 @@ mise run world:reset -- --level world  --existing   # 前のワールドに戻�
 | 視点のクライアントが `… was larger than I expected, found N bytes extra whilst reading packet …` で切れる | ミラーが自分で作ったパケットの形が本物のクライアントとずれている。持ち物（`container_set_content`）は数だけの部品に絞って送るようにした（2026-09-26）。まだ出るならクライアントの `logs/latest.log` のその行（パケットの名前）を控える。ブリッジを再起動すると直る |
 | `Twitch のチャットにつながらない` | ネットワークを確かめる。自動でつなぎ直す |
 | `Twitch から: … NOTICE …` | チャンネル名を確かめる（`TWITCH_CHANNEL`） |
+| `[eventsub] フォロー通知が届かない: トークンにスコープ moderator:read:followers がない` | 手で書いたトークンなら作り直す。自動なら `data/twitch_token.json` を消して起動し、許可し直す。ほかの応援（サブスクなど）は届く |
+| `[eventsub] トークンは別の Client-Id … で作られている` | `TWITCH_CLIENT_ID` と、トークンを作ったアプリを同じにする（手で書いたトークンのとき。自動なら起きない） |
+| `[twitch] フォロー通知のトークンを取るため、…URL を開いて許可してください` | 配信者本人がその URL を開いて許可する（初回と、30 日以上つながなかったあと） |
+| `[twitch] 更新トークンが使えない` | 続けて出る URL で許可し直す（30 日以上つないでいない、または別の場所で取り直した） |
+| `[eventsub] 許可されなかった` / `デバイスコードを取れない` | 許可の画面で拒否した、または `TWITCH_CLIENT_ID` が違う。ログの本文（Twitch の返事）を見る |
+| `[eventsub] フォローの購読を断られた（403 …）` | トークンの持ち主が、配信者本人でもそのチャンネルのモデレーターでもない |
 | `.env に GEMINI_API_KEY … を書く` | `.env` にキーを書く |
 | `目標ボードのポート 8765 が使われている` で起動しない | 前の配信や examples が動いたままになっている → 止める。別のポートにするなら `--board-port` と OBS の URL |
 | `…が止まった（…）。配信は続くが、直すには再起動する` | 目標ボードかチャットへの返事が止まった。プレイと実況は続く。区切りのよいところで配信を再起動する |
@@ -379,4 +419,6 @@ mise run world:reset -- --level world  --existing   # 前のワールドに戻�
 - 画面を Gemini に見せる: `docs/design/23_screen_vision.md`
 - アバター: `docs/design/24_avatar.md`
 - 行動の途中の一言: `docs/design/43_live_narration.md`
+- 小目標の成績の記録と集計: `docs/design/82_play_report.md`
+- 再現できる課題での測定（ベンチマーク）: `docs/design/83_benchmark.md`
 - TTS サーバー（Docker）: `docker/README.md`、`docs/setup/docker.md`

@@ -69,3 +69,17 @@ test('空の光が届かない所（洞窟、深い屋根の下）は暗く、�
   assert.ok(isDark(botUnder((x, z) => (Math.abs(x) + Math.abs(z) <= 7 ? 'stone' : null))), '屋根が 7 ブロック先まで続く')
   assert.ok(!isDark(botUnder((x, z) => (Math.abs(x) + Math.abs(z) < 7 ? 'stone' : null))), '7 ブロック先に空がある')
 })
+
+test('暗い所で松明が足りなくなったら、材料があれば作る手を出す（多ければ・材料がなければ出さない）', () => {
+  const craft = (counts) => {
+    const bot = botIn()
+    bot.inventory = { items: () => Object.entries(counts).map(([name, count]) => ({ name, count })) }
+    const state = { home: null, plan: null, unreachableDrops: new Set() }
+    return ground(bot, state, k, { dig: () => [], hunt: () => [] }, { leaves: [] }).candidates.find((c) => c.verb === 'craft' && c.item === 'torch')
+  }
+  const c = craft({ torch: 1, coal: 1, stick: 3 })
+  assert.deepEqual([c.id, c.times, c.needsTable], ['craft torch x1', 1, false])
+  assert.equal(craft({ torch: 1, coal: 5, stick: 3 }).times, 2)
+  assert.equal(craft({ torch: 6, coal: 1, stick: 3 }), undefined, '足りている')
+  assert.equal(craft({ torch: 1, stick: 3 }), undefined, '石炭も木炭もない')
+})

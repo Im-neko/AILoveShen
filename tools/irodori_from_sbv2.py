@@ -7,6 +7,9 @@ Style-Bert-VITS2 で作った（雑音のない）音声から、Irodori-TTS の
     # 1. 台本（docs/voice/*.tsv、673 文）を Style-Bert-VITS2 で読ませて WAV にする（TTS サーバーが要る）
     python tools/irodori_from_sbv2.py generate [--name shen_sbv2] [--limit 0] [--by-emotion] [--for-reference]
 
+    # 1b. 同じ台本を Irodori-TTS で読ませる（Style-Bert-VITS2 を学習し直す素材: tools/voice_dataset.py → docs/voice/README.md）
+    python tools/irodori_from_sbv2.py generate --engine irodori --voice shen_sbv2 --name shen_irodori
+
     # 2a. 学習なし: その中から参照音声を選んで Irodori-TTS の声にする（まずこれを試す）
     python tools/irodori_from_sbv2.py reference [--name shen_sbv2] [--seconds 30]
 
@@ -132,7 +135,11 @@ async def generate(args: argparse.Namespace) -> int:
     from ailoveshen.infrastructure.config import load_config_dict
 
     config = copy.deepcopy(load_config_dict(REPO / "config").get("tts", {}))
-    config["engine"] = "style_bert_vits2"
+    config["engine"] = args.engine
+    if args.engine == "irodori":
+        # 感情の説明なし・参照音声のままの話し方。seed は決めない（文ごとに同じ揺れにならないように）
+        irodori = config.setdefault("irodori", {})
+        irodori.update({"voice": args.voice, "emotion": False, "seed": None, "emotion_voices": {}, "timeout_seconds": 120})
     synthesis = config.setdefault("synthesis", {})
     # 学習用は揺れを小さく（同じ声で、はっきり）。明示されたものだけ上書き
     for key, value in (("sdp_ratio", args.sdp_ratio), ("noise", args.noise), ("noisew", args.noisew), ("length", args.length)):
@@ -452,6 +459,8 @@ def main() -> int:
     g.add_argument("--by-emotion", action="store_true", help="台本の感情のスタイルで読ませる（tts.emotion_style_map）")
     g.add_argument("--overwrite", action="store_true", help="作ってあるものも作り直す")
     g.add_argument("--speaker", default="shen")
+    g.add_argument("--engine", choices=("style_bert_vits2", "irodori"), default="style_bert_vits2", help="読み手（irodori: Irodori-TTS-Server が要る）")
+    g.add_argument("--voice", default="shen_sbv2", help="--engine irodori の参照音声の声（tools/irodori_voice.py で登録したもの）")
     g.add_argument("--sdp-ratio", type=float, default=0.1, help="小さいほど読みが安定（既定 0.1）")
     g.add_argument("--noise", type=float, default=0.4)
     g.add_argument("--noisew", type=float, default=0.6)

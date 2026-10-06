@@ -17,7 +17,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
-from ailoveshen.application.use_cases.moves import MoveBook
+from ailoveshen.application.use_cases.learned_candidates import LearnedCandidates
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
 from ailoveshen.application.use_cases.search import KeySearch
@@ -26,7 +26,13 @@ from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.application.use_cases.vision import ScreenReviewer, VisionPolicy
 from ailoveshen.application.use_cases.watcher import ToolWatcher, WatchPolicy
 from ailoveshen.domain.entities import Conversation, ObjectivePlan
-from ailoveshen.domain.value_objects import Mission
+from ailoveshen.domain.value_objects import (
+    Mission,
+    PlaybookStep,
+    StartingObjective,
+    Supply,
+    SupplyTier,
+)
 from ailoveshen.factories.llm import create_character_profile
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
@@ -43,7 +49,7 @@ from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMi
 from ailoveshen.infrastructure.adapters.storage.json_note_store import JsonNoteStore
 from ailoveshen.infrastructure.adapters.storage.json_lesson_store import JsonLessonStore
 from ailoveshen.infrastructure.adapters.storage.json_goal_store import JsonGoalStore
-from ailoveshen.infrastructure.adapters.storage.json_move_store import JsonMoveStore
+from ailoveshen.infrastructure.adapters.storage.json_learned_candidate_store import JsonLearnedCandidateStore
 from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import JsonlWatchRecorder
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
@@ -54,6 +60,7 @@ from ailoveshen.infrastructure.config import (
     MissionSettings,
     OBSSettings,
 )
+from ailoveshen.infrastructure.run_info import collect_run_info
 from ailoveshen.presentation.services.game_service import GameService
 
 
@@ -69,14 +76,51 @@ def create_objective_plan(settings: MissionSettings) -> ObjectivePlan:
         max_goals=settings.max_objectives,
         max_viewer_goals=settings.max_viewer_objectives,
         viewer_budget=settings.viewer_budget_steps,
+        playbook=tuple(
+            PlaybookStep(
+                name=step["name"],
+                title=step["title"],
+                conditions=tuple(parse_spec(c) for c in step["conditions"]),
+                reason=step.get("reason", ""),
+                ready=tuple(parse_spec(c) for c in step.get("ready", [])),
+                keep=bool(step.get("keep", False)),
+            )
+            for step in settings.playbook
+        ),
+        initial=tuple(
+            StartingObjective(
+                title=goal["title"],
+                conditions=tuple(parse_spec(c) for c in goal["conditions"]),
+                reason=goal.get("reason", ""),
+            )
+            for goal in settings.objectives
+        ),
     )
-    for goal in settings.objectives:
-        plan.add(
-            title=goal["title"],
-            conditions=tuple(parse_spec(c) for c in goal["conditions"]),
-            reason=goal.get("reason", ""),
-        )
+    plan.add_initial()
     return plan
+
+
+def create_supply_tiers(settings: list[dict]) -> tuple[SupplyTier, ...]:
+    """
+    設定の松明と食べ物のストックの段階（docs/design/84）。
+
+    Raises:
+        ValueError: 名前が重なる・数の関係が不正なとき
+    """
+    tiers = tuple(
+        SupplyTier(
+            name=t["name"],
+            torch=Supply(**t["torch"]),
+            food=Supply(**t["food"]),
+            after=tuple(t.get("after", ())),
+            or_mine=bool(t.get("or_mine", False)),
+        )
+        for t in settings
+    )
+    names = [t.name for t in tiers]
+    if len(set(names)) != len(names):
+        raise ValueError(f"supply tier names must be unique: {names}")
+    return tiers
 
 
 def create_game_service(
@@ -188,6 +232,7 @@ def create_game_service(
             recorder=JsonlWatchRecorder(minecraft.goal_record_dir)
             if minecraft.goal_record_dir
             else None,
+            supply_tiers=create_supply_tiers(minecraft.supplies),
         )
     if minecraft.control == "tools":
         assert fast_judge is not None
@@ -271,18 +316,18 @@ def create_game_service(
             else None,
         )
         lessons.load()
-    # 手の帳: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（設計書 52）
-    moves = None
-    if minecraft.control == "tools" and minecraft.moves:
-        moves = MoveBook(
-            JsonMoveStore(minecraft.moves_path),
-            shown=minecraft.moves_shown,
-            max_moves=minecraft.max_moves,
-            recorder=JsonlWatchRecorder(minecraft.moves_record_dir)
-            if minecraft.moves_record_dir
+    # 覚えた候補: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（設計書 52）
+    learned_candidates = None
+    if minecraft.control == "tools" and minecraft.learned_candidates:
+        learned_candidates = LearnedCandidates(
+            JsonLearnedCandidateStore(minecraft.learned_candidates_path),
+            shown=minecraft.learned_candidates_shown,
+            max_learned=minecraft.max_learned_candidates,
+            recorder=JsonlWatchRecorder(minecraft.learned_candidates_record_dir)
+            if minecraft.learned_candidates_record_dir
             else None,
         )
-        moves.load()
+        learned_candidates.load()
     # 検索の道具: 一覧から検索語に合うキーを Jev が選ぶ（設計書 47 §3）
     search = None
     if minecraft.control == "tools":
@@ -353,6 +398,7 @@ def create_game_service(
         max_consecutive_failures=minecraft.max_consecutive_failures,
         max_stalled_steps=minecraft.max_stalled_steps,
         goal_store=goal_store,
+        collect=minecraft.collect,
     )
     advance = AdvancePlayUseCase(
         bridge=bridge,
@@ -386,8 +432,13 @@ def create_game_service(
         stuck_check=stuck_check,
         stagnation_seconds=minecraft.stagnation_seconds,
         lessons=lessons,
-        moves=moves,
+        learned_candidates=learned_candidates,
         goal_store=goal_store,
+        goal_end_recorder=(
+            JsonlWatchRecorder(minecraft.goal_end_record_dir)
+            if minecraft.goal_end_record_dir
+            else None
+        ),
         search=search,
         abilities=load_abilities(),
         skills=(
@@ -413,4 +464,8 @@ def create_game_service(
         screen_capture=capture,
         notes=notes,
         lessons=lessons,
+        run_recorder=(
+            JsonlWatchRecorder(minecraft.run_record_dir) if minecraft.run_record_dir else None
+        ),
+        run_info=collect_run_info(gemini, jev, minecraft, llm),
     )

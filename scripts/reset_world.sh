@@ -9,7 +9,7 @@
 #
 # やること:
 #   1. ワールドについての覚え（minecraft-bridge/data/state.json、minecraft-bridge/data/skills/、minecraft-bridge/data/worldmap/、data/mission.json、data/notes.json、
-#      data/moves.json、data/goal.json）を、日付つきの名前にして取っておく（消さない）
+#      data/learned_candidates.json、data/goal.json）を、日付つきの名前にして取っておく（消さない）
 #   2. .env の MC_LEVEL と MC_SEED を書き換える
 #   3. Minecraft サーバーを作り直して（docker compose up --force-recreate）、"Done" が出るまで待つ
 # 残るもの: 教訓、自分について話したこと、名前の読み（ワールドによらない）
@@ -28,11 +28,11 @@ CONTAINER="ailoveshen-minecraft"
 STATE="$ROOT/minecraft-bridge/data/state.json"
 MISSION="$ROOT/data/mission.json"
 NOTES="$ROOT/data/notes.json"
-MOVES="$ROOT/data/moves.json"
+LEARNED="$ROOT/data/learned_candidates.json"
 GOAL="$ROOT/data/goal.json" # 今の小目標（設計書 63）
 SKILLS="$ROOT/minecraft-bridge/data/skills"
 WORLDMAP="$ROOT/minecraft-bridge/data/worldmap" # 視界の地図（設計書 59）
-FORGOTTEN=("$STATE" "$SKILLS" "$WORLDMAP" "$MISSION" "$NOTES" "$MOVES" "$GOAL") # 新しいワールドでは意味が変わる覚え
+FORGOTTEN=("$STATE" "$SKILLS" "$WORLDMAP" "$MISSION" "$NOTES" "$LEARNED" "$GOAL") # 新しいワールドでは意味が変わる覚え
 WAIT_SECONDS=300
 
 level=""
@@ -180,5 +180,5 @@ cat <<EOF
     2. 視点のクライアント:  127.0.0.1:25578 につなぐ
     3. 配信:               python -m ailoveshen.stream
     最初に畑を設計して水のバケツが揃ったら、ブリッジのログで "placed water at" を確かめる（設計書 47 §17: 実機で未確認）
-    戻すなら: .env の MC_LEVEL=$current_level に戻し、取っておいた state-*.json、skills-*、worldmap-*、mission-*.json、notes-*.json、moves-*.json、goal-*.json を元の名前に戻して、もう一度 up -d --force-recreate
+    戻すなら: .env の MC_LEVEL=$current_level に戻し、取っておいた state-*.json、skills-*、worldmap-*、mission-*.json、notes-*.json、learned_candidates-*.json、goal-*.json を元の名前に戻して、もう一度 up -d --force-recreate
 EOF

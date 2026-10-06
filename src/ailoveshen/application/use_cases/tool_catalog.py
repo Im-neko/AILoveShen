@@ -24,6 +24,8 @@ from ailoveshen.domain.value_objects import (
 )
 
 LOOK_SCREEN = "look_screen"
+# 行き詰まったときだけ道具に加える実験の道具（docs/design/85）。道具の定義は 1 手の時間を食うので、ふだんは出さない
+EXPERIMENT_QUERIES = frozenset({"inspect", "diagnostics"})
 SEARCH_FACILITY = "search_facility"
 SEARCH_MEMORY = "search_memory"
 ITEM_INFO = "item_info"
@@ -59,6 +61,15 @@ _WATCH = {
     "maxItems": MAX_WATCH_QUESTIONS,
     "items": {"type": "string", "description": "<stop|wake|maybe_done>: <English yes/no question>"},
 }
+
+# 行き詰まったときの use_item: 素手・押す面・スニーク・家のドアを足し、item を必須でなくす
+EXPERIMENT_USE_ITEM_PROPS = {
+    "item": _str("使うアイテム。省くと素手で x,y,z のブロックを押す（ドア・レバー・ボタン）"),
+    "target": _str("座標の代わりに home_door（家のドア）。うまくいった手は覚えられる"),
+    "face": _str("押すブロックの面: up / down / north / south / east / west（省くと自分のいる側）"),
+    "sneak": _bool("スニークして押すか（省くとそのまま）。ドアはスニークだと開かないことがある"),
+}
+
 
 # 名前 -> (説明, 固有の引数, 必須の引数)
 ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
@@ -208,8 +219,9 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
     "level": (
         "整地する: where のまわり半径 radius の地面を 1 つの高さにそろえる。出っ張った自然の"
         "土や石を掘り、穴を土で埋める（出っ張りを先に掘るので土が出る）。1 回の呼び出しで、届く"
-        "所を近い順に次々にそろえる。家・建物・木・畑・水・置いた物は触らない。完了条件は "
-        "leveled(where, radius)",
+        "所を近い順に次々にそろえる。家・建物・木・畑・水・置いた物は触らない。穴だけ残ったときは、"
+        "穴の数（最大 64）だけ土を持ってから呼ぶ。土は整地する土地の外から取る（土地の床より下は dig "
+        "も断られる）。完了条件は leveled(where, radius)",
         {
             "where": _str("home（家の床の高さ）か x,y,z（そこに立つ高さ。地面は y-1）。省略: home"),
             "radius": _int("半径 3〜16（省略: 8）"),
@@ -271,12 +283,15 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         ["item"],
     ),
     "find_foods": (
-        "食べられる物とその取り方（すぐ返る）: 満腹度、レシピ（材料）、かまどで焼く元、畑、狩り、掘る場所。"
-        "持っていて食べられる物、今の持ち物で作れる・焼ける物が先。小麦のように食べられない物は出ない。"
-        "食べ物を探す・作るとき、何が食べられるか分からないときに使う",
+        "食べ物を調べる（すぐ返る）。now: 食べ物が要るとき、いま手に入る所（足りない満腹度、持ち物と家のチェストの"
+        "満腹度の合計、見えている動物とそれが落とす物、熟した作物、覚えている動物の場所）。foods: 食べられる物"
+        "とその取り方（満腹度、レシピ、かまどで焼く元、畑、狩り、掘る場所。持っていて食べられる物、今作れる・焼ける物が先。"
+        "小麦のように食べられない物は出ない）。食べ物が足りないとき、どこで何を取るか決める前、何が食べられるか"
+        "分からないときに使う。満腹度は 20 で満タン（歩くと 40〜70 m で 1 減る）",
         {
-            "query": _str("名前・日本語・材料に含まれる語（例: パン、bread、wheat、beef）。省くと全部から"),
+            "query": _str("名前・日本語・材料に含まれる語（例: パン、bread、wheat、beef）。省くと now も返る"),
             "have": {"type": "boolean", "description": "持っている物と今の持ち物で作れる・焼ける物だけ"},
+            "now": {"type": "boolean", "description": "いま手に入る所（now）を添えるか（query を省くと既定で真、query があると既定で偽）"},
             "limit": _int("件数（既定 12、最大 30）"),
         },
         [],
@@ -313,6 +328,24 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"query": _str("したいこと（日本語か英語。例: 畑を作る、水を渡る、肉を焼く、夜を越す）")},
         ["query"],
     ),
+    # 行き詰まったときだけ出す実験の目（docs/design/85）
+    "inspect": (
+        "x,y,z のマスの今を細かく見る（ブロックの名前と状態 props: ドアの open・facing など、6 方向の隣、"
+        "目から届くか、間に何があるか、断られる理由、そばのモブ）。座標を省くと自分の今（位置・向き・"
+        "スニーク・手に持っている物・視線の先・歩いて出られない閉じた所にいるか・家のドアまでの距離）。すぐ返る",
+        {**{k: _int(f"見るマスの {k}（省略すると自分）") for k in ("x", "y", "z")}},
+        [],
+    ),
+    "diagnostics": (
+        "ブリッジが残した直近の失敗の記録を読む（door: 開かない・閉まらない家のドア、place: サーバーに"
+        "置けないと断られたブロック、stuck: 歩けなくなったとき）。kind を省くと種類ごとの最後の 1 件。"
+        "すぐ返る",
+        {
+            "kind": {**_str("door / place / stuck（省略可）"), "enum": ["door", "place", "stuck"]},
+            "n": _int("見る件数（1〜5、既定 1）"),
+        },
+        [],
+    ),
     # 画面を撮れるときだけ出す（docs/design/23）
     LOOK_SCREEN: (
         "配信の画面（自分の視点）を撮り、次の選択に画像として添える（すぐ返る）。"
@@ -323,10 +356,17 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 }
 
 
-def tool_specs(can_look: bool = False, skills: bool = False) -> list[ToolSpec]:
-    """配信者に渡す道具の一覧。`can_look` が偽なら look_screen を、`skills` が偽なら技の道具を出さない。"""
+def tool_specs(can_look: bool = False, skills: bool = False, experiment: bool = False) -> list[ToolSpec]:
+    """
+    配信者に渡す道具の一覧。`can_look` が偽なら look_screen を、`skills` が偽なら技の道具を出さない。
+    `experiment` が真（行き詰まっているとき）だけ、inspect / diagnostics と、use_item の素手・面・スニーク
+    を加える（docs/design/85）。
+    """
     specs = []
     actions = {**ACTION_TOOLS, **(SKILL_TOOLS if skills else {})}
+    if experiment:
+        description, props, _ = actions["use_item"]
+        actions["use_item"] = (description, {**props, **EXPERIMENT_USE_ITEM_PROPS}, [])
     for name, (description, props, required) in actions.items():
         specs.append(
             ToolSpec(
@@ -345,6 +385,8 @@ def tool_specs(can_look: bool = False, skills: bool = False) -> list[ToolSpec]:
         )
     for name, (description, props, required) in QUERY_TOOLS.items():
         if name == LOOK_SCREEN and not can_look:
+            continue
+        if name in EXPERIMENT_QUERIES and not experiment:
             continue
         specs.append(
             ToolSpec(

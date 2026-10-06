@@ -13,6 +13,7 @@ import { protectedReason } from './home.mjs'
 import { isNaturalLogName, logClusterIsTree } from './trees.mjs'
 import { REMEMBERED_ANIMALS, REMEMBERED_BLOCK, REMEMBERED_STONE, recallableKinds } from './memory.mjs'
 import { AIR, TICKS_PER_MINUTE, minuteOf, minutesSince } from './worldmap.mjs'
+import { UNDERGROUND_BELOW } from './observe.mjs'
 
 export const PLACES_RADIUS = 192
 const MAP_FIND_RADIUS = 96
@@ -131,9 +132,13 @@ export function memoryView (state, me, ticksNow, kinds = null) {
 
 // ソルバーの remembered: 種類ごとに、行く価値のある場所があるか（has だけ）。地図は要約の種類の分を 1 回だけ
 // 引く（種類ごとに引くと、原木が 8 種類あるだけで全部の断面を 8 回なめる）
+// 地下で見た場所は、戻る価値のある所に数えない（水は洞窟の水に行かない。ほかは松明があるときだけ候補に出る:
+// candidates.mjs の recallTripOk）
+const onSurface = (p) => !(p.y < UNDERGROUND_BELOW)
+
 export const rememberedKinds = (state, me, ticksNow) => {
   let kinds = null
   return {
-    has: (kind) => (kinds ??= recallableKinds(memoryView(state, me, ticksNow, summaryKinds(state.mapCells)), me, ticksNow)).has(kind)
+    has: (kind) => (kinds ??= recallableKinds(memoryView(state, me, ticksNow, summaryKinds(state.mapCells)), me, ticksNow, onSurface)).has(kind)
   }
 }

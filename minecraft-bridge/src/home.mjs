@@ -14,13 +14,17 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { BuildPlan, placeOne } from './build.mjs'
 import { buildAllowsDig, onBuildCell, isHomeCell, buildBox } from './builds.mjs'
 import { walkTo } from './move.mjs'
+import { rockBetween } from './reach.mjs'
+import { watchDoor, reportDoor } from './door-report.mjs'
 import { FOUND_BASE_NAME } from './landmarks.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem, standingCell } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const { goals } = pathfinderPkg
-const DATA_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'state.json')
-const DOOR_TOGGLE_TIMEOUT_MS = 2000
+// STATE_FILE で場所を変えられる（ベンチマークが配信のブリッジの state.json に触れずに、別の状態で走るため。docs/design/83）
+const DATA_FILE = process.env.STATE_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'state.json')
+const DOOR_TOGGLE_TIMEOUT_MS = 1000 // 1 回の手で、ドアが動くのを待つ時間（手は DOOR_TRIES の数だけ）
+const DOOR_BREAK_MS = 10000
 const WALK_THROUGH_TIMEOUT_MS = 3000
 const DOORSTEP_DEPTH = 3 // ドアの前の床の穴は、ここまでの深さなら下から埋める
 const PLACE_REACH = 4
@@ -66,6 +70,8 @@ export function saveState (state) {
     dug: state.dug ?? [],
     // 採掘の場所と階段（quarry.mjs。設計書 64）
     quarry: state.quarry ?? null,
+    // 整地する（した）土地（leveling.mjs。土を取るために掘らない所）
+    leveling: state.leveling ?? null,
     // 捨てた物（spare.mjs。5 分は拾い直さない。再起動でも忘れない）
     tossed: state.tossed ?? null
   }
@@ -89,6 +95,7 @@ export function loadState (state) {
   if (data.placed) state.placed = data.placed
   if (data.dug) state.dug = data.dug
   if (data.quarry) state.quarry = data.quarry
+  if (data.leveling) state.leveling = data.leveling
   if (data.tossed) state.tossed = data.tossed
 }
 
@@ -149,22 +156,151 @@ export function shelteredFrom (bot, home, entity) {
 
 const isTrue = (v) => v === true || v === 'true'
 
+// ドアが開いている（ドアのマスが空いていてもよい）: ドアが壊れて、なくなっていても、そこは開いている
 export function isDoorOpen (bot, home) {
   const block = bot.blockAt(home.door)
-  return !!block && isTrue(block.getProperties().open)
+  if (!block) return false
+  if (!block.name.endsWith('_door')) return block.boundingBox !== 'block'
+  return isTrue(block.getProperties().open)
 }
 
-async function setDoor (bot, home, open) {
+export class DoorStuckError extends Error {
+  constructor (open) {
+    super(`door did not ${open ? 'open' : 'close'}`)
+    this.name = 'DoorStuckError'
+  }
+}
+
+const doorOpenNow = (bot, home) => isTrue(bot.blockAt(home.door)?.getProperties?.().open)
+
+async function waitDoor (bot, home, open, ms) {
+  const start = Date.now()
+  while (doorOpenNow(bot, home) !== open) {
+    if (Date.now() - start > ms) return false
+    await bot.waitForTicks(1)
+  }
+  return true
+}
+
+// ドアを押す手。既定の右クリックで動かないとき、変えて試す（どれが効くかは door-toggles.jsonl に残る）:
+//   1. 既定: ドアの真ん中を見て、上の面をクリック
+//   2. スニークを外し、手を空にして、ボットのいる側の面を指定してクリック
+//   3. 上の段をクリック
+const DOOR_TRIES = [
+  async (bot, home, block) => { await bot.lookAt(home.door.offset(0.5, 0.5, 0.5), true); await bot.activateBlock(block) },
+  async (bot, home, block) => {
+    for (const c of ['sneak', 'sprint', 'forward', 'back', 'left', 'right']) bot.setControlState(c, false)
+    if (bot.heldItem) await bot.unequip('hand')
+    const me = bot.entity.position
+    const dx = me.x - (home.door.x + 0.5)
+    const dz = me.z - (home.door.z + 0.5)
+    const face = Math.abs(dx) > Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1)
+    const cursor = new Vec3(0.5 + face.x * 0.5, 0.5, 0.5 + face.z * 0.5)
+    await bot.lookAt(home.door.offset(0.5 + face.x * 0.5, 0.5, 0.5 + face.z * 0.5), true)
+    await bot.waitForTicks(2)
+    await bot.activateBlock(block, face, cursor)
+  },
+  async (bot, home) => {
+    const upper = bot.blockAt(home.door.offset(0, 1, 0))
+    if (!upper?.name.endsWith('_door')) throw new Error('no upper half')
+    await bot.lookAt(home.door.offset(0.5, 1.5, 0.5), true)
+    await bot.activateBlock(upper)
+  }
+]
+
+export async function setDoor (bot, home, open) {
   const block = bot.blockAt(home.door)
   if (!block || !block.name.endsWith('_door')) throw new Error(`no door at ${home.door}`)
   if (isDoorOpen(bot, home) === open) return
-  await bot.lookAt(home.door.offset(0.5, 0.5, 0.5), true)
-  await bot.activateBlock(block)
-  const start = Date.now()
-  while (isDoorOpen(bot, home) !== open) {
-    if (Date.now() - start > DOOR_TOGGLE_TIMEOUT_MS) throw new Error(`door did not ${open ? 'open' : 'close'}`)
-    await bot.waitForTicks(1)
+  const watch = watchDoor(bot, home.door)
+  const tries = []
+  try {
+    for (const [i, press] of DOOR_TRIES.entries()) {
+      try {
+        await press(bot, home, bot.blockAt(home.door))
+      } catch (e) {
+        tries.push({ try: i + 1, error: String(e?.message ?? e).slice(0, 120) })
+        continue
+      }
+      const done = await waitDoor(bot, home, open, DOOR_TOGGLE_TIMEOUT_MS)
+      tries.push({ try: i + 1, done })
+      if (done) {
+        // 最初の手で動いたときは記録しない（毎回のログが増える）。2 手目以降で動いたのは残す
+        if (i > 0) reportDoor(bot, home.door, open, tries, watch.updates, true)
+        return
+      }
+    }
+  } finally {
+    watch.stop()
   }
+  reportDoor(bot, home.door, open, tries, watch.updates, false)
+  throw new DoorStuckError(open)
+}
+
+// ドアが開かなければ壊して通る（2026-10-04: 夜に玄関の前で 28 回開かず、家に入れなかった。原因は
+// door-toggles.jsonl を見て決める）。通ったあとに置き直す（restoreDoor）。壊したら true
+// 家のドアのマスがドアでなくなっている（壊れた、爆発で飛んだ）: 読み込まれているときだけ真
+export function doorGone (bot, home) {
+  const block = home?.door ? bot.blockAt(home.door) : null
+  return !!block && !block.name.endsWith('_door')
+}
+
+// ドアがなくて、そのマスの床もない（爆発で地面ごと飛んだ）: 歩いて入ると穴に落ちる。先に家の計画（built）が足元を埋める。
+// 理由を返す（入れるなら null）
+export function homeEntryBlocked (bot, home) {
+  if (!doorGone(bot, home)) return null
+  const floor = bot.blockAt(home.door.offset(0, -1, 0))
+  return floor && floor.boundingBox !== 'block'
+    ? 'the door is gone and the floor under it too: walking in drops you into a hole; the ground under the house is filled first (built)'
+    : null
+}
+
+export async function openDoorOrBreak (bot, home, signal) {
+  // ドアがもうない: 開ける必要はなく、そのまま入れる（入ったあとで置き直す）
+  if (doorGone(bot, home)) return true
+  try {
+    await setDoor(bot, home, true)
+    return false
+  } catch (e) {
+    if (!(e instanceof DoorStuckError)) throw e
+  }
+  signal?.throwIfAborted()
+  const block = bot.blockAt(home.door)
+  if (!block?.name.endsWith('_door')) return true // もう壊れている
+  console.log(`[door] ドアが開かないので壊して通る: ${block.name} at ${home.door}`)
+  const axe = bot.inventory.items().find((i) => i.name.endsWith('_axe'))
+  if (axe) await bot.equip(axe, 'hand')
+  await bot.lookAt(home.door.offset(0.5, 0.5, 0.5), true)
+  let timer
+  try {
+    await Promise.race([
+      bot.dig(block, true),
+      new Promise((resolve, reject) => { timer = setTimeout(() => { bot.stopDigging(); reject(new Error(`could not break the stuck door in ${DOOR_BREAK_MS / 1000}s`)) }, DOOR_BREAK_MS) })
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+  return true
+}
+
+const doorItem = (bot) => bot.inventory.items().find((i) => i.name.endsWith('_door') && i.name !== 'iron_door')
+
+// 壊したドアを、通ったあとのこちら側から元の場所に置き直す（落ちたのを拾うのを少し待つ）。
+// 置けなかったら理由を返す（家は開いたまま）。置けたら ''
+export async function restoreDoor (bot, home) {
+  for (let i = 0; i < 40 && !doorItem(bot); i++) await bot.waitForTicks(1)
+  const item = doorItem(bot)
+  if (!item) return 'the broken door was not picked up'
+  try {
+    await bot.equip(item, 'hand')
+    await bot.lookAt(home.door.offset(0.5, 0, 0.5), true)
+    await bot.waitForTicks(2)
+    await bot.placeBlock(bot.blockAt(home.door.offset(0, -1, 0)), new Vec3(0, 1, 0))
+    for (let i = 0; i < 20 && !bot.blockAt(home.door)?.name.endsWith('_door'); i++) await bot.waitForTicks(1)
+  } catch (e) {
+    return `could not put the door back: ${e.message}`
+  }
+  return bot.blockAt(home.door)?.name.endsWith('_door') ? '' : 'the door was not placed back'
 }
 
 // `cell`（1ブロック先、開いたドアの向こう）の中心までまっすぐ歩く。
@@ -186,13 +322,28 @@ async function walkInto (bot, cell) {
 
 // 家の前のセルの様子（行けないときの理由に添える）。ボットの足の高さも（ドアの前の床が抜けていると
 // 1 段下に立ち、ドアへ登れない）
+const NEAR_DOOR = 8 // ドアの状態を失敗の理由に書くのは、ドアからこの距離（水平）と 3 ブロック（高さ）の内にいるとき
+
+// 家に入れない理由に添える、ドアのまわりの様子。ドアから離れているときは、ドアの状態ではなく自分の位置（離れ具合、
+// 閉じた空間か）を先に書く（2026-10-04: 家の 14 ブロック下の採掘場の底から go_home が失敗したのに「door closed」が
+// 先に出て、モデルがドアが開かないと思い込み、ドアを調べ続けた）
 export function describeDoorstep (bot, home) {
   const name = (p) => bot.blockAt(p)?.name ?? 'unloaded'
   const o = home.outside
-  const door = isDoorOpen(bot, home) ? 'open' : 'closed'
   const me = standingCell(bot)
-  return `door ${door}; in front of the door: floor ${name(o.offset(0, -1, 0))}, feet ${name(o)}, head ${name(o.offset(0, 1, 0))}; ` +
-    `you stand at ${me.x},${me.y},${me.z} (the doorstep is ${o.x},${o.y},${o.z})`
+  const away = Math.round(Math.hypot(me.x - o.x, me.z - o.z))
+  const dy = me.y - o.y
+  const where = `you stand at ${me.x},${me.y},${me.z} (the doorstep is ${o.x},${o.y},${o.z})`
+  if (away > NEAR_DOOR || Math.abs(dy) > 3) {
+    const rock = rockBetween(bot, o, false)
+    const height = dy ? ` and ${Math.abs(dy)} blocks ${dy < 0 ? 'below' : 'above'} it` : ''
+    const closed = rock
+      ? `; you are in a closed space (${rock.cells} cells you can walk in) ${rock.gap} blocks from the door: the way out is the problem, not the door. Climb out first (the candidate "climb out of the closed space")`
+      : '; no walkable route leads from here to the door'
+    return `you are ${away} blocks away from the door${height}, so the door itself is not the problem; ${where}${closed}`
+  }
+  const door = isDoorOpen(bot, home) ? 'open' : 'closed'
+  return `door ${door}; in front of the door: floor ${name(o.offset(0, -1, 0))}, feet ${name(o)}, head ${name(o.offset(0, 1, 0))}; ${where}`
 }
 
 // 今の家のドアの前の床の列（外に立つセルの真下から DOORSTEP_DEPTH まで）。ここだけは家のまわりでも
@@ -225,10 +376,23 @@ export async function jumpAndPlace (bot, cell, item) {
       if (Date.now() - start > JUMP_OUT_MS) throw new Error(`could not jump up from the hole at ${cell}`)
       await bot.waitForTicks(1)
     }
-    await bot.placeBlock(bot.blockAt(cell.offset(0, -1, 0)), new Vec3(0, 1, 0))
+    const { block, face } = placeAgainst(bot, cell)
+    await bot.placeBlock(block, face)
   } finally {
     bot.setControlState('jump', false)
   }
+}
+
+// cell に置くときに寄りかかるブロックと面: 下が固ければ下から、水の中などで下が固くなければ、横の固い壁から
+// （水の中では下が水で、足場にならない。ほかになければ下に置く）
+function placeAgainst (bot, cell) {
+  const below = bot.blockAt(cell.offset(0, -1, 0))
+  if (below?.boundingBox === 'block') return { block: below, face: new Vec3(0, 1, 0) }
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const wall = bot.blockAt(cell.offset(dx, 0, dz))
+    if (wall?.boundingBox === 'block') return { block: wall, face: new Vec3(-dx, 0, -dz) }
+  }
+  return { block: below, face: new Vec3(0, 1, 0) }
 }
 
 // ドアの前の床の穴を下から埋める（2026-09-28: 床が 1 つ抜けて、穴の中からドアへ登れず、家に入れな
@@ -263,7 +427,9 @@ const onDoorstepLevel = (bot, home) => {
   return p.y === home.outside.y && Math.abs(p.x - home.outside.x) + Math.abs(p.z - home.outside.z) <= 1
 }
 
+// 家に入ってドアを閉める。ドアを壊して入ったときは、そのことを文で返す（ふつうは ''）
 export async function enterHome (bot, home, signal) {
+  let broke = false
   if (!isInside(bot, home)) {
     await fillDoorstep(bot, home, signal)
     try {
@@ -279,16 +445,33 @@ export async function enterHome (bot, home, signal) {
       }
       if (!onDoorstepLevel(bot, home)) throw new Error(`could not stand in front of the door (${describeDoorstep(bot, home)})`)
     }
-    await setDoor(bot, home, true)
+    const gone = doorGone(bot, home)
+    broke = await openDoorOrBreak(bot, home, signal)
     try {
       await walkInto(bot, home.door)
       await walkInto(bot, home.inside)
     } catch (e) {
       throw new Error(`${e.message} (${describeDoorstep(bot, home)})`)
     }
+    // ドアが最初からなかった: 開けて壊したのではない。持っていれば置き直し、なければそのことを返す
+    if (gone) {
+      const trouble = doorItem(bot) ? await restoreDoor(bot, home) : 'you carry no door'
+      return trouble ? `the house has no door (${trouble}): it is open until a door is placed` : 'the missing door was put back'
+    }
+    if (broke) return brokenDoorNote(await restoreDoor(bot, home))
+  }
+  if (!bot.blockAt(home.door)?.name.endsWith('_door')) {
+    // ドアがない（壊れたまま）: 持っていれば置く
+    const trouble = await restoreDoor(bot, home)
+    return trouble ? `the house has no door: ${trouble}` : 'the missing door was put back'
   }
   await setDoor(bot, home, false)
+  return ''
 }
+
+const brokenDoorNote = (trouble) => trouble
+  ? `the door would not open, so it was broken to get in, and ${trouble}: the house is open`
+  : 'the door would not open, so it was broken to get in and put back'
 
 // 外のドアの近くで待っている敵対モブ
 // 家に避難しているか: 家の中にいて、夜か、ドアの前に敵対モブがいる。避難中は外での行動を出さない
@@ -504,8 +687,13 @@ export async function leaveHome (bot, home, signal, { confront = false } = {}) {
     // 閉じた家の中の経路移動は問題ない: 内部に障害物はない
     await walkTo(bot, new goals.GoalBlock(home.inside.x, home.inside.y, home.inside.z), signal)
   }
-  await setDoor(bot, home, true)
+  const broke = await openDoorOrBreak(bot, home, signal)
   await walkInto(bot, home.door)
   await walkInto(bot, home.outside)
+  if (broke) {
+    const trouble = await restoreDoor(bot, home)
+    if (trouble) console.log(`[door] ${brokenDoorNote(trouble)}`)
+    return
+  }
   await setDoor(bot, home, false)
 }

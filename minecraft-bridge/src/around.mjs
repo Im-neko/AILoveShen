@@ -6,6 +6,8 @@
 import { round, bearing } from './observe.mjs'
 import { exposed } from './world.mjs'
 import { isQuarryKind, quarrySpot, inQuarry } from './quarry.mjs'
+import { keptGround } from './leveling.mjs'
+import { shallowStone } from './mining.mjs'
 import { isTossed } from './spare.mjs'
 import { cropByBlock, isRipe } from './farming.mjs'
 import vec3Pkg from 'vec3'
@@ -40,6 +42,16 @@ export function aroundMe (bot, dropsOf = () => [], untouchable = () => false, no
           k.notTrees = (k.notTrees ?? 0) + 1
           continue
         }
+        // 家があるとき、地表に近い石は数だけ（採掘場から取る。設計書 68）
+        if (state && shallowStone(bot, state, p, b.name)) {
+          k.shallow = (k.shallow ?? 0) + 1
+          continue
+        }
+        // 整地する土地の下は数だけ（土は整地の外から取る）
+        if (state && keptGround(state, p, b.name)) {
+          k.kept = (k.kept ?? 0) + 1
+          continue
+        }
         k.count++
         if (cropByBlock(b.name)) {
           // 作物は熟したものだけ掘れる（育ち途中は断られる）ので、一番近いものは熟したものの中から選ぶ
@@ -66,7 +78,9 @@ export function aroundMe (bot, dropsOf = () => [], untouchable = () => false, no
         ...(gives.length ? { gives } : {}),
         ...(k.at && spot && isQuarryKind(k.name) && inQuarry(spot, k.at) ? { quarry: true } : {}),
         ...(k.ripe !== undefined ? { ripe: k.ripe } : {}),
-        ...(k.notTrees ? { not_trees: k.notTrees } : {})
+        ...(k.notTrees ? { not_trees: k.notTrees } : {}),
+        ...(k.shallow ? { shallow: k.shallow } : {}),
+        ...(k.kept ? { in_leveled_area: k.kept } : {})
       }
     })
   const items = new Map()

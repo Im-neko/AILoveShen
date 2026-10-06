@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from ailoveshen.domain.value_objects import EmotionState
+from ailoveshen.domain.value_objects import EmotionState, SupportEvent
 
 # =============================================================================
 # 基底のイベント
@@ -214,6 +214,13 @@ class ObjectiveDroppedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class ObjectivesResetEvent(DomainEvent):
+    """大目標を最初のリストに戻したときのイベント（管理画面から。配信では言わず、ボードだけ更新する）。"""
+
+    count: int = 0  # 戻したあとの大目標の数
+
+
+@dataclass(frozen=True)
 class GameActionExecutedEvent(DomainEvent):
     """エージェントがゲームで行動を 1 つ実行したあとのイベント。"""
 
@@ -262,6 +269,17 @@ class TownCompletedEvent(DomainEvent):
     """街のすべての段階が済んだときのイベント。"""
 
     text: str = ""
+
+
+@dataclass(frozen=True)
+class SupportReceivedEvent(DomainEvent):
+    """配信への応援（フォロー、サブスク、ギフト、ビッツ、レイド）に、お礼を言うときのイベント。
+
+    まとめて言うとき（フォロー 5 人など）は、まとめた人数を `count` に、名前は先頭の 1 件を `support` に持つ。
+    """
+
+    support: SupportEvent | None = None
+    count: int = 1
 
 
 @dataclass(frozen=True)

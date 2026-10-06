@@ -39,6 +39,17 @@ function bot (age) {
 const offered = (b, memory) => ground(b, { home: null, plan: null, unreachableDrops: new Set(), memory }, k, { dig: () => [], hunt: () => [] }, { leaves: [] })
   .candidates.filter((c) => c.verb === 'recover_items')
 
+test('地下で死んだ場所へは、武器と行きの松明があるときだけ戻る（素手で前の死に場所へ潜って続けて死んだ）', () => {
+  const now = 100 * MIN
+  const memory = { deaths: [{ x: 30, y: -20, z: 2, seen: now - 1 * MIN }], places: {}, explored: {}, chests: {}, furnaces: {} }
+  const withItems = (items) => ({ ...bot(now), inventory: { items: () => items.map(([name, count]) => ({ name, count })) } })
+  assert.equal(offered(bot(now), memory).length, 0)
+  assert.equal(offered(withItems([['stone_sword', 1]]), memory).length, 0)
+  assert.equal(offered(withItems([['torch', 20]]), memory).length, 0)
+  assert.equal(offered(withItems([['stone_sword', 1], ['torch', 3]]), memory).length, 0)
+  assert.equal(offered(withItems([['stone_sword', 1], ['torch', 20]]), memory).length, 1)
+})
+
 test('死んだ直後は、目標に関係なく持ち物を取りに戻る候補が出る', () => {
   const now = 100 * MIN
   const memory = { deaths: [{ x: 30, y: 70, z: 2, seen: now - 1 * MIN }], places: {}, explored: {}, chests: {}, furnaces: {} }

@@ -24,7 +24,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
     parse_spec,
 )
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
-from ailoveshen.application.use_cases.plan_lint import check_plan
+from ailoveshen.application.use_cases.plan_lint import check_plan, own_condition_last
 from ailoveshen.domain.entities import PlaySession
 from ailoveshen.domain.exceptions import (
     AILoveShenError,
@@ -40,11 +40,13 @@ from ailoveshen.domain.value_objects import (
     Activity,
     GoalPredicate,
     Job,
+    MaterialTree,
     Objective,
     Step,
 )
 
 _PREDICATES = [p for p in GoalPredicate if p in STEP_PREDICATES]
+_MATERIAL_PREDICATES = frozenset({GoalPredicate.HAVE, GoalPredicate.PLACED, GoalPredicate.STORED})
 
 
 def _step_schema(levels: int) -> dict[str, Any]:
@@ -198,6 +200,12 @@ class JobPlanner:
         current = plan.current
         if current is None:
             return False
+        # 計画の条件で書けない完了条件（surveyed など）の大目標は、最後の中目標を書けない。無理に書かせると
+        # 探索の代わりに整地や松明が並ぶので、書かずに Gemini の目標の決定に任せる（今までの経路）
+        unwritable = [c.describe() for c in current.conditions if c.predicate not in STEP_PREDICATES]
+        if unwritable:
+            logger.info(f"計画は書かない: {current.title} の完了条件 {', '.join(unwritable)} は計画の条件で書けない")
+            return False
         schema = plan_schema()
         error = ""
         for attempt in range(1, self._max_attempts + 1):
@@ -206,9 +214,9 @@ class JobPlanner:
             )
             try:
                 data = await self._text_generator.generate_json(prompt, schema, purpose="plan")
-                jobs = parse_plan(data)
-                await self._check_bridge(jobs)
-                check_plan(jobs, current, await self._builds())
+                jobs = own_condition_last(parse_plan(data), current)
+                trees, met = await self._check_bridge(jobs, current)
+                check_plan(jobs, current, await self._builds(), trees, met)
                 await self._objectives.set_jobs(
                     plan, current.id, jobs, planned=True, keep_done_steps=keep_done_steps
                 )
@@ -240,10 +248,13 @@ class JobPlanner:
             logger.debug(f"建物の一覧を読めなかった: {e}")
             return None
 
-    async def _check_bridge(self, jobs: tuple[Job, ...]) -> None:
+    async def _check_bridge(
+        self, jobs: tuple[Job, ...], objective: Objective
+    ) -> tuple[dict[str, MaterialTree], dict[str, bool]]:
         """
         書いた条件をブリッジが判定できるか（知らない名前や形の誤りは、GoalRejectedError の理由を
-        添えて差し戻す）。
+        添えて差し戻す）。返すのは、条件の書き方から材料の木（材料の思い込みを検算するため。設計書 67）と、
+        条件の書き方から今もう満たしているか（書いた瞬間に済む中目標を弾くため）。
         """
         specs = {}
         for job in jobs:
@@ -252,7 +263,18 @@ class JobPlanner:
             for step in job.steps:
                 for x in step.walk():
                     specs[x.key] = x.spec
-        await self._bridge.check(list(specs.values()))
+        # 大目標の条件は、材料になる物のものだけ足す（ほかの条件は、判定できない理由でこの差し戻しを起こさない）
+        for spec in objective.conditions:
+            if spec.predicate in _MATERIAL_PREDICATES:
+                specs.setdefault(spec.describe(), spec)
+        statuses = await self._bridge.check(list(specs.values()), materials=True)
+        trees = {
+            key: status.materials
+            for key, status in zip(specs, statuses, strict=True)
+            if status.materials is not None
+        }
+        met = {key: status.met for key, status in zip(specs, statuses, strict=True)}
+        return trees, met
 
 
 def _outline(step: Step) -> str:

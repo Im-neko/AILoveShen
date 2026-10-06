@@ -8,10 +8,13 @@ import { gatherableLog, isNaturalLogName } from './trees.mjs'
 import { findTable, findFurnace, knownFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms, finishedMine, mineSummaries } from './facilities.mjs'
+import { cropFarms, finishedMine, mineSummaries, inMineBody } from './facilities.mjs'
+import { inHomeRoom } from './builds.mjs'
 import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
 import { rememberedKinds } from './worldmap-places.mjs'
 import { isQuarryKind, quarrySpot, usableShaft, QUARRY_RADIUS } from './quarry.mjs'
+import { keptGround, findCount } from './leveling.mjs'
+import { mineFromHome, minePlan, shallowStone } from './mining.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
@@ -62,21 +65,30 @@ export function waterSource (bot, state) {
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
 }
 
+// 掘ってよいブロックか: 家の一部でなく、空気に面し、届き、水や溶岩をせき止めていない（digTargets が使う）
+export function diggable (bot, state, name, p) {
+  const me = bot.entity.position
+  return !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && isRipe(bot.blockAt(p)) &&
+    !liquidReason(bot, p, bot.blockAt(p)) && (!isNaturalLogName(name) || gatherableLog(bot, state, p)) &&
+    (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY) &&
+    !shallowStone(bot, state, p, name) && // 家があるとき、地表に近い石は採掘場から（設計書 68）
+    !keptGround(state, p, name) && // 整地する土地の下は掘らない（土は整地の外から）
+    !inMineBody(state, p) // 採掘場の階段の柱と段の床は掘らない（底から上がれなくなる）
+}
+
 // この種類のうちボットが掘れるブロック: 近い順。家の一部は含めない。石・土などの地形は、採掘の場所が
 // あればその近くを先に、場所に近い順（毎回違う所から掘って穴だらけにしない。quarry.mjs、設計書 64）
 export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
   const id = bot.registry.blocksByName[name]?.id
   if (id == null) return []
   const me = bot.entity.position
-  const ok = (p) => !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && isRipe(bot.blockAt(p)) &&
-    !liquidReason(bot, p, bot.blockAt(p)) && (!isNaturalLogName(name) || gatherableLog(bot, state, p)) &&
-    (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY)
+  const ok = (p) => diggable(bot, state, name, p)
   const spot = isQuarryKind(name) ? quarrySpot(state, me) : null
   if (spot) {
-    const there = bot.findBlocks({ matching: id, point: spot, maxDistance: QUARRY_RADIUS, count: 64 }).filter(ok)
+    const there = bot.findBlocks({ matching: id, point: spot, maxDistance: QUARRY_RADIUS, count: findCount(state) }).filter(ok)
     if (there.length) return there.sort((a, b) => a.distanceTo(spot) - b.distanceTo(spot) || a.distanceTo(me) - b.distanceTo(me)).slice(0, limit)
   }
-  return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
+  return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: findCount(state) })
     .filter(ok)
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
     .slice(0, limit)
@@ -155,10 +167,10 @@ export function snapshot (bot, state) {
     blocks: new Proxy({}, { get: (_, name) => typeof name === 'string' ? dig(name).length : undefined }),
     mobs: new Proxy({}, { get: (_, name) => typeof name === 'string' ? hunt(name).length : undefined }),
     table: findTable(bot, state) ? 'near' : null,
-    furnace: findFurnace(bot) ? 'near' : null,
+    furnace: findFurnace(bot, state) ? 'near' : null,
     // 近くにはないが、最後に見た（家の）かまど: そこまで歩いて焼ける
     furnaceAway: knownFurnace(bot, state)?.near === false,
-    smelting: smeltingCounts(state.memory ?? {}),
+    smelting: smeltingCounts(state.memory ?? {}, (f) => !state.home || inHomeRoom(state.home, f)), // 家のかまどだけ（精錬は家の中）
     unlocked: (item) => state.recipeBook.recipesFor(item).length > 0,
     dig,
     hunt,
@@ -173,6 +185,9 @@ export function snapshot (bot, state) {
     // 下りきった採掘場（設計書 47 §16）: 埋まった石・鉱石はそこから下りて探す
     mine: finishedMine(bot, state),
     mines: mineSummaries(state),
+    // 家のそばの採掘場から掘るか（設計書 68）と、その次の一手（minePlan）
+    home: mineFromHome(state),
+    minePlan: (sources) => minePlan(bot, state, sources),
     // 深さの上限は付けない（安全の決まりは掘るときに見る）。dig_depth があればそこまで
     digDepth: state.goal?.spec?.dig_depth ?? Infinity
   }

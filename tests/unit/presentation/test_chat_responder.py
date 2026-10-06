@@ -27,16 +27,21 @@ def _responder(llm, said, clock=None, **kwargs):
 @pytest.mark.asyncio
 async def test_replies_one_at_a_time_with_the_session():
     llm = AsyncMock()
-    llm.generate_response.side_effect = lambda user, msg, user_id=None, session=None, kind=None: (
-        f"{user}:{msg}"
-    )
+    llm.generate_response.side_effect = lambda user, msg, **kw: f"{user}:{msg}"
     said = []
     responder = _responder(llm, said)
-    responder.accept(ChatComment("まめ", "ベッド作って！", user_id="1"))
+    comment = ChatComment("まめ", "ベッド作って！", user_id="1")
+    responder.accept(comment)
     assert await responder.answer_next()
     assert said == ["まめ:ベッド作って！"]
     llm.generate_response.assert_awaited_with(
-        "まめ", "ベッド作って！", user_id="1", session="SESSION", kind=None
+        "まめ",
+        "ベッド作って！",
+        user_id="1",
+        session="SESSION",
+        kind=None,
+        received_at=comment.received_at,
+        waiting=(),
     )
     assert not await responder.answer_next()
 
@@ -244,3 +249,29 @@ async def test_comments_that_arrive_while_triaging_are_triaged_too():
     while await responder.answer_next():
         pass
     assert said == ["1", "2"]
+
+
+@pytest.mark.asyncio
+async def test_tells_the_reply_which_comments_are_still_waiting():
+    llm = AsyncMock()
+    llm.generate_response.side_effect = lambda user, msg, **kw: msg
+    responder = _responder(llm, [])
+    first = ChatComment("あ", "最初")
+    second = ChatComment("い", "次")
+    responder.accept(first)
+    responder.accept(second)
+    await responder.answer_next()
+    waiting = llm.generate_response.await_args.kwargs["waiting"]
+    assert [(m.speaker_name, m.content, m.timestamp) for m in waiting] == [("い", "次", second.received_at)]
+
+
+@pytest.mark.asyncio
+async def test_comments_not_answered_are_kept_in_the_conversation():
+    llm = AsyncMock()
+    llm.generate_response.side_effect = lambda user, msg, **kw: msg
+    kept = []
+    responder = _responder(llm, [], backlog=1, remember=kept.append)
+    old = ChatComment("あ", "追いつかず捨てる")
+    responder.accept(old)
+    responder.accept(ChatComment("い", "残る"))
+    assert kept == [old]

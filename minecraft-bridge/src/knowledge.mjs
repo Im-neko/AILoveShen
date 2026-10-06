@@ -21,6 +21,9 @@ const GROUP_PATTERNS = {
   bed: /_bed$/,
   wool: /_wool$/,
   sword: /_sword$/,
+  pickaxe: /_pickaxe$/,
+  axe: /_axe$/,
+  shovel: /_shovel$/,
   sapling: /(_sapling|^mangrove_propagule)$/,
   hoe: /_hoe$/,
   boat: /^(?!.*chest).*(_boat|_raft)$/ // 乗るためのボート（設計書 37）
@@ -29,7 +32,7 @@ const GROUP_PATTERNS = {
 // 掘っても落ちないことが多い（葉 5%、草 12.5%）ので、掘るのは失敗に数えない（primitives の dig）
 export const CHANCE_DROP_BLOCKS = /(_leaves|^short_grass|^tall_grass|^fern)$/
 const SEED_GRASS = ['short_grass', 'tall_grass', 'fern']
-const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'suspicious_stew',
+export const FOOD_EXCLUDED = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'suspicious_stew',
   'chorus_fruit', 'ominous_bottle'])
 
 // ドロップのために掘ってよい、自然にあるブロック（プレイヤーの建てたものは含めない: 家の壁は
@@ -125,7 +128,11 @@ export class Knowledge {
 
   // 必要なもののアイテム: グループ名かアイテム名 -> { label, members: [アイテム名] }
   resolve (spec) {
-    if (spec.startsWith('#') && this.index) return { label: spec.slice(1), members: this.index.tagMembers(spec.slice(1)) }
+    if (spec.startsWith('#') && this.index) {
+      const members = this.index.tagMembers(spec.slice(1))
+      if (!members.length) throw new Error(`unknown item tag: ${spec}${this.didYouMeanTag(spec.slice(1))}`)
+      return { label: spec.slice(1), members }
+    }
     if (spec.startsWith('any:')) return { label: spec.slice(4).split('|').join(' or '), members: spec.slice(4).split('|') }
     if (spec === 'food') {
       return { label: 'food', members: this.md.foodsArray.map((f) => f.name).filter((n) => !FOOD_EXCLUDED.has(n)) }
@@ -134,6 +141,13 @@ export class Knowledge {
     if (re) return { label: spec, members: this.md.itemsArray.map((i) => i.name).filter((n) => re.test(n)) }
     if (this.md.itemsByName[spec]) return { label: spec, members: [spec] }
     throw new Error(`unknown item or group: ${spec}${this.didYouMean(spec)}`)
+  }
+
+  // 知らないタグの直し方: 単数形（oak_log）は複数形のタグ（oak_logs）、グループの名前ならそのグループ
+  didYouMeanTag (tag) {
+    const plural = `${tag}s`
+    if (this.index.tagMembers(plural).length) return `; did you mean #${plural}?`
+    return this.md.itemsByName[tag] || GROUP_PATTERNS[tag] ? `; did you mean ${tag} (no #)?` : ''
   }
 
   // 知らない名前の直し方: 最後の語がグループ名（oak_bed → bed）ならそのグループ、そうでなければ

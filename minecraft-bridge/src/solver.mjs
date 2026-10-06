@@ -25,8 +25,15 @@ const DIG_DOWN_COST = 30 // 埋まったもの: 階段で掘り下げる（深�
 const MINE_COST = 40 // 採掘場を下りる（前に見た場所へ戻るより少し安く、掘り下げるよりは高い）
 const MINE_DEPTH = 8 // これより深いものは、採掘場があればそこから
 const UNDERGROUND = /^(stone|deepslate|tuff|granite|diorite|andesite)$|_ore$/
+// 地下へ下りる手と、そのとき持つ松明の数（trail.mjs の torchesNeeded で 30 m 先まで: 8 本）
+export const UNDERGROUND_LEAVES = new Set(['go_mine', 'dig_mine', 'make_mine', 'dig_down'])
+const UNDERGROUND_TORCHES = 8
+// 斧も武器（goals.mjs の armed と同じ）。道具の入手は sword の木製が最も安い
+const armedInWorld = (world) => Object.entries(world.inventory ?? {}).some(([n, c]) => c > 0 && /_(sword|axe)$/.test(n))
 const IMPOSSIBLE = 1e6
 const KILL_COST = 2
+const WILD_ONLY = /^(melon|carrots|potatoes|beetroots)$/
+const WILD_CROP_COST = 1000 // 動物を探す方が、野生の作物を探すより必ず安い（それしかなければ、それを探す）
 const WITHDRAW_COST = 0.5
 const SMELT_COST = 1 // クラフトと同じく1個あたり（ボットがほかのことをしている間もかまどは動く）
 
@@ -246,7 +253,11 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   const buried = kind === 'dig' && !inSight.length
     ? sources.map((s) => ({ s, t: world.buried?.(s)?.[0] })).filter((b) => b.t).sort((a, b) => a.t.depth - b.t.depth)[0]
     : null
-  const digDown = buried && buried.t.depth <= (world.digDepth ?? 0) &&
+  // 家があるとき、地下の石・鉱石は階段掘りでなく、家のそばの採掘場から（設計書 68）
+  const plan = kind === 'dig' && !inSight.length && world.home && sources.some((s) => UNDERGROUND.test(s))
+    ? world.minePlan?.(sources) ?? null
+    : null
+  const digDown = !plan && buried && buried.t.depth <= (world.digDepth ?? 0) &&
     DIG_DOWN_COST + buried.t.depth < (known.length ? RECALL_COST : EXPLORE_COST)
   // 下りきった採掘場があれば、深いもの（MINE_DEPTH 段より下）や見えないものはそこから下りて探す（設計書 47 §16）。
   // 浅い石は今までどおりその場で掘り下げる
@@ -308,6 +319,15 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
         `${more}${meal}`
     }
     cost += EXPLORE_COST * 2
+  } else if (plan?.go) {
+    leaf = { kind: 'go_mine', item, mine: plan.go, sources }
+    cost += MINE_COST
+  } else if (plan?.dig) {
+    leaf = { kind: 'dig_mine', item, facility: plan.dig, sources }
+    cost += MINE_COST * 2
+  } else if (plan?.make !== undefined) {
+    leaf = { kind: 'make_mine', item, bottom_y: plan.make, sources, ...(plan.exhausted ? { exhausted: plan.exhausted } : {}) }
+    cost += MINE_COST * 3
   } else if (mine) {
     leaf = { kind: 'go_mine', item, mine, sources }
     cost += MINE_COST
@@ -320,6 +340,22 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
       : '') + mineAdvice(world, kind, sources, item)
     leaf = { kind: 'explore', item, sources: sought, reason: `no ${sought.join('/')} nearby for ${item}${known.length ? ' (seen before)' : ''}${hint}` }
     cost += known.length ? RECALL_COST : EXPLORE_COST
+    // 野生の作物（メロン、にんじん、じゃがいも、ビートルート）は、ジャングルや村にしかない。何も見えていない
+    // ときに「掘る方が安い」で選ぶと、見つからないメロンを探し続ける（2026-10-03）。動物（どこにでもいる）を先にする
+    if (kind === 'dig' && !known.length && sources.every((s) => WILD_ONLY.test(s))) cost += WILD_CROP_COST
+  }
+  // 地下（採掘場、階段掘り）へは、松明を持ってから行く（暗い所の湧きを潰して進む。松明がないまま
+  // 採掘場へ下りて、骷髏に撃たれ続けた: 2026-10-01）。松明は石炭か木炭と棒から作る手が先に出る
+  // 武器も持ってから行く（武器なしで地下に出て、骷髏に撃たれ続けて死んだ: 2026-10-01 19:44。剣は木で作れる）
+  if (UNDERGROUND_LEAVES.has(leaf.kind)) {
+    const torches = need(k, world, 'torch', UNDERGROUND_TORCHES, ledger, path, depth + 1)
+    children.push(torches.node)
+    cost += torches.cost
+    if (!armedInWorld(world)) {
+      const sword = need(k, world, 'sword', 1, ledger, path, depth + 1)
+      children.push(sword.node)
+      cost += sword.cost
+    }
   }
   const units = n + children.reduce((s, c) => s + c.units, 0)
   return { cost, units, children, leaf: children.every((c) => c.have >= c.need) ? leaf : null, method: kind }
@@ -411,6 +447,8 @@ function describe (leaf, method) {
     case 'explore': return `find ${leaf.sources.join('/')}`
     case 'dig_down': return `dig stairs down to ${leaf.sources.join('/')} (${leaf.depth} blocks down)`
     case 'go_mine': return `go down the mine ${leaf.mine.name} (bottom y ${leaf.mine.bottom.y}) for ${leaf.sources.join('/')}`
+    case 'dig_mine': return `dig the mine ${leaf.facility} (stairs down, the main tunnel and its branches), then take ${leaf.item} from its walls`
+    case 'make_mine': return `design a mine down to y ${leaf.bottom_y} near the home and dig it (branch mining), then take ${leaf.item} from its walls`
     case 'place': return `place ${leaf.item}`
     case 'withdraw': return 'take it out of the chest'
     case 'smelt': return leaf.count ? `smelt ${leaf.input} in a furnace` : 'take it out of the furnace'

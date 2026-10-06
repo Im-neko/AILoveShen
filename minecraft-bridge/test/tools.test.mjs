@@ -102,14 +102,26 @@ test('今の家でも、壊すと決めたとき（demolish）は名指しで掘
 })
 
 test('掘る道具はブロックの名前を世界から決め、道具がなくて何も落ちないものは断る', async () => {
-  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5) })
-  assert.match((await callTool('dig', { x: 10, y: 69, z: 10 })).result, /stone drops nothing without one of: .*pickaxe/)
+  const ore = { '10,69,10': 'coal_ore' }
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), extra: ore })
+  assert.match((await callTool('dig', { x: 10, y: 69, z: 10 })).result, /coal_ore drops nothing without one of: .*pickaxe/)
   assert.match((await callTool('dig', { x: 10, y: 71, z: 10 })).result, /there is air/)
   // 何もない座標には、そのまわりの固いブロックと座標を添える（座標が 1 ずれただけのことが多い）
   assert.match((await callTool('dig', { x: 10, y: 71, z: 10 })).result, /Solid blocks near there: .* at \d+,\d+,\d+/)
-  const { callTool: withPick } = setup({ at: v(10.5, 70, 10.5), items: [['wooden_pickaxe', 1]] })
+  const { callTool: withPick } = setup({ at: v(10.5, 70, 10.5), items: [['wooden_pickaxe', 1]], extra: ore })
   assert.equal((await withPick('dig', { x: 10, y: 69, z: 10 })).ok, true)
   assert.equal(runs.length, 0)
+})
+
+test('家があるとき、地表に近い石は掘らない（採掘場から）。家がなければ掘れる', async () => {
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), items: [['wooden_pickaxe', 1]] })
+  const r = await callTool('dig', { x: 10, y: 69, z: 10 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /close to the surface.*mine/)
+  assert.equal(runs.length, 0)
+  const { callTool: noHome, state } = setup({ at: v(10.5, 70, 10.5), items: [['wooden_pickaxe', 1]] })
+  state.home = null
+  assert.equal((await noHome('dig', { x: 10, y: 69, z: 10 })).ok, true)
 })
 
 test('育ち途中の作物は掘らない（種しか出ず、畑が減る）', async () => {
@@ -164,6 +176,17 @@ test('数字だけが違う提案は同じ手として実行し、違うもの�
   const many = await callTool('do_suggestion', { id: 'dig oak_log at 9,70,9' })
   assert.match(many.result, /not a current suggestion \(now: dig oak_log at 5,70,5; dig oak_log at 6,70,5; craft white_bed/)
   assert.equal(runs.length, 1)
+})
+
+test('提案の id の空白を _ で書いても、同じ手として実行する（explore_east は explore east）', async () => {
+  const east = { id: 'explore east', verb: 'explore', dir: 'east' }
+  const north = { id: 'explore north', verb: 'explore', dir: 'north' }
+  const { callTool, runs } = setup({ at: v(10.5, 70, 10.5), candidates: [east, north] })
+  const done = await callTool('do_suggestion', { id: 'explore_east' })
+  assert.equal(done.ok, true)
+  assert.equal(runs[0].label, 'explore east')
+  // 当たるものがなければ、これまでどおり今の提案を添えて断る
+  assert.match((await callTool('do_suggestion', { id: 'explore_west' })).result, /not a current suggestion \(now: explore east; explore north\)/)
 })
 
 test('boat のような種類の名前は、持っている板材で作れる品物にして作る。作れなければ品物の名前を教える', async () => {
@@ -404,7 +427,7 @@ test('岩に囲まれた所から岩の向こうの遠い所へ goto すると�
   const r = await callTool('goto', { x: 10, y: 66, z: 30 })
   assert.equal(r.refused, true)
   assert.match(r.result, /closed space \(25 cells you can walk in\)/)
-  assert.match(r.result, /Dig your way out/)
+  assert.match(r.result, /climb out of the closed space/)
   assert.equal(runs.length, 0)
   // 部屋のすぐ外なら、掘って行ける近さなので通す
   assert.equal((await callTool('goto', { x: 10, y: 66, z: 15 })).ok, true)
@@ -427,4 +450,72 @@ test('goto の y が高さの範囲を超え、y と z を入れ替えると近�
   assert.equal(runs.length, 0)
   const far = await callTool('goto', { x: 3, y: -500, z: 900 })
   assert.doesNotMatch(far.result, /swap/)
+})
+
+test('家に帰る小目標のときは、家から遠い所へ goto しない（家のドアの座標と go_home を教えて断る）', async () => {
+  const at = setup({ at: v(2.5, 70, 2.5) })
+  at.state.goal = { spec: { predicate: 'at_home' } }
+  at.state.home = { ...home, door: v(8, 70, 8) }
+  const r = await at.callTool('goto', { x: 0, y: 0, z: -100 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /the goal is at_home and the home's door is at 8,70,8\. Use go_home/)
+  assert.equal(at.runs.length, 0)
+  assert.equal((await at.callTool('goto', { x: 10, y: 70, z: 10 })).refused, undefined)
+  at.state.goal = { spec: { predicate: 'have', item: 'stick', count: 4 } }
+  assert.equal((await at.callTool('goto', { x: 0, y: 70, z: -100 })).refused, undefined)
+})
+
+test('クリーパーが 16 m 以内にいる間は、go_home と家のそばへの goto を断る（追ってきて、壁を吹き飛ばす）', async () => {
+  const creeper = { name: 'creeper', position: v(2.5, 70, 22.5) }
+  const t = setup({ at: v(2.5, 70, 12.5), mobs: [creeper] })
+  const home1 = await t.callTool('go_home')
+  assert.equal(home1.refused, true)
+  assert.match(home1.result, /a creeper is within 16 m.*do not lead it to the house/)
+  const near = await t.callTool('goto', { x: 2, y: 70, z: 8 })
+  assert.equal(near.refused, true)
+  assert.match(near.result, /next to the home/)
+  // 家から離れる向きの goto は断らない。クリーパーが遠いか、ほかのモブなら go_home も通る
+  assert.equal((await t.callTool('goto', { x: 2, y: 70, z: 40 })).refused, undefined)
+  const far = setup({ at: v(2.5, 70, 12.5), mobs: [{ ...creeper, position: v(2.5, 70, 40.5) }] })
+  assert.equal((await far.callTool('go_home')).refused, undefined)
+  const zombie = setup({ at: v(2.5, 70, 12.5), mobs: [{ name: 'zombie', position: v(2.5, 70, 22.5) }] })
+  assert.equal((await zombie.callTool('go_home')).refused, undefined)
+})
+
+test('食べ物でないものを食べようとしたら、持っている食べ物（なければ、ないこと）を教えて断る', async () => {
+  const none = setup({ items: [['wheat_seeds', 3]] })
+  const r = await none.callTool('eat', { item: 'wheat_seeds' })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /wheat_seeds is not food\. You carry no food: get some first/)
+  const some = setup({ items: [['wheat_seeds', 3], ['beef', 2], ['rotten_flesh', 4]] })
+  const r2 = await some.callTool('eat', { item: 'wheat_seeds' })
+  assert.match(r2.result, /Food you carry: beef x2$/)
+  assert.equal(some.runs.length, 0)
+})
+
+test('松明が足りないと、8 ブロック以上下の地下へは歩いて下りない（数は行き先までの距離から）。足りれば行ける', async () => {
+  const { callTool } = setup({ at: v(2.5, 70, 2.5), items: [['stone_pickaxe', 1]] })
+  const r = await callTool('goto', { x: 3, y: 50, z: 3 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /will not walk down to 3,50,3.*you carry 0 torches \(7 needed/)
+  const few = setup({ at: v(2.5, 70, 2.5), items: [['torch', 4]] })
+  const r2 = await few.callTool('goto', { x: 3, y: 50, z: 3 })
+  assert.equal(r2.refused, true)
+  assert.match(r2.result, /you carry 4 torches \(7 needed/)
+  const lit = setup({ at: v(2.5, 70, 2.5), items: [['torch', 7]] })
+  assert.equal((await lit.callTool('goto', { x: 3, y: 50, z: 3 })).ok, true)
+  // 地表で動くだけなら、松明はいらない
+  assert.equal((await callTool('goto', { x: 8, y: 70, z: 8 })).ok, true)
+})
+
+test('座標のマイナスを落とすと遠すぎる拒否になる: 符号を戻すと近いなら指摘する（z=-285 を 285 と書いた）', async () => {
+  const { callTool, runs } = setup({ at: v(55.5, 77, -283.5) })
+  const r = await callTool('dig', { x: 54, y: 77, z: 285 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /is 56\dm away/)
+  assert.match(r.result, /did you drop a minus sign\?.*54,77,-285 is \d/)
+  assert.equal(runs.length, 0)
+  // 符号を戻しても遠いなら、指摘しない
+  const far = await callTool('dig', { x: 900, y: 77, z: 900 })
+  assert.doesNotMatch(far.result, /minus sign/)
 })

@@ -43,6 +43,7 @@ from ailoveshen.domain.events import (
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
+    ObjectivesResetEvent,
     SkillLearnedEvent,
     TownMapDrawnEvent,
     TownSiteChosenEvent,
@@ -74,6 +75,7 @@ EVENTS: tuple[type[DomainEvent], ...] = (
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
+    ObjectivesResetEvent,
     JobDoneEvent,
     TownSiteChosenEvent,
     TownMapDrawnEvent,
@@ -361,6 +363,7 @@ def _objective(goal: Objective, state: str) -> dict[str, Any]:
         "suggested_by": goal.suggested_by,  # 採った助言をくれた視聴者（頼みではない）
         "stage": goal.stage,  # 対応する街の段階（インデックス）。なければ None
         "prepares_town": goal.prepares_town,  # 街の準備（候補地の調査、引っ越し）
+        "playbook": goal.playbook,  # 定石の段の名前（None: 定石ではない。docs/design/74）
         "conditions": [c.describe() for c in goal.conditions],
         "progress": list(goal.progress),
         "summary": list(goal.summary()),  # ソルバーの細かい手順は除く

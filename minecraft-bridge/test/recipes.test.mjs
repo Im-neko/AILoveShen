@@ -31,3 +31,9 @@ test('計画: 主な物は全部作れる（不可能にしない）。染め物
   assert.ok(k.recipes('blue_bed').some((r) => r.ingredients.white_bed === 1))
   assert.equal(k.resolve('#planks').members.length, 12)
 })
+
+test('知らないタグは投げる（空のメンバーを返すと、ソルバーが null を読んで 500 になり続けた）', () => {
+  assert.throws(() => k.resolve('#oak_log'), /unknown item tag: #oak_log; did you mean #oak_logs\?/)
+  assert.throws(() => k.resolve('#nothing_at_all'), /unknown item tag/)
+  assert.ok(k.resolve('#oak_logs').members.includes('oak_log'))
+})

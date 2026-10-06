@@ -8,7 +8,10 @@
 // いる・足場を置いている間は数えない）ときは、その移動を止めて、跳んで抜け出す → 走りも飛び越えも
 // しない慎重な歩き方にする → 数ブロック下がってからやり直す、の順に試す。それでも動けなければ理由を
 // 添えて失敗にする（操作の精度で角や穴に引っかかり、時間切れまで同じ所で足踏みしていた）。掘る・置く
-// 間はすぐには数えないが、それが WORKING_FACTOR 倍続いても進まなければ動けないとみなす
+// 間はすぐには数えないが、それが WORKING_FACTOR 倍続いても進まなければ動けないとみなす。掘る・置く
+// 間に「進んだ」と数えるのは、位置が変わったときと目標へ近づいたときだけ（2026-10-01: 足元の土を
+// 掘っては置き、跳ねて上下しながら、go_home が 15 分同じ穴から動かなかった。掘る・置くがあるだけで
+// 近づいたとみなし、上下の跳ねで「動いた」とみなしていた）
 //
 // 掘っては置く繰り返し: pathfinder はブロックが変わるたびに経路を作り直す。掘ると、次の経路がそこに
 // 足場の土を置き、置くとまた掘る経路になって、同じ土を掘り続けた（(-78,39,-116) の dirt）。同じ
@@ -17,6 +20,7 @@
 
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { doorOpener } from './doors.mjs'
+import { isSwimming, swimToward } from './swim.mjs'
 import { standingCell } from './observe.mjs'
 import { snapshot, where, record } from './stuck-report.mjs'
 
@@ -25,6 +29,7 @@ const { GoalNearXZ } = pathfinderPkg.goals
 export const STUCK_MS = 6000
 const MOVED_M = 0.5
 const CHECK_MS = 250
+const SWIM_TRIES = 3
 const ESCAPES = ['jumped out', 'walked carefully (no sprinting or parkour)', 'backed off a few blocks']
 const BACK_OFF_M = 4
 const WORKING_FACTOR = 5
@@ -120,11 +125,27 @@ export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS, noProgressM
   signal.throwIfAborted()
   const original = bot.pathfinder.movements
   const tried = []
+  let swims = 0
   try {
     for (let attempt = 0; ; attempt++) {
       const stuck = await walkWatched(bot, goal, stuckMs, noProgressMs)
       if (!stuck) return
       signal.throwIfAborted()
+      // 水の中で動けない: 跳ぶ・慎重に歩く・下がるでは出られない（pathfinder は水の中から動く手を作らない）。
+      // 目標の向きに泳いで岸に上がり、また歩く（泳ぎは 3 回まで、いつもの手の合間に試す）
+      const point = goalPoint(goal)
+      if (!stuck.working && point && swims < SWIM_TRIES && isSwimming(bot)) {
+        swims++
+        console.log(`[move] 水の中で動けない（${where(stuck)}）: 目標へ泳いで岸に上がる`)
+        const r = await swimToward(bot, point, signal)
+        tried.push(`swam ${r.moved}m (${r.why})`)
+        if (r.landed) { attempt--; continue }
+      }
+      // 掘る・置くを続けて近づかなかった移動は、跳ぶ・慎重に歩く・下がるで抜けられない（同じ道を作り直す
+      // だけ）ので、試さずに失敗にする
+      if (stuck.noProgress && stuck.working) {
+        throw new Error(`stuck: did not get closer to the goal in ${noProgressMs * WORKING_FACTOR / 1000}s while digging and placing at ${where(stuck)} (tried: ${tried.join(', ') || 'nothing'})`)
+      }
       if (attempt >= ESCAPES.length) {
         const why = stuck.noProgress
           ? `did not get closer to the goal in ${noProgressMs / 1000}s while walking`
@@ -147,6 +168,8 @@ export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS, noProgressM
 async function walkWatched (bot, goal, stuckMs, noProgressMs = NO_PROGRESS_MS) {
   const pos = () => bot.entity?.position
   let last = pos()?.clone?.()
+  let lowY = last?.y
+  let highY = last?.y
   let since = Date.now()
   let stuck = null
   let update = null
@@ -155,23 +178,37 @@ async function walkWatched (bot, goal, stuckMs, noProgressMs = NO_PROGRESS_MS) {
   const target = goalPoint(goal)
   let best = target && pos() ? distanceTo(pos(), target) : Infinity
   let closerAt = Date.now()
+  // 動いたか: 横に MOVED_M 動いた、または跳ねた範囲（lowY〜highY）の外へ MOVED_M 上下した。同じ高さの
+  // 間を跳ねて上下するだけなら、動いていない
+  const moved = (p) => {
+    if (Math.hypot(p.x - last.x, p.z - last.z) >= MOVED_M) {
+      last = p.clone()
+      lowY = highY = p.y
+      return true
+    }
+    if (p.y >= highY + MOVED_M || p.y <= lowY - MOVED_M) {
+      lowY = Math.min(lowY, p.y)
+      highY = Math.max(highY, p.y)
+      return true
+    }
+    return false
+  }
   const timer = last && setInterval(() => {
     const p = pos()
     const working = !!bot.targetDigBlock || !!bot.pathfinder.isMining?.() || !!bot.pathfinder.isBuilding?.()
     if (p && target) {
       const d = distanceTo(p, target)
-      if (d <= best - PROGRESS_M || working) {
+      if (d <= best - PROGRESS_M) {
         best = Math.min(best, d)
         closerAt = Date.now()
-      } else if (Date.now() - closerAt >= noProgressMs) {
-        stuck = { ...snapshot(bot, goal, update), noProgress: true }
+      } else if (Date.now() - closerAt >= noProgressMs * (working ? WORKING_FACTOR : 1)) {
+        stuck = { ...snapshot(bot, goal, update), noProgress: true, working }
         record(stuck)
         bot.pathfinder.setGoal(null)
         return
       }
     }
-    if (!p || p.distanceTo(last) >= MOVED_M) {
-      if (p) last = p.clone()
+    if (!p || moved(p)) {
       since = Date.now()
       return
     }
@@ -184,6 +221,8 @@ async function walkWatched (bot, goal, stuckMs, noProgressMs = NO_PROGRESS_MS) {
   const doors = doorOpener(bot)
   try {
     await bot.pathfinder.goto(goal)
+    const silent = silentFailure(bot, goal, update)
+    if (silent) throw silent
     return null
   } catch (e) {
     if (stuck) return stuck
@@ -194,6 +233,21 @@ async function walkWatched (bot, goal, stuckMs, noProgressMs = NO_PROGRESS_MS) {
     bot.pathfinder.setGoal(null)
     await doors.stop()
   }
+}
+
+// pathfinder の goto は、経路が空のとき（状態が noPath でも timeout でも）失敗にせず成功として返す
+// （lib/goto.js: `results.path.length === 0` を状態の判定より先に見る）。着いていないのに成功と受け取ると、
+// legToward のように「着くまで繰り返す」呼び出しが、動かないまま毎 tick やり直し続ける（2026-10-04: make_mine が
+// 39 分、約 19 回/秒の noPath のまま動かなかった。6 秒の動けない検出は、1 回が短すぎて一度も働かない）。
+// 最後の経路の状態が noPath / timeout で、目標に着いていなければ、pathfinder が本来投げるのと同じ失敗にする
+function silentFailure (bot, goal, update) {
+  if (update?.status !== 'noPath' && update?.status !== 'timeout') return null
+  const here = bot.entity?.position?.floored?.()
+  if (!here || typeof goal?.isEnd !== 'function' || goal.isEnd(here)) return null
+  const noPath = update.status === 'noPath'
+  const e = new Error(noPath ? 'No path to the goal!' : 'Took to long to decide path to goal!')
+  e.name = noPath ? 'NoPath' : 'Timeout'
+  return e
 }
 
 // 目標の場所（座標のない目標は null: 近づいたかは見ない）

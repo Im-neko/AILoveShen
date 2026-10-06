@@ -36,7 +36,7 @@ def _blueprint(**kwargs) -> HouseBlueprint:
     return HouseBlueprint(**params)
 
 
-def _obs(remaining=5, met=False, phase="day", goal=True) -> GameObservation:
+def _obs(remaining=5, met=False, phase="day", goal=True, underground=False) -> GameObservation:
     return GameObservation(
         state={},
         candidates=(),
@@ -44,6 +44,7 @@ def _obs(remaining=5, met=False, phase="day", goal=True) -> GameObservation:
         food=20,
         goal=GoalStatus(met=met, remaining=remaining) if goal else None,
         time_phase=phase,
+        underground=underground,
     )
 
 
@@ -257,6 +258,16 @@ class TestPlaySession:
             "the time of day changed from day to dusk"
         )
 
+    def test_deep_underground_the_time_of_day_does_not_cut_the_goal(self):
+        """深い地下は夜も昼も同じ: 夕方になったからと小目標を切らない（帰らせない）。"""
+        session = self._session()
+        assert not session.needs_new_goal(_obs(phase="dusk", underground=True))
+        assert not session.needs_new_goal(_obs(phase="night", underground=True))
+        # 地上に出れば、また時間帯の変わり目で切る
+        assert session.goal_end_reason(_obs(phase="night")) == (
+            "the time of day changed from day to night"
+        )
+
     def test_getting_through_the_night_is_not_cut_short(self):
         session = self._session(max_steps_per_goal=2)
         session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT)), "day")
@@ -267,6 +278,19 @@ class TestPlaySession:
         assert session.goal_end_reason(_obs(phase="day", met=True)) == (
             "goal through_night() is met"
         )
+
+    def test_a_night_goal_started_at_night_is_over_at_dawn_even_if_not_met(self):
+        """朝になっても「夜を越す」が続いた（ブリッジの済みが取りこぼしても、明け方で終わる）。"""
+        session = self._session()
+        session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT)), "night")
+        assert session.goal_end_reason(_obs(phase="dawn")) == (
+            "goal through_night() is over: the night has passed (dawn)"
+        )
+        assert session.needs_new_goal(_obs(phase="day"))
+        # 昼に始めた目標は、この規則では終わらせない（すぐ終わって決め直しが続かないように）
+        day = self._session()
+        day.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT)), "day")
+        assert not day.needs_new_goal(_obs(phase="dawn"))
 
     def test_rethinks_add_up_and_only_those_seen_are_used(self):
         """後から来た考え直しで前の理由を消さない。決めたときに読んだ分だけ使ったことにする。"""

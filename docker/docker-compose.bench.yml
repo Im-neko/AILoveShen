@@ -1,0 +1,39 @@
+# ベンチマーク用の、配信とは別の Minecraft サーバー（docs/design/83）。
+#
+#   tools/benchmark.py が走るたびに作り直す: 手で動かすなら
+#   BENCH_LEVEL=bench-1 BENCH_SEED=... docker compose -p ailoveshen-bench -f docker/docker-compose.bench.yml up -d
+#
+# 配信のサーバー（docker-compose.minecraft.yml）とは、コンテナ名・ポート・ボリュームが全部違う。
+# 同じ設定（Paper 1.21.4、難易度、全レシピの解放）で、ワールドだけ毎回新しく作る（同じシードなら同じ地形）。
+# ブリッジが入るポートは 127.0.0.1:${BENCH_MC_PORT:-25566} だけ（RCON は公開せず、docker exec で使う）。
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:java21
+    container_name: ailoveshen-bench
+    ports:
+      - "127.0.0.1:${BENCH_MC_PORT:-25566}:25565"
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.4"
+      MEMORY: "2G"
+      ONLINE_MODE: "FALSE"
+      DIFFICULTY: "easy"
+      MODE: "survival"
+      MOTD: "AILoveShen benchmark server"
+      LEVEL: "${BENCH_LEVEL:-bench}"
+      SEED: "${BENCH_SEED:-}"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
+      SPAWN_PROTECTION: "0"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "ailoveshen-bench"
+      RCON_CMDS_ON_CONNECT: "recipe give @a *"
+    volumes:
+      - bench-data:/data
+    tty: true
+    stdin_open: true
+
+volumes:
+  bench-data:

@@ -122,7 +122,7 @@ test('集めた物は 1 個ずつ運ばない: たまるか、ここで集める
   rememberChest(memory, v(1, 70, 1), {}, 0)
   const state = { home, plan: null, memory }
   const at = (logs, timeOfDay = 1000, pos = v(40, 70, 40)) => {
-    const bot = { entity: { position: pos }, time: { timeOfDay }, inventory: { items: () => [{ name: 'oak_log', count: logs }], emptySlotCount: () => 30 } }
+    const bot = { entity: { position: pos }, time: { timeOfDay }, blockAt: () => null, registry: { blocksByName: {} }, inventory: { items: () => [{ name: 'oak_log', count: logs }], emptySlotCount: () => 30 } }
     const goal = makeGoal({ predicate: 'stored', item: 'log', count: 40 }, bot, state, k)
     const r = evaluate(bot, { ...state, goal }, k, world({ inventory: { oak_log: logs }, blocks: { oak_log: 9 } }))
     return r.leaves.some((l) => l.kind === 'deposit')

@@ -15,7 +15,7 @@ from ailoveshen.application.ports.output.chat_source import IChatSource
 from ailoveshen.application.use_cases.comment_triage import Triage
 from ailoveshen.application.use_cases.readings import COMMAND, VIEWER, NameReadings
 from ailoveshen.domain.entities import PlaySession
-from ailoveshen.domain.value_objects import ChatComment
+from ailoveshen.domain.value_objects import ChatComment, ConversationMessage
 from ailoveshen.presentation.services.llm_service import LLMService
 
 # 一覧を出す間（同じ一覧でチャットを埋めない）
@@ -32,7 +32,9 @@ class ChatCommand:
 
 
 YOMI = ChatCommand(
-    ("yomi", "読み", "よみ"), "!yomi <よみ>", "名前の読み方を教える（例: !yomi ねこまる）"
+    ("yomi", "読み", "よみ"),
+    "!yomi <よみ> / !yomi <言葉> <よみ>",
+    "名前や言葉の読み方を教える（例: !yomi ねこまる / !yomi 小麦 こむぎ）",
 )
 HELP = ChatCommand(("commands", "help", "コマンド"), "!commands", "この一覧")
 
@@ -45,7 +47,8 @@ class ChatResponder:
       取っておき、古いものは捨てる（多いときに遅れを積み上げない）
     - 返事と返事の間は `min_interval_seconds` 以上空ける
     - `!` で始まるコメント（コマンド）には返事をしない。自分のコマンドは実行する:
-      `!yomi よみ`（`!読み` / `!よみ`）は、その人の名前の読みを覚えて短く応える（設計書 30）、
+      `!yomi よみ`（`!読み` / `!よみ`）は、その人の名前の読みを、`!yomi 言葉 よみ` は言葉の読みを
+      覚えて短く応える（設計書 30）、
       `!commands`（`!help` / `!コマンド`）は、使えるコマンドの一覧をチャットに書く（書けなければ声で）
     - `quiet` のアカウント（配信者自身）のコメントには返事をしない（コマンドは実行する）。
       `ignore` のアカウント（ボット）には何も反応しない
@@ -67,6 +70,7 @@ class ChatResponder:
         ignore: Iterable[str] = (),
         refresh: Callable[[], Awaitable[None]] | None = None,
         triage: Callable[[ChatComment], Awaitable[Triage]] | None = None,
+        remember: Callable[[ChatComment], None] | None = None,
     ) -> None:
         """
         Args:
@@ -84,6 +88,8 @@ class ChatResponder:
             refresh: 返事を作る前にゲームの様子を取り直す（行動の途中の変化: 道具が壊れた、など）
             triage: 返事を作る前の仕分け（Jev。docs/design/34 §5）。返事の要らないものは飛ばし、
                 取り下げと頼みを先にする。None なら全部に古い順に返事をする
+            remember: 返事をしなかったコメント（仕分けで飛ばした、追いつかず捨てた）を会話の履歴に
+                残す（あとの返事が、会話の流れとして見る。None: 残さない）
         """
         self._llm = llm
         self._session = session
@@ -101,6 +107,7 @@ class ChatResponder:
         self._help_at: float | None = None
         self._refresh = refresh
         self._triage = triage
+        self._remember = remember
         self._triaged: dict[int, Triage] = {}
         self.skipped = 0  # 仕分けで返事をしなかったコメントの数
         self.dropped = 0  # 返事をせずに捨てたコメントの数
@@ -128,6 +135,7 @@ class ChatResponder:
         if len(self._queue) == self._queue.maxlen:
             self.dropped += 1
             logger.info(f"返事が追いつかないので古いコメントを飛ばした（{self.dropped} 件目）")
+            self._note(self._queue[0])
         self._queue.append(comment)
         self._arrived.set()
 
@@ -149,11 +157,17 @@ class ChatResponder:
         match = COMMAND.match(comment.message)
         if self._readings is None or match is None:
             return
-        learned = self._readings.learn(comment.user_name, match.group(1), VIEWER)
+        first, second = match.groups()
+        if second is None:
+            learned = self._readings.learn(comment.user_name, first, VIEWER)
+            ack = f"{comment.user_name}さん、読み方覚えたよ！"
+        else:
+            learned = self._readings.learn_word(first, second)
+            ack = f"{first}は{second}って読むんだね、覚えたよ！"
         if learned is None:
             return
-        # 読み上げで名前が読みに置き換わる。返事の順番は待たない（短い決まった一言）
-        self._spawn(self._say(f"{comment.user_name}さん、読み方覚えたよ！"))
+        # 読み上げで名前や言葉が読みに置き換わる。返事の順番は待たない（短い決まった一言）
+        self._spawn(self._say(ack))
 
     def _help(self) -> None:
         """`!commands`: 一覧をチャットに書く（書けなければ声で）。続けて呼ばれたら飛ばす。"""
@@ -196,6 +210,8 @@ class ChatResponder:
             user_id=comment.user_id,
             session=self._session(),
             kind=kind,
+            received_at=comment.received_at,
+            waiting=tuple(_as_message(c) for c in self._queue),
         )
         self._last_reply_at = self._clock()
         if not reply:
@@ -229,12 +245,18 @@ class ChatResponder:
         self._triaged = {k: v for k, v in self._triaged.items() if k in {id(c) for c in self._queue}}
         if not result.answer:
             self.skipped += 1
+            self._note(comment)
             logger.info(
                 f"[chat] 返事しない（{result.kind}、確信度 {result.confidence:.2f}）: "
                 f"{comment.user_name}: {comment.message}"
             )
             return None
         return comment, result.kind if result.source == "jev" else None
+
+    def _note(self, comment: ChatComment) -> None:
+        """返事をしないコメントも、会話の流れとして履歴に残す。"""
+        if self._remember is not None:
+            self._remember(comment)
 
     async def _answer_forever(self) -> None:
         while True:
@@ -250,6 +272,12 @@ class ChatResponder:
         async for comment in source.comments():
             self.accept(comment)
         logger.error("チャットの読み込みが終わった（もうコメントは届かない）")
+
+
+def _as_message(comment: ChatComment) -> ConversationMessage:
+    return ConversationMessage.from_viewer(
+        comment.message, comment.user_name, comment.user_id, comment.received_at
+    )
 
 
 def _report_reader_error(task: asyncio.Task[None]) -> None:

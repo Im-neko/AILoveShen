@@ -1,4 +1,4 @@
-"""手の帳を JSON ファイルに保存するアダプター（docs/design/52）。"""
+"""覚えた候補を JSON ファイルに保存するアダプター（docs/design/52）。"""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from ailoveshen.application.ports.output.move_store import IMoveStore
-from ailoveshen.domain.value_objects import Move
+from ailoveshen.application.ports.output.learned_candidate_store import ILearnedCandidateStore
+from ailoveshen.domain.value_objects import LearnedCandidate
 
 
-class JsonMoveStore(IMoveStore):
+class JsonLearnedCandidateStore(ILearnedCandidateStore):
     """
-    手の帳を 1 つの JSON ファイルに保存する。
+    覚えた候補を 1 つの JSON ファイルに保存する。
 
     一時ファイルに書いてから名前を変えるので、書き込み中に落ちても
     最後に完全に保存した内容が残る。
@@ -27,21 +27,21 @@ class JsonMoveStore(IMoveStore):
         """
         self._path = Path(path)
 
-    def load(self) -> Optional[tuple[list[Move], int]]:
+    def load(self) -> Optional[tuple[list[LearnedCandidate], int]]:
         """保存した手と次の id の番号。ファイルがまだなければ None。"""
         if not self._path.exists():
             return None
         data = json.loads(self._path.read_text(encoding="utf-8"))
-        moves = [
-            Move(**{**m, "situation": tuple((k, v) for k, v in m.get("situation", {}).items())})
-            for m in data["moves"]
+        learned = [
+            LearnedCandidate(**{**m, "situation": tuple((k, v) for k, v in m.get("situation", {}).items())})
+            for m in data["candidates"]
         ]
-        return moves, int(data["next_id"])
+        return learned, int(data["next_id"])
 
-    def save(self, moves: Sequence[Move], next_id: int) -> None:
-        """手の帳を保存する。"""
+    def save(self, learned: Sequence[LearnedCandidate], next_id: int) -> None:
+        """覚えた候補を保存する。"""
         data = {
-            "moves": [{**asdict(m), "situation": dict(m.situation)} for m in moves],
+            "candidates": [{**asdict(m), "situation": dict(m.situation)} for m in learned],
             "next_id": next_id,
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)

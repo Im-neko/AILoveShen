@@ -16,6 +16,7 @@ from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import NameReadings
+from ailoveshen.application.use_cases.reply_facts import ReplyFactCheck
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import Activity, CharacterProfile
@@ -59,6 +60,7 @@ def create_llm_service(
     notes: NoteKeeper | None = None,
     lessons: LessonBook | None = None,
     promise_check: PromiseCheck | None = None,
+    fact_check: ReplyFactCheck | None = None,
     self_facts: SelfFacts | None = None,
 ) -> LLMService:
     """
@@ -85,6 +87,8 @@ def create_llm_service(
         lessons: 教訓帳（あれば、納得したアドバイスはメモではなくこちらに書く）
         promise_check: 返答が行動を約束しているのに何もしない扱いなら書き直させる
             （create_promise_check。None なら確かめない）
+        fact_check: 返答が持っている物を「ない・見つからない」と言っていないか確かめる
+            （create_fact_check。None なら確かめない）
         self_facts: 自分について話したこと（返答のプロンプトに出し、返答から覚える）
 
     Returns:
@@ -138,6 +142,7 @@ def create_llm_service(
         notes=notes,
         lessons=lessons,
         promise_check=promise_check,
+        fact_check=fact_check,
         self_facts=self_facts,
     )
 
@@ -169,6 +174,30 @@ def create_promise_check(
         ),
         recorder=JsonlWatchRecorder(str(base_dir / twitch.promise_record_dir))
         if twitch.promise_record_dir
+        else None,
+    )
+
+
+def create_fact_check(
+    twitch: TwitchSettings, jev: JevSettings, base_dir: Path
+) -> ReplyFactCheck | None:
+    """
+    返答の事実（持ち物とチェスト）を Jev で確かめるもの。`twitch.response.fact_check` が jev で
+    TypeSafe のキーがあるときだけ作る（なければ None: 確かめない）。閉じるのは呼び出し側。
+    """
+    if twitch.fact_check != "jev" or not jev.api_key:
+        return None
+    from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
+    from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import (
+        JsonlWatchRecorder,
+    )
+
+    return ReplyFactCheck(
+        judge=JevFastJudge(
+            api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+        ),
+        recorder=JsonlWatchRecorder(str(base_dir / twitch.fact_record_dir))
+        if twitch.fact_record_dir
         else None,
     )
 

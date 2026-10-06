@@ -6,24 +6,29 @@
 // 動けない・経路がないのは移動が失敗にする（move.mjs）。中断すると経路移動と採掘を取り消し、実行関数が本当に止まるまで
 // 待つので、行動が重なることはない。実行中は state.current を持ち（反射の割り込みと POST /abort が
 // 使う）、進み具合（state.mjs の共通の状態）を記録する。
-import { threats, round, dayPhase, isDark, inventoryCounts } from './observe.mjs'
+import { threats, round, dayPhase, isDark, isUnderground, inventoryCounts, pushHistory } from './observe.mjs'
 import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark } from './primitives.mjs'
 import { riding } from './boat.mjs'
+import { isSwimming } from './swim.mjs'
 import { needsOutside } from './candidates.mjs'
 import { leaveHome, houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
 import { brokeSince } from './wear.mjs'
+import { carriesFood } from './healing.mjs'
+import { TRAIL_VERBS, startTrail } from './trail.mjs'
 import { noteRefusal } from './refusals.mjs'
 
 const NEED_CHECK_MS = 500
 // 夕方・夜になっても止めない行動（夜を過ごす、家に入る、戦う・逃げる、食べる）
 const NIGHT_VERBS = new Set(['sleep', 'sleep_at', 'bed_here', 'place_bed', 'go_home', 'wait', 'repair_wall', 'exit_wall',
-  'attack', 'flee', 'stash', 'eat', 'place_torch', 'recover_items', 'plug_hole', 'wake_sleeper', 'dig_in', 'leave_burrow'])
+  'attack', 'flee', 'stash', 'tidy', 'eat', 'place_torch', 'recover_items', 'plug_hole', 'wake_sleeper', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow'])
+// 歩いて帰る・向かう夜の行動: 食べ物を持っているなら、空腹になったら止めて食べる（なければ止めない）
+const NIGHT_WALKS = new Set(['go_home', 'sleep_at', 'recover_items'])
 // 始めたときより暗い時間帯になったら止める（明け方・朝になるのでは止めない）
 const DARKER = { day: ['dusk', 'night'], dusk: ['night'], night: [], dawn: [] }
 // 暗くて松明がないとき止めない行動（松明を置く・作る、帰る、食べる、戦う・逃げる…）。それ以外は止めて、
 // 引き返して松明を作らせる（暗い所では何も見えない。設計書 15）
-const DARK_OK_VERBS = new Set([...NIGHT_VERBS, 'craft', 'place_torch_at'])
+const DARK_OK_VERBS = new Set([...NIGHT_VERBS, 'craft', 'place_torch_at', 'surface'])
 // 止めた理由のうち、やり方の失敗ではないもの（小目標の失敗・行き詰まりに数えない）
 const NOT_A_FAILURE = /^failed: (interrupted: took damage|reflex: |stopped: |rethink: )/
 
@@ -58,9 +63,15 @@ export function createRunner (bot, state, deps = {}) {
     const needNow = () => {
       if (riding(bot)) return null // 水の上: 岸まで漕ぐ
       const phase = dayPhase(bot.time.timeOfDay)
-      if (DARKER[start.phase]?.includes(phase) && !NIGHT_VERBS.has(c.verb)) return `it is ${phase} now`
+      // 深い地下は夜も昼も同じ: 夕方・夜になっても止めない（isUnderground）
+      if (DARKER[start.phase]?.includes(phase) && !NIGHT_VERBS.has(c.verb) && !isUnderground(bot)) return `it is ${phase} now`
       if (!DARK_OK_VERBS.has(c.verb) && !start.tooDark && tooDark()) return 'too dark to see and no torch'
-      if (c.verb !== 'eat' && bot.food <= HUNGER_URGENT && start.food > HUNGER_URGENT) return `hungry (food ${bot.food}/20)`
+      // 空腹で止めるのは、食べに行くため。夜を過ごす・家に帰る・戦う・逃げる・食べる（NIGHT_VERBS）は止めない:
+      // 食べ物がないと、帰る歩きを途中で止めるだけになる（2026-09-30 18:07: 家まで 64 m の帰り道を 14 m で止め、
+      // 夜の外でモブに囲まれて死んだ）
+      // 食べ物を持っているなら、夜の歩きも止めて食べる（2026-10-01: 満腹度 0 で肉を持ったまま 11 分歩いた）
+      const eats = NIGHT_WALKS.has(c.verb) && carriesFood(bot)
+      if ((!NIGHT_VERBS.has(c.verb) || eats) && bot.food <= HUNGER_URGENT && start.food > HUNGER_URGENT) return `hungry (food ${bot.food}/20)`
       if (!DAMAGE_TOLERANT.has(c.verb) && bot.health <= HEALTH_CRITICAL && start.health > HEALTH_CRITICAL) return `health is low (${round(bot.health)}/20)`
       return null
     }
@@ -70,6 +81,7 @@ export function createRunner (bot, state, deps = {}) {
       const moved = round(bot.entity.position.distanceTo(startPos))
       abort(`stopped: ${need}${bot.actionPhase ? ` (while ${bot.actionPhase}; moved ${moved}m)` : moved >= 1 ? ` (moved ${moved}m)` : ''}`)
     }, NEED_CHECK_MS)
+    const stopTrail = TRAIL_VERBS.has(c.verb) ? startTrail(bot, state, log) : null
     const onHurt = (entity) => {
       if (entity !== bot.entity) return
       // ボートで水の上を進んでいる: 止まるより進み続けて離れる（設計書 37）
@@ -111,6 +123,7 @@ export function createRunner (bot, state, deps = {}) {
       result = `failed: ${reason.message}`
     } finally {
       clearInterval(timer)
+      stopTrail?.()
       bot.off('entityHurt', onHurt)
       progress.stop()
       state.busy = false
@@ -120,7 +133,9 @@ export function createRunner (bot, state, deps = {}) {
     }
     const seconds = round((Date.now() - t) / 1000)
     result += brokeSince(state, t) // この行動の間に壊れた道具（すぐ持ち物の見方を直すため）
-    state.history.push({ action: label, ok, result, seconds })
+    // 水の中で終わった行動は、陸ではないと結果に書く（成功と読んで、陸にいると思い込まない）
+    if (isSwimming(bot) && !riding(bot)) result += '; you are in the water now, not on land'
+    pushHistory(state, { action: label, ok, result, seconds })
     log(`[act] ${label}: ${ok ? '成功' : '失敗'} ${result}（${seconds}秒）`)
     // 襲われて止まった（ダメージ、反射。設計書 28 §3）、必要が出て止めた、考え直しで止めた: 小目標の失敗に
     // 数えない

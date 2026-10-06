@@ -1415,3 +1415,59 @@ class TestProducerInstruction:
         await use_case.execute(GenerateResponseRequest(
             user_name="neko", message="こんにちは", session=_playing(), kind="chat"))
         assert mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["producer"] is False
+
+
+class TestReplyFacts:
+    """持っている物を「ない」と言う返事は、事実を添えて 1 回だけ書き直させる。"""
+
+    def _use_case(self, generator, builder, events, conversation, bridge, store, problems):
+        check = AsyncMock()
+        check.problem.side_effect = problems
+        use_case = GenerateResponseUseCase(
+            text_generator=generator,
+            prompt_builder=builder,
+            event_publisher=events,
+            conversation=conversation,
+            character=CharacterProfile(),
+            objectives=ObjectiveKeeper(bridge=bridge, event_publisher=events, store=store),
+            fact_check=check,
+        )
+        return use_case, check
+
+    @pytest.mark.asyncio
+    async def test_a_reply_that_denies_what_is_held_is_written_again_with_the_facts(
+        self, mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+    ):
+        use_case, check = self._use_case(
+            mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store,
+            ["事実は チェスト: 2 raw_iron", ""],
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "鉄はまだ見つからなくて", "request": "none"},
+            {"reply": "鉄は 2 個チェストにあるよ、あと 1 個！", "request": "none"},
+        ]
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="鉄集まった？", session=_playing())
+        )
+        assert response.text == "鉄は 2 個チェストにあるよ、あと 1 個！"
+        assert mock_prompt_builder.build_chat_response_prompt.call_args.kwargs["previous_error"] == (
+            "事実は チェスト: 2 raw_iron"
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_last_attempt_is_spoken_even_when_it_still_differs(
+        self, mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+    ):
+        use_case, check = self._use_case(
+            mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store,
+            ["食い違う"] * 5,
+        )
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ない", "request": "none"},
+            {"reply": "やっぱりない", "request": "none"},
+        ]
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="鉄集まった？", session=_playing())
+        )
+        assert response.text == "やっぱりない"
+        assert check.problem.await_count == 1  # 最後の試しは確かめずに話す

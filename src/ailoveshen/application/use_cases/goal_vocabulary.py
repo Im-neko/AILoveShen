@@ -496,6 +496,12 @@ def lesson_when_schema() -> dict[str, Any]:
             "time": {"type": "string", "enum": list(SITUATION_VALUES["time"])},
             "place": {"type": "string", "enum": list(SITUATION_VALUES["place"])},
             "body": {"type": "string", "enum": ["hungry", "hurt"]},
+            "dark": {
+                "type": "string",
+                "enum": ["yes"],
+                "description": "yes for a lesson about dark places (torches, light): caves are dark "
+                "by day too, so do not write it as time=night or place=outside",
+            },
         },
     }
 

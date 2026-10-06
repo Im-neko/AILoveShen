@@ -8,28 +8,39 @@
 import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
-import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell, isLog } from './observe.mjs'
+import { torchesNeeded, TORCH_SPACING } from './trail.mjs'
+import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell, isLog, isUnderground } from './observe.mjs'
+import { surfaceExits } from './surface.mjs'
 import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
-import { buildAllowsDig, growHome } from './builds.mjs'
+import { buildAllowsDig, growHome, inHomeRoom } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { jumpAndPlace, shelteredFrom, enterHome, isDoorstepFloor, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
-import { rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
+import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './move.mjs'
 import { teachDoors } from './doors.mjs'
 import { digTargets } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
-import { levelStatus, TERRAIN } from './leveling.mjs'
+import { levelStatus, noteLevelZone, noteLevelArea, farmLevel, FARM_MARGIN, TERRAIN } from './leveling.mjs'
 import { noteDig, noteShaft, usableShaft } from './quarry.mjs'
 import { canHold, isTossed, noteTossed, emptySlots } from './spare.mjs'
 import { liquidReason } from './liquid.mjs'
 import { supportFor } from './placing.mjs'
 import { isSleeping, sleeperOf } from './sleepers.mjs'
+import { SINGLE_CHEST, defragChests, contentsSignature } from './storage.mjs'
 import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
 import { furnitureInHome } from './furniture.mjs'
-import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody } from './facilities.mjs'
+import { refusalAt } from './refusals.mjs'
+import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
+import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
+import { sealStock, openings, sealCell, plugCell } from './sealing.mjs'
+import { isSwimming, swimToward } from './swim.mjs'
+import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder } from './reach.mjs'
+import { holdsWater } from './breath.mjs'
+import { reachLand } from './land.mjs'
+import { campSite, campAt, campSources, campCount, buildCamp, campExit } from './camp.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -39,13 +50,19 @@ export const REACH = 4.5 // サバイバルで目からブロックに届く距�
 export const HEALTH_CRITICAL = 8
 // 7 未満でダッシュできなくなる。ここから先は飢えているので、少し害のあるものでも食べる価値がある
 export const HUNGER_URGENT = 6
+export const EAT_WASTE_OK = 3 // 食べて満腹度 20 を超えて捨ててよい点数（これを超える食べ物は、満腹度が足りなくなってから）
+const EAT_MAX = 8 // 1 回の食べる手で続けて食べる数の上限
 export const TABLE_SEARCH_RADIUS = 32
 const HOSTILE_AVOID_RADIUS = 5
 const HOSTILE_STEP_COST = 20
 const HOSTILE_CACHE_MS = 1000
 const LEAVES_STEP_COST = 10
 const FLEE_DISTANCE = 16
+const FLEE_MS = 15000 // これだけ逃げても離れられなければ、逃げるのをやめる（続きは反射が数える）
+const FLEE_DAMAGE = 6 // 逃げる間にこれだけ（骷髏の矢 2 本）ダメージを受けたら、逃げるのをやめる
 const FIGHT_LOST_M = 24 // 相手がこれより離れたら見失った
+const FIGHT_NO_DIG_BELOW = 3 // 相手がこれ以上下にいる間は、掘って近づかない
+const FIGHT_MAX_DESCENT = 4 // 追って降りるのは、戦い始めの高さからこれまで（それより下の相手は追わない）
 const FIGHT_LOST_SLACK = 4 // 始めから 24 m より遠い相手（狩りの候補は 32 m まで）は、始めの距離よりこれ以上離れたら見失った
 const PICKUP_WAIT_MS = 1500
 const DROP_COLLECT_RADIUS = 8
@@ -73,6 +90,11 @@ export function arrivalReport (bot, goal, target) {
   const p = bot.entity.position
   const at = `${round(p.x)},${round(p.y)},${round(p.z)}`
   const f = standingCell(bot)
+  // 水の中にいて、目標が水でないなら、陸に着いていない（岸の手前で「着いた」と読んでいた: 2026-10-01）
+  if (isSwimming(bot) && !holdsWater(bot.blockAt(new Vec3(target.x, target.y, target.z)))) {
+    throw new Error(`did not reach ${target.x},${target.y},${target.z}: you are in the water at ${at}, not on land ` +
+      `(${round(Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z))} m away horizontally)`)
+  }
   if (!goal.isEnd(f)) {
     throw new Error(`did not reach ${target.x},${target.y},${target.z}: stopped at ${at} ` +
       `(${round(Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z))} m away horizontally, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`)
@@ -80,8 +102,28 @@ export function arrivalReport (bot, goal, target) {
   return `arrived near ${target.x},${target.y},${target.z} (now at ${at}, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`
 }
 
+// 次に置く計画のブロック: 候補が指したブロックがあればそれ。ただし足元がない（床が抜けたドア）なら、足元の土から
+// （pending の先頭）: ドアだけを先に置こうとして、床がなく失敗し続けた（2026-10-06）
+export function planBlockToPlace (bot, plan, planBlock) {
+  const wanted = planBlock && !plan.isPlaced(bot, planBlock) ? planBlock : null
+  const floorBelow = wanted && bot.blockAt(plan.worldPos(wanted).offset(0, -1, 0))
+  return wanted && !(floorBelow && floorBelow.boundingBox === 'empty') ? wanted : plan.pending(bot)[0]
+}
+
+const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
+const CLIMB_MAX = 24 // 閉じた所から出るために積む高さの上限
+const DESCEND_MAX = 200 // 柱を掘り下げる最大の数
+const CLIMB_BLOCK_MS = 5 * 60 * 1000 // 積んで出るのに失敗したあと、聞かずに実行しない間
+const HANDLESS_CACHE_MS = 2000 // 持ち物が変わる（道具を作る・壊れる）のを、この間隔で読み直す
+
 export function configureMovements (bot, state) {
   const m = new Movements(bot)
+  // ケルプ・海草は水の中の植物: pathfinder は当たり判定のない空気とみなし、海底を歩く道（水面から 3 ブロック下
+  // から始まる）を作って、水面で動けなくなった（2026-10-01、docs/design/73_swimming.md）
+  for (const name of ['kelp', 'kelp_plant', 'seagrass', 'tall_seagrass', 'bubble_column']) {
+    const b = bot.registry.blocksByName[name]
+    if (b) m.liquids.add(b.id)
+  }
   // まだ読み込まれていないチャンクでは、pathfinder は位置のない代わりのブロックを渡す（歩けることは
   // ない）。その位置を読むコスト関数は物理ティックの中で例外を投げてしまう。
   const step = (cost) => m.exclusionAreasStep.push((block) => block.position ? cost(block) : 0)
@@ -112,6 +154,23 @@ export function configureMovements (bot, state) {
   // 家、前の家、建てている家は壊さないし、そこに足場も置かない。
   // 自然の地形（leveling.mjs の TERRAIN）。置いた物（丸石、板材、チェストなど）は入れない
   m.exclusionAreasBreak.push((block) => block.position && (isLeaves(block.name) || TERRAIN.test(block.name)) && !inHouse(state, block.position) ? 0 : 100)
+  // 道具が要るブロック（石にツルハシ）は、その道具を持っていないと掘って進まない: 素手で石や深層岩を
+  // 掘り続け、何も落ちないまま地下の奥へ潜った（2026-10-01: 逃走・回収中。docs/design/80_underground_deaths.md）
+  // ただし閉じ込められて出られない（歩ける所が閉じている）ときは、出る行動に限り素手で掘ってよい: 道具を作る材料も
+  // 取りに行けないまま動けなくなる（2026-10-04: 採掘場の底で木のつるはしが壊れ、約 50 分出られなかった）
+  const handless = new Map()
+  let handlessAt = 0
+  let shutIn = false
+  m.exclusionAreasBreak.push((block) => {
+    if (!block.position || !block.harvestTools || !Object.keys(block.harvestTools).length) return 0
+    if (Date.now() - handlessAt > HANDLESS_CACHE_MS) {
+      handless.clear()
+      handlessAt = Date.now()
+      shutIn = ROCK_ESCAPE.has(state.current?.verb) && isUnderground(bot) && !!closedSpaceCached(bot)
+    }
+    if (!handless.has(block.type)) handless.set(block.type, !chooseTool(bot, block))
+    return handless.get(block.type) && !shutIn ? 100 : 0
+  })
   // （水や溶岩に接したブロックは、mineflayer-pathfinder の dontCreateFlow（既定で真）がもともと壊さない。
   // 同じ判定をここに足すと、壊す候補ごとの読み取りが増えるだけで、経路探索が遅くなった）
   // ただしドアの前の床の穴は埋めてよい（その上に立ってドアへ入る。home.mjs の isDoorstepFloor）
@@ -120,6 +179,9 @@ export function configureMovements (bot, state) {
   m.exclusionAreasPlace.push((block) => block.position && onMineCell(state, block.position) ? 100 : 0)
   // らせん階段の柱と段の床は壊さない（経路探しが近道に掘ると階段が崩れる）
   m.exclusionAreasBreak.push((block) => block.position && inMineBody(state, block.position) ? 100 : 0)
+  // 採掘場のほかの深い岩は掘らない（岩の中は採掘場の坑道と枝だけ。設計書 86）。帰る・脱出する行動は、閉じた所から
+  // 出られなくならないように除く
+  m.exclusionAreasBreak.push((block) => block.position && !ROCK_ESCAPE.has(state.current?.verb) && protectedRock(state, block.position, block.name) ? 100 : 0)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
   m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
@@ -169,14 +231,17 @@ const goNear = (bot, pos, range, signal) => goto(bot, new goals.GoalNear(pos.x, 
 // 作業台やかまどを置ける場所: [{ pos, where: 'inside' | 'nearby' }]。どちらに置くかは選ぶ側
 // （Jev か Gemini）が決める。家の中は、ドアの通り道を空け、ベッドを置く場所を残せるときだけ
 // （roomSpot）。建てる予定の家の敷地と、家の壁のまわりには置かない（壁が建てられなくなる）。
-// 避難中（夜に家の中）は家の中だけ（外には出ない。夜の待ち時間にクラフトできなかった）
+// かまど類は家の中だけ（外や地下で腰を据えて作業すると襲われる。2026-10-04: 地下でかまどを置いて精錬して死んだ。
+// 外にいるときは、置く手は家へ帰る手になる: candidates.mjs の place）。作業台は家の外にも置くが、地下は除く
 export function stationSpots (bot, state, item = null) {
   const out = []
   if (state.home && isInside(bot, state.home)) {
     const pos = roomSpot(bot, state.home)
     if (pos) out.push({ pos, where: 'inside' })
   }
+  if (state.home && FURNACE_ITEM.test(item ?? '')) return out
   if (state.home && shelterOf(bot, state.home).sheltering) return out
+  if (isUnderground(bot)) return out
   const pos = nearbySpot(bot, state)
   if (pos) out.push({ pos, where: 'nearby' })
   return out
@@ -259,10 +324,27 @@ async function crossWater (bot, state, target, what, signal, minWater = undefine
   if (!crossing) return null
   if (!boatItem(bot)) {
     state.waterAhead = { at: Date.now(), length: crossing.length }
-    return null
+    // ボートがなければ泳いで渡る（pathfinder は水の中から動けない: docs/design/73_swimming.md）。水が遠くても、
+    // 先に水際まで歩く（区間の歩きが水の上に伸びると、pathfinder は道を作れない）
+    return await swimAcross(bot, target, what, signal, crossing)
   }
   if (crossing.from > BOARD_WITHIN_M) return null
   return await rideBoat(bot, state, target, what, signal, crossing)
+}
+
+// 水際まで歩き、向こう岸まで泳いで上がる。岸に着けなければ、水の中にいることを言って失敗にする
+async function swimAcross (bot, target, what, signal, crossing) {
+  if (!isSwimming(bot) && crossing.from > 2) {
+    bot.actionPhase = `walking to the water on the way to ${what}`
+    await goto(bot, new goals.GoalNear(crossing.entry.x, crossing.entry.y + 1, crossing.entry.z, 2), signal)
+  }
+  bot.actionPhase = `swimming toward ${what}`
+  const r = await swimToward(bot, target, signal)
+  bot.actionPhase = ''
+  signal.throwIfAborted()
+  const p = bot.entity.position
+  if (!r.landed && r.why !== 'arrived') throw new Error(`swam ${r.moved}m toward ${what} but ${r.why}: you are still in the water at ${round(p.x)},${round(p.y)},${round(p.z)}`)
+  return `swam ${r.moved}m across the water toward ${what} (${r.why})`
 }
 
 async function rideBoat (bot, state, target, what, signal, crossing = null) {
@@ -292,16 +374,23 @@ async function rideBoat (bot, state, target, what, signal, crossing = null) {
   if (!r.landed) return `rode a boat ${r.moved}m toward ${what}; still on the water (${r.why})`
   await leaveBoat(bot)
   const kept = await pickUpBoat(bot, state, boat, signal)
+  // 降りた所がまだ水の中なら、岸まで泳ぐ（降りたら陸、とは限らない: 2026-10-01）
+  let swim = null
+  if (isSwimming(bot)) swim = await swimToward(bot, target, signal)
   const p = bot.entity.position
-  return `rode a boat ${r.moved}m across the water toward ${what} and got off at ${round(p.x)},${round(p.z)} (${r.why})` +
+  const landing = !isSwimming(bot) ? `got off at ${round(p.x)},${round(p.z)}` : `got off, but you are still in the water at ${round(p.x)},${round(p.y)},${round(p.z)} (${swim?.why ?? 'no swim'})`
+  return `rode a boat ${r.moved}m across the water toward ${what} and ${landing} (${r.why})` +
     (kept ? '' : '; the boat could not be picked up again')
 }
 
 const RIDE_MIN_WATER = 3 // 道具 ride_boat で渡る水の長さの下限（自動で乗るのは BOAT_MIN_WATER から）
 // 水の上で続きを漕げる行動（legToward を通る）。ほかの行動の前には降りる（runner）
-export const TRAVELS = new Set(['place_plan', 'go_home', 'deposit', 'stash', 'withdraw', 'smelt', 'goto_memory', 'survey', 'goto_pos', 'explore', 'ride_boat'])
+export const TRAVELS = new Set(['place_plan', 'go_home', 'deposit', 'stash', 'tidy', 'withdraw', 'smelt', 'goto_memory', 'survey', 'goto_pos', 'explore', 'ride_boat'])
 
 // ブロックのどの面を使うか: ボットの目に向いている面
+// use_item の face（右クリックするブロックの面）の名前 → 向き
+export const FACE_VECTORS = { up: [0, 1, 0], down: [0, -1, 0], north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0] }
+
 function faceToward (bot, pos) {
   const d = bot.entity.position.offset(0, 1.6, 0).minus(pos.offset(0.5, 0.5, 0.5))
   const axis = ['x', 'y', 'z'].reduce((a, b) => (Math.abs(d[b]) > Math.abs(d[a]) ? b : a))
@@ -359,7 +448,7 @@ export const bestWeapon = (bot) => {
 
 // 相手がいなくなるまで戦う。見失った（FIGHT_LOST_M より離れた）、STUCK_MS の間近づけない・動けないときは
 // やめる（時間では止めない）
-export async function fight (bot, target, signal) {
+export async function fight (bot, target, signal, maxMs = Infinity, minHealth = 0) {
   // 追う目標は一度だけ置く（動く相手には pathfinder が経路を立て直す）。置き直すたびに、歩く
   // 途中の掘り（雪など）が止まる（town4d: 同じ雪を 4 回掘りかけたまま、ゾンビに倒された）
   const follow = new goals.GoalFollow(target, 2)
@@ -368,11 +457,25 @@ export async function fight (bot, target, signal) {
   // 狩りの候補は 32 m まで出す。始めから 24 m より遠い相手を、始めの 1 回目で「見失った」にしない
   // （2026-09-30: 26 m の牛・羊を 0.0 秒で見失って、食料が集まらなかった）
   const lostAt = Math.max(FIGHT_LOST_M, target.position.distanceTo(bot.entity.position) + FIGHT_LOST_SLACK)
+  const startedAt = Date.now()
+  const startY = bot.entity.position.y
+  const movements = bot.pathfinder.movements
+  const canDig = movements?.canDig
   try {
     while (bot.entities[target.id] && !signal.aborted) {
       const d = target.position.distanceTo(bot.entity.position)
+      // 下にいる相手には掘って近づかない（蜘蛛を追って石を掘り下り、洞窟の骷髏のところへ 15 m 落ちて死んだ:
+      // 2026-10-03）。同じ高さか上の相手には、これまでどおり掘る（雪など）
+      if (movements) movements.canDig = canDig && target.position.y > bot.entity.position.y - FIGHT_NO_DIG_BELOW
+      // 反射の戦いだけに上限がある（maxMs）: 殴っても倒れない相手（壁の向こう、など）と永久に殴り合わない
+      if (Date.now() - startedAt > maxMs) { why = `did not kill it in ${maxMs / 1000}s`; break }
+      // 素手で殴り合う反射の戦い: 体力がここまで減ったらやめる（次の反射は、体力が足りなければ逃げる）
+      if (bot.health < minHealth) { why = `health is down to ${round(bot.health)}/20: not trading blows with bare hands any longer`; break }
       if (d > lostAt) { why = `lost it (${round(d)}m away)`; break }
       if (d > 3 && stuck()) { why = `could not get to it (${round(d)}m away)`; break }
+      // 洞窟へ逃げ込む相手を歩いて追い、持ち物を持ったまま地下へ降りた（2026-10-04: 畑から蜘蛛を追って y63 の洞窟へ）。
+      // 離れた相手は、戦い始めの高さから FIGHT_MAX_DESCENT より下へは追わない（近寄ってくる相手とは戦う）
+      if (d > 3 && bot.entity.position.y < startY - FIGHT_MAX_DESCENT) { why = `it went down; will not follow it ${round(startY - bot.entity.position.y)}m below where the fight began`; break }
       if (target.position.distanceTo(bot.entity.position) > 3) {
         if (bot.pathfinder.goal !== follow) bot.pathfinder.setGoal(follow, true)
       } else {
@@ -386,22 +489,39 @@ export async function fight (bot, target, signal) {
     }
   } finally {
     bot.pathfinder.setGoal(null)
+    if (movements) movements.canDig = canDig
   }
   return bot.entities[target.id] ? `${target.name} still alive${why ? `: ${why}` : ''}` : `${target.name} gone (killed or despawned)`
 }
 
-// distance（離れたい距離）まで逃げる。STUCK_MS の間それ以上離れられなければやめる
+// distance（離れたい距離）まで逃げる。STUCK_MS の間それ以上離れられなければ、FLEE_MS たっても離れられなければ、
+// 逃げる間に FLEE_DAMAGE 以上ダメージを受ければやめる。逃げるときは掘らない（石を掘って潜りながら逃げ、
+// 骷髏に 30 秒撃たれ続けて死んだ: 2026-10-01 19:44。掘る間は進まず、同じ直線上で当たり続ける）
 export async function flee (bot, h, signal, distance = FLEE_DISTANCE) {
+  const movements = bot.pathfinder.movements
+  const canDig = movements?.canDig
+  if (movements) movements.canDig = false
   bot.pathfinder.setGoal(new GoalAwayFrom(h, distance + REPLAN_MOVE), true)
   const stuck = stuckWatch(bot, () => -h.position.distanceTo(bot.entity.position))
+  const startedAt = Date.now()
+  const health = bot.health
+  let why = ''
   try {
     while (!signal.aborted && bot.entities[h.id] && h.position.distanceTo(bot.entity.position) < distance && !stuck()) {
+      if (health - bot.health >= FLEE_DAMAGE) { why = `took ${round(health - bot.health)} damage while fleeing`; break }
+      if (Date.now() - startedAt > FLEE_MS) { why = `${FLEE_MS / 1000}s`; break }
       await bot.waitForTicks(5)
     }
   } finally {
     bot.pathfinder.setGoal(null)
+    if (movements) movements.canDig = canDig
   }
-  return `now ${round(h.position.distanceTo(bot.entity.position))}m from ${h.name}`
+  const left = round(h.position.distanceTo(bot.entity.position))
+  // 離れられなかった: 逃げられたことにしない（反射が同じ相手から逃げ続ける繰り返しを数える）
+  if (bot.entities[h.id] && left < distance && (why || stuck())) {
+    throw new Error(`could not get away from ${h.name}: still ${left}m${why ? ` (${why})` : ` after ${STUCK_MS / 1000}s`}`)
+  }
+  return `now ${left}m from ${h.name}`
 }
 
 // 動けないかを見る: 呼ぶたびに、score（小さいほどよい: 相手までの距離など）が STUCK_MS の間よくならず、
@@ -508,6 +628,17 @@ function dropsAround (bot) {
 const itemCount = (bot, name) => bot.inventory.items().filter((i) => i.name === name).reduce((n, i) => n + i.count, 0)
 const totalItems = (bot) => bot.inventory.items().reduce((n, i) => n + i.count, 0)
 
+// 拾った数は、増えた物の増え分だけを数える（物ごとの増減の、増えた側の合計）。総数の純増で見ると、歩く間に
+// 使った物（足場に置いた土、trail が置いた松明）で差し引かれ、拾えたのに「拾えなかった」と失敗していた
+// （2026-10-04 02:40: 松明 2 本を置いたあとに鉄鉱石を掘り、鉄 1 + 丸石 1 - 松明 2 = 0 で失敗。原木の「3〜5 本目で
+// 拾えない」も、幹に登る足場の土）
+export function gainedSince (bot, baseline) {
+  const now = inventoryCounts(bot)
+  let gained = 0
+  for (const [name, n] of Object.entries(now)) gained += Math.max(0, n - (baseline[name] ?? 0))
+  return gained
+}
+
 // 使える作業台。避難中（夜に家の中）は家の中のものだけ（外のものへは行けない）
 export function findTable (bot, state = null) {
   const matching = bot.registry.blocksByName.crafting_table.id
@@ -519,20 +650,45 @@ export function findTable (bot, state = null) {
   return bot.findBlock({ matching, maxDistance: TABLE_SEARCH_RADIUS })
 }
 
-export function findFurnace (bot) {
-  return bot.findBlock({ matching: bot.registry.blocksByName.furnace.id, maxDistance: TABLE_SEARCH_RADIUS })
+// 使えるかまど。精錬・調理は家の中のかまどだけ: 地下の洞窟でかまどを置いて 50 秒立ち止まり、骸骨に撃たれ続けて
+// 死んだ（2026-10-04、docs/design/86_safe_work_and_branch_mining.md）。家がまだないときだけ、近くのかまど（地上のもの。
+// 地下では使わない）
+export function findFurnace (bot, state = null) {
+  const matching = bot.registry.blocksByName.furnace.id
+  if (!state?.home) return isUnderground(bot) ? null : bot.findBlock({ matching, maxDistance: TABLE_SEARCH_RADIUS })
+  return bot.findBlocks({ matching, maxDistance: TABLE_SEARCH_RADIUS, count: 16 })
+    .map((p) => bot.blockAt(p))
+    .find((b) => b && inHomeRoom(state.home, b.position)) ?? null
 }
 
-// 焼けるかまど: 近くにあればそれ、なければ最後に見たかまど（家のかまどなど）まで歩いて焼く。
-// { position, near } か null（state を渡したときだけ遠くのを探す）。近くのを見たら覚える
+// 焼けるかまど: 近くにあればそれ、なければ家のかまど（遠ければ歩いて焼く。家がまだないときは最後に見たもの）。
+// { position, near } か null（state を渡したときだけ遠くのを探す）
 export function knownFurnace (bot, state = null) {
-  const near = findFurnace(bot)
+  const near = findFurnace(bot, state)
   if (near) {
-    if (state) state.lastFurnace = { x: near.position.x, y: near.position.y, z: near.position.z }
+    if (state && !state.home) state.lastFurnace = { x: near.position.x, y: near.position.y, z: near.position.z }
     return { position: near.position, near: true }
   }
-  const p = state?.lastFurnace ?? (state?.home ? furnitureInHome(bot, state.home, 'furnace') : null)
+  const p = state?.home
+    ? furnitureInHome(bot, state.home, 'furnace', (q) => bot.blockAt(q)?.name === 'furnace')
+    : (!isUnderground(bot) ? state?.lastFurnace : null)
   return p ? { position: new Vec3(p.x, p.y, p.z), near: false } : null
+}
+
+// かまど類は、置くのも使うのも家の中だけ（家がまだないときは地下を除く）。作業台は地下で置かない
+// （建築予定地への仮設など、地上の昼の作業はこれまでどおり）。置く場所を選ぶ側と、道具 place が使う。
+// 置けないときは理由
+export const FURNACE_ITEM = /^(furnace|blast_furnace|smoker)$/
+export function stationRefusal (bot, state, item, pos) {
+  if (FURNACE_ITEM.test(item) && state.home) {
+    return inHomeRoom(state.home, pos)
+      ? ''
+      : `a ${item} is placed only inside the house (smelting and cooking are done where it is safe, not in the field or underground): go home and place it there`
+  }
+  if ((FURNACE_ITEM.test(item) || item === 'crafting_table') && isUnderground(bot)) {
+    return `a ${item} is not placed underground (monsters spawn in the dark and you stand still while using it): do it on the surface or in the house`
+  }
+  return ''
 }
 
 // 経路が届かなかったブロックは、このセッションでは再び出さない（town2: 何度も選ばれた）
@@ -573,13 +729,15 @@ export function chooseTool (bot, block) {
 // （ツルハシが壊れたあとも、素手で石を掘り続けていた）
 function checkHarvestable (bot, state, block, tool = chooseTool(bot, block)) {
   if (tool || !block?.harvestTools || !Object.keys(block.harvestTools).length) return
+  if (isUnderground(bot) && closedSpace(bot)) return // 閉じ込められたら素手でも掘る（出る道を空けるため。何も落ちなくてよい）
   const last = (state?.brokenTools ?? []).at(-1)
   throw new Error(`no tool that can mine ${block.name}${last ? ` (the ${last.item} broke)` : ''}: make one first`)
 }
 
-async function equipToolFor (bot, state, block) {
+// drops: false は、壊すだけでよいとき（自分で積んだ柱を崩す。何も落ちなくてよい）: 掘れる道具がなくても素手で壊す
+async function equipToolFor (bot, state, block, { drops = true } = {}) {
   const tool = chooseTool(bot, block)
-  checkHarvestable(bot, state, block, tool)
+  if (drops) checkHarvestable(bot, state, block, tool)
   if (tool) {
     if (bot.heldItem?.name !== tool.name) await bot.equip(tool, 'hand')
   } else if (TOOL_ITEM.test(bot.heldItem?.name ?? '')) {
@@ -632,11 +790,11 @@ async function afterDig (bot, state, c, before, signal) {
   const why = await collectNearbyDrops(bot, state, signal)
   if (harvested.length) {
     const replanted = await replant(bot, harvested, c.block)
-    const gained = totalItems(bot) - before
-    return `harvested ${harvested.length} ${c.block}, replanted ${replanted}; ${gained >= 0 ? 'picked up' : 'net'} ${gained} items` +
+    const gained = gainedSince(bot, before)
+    return `harvested ${harvested.length} ${c.block}, replanted ${replanted}; picked up ${gained} items` +
       (replanted < harvested.length ? ` (no ${CROPS[cropByBlock(c.block)].seed} left to replant ${harvested.length - replanted})` : '')
   }
-  const gained = totalItems(bot) - before
+  const gained = gainedSince(bot, before)
   // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
   if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
   if (gained <= 0) {
@@ -647,11 +805,109 @@ async function afterDig (bot, state, c, before, signal) {
 }
 
 // 実行関数: (bot, state, candidate, signal) -> 結果の文字列。対象は候補が持っている
+const MINE_SITE_WALK = 32 // 採掘場を設計するとき、家からこの内にいないと近づく（外周の輪は家から 40 m まである）
+const MINE_TORCH = { stairs: 12, tunnel: 8 } // 松明を置く間隔（掘ったセルの数）
+const ORE_CHECK_EVERY = 3 // 探している鉱石が壁に出たかを、これだけ掘るごとに見る
+
+// 探している鉱石で、今掘れるもの（空気に面して、届き、さっき断られていない）: { name, pos } か null。solver の見え方
+// （world.dig = digTargets）と同じ判定なので、これが出れば次の手は掘る
+function oreShowing (bot, state, sources) {
+  for (const name of sources) {
+    const pos = digTargets(bot, state, name, 4).find((p) => !refusalAt(state, 'dig', p))
+    if (pos) return { name, pos }
+  }
+  return null
+}
+const cutNote = (cut) => cut.length ? `; branches cut short for danger: ${cut.join('; ')}` : ''
+const sealNote = (n) => n ? `; walled off ${n} cave openings with cobblestone (floor, walls and ceiling)` : ''
+
+// 掘り終えたセルの壁に、間隔をおいて松明を 1 本（置けなくても掘りは続ける）。置く番なのに持っていなければ
+// 'missing' を返す（暗いまま掘り進めない: 呼ぶ側が止めて、足りないと知らせる）
+async function torchInMine (bot, cells, index) {
+  const cell = cells[index]
+  const k = cells.slice(0, index).filter((x) => x.part === cell.part).length
+  // 枝には置かない: 幹の松明が枝の奥まで届く（1.18 以降、モブが湧くのは明るさ 0 だけ。枝は幹から 10 マス）
+  if (cell.part.startsWith('branch')) return null
+  const due = cell.part === 'stairs' ? k % MINE_TORCH.stairs === MINE_TORCH.stairs - 1
+    : cell.part === 'room' ? k === 0
+      : k % MINE_TORCH.tunnel === MINE_TORCH.tunnel - 1
+  if (!due) return null
+  const torch = bot.inventory.items().find((i) => i.name === 'torch')
+  if (!torch) return 'missing'
+  const head = new Vec3(cell.x, cell.y + 1, cell.z)
+  if (bot.blockAt(head)?.boundingBox !== 'empty') return null
+  const planned = plannedBlocks(cells)
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const wall = bot.blockAt(head.offset(dx, 0, dz))
+    if (wall?.boundingBox !== 'block' || planned.has(`${wall.position.x},${wall.position.y},${wall.position.z}`)) continue
+    try {
+      await bot.equip(torch, 'hand')
+      await bot.placeBlock(wall, new Vec3(-dx, 0, -dz))
+      return null
+    } catch (e) {
+      console.log(`[mine] 松明を置けなかった: ${e.message}`)
+    }
+  }
+  return null
+}
+
+// かまどを開け、できたものを取り、材料と燃料を入れ、全部焼けるまで待つ。燃料が尽きて焼けないまま入力が残った
+// ら取り戻す。残りは後のステップで取り出す（その間もかまどは動く）
+export async function tendFurnace (bot, state, c, block, signal) {
+  const furnace = await bot.openFurnace(block)
+  const got = {}
+  let returned = ''
+  const take = async () => {
+    const out = furnace.outputItem()
+    if (!out) return
+    await furnace.takeOutput()
+    got[out.name] = (got[out.name] ?? 0) + out.count
+  }
+  try {
+    await take()
+    if (c.input) {
+      const inSlot = furnace.inputItem()?.name === c.input ? furnace.inputItem().count : 0
+      const n = Math.min(c.count - inSlot, inventoryCounts(bot)[c.input] ?? 0)
+      if (c.fuel && (furnace.fuelItem()?.count ?? 0) < c.fuelCount) {
+        await furnace.putFuel(bot.registry.itemsByName[c.fuel].id, null, Math.min(c.fuelCount, inventoryCounts(bot)[c.fuel] ?? 0))
+      }
+      if (n > 0) await furnace.putInput(bot.registry.itemsByName[c.input].id, null, n)
+    }
+    // 全部焼けるまで待つ（1 個 10 秒）。燃料が切れて火が消えたらやめる。中断（反射・ダメージ）は 1 秒ごとに見る:
+    // 見ないと 51 秒の精錬が終わるまで反射が待たされ、その間に骸骨に撃たれ続けて死んだ（2026-10-04）
+    while (furnace.inputItem() && (furnace.fuelItem() || furnace.fuel > 0)) {
+      signal.throwIfAborted()
+      await bot.waitForTicks(20)
+      await take()
+    }
+    await take()
+    // 燃料が尽きて、焼けないまま入力が残った: 取り戻す（かまどに入れっぱなしだと、記録が「焼けているはず」の
+    // ままで、取りに行っても何も出ない手を成功と数えて空回りした: 2026-10-03、昆布 3 個）
+    const stuck = furnace.inputItem()
+    if (stuck && !furnace.fuelItem() && !(furnace.fuel > 0)) {
+      await furnace.takeInput()
+      returned = `${stuck.count} ${stuck.name}`
+    }
+  } finally {
+    const making = {}
+    if (furnace.outputItem()) making[furnace.outputItem().name] = furnace.outputItem().count
+    const input = furnace.inputItem()
+    const product = input && smeltingProduct(input.name)
+    if (product) making[product] = (making[product] ?? 0) + input.count
+    rememberFurnace(state.memory, c.pos, making, Number(bot.time.age))
+    furnace.close()
+  }
+  const took = Object.entries(got).map(([name, n]) => `${n} ${name}`).join(', ')
+  const left = furnace.inputItem()?.count ?? 0
+  const back = returned ? `${took ? '; ' : ''}the furnace ran out of fuel: took back ${returned} (add fuel and smelt again)` : ''
+  const short = c.short ? `; the fuel you carry burns only ${c.count} of them: ${c.short} not put in, add fuel for the rest` : ''
+  return `${took ? `took ${took}` : returned ? '' : 'nothing done yet'}${back}${left ? `; ${left} still smelting` : ''}${short}`
+}
+
 export const PRIMITIVES = {
   async dig (bot, state, c, signal) {
     const block = bot.blockAt(c.pos)
     if (!block || block.name !== c.block) throw new Error(`${c.block} is gone from ${c.pos}`)
-    const before = totalItems(bot)
     checkHarvestable(bot, state, block) // 歩いて行く前に
     // 水や溶岩をせき止めているブロックは掘らない（候補にも道具にも出さないが、掘る直前にも確かめる）
     const wet = liquidReason(bot, c.pos, block)
@@ -674,6 +930,7 @@ export const PRIMITIVES = {
     // 空中で掘ると5倍遅い（例えば、立っていたブロックを切った直後）
     for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
     await equipToolFor(bot, state, block)
+    const before = inventoryCounts(bot) // 掘る直前から数える: 歩く間に拾った物は、この物のドロップではない
     await bot.dig(bot.blockAt(c.pos), true)
     noteDig(state, c.pos, c.block, bot.entity.position) // 地形を掘った場所を採掘の場所にする（quarry.mjs）
     signal.throwIfAborted()
@@ -691,7 +948,7 @@ export const PRIMITIVES = {
   async pickup (bot, state, c, signal) {
     const drop = bot.entities[c.entityId]
     if (!drop) throw new Error('the item is gone')
-    const before = totalItems(bot)
+    const before = inventoryCounts(bot)
     const collected = waitForCollect(bot, PICKUP_WAIT_MS)
     try {
       await goNear(bot, drop.position, 0.5, signal)
@@ -700,7 +957,7 @@ export const PRIMITIVES = {
       throw e
     }
     await collected
-    const gained = totalItems(bot) - before
+    const gained = gainedSince(bot, before)
     // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
     if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
     if (gained <= 0) {
@@ -770,9 +1027,52 @@ export const PRIMITIVES = {
     if (bot.blockAt(seal)?.boundingBox !== 'block') throw new Error(`dug the hole but the top at ${seal.x},${seal.y},${seal.z} is still open`)
     return `dug in: a ${BURROW_DEPTH}-block hole at ${seal.x},${seal.z}, sealed on top with ${item.name}; wait here until morning`
   },
+  // 水から陸へ泳いで上がる（docs/design/89）。経路探索器は水の中から動かないので、泳ぎ（swim.mjs）で渡る
+  async reach_land (bot, state, c, signal) {
+    return await reachLand(bot, signal)
+  },
+  // 家も寝床も掘れる地面もない夜: 立った所の四方（足・頭・天井の高さ）と真上を土などで囲み、朝まで待つ（docs/design/89）。
+  // 持っていなければ、近くの土を掘って集める（素手でよい）。囲めば inBurrow が真になる
+  async wall_in (bot, state, c, signal) {
+    if (inBurrow(bot)) return 'already enclosed'
+    if (isSwimming(bot)) throw new Error('you are in the water: swim to land first (reach_land)')
+    const { site, why } = campSite(bot, state)
+    if (!site) throw new Error(`no place to make a camp within reach: ${why}`)
+    let dug = 0
+    // 材料: 足りなければ、囲む場所のまわりの土を掘る（囲みと足元は掘らない）
+    while (campCount(bot) < site.need) {
+      signal.throwIfAborted()
+      const [target] = campSources(bot, state, site)
+      if (!target) throw new Error(`the camp needs ${site.need} blocks and you carry ${campCount(bot)}: no dirt within reach to dig for the rest`)
+      if (++dug > site.need + 6) throw new Error(`dug ${dug - 1} blocks of dirt and still carry only ${campCount(bot)} of the ${site.need} needed`)
+      const block = bot.blockAt(target)
+      await PRIMITIVES.dig(bot, state, { block: block.name, pos: target }, signal)
+    }
+    // 立つ場所へ戻る（掘りに歩いたとき）。戻ったあとで場所をもう一度確かめる
+    if (!standingCell(bot).equals(site.feet)) await goto(bot, new goals.GoalBlock(site.feet.x, site.feet.y, site.feet.z), signal)
+    const again = campAt(bot, state, site.feet)
+    if (typeof again === 'string') throw new Error(`the camp spot is no longer usable: ${again}`)
+    const placed = await buildCamp(bot, again, signal)
+    if (!inBurrow(bot)) throw new Error(`placed ${placed} blocks but still not enclosed (a wall or the roof is missing)`)
+    return `enclosed myself at ${site.feet.x},${site.feet.y},${site.feet.z} with ${placed} blocks: wait here until morning`
+  },
   // 穴から出る: 上の塞ぎを壊し、足元に土を置いて地面の高さまで上がる
   async leave_burrow (bot, state, c, signal) {
     if (!inBurrow(bot) && !inOpenShaft(bot)) return 'not in a hole'
+    // 囲い（wall_in）は、壁の 1 方を掘って歩いて出る（縦穴のように上へ積まない）
+    const exit = campExit(bot)
+    if (exit) {
+      for (const cell of exit.cells) {
+        signal.throwIfAborted()
+        const block = bot.blockAt(cell)
+        if (block?.boundingBox !== 'block') continue
+        await equipToolFor(bot, state, block)
+        await bot.dig(block, true)
+      }
+      await goto(bot, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), signal)
+      await collectNearbyDrops(bot, state, signal)
+      return `dug out through the ${exit.dir[0] ? (exit.dir[0] > 0 ? 'east' : 'west') : (exit.dir[1] > 0 ? 'south' : 'north')} wall to ${exit.outside.x},${exit.outside.y},${exit.outside.z}`
+    }
     const start = standingCell(bot)
     let roof = start.offset(0, 2, 0)
     let up = 0
@@ -797,18 +1097,99 @@ export const PRIMITIVES = {
     await collectNearbyDrops(bot, state, signal)
     return `climbed out of the hole to ${standingCell(bot).x},${standingCell(bot).y},${standingCell(bot).z}`
   },
+  // 閉じた所から出る: 足元に土か丸石を積んで、歩いて出られるようになる高さまで上がる（階段の床が抜けて 1 段ずつ
+  // 上がれないとき、深い穴に落ちたとき）。頭の上が岩なら掘る（道具がなければ素手で: 閉じ込められたときだけ許す）
+  async climb_out (bot, state, c, signal) {
+    if (!closedSpace(bot)) return 'not shut in: you can walk out from here'
+    let raised = 0
+    try {
+      while (closedSpace(bot)) {
+        signal.throwIfAborted()
+        if (raised >= CLIMB_MAX) throw new Error(`piled up ${raised} blocks and still cannot walk out`)
+        const cell = standingCell(bot)
+        const item = fillItem(bot)
+        if (!item) throw new Error(`piled up ${raised} blocks and ran out of dirt and cobblestone`)
+        // 水が入った小部屋では、水はもう浴びている（溶岩だけは止める）。乾いた所では、水も流れ込むので止める
+        const hazard = bot.entity.isInWater ? /lava/ : FLUID
+        const roof = bot.blockAt(cell.offset(0, 2, 0)) // 1 つ上がった足の高さの頭
+        if (!roof) throw new Error('the space above is not loaded')
+        if (roof.boundingBox === 'block') {
+          // 掘る前に、上と横に水・溶岩・落ちる砂がないか（1 マスの縦穴では、流れ込むと逃げ場がない）
+          const bad = [[0, 0, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
+            .map(([x, y, z]) => bot.blockAt(roof.position.offset(x, y, z)))
+            .find((b) => b && (hazard.test(b.name) || (FALLING.test(b.name) && b.position.y > roof.position.y)))
+          if (bad) throw new Error(`${bad.name} at ${bad.position.x},${bad.position.y},${bad.position.z} beside the rock above: digging it would let it in on you`)
+          await equipToolFor(bot, state, roof)
+          await bot.dig(roof, true)
+        } else if (hazard.test(roof.name)) {
+          throw new Error(`${roof.name} above at ${roof.position.x},${roof.position.y},${roof.position.z}: not piling up into it`)
+        }
+        await jumpAndPlace(bot, cell, item)
+        raised++
+        await bot.waitForTicks(4)
+      }
+    } catch (e) {
+      // 続けて出し直すと、同じ失敗で土を使い切る: しばらくは聞かずに実行しない。反射や中止で止められたのは失敗ではない
+      if (!signal.aborted) state.climbBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      throw e
+    }
+    if (isolatedSpace(bot)) {
+      state.climbBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      throw new Error(`piled up ${raised} block${raised === 1 ? '' : 's'} and now stand over a drop on every side, not in a closed space: climb down the pillar instead`)
+    }
+    const at = standingCell(bot)
+    return `piled up ${raised} block${raised === 1 ? '' : 's'} and can walk out now (at ${at.x},${at.y},${at.z})`
+  },
+  // 1 本の柱の頂上（自分で積んだ塔。まわりは崖）から降りる: 足元のブロックを掘って 1 つずつ落ちる。掘ったブロックは
+  // 拾えるので、降りるほど持ち物が戻る。柱でない所（自然の崖の縁）は掘らない。落ちる先が 3 ブロックを超えるなら止まる
+  async climb_down (bot, state, c, signal) {
+    if (!isolatedSpace(bot)) return 'not on a pillar over a drop: you can walk from here'
+    let dug = 0
+    try {
+      while (dug < DESCEND_MAX) {
+        signal.throwIfAborted()
+        if (!isolatedSpace(bot)) break
+        const under = pillarUnder(bot)
+        if (!under) throw new Error('the block under your feet is not a free-standing pillar (natural ground or a wall beside it): it will not be dug away')
+        const y0 = bot.entity.position.y
+        await equipToolFor(bot, state, under, { drops: false })
+        await bot.dig(under, true)
+        dug++
+        const t0 = Date.now()
+        while (bot.entity.position.y > y0 - 0.9 && Date.now() - t0 < 1500) await bot.waitForTicks(1)
+      }
+    } catch (e) {
+      if (!signal.aborted) state.descendBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      throw e
+    }
+    await collectNearbyDrops(bot, state, signal)
+    const at = standingCell(bot)
+    if (isolatedSpace(bot)) throw new Error(`dug down ${dug} blocks and still stand over a drop at ${at.x},${at.y},${at.z}`)
+    return `dug down ${dug} block${dug === 1 ? '' : 's'} of the pillar and can walk off now (at ${at.x},${at.y},${at.z})`
+  },
   async flee (bot, state, c, signal) {
     const h = bot.entities[c.entityId]
     if (!h) return `${c.target} is gone`
     return await flee(bot, h, signal)
   },
+  // 同じ食べ物を、満腹度が 20 になるまで続けて食べる。次の 1 個が捨てる点数が EAT_WASTE_OK を超えるなら
+  // やめる（healTo: 回復のために食べるときは、その満腹度に届くまでは捨ててもやめない）
   async eat (bot, state, c, signal) {
-    const food = bot.inventory.items().find((i) => i.name === c.item)
-    if (!food) throw new Error(`no ${c.item}`)
     const before = bot.food
-    await bot.equip(food, 'hand')
-    await bot.consume()
-    return `ate ${c.item}, hunger ${before} -> ${bot.food}`
+    const points = bot.registry.foodsByName[c.item]?.foodPoints ?? 0
+    let ate = 0
+    while (ate < EAT_MAX) {
+      signal.throwIfAborted()
+      const food = bot.inventory.items().find((i) => i.name === c.item)
+      if (!food) break
+      if (bot.food >= 20) break
+      if (ate && points - (20 - bot.food) > EAT_WASTE_OK && bot.food >= (c.healTo ?? 0)) break
+      await bot.equip(food, 'hand')
+      await bot.consume()
+      ate++
+    }
+    if (!ate) throw new Error(bot.food >= 20 ? 'already full' : `no ${c.item}`)
+    return `ate ${ate} ${c.item}, hunger ${before} -> ${bot.food}`
   },
   async equip (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
@@ -900,7 +1281,7 @@ export const PRIMITIVES = {
     }
     // 候補が指したブロック（向きの違うドアの置き直しなど）を置く。前は計画の最初の未完成の
     // ブロックを置いていて、「place door」を選んでも別のブロックで失敗し続けた
-    const b = c.planBlock && !plan.isPlaced(bot, c.planBlock) ? c.planBlock : plan.pending(bot)[0]
+    const b = planBlockToPlace(bot, plan, c.planBlock)
     if (!b) return 'the plan is complete'
     if (b.block === 'door') {
       // 家から遠ければ、まずドアへ区間ごとに歩く（遠くから直しに行って毎回時間切れになった）
@@ -908,7 +1289,8 @@ export const PRIMITIVES = {
     }
     try {
       await placeOne(bot, plan, b, signal)
-      if (b.block === 'door') state.doorFailures = 0
+      // 床が直ったら、ドアの失敗の数え直し（床がなくて置けなかった失敗を、ドアのやり方の失敗として数え続けない）
+      if (b.block === 'door' || b.foundation) state.doorFailures = 0
     } catch (e) {
       // 時間切れも数える（襲われて止まったのは数えない）
       const why = signal.aborted ? String(signal.reason?.message ?? '') : ''
@@ -995,15 +1377,16 @@ export const PRIMITIVES = {
     return 'the house wall is closed again'
   },
   async go_home (bot, state, c, signal) {
+    let note = ''
     try {
       await legToward(bot, state, state.home.outside, 'home', signal)
-      await enterHome(bot, state.home, signal)
+      note = await enterHome(bot, state.home, signal)
     } catch (e) {
       // 行けない家を夜の選択肢に出し続けない（ほかの夜の越し方を選ばせる）
       if (isNoPath(e)) markNoPath(state, state.home.outside)
       throw e
     }
-    return 'inside the house with the door closed'
+    return note ? `inside the house; ${note}` : 'inside the house with the door closed'
   },
   async wait (bot, state, c, signal) {
     if (c.inside) {
@@ -1034,12 +1417,11 @@ export const PRIMITIVES = {
     return `placed a chest in the house at ${spot.x},${spot.y},${spot.z}`
   },
   async deposit (bot, state, c, signal) {
-    return withOpenChest(bot, state, c, signal, async (window) => {
-      const n = Math.min(c.count, inventoryCounts(bot)[c.item] ?? 0)
-      if (!n) throw new Error(`no ${c.item} to put in`)
-      await window.deposit(bot.registry.itemsByName[c.item].id, null, n)
-      return `put ${n} ${c.item} in the chest`
-    })
+    const n = Math.min(c.count, inventoryCounts(bot)[c.item] ?? 0)
+    if (!n) throw new Error(`no ${c.item} to put in`)
+    const put = await putInChests(bot, state, c, signal, [{ item: c.item, count: n }])
+    if (!put.length) throw new Error('could not put anything in the chest: it is full')
+    return `put ${put.join(', ')} in the chest`
   },
   // 余った物を捨てる（家のチェストがない・遠いとき。spare.mjs）。前に向かって捨てる: 下を向いたまま
   // 捨てると、足元に落ちて数秒後に拾い直す。捨てた物は state.tossed に覚えて、拾う候補に出さない
@@ -1058,21 +1440,46 @@ export const PRIMITIVES = {
     return `threw away ${threw.join(', ')}; ${emptySlots(bot)} slots free`
   },
   async stash (bot, state, c, signal) {
-    return withOpenChest(bot, state, c, signal, async (window) => {
-      const put = []
-      for (const { item } of c.items) {
-        const n = inventoryCounts(bot)[item] ?? 0
-        if (!n) continue
-        try {
-          await window.deposit(bot.registry.itemsByName[item].id, null, n)
-          put.push(`${n} ${item}`)
-        } catch (e) {
-          if (put.length) break // チェストがいっぱい: 入った分だけ
-          throw new Error(`could not put anything in the chest: ${e.message}`)
-        }
-      }
+    try {
+      const items = c.items.map(({ item }) => ({ item, count: inventoryCounts(bot)[item] ?? 0 })).filter((i) => i.count > 0)
+      const put = await putInChests(bot, state, c, signal, items)
+      if (!put.length) throw new Error('could not put anything in the chest: it is full')
       return `put ${put.join(', ')} in the chest (kept the weapon, armor, food and torches)`
-    })
+    } catch (e) {
+      state.tidyBlockedUntil = Number(bot.time.age) + 5 * 60 * 20 // いっぱいなどで預けられない: しばらく出さない
+      throw e
+    }
+  },
+  // 今使わない物を、数どおりに家のチェストへ（candidates.mjs tidyUp）。入らなかったら、しばらく出さない
+  async tidy (bot, state, c, signal) {
+    let put = []
+    try {
+      const items = c.stow.map(({ item, count }) => ({ item, count: Math.min(count, inventoryCounts(bot)[item] ?? 0) })).filter((i) => i.count > 0)
+      put = await putInChests(bot, state, c, signal, items)
+    } catch (e) {
+      state.tidyBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
+      throw e
+    }
+    if (!put.length) {
+      state.tidyBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
+      throw new Error('could not put anything in the chest: it is full (or it is all gone from the inventory)')
+    }
+    return `put ${put.join(', ')} in the chest`
+  },
+  // 家のチェストの中身をまとめる（同じ物を 1 つのチェストに、半端なスタックを 1 つに: storage.mjs）。
+  // 終わったら、中身の署名を覚えて、中身が変わるまで出さない
+  async defrag (bot, state, c, signal) {
+    await enterHome(bot, state.home, signal)
+    const positions = homeChests(state.memory, state.home).map((r) => new Vec3(r.x, r.y, r.z))
+    if (positions.length < 1) throw new Error('no chest in the home')
+    try {
+      const result = await defragChests(bot, positions, (pos, use) => withOpenChest(bot, state, { pos }, signal, use), signal)
+      state.defragSig = contentsSignature(state)
+      return result
+    } catch (e) {
+      state.defragBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
+      throw e
+    }
   },
   async withdraw (bot, state, c, signal) {
     return withOpenChest(bot, state, c, signal, async (window) => {
@@ -1080,56 +1487,44 @@ export const PRIMITIVES = {
       const n = Math.min(c.count, inside)
       if (!n) throw new Error(`no ${c.item} in the chest (the record was wrong)`)
       await window.withdraw(bot.registry.itemsByName[c.item].id, null, n)
+      state.withdrawn = { ...(state.withdrawn ?? {}), [c.item]: Number(bot.time.age) } // 預け直さない（candidates.mjs の recentlyTaken）
       return `took ${n} ${c.item} from the chest`
     })
   },
   // できたものを取り出し、材料と燃料を入れ、しばらく待ってできたものを取る。
   // 残りは後のステップで取り出す（その間もかまどは動く）
   async smelt (bot, state, c, signal) {
+    // 精錬・調理は家の中のかまどだけ（候補は家のかまどしか出さないが、道具や古い記録からの呼び出しも断る）
+    if (state.home && !inHomeRoom(state.home, c.pos)) throw new Error(`the furnace at ${c.pos.x},${c.pos.y},${c.pos.z} is not inside the house: smelting and cooking are done only in the furnace inside the house (go home first)`)
     await legToward(bot, state, c.pos, 'the furnace', signal)
     await goNear(bot, c.pos, 2, signal) // 遠いブロックは null になる: 着いてから判定する
+    if (!state.home && isUnderground(bot)) throw new Error('smelting is not done underground (monsters spawn in the dark and a smelt keeps you standing still): do it on the surface or in the house')
     const block = bot.blockAt(c.pos)
     if (block?.name !== 'furnace') {
       forgetFurnace(state.memory, c.pos)
       if (state.lastFurnace && state.lastFurnace.x === c.pos.x && state.lastFurnace.y === c.pos.y && state.lastFurnace.z === c.pos.z) delete state.lastFurnace
       throw new Error(`no furnace at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
     }
-    const furnace = await bot.openFurnace(block)
-    const got = {}
-    const take = async () => {
-      const out = furnace.outputItem()
-      if (!out) return
-      await furnace.takeOutput()
-      got[out.name] = (got[out.name] ?? 0) + out.count
-    }
-    try {
-      await take()
-      if (c.input) {
-        const inSlot = furnace.inputItem()?.name === c.input ? furnace.inputItem().count : 0
-        const n = Math.min(c.count - inSlot, inventoryCounts(bot)[c.input] ?? 0)
-        if (c.fuel && (furnace.fuelItem()?.count ?? 0) < c.fuelCount) {
-          await furnace.putFuel(bot.registry.itemsByName[c.fuel].id, null, Math.min(c.fuelCount, inventoryCounts(bot)[c.fuel] ?? 0))
-        }
-        if (n > 0) await furnace.putInput(bot.registry.itemsByName[c.input].id, null, n)
+    return tendFurnace(bot, state, c, block, signal)
+  },
+  // 地下から地上に出る: 最後に地上にいた場所、鉱山の入口、家の玄関の外の順に、地上に出るまで歩く（surface.mjs）
+  async surface (bot, state, c, signal) {
+    const exits = surfaceExits(bot, state)
+    if (!exits.length) throw new Error('no known way out (nowhere higher that you stood): dig upward with a pickaxe, or explore toward daylight')
+    let last = null
+    for (const way of exits) {
+      const pos = new Vec3(way.x, way.y, way.z)
+      try {
+        await legToward(bot, state, pos, 'a way to the surface', signal)
+        await goNear(bot, pos, 3, signal)
+      } catch (e) {
+        if (signal.aborted) throw e
+        last = e
+        continue
       }
-      // 全部焼けるまで待つ（1 個 10 秒）。燃料が切れて火が消えたらやめる
-      while (furnace.inputItem() && (furnace.fuelItem() || furnace.fuel > 0)) {
-        await bot.waitForTicks(20)
-        await take()
-      }
-      await take()
-    } finally {
-      const making = {}
-      if (furnace.outputItem()) making[furnace.outputItem().name] = furnace.outputItem().count
-      const input = furnace.inputItem()
-      const product = input && smeltingProduct(input.name)
-      if (product) making[product] = (making[product] ?? 0) + input.count
-      rememberFurnace(state.memory, c.pos, making, Number(bot.time.age))
-      furnace.close()
+      if (!isUnderground(bot)) { const p = bot.entity.position.floored(); return `back on the surface at ${p.x},${p.y},${p.z}` }
     }
-    const took = Object.entries(got).map(([name, n]) => `${n} ${name}`).join(', ')
-    const left = furnace.inputItem()?.count ?? 0
-    return `${took ? `took ${took}` : 'nothing done yet'}${left ? `; ${left} still smelting` : ''}`
+    throw new Error(`could not get to the surface by the ways known (${exits.length}): ${last?.message ?? 'still underground'}`)
   },
   // c.pos の地面に置く（完全なブロックの上の空いたセル）
   async place_torch_at (bot, state, c, signal) {
@@ -1174,6 +1569,13 @@ export const PRIMITIVES = {
       `stone ${numbers.stone}, coal ${numbers.coal}, iron ${numbers.iron}, logs ${numbers.logs}, animals ${numbers.animals}`
   },
   async dig_down (bot, state, c, signal) {
+    // 階段で下りる間、約 9 m ごとに松明を置いて進む（trail.mjs）: 持つ数は掘る長さ（深さの 1.5 倍）から
+    const downBy = bot.entity.position.y - c.pos.y
+    if (c.pos.y <= 54 && downBy >= 8) {
+      const need = torchesNeeded(downBy * 1.5)
+      const have = inventoryCounts(bot).torch ?? 0
+      if (have < need) throw new Error(`dig_down needs ${need} torches for ${Math.round(downBy)} blocks down (one about every ${TORCH_SPACING} m, so no monster can spawn behind you); you carry ${have}: make torches first (a torch is 1 coal or charcoal + 1 stick)`)
+    }
     let surfaceY = state.goal?.surfaceY ?? Math.floor(bot.entity.position.y)
     const maxDepth = state.goal?.spec?.dig_depth ?? Infinity // 上限なし（溶岩・水・砂利・岩盤で止まる）
     let steps = 0
@@ -1231,8 +1633,14 @@ export const PRIMITIVES = {
   async dig_mine (bot, state, c, signal) {
     const fac = state.facilities?.[c.facility]
     if (!fac?.layout || fac.kind !== 'mine') throw new Error(`there is no mine named ${c.facility}`)
+    // 松明なしでは掘り始めない（暗い坑道はモブが湧く。夜も昼も同じ）: 足りないと知らせて、作りに戻らせる
+    if (mineStatus(bot, fac).next && !bot.inventory.items().some((i) => i.name === 'torch')) {
+      throw new Error(`no torch to light the mine ${fac.name} (a torch goes on the wall every ${MINE_TORCH.tunnel}–${MINE_TORCH.stairs} cells): make torches first (a torch is 1 coal or charcoal + 1 stick)`)
+    }
     let dug = 0
     let last = -1
+    let walled = 0 // 丸石で塞いだ面の数
+    const cut = [] // 危なくて打ち切った枝
     for (;;) {
       signal.throwIfAborted()
       const m = mineStatus(bot, fac)
@@ -1245,24 +1653,96 @@ export const PRIMITIVES = {
       const stand = cells.slice(0, m.index).reverse().find((a) => adjacent(a) && mineBlocks(a).slice(0, 2).every((p) => bot.blockAt(p)?.boundingBox === 'empty'))
       await goto(bot, stand ? new goals.GoalBlock(stand.x, stand.y, stand.z) : new goals.GoalNear(cell.x, cell.y, cell.z, 1), signal)
       signal.throwIfAborted()
-      const why = mineDanger(bot, cell, plannedBlocks(cells))
-      if (why) {
-        stopMine(fac, m.index, why)
+      // この採掘場に出会った危ないもの（水・溶岩・岩盤・落ちる砂利）か、封じ切れない洞窟: 枝ならその枝だけ打ち切って
+      // ほかの枝を掘り続ける。階段・部屋・坑道は、そこから先がなくなる
+      const giveUp = (reason) => {
+        stopMine(fac, m.index, reason)
+        if (cell.part.startsWith('branch')) {
+          cut.push(`${cell.part} at ${cell.x},${cell.y},${cell.z}: ${reason}`)
+          last = -1
+          return null
+        }
         updateStatus(bot, fac)
-        return `dug ${dug} cells of the mine ${fac.name}; stopped at ${cell.x},${cell.y},${cell.z}: ${why} (the mine now ends before it)`
+        return `dug ${dug} cells of the mine ${fac.name}; stopped at ${cell.x},${cell.y},${cell.z}: ${reason} (the mine now ends before it)${cutNote(cut)}${sealNote(walled)}`
       }
+      // 坑道と枝は、空洞（洞窟）に出たら、手元の丸石で床・壁・天井を作って塞ぐ（sealing.mjs）。床の穴は埋めて通る
+      const sealable = !!fac.layout.sealing && cell.part !== 'stairs'
+      const why = mineDanger(bot, cell, plannedBlocks(cells), sealable)
+      if (why) {
+        const stopped = giveUp(why)
+        if (stopped) return stopped
+        continue
+      }
+      const gaps = sealable ? openings(bot, state, cell) : []
+      if (gaps.length && sealStock(bot) < gaps.length) {
+        const g = gaps[0].pos
+        const stopped = giveUp(`a cave opens at ${g.x},${g.y},${g.z}: walling it off takes ${gaps.length} cobblestone and you carry ${sealStock(bot)}`)
+        if (stopped) return stopped
+        continue
+      }
+      let dugAny = false
       for (const p of mineBlocks(cell).reverse()) {
         const block = bot.blockAt(p)
         if (!block || block.boundingBox === 'empty') continue
         await equipToolFor(bot, state, block)
         await bot.dig(block, true)
         signal.throwIfAborted()
+        dugAny = true
       }
+      if (gaps.length) {
+        const sealed = await sealCell(bot, state, cell, signal, () => goto(bot, new goals.GoalBlock(cell.x, cell.y, cell.z), signal))
+        walled += sealed.placed
+        if (!sealed.ok) {
+          // 塞げなかった: 前のセルから丸石で通路をふさぎ（洞窟とつながったままにしない）、先を打ち切る
+          if (stand) await goto(bot, new goals.GoalBlock(stand.x, stand.y, stand.z), signal)
+          await plugCell(bot, cell, signal)
+          const r = sealed.remaining[0].pos
+          const stopped = giveUp(`could not wall off the cave at ${r.x},${r.y},${r.z} with cobblestone (the passage was plugged)`)
+          if (stopped) return stopped
+          continue
+        }
+      }
+      if (sealable) cell.sealed = true
+      // もう空いていて、囲まれてもいる（洞窟に出ない）セルは、印だけ付けて次へ（掘ったことにしない）
+      if (!dugAny && !gaps.length) continue
       dug++
+      // 置く番で松明が尽きた: 暗いまま先へ掘らない。ここまでは掘ったので、成功として理由を返す
+      if (await torchInMine(bot, cells, m.index) === 'missing') {
+        updateStatus(bot, fac)
+        return `dug ${dug} cells of the mine ${fac.name}; stopped: out of torches (one is due on the wall here, ${MINE_TORCH.tunnel}–${MINE_TORCH.stairs} cells apart): make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}`
+      }
+      // 探している鉱石が壁に出た（見えているのは、空気に面した、届くもの: 設計書 86）: 掘るのは次の手に任せる。
+      // 3 セルごとに見る（探す処理が重い）。1 セルは掘ってから止まる（同じ鉱石の拒否でここで止まり続けない）
+      if (c.sources?.length && dug % ORE_CHECK_EVERY === 0) {
+        const shown = oreShowing(bot, state, c.sources)
+        if (shown) {
+          updateStatus(bot, fac)
+          return `dug ${dug} cells of the mine ${fac.name}; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it${cutNote(cut)}${sealNote(walled)}`
+        }
+      }
     }
     updateStatus(bot, fac)
     await collectNearbyDrops(bot, state, signal)
-    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}`
+    const shown = c.sources?.length ? oreShowing(bot, state, c.sources) : null
+    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}${shown ? `; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it` : ''}${cutNote(cut)}${sealNote(walled)}`
+  },
+  // 採掘場を自分で設計して掘る（設計書 68）: 家の外周（壁から 10〜30 m）の、鉱石の高さまで下りられる所に、
+  // 階段と坑道を設計し、そのまま掘り始める。掘り切る前に止まっても、次は dig_mine が続きから掘る
+  async make_mine (bot, state, c, signal) {
+    if (!mineFromHome(state)) throw new Error('a mine is designed near a home you built (there is none)')
+    // 家の外周は、遠いと読み込まれていない
+    if (bot.entity.position.distanceTo(state.home.inside) > MINE_SITE_WALK) await legToward(bot, state, state.home.inside, 'the home', signal)
+    // 掘り尽くして鉱石が出なかった採掘場に印を付ける（次の計画で、同じ採掘場へ下りない）
+    if (c.exhausted && state.facilities?.[c.exhausted]?.layout) state.facilities[c.exhausted].layout.exhausted = true
+    let fac
+    try {
+      fac = designMine(bot, state, c.bottom_y, mineSites(state))
+    } catch (e) {
+      if (e instanceof FacilityError) throw new Error(`could not design a mine down to y ${c.bottom_y} near the home: ${e.message}`)
+      throw e
+    }
+    const dug = await PRIMITIVES.dig_mine(bot, state, { facility: fac.name, sources: c.sources }, signal)
+    return `designed the mine ${fac.name} (entrance ${fac.entrance.x},${fac.entrance.y},${fac.entrance.z}, ${fac.layout.tunnels.length} tunnels of ${fac.layout.tunnel_length} with branches of ${fac.layout.branch_length} every 3 blocks); ${dug}`
   },
   // 道具 goto（設計書 21）: 位置へ向かう。遠ければ 1 回 1 区間
   // 死んだ場所へ戻って、落とした持ち物を拾う（5 分で消える）。着いても何も落ちていなければ諦める
@@ -1272,7 +1752,7 @@ export const PRIMITIVES = {
     death.tries = (death.tries ?? 0) + 1
     await legToward(bot, state, c.pos, `${c.pos.x},${c.pos.y},${c.pos.z}`, signal)
     await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 3), signal)
-    const before = totalItems(bot)
+    const before = inventoryCounts(bot)
     for (let i = 0; i < 6 && nearbyDrops(bot, state, RECOVER_RADIUS).length; i++) {
       const drop = nearbyDrops(bot, state, RECOVER_RADIUS)[0]
       const collected = waitForCollect(bot, PICKUP_WAIT_MS)
@@ -1282,7 +1762,7 @@ export const PRIMITIVES = {
       await collected
       if (!reached) break
     }
-    const gained = totalItems(bot) - before
+    const gained = gainedSince(bot, before)
     if (!nearbyDrops(bot, state, RECOVER_RADIUS).length) death.recovered = true
     if (gained <= 0) throw new Error(`nothing left to pick up where you died (${dropsAround(bot)})`)
     return `recovered ${gained} items where you died`
@@ -1326,6 +1806,16 @@ export const PRIMITIVES = {
   // （土が出る）、埋めるのは持っている土で。行けない・掘れない列は飛ばす。時間では止めない
   // （夕方・空腹・考え直しでは runner が止める）。そろえた列がなければ失敗
   async level (bot, state, c, signal) {
+    // 畑の整地（設計書 75）: c.facility の四角と柵の輪を、畑の地面の高さにそろえる（c.where / c.radius は円）
+    const farm = c.facility ? state.facilities?.[c.facility] : null
+    if (c.facility && !farm?.layout?.rect) throw new Error(`there is no designed farm named ${c.facility} to level`)
+    if (farm) {
+      const { rect, y } = farm.layout
+      noteLevelArea(state, { x: rect.x0 + Math.floor(rect.w / 2), y: y + 1, z: rect.z0 + Math.floor(rect.d / 2), radius: Math.ceil(Math.hypot(rect.w + 2 * FARM_MARGIN, rect.d + 2 * FARM_MARGIN) / 2) + 1 })
+    } else {
+      noteLevelZone(state, c.where, c.radius) // ここは土を取るために掘らない（leveling.mjs）
+    }
+    const statusNow = () => farm ? farmLevel(bot, state, farm) : levelStatus(bot, state, c.where, c.radius)
     const skipped = new Map()
     const tries = new Map() // 同じセルを何度も（掘ったのに残る、置いたのに空く）: 3 回で飛ばす
     let cut = 0
@@ -1333,7 +1823,7 @@ export const PRIMITIVES = {
     let since = 0 // 落とし物を拾ってからの掘った数
     for (;;) {
       signal.throwIfAborted()
-      const s = levelStatus(bot, state, c.where, c.radius)
+      const s = statusNow()
       const me = bot.entity.position
       const near = (p) => p.distanceTo(me)
       const open = (p) => !skipped.has(`${p.x},${p.z}`)
@@ -1356,7 +1846,8 @@ export const PRIMITIVES = {
         if (tries.get(k) > 3) throw new Error('tried 3 times and it did not change')
         if (next.cut) {
           const block = bot.blockAt(p)
-          if (!TERRAIN.test(block?.name ?? '')) throw new Error(`${block?.name} is not natural ground`)
+          // 畑の整地は、低い耕地の作物（上に生えているもの）も掘る
+          if (!TERRAIN.test(block?.name ?? '') && !(farm && block?.boundingBox === 'empty')) throw new Error(`${block?.name} is not natural ground`)
           const wet = liquidReason(bot, p, block)
           if (wet) throw new Error(wet)
           if (!withinReach(bot, p)) await goto(bot, new goals.GoalLookAtBlock(p, bot.world, { reach: REACH }), signal)
@@ -1373,15 +1864,20 @@ export const PRIMITIVES = {
             // （1x1 の塔。足場は土）。深い穴も下から 1 段ずつ埋まる（2026-09-27: 穴の中から
             // 埋められず、その列を飛ばして整地が失敗した）
             await goto(bot, new goals.GoalBlock(p.x, p.y + 1, p.z), signal)
-            if (bot.blockAt(p)?.boundingBox !== 'block') throw new Error('climbed out but the hole is still open')
-            filled++
-            continue
+            if (bot.blockAt(p)?.boundingBox === 'block') {
+              filled++
+              continue
+            }
+            // 浅い穴は、足元に積まなくても縁へ出られる: 外から埋める（下へ続く）
           }
           // 丸石しかなければ積めない（足場は土だけ）: 縁に出てから置く（置く所には立たない）
           if (!withinReach(bot, p) || bot.entity.position.floored().equals(p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH }), signal)
           if (bot.entity.position.floored().equals(p)) throw new Error('standing in the hole')
-          await bot.equip(fillItem(bot), 'hand')
-          await bot.placeBlock(below, new Vec3(0, 1, 0))
+          // 出る途中で足元に積んで、土を使い切ることがある: 次の周で埋める物がなくなって終わる
+          const fill = fillItem(bot)
+          if (!fill) continue
+          await bot.equip(fill, 'hand')
+          await bot.placeBlock(below, new Vec3(0, 1, 0)) // 断られたら place-report.mjs の installPlaceReport が記録する
           filled++
         }
       } catch (e) {
@@ -1391,6 +1887,52 @@ export const PRIMITIVES = {
         bot.actionPhase = ''
       }
     }
+  },
+  // 畑のまわりの柵（設計書 75）: 輪の足りない所に、近い順に柵を立てる。持っている柵がなくなるか、立てられる所が
+  // なくなるまで。1 つも立てられなければ失敗
+  async fence (bot, state, c, signal) {
+    const fac = state.facilities?.[c.facility]
+    if (!fac?.layout?.fence) throw new Error(`there is no designed farm named ${c.facility} with a fence`)
+    const skipped = new Map()
+    let placed = 0
+    for (;;) {
+      signal.throwIfAborted()
+      const todo = layoutStatus(bot, fac).fence.filter((p) => !skipped.has(`${p.x},${p.z}`))
+      const item = bot.inventory.items().find((i) => FENCE_ITEM.test(i.name))
+      if (!todo.length || !item) break
+      const me = bot.entity.position
+      const p = todo.sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0]
+      bot.actionPhase = `placing a fence at ${p.x},${p.y},${p.z}`
+      try {
+        await PRIMITIVES.place_at(bot, state, { item: item.name, pos: p, against: p.offset(0, -1, 0) }, signal)
+        placed++
+      } catch (e) {
+        if (signal.aborted) throw e
+        skipped.set(`${p.x},${p.z}`, `${p.x},${p.z}: ${e.message.slice(0, 80)}`)
+      } finally {
+        bot.actionPhase = ''
+      }
+    }
+    const left = layoutStatus(bot, fac).fence.length
+    if (!placed) throw new Error(`could not place any fence around ${fac.name}${skipped.size ? ` (${[...skipped.values()].slice(0, 2).join('; ')})` : ' (no fence carried)'}`)
+    return `placed ${placed} fences around the farm ${fac.name}${left ? `, ${left} still to place` : ''}`
+  },
+  // 畑の柵のゲート: 輪の外に立ち、輪に向かって置く（ゲートの向きは置くときに向いている向きで決まる。向きが輪と
+  // 合わないと、通れない）
+  async fence_gate (bot, state, c, signal) {
+    const fac = state.facilities?.[c.facility]
+    const gate = fac?.layout?.gate
+    if (!gate) throw new Error(`there is no designed farm named ${c.facility} with a gate`)
+    const item = bot.inventory.items().find((i) => FENCE_GATE_ITEM.test(i.name))
+    if (!item) throw new Error('no fence gate')
+    const pos = new Vec3(gate.x, gate.y, gate.z)
+    const stand = pos.offset(gate.out[0], 0, gate.out[1])
+    await goto(bot, new goals.GoalBlock(stand.x, stand.y, stand.z), signal)
+    signal.throwIfAborted()
+    const against = pos.offset(0, -1, 0)
+    if (bot.blockAt(against)?.boundingBox !== 'block') throw new Error(`nothing to place the gate on at ${against.x},${against.y},${against.z}`)
+    await bot.lookAt(pos.offset(0.5, 0.5, 0.5), true)
+    return await PRIMITIVES.place_at(bot, state, { item: item.name, pos, against }, signal)
   },
   // 植林と畑（設計書 33）。c.pos: 苗木を置く空いたセル / 耕す土 / 種をまく耕地
   async plant (bot, state, c, signal) {
@@ -1490,59 +2032,83 @@ export const PRIMITIVES = {
   // 道具 use_item（設計書 37）: 手に持って使う（右クリック）。c.entityId のモブに、c.pos のブロックに
   // （固いブロックはその面に、水や空気はそこを見て）、どちらもなければ今向いている方へ。c.hold 秒押し続ける
   async use_item (bot, state, c, signal) {
-    const item = bot.inventory.items().find((i) => i.name === c.item)
-    if (!item) throw new Error(`no ${c.item}`)
-    const before = { items: inventoryCounts(bot), damage: item.durabilityUsed ?? 0 }
+    const bare = !c.item // 素手で押す（行き詰まったときの実験。設計書 85）
+    const item = bare ? null : bot.inventory.items().find((i) => i.name === c.item)
+    if (!bare && !item) throw new Error(`no ${c.item}`)
+    const what = bare ? 'an empty hand' : c.item
+    const before = { items: inventoryCounts(bot), damage: item?.durabilityUsed ?? 0 }
     const drops = new Set(nearbyEntities(bot).filter(({ e }) => e.name === 'item').map(({ e }) => e.id))
+    const hand = async () => {
+      if (!bare) await bot.equip(item, 'hand')
+      else if (bot.heldItem) await bot.unequip('hand')
+    }
     let on = 'in the air'
     let blockBefore = null
-    if (c.entityId != null) {
-      const e = bot.entities[c.entityId]
-      if (!e) throw new Error(`the ${c.target} is gone`)
-      if (e.position.distanceTo(bot.entity.position) > 3) await goNear(bot, e.position, 2, signal)
-      await bot.equip(item, 'hand')
-      await bot.lookAt(e.position.offset(0, (e.height ?? 1) / 2, 0), true)
-      bot.useOn(e)
-      on = `on the ${e.name}`
-    } else if (c.pos) {
-      if (!withinReach(bot, c.pos)) await goNear(bot, c.pos, 3, signal)
-      signal.throwIfAborted()
-      const block = bot.blockAt(c.pos)
-      if (!block) throw new Error(`${c.pos.x},${c.pos.y},${c.pos.z} is not loaded`)
-      blockBefore = block.name
-      await bot.equip(item, 'hand')
-      if (block.boundingBox === 'block') {
-        await bot.activateBlock(block, faceToward(bot, c.pos))
+    let propsBefore = null
+    // 押し方を指定したときだけスニークを触る（指定がなければ、そのまま）
+    const touchSneak = c.sneak !== undefined
+    if (touchSneak) bot.setControlState('sneak', !!c.sneak)
+    try {
+      if (c.entityId != null) {
+        const e = bot.entities[c.entityId]
+        if (!e) throw new Error(`the ${c.target} is gone`)
+        if (e.position.distanceTo(bot.entity.position) > 3) await goNear(bot, e.position, 2, signal)
+        await hand()
+        await bot.lookAt(e.position.offset(0, (e.height ?? 1) / 2, 0), true)
+        bot.useOn(e)
+        on = `on the ${e.name}`
+      } else if (c.pos) {
+        if (!withinReach(bot, c.pos)) await goNear(bot, c.pos, 3, signal)
+        signal.throwIfAborted()
+        const block = bot.blockAt(c.pos)
+        if (!block) throw new Error(`${c.pos.x},${c.pos.y},${c.pos.z} is not loaded`)
+        blockBefore = block.name
+        propsBefore = block.getProperties?.() ?? null
+        await hand()
+        if (block.boundingBox === 'block' || bare) {
+          const face = c.face ? new Vec3(...FACE_VECTORS[c.face]) : faceToward(bot, c.pos)
+          // 押す点は、その面の真ん中
+          const cursor = new Vec3(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5)
+          await bot.lookAt(c.pos.offset(cursor.x, cursor.y, cursor.z), true)
+          await bot.activateBlock(block, face, cursor)
+        } else {
+          await bot.lookAt(c.pos.offset(0.5, 0.5, 0.5), true)
+          bot.activateItem()
+        }
+        on = `at ${block.name} ${c.pos.x},${c.pos.y},${c.pos.z}`
       } else {
-        await bot.lookAt(c.pos.offset(0.5, 0.5, 0.5), true)
+        await hand()
         bot.activateItem()
       }
-      on = `at ${block.name} ${c.pos.x},${c.pos.y},${c.pos.z}`
-    } else {
-      await bot.equip(item, 'hand')
-      bot.activateItem()
+      if (c.hold) {
+        await bot.waitForTicks(Math.round(c.hold * 20))
+        bot.deactivateItem()
+      }
+      await bot.waitForTicks(6)
+    } finally {
+      if (touchSneak) bot.setControlState('sneak', false)
     }
-    if (c.hold) {
-      await bot.waitForTicks(Math.round(c.hold * 20))
-      bot.deactivateItem()
-    }
-    await bot.waitForTicks(6)
     const changes = []
     const after = inventoryCounts(bot)
     for (const name of new Set([...Object.keys(before.items), ...Object.keys(after)])) {
       const d = (after[name] ?? 0) - (before.items[name] ?? 0)
       if (d) changes.push(`${d > 0 ? '+' : ''}${d} ${name}`)
     }
-    const held = bot.inventory.items().find((i) => i.name === c.item)
+    const held = bare ? null : bot.inventory.items().find((i) => i.name === c.item)
     if (held && (held.durabilityUsed ?? 0) !== before.damage) changes.push(`the ${c.item} wore a little`)
     if (c.pos) {
-      const now = bot.blockAt(c.pos)?.name
-      if (now && now !== blockBefore) changes.push(`${blockBefore} became ${now}`)
+      const nowBlock = bot.blockAt(c.pos)
+      if (nowBlock && nowBlock.name !== blockBefore) changes.push(`${blockBefore} became ${nowBlock.name}`)
+      // ドアの開閉などブロックの状態の変わりも変化として数える
+      const propsNow = nowBlock?.getProperties?.() ?? null
+      if (propsBefore && propsNow && nowBlock.name === blockBefore) {
+        for (const k of Object.keys(propsNow)) if (String(propsNow[k]) !== String(propsBefore[k])) changes.push(`${k}: ${propsBefore[k]} -> ${propsNow[k]}`)
+      }
     }
     const dropped = nearbyEntities(bot).filter(({ e }) => e.name === 'item' && !drops.has(e.id))
     if (dropped.length) changes.push(`${dropped.length} item(s) dropped nearby (pickup)`)
-    if (!changes.length) throw new Error(`nothing changed after using ${c.item} ${on}`)
-    return `used ${c.item} ${on}: ${changes.join(', ')}`
+    if (!changes.length) throw new Error(`nothing changed after using ${what} ${on}`)
+    return `used ${what} ${on}: ${changes.join(', ')}`
   },
   async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
@@ -1577,10 +2143,56 @@ async function withOpenChest (bot, state, c, signal, use) {
     return await use(window)
   } finally {
     const contents = {}
-    for (const i of window.containerItems()) contents[i.name] = (contents[i.name] ?? 0) + i.count
-    rememberChest(state.memory, c.pos, contents, Number(bot.time.age))
+    const items = window.containerItems()
+    for (const i of items) contents[i.name] = (contents[i.name] ?? 0) + i.count
+    // ラージチェスト（隣り合う 2 つ）は 1 つの窓で 54 スロット: 左の半分に覚え、右の半分の記録は消す
+    // （両方に覚えると、中身が 2 倍に数えられる）
+    const at = chestRecordPos(bot, block)
+    if (!at.same) forgetChest(state.memory, c.pos)
+    rememberChest(state.memory, at.pos, contents, Number(bot.time.age), { used: items.length, size: window.inventoryStart ?? SINGLE_CHEST })
     window.close()
   }
+}
+
+// items（{ item, count }）を、c.pos のチェストから順に、家のチェストへ入れる。いっぱいなら次のチェストへ。
+// 入れた分の文（"3 dirt"）の配列を返す
+async function putInChests (bot, state, c, signal, items) {
+  const todo = new Map(items.map(({ item, count }) => [item, count]))
+  const first = c.pos
+  const others = homeChests(state.memory, state.home).map((r) => new Vec3(r.x, r.y, r.z))
+    .filter((p) => !p.equals(first)).sort((a, b) => a.distanceTo(first) - b.distanceTo(first))
+  const put = []
+  for (const pos of [first, ...others]) {
+    if (![...todo.values()].some((n) => n > 0)) break
+    signal.throwIfAborted()
+    await withOpenChest(bot, state, { pos }, signal, async (window) => {
+      for (const [item, want] of todo) {
+        const n = Math.min(want, inventoryCounts(bot)[item] ?? 0)
+        if (n <= 0) { todo.set(item, 0); continue }
+        const before = inventoryCounts(bot)[item] ?? 0
+        try {
+          await window.deposit(bot.registry.itemsByName[item].id, null, n)
+        } catch {
+          // このチェストには入らない（いっぱい）: 入った分だけ数えて、次のチェストへ
+        }
+        const moved = before - (inventoryCounts(bot)[item] ?? 0)
+        if (moved > 0) { put.push(`${moved} ${item}`); todo.set(item, want - moved) }
+      }
+    })
+  }
+  return put
+}
+
+// 記録するチェストの位置: ラージチェストなら左の半分（もう片方の位置の記録は消す）、そうでなければそのチェスト
+function chestRecordPos (bot, block) {
+  const type = block.getProperties?.().type
+  if (type !== 'left' && type !== 'right') return { pos: block.position, same: true }
+  const facing = block.getProperties().facing
+  const other = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => bot.blockAt(block.position.offset(dx, 0, dz)))
+    .find((b) => b?.name === 'chest' && b.getProperties?.().facing === facing && b.getProperties().type !== type)
+  if (!other) return { pos: block.position, same: true }
+  const left = type === 'left' ? block : other
+  return { pos: left.position, same: left === block }
 }
 
 // 目の高さからブロックの中心までが届く距離か
@@ -1595,7 +2207,7 @@ async function sweepNearby (bot, state, name, before, signal) {
   const ids = SWEEP_KINDS(name).map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id != null)
   for (let i = 0; i < SWEEP_MAX; i++) {
     signal.throwIfAborted()
-    if (totalItems(bot) > before || nearbyDrops(bot, state, SWEEP_RADIUS + 2).length) return
+    if (gainedSince(bot, before) > 0 || nearbyDrops(bot, state, SWEEP_RADIUS + 2).length) return
     const next = bot.findBlock({ matching: ids, maxDistance: SWEEP_RADIUS, useExtraInfo: (b) => !inHouse(state, b.position) })
     if (!next) return
     try {
@@ -1685,7 +2297,7 @@ function bedSpotHere (bot, state) {
 }
 
 // 自分でダメージに対処するプリミティブ: ダメージを受けても中断しない
-export const DAMAGE_TOLERANT = new Set(['attack', 'flee'])
+export const DAMAGE_TOLERANT = new Set(['attack', 'flee', 'reach_land'])
 
 // 名前付きの建物の次のブロック（空けるマスなら掘る）。家の増築ができたら、家の室内を広げる
 async function placeBuildBlock (bot, state, name, signal) {

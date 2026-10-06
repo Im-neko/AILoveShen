@@ -64,6 +64,26 @@ class TestGameService:
         assert advance.execute.await_count == 3
 
     @pytest.mark.asyncio
+    async def test_records_the_run_conditions_once_when_the_play_starts(self, start):
+        """成績を実行ごとに比べるため、プレイの始まりに条件を 1 件残す（docs/design/82）。"""
+        advance = AsyncMock()
+        advance.execute.return_value = _report()
+        recorder = Mock()
+        closers = (AsyncMock(), AsyncMock(), AsyncMock())
+        service = GameService(
+            start,
+            advance,
+            *closers,
+            objectives=Mock(),
+            run_recorder=recorder,
+            run_info={"event": "run", "control": "tools"},
+        )
+
+        await service.play(max_steps=3)
+
+        recorder.record.assert_called_once_with({"event": "run", "control": "tools"})
+
+    @pytest.mark.asyncio
     async def test_stops_at_step_budget(self, start):
         """実行は、完了したかどうかに関係なく max_steps 回の行動で終わる。"""
         advance = AsyncMock()

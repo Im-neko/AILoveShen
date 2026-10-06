@@ -15,6 +15,7 @@ sounddevice = pytest.importorskip("sounddevice", reason="sounddevice not install
 
 from ailoveshen.infrastructure.adapters.audio.sounddevice_player import (
     SounddevicePlayer,
+    apply_gain,
     _parse_wav_header,
     _wav_to_numpy,
 )
@@ -194,3 +195,42 @@ class TestSounddevicePlayer:
 
             # 終わったら False になる
             assert player.is_playing() is False
+
+
+class TestApplyGain:
+    """音量を上げて、山をソフトリミッターで丸める。"""
+
+    def test_zero_gain_leaves_the_audio_alone(self):
+        audio = np.array([0.1, -0.5, 1.0], dtype=np.float32)
+        assert apply_gain(audio, 0.0) is audio
+
+    def test_quiet_samples_are_scaled_exactly(self):
+        audio = np.array([0.1, -0.2, 0.0], dtype=np.float32)
+        out = apply_gain(audio, 6.0)
+        np.testing.assert_allclose(out, audio * 10 ** (6 / 20), rtol=1e-5)
+
+    def test_peaks_never_pass_full_scale(self):
+        # the TTS server returns every line with a peak of exactly 1.0
+        audio = np.array([1.0, -1.0, 0.9, -0.8, 0.3], dtype=np.float32)
+        out = apply_gain(audio, 12.0)
+        assert np.abs(out).max() <= 1.0
+        assert out[0] > 0.99 and out[1] < -0.99
+
+    def test_soft_limiter_keeps_the_sign_and_order(self):
+        audio = np.linspace(-1.0, 1.0, 201, dtype=np.float32)
+        out = apply_gain(audio, 6.0)
+        assert np.all(np.diff(out) >= 0)
+        assert np.all(np.sign(out) == np.sign(audio))
+
+    def test_negative_gain_makes_it_quieter(self):
+        audio = np.array([0.5, -0.5], dtype=np.float32)
+        out = apply_gain(audio, -6.0)
+        assert np.abs(out).max() < 0.5
+
+    def test_player_applies_the_gain_before_playing(self):
+        wav = create_wav_data(sample_rate=8000, duration_seconds=0.05)
+        with patch("ailoveshen.infrastructure.adapters.audio.sounddevice_player.sd") as sd:
+            player = SounddevicePlayer(gain_db=-20.0)
+            asyncio.run(player.play(wav))
+        played = sd.play.call_args.args[0]
+        assert np.abs(played).max() < 0.2   # a full-scale sine, 20 dB down

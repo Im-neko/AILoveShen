@@ -204,6 +204,7 @@ class AdminPanel:
         speak: Callable[[str], Awaitable[bool]],
         instruct: Callable[[str, bool], Awaitable[str]],
         rethink: Callable[[str], bool],
+        reset: Callable[[], Awaitable[bool]],
         allowed_hosts: frozenset[str] = LOOPBACK,
         clock: Callable[[], datetime] = datetime.now,
     ) -> None:
@@ -213,6 +214,7 @@ class AdminPanel:
             speak: 文章を（視聴者への返事と同じ優先度で）喋らせる。喋らせられたか（読み上げがなければ偽）
             instruct: 配信者の指示として渡す（第 2 引数: 返事を喋るか）。返事の文章（なければ空）
             rethink: 今の小目標を次の切れ目で決め直させる。受け付けたか（プレイ前なら偽）
+            reset: 大目標を最初のリストに戻し、小目標を決め直させる。戻したか（プレイ前なら偽）
             allowed_hosts: 接続を受けるクライアントのホストと、Host / Origin のホスト（既定: このマシンだけ）
             clock: 時計（テストで差し替える）
         """
@@ -220,6 +222,7 @@ class AdminPanel:
         self._speak = speak
         self._instruct = instruct
         self._rethink = rethink
+        self._reset = reset
         self._allowed = allowed_hosts
         self._clock = clock
         self._log: deque[dict[str, str]] = deque(maxlen=LOG_SIZE)
@@ -321,6 +324,14 @@ class AdminPanel:
             accepted = self._rethink(reason)
             self._note("rethink", reason or "(理由なし)", "受け付けた" if accepted else "プレイ前")
             return {"ok": accepted}
+
+        @app.post("/api/admin/reset")
+        async def reset(request: Request) -> dict[str, Any]:
+            self._guard(request)
+            done = await self._reset()
+            logger.info(f"[admin] 目標をリセット: {'戻した' if done else 'プレイ前'}")
+            self._note("reset", "目標をリセット", "最初のリストに戻した" if done else "プレイ前")
+            return {"ok": done}
 
     async def _say(self, text: str, kind: str) -> dict[str, Any]:
         try:

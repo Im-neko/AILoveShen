@@ -18,6 +18,7 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     Mission,
     Objective,
+    SameCause,
     SkillInfo,
     ToolOutcome,
     TownDefinition,
@@ -316,6 +317,7 @@ class IGamePromptBuilder(ABC):
         repeated: Sequence[str] = (),
         repeated_times: int = 0,
         repeated_skill: str = "",
+        same_cause: SameCause | None = None,
     ) -> str:
         """
         配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。
@@ -332,6 +334,7 @@ class IGamePromptBuilder(ABC):
             repeated: 続けて成功した同じ手の並び（技にする機会。空: 繰り返していない）
             repeated_times: その並びを続けた回数
             repeated_skill: その並びに合う、すでに覚えた技の名前（なければ空）
+            same_cause: 同じ道具が同じ理由で失敗し続けているとき、その状態（なければ None）
         """
         ...
 

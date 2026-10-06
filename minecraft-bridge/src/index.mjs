@@ -50,13 +50,16 @@
 //   リポジトリ直下の .env にも書ける（env.mjs。シェルの環境変数が優先）
 
 import './env.mjs' // 最初に: 他のモジュールが読み込み時に使う環境変数を .env から入れる
+import { teeConsole } from './bridge-log.mjs'
 import { plantingStatus, cropOf } from './farming.mjs'
 import { aroundMe } from './around.mjs'
+import { setLevelWanted } from './leveling.mjs'
 import { quarrySpot } from './quarry.mjs'
 import { listRefusals } from './refusals.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops, installAutoJump } from './move.mjs'
 import { installLedger } from './ledger.mjs'
+import { installPlaceReport } from './place-report.mjs'
 import { WorldMap, makeClassifier, createSampler, botReader, reflectLive, minuteOf } from './worldmap.mjs'
 import { liquidReason } from './liquid.mjs'
 import { memoryView, summaryKinds } from './worldmap-places.mjs'
@@ -70,13 +73,16 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
-import { adoptExisting, facilitiesStatus, registerFacility, updateStatus, FacilityError, cropFarms, farmSummary } from './facilities.mjs'
+import { adoptExisting, facilitiesStatus, registerFacility, updateStatus, FacilityError, cropFarms, farmSummary, mineSummaries, mineBodyReason } from './facilities.mjs'
 import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
-import { summarize, bearing, round, inventoryCounts, isUnderground, blockInfo } from './observe.mjs'
-import { configureMovements, DAMAGE_TOLERANT, nearbyDrops } from './primitives.mjs'
+import { summarize, bearing, round, inventoryCounts, isUnderground, blockInfo, pushHistory } from './observe.mjs'
+import { foodCount, foodIn, foodPointsIn } from './cooking.mjs'
+import { trackSurface } from './surface.mjs'
+import { installDamageLog } from './damage-log.mjs'
+import { configureMovements, DAMAGE_TOLERANT, knownFurnace, nearbyDrops } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools, DROP_RADIUS as PICKUP_RADIUS } from './tools.mjs'
 import { sharedState } from './state.mjs'
@@ -88,11 +94,24 @@ import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed, protectedReason } from './home.mjs'
-import { startReflex, steerReflex, dangerView } from './reflex.mjs'
-import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests } from './memory.mjs'
+import { startReflex, steerReflex, releaseReflex, dangerView } from './reflex.mjs'
+import { storageUsage } from './storage.mjs'
+import { countPlaced } from './placing.mjs'
+import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests, storedCounts } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
 import { landmarks, adoptFoundBase } from './landmarks.mjs'
 import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
+
+// 家のチェストの数と空き（観測の home に付ける）: chest_blocks = 家にあるチェストのブロック数（ラージは 2）、
+// chest_slots / chest_free = 記録からのスロット数と空き、chest_saving = まとめると空くスロット（storage.mjs）
+function chestFacts (bot, state) {
+  if (!state.memory) return {}
+  const u = storageUsage(bot, state)
+  return { chest_blocks: countPlaced(bot, state, 'home', 'chest'), chest_slots: u.size, chest_free: u.free, chest_saving: u.saving }
+}
+
+
+teeConsole() // 標準出力を logs/bridge.log にも残す（端末を閉じても、あとで読める）
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 3000)
 const VERSION = '1.21.4'
@@ -190,7 +209,7 @@ function observation () {
   extra.around = aroundMe(
     bot,
     (name) => knowledge.dropsOf(name),
-    (p, b) => protectedReason(state, p, 0, b) !== null || !!liquidReason(bot, p, b),
+    (p, b) => protectedReason(state, p, 0, b) !== null || mineBodyReason(state, p) !== null || !!liquidReason(bot, p, b),
     (p, b) => isNaturalLogName(b.name) && !gatherableLog(bot, state, p),
     state
   )
@@ -198,18 +217,44 @@ function observation () {
   const spot = quarrySpot(state, bot.entity.position)
   if (spot) extra.quarry = { x: spot.x, y: spot.y, z: spot.z, distance_m: round(spot.distanceTo(bot.entity.position)), direction: bearing(bot.entity.position, spot), shafts: (state.quarry?.shafts ?? []).map((s) => ({ top: s.top, bottom: s.bottom })) }
   extra.underground = isUnderground(bot)
+  trackSurface(bot, state, extra.underground)
+  // 手持ちのストック（食べ物の個数、松明の本数。Python が、切らす前に集める小目標を出す）
+  // 家のチェストにある数は最後に開けたときの中身（備蓄。手持ちと合わせて数える）。mines は設計した鉱山の数
+  const homeStored = state.home ? storedCounts(state.memory ?? {}, state.home) : {}
+  const furnaceKnown = !!knownFurnace(bot, state)
+  extra.supplies = {
+    food: foodCount(bot, knowledge),
+    torch: inventoryCounts(bot).torch ?? 0,
+    food_stored: foodIn(homeStored, knowledge),
+    food_points: foodPointsIn(inventoryCounts(bot), knowledge, furnaceKnown),
+    food_points_stored: foodPointsIn(homeStored, knowledge, furnaceKnown),
+    torch_stored: homeStored.torch ?? 0,
+    mines: mineSummaries(state).length
+  }
   // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
   const broken = recentBreaks(bot, state)
   if (broken.length) extra.broken_tools = broken
   const xyz = (v) => v && { x: v.x, y: v.y, z: v.z }
-  extra.home = state.home ? { name: state.home.name, design: state.home.design, door: xyz(state.home.door), min: xyz(state.home.min), max: xyz(state.home.max), inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), chest: homeChests(state.memory ?? {}, state.home).length > 0, found: !!state.home.found, sleeping: bot.isSleeping } : null
+  extra.home = state.home ? { name: state.home.name, design: state.home.design, door: xyz(state.home.door), min: xyz(state.home.min), max: xyz(state.home.max), inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), chest: homeChests(state.memory ?? {}, state.home).length > 0, ...chestFacts(bot, state), found: !!state.home.found, sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)
 }
 
 // 目標の状態と候補。ワールドの1つのスナップショットから作る
-function decisionView () {
+// strict: 評価で落ちるなら投げる（PUT /goal が目標を受けるかの検査）。そうでなければ、評価できない目標は捨てる
+// （保存された目標が再起動のあとも /observe を 500 にし続けないように。2026-10-04 `have #oak_log`）
+function decisionView (strict = false) {
   const world = snapshot(bot, state)
-  const status = state.goal ? evaluate(bot, state, knowledge, world) : null
+  let status = null
+  if (state.goal) {
+    try {
+      status = evaluate(bot, state, knowledge, world)
+    } catch (e) {
+      if (strict) throw e
+      console.log(`[bridge] 目標を評価できないので捨てた: ${JSON.stringify(state.goal.spec)}: ${e.message}`)
+      state.goal = null
+      persist()
+    }
+  }
   const { candidates, withheld } = ground(bot, state, knowledge, world, status)
   // 避難の規則で外したものは、目標が進まない理由の一部
   if (status && withheld) status.blocked.push(withheld)
@@ -349,20 +394,28 @@ async function handle (req, res) {
     })
   }
   if (req.method === 'PUT' && req.url === '/goal') {
+    // 決める前に評価する: 評価で落ちる目標を残すと、/observe が毎回 500 になり続ける
+    // （2026-10-04 `have #oak_log` で 109 分止まった）。落ちたら元の目標に戻して 400 で返す
+    const previous = state.goal
+    let status
     try {
-      state.goal = makeGoal(await readJson(req), bot, state, knowledge)
+      const body = await readJson(req)
+      state.goal = makeGoal(body, bot, state, knowledge)
+      setLevelWanted(state, body.level_areas)
+      status = decisionView(true).status
     } catch (e) {
+      state.goal = previous
       return send(res, 400, { error: e.message })
     }
     persist()
     console.log(`[bridge] 目標: ${JSON.stringify(state.goal.spec)}`)
-    return send(res, 200, publicStatus(decisionView().status))
+    return send(res, 200, publicStatus(status))
   }
   if (req.method === 'POST' && req.url === '/check') {
-    const { specs } = await readJson(req)
+    const { specs, materials } = await readJson(req)
     persist() // 建ち終わったばかりの家を、判定の前に家にする
     try {
-      return send(res, 200, checkConditions(specs, bot, state, knowledge, snapshot(bot, state)))
+      return send(res, 200, checkConditions(specs, bot, state, knowledge, snapshot(bot, state), { materials: !!materials }))
     } catch (e) {
       return send(res, 400, { error: e.message })
     }
@@ -462,6 +515,16 @@ async function handle (req, res) {
     // 危険がなければ null（見張りは 0.25 秒ごとに読むので軽くする）。あれば Jev に渡す状態つき
     return send(res, 200, state.danger ? reflexState() : null)
   }
+  // 目標外で集めるブロック（鉱石のほかに）: Python の設定の一覧（windfall.mjs）
+  if (req.method === 'PUT' && req.url === '/collect') {
+    const { blocks } = await readJson(req)
+    const known = (Array.isArray(blocks) ? blocks : []).filter((n) => typeof n === 'string' && bot.registry.blocksByName[n])
+    state.collect = { extra: known }
+    return send(res, 200, { extra: known })
+  }
+  if (req.method === 'POST' && req.url === '/reflex/release') {
+    return send(res, 200, releaseReflex(state, (await readJson(req)).seconds))
+  }
   if (req.method === 'POST' && req.url === '/reflex') {
     const r = steerReflex(state, await readJson(req))
     return send(res, 200, r)
@@ -529,17 +592,18 @@ http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { e
   .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] 待ち受け中 http://127.0.0.1:${BRIDGE_PORT}`))
 
 startReflex(bot, state, {
-  async preempt (reason) {
+  async preempt (reason, force = false) {
     const current = state.current
     if (!current) return true
-    if (DAMAGE_TOLERANT.has(current.verb)) return false // すでに脅威に対処している
+    if (!force && DAMAGE_TOLERANT.has(current.verb)) return false // すでに脅威に対処している（溺れそうなときは止める）
     current.abort(reason)
     await current.done
     return true
   },
-  record (entry) { state.history.push(entry) }
+  record (entry) { pushHistory(state, entry) }
 })
 
+installDamageLog(bot, () => state.current?.id ?? (state.reflex ? 'the reflex' : ''))
 bot.on('death', () => {
   state.deaths += 1
   rememberDeath(state.memory, bot.entity.position, worldAge())
@@ -552,6 +616,7 @@ bot.once('spawn', () => {
   watchWear(bot, state)
   guardDigLoops(bot, state)
   installAutoJump(bot)
+  installPlaceReport(bot)
   installLedger(bot, state, (pos) => reflectLive(worldMap, botReader(bot), mapCells, pos, minuteOf(bot.time.age)))
   sampler.start()
   console.log(`[bot] ${bot.entity.position} にスポーンした`)
@@ -580,7 +645,7 @@ bot.on('physicsTick', () => {
   if (t && t !== lastDig) console.log(`[bot] ${t.position} の ${t.name} を掘る`)
   lastDig = t
 })
-bot.on('death', () => { console.log('[bot] 死んだ'); state.history.push({ action: 'event', ok: false, result: 'died', seconds: 0 }) })
+bot.on('death', () => { console.log('[bot] 死んだ'); pushHistory(state, { action: 'event', ok: false, result: 'died', seconds: 0 }) })
 bot.on('kicked', (r) => console.log('[bot] キックされた', JSON.stringify(r)))
 bot.on('error', (e) => console.log('[bot] エラー', e.message))
 
@@ -600,7 +665,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     }
     try { bot.quit('bridge restarting') } catch {}
     sampler.stop()
-    const saved = worldMap.save(WORLDMAP_DIR, VERSION).catch((e) => console.log('[worldmap] 保存できなかった', e.message))
+    const saved = worldMap.save(WORLDMAP_DIR, VERSION, { final: true }).catch((e) => console.log('[worldmap] 保存できなかった', e.message))
     setTimeout(() => process.exit(0), 3000).unref()
     saved.then(() => setTimeout(() => process.exit(0), 500))
   })

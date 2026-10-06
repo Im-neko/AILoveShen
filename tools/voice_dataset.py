@@ -4,7 +4,7 @@
 （Whisper）は要らない: 台本の文をそのまま esd.list に書く（docs/voice/README.md）。
 
     python tools/voice_dataset.py <録音のフォルダー> [--model shen] [--data Style-Bert-VITS2/Data]
-        [--with-long] [--dry-run]
+        [--with-long] [--neutral-only] [--extra スタイル=フォルダー …] [--dry-run]
 
 - 録音のファイル名は台本の番号（N001.wav、H012.wav、ITA は EMOTION100_001.wav …）。フォルダー分けは
   自由（下の階層も探す）。ITA コーパス（パブリックドメイン）は Neutral に入る
@@ -12,6 +12,14 @@
   サブフォルダーごとにスタイルができる（Neutral / Happy / Surprised / Sad / Angry / Fear）
 - esd.list: `<スタイル>/<番号>.wav|<model>|JP|<文>`（前のものは esd.list.bak に）
 - 語り（L…、15 秒前後）は Irodori-TTS の参照音声用なので、学習には入れない（--with-long で入れる）
+- --neutral-only: 台本の感情にかかわらず全部 Neutral に入れる（Irodori-TTS に感情の説明なしで読ませた音声:
+  `irodori_from_sbv2.py generate --engine irodori` は全部ふつうの話し方なので、感情の文を Happy などに
+  入れると名前と中身が食い違う）
+- --extra スタイル=フォルダー（何回でも）: 別のフォルダーの音声をそのスタイルに足す。例: 感情の説明つきで読ませた
+  `--extra Happy=data/irodori_train/shen_sbv2_happy/audio`、別の take の `--extra Neutral=…/shen_irodori_2/audio`。
+  ファイル名は `<フォルダーの名前>_<番号>.wav` にして写す（同じ番号の音声が別のフォルダーにあっても上書きしない。
+  フォルダーが `audio` ならその 1 つ上の名前）。主のフォルダーのほかは「録音がない」の数には入れない
+- `audio_rejected/` と `_previous/` の中は使わない（voice_screen.py が外したもの、録り直しの前のもの）
 - 録音のない番号と、台本にないファイルを表示する
 """
 
@@ -35,6 +43,18 @@ STYLES = {
 }
 
 
+SKIPPED_FOLDERS = {"audio_rejected", "_previous"}
+
+
+def find_wavs(folder: Path) -> dict[str, Path]:
+    """番号（大文字）→ WAV。外したもの・録り直しの前のものは入れない。"""
+    return {
+        p.stem.upper(): p
+        for p in sorted(folder.rglob("*.wav"))
+        if not SKIPPED_FOLDERS & set(p.relative_to(folder).parts[:-1])
+    }
+
+
 def read_script() -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for path in SCRIPTS:
@@ -50,31 +70,57 @@ def main() -> int:
     ap.add_argument("--model", default="shen", help="モデル名（Data/<model>/）")
     ap.add_argument("--data", type=Path, default=REPO / "Style-Bert-VITS2" / "Data", help="Style-Bert-VITS2 の Data/")
     ap.add_argument("--with-long", action="store_true", help="語り（L…）も学習に入れる")
+    ap.add_argument("--neutral-only", action="store_true", help="感情にかかわらず全部 Neutral に入れる")
+    ap.add_argument("--extra", action="append", default=[], metavar="スタイル=フォルダー", help="別のフォルダーの音声をそのスタイルに足す（何回でも）")
     ap.add_argument("--dry-run", action="store_true", help="写さずに、足りない録音だけ表示する")
     args = ap.parse_args()
 
     if not args.recordings.is_dir():
         print(f"{args.recordings} がない", file=sys.stderr)
         return 1
-    lines = [ln for ln in read_script() if args.with_long or not ln["id"].startswith("L")]
-    files = {p.stem.upper(): p for p in args.recordings.rglob("*.wav")}
+    script = read_script()
+    by_id = {ln["id"]: ln for ln in script}
+    lines = [ln for ln in script if args.with_long or not ln["id"].startswith("L")]
+    files = find_wavs(args.recordings)
     missing = [ln["id"] for ln in lines if ln["id"] not in files]
-    known = {ln["id"] for ln in read_script()}
-    extra = sorted(stem for stem in files if stem not in known)
+    extra = sorted(stem for stem in files if stem not in by_id)
+
+    # (スタイル, 番号, 元のファイル, 写す名前, 文)
+    jobs: list[tuple[str, str, Path, str, str]] = []
+    for ln in lines:
+        src = files.get(ln["id"])
+        if src is not None:
+            style = "Neutral" if args.neutral_only else STYLES.get(ln["emotion"], "Neutral")
+            jobs.append((style, ln["id"], src, f"{ln['id']}.wav", ln["text"]))
+    for spec in args.extra:
+        style, sep, path = spec.partition("=")
+        folder = Path(path).expanduser()
+        if not sep or style not in STYLES.values() or not folder.is_dir():
+            print(f"--extra はスタイル=フォルダー（スタイル: {', '.join(STYLES.values())}）で、フォルダーがあること: {spec}", file=sys.stderr)
+            return 1
+        prefix = folder.parent.name if folder.name == "audio" else folder.name
+        unknown = []
+        for stem, src in find_wavs(folder).items():
+            ln = by_id.get(stem)
+            if ln is None or (not args.with_long and stem.startswith("L")):
+                unknown.append(stem)
+                continue
+            jobs.append((style, stem, src, f"{prefix}_{stem}.wav", ln["text"]))
+        if unknown:
+            print(f"{folder}: 台本にない・語りのファイルは使わない: {' '.join(unknown)}")
 
     raw = args.data / args.model / "raw"
     esd = args.data / args.model / "esd.list"
     rows = []
-    for ln in lines:
-        src = files.get(ln["id"])
-        if src is None:
-            continue
-        style = STYLES.get(ln["emotion"], "Neutral")
-        rel = f"{style}/{ln['id']}.wav"
-        rows.append(f"{rel}|{args.model}|JP|{ln['text']}")
+    for style, _, src, name, text in jobs:
+        rel = name if style == "Neutral" else f"{style}/{name}"
+        rows.append(f"{rel}|{args.model}|JP|{text}")
         if not args.dry_run:
-            (raw / style).mkdir(parents=True, exist_ok=True)
+            (raw / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, raw / rel)
+    if len({r.split("|", 1)[0] for r in rows}) != len(rows):
+        print("同じ名前のファイルがある（--extra のフォルダーの名前が同じ？）", file=sys.stderr)
+        return 1
 
     if not args.dry_run:
         if esd.exists():
@@ -84,9 +130,9 @@ def main() -> int:
 
     per_style: dict[str, int] = {}
     for r in rows:
-        style = r.split("/", 1)[0]
+        style = r.split("/", 1)[0] if "/" in r.split("|", 1)[0] else "Neutral"
         per_style[style] = per_style.get(style, 0) + 1
-    print(f"録音 {len(rows)} / 台本 {len(lines)}（{', '.join(f'{k} {v}' for k, v in per_style.items())}）")
+    print(f"音声 {len(rows)} / 台本 {len(lines)}（{', '.join(f'{k} {v}' for k, v in per_style.items())}）")
     if missing:
         # 区分ごとに（ITA の 324 文をまだ録っていないだけで画面が埋まらないように）
         by_section: dict[str, list[str]] = {}

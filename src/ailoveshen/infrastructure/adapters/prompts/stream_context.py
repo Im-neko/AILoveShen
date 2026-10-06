@@ -20,6 +20,7 @@ from ailoveshen.domain.value_objects import (
     Job,
     Lesson,
     MessageRole,
+    MessageType,
     JobState,
     Objective,
     ObjectiveState,
@@ -177,7 +178,7 @@ def site_name(site_id: str) -> str:
 def format_site_facts(row: dict) -> str:
     """ブリッジが測った候補地 1 か所の数字（半径 32 ブロック）。"""
     return (
-        f"{site_name(str(row['id']))}（{row['x']},{row['z']}、家から {row['distance']}m）: "
+        f"{site_name(str(row['id']))}（x={row['x']} z={row['z']}、家から {row['distance']}m）: "
         f"家を建てられる平らな区画 {row['flat_plots']}、水 {row['water_pct']}%、"
         f"急な段差 {row['steep_pct']}%、地表の石 {row['stone']}・石炭 {row['coal']}・"
         f"鉄 {row['iron']}、原木 {row['logs']}、溶岩 {row['lava']}、動物 {row['animals']}"
@@ -203,6 +204,7 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     if activity.mission is not None:
         lines.append(f"- 最終目標: {activity.mission.text}")
     lines += _format_site(activity)
+    lines += _format_playbook(activity)
     if activity.town is not None:
         lines += _format_town(activity)
     pending = [g for g in activity.objectives if g.state == ObjectiveState.PENDING]
@@ -236,14 +238,44 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     return "\n".join(lines)
 
 
-def format_messages(messages: tuple[ConversationMessage, ...] | list[ConversationMessage]) -> str:
-    """会話の履歴。1行に 1メッセージ。"""
+def format_age(seconds: float) -> str:
+    """経った時間の短い言い方（秒・分・時間）。"""
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}秒前"
+    if seconds < 3600:
+        return f"{seconds // 60}分前"
+    return f"{seconds // 3600}時間前"
+
+
+def _speaker(message: ConversationMessage) -> str:
+    if message.role == MessageRole.VIEWER:
+        return f"{message.speaker_name}さん"
+    if message.message_type == MessageType.COMMENTARY:
+        return "あなた（実況）"
+    if message.message_type == MessageType.RESPONSE and message.addressed_to:
+        return f"あなた（{message.addressed_to}さんへの返事）"
+    return "あなた"
+
+
+def format_messages(
+    messages: tuple[ConversationMessage, ...] | list[ConversationMessage],
+    now: datetime | None = None,
+) -> str:
+    """
+    会話の履歴。1行に 1メッセージ。`now` があれば、行頭に「[N秒前]」と、誰への返事か・実況かを付ける
+    （チャットの返事: 時系列と、どのコメントへの返事かを取り違えないため）。
+    """
     if not messages:
         return NO_INFORMATION
     lines = []
     for message in messages:
-        speaker = f"{message.speaker_name}さん" if message.role == MessageRole.VIEWER else "あなた"
-        lines.append(f"{speaker}: {message.content}")
+        if now is None:
+            speaker = f"{message.speaker_name}さん" if message.role == MessageRole.VIEWER else "あなた"
+            lines.append(f"{speaker}: {message.content}")
+        else:
+            age = format_age((now - message.timestamp).total_seconds())
+            lines.append(f"[{age}] {_speaker(message)}: {message.content}")
     return "\n".join(lines)
 
 
@@ -374,6 +406,18 @@ def _format_town(activity: Activity) -> list[str]:
     return lines
 
 
+def _format_playbook(activity: Activity) -> list[str]:
+    """定石（この順にやる。コードが守る。docs/design/74）: 済・今・先。"""
+    if not activity.playbook:
+        return []
+    now = next((s.name for s in activity.playbook if s.name not in activity.playbook_done), None)
+    parts = [
+        f"[{'済' if s.name in activity.playbook_done else '今' if s.name == now else '先'}] {s.title}"
+        for s in activity.playbook
+    ]
+    return [f"- 定石（この順に。コードが守る）: {' → '.join(parts)}"]
+
+
 def _format_objective(goal: Objective, with_ids: bool, current: bool) -> str:
     conditions = ", ".join(c.describe() for c in goal.conditions)
     summary = goal.summary()
@@ -381,6 +425,8 @@ def _format_objective(goal: Objective, with_ids: bool, current: bool) -> str:
     stage = f" [街の段階 {goal.stage + 1}: やめられない]" if goal.stage is not None else ""
     if goal.prepares_town:
         stage = " [街の準備: やめられない]"
+    if goal.playbook is not None:
+        stage = f" [定石 {goal.playbook}: 動かせない・やめられない]"
     jobs = ""
     if current and goal.jobs:
         jobs = " 中目標: " + _format_jobs(goal)
@@ -552,6 +598,12 @@ def _format_nearby(nearby: list) -> str:
     return "、".join(one(n) for n in nearby) or "なし"
 
 
+def _xyz(p: dict) -> str:
+    """座標をラベル付きで書く（`x=56 y=77 z=-284`）。`56,77,-284` だと、モデルが写すときにマイナスを落とす
+    （2026-10-03: z=-285 を 285 と書いて、8 回以上「遠すぎる」と断られた）。道具の引数の名前と同じ書き方。"""
+    return f"x={p['x']} y={p['y']} z={p['z']}"
+
+
 def _format_around(around: dict) -> list[str]:
     """
     目の前にあるもの（ブリッジの around: 半径 8m、足元の高さ ±2 の、見えているブロックと
@@ -563,7 +615,7 @@ def _format_around(around: dict) -> list[str]:
     def where(p: dict) -> str:
         direction = DIRECTION_NAMES.get(p.get("direction"), p.get("direction", ""))
         dy = p.get("dy", 0)
-        return f"{p['x']},{p['y']},{p['z']} {direction} {p['distance_m']}m、高さ {dy:+d}"
+        return f"{_xyz(p)} {direction} {p['distance_m']}m、高さ {dy:+d}"
 
     def block(b: dict) -> str:
         ripe = f"熟した {b['ripe']}、" if "ripe" in b else ""
@@ -599,12 +651,12 @@ def _format_quarry(quarry: dict) -> list[str]:
     direction = DIRECTION_NAMES.get(quarry.get("direction"), quarry.get("direction", ""))
     line = (
         f"- 採掘の場所（石・土・砂利はここの近くから掘る。別の所を新しく掘らない）: "
-        f"{quarry['x']},{quarry['y']},{quarry['z']} {direction} {quarry['distance_m']}m"
+        f"{_xyz(quarry)} {direction} {quarry['distance_m']}m"
     )
     shafts = quarry.get("shafts") or []
     if shafts:
         line += "、前に掘った階段 " + "、".join(
-            f"入口 {s['top']['x']},{s['top']['y']},{s['top']['z']} → 底 y {s['bottom']['y']}" for s in shafts
+            f"入口 {_xyz(s['top'])} → 底 y {s['bottom']['y']}" for s in shafts
         )
         line += "（鉱石が底より深ければ、その底から続けて掘る）"
     return [line]
@@ -620,15 +672,20 @@ def _format_home(obs: GameObservation) -> str:
     home = obs.state.get("home") or {}
     name = home.get("name")
     chests = len((obs.state.get("memory") or {}).get("chests", []))
+    door = home.get("door") or {}
+    # 玄関の座標: ないと、歩く先の座標を思い込みで書く（小目標 at_home の間に 0,0,-347 へ歩き続けた）
+    where = (
+        f"、玄関 {_xyz(door)}" if all(k in door for k in "xyz") else ""
+    )
     if home.get("found"):
         # 村の家など、もとからあった建物。自分で建てた家ではなく、中のベッドも自分の物ではない
         bed = "もとからあるベッド（自分の物ではない）" if obs.bed_in_home else "ベッドなし"
         return (
             f"{f'{name}（もとからあった建物を仮の宿にしている。自分で建てた家ではない）' if name else '仮の宿（自分で建てた家ではない）'}"
-            f"、{bed}、チェスト {chests}"
+            f"、{bed}、チェスト {chests}{where}"
         )
     bed = "ベッドあり" if obs.bed_in_home else "ベッドなし"
-    return f"{f'{name}（建ててある）' if name else '建ててある'}、{bed}、チェスト {chests}"
+    return f"{f'{name}（建ててある）' if name else '建ててある'}、{bed}、チェスト {chests}{where}"
 
 
 def format_place(obs: GameObservation) -> str:

@@ -4,6 +4,7 @@ import vec3Pkg from 'vec3'
 import { TERRAIN } from './leveling.mjs'
 import { inHouse } from './home.mjs'
 import { liquidReason } from './liquid.mjs'
+import { facilityAt } from './facilities.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -30,6 +31,8 @@ function diggable (bot, block) {
 // feet = 今立つ足のセル（地面の上）、cells = 掘る 3 マス（上から）、seal = 塞ぐセル（cells の先頭）
 export function burrowAt (bot, state, x, feetY, z) {
   const feet = new Vec3(x, feetY, z)
+  const fac = facilityAt(state, feet, 1)
+  if (fac) return `part of the facility ${fac} (the farm or grove must not be dug)`
   if (!passable(bot.blockAt(feet)) || !passable(bot.blockAt(feet.offset(0, 1, 0)))) return 'no free space to stand there'
   // 四方が固い所は地面ではなく穴（掘りかけの穴の上に、さらに掘ると深くなって出られない）
   if (HORIZONTAL.every(([dx, dz]) => solid(bot.blockAt(feet.offset(dx, 0, dz))))) return 'that is a pit, not level ground'

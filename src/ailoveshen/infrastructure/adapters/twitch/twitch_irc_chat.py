@@ -1,5 +1,6 @@
 """
-Twitch のチャットを読み、トークンがあれば書き込むアダプター（IRC）。
+Twitch のチャットを読み、トークンがあれば書き込むアダプター（IRC）。応援（サブスク、ギフト、レイド、ビッツ）も
+ここで受け取る（USERNOTICE と PRIVMSG の bits タグ。認証は要らない。フォローは IRC に来ないので EventSub）。
 
 Twitch の IRC は `justinfan<数字>` の名前なら認証なしで読める（書き込みはできない）。
 配信者の返事は声（TTS）で返すので、ふだんは読むだけでよい。トークン（`chat:edit` の
@@ -19,7 +20,8 @@ from loguru import logger
 
 from ailoveshen.application.ports.output.chat_sink import IChatSink
 from ailoveshen.application.ports.output.chat_source import IChatSource
-from ailoveshen.domain.value_objects import ChatComment
+from ailoveshen.application.ports.output.support_source import ISupportSource
+from ailoveshen.domain.value_objects import ChatComment, SupportEvent, SupportKind
 
 HOST = "irc.chat.twitch.tv"
 TLS_PORT = 6697
@@ -31,6 +33,107 @@ MAX_POST_CHARS = 450
 _AUTH_FAILED = ("Login authentication failed", "Improperly formatted auth")
 
 Opener = Callable[[], Any]  # () -> awaitable (reader, writer)
+
+# 応援が来てからお礼を言うまでに溜められる数（多すぎるときは古いものから捨てる）
+SUPPORT_BACKLOG = 100
+ANONYMOUS = "匿名"
+_TAG_ESCAPES = {"\\s": " ", "\\:": ";", "\\\\": "\\", "\\r": "", "\\n": ""}
+
+
+def _unescape(value: str) -> str:
+    """IRC のタグの値の書き換え（バックスラッシュ + s は空白、バックスラッシュ + コロンは `;`）を戻す。"""
+    out = []
+    i = 0
+    while i < len(value):
+        pair = value[i : i + 2]
+        if pair in _TAG_ESCAPES:
+            out.append(_TAG_ESCAPES[pair])
+            i += 2
+        else:
+            out.append(value[i])
+            i += 1
+    return "".join(out)
+
+
+def _split(line: str) -> tuple[dict[str, str], str, str, str]:
+    """IRC の 1 行を (タグ, 送り主, コマンド, 残り) にする。形が違えば ('', '' …) 。"""
+    tags: dict[str, str] = {}
+    rest = line
+    if rest.startswith("@"):
+        raw_tags, _, rest = rest[1:].partition(" ")
+        for item in raw_tags.split(";"):
+            key, _, value = item.partition("=")
+            tags[key] = _unescape(value)
+    if not rest.startswith(":"):
+        return tags, "", "", ""
+    prefix, _, rest = rest[1:].partition(" ")
+    command, _, rest = rest.partition(" ")
+    return tags, prefix.split("!", 1)[0], command, rest
+
+
+_PLANS = {"Prime": 1, "1000": 1, "2000": 2, "3000": 3}
+
+
+def _number(tags: dict[str, str], key: str) -> int:
+    try:
+        return max(0, int(tags.get(key) or 0))
+    except ValueError:
+        return 0
+
+
+def parse_support(line: str) -> Optional[SupportEvent]:
+    """
+    IRC の 1 行が応援なら SupportEvent にする（`CAP REQ :twitch.tv/commands` のとき届く USERNOTICE、
+    ビッツは PRIVMSG の `bits` タグ）。応援でなければ None。
+
+    - sub / resub: サブスク（resub は何か月目か）
+    - submysterygift: 何人かにまとめて贈った。そのうちの 1 人への subgift（`msg-param-community-gift-id`
+      付き）は数えない（まとめて 1 回だけお礼を言う）。1 人だけに贈った subgift は数える
+    - raid: レイド（連れてきた人数）
+    - bits の付いたコメント: ビッツ
+    """
+    tags, nick, command, rest = _split(line)
+    name = tags.get("display-name") or nick
+    login = (tags.get("login") or nick).lower() or None
+    _channel, _, message = rest.partition(" :")
+    try:
+        if command == "PRIVMSG":
+            bits = _number(tags, "bits")
+            if bits <= 0:
+                return None
+            return SupportEvent(SupportKind.CHEER, name, login, amount=bits, message=message)
+        if command != "USERNOTICE":
+            return None
+        kind = tags.get("msg-id", "")
+        if login == "ananonymousgifter" or name.lower() == "ananonymousgifter":
+            name = ANONYMOUS
+        tier = _PLANS.get(tags.get("msg-param-sub-plan", ""), 1)
+        if kind == "sub":
+            return SupportEvent(SupportKind.SUBSCRIBE, name, login, tier=tier, message=message)
+        if kind == "resub":
+            months = _number(tags, "msg-param-cumulative-months") or _number(
+                tags, "msg-param-months"
+            )
+            return SupportEvent(
+                SupportKind.RESUBSCRIBE, name, login, months=months, tier=tier, message=message
+            )
+        if kind == "submysterygift":
+            count = _number(tags, "msg-param-mass-gift-count") or 1
+            return SupportEvent(SupportKind.GIFT, name, login, amount=count, tier=tier)
+        if kind == "subgift":
+            if tags.get("msg-param-community-gift-id"):
+                return None
+            recipient = tags.get("msg-param-recipient-display-name", "")
+            return SupportEvent(
+                SupportKind.GIFT, name, login, amount=1, tier=tier, recipient=recipient
+            )
+        if kind == "raid":
+            return SupportEvent(
+                SupportKind.RAID, name, login, amount=_number(tags, "msg-param-viewerCount")
+            )
+    except ValueError:
+        return None
+    return None
 
 
 def parse_privmsg(line: str) -> Optional[ChatComment]:
@@ -67,9 +170,10 @@ def parse_privmsg(line: str) -> Optional[ChatComment]:
         return None
 
 
-class TwitchIrcChat(IChatSource, IChatSink):
+class TwitchIrcChat(IChatSource, IChatSink, ISupportSource):
     """
-    Twitch のチャンネルのチャットを読む（トークンがあれば書き込める）。
+    Twitch のチャンネルのチャットを読む（トークンがあれば書き込める）。応援（サブスク、ギフト、レイド、
+    ビッツ）も `supports()` で流す。
 
     - つながらない・切れたら、1 秒から倍々に最長 60 秒待ってつなぎ直す（成功したら戻す）
     - PING には PONG を返す。RECONNECT（Twitch の保守）ならつなぎ直す
@@ -116,6 +220,7 @@ class TwitchIrcChat(IChatSource, IChatSink):
         self._token = token.strip().removeprefix("oauth:")
         self._login_name = (login.strip().lower() or channel) if self._token else ""
         self._joined = False
+        self._supports: asyncio.Queue[SupportEvent | None] = asyncio.Queue(SUPPORT_BACKLOG)
 
     @property
     def channel(self) -> str:
@@ -175,8 +280,25 @@ class TwitchIrcChat(IChatSource, IChatSink):
             logger.info(f"{wait:.0f} 秒後に Twitch のチャットにつなぎ直す")
             await asyncio.sleep(wait)
 
+    async def supports(self) -> AsyncIterator[SupportEvent]:
+        """届いた応援（comments() を読んでいる間に、つながった接続から届く）。close() まで終わらない。"""
+        while not self._closed:
+            support = await self._supports.get()
+            if support is None:
+                return
+            yield support
+
+    def _note_support(self, support: SupportEvent) -> None:
+        if self._supports.full():
+            self._supports.get_nowait()
+            logger.info("お礼が追いつかないので古い応援を飛ばした")
+        self._supports.put_nowait(support)
+
     async def close(self) -> None:
         self._closed = True
+        if self._supports.full():
+            self._supports.get_nowait()
+        self._supports.put_nowait(None)
         await self._drop()
 
     async def _login(self, writer: Any) -> None:
@@ -184,7 +306,11 @@ class TwitchIrcChat(IChatSource, IChatSink):
             lines = [f"PASS oauth:{self._token}", f"NICK {self._login_name}"]
         else:
             lines = [f"NICK justinfan{random.randint(10000, 99999)}"]
-        for line in ("CAP REQ :twitch.tv/tags", *lines, f"JOIN #{self._channel}"):
+        for line in (
+            "CAP REQ :twitch.tv/tags twitch.tv/commands",
+            *lines,
+            f"JOIN #{self._channel}",
+        ):
             writer.write(f"{line}\r\n".encode())
         await writer.drain()
 
@@ -218,6 +344,13 @@ class TwitchIrcChat(IChatSource, IChatSink):
                     return
                 logger.warning(f"Twitch から: {line}")
                 continue
+            support = parse_support(line)
+            if support is not None:
+                logger.info(
+                    f"[support] {support.kind.value}: {support.user_name} "
+                    f"(amount {support.amount}, months {support.months})"
+                )
+                self._note_support(support)
             comment = parse_privmsg(line)
             if comment is not None:
                 yield comment, False

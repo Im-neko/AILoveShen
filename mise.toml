@@ -1,7 +1,13 @@
 # mise のタスク（mise run <名前>）。運用の手順をここに置く。初めて使うときは mise trust。
 
 [tasks."world:reset"]
-description = "ワールドとボットのワールドの記憶（state.json / skills / mission.json / notes.json / moves.json）を作り直す（教訓・自分について話したこと・名前の読みは残る）（docs/streaming.md「ワールドを作り直す」）"
+description = "ワールドとボットのワールドの記憶（state.json / skills / mission.json / notes.json / learned_candidates.json）を作り直す（教訓・自分について話したこと・名前の読みは残る）（docs/streaming.md「ワールドを作り直す」）"
 # 引数は -- のあとに渡す: mise run world:reset -- --dry-run / --level world3 / --seed random / --existing / --yes
 # 配信とブリッジは自分で止めてから（動いていれば、このタスクは断る）
 run = "scripts/reset_world.sh"
+
+[tasks.bench]
+description = "再現できる課題（食料・石のツルハシ・家）で変更の効果を測る。配信とは別のサーバー・ブリッジで、毎回新しいワールドで走る（docs/design/83、docs/streaming.md「ベンチマーク」）"
+# 引数は -- のあとに渡す: mise run bench -- --dry-run / --tasks food --repeats 1 --cap-minutes 5 / report 記録.jsonl / compare 前.jsonl 後.jsonl
+# 配信とブリッジは自分で止めてから（ローカルの LLM を共有すると時間の測定が意味をなさない。動いていれば断る）
+run = ".venv/bin/python tools/benchmark.py"

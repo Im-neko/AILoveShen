@@ -132,6 +132,29 @@ def _wav_to_numpy(data: bytes) -> Tuple[np.ndarray, int]:
         raise AudioPlaybackError(f"Failed to convert WAV to numpy: {e}") from e
 
 
+# ゲインで 1.0 を超える山は、この値から tanh で丸める（割れずに平均の音量だけ上がる）
+SOFT_KNEE = 0.7
+
+
+def apply_gain(audio: np.ndarray, gain_db: float) -> np.ndarray:
+    """
+    音量を gain_db 上げ（下げ）、1.0 を超える山をソフトリミッターで丸める。
+
+    Style-Bert-VITS2 のサーバーは出力の山を最大値ちょうどに揃えて返す（0dBFS）ので、ただ掛けると割れる。
+    山が SOFT_KNEE を超えるところだけ tanh で ±1.0 に収め、それより小さい音はそのまま掛ける。
+    """
+    if gain_db == 0.0:
+        return audio
+    scaled = audio * np.float32(10.0 ** (gain_db / 20.0))
+    over = np.abs(scaled) > SOFT_KNEE
+    if over.any():
+        magnitude = np.abs(scaled[over])
+        scaled[over] = np.sign(scaled[over]) * (
+            SOFT_KNEE + (1.0 - SOFT_KNEE) * np.tanh((magnitude - SOFT_KNEE) / (1.0 - SOFT_KNEE))
+        )
+    return scaled.astype(np.float32)
+
+
 class SounddevicePlayer(IAudioPlayer):
     """
     sounddevice で音声を再生するインフラ側アダプター。
@@ -144,6 +167,7 @@ class SounddevicePlayer(IAudioPlayer):
         self,
         device: Optional[int] = None,
         blocksize: int = 1024,
+        gain_db: float = 0.0,
     ) -> None:
         """
         音声プレイヤーを初期化する。
@@ -151,9 +175,11 @@ class SounddevicePlayer(IAudioPlayer):
         Args:
             device: 音声の出力デバイスの ID（None なら既定のデバイス）
             blocksize: 音声のストリーミングのブロックサイズ
+            gain_db: 再生前に上げる音量（dB）。山はソフトリミッターで丸める
         """
         self._device = device
         self._blocksize = blocksize
+        self._gain_db = gain_db
         self._playing = False
         self._stop_requested = False
 
@@ -175,6 +201,7 @@ class SounddevicePlayer(IAudioPlayer):
         try:
             # WAV を numpy の配列に変換する
             audio_array, sample_rate = _wav_to_numpy(audio_data)
+            audio_array = apply_gain(audio_array, self._gain_db)
 
             self._playing = True
             self._stop_requested = False

@@ -45,6 +45,28 @@ twitch:
   # (empty login: the channel's own account). Without a token the chat is only read; the list is spoken
   access_token: "${TWITCH_ACCESS_TOKEN:-}"
   bot_login: "${TWITCH_BOT_LOGIN:-}"
+  # Follow alerts (EventSub, docs/design/71_support_thanks.md): with client_id set (a public application
+  # needs no client secret) the token is obtained and refreshed automatically: on the first start the log
+  # shows a URL and a code that the broadcaster opens in a browser and approves (device code flow), then
+  # the token is kept in token_path (a refresh token lasts 30 days unused; the access token 4 hours).
+  # eventsub_token: a token made by hand (scope moderator:read:followers, same client id, of the
+  # broadcaster or a moderator) is used as it is and cannot be refreshed: leave it empty
+  eventsub_token: "${TWITCH_EVENTSUB_TOKEN:-}"
+  token_path: "data/twitch_token.json"
+  # When an approval is needed, open the approval page in this PC's browser (the default browser: it must
+  # be logged in as the broadcaster) and say so aloud, once per approval; the URL is always in the log
+  open_browser: true
+
+  # Thanking viewers who support the stream: subs, gift subs, raids and bits arrive over the chat
+  # connection (no token needed); follows over EventSub (client_id + the token above). The streamer
+  # says thanks (fixed lines, no LLM wait) and the avatar cheers or waves
+  support:
+    enabled: true
+    follows: true
+    min_interval_seconds: 3.0   # between two thanks
+    batch_seconds: 2.0          # follows arriving together are thanked in one line
+    backlog: 20                 # thanks waiting; older ones are dropped
+    dedupe_seconds: 3600        # the same follower is not thanked again within this
   # The channel's own account and bot_login get no reply (their !commands still work).
   # Bots (logins) get nothing at all, not even commands. Add others such as nightbot here
   ignore_users: [streamelements]
@@ -68,8 +90,13 @@ twitch:
     # off = no check
     promise_check: "jev"
     promise_record_dir: "logs/promises"   # every check with the comment and the reply
+    # After a reply is written: jev = Jev says whether it flatly denies having something that the
+    # bridge shows she carries or has in her chests ("no iron found" with iron in the chest); if so the
+    # reply is written again once, with the facts. Unsure or failing Jev: spoken as is. off = no check
+    fact_check: "jev"
+    fact_record_dir: "logs/facts"   # every check with the reply and what she holds
 
-  # How viewers' names are read aloud (docs/design/30_name_readings.md): learned from `!yomi <reading>`
+  # How viewers' names are read aloud (docs/design/30_name_readings.md): learned from `!yomi <reading>` / `!yomi <word> <reading>`
   # and from replies; used only for the text sent to TTS. Lookup: GET /api/readings on the board
   readings_path: "data/readings.json"
   # What the streamer said about herself in chat (docs/design/40_small_talk.md): remembered from replies
@@ -187,6 +214,11 @@ gemini:
   # Thought summaries cost output tokens on every call: off by default, on with --debug
   include_thoughts: false
   debug_log_size: 50
+  # Every call (the whole prompt, the output, tool calls, tokens, which model answered) is also appended
+  # to <generation_log_dir>/gen-<start>.jsonl; files older than generation_log_keep_days are deleted at
+  # start. Viewer comments are in the prompts; logs/ is not committed. "" = memory only
+  generation_log_dir: "logs/generations"
+  generation_log_keep_days: 3
   # Resolution of attached screenshots (low / medium / high): lower costs fewer image tokens
   media_resolution: "low"
   media_resolutions:
@@ -273,6 +305,11 @@ tts:
     # macOS (BlackHole): "BlackHole 2ch"
     device: null
     blocksize: 1024
+    # Raise the voice by this many dB before playing (0: as the server returns it). The server
+    # returns every line at full scale (0 dBFS peak), so the peaks above 1.0 are rounded by a soft
+    # limiter (measured on the shen_clean voice: +3 dB = +2.9 LUFS with 2% of the samples rounded,
+    # +6 dB = +5.4 LUFS with 6%, +9 dB = +7.5 LUFS with 13%)
+    gain_db: 0.0
 
   # Emotion to Style mapping (for EmotionStyleService)
   # Styles of the shen model: Neutral (from Irodori-TTS's plain reading), Happy / Surprised / Sad /
@@ -450,6 +487,14 @@ minecraft:
     max_stalled_steps: 8
     # The streamer's own notes (docs/design/18_notes.md), kept across restarts
     notes_path: "data/notes.json"
+    # Blocks collected when found nearby even if no goal needs them (docs/design/79_windfall.md). Ores (coal,
+    # copper, iron, lapis, redstone, gold, diamond, emerald) are always collected; this list is for the rest.
+    # The bridge only mines what the carried pickaxe can (diamond needs iron, obsidian needs diamond) and
+    # remembers the place of the rest; at most 64 of a drop are carried.
+    collect:
+      - obsidian
+      - clay
+      - sugar_cane
     # How actions are chosen (docs/design/21_tool_control.md):
     #   tools (the default): Gemini calls tools itself (and runs its skills; do_suggestion runs one
     #     of the bridge's candidates); Jev answers watch questions while a tool runs
@@ -499,14 +544,14 @@ minecraft:
     lesson_min_confidence: 0.6
     lesson_timeout_seconds: 2.0
     max_lessons: 200
-    # Move book (docs/design/52): a step the LLM chose that worked (a tool call with no coordinates:
-    # craft, equip, withdraw, smelt, ...) is remembered with the situation (goal, item, place) and
-    # offered to Jev as "remembered ..." in a similar situation; moves that stop working are dropped
-    moves: true
-    moves_path: "data/moves.json"
-    moves_record_dir: "logs/moves"
-    moves_shown: 3
-    max_moves: 100
+    # Learned candidates (docs/design/52): a step the LLM chose that worked (a tool call with no coordinates:
+    # craft, equip, smelt, ...) is remembered with the situation (goal, item, place) and offered to Jev
+    # as "learned ..." beside the bridge's candidates in a similar situation; ones that stop working are dropped
+    learned_candidates: true
+    learned_candidates_path: "data/learned_candidates.json"
+    learned_candidates_record_dir: "logs/learned_candidates"
+    learned_candidates_shown: 3
+    max_learned_candidates: 100
     # The current small goal and its step counts (docs/design/63): after a restart, resumed when the
     # bridge is still on the same small goal. Empty = not saved
     goal_path: "data/goal.json"
@@ -529,6 +574,8 @@ minecraft:
     # small goals ending as stalled could otherwise come back to the same one and circle. 0: off
     objective_stall_steps: 60
     goal_record_dir: "logs/goals"  # Jev's choices (options, chosen, confidence, why Gemini)
+    goal_end_record_dir: "logs/goal_ends"  # per small goal that ends: how it ended, steps, seconds (tools/goal_outcomes.py; empty: none)
+    run_record_dir: "logs/runs"  # per start of play: commit, settings, models (to compare results run by run; empty: none)
     # Skills (docs/design/22_skills.md, control: tools only): Gemini writes JS skills over the
     # tools, the bridge runs them in a sandbox and keeps the ones that worked
     # (minecraft-bridge/data/skills, set aside by world:reset; clean with npm run skills:clean)
@@ -568,24 +615,86 @@ minecraft:
     review_interval_seconds: 0
     failure_interval_seconds: 60   # a screenshot goes with a rethink after failure at most this often
 
+  # Supplies (docs/design/84): how many torches and how much food to keep, by how well the town's
+  # infrastructure stands. A list, earliest first; the stage is the LAST entry reached. An entry is reached
+  # when all its `after` playbook steps are done (the playbook above), or, with `or_mine`, when the bridge
+  # has designed a mine. For each of torch / food: `low` = below this (carried + the home chest) a goal to
+  # restock is offered; `carry` = how many to hold in hand (what a restock reaches, and what is taken from
+  # the chest before going out); `stock` = carried + chest in total (the part above `carry` is a reserve
+  # kept in the home chest). Without a chest in the home only the carried count exists. Torches are counted in
+  # pieces, food in HUNGER POINTS (a full bar is 20; potato 1, raw pork 3, bread 5, cooked beef 8; a raw meat
+  # counts as cooked only when a furnace is known), docs/design/84 §8. Early on, food is kept small: with no
+  # farm yet, a big stock meant a long hunt before the real task (2026-10-02; 24 = 8 raw meats).
+  supplies:
+    - name: early
+      torch: {low: 8, carry: 16, stock: 16}
+      food: {low: 12, carry: 24, stock: 24}
+    - name: settled          # the farm stands and has been harvested
+      after: [food]
+      torch: {low: 16, carry: 16, stock: 32}
+      food: {low: 40, carry: 80, stock: 160}
+    - name: mining           # real mining: the iron step is now (lumber done) or a mine is designed
+      after: [lumber]
+      or_mine: true
+      torch: {low: 32, carry: 64, stock: 128}   # at least one stack in hand
+      food: {low: 100, carry: 160, stock: 320}
+
   # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
   # objectives are worked on from the top, completed when their conditions hold in the world.
   # Conditions: built / placed (item: bed) / have (item, count)
   mission:
     text: "生き延びながら家を建て、街にしていく"
-    objectives:
-      - title: "自分の家を作る"
+    # The first objectives when nothing is saved (the playbook below is what the code keeps in order)
+    objectives: []
+    # Playbook (docs/design/74): the standard opening of the town, in this order. Only the first step
+    # not yet done is an objective, always at the top; the code refuses to move it, drop it or put
+    # another objective before it (survival goals — hunger, night, death — are small goals and still
+    # interrupt). A step is done for good once all its conditions hold at once. A step is the whole
+    # cycle (set up, then the first harvest), so a facility condition may sit beside others; materials
+    # for it (a bucket for the farm's water: iron) are jobs of the step, not a step of their own.
+    # `keep` (a step that has to stay true) reopens the step when its conditions stop holding.
+    # `ready` (some of the conditions) is the set-up being finished while the plants only have to grow:
+    # the next step may then be worked on at the same time (two steps at most; a third waits until both
+    # are done), the step that needs hands first and the growing one behind it.
+    # To add a rule, add an entry here: name (unique), title, conditions, reason. A facility name is
+    # designed on first use (the farm / tree farm layout), so keep it short and unique.
+    playbook:
+      - name: shelter
+        title: "自分の家を作る"
         conditions: [{predicate: built}]
+        keep: true   # a house the creepers blew up (walls, or the ground under it) makes it the current step again (docs/design/88)
         reason: "夜を安全に過ごす拠点"
-      - title: "夜に寝られるようにする"
+      - name: bed
+        title: "夜に寝られるようにする"
         conditions: [{predicate: placed, item: bed}]
         reason: "夜を飛ばして昼に活動する"
-      - title: "身を守る道具を持つ"
-        conditions: [{predicate: have, item: wooden_sword, count: 1}]
-        reason: "敵と戦えるようにする"
-      - title: "食料を蓄える"
-        conditions: [{predicate: have, item: food, count: 8}]
-        reason: "空腹で動けなくならないように"
+      - name: weapon
+        title: "身を守る道具を持つ"
+        conditions: [{predicate: have, item: sword, count: 1}]
+        keep: true   # a lost sword (death) makes it the current step again
+        reason: "敵と戦えるようにする（死ぬと持ち物を失うので、畑より先に。地下へ出るにも要る）"
+      - name: food
+        title: "小麦畑を作って、最初の収穫まで回す"
+        conditions: [{predicate: facility, name: wheat_farm_1}, {predicate: have, item: wheat, count: 3}]
+        ready: [{predicate: facility, name: wheat_farm_1}]   # set up: the crops only have to grow, the next step may start
+        reason: "食料を安定して手に入れる基盤。牛や羊を探して遠くまで往復すると、走るぶんの空腹で得がほとんど残らない。畑の水に要る桶（鉄 3）は、この段の中目標として鉄を集めてよい"
+      - name: yard
+        title: "家のまわりを床と同じ高さの平地にそろえる"
+        conditions: [{predicate: leveled, where: home, distance: 6}]
+        reason: "家のまわりが穴や出っ張りだらけだと、ドアの前で足を取られ、モブが隠れ、爆発の穴も残る。施設（畑・採掘場の入口）の場所は整地が避ける。食料が回り出してから（土を掘って埋める作業で畑が遅れないように）"
+      - name: lights
+        title: "家のまわりを松明で明るくする"
+        conditions: [{predicate: lit, distance: 8}]
+        reason: "暗い所にはクリーパーなどが湧く。家のそばで湧かせず、壁を吹き飛ばされないようにする（畑が育つのを待つ間に。畑より先にすると、松明の材料で畑が遅れる）"
+      - name: lumber
+        title: "植林場を作って、最初の原木を取るまで回す"
+        conditions: [{predicate: facility, name: oak_grove_1}, {predicate: have, item: oak_log, count: 16}]
+        ready: [{predicate: facility, name: oak_grove_1}]
+        reason: "建材（木）を安定して手に入れる基盤。木を探して歩き回らずに、家のそばで原木を取る"
+      - name: iron
+        title: "鉄の道具をそろえる"
+        conditions: [{predicate: have, item: iron_pickaxe, count: 1}, {predicate: have, item: iron_sword, count: 1}]
+        reason: "資材（鉄）。鉄のつるはしで先の鉱石（ダイヤなど）に進める"
     # Limits the code keeps (not left to the model)
     max_objectives: 6
     max_viewer_objectives: 2       # at a time; one per viewer

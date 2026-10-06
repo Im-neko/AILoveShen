@@ -10,7 +10,12 @@ from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChoose
 from ailoveshen.application.use_cases.goal_vocabulary import parse_proposal
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
-from ailoveshen.application.use_cases.play import AdvancePlayUseCase, _check_remedy, _ObjectiveWatch
+from ailoveshen.application.use_cases.play import (
+    AdvancePlayUseCase,
+    _check_after_death,
+    _check_remedy,
+    _ObjectiveWatch,
+)
 from ailoveshen.domain.entities import Conversation, ObjectivePlan
 from ailoveshen.domain.events import JobDoneEvent, ObjectiveDroppedEvent
 from ailoveshen.domain.value_objects import (
@@ -25,6 +30,8 @@ from ailoveshen.domain.value_objects import (
     JobState,
     Mission,
     Job,
+    Supply,
+    SupplyTier,
 )
 from tests.unit.application.test_play_use_cases import (
     LOG,
@@ -658,18 +665,45 @@ class TestDecisionRewrite:
         assert len(plan.current.open_jobs) == 8
 
 
+# 松明は 16 本を下回ったら 32 本まで（設計書 50 §14 の最初の値）。段階の切り替えは test_supply_tiers.py
+STOCK_TIER = SupplyTier("test", torch=Supply(16, 32, 32), food=Supply(8, 16, 16))
+
+
 class TestTorchStock:
-    """松明を切らさず持つ。暗くて松明がなければ引き返して作る（docs/design/50 §14）。"""
+    """松明を切らさず持つ。暗くて松明がなければ引き返して作る（docs/design/50 §14）。段階は 1 つ（下の STOCK_TIER）。"""
 
     @staticmethod
-    def _stock(inventory, needs=()):
+    def _stock(inventory, needs=(), underground=False):
         return GameObservation(
             state={"inventory": inventory},
             candidates=(),
             health=20.0,
             food=20,
             needs=tuple(needs),
+            underground=underground,
         )
+
+    @pytest.mark.asyncio
+    async def test_deep_underground_without_a_torch_or_materials_goes_up_without_asking_jev(self, bridge):
+        """洞窟の中では石炭や棒が集まらないことが多い: 深い地下で松明が足りず材料もなければ、集めずに地上へ出る（家へ）。"""
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        jev = FakeJev("A")
+        picked = await GoalChooser(jev, bridge, supply_tiers=(STOCK_TIER,)).choose(
+            session, self._stock({"stick": 2}, underground=True), "met"
+        )
+        assert picked.spec == GoalSpec(GoalPredicate.AT_HOME)
+        assert jev.asked == []
+
+    @pytest.mark.asyncio
+    async def test_deep_underground_with_coal_and_sticks_makes_torches_there(self, bridge):
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        jev = FakeJev("A")
+        picked = await GoalChooser(jev, bridge, supply_tiers=(STOCK_TIER,)).choose(
+            session, self._stock({"coal": 1, "stick": 4}, underground=True), "met"
+        )
+        assert picked.spec.item == "torch" and jev.asked == []
 
     @pytest.mark.asyncio
     async def test_dark_without_a_torch_makes_torches_without_asking_jev(self, bridge):
@@ -677,8 +711,8 @@ class TestTorchStock:
         bridge.check.side_effect = _checked(set())
         jev = FakeJev("A")
         obs = self._stock({"stick": 2}, ["dark here: no light source around"])
-        picked = await GoalChooser(jev, bridge).choose(session, obs, "met")
-        assert picked.spec == GoalSpec(GoalPredicate.HAVE, item="torch", count=4)
+        picked = await GoalChooser(jev, bridge, supply_tiers=(STOCK_TIER,)).choose(session, obs, "met")
+        assert picked.spec == GoalSpec(GoalPredicate.HAVE, item="torch", count=STOCK_TIER.torch.stock)
         assert jev.asked == []
 
     @pytest.mark.asyncio
@@ -686,7 +720,7 @@ class TestTorchStock:
         session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
         bridge.check.side_effect = _checked(set())
         obs = self._stock({"torch": 1, "coal": 1, "stick": 4})
-        picked = await GoalChooser(FakeJev("A"), bridge).choose(session, obs, "met")
+        picked = await GoalChooser(FakeJev("A"), bridge, supply_tiers=(STOCK_TIER,)).choose(session, obs, "met")
         assert picked.spec == GoalSpec(GoalPredicate.HAVE, item="torch", count=5)
 
     @pytest.mark.asyncio
@@ -694,7 +728,7 @@ class TestTorchStock:
         session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
         bridge.check.side_effect = _checked(set())
         jev = FakeJev("A")
-        picked = await GoalChooser(jev, bridge).choose(session, self._stock({"torch": 2}), "met")
+        picked = await GoalChooser(jev, bridge, supply_tiers=(STOCK_TIER,)).choose(session, self._stock({"torch": 2}), "met")
         assert picked.spec == LOG  # Jev が中目標を選ぶ
         assert len(jev.asked[0][1][0].criteria) == 3  # 原木、石、松明の在庫
 
@@ -703,8 +737,17 @@ class TestTorchStock:
         session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
         bridge.check.side_effect = _checked(set())
         jev = FakeJev("A")
-        await GoalChooser(jev, bridge).choose(session, self._stock({"torch": 4}), "met")
+        await GoalChooser(jev, bridge, supply_tiers=(STOCK_TIER,)).choose(session, self._stock({"torch": 16}), "met")
         assert len(jev.asked[0][1][0].criteria) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_low_stock_is_topped_up_to_the_stock_not_to_the_bare_minimum(self, bridge):
+        """4 本あっても 16 本を下回れば、32 本まで多めに持つ（切らしてから集めると暗い所で動けなくなる）。"""
+        session = _session(plan=_plan(Job(LOG, "原木"), Job(STONE, "石")))
+        bridge.check.side_effect = _checked(set())
+        obs = self._stock({"torch": 10, "coal": 8, "stick": 8})
+        picked = await GoalChooser(FakeJev("A"), bridge, supply_tiers=(STOCK_TIER,)).choose(session, obs, "met")
+        assert picked.spec == GoalSpec(GoalPredicate.HAVE, item="torch", count=32)  # 材料があれば作るだけ: 聞かない
 
 
 class TestCheckRemedy:
@@ -727,6 +770,12 @@ class TestCheckRemedy:
         with pytest.raises(ValueError, match="advice"):
             _check_remedy(self._decision(same, "change"), failed, 1)
         _check_remedy(self._decision(same, "change", "Bring logs first."), failed, 1)
+
+    def test_after_a_death_the_same_small_goal_is_not_resumed(self):
+        died = GoalSpec(GoalPredicate.HAVE, item="raw_iron", count=3)
+        with pytest.raises(ValueError, match="Set a new small goal"):
+            _check_after_death(self._decision(GoalSpec(GoalPredicate.HAVE, item="raw_iron", count=2), "change"), died)
+        _check_after_death(self._decision(GoalSpec(GoalPredicate.HAVE, item="torch", count=8), "change"), died)
 
     def test_same_goal_after_repeated_failures_is_refused(self):
         failed = GoalSpec(GoalPredicate.HAVE, item="oak_planks", count=59)

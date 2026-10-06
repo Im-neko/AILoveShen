@@ -1,0 +1,58 @@
+# ベンチマーク（tools/benchmark.py、docs/design/83）の課題と既定。
+# 設定（Settings）には入らない: tools/benchmark.py がこのファイルを直接読む。
+# プレイの設定は配信と同じ（config/default.yaml + development.yaml + .env）で、ベンチマークの実行が
+# 変えるのは、定石を空にすること、大目標をこの課題 1 つにすること、保存先と記録先を実行ごとの
+# ディレクトリにすること、ブリッジのポートだけ。
+
+benchmark:
+  repeats: 3          # 1 課題の繰り返し（ローカル LLM が非決定なので、中央値を見る）
+  cap_minutes: 15     # 1 回の上限（通常は時間制限なしの設計だが、測定には上限が要る）
+  check_seconds: 5    # 課題の条件をブリッジに聞く間隔（成功の時刻の細かさ）
+  freeze_day: true    # 昼のまま時間を止め、天気も晴れに固定する（15 分の途中で夜が来て結果が揺れるのを防ぐ）
+  server_port: 25566  # ベンチマーク用のサーバー（配信は 25565）
+  bridge_port: 3001   # ベンチマーク用のブリッジ（配信は 3000）
+  mirror_port: 25579  # ブリッジの視点ミラー（配信は 25578）
+
+  # 課題: 成否はブリッジが世界から判定する（/check）。素手で始める（`give` のある課題だけ、その持ち物を渡す）。
+  tasks:
+    food:
+      title: "食料を 8 個集める"
+      reason: "集計で最も行き詰まりやすい種類（have(food)）"
+      conditions: [{predicate: have, item: food, count: 8}]
+    pickaxe:
+      title: "石のツルハシを作る"
+      reason: "木 → 道具 → 石の基本の手順"
+      conditions: [{predicate: have, item: stone_pickaxe, count: 1}]
+    build:
+      title: "家を建てる"
+      reason: "ほとんど達成できていない種類（built）。材料集めは別の課題で測るので、建築だけを測る"
+      conditions: [{predicate: built}]
+      # 始まる前に渡す持ち物（RCON の give）。家は最大 7x7x4（屋根と壁で約 150 ブロック）。
+      # 板材の壁と屋根、四隅の原木、扉。足りなくなって材料集めが混ざらない量にする
+      give: {oak_planks: 192, oak_log: 64, oak_door: 2}
+
+  # 事故の再現（scenarios）: 既定では走らない（`mise run bench -- --tasks night,pond,cage` と名前で指定する）。
+  # ボットがサーバーに入ったあと、`setup` の RCON コマンド（time / weather / fill / setblock / execute だけ）で
+  # 状況をつくる。実際に起きて直した事故が、直したあとも起きないかを測る（docs/design/90 §5）。
+  # 条件は大目標に使える述語だけ（`Objective` が検査する。through_night や explored は使えない）。成否の意味が課題と違う: 見るのは成功の数より死亡の数と、抜け出すまでの秒。
+  scenarios:
+    night:
+      title: "原木を 4 本集める"
+      reason: "家も道具もない夜に死ぬことが続いた（設計書 89）。夕方から始めるので、条件は昼の仕事のまま夜をどう過ごすかを見る。成功より死亡の数を見る"
+      conditions: [{predicate: have, item: log, count: 4}]
+      freeze_day: false   # 夜が来ないと測れない: 昼固定をやめる
+      setup: ["time set 12000", "weather clear"]
+    pond:
+      title: "原木を 4 本集める"
+      reason: "海にスポーンして、水の上で昼も夜も過ごした（設計書 89）。半径 12 の池の真ん中から始め、陸に上がって木に着けるかを測る"
+      conditions: [{predicate: have, item: log, count: 4}]
+      # 足元の地面の高さまで、半径 12・深さ 3 の池にする（ボットはその上に落ちて水に浮く）
+      setup: ["execute at @a run fill ~-12 ~-3 ~-12 ~12 ~-1 ~12 minecraft:water"]
+    cage:
+      title: "原木を 4 本集める"
+      reason: "水が入った小部屋（空気 6 マス）に 40 分いて溺れた（設計書 87、88）。土の小部屋の水の中から始め、素手で掘って出て木に着けるかを測る"
+      conditions: [{predicate: have, item: log, count: 4}]
+      # 土の殻（3x4x3 の部屋。石は素手では何も落ちない）の下半分に水を入れる
+      setup:
+        - "execute at @a run fill ~-2 ~-1 ~-2 ~2 ~4 ~2 minecraft:dirt hollow"
+        - "execute at @a run fill ~-1 ~ ~-1 ~1 ~1 ~1 minecraft:water"

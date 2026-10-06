@@ -136,3 +136,17 @@ test('クラフトの行に 1 回のレシピ（材料の数とできる数）�
   assert.match(r.lines[0], /^have 2 bread \(0\/2\): craft bread x2 \(one craft: 3 wheat -> 1 bread\)/)
   assert.ok(r.lines.some((l) => /have 6 wheat \(2\/6\)/.test(l)))
 })
+
+test('何も見えていない食べ物は、野生の作物（メロン）でなく動物を探す。見えていれば、見えているものを採る', () => {
+  const sources = (r) => r.leaves.flatMap((l) => l.sources ?? [])
+  const none = solve(k, world(), [{ spec: 'food', count: 4 }])
+  assert.deepEqual(kinds(none).map((x) => x.split(':')[0]), ['explore'])
+  assert.ok(!sources(none).some((s) => /melon|carrots|potatoes|beetroots/.test(s)), sources(none).join())
+  assert.ok(sources(none).some((s) => /pig|cow|chicken|sheep/.test(s)), sources(none).join())
+  // メロンが見えていれば、メロンを採る
+  const seen = solve(k, world({ blocks: { melon: 3 } }), [{ spec: 'food', count: 4 }])
+  assert.deepEqual(kinds(seen), ['dig:melon_slice'])
+  // メロンそのものを求める目標は、メロンを探す（ほかに手がない）
+  const direct = solve(k, world(), [{ spec: 'melon_slice', count: 2 }])
+  assert.deepEqual(sources(direct), ['melon'])
+})

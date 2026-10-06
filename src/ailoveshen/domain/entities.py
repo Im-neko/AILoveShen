@@ -27,6 +27,8 @@ from ailoveshen.domain.value_objects import (
     MAX_OPEN_JOBS,
     MessageType,
     Objective,
+    PlaybookStep,
+    StartingObjective,
     ObjectiveState,
     Mission,
     Note,
@@ -113,7 +115,7 @@ class Conversation(Entity):
         ValueError: max_history が正でないとき。
     """
 
-    max_history: int = 20
+    max_history: int = 40
     _messages: deque[ConversationMessage] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -127,23 +129,39 @@ class Conversation(Entity):
         content: str,
         user_name: str,
         user_id: Optional[str] = None,
+        received_at: Optional[datetime] = None,
     ) -> ConversationMessage:
-        """視聴者のチャットのメッセージを記録する。"""
-        return self._append(ConversationMessage.from_viewer(content, user_name, user_id))
+        """視聴者のチャットのメッセージを記録する（届いた時刻の順に並ぶ）。"""
+        return self._append(ConversationMessage.from_viewer(content, user_name, user_id, received_at))
 
     def add_streamer_message(
         self,
         content: str,
         message_type: MessageType,
+        addressed_to: str = "",
     ) -> ConversationMessage:
-        """配信者が言ったことを記録する。"""
-        return self._append(ConversationMessage.from_streamer(content, message_type))
+        """配信者が言ったことを記録する（返答なら、誰のコメントへのものか）。"""
+        return self._append(ConversationMessage.from_streamer(content, message_type, addressed_to))
 
     def recent_messages(self, limit: int = 10) -> tuple[ConversationMessage, ...]:
         """最新のメッセージを、古い順に返す。"""
         if limit <= 0:
             return ()
         return tuple(self._messages)[-limit:]
+
+    def recent_chat_flow(
+        self, chat_limit: int = 10, commentary_limit: int = 3
+    ) -> tuple[ConversationMessage, ...]:
+        """
+        チャットの返事に使う会話の流れ: 視聴者のコメントと自分の返事の最新 chat_limit 件と、自分の実況
+        （独り言）の最新 commentary_limit 件を、時刻の古い順に。実況は頻繁なので、一緒に数えると
+        コメントとの往復が押し出される。
+        """
+        chat = [m for m in self._messages if m.message_type != MessageType.COMMENTARY]
+        commentary = [m for m in self._messages if m.message_type == MessageType.COMMENTARY]
+        picked = chat[-chat_limit:] if chat_limit > 0 else []
+        picked += commentary[-commentary_limit:] if commentary_limit > 0 else []
+        return tuple(sorted(picked, key=lambda m: m.timestamp))
 
     def recent_viewer_messages(self, limit: int = 5) -> tuple[ConversationMessage, ...]:
         """視聴者の最新のチャットのメッセージを、古い順に返す。"""
@@ -158,7 +176,15 @@ class Conversation(Entity):
         self.updated_at = _utc_now()
 
     def _append(self, message: ConversationMessage) -> ConversationMessage:
-        self._messages.append(message)
+        # 時刻の順に並べる: 返事を書いている間に実況が入っても、コメントは届いた時刻の位置に入る
+        if len(self._messages) == self._messages.maxlen:
+            if message.timestamp < self._messages[0].timestamp:
+                return message  # 残っているどれよりも古い
+            self._messages.popleft()
+        index = len(self._messages)
+        while index > 0 and self._messages[index - 1].timestamp > message.timestamp:
+            index -= 1
+        self._messages.insert(index, message)
         self.updated_at = _utc_now()
         return message
 
@@ -198,6 +224,8 @@ class ObjectivePlan(Entity):
     max_viewer_goals: int = 2
     viewer_budget: int = 80
     finished_shown: int = 3
+    playbook: tuple[PlaybookStep, ...] = ()
+    initial: tuple[StartingObjective, ...] = ()
     _goals: list[Objective] = field(default_factory=list, init=False, repr=False)
     _finished: deque[Objective] = field(init=False, repr=False)
     _next_id: int = field(default=1, init=False, repr=False)
@@ -208,6 +236,7 @@ class ObjectivePlan(Entity):
     _stage_met: tuple[GoalSpec, ...] = field(default=(), init=False, repr=False)
     _site: Optional[TownSite] = field(default=None, init=False, repr=False)
     _town_map: Optional[TownMap] = field(default=None, init=False, repr=False)
+    _playbook_done: tuple[str, ...] = field(default=(), init=False, repr=False)
 
     def __post_init__(self) -> None:
         """上限を検証する。"""
@@ -230,6 +259,46 @@ class ObjectivePlan(Entity):
     def current(self) -> Optional[Objective]:
         """今取り組んでいる大目標（未完了の最初のもの）。"""
         return self._goals[0] if self._goals else None
+
+    @property
+    def playbook_done(self) -> tuple[str, ...]:
+        """済んだ定石の段の名前（一度済んだら済みのまま。持ち物が減っても戻さない）。"""
+        return self._playbook_done
+
+    @property
+    def playbook_step(self) -> Optional[PlaybookStep]:
+        """今の定石の段（まだ済んでいない最初のもの。全部済んでいれば None）。"""
+        return next((s for s in self.playbook if s.name not in self._playbook_done), None)
+
+    def playbook_goal(self) -> Optional[Objective]:
+        """リストにある定石の大目標（なければ None）。"""
+        return next((g for g in self._goals if g.playbook is not None), None)
+
+    def playbook_goals(self) -> tuple[Objective, ...]:
+        """リストの先頭に並ぶ定石の大目標（育成中の段を待つ間は、次の段と 2 つになる）。"""
+        return tuple(self._goals[: self._playbook_front()])
+
+    def order_playbook(self, names: Sequence[str]) -> None:
+        """
+        先頭に並ぶ定石の大目標を `names` の順に並べる（手を動かす段が先、育成中の段が後ろ。
+        ここに挙げない名前は最後）。定石の並びを変えられるのはコードだけ（`move` は断る）。
+        """
+        front = self._playbook_front()
+        order = {n: i for i, n in enumerate(names)}
+        self._goals[:front] = sorted(self._goals[:front], key=lambda g: order.get(g.playbook or "", len(order)))
+        self.updated_at = _utc_now()
+
+    def mark_playbook(self, name: str) -> None:
+        """定石の段を済みにする。"""
+        if name not in self._playbook_done:
+            self._playbook_done += (name,)
+            self.updated_at = _utc_now()
+
+    def unmark_playbook(self, name: str) -> None:
+        """済みにした定石の段を、また今の段にする（`keep` の段で、持っていた物を失ったとき）。"""
+        if name in self._playbook_done:
+            self._playbook_done = tuple(n for n in self._playbook_done if n != name)
+            self.updated_at = _utc_now()
 
     @property
     def town(self) -> Optional[TownDefinition]:
@@ -341,13 +410,25 @@ class ObjectivePlan(Entity):
             ValueError: リストがいっぱい、その視聴者の頼みがもうある、視聴者の頼みが上限のとき
         """
         if not job and len(self._goals) >= self.max_goals:
-            raise ValueError(f"the objective list is full ({self.max_goals})")
+            raise ValueError(
+                f"the objective list is full ({self.max_goals}): drop one first "
+                f"(an add that comes after the drop in the same edit list is fine). {self._droppable()}"
+            )
         if requested_by is not None:
             viewers = self.viewers()
             if requested_by in viewers:
                 raise ValueError(f"{requested_by} already has a request in the list")
             if len(viewers) >= self.max_viewer_goals:
                 raise ValueError(f"the list already has {self.max_viewer_goals} viewers' requests")
+
+    def _droppable(self) -> str:
+        """リストがいっぱいのとき、落とせるもの・落とせないものの一覧（LLM が何を落とすか決める手がかり）。"""
+        keep = [g for g in self._goals if g.stage is not None or g.prepares_town or g.playbook is not None]
+        free = [g for g in self._goals if g not in keep]
+        out = "can drop: " + ("; ".join(f"[{g.id}] {g.title}" for g in free) or "none")
+        if keep:
+            out += ". cannot drop (town / playbook): " + "; ".join(f"[{g.id}] {g.title}" for g in keep)
+        return out
 
     def add(
         self,
@@ -361,6 +442,7 @@ class ObjectivePlan(Entity):
         budget: Optional[int] = None,
         now: bool = False,
         suggested_by: Optional[str] = None,
+        playbook: Optional[str] = None,
     ) -> Objective:
         """
         `position`（未完了のものの中で 0 始まり。None: 最後）に大目標を足す。
@@ -368,6 +450,7 @@ class ObjectivePlan(Entity):
         視聴者の大目標は、position が何でも、取り組んでいるものの後ろに入る。ただし `now`
         （配信者が待っている間に今やると引き受けた頼み）は先頭にも入れる。`suggested_by`
         （納得して採った助言）は配信者自身の大目標なので、視聴者の上限に数えない。
+        定石の大目標（`playbook`）は先頭に入り、ほかの大目標は定石の大目標の後ろに入る（docs/design/74）。
         """
         self.check_room(requested_by)
         goal = Objective(
@@ -380,8 +463,13 @@ class ObjectivePlan(Entity):
             prepares_town=prepares_town,
             budget=budget,
             suggested_by=suggested_by,
+            playbook=playbook,
         )
         earliest = 1 if requested_by is not None and self._goals and not now else 0
+        if playbook is None:
+            earliest = max(earliest, self._playbook_front())
+        else:
+            position = 0
         at = (
             len(self._goals) if position is None else min(max(position, earliest), len(self._goals))
         )
@@ -395,12 +483,35 @@ class ObjectivePlan(Entity):
         want = {c.describe() for c in conditions}
         return next((g for g in self.pending if {c.describe() for c in g.conditions} == want), None)
 
+    def _playbook_front(self) -> int:
+        """リストの先頭に並ぶ定石の大目標の数（ほかの大目標はこの後ろ）。"""
+        n = 0
+        while n < len(self._goals) and self._goals[n].playbook is not None:
+            n += 1
+        return n
+
     def move(self, objective_id: str, position: int) -> Objective:
         """
         未完了の大目標の優先度を変える（position は 0 始まり）。配信者自身の判断なので、
-        視聴者の頼みも先頭にできる（合理的なら優先を変えながら進める。13 §14）。
+        視聴者の頼みも先頭にできる（合理的なら優先を変えながら進める。13 §14）。ただし定石の大目標
+        （docs/design/74）は動かせず、ほかのものは定石の大目標より前に出せない。
+
+        Raises:
+            ValueError: 定石の順を破るとき
         """
         goal = self._require(objective_id)
+        front = self._playbook_front()
+        if goal.playbook is not None:
+            raise ValueError(
+                f"{objective_id} is a step of the playbook ({goal.playbook}): the code keeps its "
+                "order, it cannot be moved"
+            )
+        if position < front:
+            raise ValueError(
+                f"{objective_id} cannot go before the playbook step "
+                f"{self._goals[0].title!r}: the playbook (bed, food, building materials, iron…) "
+                f"comes first and the code keeps that order. Put it at position {front} or later"
+            )
         self._goals.remove(goal)
         self._goals.insert(min(max(position, 0), len(self._goals)), goal)
         self.updated_at = _utc_now()
@@ -419,11 +530,18 @@ class ObjectivePlan(Entity):
             raise ValueError(
                 f"{objective_id} prepares the town (its site): move it down instead of dropping it"
             )
+        if goal.playbook is not None:
+            raise ValueError(
+                f"{objective_id} is a step of the playbook ({goal.playbook}): the code keeps it "
+                "until it is done, it cannot be dropped"
+            )
         return self._finish(objective_id, ObjectiveState.DROPPED, reason)
 
     def complete(self, objective_id: str) -> Objective:
         """大目標を完了にする（条件が満たされている）。段階の大目標なら、街が進むことがある。"""
         done = self._finish(objective_id, ObjectiveState.DONE, "its conditions hold")
+        if done.playbook is not None:
+            self.mark_playbook(done.playbook)
         if done.stage is not None and done.stage == self._town_stage:
             self._stage_met += tuple(c for c in done.conditions if c not in self._stage_met)
             self.settle_stage()
@@ -650,6 +768,25 @@ class ObjectivePlan(Entity):
             )
         return None
 
+    def add_initial(self) -> None:
+        """設定の最初の大目標を、リストの最後に足す。"""
+        for goal in self.initial:
+            self.add(title=goal.title, conditions=goal.conditions, reason=goal.reason)
+
+    def reset(self) -> None:
+        """
+        大目標を最初のリストに戻す: 大目標（中目標、計画、視聴者のものも）と終えたものの記録、済んだ
+        定石の段を消して、設定の最初の大目標を足し直す。街の定義・場所・理想図・段階は世界に建てたものの
+        ことなので残す。id は戻さない（走っている小目標が覚えている古い id が、新しい大目標と同じ名前に
+        ならないように）。
+        """
+        self._goals = []
+        self._finished.clear()
+        self._dropped_jobs = []
+        self._playbook_done = ()
+        self.updated_at = _utc_now()
+        self.add_initial()
+
     def take_dropped_jobs(self) -> tuple[Job, ...]:
         """予算を超えて断念した視聴者の中目標を受け取る（受け取ったら空になる）。"""
         dropped, self._dropped_jobs = tuple(self._dropped_jobs), []
@@ -666,8 +803,10 @@ class ObjectivePlan(Entity):
         site: Optional[TownSite] = None,
         town_map: Optional[TownMap] = None,
         next_job_id: int = 1,
+        playbook_done: tuple[str, ...] = (),
     ) -> None:
         """保存したプランを戻す（id はそのまま）。"""
+        self._playbook_done = playbook_done
         self._goals = list(pending)
         self._finished.clear()
         self._finished.extend(finished)
@@ -857,6 +996,8 @@ class PlaySession(Entity):
     lessons: tuple[Lesson, ...] = field(default=(), init=False)
     # 小目標を決めたときのブリッジの死んだ回数（増えたら、死んでリスポーンした: 小目標を選び直す）
     deaths_at_goal: Optional[int] = field(default=None, init=False)
+    # 再起動のあとに続きから追い始めた時刻（新しく決めた小目標は None）。止まっていた間を所要時間に数えない
+    goal_resumed_at: Optional[datetime] = field(default=None, init=False)
     # 直前のステップが襲われて止まった: 次の読み取りを「進まない」に数えない（docs/design/28）
     _skip_stall: bool = field(default=False, init=False, repr=False)
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
@@ -897,6 +1038,8 @@ class PlaySession(Entity):
             screen_note=self.screen_note,
             lessons=self.lessons,
             town_map=self.plan.town_map,
+            playbook=self.plan.playbook,
+            playbook_done=self.plan.playbook_done,
         )
 
     @property
@@ -948,6 +1091,14 @@ class PlaySession(Entity):
             )
         if obs.goal.met:
             return f"goal {name} is met"
+        # 夕方か夜に始めた夜を越す目標は、夜が明けたら終わる（ブリッジの済みの判定が取りこぼしても、朝に「夜を越す」を
+        # 続けない。2026-09-30 19:40: 溺れたゾンビから逃げている間に朝になり、昼に表示され続けた）
+        if (
+            self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
+            and self.goal_phase in ("dusk", "night")
+            and obs.time_phase in ("dawn", "day")
+        ):
+            return f"goal {name} is over: the night has passed ({obs.time_phase})"
         if self.rethink_reason:
             return f"goal {name} is reconsidered: {self.rethink_reason}"
         objective_id = self.goal.objective_id
@@ -961,7 +1112,8 @@ class PlaySession(Entity):
         spans_the_night = self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
         if self.steps_in_goal >= self.step_budget and not spans_the_night:
             return f"goal {name} ran for {self.steps_in_goal} steps"
-        if self.phase_changed(obs) and not spans_the_night:
+        # 深い地下は夜も昼も同じ: 時間帯が変わっても小目標を切らない（帰らせない）
+        if self.phase_changed(obs) and not spans_the_night and not obs.underground:
             return f"the time of day changed from {self.goal_phase} to {obs.time_phase}"
         return ""
 
@@ -1002,6 +1154,7 @@ class PlaySession(Entity):
         seen = self.last_observation.state.get("deaths") if self.last_observation else None
         self.deaths_at_goal = seen if isinstance(seen, int) else None
         self.goal = goal
+        self.goal_resumed_at = None
         self.goal_phase = time_phase
         self.steps_in_goal = 0
         self.consecutive_failures = 0
@@ -1025,6 +1178,7 @@ class PlaySession(Entity):
     ) -> None:
         """再起動のあとに、保存しておいた小目標を、歩みの数えごと続きから追う。"""
         self.goal = goal
+        self.goal_resumed_at = _utc_now()
         self.goal_phase = time_phase
         self.steps_in_goal = steps_in_goal
         self.consecutive_failures = consecutive_failures

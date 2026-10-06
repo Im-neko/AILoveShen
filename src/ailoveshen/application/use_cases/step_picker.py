@@ -22,7 +22,7 @@ from ailoveshen.domain.exceptions import AILoveShenError
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     Candidate,
-    Move,
+    LearnedCandidate,
     SkillInfo,
     ToolCall,
     ToolOutcome,
@@ -32,10 +32,22 @@ ASK_GEMINI = "ask_gemini"
 RECOVER_VERB = "recover_items"
 PLUG_VERB = "plug_hole"
 LEAVE_BURROW_VERB = "leave_burrow"
+CLIMB_OUT_VERB = "climb_out"
+CLIMB_DOWN_VERB = "climb_down"
 TORCH_VERB = "place_torch"
 TOSS_VERB = "toss"
+TIDY_VERB = "tidy"
+STASH_VERB = "stash"
+WINDFALL_NOW = "now"  # ブリッジが見つけた、目標外の近くの鉱石・素材（`windfall`）
+# 聞かずに採る寄り道は、小目標の手のうち「目標の手」と同じ数まで（最初の WINDFALL_FREE 手は数えない）。
+# 8 分間 30 手のうち 24 手が寄り道で、目標（鉄 3）の手は一度も選ばれなかった（2026-10-01）
+WINDFALL_FREE = 2
+EAT_VERB = "eat"
+DIG_IN_VERB = "dig_in"
+WALL_IN_VERB = "wall_in"
+REACH_LAND_VERB = "reach_land"
 SKILL_PREFIX = "run_skill "
-MOVE_PREFIX = "remembered "
+LEARNED_PREFIX = "learned "
 SKILLS_OFFERED = 5
 CANDIDATES_OFFERED = 16
 PROBABILITIES_KEPT = 5
@@ -54,7 +66,7 @@ class PickedStep:
     option_id: str
     confidence: float
     skill: Optional[SkillInfo] = None
-    move: Optional[Move] = None  # 手の帳から選んだとき（docs/design/52）
+    learned: Optional[LearnedCandidate] = None  # 覚えた候補から選んだとき（docs/design/52）
 
 
 @dataclass(frozen=True)
@@ -105,6 +117,9 @@ class StepPicker:
         self._streak = 0  # Jev が続けて選んだ数
         self._step = 0
         self._pending: Optional[_Pending] = None
+        self._windfall_goal: Optional[str] = None  # 数えている小目標
+        self._windfall_steps = 0  # その小目標の手のうち、寄り道
+        self._goal_steps = 0  # それ以外の手
 
     def note(self, by_jev: bool, outcome: ToolOutcome) -> None:
         """1 手の結果を知らせる（誰が選んだか、実行の結果）。数え直し、結果を記録する。"""
@@ -115,6 +130,7 @@ class StepPicker:
         else:
             self._streak = 0
             self._failures = 0
+            self._goal_steps += 1  # Gemini が選んだ手は目標の手
         self._record_result(by_jev, outcome)
 
     def skip(self, goal: str, why: str) -> None:
@@ -125,7 +141,7 @@ class StepPicker:
         self,
         candidates: Sequence[Candidate],
         skills: Sequence[SkillInfo],
-        moves: Sequence[Move] = (),
+        learned: Sequence[LearnedCandidate] = (),
     ) -> list[Candidate]:
         """Jev に見せる選択肢（候補、使える技、覚えている手）。順位はつけない。"""
         out = list(candidates[:CANDIDATES_OFFERED])
@@ -142,12 +158,12 @@ class StepPicker:
                     },
                 )
             )
-        for m in moves:
+        for m in learned:
             out.append(
                 Candidate(
-                    f"{MOVE_PREFIX}{m.describe()}",
+                    f"{LEARNED_PREFIX}{m.describe()}",
                     {
-                        "verb": "remembered",
+                        "verb": "learned",
                         "what": m.intent or m.describe(),
                         "worked": m.worked,
                         "failed": m.failed,
@@ -163,10 +179,10 @@ class StepPicker:
         candidates: Sequence[Candidate],
         skills: Sequence[SkillInfo],
         last_ok: Optional[bool],
-        moves: Sequence[Move] = (),
+        learned: Sequence[LearnedCandidate] = (),
     ) -> PickedStep | StepToGemini:
         """次の 1 手を選ぶ。選べなければ理由（StepToGemini）。"""
-        options = self.options(candidates, skills, moves)
+        options = self.options(candidates, skills, learned)
         offered = options + [Candidate(ASK_GEMINI, {"what": ASK_GEMINI_TEXT})]
         # 死んで落とした持ち物は 5 分で消える。ブリッジは死んで 4 分半までしか出さず、行く回数も 2 回に
         # 限る（何度も失敗して止まらないことはない）ので、直前の手の失敗や Jev の続けた数に関わらず、
@@ -184,12 +200,103 @@ class StepPicker:
         leave = self._forced(state, options, offered, (LEAVE_BURROW_VERB,))
         if leave is not None:
             return leave
+        # 飢えそう（ブリッジが `urgent` を付けた食べる手。食べる物がある）: 何を選ぶより先に食べる。
+        # 満腹度 0 で肉を持ったまま go_home を選び続け、11 分歩いて体力を半分失った（2026-10-01）。
+        # 失敗したあとは上の行のとおり LLM が見る
+        starving = next(
+            (
+                o
+                for o in options
+                if o.description.get("verb") == EAT_VERB and o.description.get("urgent")
+            ),
+            None,
+        )
+        if starving is not None:
+            self._record(state, offered, starving.action_id)
+            return PickedStep(
+                ToolCall("do_suggestion", {"id": starving.action_id}, intent=_intent(starving)),
+                starving.action_id,
+                1.0,
+            )
+        # 体力が危険で家が遠い（ブリッジが `urgent` を付けた穴掘り）: 遠い家へ歩かず、その場で穴に入って塞ぐ。
+        # 3 回の死亡はどれも、体力 1〜5 で家への長い道を歩いている最中だった（2026-10-01）
+        shelter = next(
+            (
+                o
+                for o in options
+                if o.description.get("verb") in (DIG_IN_VERB, WALL_IN_VERB) and o.description.get("urgent")
+            ),
+            None,
+        )
+        if shelter is not None:
+            self._record(state, offered, shelter.action_id)
+            return PickedStep(
+                ToolCall("do_suggestion", {"id": shelter.action_id}, intent=_intent(shelter)),
+                shelter.action_id,
+                1.0,
+            )
+        # 水の中（ブリッジが `urgent` を付けた reach_land: 読み込まれた範囲に陸がある）: 経路探索器は水の中から動かないので、
+        # 何を選んでも進まない。先に陸へ泳ぐ（2026-10-06: 海の上で夜を迎え、wait を繰り返した）。
+        # 閉じた所に閉じ込められている（ブリッジが `urgent` を付けた climb_out: 昼で、積む土か丸石がある）: 歩いて
+        # 出られないので、何を選んでも進まない。先に積んで出る。夜は安全な地下なので urgent なしで、LLM が選ぶ
+        # （階段の床が抜けた採掘場の底で、go_home の失敗を約 50 分繰り返した: 2026-10-04）
+        shut_in = next(
+            (
+                o
+                for o in options
+                if o.description.get("verb") in (CLIMB_OUT_VERB, CLIMB_DOWN_VERB, REACH_LAND_VERB) and o.description.get("urgent")
+            ),
+            None,
+        )
+        if shut_in is not None:
+            self._record(state, offered, shut_in.action_id)
+            return PickedStep(
+                ToolCall("do_suggestion", {"id": shut_in.action_id}, intent=_intent(shut_in)),
+                shut_in.action_id,
+                1.0,
+            )
         # 持ち物がほぼいっぱいで、余った物がある（ブリッジが出す）: 拾えない・掘っても入らない状態は
         # 何を選んでも進まないので、先に捨てて空ける。失敗したあとは上の行のとおり LLM が見る
         # （toss の道具もある。捨てられずに同じ手を繰り返すことはない）
         toss = self._forced(state, options, offered, (TOSS_VERB,))
         if toss is not None:
             return toss
+        # 回復の手段がなく（体力が危険、満腹度が足りない、食べ物がない）家にいる（ブリッジが `urgent` を付けた
+        # 預け入れ）: 家にいても治らない。死んで失う物を先に無くして、外で動けるようにする（docs/design/76）。
+        # 夜に戦いに出る前の預け入れ（`urgent` なし）は目標の手順なので、ここでは選ばない
+        stash = next(
+            (
+                o
+                for o in options
+                if o.description.get("verb") == STASH_VERB and o.description.get("urgent")
+            ),
+            None,
+        )
+        if stash is not None:
+            self._record(state, offered, stash.action_id)
+            return PickedStep(
+                ToolCall("do_suggestion", {"id": stash.action_id}, intent=_intent(stash)),
+                stash.action_id,
+                1.0,
+            )
+        # 家の中で、今使わない物を持っている（ブリッジが出す。目標が使う物は残す）: 持ち物は死ぬと全部落ちて
+        # 5 分で消えるので、先にチェストへ戻す。失敗したあとは上の行のとおり LLM が見る（いっぱいで入らない
+        # ときは、ブリッジがしばらく出さない）
+        tidy = self._forced(state, options, offered, (TIDY_VERB,))
+        if tidy is not None:
+            return tidy
+        # 近くで見つけた目標外の鉱石・素材（ブリッジが、採れる道具があり、安全なときだけ `windfall: now` で出す。
+        # docs/design/79）: 聞かずに採る。失敗したあとは上の行のとおり LLM が見る
+        found = next(
+            (o for o in options if o.description.get("windfall") == WINDFALL_NOW), None
+        )
+        if found is not None and self._detour_allowed(state):
+            self._record(state, offered, found.action_id)
+            return PickedStep(
+                ToolCall("do_suggestion", {"id": found.action_id}, intent=_intent(found)),
+                found.action_id,
+                1.0,
+            )
         if self._failures >= self._max_failures:
             return self._not(f"Jev's last {self._failures} steps failed", state, offered)
         if self._streak >= self._gemini_every:
@@ -242,10 +349,10 @@ class StepPicker:
             skill = next(s for s in skills if s.name == name)
             call = ToolCall("run_skill", {"name": name}, intent=skill.description)
             return PickedStep(call, chosen.action_id, decision.confidence, skill)
-        if chosen.action_id.startswith(MOVE_PREFIX):
-            move = next(m for m in moves if f"{MOVE_PREFIX}{m.describe()}" == chosen.action_id)
-            call = ToolCall(move.tool, dict(move.args), intent=move.intent or move.describe())
-            return PickedStep(call, chosen.action_id, decision.confidence, move=move)
+        if chosen.action_id.startswith(LEARNED_PREFIX):
+            found = next(m for m in learned if f"{LEARNED_PREFIX}{m.describe()}" == chosen.action_id)
+            call = ToolCall(found.tool, dict(found.args), intent=found.intent or found.describe())
+            return PickedStep(call, chosen.action_id, decision.confidence, learned=found)
         call = ToolCall(
             "do_suggestion", {"id": chosen.action_id}, intent=_intent(chosen)
         )
@@ -276,6 +383,32 @@ class StepPicker:
             1.0,
         )
 
+    def _detour_allowed(self, state: dict[str, Any]) -> bool:
+        """聞かずに採る寄り道をしてよいか（この小目標で、目標の手より寄り道が多くなりすぎていないとき）。"""
+        self._count_for(state)
+        return self._windfall_steps < WINDFALL_FREE + self._goal_steps
+
+    def _count_for(self, state: dict[str, Any]) -> None:
+        """小目標が変わったら、寄り道と目標の手の数を数え直す。"""
+        goal = state.get("goal")
+        if goal != self._windfall_goal:
+            self._windfall_goal = goal
+            self._windfall_steps = 0
+            self._goal_steps = 0
+
+    def _count_step(
+        self, state: dict[str, Any], offered: Sequence[Candidate], chosen: Optional[str]
+    ) -> None:
+        """選んだ手が寄り道（`windfall`）か、それ以外かを数える（Gemini に回す手は選んでいないので数えない）。"""
+        if chosen is None:
+            return
+        self._count_for(state)
+        picked = next((o for o in offered if o.action_id == chosen), None)
+        if picked is not None and picked.description.get("windfall"):
+            self._windfall_steps += 1
+        else:
+            self._goal_steps += 1
+
     def _not(
         self,
         why: str,
@@ -303,6 +436,7 @@ class StepPicker:
         """
         ids = tuple(o.action_id for o in offered)
         top = _top_option(decision, ids)
+        self._count_step(state, offered, chosen)
         self._step += 1
         self._pending = _Pending(self._step, ids, top[0] if top else None)
         if self._recorder is None:

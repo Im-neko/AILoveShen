@@ -120,6 +120,10 @@
       <input type="text" id="rt-reason" class="grow" placeholder="小目標を決め直させる理由（空でもよい）">
       <button id="rt-go">小目標を決め直させる</button>
     </div>
+    <div class="row" style="margin-top:14px">
+      <button class="danger" id="reset-go">目標をリセット</button>
+      <span class="hint">大目標を最初のリストに戻し（視聴者の頼み・中目標・計画・定石の済みも消す）、小目標を決め直させます。街の場所と理想図は残ります。</span>
+    </div>
   </section>
 
   <section>
@@ -260,6 +264,12 @@ $('rt-go').onclick = (ev) => act(ev.target, async () => {
   const r = await api('POST', '/api/admin/rethink', { reason: $('rt-reason').value })
   $('rt-reason').value = ''
   toast(r.ok ? '次の切れ目で決め直します' : 'まだプレイが始まっていません', !r.ok)
+  await refresh()
+})
+$('reset-go').onclick = (ev) => act(ev.target, async () => {
+  if (!confirm('大目標を最初のリストに戻します。視聴者の頼み・中目標・計画・定石の済みも消えます。よろしいですか？')) return
+  const r = await api('POST', '/api/admin/reset')
+  toast(r.ok ? '目標をリセットしました（次の切れ目で小目標を決め直します）' : 'まだプレイが始まっていません', !r.ok)
   await refresh()
 })
 $('chips').onclick = (ev) => {

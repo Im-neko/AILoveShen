@@ -31,6 +31,8 @@ class MemoryStore(IPresetStore):
 class Spy:
     def __init__(self, spoken=True):
         self.said, self.instructed, self.rethought = [], [], []
+        self.resets = 0
+        self.started = True
         self.spoken = spoken
 
     async def speak(self, text):
@@ -45,6 +47,10 @@ class Spy:
         self.rethought.append(reason)
         return True
 
+    async def reset(self):
+        self.resets += 1
+        return self.started
+
 
 def _client(spy=None, allowed_hosts=TESTING):
     spy = spy or Spy()
@@ -53,6 +59,7 @@ def _client(spy=None, allowed_hosts=TESTING):
         speak=spy.speak,
         instruct=spy.instruct,
         rethink=spy.rethink,
+        reset=spy.reset,
         allowed_hosts=allowed_hosts,
     )
     app = FastAPI()
@@ -134,3 +141,21 @@ def test_writes_need_the_guard_header_and_only_this_machine_gets_in():
     away, _ = _client(allowed_hosts=frozenset({"127.0.0.1", "testserver"}))
     assert away.get("/api/admin/state").status_code == 403
     assert away.post("/api/admin/say", json={"text": "こんにちは"}, headers=GUARD).status_code == 403
+
+
+def test_resetting_the_goals_needs_the_header_and_is_logged():
+    client, spy = _client()
+    assert client.post("/api/admin/reset").status_code == 403
+    assert spy.resets == 0
+    assert client.post("/api/admin/reset", headers=GUARD).json() == {"ok": True}
+    assert spy.resets == 1
+    log = client.get("/api/admin/state").json()["log"][0]
+    assert log["kind"] == "reset" and "戻した" in log["result"]
+
+
+def test_resetting_before_the_play_starts_says_so():
+    spy = Spy()
+    spy.started = False
+    client, _ = _client(spy)
+    assert client.post("/api/admin/reset", headers=GUARD).json() == {"ok": False}
+    assert client.get("/api/admin/state").json()["log"][0]["result"] == "プレイ前"

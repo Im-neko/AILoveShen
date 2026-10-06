@@ -40,7 +40,8 @@ export function isFutile (reason) {
 }
 
 export function noteRefusal (state, verb, pos, reason, now = Date.now()) {
-  if (!pos || !Number.isFinite(pos.x) || !isFutile(reason)) return false
+  // 台帳が断った手（was tried before）は、新しい理由ではない: 載せ直すと期限が延び続け、理由が入れ子になる（2026-10-06: 4 重）
+  if (!pos || !Number.isFinite(pos.x) || !isFutile(reason) || /was tried before/i.test(String(reason))) return false
   state.refusals ??= new Map()
   state.refusals.set(`${groupOf(verb)}:${cellKey(pos)}`, {
     verb: groupOf(verb), pos: { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) },

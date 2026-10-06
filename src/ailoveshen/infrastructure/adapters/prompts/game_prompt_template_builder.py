@@ -23,6 +23,7 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     Mission,
     Objective,
+    SameCause,
     SkillInfo,
     ToolOutcome,
     TownDefinition,
@@ -262,7 +263,9 @@ $where
 - farm（畑）: crop（wheat / carrots / potatoes / beetroots）と大きさ width x depth（各 1〜16）。
   四角の中の 9 x 9 ごとに 1 マスは水のマスになり（水のバケツを置く。水が届いた耕地だけが湿って、
   何も植わっていなくても土に戻らず、作物が速く育つ）、残りを耕して種をまくと完成。作物のマスは
-  幅 x 奥行き − 水のマス（9 x 9 なら 80 マス、2 x 1 なら 1 マス）。区画の平らな地面に収まる大きさにする（1 区画は 8 x 8）
+  幅 x 奥行き − 水のマス（9 x 9 なら 80 マス、2 x 1 なら 1 マス）。区画の平らな地面に収まる大きさにする（1 区画は 8 x 8）。
+  畑は、地面の高さをそろえ（整地）、四角の 1 マス外側を柵で囲い、柵のゲートを 1 つ付けるまでが完成。
+  外側の輪が家・建物・ほかの施設にかかる場所は断られる
 - tree_farm（植林場）: sapling（苗木の種類。何でもよければ sapling）と本数 count（1〜32）、
   苗木どうしの間 spacing（4〜6。木が育つ間隔）。全部のマスに植えると完成。1 区画に 4 本ほど
 - mine（採掘場）: 底の高さ bottom_y と、底の部屋から横へ延びる坑道の本数 tunnels（0〜4）と長さ
@@ -302,25 +305,32 @@ $replan
   （持つ、置く、植える、整地する…）。今もう満たしている小目標は自動で飛ばされるので、要るなら
   持っている物も書いてよい
 - 前提（needs）: 小目標の前に要るもの（2 段まで）。小目標がもう済んでいれば前提も飛ばされる。材料が
-  なければ集める小目標を前提に書く（バケツの前に鉄。鉄がなければその前に鉄鉱石）。前提のない
-  小目標は空にする
+  なければ集める小目標を前提に書く。書くのは、その小目標の物のレシピが直接使う材料と道具だけ:
+  思い込みで足した物は、関係がなくても集めに行ってしまう（コードが、ほかの条件の材料にない物を
+  差し戻す）。前提のない小目標は空にする
 - 今の持ち物・近くにあるもの・覚えている場所を見て、集め直しや遠回りをしない。1 つの小目標は数分
   で終わる大きさ。素材の採集だけの中目標は作らない（何のための素材かを中目標にする）
 - 済んだ中目標は書き直さない。視聴者の頼みの中目標は書かなくても残る
+- 畑（facility）の柵とゲートは、畑のマス（整地・水・耕す・まく）が全部済んでから最後に、施設が自分で置く。
+  柵のための板を先にそろえる段階や、placed(oak_fence…) の段階は書かない（板は柵の番になってから）
 - 中目標に大目標の完了条件を書くのは最後の 1 つだけ。途中の段階は、その前にそろえるものにする。
   同じ条件の中目標や、同じ title の中目標を並べない
 - built(名前) は、大目標の完了条件に入っている名前の建物か、もう建ててある建物だけ。家そのものは
-  名前なしの built で、存在しない名前（built(house) など）は判定できないので書かない
+  名前なしの built で、存在しない名前（built(house) など）は判定できないので書かない。家が建ててある
+  （「家:」に建ててあると書かれている）とき built() は今もう満たしているので、中目標にも小目標にも
+  書かない（書いた瞬間に済んで何もしない。コードが差し戻す）。「家の中で夜を越す・待つ」も計画に
+  書かない: 夜と安全は生存の小目標が自動でやる
 - 品目は Minecraft の正式な名前 1 つ（oak_log、oak_planks、oak_door）。複数形（oak_logs）、まとめた
   名前や造語（planks_and_door、wooden_tool_materials）は判定できない。いくつもの物は小目標を分ける
-- 家がまだ無い間（「家:」に建ててあると書かれていない間）は、placed(…, near_home) や placed(…, home)、
-  at_home を書かない（家ができてから）。場所は x,y,z か、大目標の built の名前（build:名前）だけ。
+- 家がまだ無い間（「家:」に建ててあると書かれていない間）は、placed(…, near_home) や placed(…, home) を
+  書かない（家ができてから）。場所は x,y,z か、大目標の built の名前（build:名前）だけ。at_home と
+  through_night は計画の条件にない
   leveled は where が home か x,y,z（座標）で、distance が要る
 
-## 例（畑を広げる: facility(wheat_farm_3)）
-1. 水の用意 have(water_bucket, 1): 小目標 have(water_bucket, 1)（前提 have(bucket, 1)（前提 have(iron_ingot, 3)））
-2. 農具と種の用意 have(wheat_seeds, 16): 小目標 have(hoe, 1)、have(wheat_seeds, 16)（近くの草を刈る）
-3. 畑を耕してまく facility(wheat_farm_3): 小目標 facility(wheat_farm_3)
+## 例（形だけ。<A>〜<E> は、この大目標の品目に置き換える。この例の物は書かない）
+1. <段階の名前> have(<A>, 1): 小目標 have(<A>, 1)（前提 have(<B>, 1)（前提 have(<C>, 3)））
+2. <段階の名前> have(<D>, 16): 小目標 have(<E>, 1)、have(<D>, 16)
+3. <最後の段階> <大目標の完了条件>: 小目標 <大目標の完了条件>
 
 ## 使える条件
 $conditions
@@ -444,6 +454,14 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
 - 同じ物を何度も遠くへ取りに行く、同じ作業を繰り返す、待ち時間ができた、は効率化の合図
 - 目安は、作る手間がこの先それで浮く手間より小さいこと。理由は review に書く（配信で伝わる）
 
+## 定石（順序はコードが守る）
+- 街づくりの土台は、寝床 → 食料（畑）→ 建材（植林場）→ 資材（鉄）…の順（状況の「定石」の行）。
+  今の段は [定石 …] の大目標として一番上にあり、コードが守る: 動かせず、やめられず、ほかの大目標を
+  その前に置けない（置こうとすると差し戻される）。足したほかの大目標は定石の段の後ろに入る
+- 定石の段は、作って回るところまでが 1 段（畑なら畑と最初の収穫）。小目標は今の段を進めるもの。
+  段のための材料は、その段の中目標に書いてよい（例: 畑の水に要る桶の鉄集め、植林場の苗木）
+- 夜・空腹・体力・死亡の身を守る小目標は、定石より先にしてよい（定石の大目標は動かない）
+
 ## 見直し（review。毎回、最初に）
 今の状態（持ち物、チェスト、目の前の物、近くにあるもの、覚えている場所、時間帯、「中目標の今の
 状態」）から、もっと早く・無駄なく進むやり方を探す。確かめること:
@@ -507,6 +525,8 @@ $conditions
 - 建てる（built）・施設（facility）の大目標は、その条件だけを完了条件にする。材料・整地・内装は
   その大目標の中目標に書く（混ぜると差し戻される）。道具・食料・明かりなど基盤の大目標は have・
   placed・stored・farmed などを完了条件にできる
+- 畑の柵とゲートは、畑のマス（整地・水・耕す・まく）が全部済んでから最後に、施設が自分で置く。柵のための
+  板を先にそろえる中目標や、placed(oak_fence…) の中目標は書かない（板は柵の番になってから）
 - add: 要るのにリストにないもの（題名、完了条件、位置、理由）
 - move: 順番を変える（1 が今取り組むもの）。今の場所・持ち物・時間帯で先にやるほうが早い・安全
   なとき（視聴者の頼みも）。前の判断を覆すなら、何が変わったかを理由に書く
@@ -610,11 +630,11 @@ $recent
   英語でもよく、名前でも目的でもよい。返った座標や名前をそのまま使う
   - search_abilities: やり方が分からない・初めてのこと（例: 畑を作る、水を渡る、肉を焼く）
   - item_info: 物の取り方・要る道具・使い道（例: 鉄、iron_ingot）。uses_of: その素材で作れる物
-  - find_foods: 食べられる物とその取り方（レシピ、かまど、畑、狩り）。食べ物を探す・作る前に、食べられるか分からない物は eat の前に
+  - find_foods: 食べ物が要るとき、いま手に入る所（持ち物・チェスト・見える動物・熟した作物の満腹度。足りない満腹度と比べる）と、食べられる物の取り方（レシピ、かまど、畑、狩り）。食べ物を探しに出る前、食べられるか分からない物は eat の前に
   - search_facility: 自分の施設（畑、植林場、建物）の場所と中身。行く・使う前に
   - search_memory: 前に見た場所（鉱石、木、動物、チェストの中身）。遠くへ探しに行く前に
 - 夜に家の中にいるときは、外に出る道具は断られる
-- 座標は整数。y は足元の高さ
+- 座標は整数で、符号つき。z=-284 は -284 と書く（マイナスを落とすと別の場所になり、遠すぎると断られる）。y は足元の高さ
 - look_screen（使えるときだけ出ている）は配信の画面を撮り、次の選択に画像として添える。
   文字の状態で分からないとき（地形、何が起きているか）に使う。画像で完了は決めない
 - 画像が添えてあれば、それはいま配信に映っている自分の視点
@@ -630,6 +650,16 @@ $record- 「直近の道具」の失敗の理由を読み、なぜ失敗した�
   足場を置く・掘って進む / 材料や道具が足りない → 先にそれを集める・作る / 断られた → 断られた理由の
   ブロックや場所を避ける / 敵が近い → 倒すか離れるか、家に戻る
 - 何をすればよいか分からなければ、動く前に search_abilities / item_info / search_facility で調べる
+- 原因が分からないまま同じことが通らないときは、実験する。変えるものは 1 回に 1 つだけ:
+  0. 家や行き先に着けないときは、先に inspect（座標なし）で自分を見る。closed_space（歩いて出られない閉じた所）と
+     home_door（ドアまで何ブロック離れ、何ブロック下か）が分かる。ドアから遠いなら、ドアは原因ではない
+  1. diagnostics でブリッジが残した失敗の記録を読み、inspect でそのマス（x, y, z）と自分（座標なし）を見る
+     （ブロックの状態 props、隣、届くか、間にある物、スニークしているか、手に持っている物）
+  2. 見たことから原因の仮説を 1 つ立て、use_item の押し方を 1 つだけ変えて試す
+     （face = 押す面、sneak = スニークの有無、item を省く = 素手、別の位置から）。家のドアは座標の代わりに target: home_door
+  3. もう一度 inspect で変わったかを確かめる。変わったらその押し方で続ける（うまくいった手は覚えられて、
+     次の同じ場面から候補に出る）。変わらなければ仮説を捨て、別の 1 つを変える
+  4. 3 つ試して通らなければ、続けずに別の手（家に戻る・小目標を変える）に切り替える
 - 小目標そのものが今は進められないと考えたなら、家に戻って安全に別のことをする（小目標は自分で決め直される）
 """
 
@@ -644,10 +674,40 @@ def _refused_section(refusals: Sequence[dict[str, Any]] | None) -> str:
     if not refusals:
         return ""
     lines = "\n".join(
-        f"- {r['tool']} ({r['x']}, {r['y']}, {r['z']}): {r['reason']}（{r['minutes_ago']} 分前）"
+        f"- {r['tool']} (x={r['x']} y={r['y']} z={r['z']}): {r['reason']}（{r['minutes_ago']} 分前）"
         for r in refusals
     )
     return Template(TOOL_REFUSED_SECTION).substitute(refused=lines)
+
+
+# 同じ道具が同じ理由で失敗し続けているとき（設計書 51 追記 2）: 引数の数字を変えても同じ。理由と別の方法を示す
+TOOL_SAME_CAUSE_SECTION = """
+## 同じ理由で失敗し続けている（$tool が $times 回続けて、同じ理由）
+- 理由: $reason
+- 引数の数字を少し変えても、この理由は変わらない。同じ道具を同じやり方でもう一度は呼ばない
+$advice$withheld"""
+SAME_CAUSE_FAR = """- 「遠すぎる」と断られ続けているのは、座標を書き間違えているから: 状態の座標（x=… y=… z=…）をそのまま写す。
+  マイナス（z=-285 を 285 と書くなど）を落としていないか確かめる
+- 座標を自分で書かずに、提案（do_suggestion）の id をそのまま使うか、find_blocks の x, y, z をそのまま使う
+"""
+SAME_CAUSE_OTHER = """- 理由を読んで、原因を直す手を先にする。分からなければ、提案（do_suggestion）の id をそのまま使うか、
+  search_abilities / item_info で調べる
+"""
+SAME_CAUSE_WITHHELD = "- この手番では $tool は出していない。ほかの道具を選ぶ\n"
+
+
+def _same_cause_section(cause: SameCause | None) -> str:
+    """同じ理由の失敗が続いている節。なければ空。"""
+    if cause is None:
+        return ""
+    far = "away (at most" in cause.reason or "m away" in cause.reason
+    return Template(TOOL_SAME_CAUSE_SECTION).substitute(
+        tool=cause.tool,
+        times=cause.times,
+        reason=cause.reason,
+        advice=SAME_CAUSE_FAR if far else SAME_CAUSE_OTHER,
+        withheld=Template(SAME_CAUSE_WITHHELD).substitute(tool=cause.tool) if cause.withheld else "",
+    )
 
 
 def _stuck_section(failing: int, stagnant_seconds: float, actions: Sequence[str]) -> str:
@@ -797,7 +857,7 @@ ACTION_INSTRUCTIONS = (
     "danger. The state's remember lists lessons from similar situations before; keep them in mind."
 )
 MOBS_SHOWN = 8
-RECENT_ACTIONS_SHOWN = 3
+RECENT_ACTIONS_SHOWN = 8  # Jev に見せる直近の行動（ブリッジの observe.mjs HISTORY と同じ）
 
 
 class GamePromptTemplateBuilder(IGamePromptBuilder):
@@ -1121,6 +1181,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         repeated: Sequence[str] = (),
         repeated_times: int = 0,
         repeated_skill: str = "",
+        same_cause: SameCause | None = None,
     ) -> str:
         """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
         around = state.get("surroundings") or {}
@@ -1152,7 +1213,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             )
             if skills is not None
             else ""
-        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions) + _repeat_section(repeated, repeated_times, repeated_skill)
+        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions) + _same_cause_section(same_cause) + _repeat_section(repeated, repeated_times, repeated_skill)
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""
@@ -1301,6 +1362,8 @@ def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> 
     elif build:
         site = "建設地は決定済み" if build.get("origin") else "建設地は未決定"
         progress = f"{build['placed']}/{build['total']} ブロック設置済み、{site}"
+        if build.get("foundation"):
+            progress += f"、足元の地面が抜けていて土があと {build['foundation']} ブロック要る"
     else:
         progress = "未着手"
     return f"「{b.name}」{size}（必要ブロック: {counts}）- {b.concept}\n進み具合: {progress}"

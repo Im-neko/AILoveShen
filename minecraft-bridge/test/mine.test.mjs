@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { registerFacility, mineStatus, onMineCell, inMineBody, finishedMine, updateStatus, FacilityError } from '../src/facilities.mjs'
+import { registerFacility, mineStatus, onMineCell, inMineBody, finishedMine, updateStatus, retireUnclimbableMine, plannedBlocks, MINE_GEOMETRY, FacilityError } from '../src/facilities.mjs'
 import { columnWork } from '../src/leveling.mjs'
 import { makeGoal, evaluate } from '../src/goals.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
@@ -52,7 +52,8 @@ test('採掘場の設計: 4 x 4 の輪を回るらせん階段で底まで、下
     assert.equal(Math.abs(stairs[i].x - stairs[i - 1].x) + Math.abs(stairs[i].z - stairs[i - 1].z), 1)
     assert.equal(stairs[i - 1].y - stairs[i].y, 1)
   }
-  assert.equal(fac.layout.cells.filter((c) => c.part === 'room').length, 15)
+  // 部屋は 4 x 4 から、階段の床になる 2 列を除いた 13 列（stairSupport）
+  assert.equal(fac.layout.cells.filter((c) => c.part === 'room').length, 13)
   assert.deepEqual(fac.layout.tunnels, ['east', 'south'])
   assert.equal(fac.layout.cells.filter((c) => c.part.startsWith('tunnel')).length, 16)
   assert.equal(fac.box.max.x - fac.box.min.x, 3)
@@ -108,7 +109,7 @@ test('掘っている途中で水が出たら、そこから先を設計から�
   const s = state()
   const fac = registerFacility(world(), s, 'mine_1', MINE)
   const blocks = {}
-  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }])
+  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 8 }])
   const seventh = fac.layout.cells[7]
   bot.dig = async (b) => {
     blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air'
@@ -137,9 +138,12 @@ test('深い鉄は、下りきった採掘場があればそこから下りて�
   const { solve } = await import('../src/solver.mjs')
   const k = new Knowledge(md)
   const mine = { name: 'mine_1', bottom: { x: 8, y: 16, z: 0 }, above: true }
-  const w = (extra) => ({ inventory: { stone_pickaxe: 1 }, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set(), digDepth: Infinity, ...extra })
+  const w = (extra) => ({ inventory: { stone_pickaxe: 1, torch: 8, wooden_sword: 1 }, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set(), digDepth: Infinity, ...extra })
   const deep = solve(k, w({ mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 20, 0), depth: 44 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
   assert.deepEqual(deep.leaves.map((l) => [l.kind, l.mine?.name]), [['go_mine', 'mine_1']])
+  // 武器がなければ、まず作る（武器なしで地下に出ない）
+  const unarmed = solve(k, w({ inventory: { stone_pickaxe: 1, torch: 8 }, mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 20, 0), depth: 44 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
+  assert.ok(!unarmed.leaves.some((l) => l.kind === 'go_mine'))
   // 浅いものはその場で掘り下げる
   const shallow = solve(k, w({ mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 60, 0), depth: 4 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
   assert.deepEqual(shallow.leaves.map((l) => l.kind), ['dig_down'])
@@ -165,4 +169,70 @@ test('らせん階段の柱と段の床は経路探しに壊させない（空�
   assert.equal(inMineBody(s, new Vec3(fac.box.min.x + 1, 50, fac.box.min.z + 1)), true) // 真ん中の柱
   assert.equal(inMineBody(s, new Vec3(b.x, b.y, b.z)), false) // 空ける所
   assert.equal(inMineBody(s, new Vec3(fac.box.max.x + 1, 50, fac.box.min.z)), false) // 輪の外
+})
+
+// 掘る動作のテスト用ボット: 掘ったセルを空気にする
+function digger (fac, items) {
+  const blocks = {}
+  const bot = world(blocks, items)
+  bot.dig = async (b) => { blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air' }
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async () => {}, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  return bot
+}
+
+test('松明がなければ採掘場を掘り始めない。作るよう理由を返す', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  const bot = digger(fac, [{ name: 'stone_pickaxe', count: 1 }])
+  await assert.rejects(PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal), /no torch to light the mine mine_1.*make torches first/)
+})
+
+test('掘っている途中で松明が尽きたら、暗いまま先へ掘らず、そこまでを成功として理由を返す', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  // 松明 1 本: 階段 12 段ごとに 1 本、置く番は 12 段目。持っている 1 本は使い切れないので、12 段目で置いた後、
+  // 24 段目の番で尽きる
+  const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 1 }]
+  const bot = digger(fac, items)
+  bot.placeBlock = async () => { items.splice(items.findIndex((i) => i.name === 'torch'), 1) } // 使い切ると持ち物から消える
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.match(r, /^dug \d+ cells of the mine mine_1; stopped: out of torches/)
+  assert.ok(Number(/^dug (\d+)/.exec(r)[1]) >= 12)
+})
+
+test('部屋は階段の床を消さない: どの深さでも、どの段も床が残り、部屋から階段へ 1 段ずつ上がれる（mine_1 の底で閉じ込められた）', () => {
+  for (let bottom = 40; bottom >= 29; bottom--) {
+    const fac = registerFacility(world(), state(), `mine_${bottom}`, { ...MINE, design: { bottom_y: bottom, tunnels: 4, tunnel_length: 4 } })
+    const open = plannedBlocks(fac.layout.cells)
+    const stairs = fac.layout.cells.filter((c) => c.part === 'stairs')
+    for (const st of stairs.slice(0, -1)) {
+      assert.equal(open.has(`${st.x},${st.y - 1},${st.z}`), false, `bottom ${bottom}: the floor under the step at ${st.x},${st.y},${st.z} is dug`)
+    }
+    assert.equal(fac.layout.geometry, MINE_GEOMETRY)
+    // 4 本の坑道は、どれも部屋かの最後の段に隣り合って始まる（床の列に塞がれない）
+    for (const dir of fac.layout.tunnels) {
+      const first = fac.layout.cells.find((c) => c.part === `tunnel_${dir}`)
+      const near = fac.layout.cells.some((c) => (c.part === 'room' || c === stairs.at(-1)) && Math.abs(c.x - first.x) + Math.abs(c.z - first.z) === 1 && c.y === first.y)
+      assert.ok(near, `bottom ${bottom}: tunnel ${dir} starts at ${first.x},${first.z} with no room cell beside it`)
+    }
+  }
+})
+
+test('部屋が階段の床を消す古い形の採掘場は、使わない扱いにする', () => {
+  const old = { kind: 'mine', layout: { bottom_y: 40, cells: [
+    { x: 1, y: 42, z: 0, h: 3, part: 'stairs' }, { x: 1, y: 41, z: 1, h: 3, part: 'stairs' }, { x: 2, y: 40, z: 1, h: 3, part: 'stairs' },
+    { x: 1, y: 40, z: 1, h: 2, part: 'room' }, { x: 3, y: 40, z: 3, h: 2, part: 'room' }
+  ] } }
+  assert.equal(retireUnclimbableMine(old), true)
+  assert.equal(old.layout.exhausted, true)
+  assert.match(old.layout.retired, /no way back up/)
+  // 新しい形は何もしない
+  const fresh = registerFacility(world(), state(), 'mine_1', MINE)
+  assert.equal(retireUnclimbableMine(fresh), false)
+  assert.equal(fresh.layout.exhausted, undefined)
 })

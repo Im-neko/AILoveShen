@@ -72,6 +72,11 @@
 - 費用: 発話 1 回とゲームの出来事 1 回ごとに 1 回の呼び出し（見張りの 1 秒ごとよりずっと少ない）
 - 未確認（実機）: Jev の答えの速さ（1.5 秒に収まるか）、日本語の発言をどれだけ読めるか
 
+### 8.1 うまくいかず考え直すときの表情（2026-09-30）
+
+ユーザー「上手くいかなくて考え直す時のアバターの表情を jev に選ばせたい」。小目標が行き詰まった・止まった後、Gemini / ローカル LLM が考え直す間（何十秒〜数分）は、小目標が終わったときの表情（sad 3 秒）が消えると無表情に戻っていた。
+`GoalDecidingEvent(after_failure=True)`（`AdvancePlayUseCase._while_deciding` が考え始めに出す）を `AvatarStage` が購読し、`emote` の合図にする。規則の答えは sad 0.5 + tilt を 8 秒（`RETHINK_SECONDS`）、Jev には `moment_of` の「something did not work out and the streamer is thinking again about how to go on」で 8 つの表情・しぐさから選ばせる（ふつうの次の目標の検討 `after_failure=False` は変えない）。考えが終わる（`GoalDecidedEvent`）まで保つのではなく、8 秒で戻す（考えの長さは数十秒〜数分で、ずっと悲しい顔にはしない）。未確認（実機）: Jev が選ぶ表情の傾向（`logs/avatar/`）。
+
 ## 9. モデルのライセンス
 
 モデルのメタ情報は `avatarPermission: onlyAuthor`、`commercialUsage: personalNonProfit`。作者本人の配信には問題ないが、収益化する配信で使うなら VRoid Studio でライセンスの設定を見直す。

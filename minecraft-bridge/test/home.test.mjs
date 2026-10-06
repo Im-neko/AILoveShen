@@ -106,3 +106,18 @@ test('見つけた拠点の印は保存しても消えない（再起動で自�
   delete old.found
   assert.equal(homeFromJSON(old).found, true)
 })
+
+test('STATE_FILE で状態の保存先を変えられる（ベンチマークが配信の state.json に触れない。設計書 83）', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const { mkdtempSync, readFileSync, existsSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const file = join(mkdtempSync(join(tmpdir(), 'state-')), 'nested', 'state.json')
+  const here = new URL('../src/home.mjs', import.meta.url).href
+  execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import { saveState } from '${here}'
+    saveState({ goal: { predicate: 'have' }, memory: { places: [] } })
+  `], { env: { ...process.env, STATE_FILE: file } })
+  assert.equal(existsSync(file), true)
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).goal, { predicate: 'have' })
+})

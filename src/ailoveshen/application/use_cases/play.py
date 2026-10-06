@@ -8,6 +8,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Any, Optional, TypeVar
 
 from loguru import logger
@@ -21,9 +22,12 @@ from ailoveshen.application.ports.output.goal_store import IGoalStore, SavedGoal
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
+from ailoveshen.application.use_cases.goal_ends import goal_end_entry
 from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
 from ailoveshen.application.use_cases.repetition import Repetition
+from ailoveshen.application.use_cases.same_cause import same_cause_run
 from ailoveshen.application.use_cases.stagnation import WAITING_VERBS, Stagnation
 from ailoveshen.application.use_cases.stuck_check import StuckCheck
 from ailoveshen.application.use_cases.goal_vocabulary import (
@@ -44,7 +48,7 @@ from ailoveshen.application.use_cases.lessons import (
     ended_kind,
     situation_of,
 )
-from ailoveshen.application.use_cases.moves import MoveBook, offers_of
+from ailoveshen.application.use_cases.learned_candidates import LearnedCandidates, offers_of
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.search import KeySearch, WorldSearch
 from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
@@ -99,7 +103,7 @@ from ailoveshen.domain.value_objects import (
     Lesson,
     MessageRole,
     MessageType,
-    Move,
+    LearnedCandidate,
     Objective,
     Job,
     Screenshot,
@@ -119,8 +123,11 @@ OFFERED_SHOWN = 12  # 失敗の分析に見せる、最後に出ていた候補�
 MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら、やり直しは選べない
 UNDESIGNABLE_SECONDS = 600  # 設計できなかった建物を、大目標に足さない間（秒）
 MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
+SAME_CAUSE_EXPERIMENT = 3  # 同じ理由でこれだけ続けて失敗したら、実験の道具を出す（設計書 85）
 STUCK_TOOL_FAILURES = 2  # 続けてこれだけ失敗した小目標の道具の選択は、よく考えさせる（purpose tool_stuck）
 REFLEX_POLL_SECONDS = 0.5  # 反射が動いている間、終わったかを見る間隔（その間は道具が断られるので選ばせない）
+REFLEX_WAIT_LIMIT_SECONDS = 60  # 反射がこれ以上続くなら手放す（ブリッジの反射が離れられない相手と回り続けた: 2026-10-01）
+REFLEX_RELEASE_SECONDS = 30  # 手放したあと、近づいた相手に反射させない時間
 RETHINK_POLL_SECONDS = 0.5  # 行動の間、考え直しの依頼が来たかを見る間隔（docs/design/38）
 # 目標の決定を待つ間（ローカルの LLM で数分かかる）、この間隔で飢えを確かめ、ブリッジの候補に食べる
 # 物があれば食べる（2026-09-28: 空腹 0 のまま 6 分近く決定を待って立っていた）。ほかの行動はしない
@@ -170,6 +177,7 @@ class StartPlayUseCase(IStartPlay):
         max_consecutive_failures: int = 3,
         max_stalled_steps: int = 8,
         goal_store: Optional[IGoalStore] = None,
+        collect: Sequence[str] = (),
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -186,8 +194,10 @@ class StartPlayUseCase(IStartPlay):
             max_consecutive_failures: 新しい目標を求めるまでに、続けて失敗するステップ数
             max_stalled_steps: 新しい目標を求めるまでに、進まないステップ数
             goal_store: 再起動をまたいで今の小目標を保つ（None なら小目標は引き継がない）
+            collect: 目標外でも見つけたら集めるブロック（鉱石のほかに。docs/design/79）
         """
         self._goal_store = goal_store
+        self._collect = tuple(collect)
         self._bridge = bridge
         self._event_publisher = event_publisher
         self._designer = designer
@@ -202,6 +212,7 @@ class StartPlayUseCase(IStartPlay):
     async def execute(self) -> PlaySession:
         """プランと街を読み込み、家を設計して（建っていなければ）、セッションを始める。"""
         plan = self._load_plan()
+        await self._bridge.set_collect(self._collect)
         await self._town.prepare(plan)
         obs = await self._bridge.observe()
         notebook = Notebook()
@@ -278,6 +289,7 @@ class StartPlayUseCase(IStartPlay):
                 stage_met=saved.stage_met,
                 site=saved.site,
                 town_map=saved.town_map,
+                playbook_done=saved.playbook_done,
             )
             logger.info(f"大目標を引き継いだ: {', '.join(g.describe() for g in plan.pending)}")
         else:
@@ -335,11 +347,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         stuck_check: Optional[StuckCheck] = None,
         stagnation_seconds: float = 10.0,
         lessons: Optional[LessonBook] = None,
-        moves: Optional[MoveBook] = None,
+        learned_candidates: Optional[LearnedCandidates] = None,
         search: Optional[KeySearch] = None,
         abilities: Sequence[dict[str, Any]] = (),
         planner: Optional[JobPlanner] = None,
         goal_store: Optional[IGoalStore] = None,
+        goal_end_recorder: Optional[IWatchRecorder] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -373,6 +386,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                 None なら計画は書かず、Gemini の目標の決定が中目標を書く
             goal_store: 小目標を決めたときと、1 手ごとに、今の小目標と歩みの数えを保存する
                 （再起動のあとに続きから追う。None なら保存しない。docs/design/63）
+            goal_end_recorder: 小目標が終わるたびに、その終わり方（達成、行き詰まり、死亡、切った）と歩み
+                （ステップ数、秒数、残り）を 1 件残す（実行の成績の集計用。None なら残さない。docs/design/82）
             objective_stall_steps: 一番上の大目標の進み具合（条件の数）が、そのための行動を
                 これだけ続けても変わらなければ、Gemini に考え直させる（小目標を変えても同じ所を
                 回るのを止める。0 なら見ない）
@@ -424,8 +439,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._repetition = Repetition()
         # 教訓帳: 小目標の始まりと Gemini の決定の前に思い出し、実績を数える（docs/design/35）
         self._lessons = lessons
-        # 手の帳: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（docs/design/52）
-        self._moves = moves if control == "tools" else None
+        # 覚えた候補: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（docs/design/52）
+        self._learned = learned_candidates if control == "tools" else None
         self._in_play: tuple[Lesson, ...] = ()  # 今の小目標の始まりに思い出した教訓
         self._last_ended = ""  # 前の小目標の終わり方（stuck / stalled / died / met / other）
         self._undesignable: dict[str, float] = {}  # 設計できなかった建物 → また試してよい時刻
@@ -436,6 +451,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 中目標を書き、小目標は解決器の次の一歩から選ぶ（今までどおり）
         self._planner = planner
         self._goal_store = goal_store
+        self._goal_end_recorder = goal_end_recorder
+        self._goal_end_recorded: Optional[Goal] = None  # 終わりを記録した小目標（決定に失敗して残った目標を二度数えない）
         self._planned_at: dict[str, float] = {}  # 大目標の id → 最後に計画を書いた（書こうとした）時刻
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
@@ -471,6 +488,19 @@ class AdvancePlayUseCase(IAdvancePlay):
             goal_changed = True
             obs = await self._bridge.observe()
             session.observe(obs)
+            if session.died_since_goal(obs):
+                # 決めている間に死んだ（決めた目標は死ぬ前の持ち物と場所で書かれている）。動かずに、次の
+                # ステップで持ち物を取りに戻り、決め直す。動くと 301 m 歩いた: 2026-10-03
+                logger.info("目標を決めている間に死んだ: この目標では動かず、決め直す")
+                return PlayStepReport(
+                    goal=session.goal,
+                    goal_changed=True,
+                    status=obs.goal,
+                    decision=None,
+                    result=None,
+                    house_complete=obs.house_complete,
+                    waiting=True,
+                )
 
         goal = session.goal
         assert goal is not None
@@ -629,8 +659,16 @@ class AdvancePlayUseCase(IAdvancePlay):
         if not state.get("reflex"):
             return state
         logger.info("反射が動いているので、終わるまで選ばせずに待つ")
+        waited = 0.0
         while state.get("reflex"):
+            if waited >= REFLEX_WAIT_LIMIT_SECONDS:
+                # 待っても終わらない（同じ相手から逃げ続けるなど）: 待ち続けると、止まっている検知（Stagnation、
+                # StuckCheck）にも届かない。反射を手放して、選ばせる
+                logger.warning(f"反射が {REFLEX_WAIT_LIMIT_SECONDS} 秒続いている: 手放して、選ばせる")
+                await self._bridge.release_reflex(REFLEX_RELEASE_SECONDS)
+                return await self._bridge.state()
             await asyncio.sleep(REFLEX_POLL_SECONDS)
+            waited += REFLEX_POLL_SECONDS
             state = await self._bridge.state()
         return state
 
@@ -659,21 +697,24 @@ class AdvancePlayUseCase(IAdvancePlay):
                 session.goal.describe(),
                 f"nothing changed for {stagnant:.0f} s" if stagnant else "the same steps repeat",
             )
-        remembered: list[Move] = []
+        learned: list[LearnedCandidate] = []
         situation: dict[str, str] = {}
-        if self._moves is not None and session.goal is not None:
-            self._moves.settle(obs, session.goal.describe())
+        if self._learned is not None and session.goal is not None:
+            self._learned.settle(obs, session.goal.describe())
             situation = {**situation_of(session.goal.spec, obs), "offers": offers_of(obs.candidates)}
-            remembered = self._moves.recall(situation)
+            learned = self._learned.recall(situation)
         picked = (
             None
             if stagnant or repeat
-            else await self._jev_step(session, obs, skills or [], remembered, situation)
+            else await self._jev_step(session, obs, skills or [], learned, situation)
         )
         if picked is not None:
             return picked
-        specs = tool_specs(can_look=self._screen is not None, skills=self._skills is not None)
-        action_specs = [t for t in specs if t.name in ACTION_TOOLS or is_skill_tool(t.name)]
+        # 行き詰まっているときだけ、実験の道具（inspect / diagnostics、素手・面・スニークの use_item）を加える（設計書 85）
+        specs_by_experiment = {
+            on: tool_specs(can_look=self._screen is not None, skills=self._skills is not None, experiment=on)
+            for on in (False, True)
+        }
         images: list[Screenshot] = []  # 次の選択にだけ添える画面（ステップをまたがない）
         last = self._recent_tools[-1] if self._recent_tools else None
         if self._screen is not None and last is not None and not last.ok:
@@ -681,6 +722,9 @@ class AdvancePlayUseCase(IAdvancePlay):
             images = [shot] if shot else []
         for attempt in range(MAX_QUERIES_PER_STEP + 1):
             state = await self._bridge.state()
+            cause = same_cause_run(self._recent_tools, lambda name: is_query(name) or name in SEARCH_TOOLS or name == LOOK_SCREEN)
+            if cause is not None and attempt == 0:
+                logger.info(f"同じ理由で {cause.times} 回続けて失敗: {cause.tool}（{cause.reason[:100]}）")
             prompt = self._prompt_builder.build_tool_prompt(
                 session.activity(),
                 state,
@@ -693,12 +737,25 @@ class AdvancePlayUseCase(IAdvancePlay):
                 repeated=repeat.steps if repeat else (),
                 repeated_times=repeat.times if repeat else 0,
                 repeated_skill=_fitting_skill(skills or [], session.goal) if repeat else "",
+                same_cause=cause,
             )
             last = self._recent_tools[-1] if self._recent_tools else None
             purpose = "tool_after_failure" if last is not None and not last.ok else "tool"
             if session.consecutive_failures >= STUCK_TOOL_FAILURES or stagnant:
                 purpose = "tool_stuck"  # 行き詰まり: よく考えて別の方法を選ばせる
-            offered = specs if attempt < MAX_QUERIES_PER_STEP else action_specs
+            experiment = (
+                session.consecutive_failures >= STUCK_TOOL_FAILURES
+                or bool(stagnant)
+                or (cause is not None and cause.times >= SAME_CAUSE_EXPERIMENT)
+            )
+            specs = specs_by_experiment[experiment]
+            offered = (
+                specs
+                if attempt < MAX_QUERIES_PER_STEP
+                else [t for t in specs if t.name in ACTION_TOOLS or is_skill_tool(t.name)]
+            )
+            if cause is not None and cause.withheld:  # 数字を変えて繰り返すのをやめさせる: 別の道具だけを出す
+                offered = [t for t in offered if t.name != cause.tool]
             if state.get("pickup_ready") is False:  # 拾える落とし物がなければ pickup は断られるだけ
                 offered = [t for t in offered if t.name != "pickup"]
             choice = await self._text_generator.choose_tool(
@@ -764,8 +821,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             break
         if self._step_picker is not None:
             self._step_picker.note(by_jev=False, outcome=outcome)
-        if self._moves is not None and session.goal is not None:
-            self._moves.begin(
+        if self._learned is not None and session.goal is not None:
+            self._learned.begin(
                 situation, outcome.call, obs, session.goal.describe(), outcome.ok and not outcome.refused
             )
         decision = ActionDecision(action_id=outcome.call.describe(), confidence=1.0)
@@ -776,7 +833,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         session: PlaySession,
         obs: GameObservation,
         skills: list[SkillInfo],
-        moves: Sequence[Move] = (),
+        learned: Sequence[LearnedCandidate] = (),
         situation: Optional[dict[str, str]] = None,
     ) -> Optional[tuple[ActionDecision, ActionResult]]:
         """
@@ -791,7 +848,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 回さない: 決まりきった断りで 1 手（LLM の数秒）を使わず、残った候補から Jev が選ぶ
         last_ok = None if last is None else last.ok or last.refused
         picked = await self._step_picker.pick(
-            state, instructions, obs.candidates, skills, last_ok, moves=moves
+            state, instructions, obs.candidates, skills, last_ok, learned=learned
         )
         if not isinstance(picked, PickedStep):
             logger.info(f"1 手は Gemini が決める: {picked.why}")
@@ -808,14 +865,14 @@ class AdvancePlayUseCase(IAdvancePlay):
             outcome = await self._watcher.run(call)
         self._recent_tools.append(outcome)
         self._step_picker.note(by_jev=True, outcome=outcome)
-        if self._moves is not None and picked.move is not None:
-            self._moves.begin(
+        if self._learned is not None and picked.learned is not None:
+            self._learned.begin(
                 situation or {},
                 call,
                 obs,
                 session.goal.describe(),
                 outcome.ok and not outcome.refused,
-                picked.move,
+                picked.learned,
             )
         decision = ActionDecision(action_id=picked.option_id, confidence=picked.confidence)
         return decision, outcome.as_action_result()
@@ -935,6 +992,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                         _kept(session.plan),
                         _also(session.plan, (picked.spec, *picked.together)),
                         together=picked.together,
+                        level_areas=_level_areas(session.plan, (picked.spec, *picked.together)),
                     )
                 except GoalRejectedError as e:
                     why = f"the bridge rejected {picked.describe()}: {e}"
@@ -962,6 +1020,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 {
                     "last_goal": activity.goal.describe() if activity.goal else None,
                     "ended_because": reason,
+                    **_light_of(obs),
                 },
                 moment="decision",
             )
@@ -996,6 +1055,11 @@ class AdvancePlayUseCase(IAdvancePlay):
             record = "; ".join(list(self._goal_steps)[-PLAN_RECORD_SHOWN:])
             replan = reason + (f". The last actions: {record}" if record else "")
         written: list[bool] = []
+        # 終わったばかりの小目標がこの大目標のものでなければ、計画には見せない。置き換わる小目標（死んだ
+        # ときの食料と鉄と革の束）を真似て、剣の大目標に食料と鉄の中目標を書き、3 回差し戻されて 40 秒
+        # 無駄になった（2026-10-03）
+        if activity.goal is not None and activity.goal.objective_id != current.id:
+            activity = replace(activity, goal=None, intent="")
 
         async def write() -> None:
             written.append(
@@ -1101,6 +1165,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         if outcome is None:
             return
         goal = outcome.goal
+        self._record_goal_end(session, obs, reason)
         await self._event_publisher.publish(
             GoalEndedEvent(
                 goal=goal.describe(),
@@ -1109,6 +1174,18 @@ class AdvancePlayUseCase(IAdvancePlay):
                 met=met,
             )
         )
+
+    def _record_goal_end(self, session: PlaySession, obs: GameObservation, reason: str) -> None:
+        """終わる小目標の成績を 1 件残す（新しい小目標が歩みの数えを消す前に）。計測のためにプレイは止めない。"""
+        if self._goal_end_recorder is None or session.goal is self._goal_end_recorded:
+            return
+        self._goal_end_recorded = session.goal
+        try:
+            self._goal_end_recorder.record(
+                goal_end_entry(session, obs, reason, datetime.now(timezone.utc))
+            )
+        except Exception as e:
+            logger.warning(f"小目標の終わりの記録を作れなかった: {type(e).__name__}: {e}")
 
     async def _decide_goal(
         self,
@@ -1144,6 +1221,13 @@ class AdvancePlayUseCase(IAdvancePlay):
             else None
         )
         same_failures = _same_failures(session) if failed_goal else 0
+        # 死んだときは、死んだ小目標をそのまま再開させない（持ち物が消えている。2026-10-01: 死んだ直後に
+        # 同じ have(raw_iron, 3) を決め、また同じ地下へ戻った）
+        died_goal = (
+            session.recent_goals[-1].goal.spec
+            if " died and " in reason and session.recent_goals
+            else None
+        )
         # 大目標が進まないときは、同じやり方のやり直しを出さない（別のやり方に変える）
         retry_allowed = same_failures < MAX_SAME_FAILURES and OBJECTIVE_STALLED not in reason
         record = tuple(self._goal_steps) if failed_goal else ()
@@ -1188,6 +1272,13 @@ class AdvancePlayUseCase(IAdvancePlay):
             dropped = ""  # 設計できずに落とした建物（差し戻すとき Gemini に伝える）
             try:
                 decision = parse_decision(data)
+                # 最後の試行は、プランが断る並べ替え・断念（定石の順を破る move など）を捨てて、決定の
+                # 残りを通す（同じ編集を書き続けて、夜の野外で 4 分以上決まらなかった: 2026-10-03）
+                if attempt >= self._max_goal_attempts and decision.changes:
+                    decision = replace(
+                        decision,
+                        changes=self._objectives.without_refused(plan, decision.changes),
+                    )
                 # 計画済みなら中目標は計画が持つ: スキーマに欄がなくても、モデルが書いてきたら捨てる
                 # （書き直されて計画の小目標と済みが消える。決定の残りは通す）
                 if plan_owns_jobs and decision.jobs:
@@ -1209,7 +1300,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                 if failed_goal is not None:
                     _check_remedy(decision, failed_goal, same_failures)
                 _check_time(decision, obs)
+                if attempt < self._max_goal_attempts:
+                    _check_survival_time(decision, obs)
                 await self._check_job_order(decision.jobs, plan.current)
+                if died_goal is not None and attempt < self._max_goal_attempts:
+                    _check_after_death(decision, died_goal)
                 # 最後の試行は通す（差し戻し続けて決定が失敗するより、細かい中目標のほうがまし）
                 if attempt < self._max_goal_attempts:
                     await self._check_job_grain(decision.jobs, plan.current)
@@ -1235,6 +1330,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     _kept(rehearsed),
                     _also(rehearsed, (decision.spec, *decision.together)),
                     together=decision.together,
+                    level_areas=_level_areas(rehearsed, (decision.spec, *decision.together)),
                 )
                 if status.met:
                     # 決めた時点でもう済んでいる小目標は、何もせずに終わって次の決定を呼ぶだけ
@@ -1242,7 +1338,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     raise ValueError(
                         f"the small goal {_bundle_label(decision)} is already met now"
                         f"{_carried_note(obs, decision)}; choose one that is not met yet "
-                        "(see the jobs' state now)"
+                        "(see the jobs' state now)" + _stay_note(decision, obs)
                     )
                 if status.dead_end:
                     # 進める手がない小目標（畑がないのに farmed など）は、行き詰まるまで回さずに差し戻す
@@ -1470,7 +1566,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             return ()
         recalled = await self._lessons.recall(
             situation_of(goal.spec, obs, self._last_ended),
-            context={"goal": goal.spec.describe(), "goal_reason": goal.reason},
+            context={"goal": goal.spec.describe(), "goal_reason": goal.reason, **_light_of(obs)},
             moment="start",
         )
         recalled = self._lessons.mark_used(recalled)
@@ -1558,6 +1654,15 @@ def _goal(decision: GoalDecision, plan: ObjectivePlan) -> Goal:
         together=decision.together,
         approach=decision.approach,
     )
+
+
+def _light_of(obs: GameObservation) -> dict[str, Any]:
+    """教訓が今に当てはまるかを Jev が確かめる手がかり: 暗いか、松明を何本持っているか（「暗い所では松明を」の教えが当てはまると答えられなかった）。"""
+    inventory = obs.state.get("inventory") or {}
+    return {
+        "dark_here": any("dark here" in n for n in obs.needs),
+        "torches_carried": int(inventory.get("torch") or 0),
+    }
 
 
 def _upcoming(plan: ObjectivePlan) -> list[dict[str, str]]:
@@ -1680,6 +1785,25 @@ def _bundle_label(decision: GoalDecision) -> str:
     return " + ".join(s.describe() for s in (decision.spec, *decision.together))
 
 
+def _stay_note(decision, obs: GameObservation) -> str:
+    """
+    夕方・夜に、もう家の中にいて `at_home` を選んだ差し戻しに添える: 安全のためにここにいたいのなら、
+    選ぶのは through_night（夜が明けるまで家で過ごし、眠れる時間になればベッドで寝る）。`at_home` は
+    済んでいるので通らず、3 回目に外の作業が通って外へ出て死んだ（2026-09-30 18:08）。
+    """
+    if (
+        decision.spec.predicate == GoalPredicate.AT_HOME
+        and obs.inside_home
+        and obs.time_phase in ("dusk", "night")
+    ):
+        return (
+            ". You are already inside the home: to stay safe here choose through_night "
+            "(it waits in the home until morning and sleeps in the bed when it is time), "
+            "not an outdoor task"
+        )
+    return ""
+
+
 def _carried_note(obs: GameObservation, decision: GoalDecision) -> str:
     """
     have(item, n) は持っている合計が n 以上になること。「あと n 個」と取り違えた決定（11 個持っていて
@@ -1713,11 +1837,25 @@ def _check_time(decision: GoalDecision, obs: GameObservation) -> None:
     """見直しが今の時間帯を取り違えていれば差し戻す（読み直させる）。"""
     phase = obs.time_phase
     wrong = _WRONG_TIME.get(phase)
-    found = wrong.search(decision.review) if wrong and decision.review else None
-    if found:
+    for name, text in (("review", decision.review), ("reason", decision.reason)):
+        found = wrong.search(text) if wrong and text else None
+        if found:
+            raise ValueError(
+                f"the {name} says {found.group(0)!r}, but it is {phase} now: read the time in the "
+                "state again and decide for that time"
+            )
+
+
+def _check_survival_time(decision: GoalDecision, obs: GameObservation) -> None:
+    """
+    through_night は夕方と夜の目標。昼や明け方に選んだ決定を差し戻す（2026-10-04 10:06: 昼なのに
+    「家に入れない状態で夜が来るため」と through_night を選び、畑の中に穴を掘って潜った）。
+    """
+    if decision.spec.predicate == GoalPredicate.THROUGH_NIGHT and obs.time_phase in ("day", "dawn"):
         raise ValueError(
-            f"the review says {found.group(0)!r}, but it is {phase} now: read the time in the "
-            "state again and decide for that time"
+            f"it is {obs.time_phase} now, not night: through_night is for dusk and night. Read the "
+            "time in the state. If you cannot get into the home, that is the problem to solve "
+            "(its door, the way to it) with a small goal for the day, not a night goal"
         )
 
 
@@ -1733,6 +1871,17 @@ def _check_remedy(decision: GoalDecision, failed: GoalSpec, same_failures: int) 
         )
     if same and not decision.advice:
         raise ValueError("retry needs advice: what the action chooser should do differently")
+
+
+def _check_after_death(decision: GoalDecision, died: GoalSpec) -> None:
+    """死んだあとの決定が、死んだ小目標の再開ではないか（小目標は決め直す）。"""
+    if decision.spec.same_kind(died):
+        raise ValueError(
+            f"you died while working on {died.describe()}: what you carried is gone and the "
+            "situation changed. Set a new small goal: do not resume it as it was. First prepare for "
+            "what killed you or what you lost (a weapon, armor, torches, food, a tool), or choose a "
+            "different goal; the job comes back after that"
+        )
 
 
 def _verb_of(outcome: Optional[ToolOutcome], candidates: Sequence[Candidate]) -> Optional[str]:
@@ -1782,6 +1931,24 @@ def _also(plan: ObjectivePlan, bundle: tuple[GoalSpec, ...]) -> tuple[GoalSpec, 
     out: list[GoalSpec] = []
     for s in specs:
         if s.predicate in _GATHERED and s.item not in items and s not in out:
+            out.append(s)
+    return tuple(out)
+
+
+def _level_areas(plan: ObjectivePlan, bundle: tuple[GoalSpec, ...]) -> tuple[GoalSpec, ...]:
+    """
+    整地する予定の土地: 今の小目標の束、大目標の条件、大目標の中目標（とその計画の小目標）の
+    leveled。ブリッジは土や石を取るとき、この土地の床より下を掘らない（整地した地面の下が穴だらけになる）。
+    """
+    specs = list(bundle)
+    for g in plan.pending:
+        specs += g.conditions
+        for job in g.open_jobs:
+            specs += job.specs
+            specs += [step.spec for step in job.steps]
+    out: list[GoalSpec] = []
+    for s in specs:
+        if s.predicate == GoalPredicate.LEVELED and s not in out:
             out.append(s)
     return tuple(out)
 

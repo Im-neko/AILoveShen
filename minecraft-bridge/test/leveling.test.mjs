@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import prismarineBlock from 'prismarine-block'
-import { levelStatus, levelTarget, columnWork } from '../src/leveling.mjs'
+import { levelStatus, levelTarget, columnWork, setLevelWanted, noteLevelZone, keptGround, levelZones } from '../src/leveling.mjs'
 import { PRIMITIVES } from '../src/primitives.mjs'
 import { createTools } from '../src/tools.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
@@ -58,10 +58,13 @@ test('出っ張りは上から掘り、穴は下から埋める。木・水・�
   assert.equal(columnWork({ blockAt: w.blockAt }, state(), 0, 2, 64).off, false)
 })
 
-test('家と建物（とまわり 1 マス）は触らない。見えていない列はそろっていないと数える', () => {
+test('家と建物（とまわり 1 マス）は触らない。家の床と同じ高さなら壁のすぐ外は整地する。見えていない列はそろっていないと数える', () => {
   const w = world({ '0,64,0': 'dirt' })
   const home = { door: new Vec3(0, 64, 3), inside: new Vec3(0, 64, 0), min: new Vec3(-1, 64, -1), max: new Vec3(1, 64, 1), breach: [] }
   assert.equal(columnWork({ blockAt: w.blockAt }, state({ home }), 0, 0, 64), 'house or build')
+  assert.equal(columnWork({ blockAt: w.blockAt }, state({ home }), 2, 0, 64), 'house or build') // 壁の下
+  assert.equal(typeof columnWork({ blockAt: w.blockAt }, state({ home }), 3, 0, 64), 'object') // 家の床と同じ高さなら、壁のすぐ外は整地する
+  assert.equal(columnWork({ blockAt: w.blockAt }, state({ home }), 3, 0, 65), 'house or build') // 別の高さなら触らない
   const blind = levelStatus({ blockAt: (p) => (p.x > 2 ? null : w.blockAt(p)) }, state(), '0,64,0', 3)
   assert.ok(blind.unloaded > 0)
 })
@@ -108,7 +111,7 @@ test('level: 何もそろえられなければ失敗（土がなく、穴だけ�
     candidates: () => [],
     check: () => []
   })
-  assert.match((await callTool('level', { where: '0,64,0', radius: 3 })).result, /no dirt/)
+  assert.match((await callTool('level', { where: '0,64,0', radius: 3 })).result, /carry 0 dirt/)
   assert.match((await callTool('level', { where: '0,64,0', radius: 2 })).result, /radius must be 3-16/)
   const flat = createTools({ bot: { ...fakeBot(world(), []), time: { timeOfDay: 1000 } }, state: { ...state(), memory: {}, busy: false, reflex: false }, knowledge: new Knowledge(md), run: async () => ({}), candidates: () => [], check: () => [] })
   assert.match((await flat('level', { where: '0,64,0', radius: 3 })).result, /already level/)
@@ -168,5 +171,75 @@ test('level: 穴の中に立っていたら、足元に土を積んで登って�
   const r = await PRIMITIVES.level(bot, state(), { where: '0,64,0', radius: 3 }, new AbortController().signal)
   assert.match(r, /filled 2/)
   assert.deepEqual(goals, ['GoalBlock', 'GoalBlock'])
+  assert.equal(levelStatus(bot, state(), '0,64,0', 3).off, 0)
+})
+
+test('整地する土地の、床より下の地形は掘らない（土は整地の外から）。床より上の出っ張りは掘ってよい', () => {
+  const st = state()
+  setLevelWanted(st, [{ where: '0,64,0', distance: 5 }, { where: '0,64,0', distance: 99 }, { where: 'home', distance: 4 }])
+  // 範囲外の半径と、家がまだない home は、ないものとして読む
+  assert.deepEqual(levelZones(st), [{ x: 0, y: 64, z: 0, radius: 5 }])
+  assert.equal(keptGround(st, new Vec3(3, 63, 0), 'dirt'), true) // 床（y 63）とその下
+  assert.equal(keptGround(st, new Vec3(3, 60, 0), 'stone'), true)
+  assert.equal(keptGround(st, new Vec3(6, 63, 0), 'dirt'), true) // 半径の外 1 マスまで
+  assert.equal(keptGround(st, new Vec3(7, 63, 0), 'dirt'), false)
+  assert.equal(keptGround(st, new Vec3(3, 64, 0), 'dirt'), false) // 出っ張り（整地で掘るもの）
+  assert.equal(keptGround(st, new Vec3(3, 63, 0), 'oak_log'), false) // 地形ではない
+  // 整地を始めた土地は、予定を送り直しても残る（目標が終わった後も守る）
+  noteLevelZone(st, '20,70,20', 6)
+  noteLevelZone(st, '20,70,20', 6)
+  setLevelWanted(st, [])
+  assert.deepEqual(levelZones(st), [{ x: 20, y: 70, z: 20, radius: 6 }])
+  assert.equal(keptGround(st, new Vec3(22, 69, 20), 'dirt'), true)
+  // 送られていなければ（undefined）予定はそのまま
+  setLevelWanted(st, [{ where: '0,64,0', distance: 5 }])
+  setLevelWanted(st, undefined)
+  assert.equal(levelZones(st).length, 2)
+})
+
+test('dig の道具は、整地する土地の下を断り、外を勧める。出っ張りは掘れる', async () => {
+  const st = state({ leveling: { done: [{ x: 0, y: 64, z: 0, radius: 5 }], wanted: [] } })
+  const w = world({ '2,64,0': 'dirt' })
+  const callTool = createTools({
+    bot: { ...fakeBot(w, []), time: { timeOfDay: 1000 } },
+    state: { ...st, memory: {}, busy: false, reflex: false },
+    knowledge: new Knowledge(md),
+    run: async (c) => ({ ok: true, result: c.verb, seconds: 0 }),
+    candidates: () => [],
+    check: () => []
+  })
+  assert.match((await callTool('dig', { x: 1, y: 63, z: 0 })).result, /being leveled/)
+  assert.equal((await callTool('dig', { x: 2, y: 64, z: 0 })).result, 'dig')
+})
+
+test('leveled(where, distance): 埋めるだけなら穴の数だけ土を持ってから始める。足りなければ土を集める', async () => {
+  const { makeGoal, evaluate } = await import('../src/goals.mjs')
+  const k = new Knowledge(md)
+  const worldInfo = { inventory: {}, stored: {}, smelting: {}, blocks: {}, mobs: {}, table: 'near', furnace: null, unlocked: () => true, remembered: new Set(), dig: () => [], hunt: () => [] }
+  const holes = { '-2,63,0': 'air', '-2,62,0': 'air', '-2,61,0': 'air' } // 3 個の穴
+  const botOf = (items) => ({ ...fakeBot(world(holes), items), time: { timeOfDay: 1000 } })
+  const st = state()
+  const goal = makeGoal({ predicate: 'leveled', where: '0,64,0', distance: 3 }, botOf([]), st, k)
+  const few = evaluate(botOf([['dirt', 1]]), { ...st, goal }, k, worldInfo)
+  assert.ok(!few.leaves.some((l) => l.kind === 'level'), 'dirt 1 of 3: not yet')
+  assert.ok(few.lines.some((l) => /3 blocks to fill need 3 dirt \(carrying 1\)/.test(l)), few.lines.join('\n'))
+  const enough = evaluate(botOf([['dirt', 3]]), { ...st, goal }, k, worldInfo)
+  assert.ok(enough.leaves.some((l) => l.kind === 'level'))
+})
+
+test('level: 浅い穴に立っていて、足元に積まずに外へ出られたら、外から埋める', async () => {
+  const w = world({ '-2,63,0': 'air' }) // 1 段の穴
+  const bot = fakeBot(w, [['dirt', 2]])
+  bot.entity.position = new Vec3(-1.5, 63, 0.5) // 穴の中
+  bot.on = () => {}
+  bot.off = () => {}
+  bot.world = { getBlock: w.blockAt }
+  bot.pathfinder = {
+    setGoal: () => {},
+    // 1 段の穴は、積まずに横の地面へ上がれる。GoalPlaceBlock（縁へ）も足を動かすだけ
+    goto: async (g) => { bot.entity.position = new Vec3(-0.5, 64, 0.5) }
+  }
+  const r = await PRIMITIVES.level(bot, state(), { where: '0,64,0', radius: 3 }, new AbortController().signal)
+  assert.match(r, /filled 1/)
   assert.equal(levelStatus(bot, state(), '0,64,0', 3).off, 0)
 })

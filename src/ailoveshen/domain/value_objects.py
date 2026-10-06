@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum, IntEnum
-from typing import Any, Iterator, Mapping, Optional
+from typing import Any, Collection, Iterator, Mapping, Optional
 
 
 def _utc_now() -> datetime:
@@ -199,7 +199,10 @@ class ConversationMessage:
     content: str
     speaker_name: str = ""
     speaker_id: Optional[str] = None
+    # 言った時刻。視聴者のコメントは届いた時刻（返事を書き終えた時刻ではない）
     timestamp: datetime = field(default_factory=_utc_now)
+    # 返答（RESPONSE）が誰のコメントへのものか
+    addressed_to: str = ""
 
     def __post_init__(self) -> None:
         """content を検証する。"""
@@ -212,23 +215,28 @@ class ConversationMessage:
         content: str,
         user_name: str,
         user_id: Optional[str] = None,
+        received_at: Optional[datetime] = None,
     ) -> ConversationMessage:
-        """視聴者が送ったチャットのメッセージを作る。"""
+        """視聴者が送ったチャットのメッセージを作る（届いた時刻が分かれば received_at に）。"""
         return cls(
             role=MessageRole.VIEWER,
             message_type=MessageType.CHAT,
             content=content,
             speaker_name=user_name,
             speaker_id=user_id,
+            **({"timestamp": received_at} if received_at is not None else {}),
         )
 
     @classmethod
-    def from_streamer(cls, content: str, message_type: MessageType) -> ConversationMessage:
-        """AI の配信者が話したメッセージを作る。"""
+    def from_streamer(
+        cls, content: str, message_type: MessageType, addressed_to: str = ""
+    ) -> ConversationMessage:
+        """AI の配信者が話したメッセージを作る（返答なら、誰のコメントへのものかを addressed_to に）。"""
         return cls(
             role=MessageRole.STREAMER,
             message_type=message_type,
             content=content,
+            addressed_to=addressed_to,
         )
 
 
@@ -272,6 +280,11 @@ class GenerationContext:
     activity: Optional[Activity] = None
     recent_events: tuple[str, ...] = ()
     recent_messages: tuple[ConversationMessage, ...] = ()
+    # チャットへの返答のとき: 今の時刻、返事をするコメントが届いた時刻、ほかに届いてまだ返事していない
+    # コメント（会話の時系列を、経った時間で見せる）
+    now: Optional[datetime] = None
+    comment_received_at: Optional[datetime] = None
+    waiting_comments: tuple[ConversationMessage, ...] = ()
 
 
 # =============================================================================
@@ -533,6 +546,17 @@ class Goal:
 
 
 @dataclass(frozen=True)
+class MaterialTree:
+    """
+    物を 1 から作るとき、材料の木に出てくるアイテム（持ち物を使わない静的な木。ブリッジのソルバーが作る）。
+    `root` は物そのもの（グループなら中身）、`all` は木のすべて（道具や作業台も）。
+    """
+
+    root: tuple[str, ...]
+    all: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ConditionStatus:
     """ブリッジが判定した大目標の条件（目標としては設定しない）。"""
 
@@ -545,6 +569,8 @@ class ConditionStatus:
     # have の条件そのものが素材の採集（掘る・狩る・チェストから出す）: 小目標と同じ 1 回の遠征で、中目標にする
     # 意味が薄い（何のための素材かを中目標にする。docs/design/50 §14）
     gather: bool = False
+    # have / placed / stored の条件で、その物の材料の木（`check(materials=True)` のときだけ）
+    materials: Optional[MaterialTree] = None
 
 
 # 世界の状態だけから判定できる: 大目標の完了条件になれる
@@ -656,6 +682,102 @@ def objective_kind(conditions: tuple[GoalSpec, ...]) -> ObjectiveKind:
 
 
 @dataclass(frozen=True)
+class StartingObjective:
+    """最初のプランに入っている大目標（設定 `minecraft.mission.objectives`）。目標のリセットで戻す先。"""
+
+    title: str
+    conditions: tuple[GoalSpec, ...]
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class PlaybookStep:
+    """
+    定石の 1 段: 街づくりの土台として、この順にやる（設定 `minecraft.playbook`。docs/design/74）。
+    条件がすべて満たされたら済み。畑なら施設と最初の収穫、というように、作って回るところまでを 1 段にする
+    ので、建てる・施設の条件にほかの条件が混ざってよい（街の段階と同じ）。
+    `ready` は、その段の設営ができて育つのを待つだけの状態の条件（畑なら施設ができた）。満たしている間、
+    その段は「育成中」で、次の段を同時に進めてよい（ただし 2 段まで。3 段目は、2 つとも済んでから）。
+    `keep` は、済んだあとも持ち続けるもの（武器）の段: 条件が崩れたら（死んで失った）また今の段にする。
+    作ったものが残る段（畑）は、壊れても作り直さない（済みのまま）。家は `keep` で、壊れたら直す（docs/design/88）。
+
+    Raises:
+        ValueError: 名前か題名か条件がないとき
+    """
+
+    name: str
+    title: str
+    conditions: tuple[GoalSpec, ...]
+    reason: str = ""
+    ready: tuple[GoalSpec, ...] = ()
+    keep: bool = False
+
+    def __post_init__(self) -> None:
+        """形を確かめる。"""
+        if not self.name or not self.title:
+            raise ValueError("a playbook step needs a name and a title")
+        if not self.conditions:
+            raise ValueError(f"playbook step {self.name} needs at least one condition")
+        missing = [c.describe() for c in self.ready if c not in self.conditions]
+        if missing:
+            raise ValueError(
+                f"playbook step {self.name}: ready must be some of its conditions ({', '.join(missing)})"
+            )
+        for c in self.conditions:
+            if c.predicate not in CONDITION_PREDICATES:
+                raise ValueError(f"{c.predicate.value} cannot be a condition of playbook step {self.name}")
+
+
+@dataclass(frozen=True)
+class Supply:
+    """
+    1 つの物（松明か食べ物）の持ち方: 手持ちとチェストの合計が `low` を下回ったら集め、手に `carry` 個持つ。
+    `stock` は、手持ちとチェストの合計で持っておきたい量（`carry` を超えるぶんは家のチェストに置く備蓄）。
+
+    Raises:
+        ValueError: 1 <= low <= carry <= stock でないとき
+    """
+
+    low: int
+    carry: int
+    stock: int
+
+    def __post_init__(self) -> None:
+        """数の関係を確かめる。"""
+        if not 1 <= self.low <= self.carry <= self.stock:
+            raise ValueError(
+                f"supply needs 1 <= low <= carry <= stock, got {self.low}/{self.carry}/{self.stock}"
+            )
+
+
+@dataclass(frozen=True)
+class SupplyTier:
+    """
+    ストックの段階（設定 `minecraft.supplies`。docs/design/84）: 生活インフラの整い方で、松明と食べ物を
+    どれだけ持つかを変える。`after` の定石の段がすべて済んでいる、または `or_mine` で鉱山が設計されて
+    いれば、その段階に着いている。着いている段階のうち、一覧で後ろのものが今の段階。
+
+    Raises:
+        ValueError: 名前がないとき
+    """
+
+    name: str
+    torch: Supply
+    food: Supply
+    after: tuple[str, ...] = ()
+    or_mine: bool = False
+
+    def __post_init__(self) -> None:
+        """名前を確かめる。"""
+        if not self.name:
+            raise ValueError("a supply tier needs a name")
+
+    def reached(self, done: Collection[str], has_mine: bool) -> bool:
+        """この段階に着いているか（定石で済んだ段の名前、鉱山が設計済みか）。"""
+        return all(step in done for step in self.after) or (self.or_mine and has_mine)
+
+
+@dataclass(frozen=True)
 class Objective:
     """
     大目標: 最終目標への一歩。条件がすべて世界で満たされたら完了する。
@@ -666,6 +788,8 @@ class Objective:
     `stage` は、それが表す街の段階（None: 段階ではない）。
     `prepares_town` は、街の段階の前にやる準備（候補地の調査、選んだ場所への引っ越し）。
     段階と同じく、やめられない。
+    `playbook` は、それが表す定石の段の名前（None: 定石ではない）。定石の大目標は、ほかのどの大目標より
+    先にあり、動かせず、やめられない（docs/design/74）。
     `budget_used` は、そのために小目標が使ったステップの数（視聴者のものには予算がある）。
 
     Raises:
@@ -684,6 +808,7 @@ class Objective:
     progress: tuple[str, ...] = ()  # 最後に判定したときの、条件の進み具合
     stage: Optional[int] = None
     prepares_town: bool = False
+    playbook: Optional[str] = None
     # 視聴者の頼みのステップの予算（None: プランの既定。建物は大きさに合わせて広げる）
     budget: Optional[int] = None
     # Gemini が書いた、この大目標のための中目標（小目標の並び。済んだものも残る）。Jev が次を選ぶ
@@ -704,7 +829,7 @@ class Objective:
                 raise ValueError(
                     f"{c.predicate.value} cannot be a condition of an objective; use {allowed}"
                 )
-        if self.stage is None and not self.prepares_town:
+        if self.stage is None and not self.prepares_town and self.playbook is None:
             objective_kind(self.conditions)  # 街の段階と準備は、段階の定義が条件を決める
 
     @property
@@ -1311,6 +1436,11 @@ class GameObservation:
     bed_in_home: bool = False
     # 家の中にチェストがある（預ける先。なければ持ち物がいっぱいでも預けられない）
     chest_in_home: bool = False
+    # 家のチェストの数（ブロック数。ラージは 2）と、記録からの空き。まとめる（デフラグ）と空くスロット数
+    chest_blocks: Optional[int] = None
+    chest_slots: Optional[int] = None
+    chest_free: Optional[int] = None
+    chest_saving: Optional[int] = None
     # まだできていない建物（Gemini が設計したもの）の名前
     unfinished_builds: tuple[str, ...] = ()
     busy: bool = False  # ブリッジが行動か反射を実行している
@@ -1557,6 +1687,7 @@ SITUATION_VALUES: dict[str, tuple[str, ...]] = {
     "place": ("home", "underground", "outside"),
     "body": ("hungry", "hurt", "ok"),
     "pickaxe": ("yes", "no"),
+    "dark": ("yes", "no"),
     "ended": ("stuck", "stalled", "died", "met", "other"),
 }
 SITUATION_KEYS = ("goal", "item", *SITUATION_VALUES)
@@ -1617,9 +1748,9 @@ class Lesson:
 
 
 @dataclass(frozen=True)
-class Move:
+class LearnedCandidate:
     """
-    手の帳の 1 件（docs/design/52）: LLM が選んで、うまくいった道具の呼び出し。似た状況で Jev の
+    覚えた候補の 1 件（docs/design/52）: LLM が選んで、うまくいった道具の呼び出し。似た状況で Jev の
     選択肢にもう一度出す。世界の座標を含まない道具の呼び出しだけ（クラフト、装備、預ける・出す、
     かまど…）で、場所によらないのでワールドを作り直しても残す。
 
@@ -1671,6 +1802,8 @@ class Activity:
     screen_note: Optional["ScreenNote"] = None  # 画面で見たこと（確かめていない）
     lessons: tuple[Lesson, ...] = ()  # 今の状況で思い出した教訓（確かめていない。docs/design/35）
     town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6。目標の決定とボードが見る）
+    playbook: tuple[PlaybookStep, ...] = ()  # 定石（この順にやる。docs/design/74）
+    playbook_done: tuple[str, ...] = ()  # 済んだ定石の段の名前
 
 
 @dataclass(frozen=True)
@@ -1844,6 +1977,20 @@ class ToolOutcome:
         )
 
 
+@dataclass(frozen=True)
+class SameCause:
+    """
+    同じ道具が、同じ理由（数字を除いて同じ文）で続けて失敗・拒否されている状態。引数の数字を少し変えて
+    繰り返すだけでは抜けられない（2026-10-03: `dig(z=285)`、本当は -285 のまま、座標を 54, 55, 56 と
+    変えて 8 回以上断られた）。`withheld` なら、その道具をこの手番では出さない。
+    """
+
+    tool: str
+    reason: str
+    times: int
+    withheld: bool = False
+
+
 # =============================================================================
 # 技（docs/design/22_skills.md）
 # =============================================================================
@@ -1984,6 +2131,48 @@ class ScreenNote:
     concern: str = ""
     matches_goal: bool = True
     taken_at: datetime = field(default_factory=_utc_now)
+
+
+class SupportKind(str, Enum):
+    """配信を応援してくれた出来事の種類（フォロー、サブスク、ギフト、ビッツ、レイド）。"""
+
+    FOLLOW = "follow"
+    SUBSCRIBE = "subscribe"  # はじめてのサブスク
+    RESUBSCRIBE = "resubscribe"  # 続けてのサブスク（months か月目）
+    GIFT = "gift"  # サブスクのプレゼント（amount 人分）
+    CHEER = "cheer"  # ビッツ（amount ビッツ）
+    RAID = "raid"  # レイド（amount 人が来た）
+
+
+@dataclass(frozen=True)
+class SupportEvent:
+    """
+    配信への応援 1 件（Twitch のフォロー、サブスク、ギフト、ビッツ、レイドなど）。お礼を言う元になる。
+
+    Raises:
+        ValueError: 名前が空のとき、数が負のとき。
+    """
+
+    kind: SupportKind
+    user_name: str
+    login: Optional[str] = None
+    # GIFT: 贈った人数、CHEER: ビッツ、RAID: 連れてきた人数。ほかは 0
+    amount: int = 0
+    # RESUBSCRIBE: 何か月目か
+    months: int = 0
+    # SUBSCRIBE / RESUBSCRIBE / GIFT: 1 = Tier 1、2 = Tier 2、3 = Tier 3（プライムは 1）
+    tier: int = 1
+    # GIFT で 1 人に贈ったとき、その人の名前
+    recipient: str = ""
+    # 添えられたメッセージ（サブスクやビッツに付く）
+    message: str = ""
+    received_at: datetime = field(default_factory=_utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.user_name.strip():
+            raise ValueError("a support event needs a user name")
+        if self.amount < 0 or self.months < 0:
+            raise ValueError("amount and months must not be negative")
 
 
 @dataclass(frozen=True)

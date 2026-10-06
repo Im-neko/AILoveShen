@@ -53,13 +53,17 @@ const ENTITY_ATTACHED = new Set(['entity_metadata', 'entity_equipment', 'entity_
 
 const chunkKey = (x, z) => `${x},${z}`
 
-class WorldRecorder {
+// 記録が増え続けないための上限（2026-10-01: 持ち物の更新などが切り詰めなしで溜まり、視聴者が参加するたびに
+// 全部を再生していた）。ログは古い方から捨てる
+export const LOG_LIMIT = 500
+
+export class WorldRecorder {
   constructor () {
     this.configPackets = []
     this.login = null
     this.singletons = new Map()
     this.log = []
-    this.chunks = new Map() // キー -> { chunk, light, changes: [] }
+    this.chunks = new Map() // キー -> { chunk, light, changes: Map(位置 -> { x, y, z, type }) }
     this.entities = new Map() // id -> { spawn, attached: Map(名前 -> バッファ) }
   }
 
@@ -75,11 +79,17 @@ class WorldRecorder {
     if (name === 'login') { this.login = { data, buffer }; return }
     if (name === 'respawn') { this.chunks.clear(); this.entities.clear() }
     if (SINGLETONS.has(name)) { this.singletons.set(name, buffer); return }
-    if (LOGGED.has(name)) { this.log.push(buffer); return }
+    if (LOGGED.has(name)) {
+      // ボットの持ち物（ウィンドウ 0）は、参加した視聴者に今の状態から送る（replayWorld の最後）ので、記録しない
+      if ((name === 'set_slot' || name === 'window_items') && data.windowId === 0) return
+      this.log.push(buffer)
+      if (this.log.length > LOG_LIMIT) this.log.splice(0, this.log.length - LOG_LIMIT)
+      return
+    }
 
     switch (name) {
       case 'map_chunk': {
-        this.chunks.set(chunkKey(data.x, data.z), { chunk: buffer, light: null, changes: [] })
+        this.chunks.set(chunkKey(data.x, data.z), { chunk: buffer, light: null, changes: new Map() })
         return
       }
       case 'update_light': {
@@ -92,14 +102,22 @@ class WorldRecorder {
         return
       }
       case 'block_change': {
-        const c = this.chunks.get(chunkKey(data.location.x >> 4, data.location.z >> 4))
-        if (c) c.changes.push(buffer)
+        // 位置ごとに最後の 1 つだけ覚える（同じブロックの変化は上書き）
+        const { x, y, z } = data.location
+        const c = this.chunks.get(chunkKey(x >> 4, z >> 4))
+        if (c) c.changes.set(`${x},${y},${z}`, { x, y, z, type: data.type })
         return
       }
       case 'multi_block_change': {
-        const { x, z } = data.chunkCoordinates
-        const c = this.chunks.get(chunkKey(x, z))
-        if (c) c.changes.push(buffer)
+        const { x: cx, y: cy, z: cz } = data.chunkCoordinates
+        const c = this.chunks.get(chunkKey(cx, cz))
+        if (!c) return
+        for (const record of data.records) {
+          const x = cx * 16 + ((record >> 8) & 0x0f)
+          const y = cy * 16 + (record & 0x0f)
+          const z = cz * 16 + ((record >> 4) & 0x0f)
+          c.changes.set(`${x},${y},${z}`, { x, y, z, type: record >> 12 })
+        }
         return
       }
     }
@@ -178,7 +196,7 @@ function replayWorld (viewer, rec, bot) {
   for (const c of rec.chunks.values()) {
     viewer.writeRaw(c.chunk)
     if (c.light) viewer.writeRaw(c.light)
-    for (const ch of c.changes) viewer.writeRaw(ch)
+    for (const { x, y, z, type } of c.changes.values()) viewer.write('block_change', { location: { x, y, z }, type })
   }
   viewer.write('chunk_batch_finished', { batchSize: rec.chunks.size })
   for (const [id, e] of rec.entities) {
@@ -347,53 +365,30 @@ export function relayOwnState (bot, viewers, Item, { delayMs = INVENTORY_SYNC_MS
   }
 }
 
-// 装備の表示（set_equipment）に部品（附呪、名前、NBT など）つきのアイテムがあると、視聴者が
-// 「74 bytes extra whilst reading packet set_equipment」で切れた。数だけの部品（damage など）に絞って
-// 書き直しても、また「6 bytes extra」で切れた（2026-09-30 16:42）。装備の見た目に部品は要らないので、
-// 部品のある装備は部品を全部外して書き直して送る（部品がなければそのまま中継）。持ち物（safeSlot）とは別
-export function sanitizedEquipment (data) {
-  const risky = (data.equipments ?? []).some((e) => (e.item?.addedComponentCount ?? 0) > 0 || (e.item?.removedComponentCount ?? 0) > 0)
-  if (!risky) return null
-  const bare = (item) => (item && Array.isArray(item.components)
-    ? { ...item, addedComponentCount: 0, components: [], removedComponentCount: 0, removeComponents: [] }
-    : item)
-  return { entityId: data.entityId, equipments: data.equipments.map((e) => ({ slot: e.slot, item: bare(e.item) })) }
+// nmp の読み取り（topBitSetTerminatedArray）は、装備の各エントリのスロット番号の先頭ビット（「まだ続く」の印）を
+// 読んだバッファの上で消し、戻さない。'packet' で渡されるバッファは同じメモリなので、そのまま視聴者へ中継すると
+// 2 つ以上の装備があるパケットは続きの印がなく、本物のクライアントが「N bytes extra whilst reading packet
+// set_equipment」で切れる（2026-10-03 に切れたパケット: 60 a3a901 | 00 01 d809 00 00 | 01 01 d909 00 00,
+// 1 つ目のスロットが 0x80 でなく 0x00）。読んだ中身から書き直して送る（書き込み側は印を立てる）
+let equipmentSerializer = null
+export function encodeEquipment (data) {
+  equipmentSerializer ??= mc.createSerializer({ state: 'play', isServer: true, version: VERSION })
+  return equipmentSerializer.createPacketBuffer({ name: 'entity_equipment', params: { entityId: data.entityId, equipments: data.equipments } })
 }
-
-// 視聴者が切れたときの手がかり: 最近中継した装備のパケット（どのアイテムか、書き直したか、先頭のバイト列）
-const RECENT_EQUIPMENT = 6
-const summarizeEquipment = (data, path, buffer) => ({
-  at: new Date().toISOString().slice(11, 19),
-  entity: data.entityId,
-  path,
-  items: (data.equipments ?? []).map((e) => `${e.slot}:${e.item?.itemId ?? '-'}x${e.item?.itemCount ?? 0}[${(e.item?.components ?? []).map((c) => c.type).join(',')}]`),
-  hex: buffer.subarray(0, 48).toString('hex')
-})
 
 export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}) {
   const rec = new WorldRecorder()
   const viewers = new Set()
-  let equipmentSerializer = null
-  const recentEquipment = []
   const windows = relayWindows(bot, viewers, () => itemClass(bot))
-  const encodeEquipment = (params) => {
-    equipmentSerializer ??= mc.createSerializer({ state: 'play', isServer: true, version: VERSION })
-    return equipmentSerializer.createPacketBuffer({ name: 'entity_equipment', params })
-  }
 
   bot._client.on('packet', (data, meta, _buffer, fullBuffer) => {
     let buffer = fullBuffer
     if (meta.state === 'play' && meta.name === 'entity_equipment') {
-      const safe = sanitizedEquipment(data)
-      if (safe) {
-        try {
-          buffer = encodeEquipment(safe)
-        } catch (e) {
-          return // 書き直せなければ送らない（装備の見た目だけ）
-        }
+      try {
+        buffer = encodeEquipment(data)
+      } catch (e) {
+        return // 書き直せなければ送らない（装備の見た目だけ）
       }
-      recentEquipment.push(summarizeEquipment(data, safe ? 'rewritten' : 'raw', buffer))
-      if (recentEquipment.length > RECENT_EQUIPMENT) recentEquipment.shift()
     }
     rec.record(data, meta, buffer)
     if (meta.state !== 'play' || NOT_RELAYED.has(meta.name)) return
@@ -428,8 +423,6 @@ export function startMirror (bot, { port = MIRROR_PORT, log = console.log } = {}
     viewer.on('end', () => {
       viewers.delete(viewer)
       log(`[mirror] 視聴者 ${viewer.username} が退出した`)
-      // 装備のパケットで切れたとき（クライアントのエラーは、ここでは「退出した」としか分からない）の手がかり
-      if (recentEquipment.length) log(`[mirror] 直近の装備パケット: ${JSON.stringify(recentEquipment)}`)
     })
     viewer.on('error', (e) => log(`[mirror] 視聴者のエラー: ${e.message}`))
   })

@@ -47,6 +47,7 @@ class IMinecraftBridge(ABC):
         keep: Sequence[GoalSpec] = (),
         also: Sequence[GoalSpec] = (),
         together: Sequence[GoalSpec] = (),
+        level_areas: Sequence[GoalSpec] = (),
     ) -> GoalStatus:
         """
         候補を具体化する対象の目標を設定する。
@@ -59,6 +60,8 @@ class IMinecraftBridge(ABC):
                 ために取り出さない（食料は飢えているときだけ取り出す）
             also: ほかの大目標で集める物（have / stored / planted / farmed）。そばで取れるなら
                 一緒に取る候補が出る（木を見つけたら原木と、葉から苗木）
+            level_areas: 整地する予定の土地（leveled の条件）。ブリッジはその土地の床より下の地面を、
+                土や石を取るために掘らない（整地した地面の下が穴だらけになる）
 
         Raises:
             GoalRejectedError: ブリッジが目標を拒否したとき（理由つき）
@@ -67,9 +70,14 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
-    async def check(self, specs: Sequence[GoalSpec]) -> list[ConditionStatus]:
+    async def check(
+        self, specs: Sequence[GoalSpec], materials: bool = False
+    ) -> list[ConditionStatus]:
         """
         目標を設定せずに、大目標の条件を世界から判定する。
+
+        Args:
+            materials: have / placed / stored の条件に、その物の材料の木（`ConditionStatus.materials`）を添える
 
         Raises:
             GoalRejectedError: spec が条件になれないとき（メッセージに理由がある）
@@ -263,6 +271,19 @@ class IMinecraftBridge(ABC):
     @abstractmethod
     async def steer_reflex(self, danger_id: int, choice: str, confidence: float) -> bool:
         """反射を選んだものに切り替える。受け付けられたか（終わっていれば False）。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def set_collect(self, blocks: Sequence[str]) -> None:
+        """目標外でも見つけたら集めるブロック（鉱石のほかに。docs/design/79）をブリッジに伝える。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def release_reflex(self, seconds: float) -> bool:
+        """
+        長く続いた反射を手放す: 動いている反射を止め、`seconds` の間は近づいた相手に反応させない
+        （ダメージを受けたときは反応する）。止めた反射があったか。
+        """
         raise NotImplementedError
 
     @abstractmethod

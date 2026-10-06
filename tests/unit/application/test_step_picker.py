@@ -485,6 +485,38 @@ async def test_a_hole_left_in_the_morning_is_climbed_out_of_without_asking_jev()
     assert not isinstance(failed, PickedStep)
 
 
+CLIMB = Candidate("climb out of the closed space by piling up dirt or cobblestone", {"verb": "climb_out", "urgent": True})
+CLIMB_AT_NIGHT = Candidate("climb out of the closed space by piling up dirt or cobblestone", {"verb": "climb_out"})
+
+
+@pytest.mark.asyncio
+async def test_shut_in_by_day_the_streamer_climbs_out_without_asking_jev_but_at_night_it_is_only_an_option():
+    """閉じ込められて（昼・積む物あり: urgent）なら先に出る。失敗した直後は LLM が見る。夜（urgent なし）は普通の選択肢。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (CLIMB,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == CLIMB.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (CLIMB,), [], False)
+    assert not isinstance(failed, PickedStep)
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    await picker.pick({"goal": "x"}, "", CANDS + (CLIMB_AT_NIGHT,), [], True)
+    selector.select.assert_called_once()
+
+
+CLIMB_DOWN = Candidate("climb down the pillar you stand on by digging it away", {"verb": "climb_down", "urgent": True})
+
+
+@pytest.mark.asyncio
+async def test_on_a_pillar_by_day_the_streamer_climbs_down_without_asking_jev():
+    """自分で積んだ柱の頂上（昼: urgent）なら、聞かずに掘り下げて降りる。失敗した直後は LLM が見る。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (CLIMB_DOWN,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == CLIMB_DOWN.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (CLIMB_DOWN,), [], False)
+    assert not isinstance(failed, PickedStep)
+
+
 TOSS = Candidate("throw away the spare items to free inventory slots", {"verb": "toss"})
 
 
@@ -497,3 +529,144 @@ async def test_spare_items_are_thrown_away_without_asking_jev_when_the_inventory
     selector.select.assert_not_called()
     failed = await picker.pick({"goal": "x"}, "", CANDS + (TOSS,), [], False)
     assert not isinstance(failed, PickedStep)
+
+
+HUNGRY_EAT = Candidate("eat beef", {"verb": "eat", "item": "beef", "urgent": True})
+EAT = Candidate("eat bread", {"verb": "eat", "item": "bread"})
+
+
+@pytest.mark.asyncio
+async def test_a_starving_streamer_eats_without_asking_jev_but_only_when_the_bridge_says_urgent():
+    """飢えそう（urgent）なら、何より先に食べる。失敗した直後は LLM が見る。urgent でない食べる手は普通の選択肢。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (HUNGRY_EAT,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == HUNGRY_EAT.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (HUNGRY_EAT,), [], False)
+    assert not isinstance(failed, PickedStep)
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    await picker.pick({"goal": "x"}, "", CANDS + (EAT,), [], True)
+    selector.select.assert_called_once()
+
+
+BURROW = Candidate("dig into the ground here and seal yourself in: your health is critical", {"verb": "dig_in", "urgent": True})
+TIDY = Candidate("put the things you do not need now in the home's chest", {"verb": "tidy", "kinds": 3})
+WALL_IN = Candidate("wall yourself in with the blocks you carry: your health is critical", {"verb": "wall_in", "urgent": True})
+WALL_IN_OPTION = Candidate("wall yourself in with dirt here and wait until morning", {"verb": "wall_in"})
+REACH_LAND = Candidate("swim to the nearest land at 10,63,0", {"verb": "reach_land", "urgent": True})
+
+
+@pytest.mark.asyncio
+async def test_a_critical_streamer_where_no_hole_can_be_dug_walls_in_without_asking_jev():
+    """縦穴が掘れない所（砂浜・石・水のそば）で体力が危険なら、持っているブロックで囲む（urgent）。夜の選択肢としての囲みは普通の選択肢。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (WALL_IN,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == WALL_IN.action_id
+    selector.select.assert_not_called()
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    await picker.pick({"goal": "x"}, "", CANDS + (WALL_IN_OPTION,), [], True)
+    selector.select.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_a_streamer_in_the_water_swims_to_land_without_asking_jev():
+    """水の中（経路探索器が動かない）では、何を選んでも進まない。陸が見えていれば（urgent）聞かずに泳ぐ。失敗した直後は LLM が見る。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (REACH_LAND,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == REACH_LAND.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (REACH_LAND,), [], False)
+    assert not isinstance(failed, PickedStep)
+
+
+@pytest.mark.asyncio
+async def test_a_critical_streamer_far_from_home_digs_in_without_asking_jev():
+    """体力が危険で家が遠い（ブリッジが urgent を付けた穴掘り）なら、何より先に穴に入る。失敗した直後は LLM が見る。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (BURROW,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == BURROW.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (BURROW,), [], False)
+    assert not isinstance(failed, PickedStep)
+
+
+@pytest.mark.asyncio
+async def test_things_not_needed_are_put_in_the_chest_without_asking_jev():
+    """家の中で今使わない物を持っていれば、聞かずに戻す（死ぬと持ち物は全部落ちて 5 分で消える）。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (TIDY,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == TIDY.action_id
+    selector.select.assert_not_called()
+
+
+STASH_ALL = Candidate(
+    "put everything but the weapon, armor, torches and what the goal uses in the home's chest",
+    {"verb": "stash", "urgent": True},
+)
+STASH_BEFORE_FIGHT = Candidate("put your items in the home's chest before fighting (keep the weapon)", {"verb": "stash"})
+
+
+@pytest.mark.asyncio
+async def test_when_nothing_can_heal_the_streamer_the_things_are_put_away_without_asking_jev():
+    """回復の手段がなく家にいる（ブリッジが urgent を付けた預け入れ）なら、聞かずに預ける。夜の戦いの前の預け入れは選ばない。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (STASH_ALL,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == STASH_ALL.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (STASH_ALL,), [], False)
+    assert not isinstance(failed, PickedStep)
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    await picker.pick({"goal": "x"}, "", CANDS + (STASH_BEFORE_FIGHT,), [], True)
+    selector.select.assert_called_once()
+
+
+WINDFALL_NOW = Candidate(
+    "collect iron_ore at 3,70,0 (seen nearby; the goal does not need it)",
+    {"verb": "dig", "windfall": "now"},
+)
+WINDFALL_TRIP = Candidate(
+    "go to the iron_ore seen at 30,70,0 and mine it (the goal does not need it)",
+    {"verb": "goto_pos", "windfall": "trip"},
+)
+
+
+@pytest.mark.asyncio
+async def test_an_ore_found_nearby_is_mined_without_asking_jev_but_a_trip_is_only_offered():
+    """近くで見つけた目標外の鉱石（windfall: now）は聞かずに採る。覚えている場所への行きは候補に出すだけ。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (WINDFALL_NOW,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == WINDFALL_NOW.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (WINDFALL_NOW,), [], False)
+    assert not isinstance(failed, PickedStep)
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    await picker.pick({"goal": "x"}, "", CANDS + (WINDFALL_TRIP,), [], True)
+    selector.select.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_detours_are_not_taken_without_asking_more_often_than_the_goals_own_steps():
+    """聞かずに採る寄り道は、最初の 2 手のあとは目標の手と同じ数まで。小目標が変わると数え直す。
+
+    8 分間 30 手のうち 24 手が寄り道で、目標の手は一度も選ばれなかった（2026-10-01）。
+    """
+    picker, selector, _ = _picker(ActionDecision("dig oak_log at 1,70,2", 0.9))
+    state = {"goal": "have(raw_iron, 3)"}
+    options = CANDS + (WINDFALL_NOW,)
+    for _ in range(2):
+        picked = await picker.pick(state, "", options, [], True)
+        assert picked.option_id == WINDFALL_NOW.action_id
+        picker.note(True, ToolOutcome(ToolCall("do_suggestion", {"id": picked.option_id}), True, "ok", 1.0))
+    selector.select.assert_not_called()
+    # 3 手目は聞く（Jev が目標の手を選ぶ）
+    picked = await picker.pick(state, "", options, [], True)
+    assert picked.option_id == "dig oak_log at 1,70,2"
+    selector.select.assert_called_once()
+    picker.note(True, ToolOutcome(ToolCall("do_suggestion", {"id": picked.option_id}), True, "ok", 1.0))
+    # 目標の手が 1 つ増えたので、寄り道がもう 1 回できる
+    picked = await picker.pick(state, "", options, [], True)
+    assert picked.option_id == WINDFALL_NOW.action_id
+    # 小目標が変われば数え直す
+    picker.note(True, ToolOutcome(ToolCall("do_suggestion", {"id": picked.option_id}), True, "ok", 1.0))
+    picked = await picker.pick({"goal": "have(torch, 16)"}, "", options, [], True)
+    assert picked.option_id == WINDFALL_NOW.action_id

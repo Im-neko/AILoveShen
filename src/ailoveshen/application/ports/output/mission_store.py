@@ -31,6 +31,7 @@ class SavedPlan:
     stage_met: tuple[GoalSpec, ...] = ()  # 今の段階の条件のうち、これまでに満たしたもの
     site: Optional[TownSite] = None  # 選んだ街の場所
     town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6）
+    playbook_done: tuple[str, ...] = ()  # 済んだ定石の段（docs/design/74）
 
 
 class IMissionStore(ABC):

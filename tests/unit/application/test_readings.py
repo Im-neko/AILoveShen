@@ -16,6 +16,7 @@ from ailoveshen.application.use_cases.readings import (
     NameReadings,
     tells_reading,
     valid_reading,
+    valid_word,
 )
 from ailoveshen.application.use_cases.speak_text import SpeakTextUseCase
 from ailoveshen.domain.entities import Conversation
@@ -54,6 +55,25 @@ class TestNameReadings:
         assert valid_reading("猫") is None
         assert valid_reading("あ" * 31) is None
         assert valid_reading("") is None
+
+    def test_valid_words_are_not_hiragana_only_nor_a_lone_non_kanji(self):
+        assert valid_word(" 小麦 ") == "小麦"
+        assert valid_word("米") == "米"  # 漢字 1 文字は受ける
+        assert valid_word("Minecraft") == "Minecraft"
+        assert valid_word("トマト") == "トマト"
+        assert valid_word("こむぎ") is None  # もう読める。文の途中まで置き換わる
+        assert valid_word("ト") is None
+        assert valid_word("a") is None
+        assert valid_word("あ" * 31) is None
+        assert valid_word("") is None
+
+    def test_a_word_is_replaced_in_speech_like_a_name(self):
+        readings = NameReadings(MemoryStore())
+        assert readings.learn_word("小麦", "こむぎ").source == VIEWER
+        assert readings.learn_word("こむぎ", "しょうばく") is None
+        assert readings.learn_word("小麦", "こむぎ") is None  # 変わらない
+        assert readings.apply("小麦を集めるよ") == "こむぎを集めるよ"
+        assert readings.learn_word("小麦", "こめ").reading == "こめ"  # 言い直せる
 
     def test_tells_reading(self):
         assert tells_reading("名前の読みはねこまるです")
@@ -201,6 +221,29 @@ class TestReplyLearnsReadings:
 
         assert readings.get("neko").reading == "にゃんこ"
         assert readings.get("neko").source == VIEWER
+
+
+@pytest.mark.asyncio
+async def test_yomi_command_with_a_word_teaches_the_words_reading():
+    said = []
+
+    async def say(text):
+        said.append(text)
+
+    readings = _readings()
+    responder = ChatResponder(AsyncMock(), session=lambda: None, say=say, readings=readings)
+    responder.accept(ChatComment("neko", "!yomi 小麦 こむぎ"))
+    responder.accept(ChatComment("neko", "!よみ 小麦　こむぎ2"))  # かなでない: 覚えない
+    responder.accept(ChatComment("neko", "!yomi こむぎ こむぎ"))  # ひらがなだけの言葉: 覚えない
+    responder.accept(ChatComment("neko", "!yomi 大麦 おおむぎ。"))  # 読みに使えない文字
+    await asyncio.sleep(0)
+
+    assert readings.get("小麦").reading == "こむぎ"
+    assert readings.get("小麦").source == VIEWER
+    assert readings.get("neko") is None  # 自分の名前の読みは変わらない
+    assert readings.get("大麦") is None
+    assert said == ["小麦はこむぎって読むんだね、覚えたよ！"]
+    assert not await responder.answer_next()
 
 
 @pytest.mark.asyncio

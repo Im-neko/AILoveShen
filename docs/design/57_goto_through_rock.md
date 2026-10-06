@@ -21,7 +21,7 @@ mineflayer-pathfinder は `thinkTimeout`（5 秒）のうちに経路を決め�
 - 足元から、東西南北へ 1 マス。同じ高さ、1 段上（頭上が空いている）、3 マスまでの段差を降りる。床は固いブロックか水。扉・フェンスゲート・トラップドア・葉は通れる
 - 目標から 4 ブロック以内のマスに届けば、行ける（そこで打ち切る）
 - 3000 マスを超えるか、読み込まれていないブロックに届けば、閉じているとは言えないので調べを終えて通す。水の中と船に乗っているときは調べない
-- 歩ける範囲が閉じていて、目標がそこから 4 ブロックより遠ければ、`goto` を断る: `will not walk to x,y,z: you are in a closed space (N cells you can walk in) and the target is about D blocks of rock away. The path search gives up after 5 s on that much digging. Dig your way out first (dig the blocks toward it, or a stair up), or go_home`
+- 歩ける範囲が閉じていて、目標がそこから 4 ブロックより遠ければ、`goto` を断る: `will not walk to x,y,z: you are in a closed space (N cells you can walk in) and the target is about D blocks of rock away. The path search gives up after 5 s on that much digging. Get out first: the candidate "climb out of the closed space" piles up the dirt or cobblestone you carry (a pickaxe is not needed), or dig a stair up, or go_home`
 
 4 ブロックは、掘って進む探索が 5 秒に収まる目安（1 マス掘るごとのコストは歩きより大きいが、数ブロックなら足りる）。
 

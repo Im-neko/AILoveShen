@@ -179,6 +179,7 @@ def create_tts_service(
     audio_player = SounddevicePlayer(
         device=audio_config.get("device"),
         blocksize=audio_config.get("blocksize", 1024),
+        gain_db=float(audio_config.get("gain_db", 0.0)),
     )
 
     # 渡された感情の提供元を使う。なければ既定のもの

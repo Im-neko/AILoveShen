@@ -13,7 +13,7 @@ const k = new Knowledge(md)
 
 // 木のツルハシを持ち、近くに見える石はない。石は 4 段下に埋まっている
 const world = (digDepth, buried = [{ pos: v(3, 66, 0), depth: 4 }]) => ({
-  inventory: { wooden_pickaxe: 1 },
+  inventory: { wooden_pickaxe: 1, torch: 8, wooden_sword: 1 },
   stored: {},
   blocks: {},
   mobs: {},

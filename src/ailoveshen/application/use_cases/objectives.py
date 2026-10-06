@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from collections.abc import Sequence
 from typing import Optional
 
@@ -14,7 +15,7 @@ from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
-from ailoveshen.application.use_cases.plan_lint import unregistered_builds
+from ailoveshen.application.use_cases.plan_lint import fake_infrastructure, unregistered_builds
 from ailoveshen.application.use_cases.goal_vocabulary import (
     ObjectiveProposal,
     PlanChange,
@@ -27,6 +28,7 @@ from ailoveshen.domain.events import (
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
+    ObjectivesResetEvent,
     TownCompletedEvent,
 )
 from ailoveshen.domain.exceptions import AILoveShenError, GoalRejectedError
@@ -36,9 +38,16 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     Objective,
     Job,
+    PlaybookStep,
 )
 
 MAX_STAGE_DESIGN_TRIES = 2
+# 定石（docs/design/74）: 施設の段は、家のそばで設計する（区画が読み込まれている範囲 m）。待つ間に調べ直す間隔と、
+# 設計に失敗しても試す回数
+PLAYBOOK_NEAR_HOME_M = 64
+PLAYBOOK_RETRY_SECONDS = 60.0
+PLAYBOOK_TRIES = 3
+PLAYBOOK_PARALLEL = 2  # 育成を待つ間に、同時に進める定石の段の数
 
 
 class ObjectiveKeeper:
@@ -84,6 +93,9 @@ class ObjectiveKeeper:
         self._checker = checker
         self._facilities = facilities
         self._design_failures: dict[str, int] = {}  # 街の段階の建物の設計に失敗した回数
+        self._playbook_failures: dict[str, int] = {}  # 定石の段を足せなかった回数
+        self._playbook_at = -PLAYBOOK_RETRY_SECONDS  # 施設の段の置き場所を最後に調べた時刻（time.monotonic）
+        self._playbook_site = False  # そのときの答え
 
     async def judge(self, plan: ObjectivePlan) -> None:
         """
@@ -128,6 +140,7 @@ class ObjectiveKeeper:
         await self._drop_unjudgeable(plan)
         await self._reconcile(plan)
         await self._design_stage_builds(plan)
+        events.extend(await self._ensure_playbook(plan))
         events.extend(self._next_stage(plan))
         if plan.town_complete and not was_complete:
             assert plan.town is not None
@@ -242,8 +255,9 @@ class ObjectiveKeeper:
         return events
 
     def _next_stage(self, plan: ObjectivePlan) -> list[DomainEvent]:
-        # 段階の条件は家を基準に判定する: 引っ越す前の家で満たしても意味がない
-        if plan.site is None or plan.preparing_town:
+        # 定石の段が先（街の段階は、定石が土台の上に載る。docs/design/74）。段階の条件は家を基準に判定する:
+        # 引っ越す前の家で満たしても意味がない
+        if plan.site is None or plan.preparing_town or plan.playbook_goal() is not None:
             return []
         plan.settle_stage()  # 書き直した段階は、もう済んでいるかもしれない
         stage = plan.current_stage
@@ -368,6 +382,154 @@ class ObjectiveKeeper:
         await self._publish([_added(plan, goal)])
         return goal
 
+    @staticmethod
+    def _check_infrastructure(proposal: ObjectiveProposal) -> None:
+        """畑・植林場の題名で、それ自体が条件にない提案は、直し方を添えて断る。"""
+        why = "" if proposal.job else fake_infrastructure(proposal.title, proposal.conditions)
+        if why:
+            raise GoalRejectedError(why)
+
+    async def _ensure_playbook(self, plan: ObjectivePlan) -> list[DomainEvent]:
+        """
+        定石（docs/design/74）の今の段を、リストの先頭の大目標にする（コードが決める）。
+
+        段は設定の順（寝床 → 食料 → 建材 → 資材…）で、今の段は、まだ済んでいない最初のもの。
+        済みは、大目標の完了（`ObjectivePlan.complete`）か、足す前にもう条件が満たされていたことで決まり、
+        一度済んだら戻さない（持ち物が減っても畑を作り直さない）。
+
+        育成中（`ready` が満たされている: 畑ができて作物が育つのを待つだけ）の段があれば、次の段を同時に
+        進めてよい。ただし同時に進めるのは 2 段まで: 3 段目は、2 つとも済んでから（非同期に始めても、
+        待つのは必ず完成まで）。手を動かす段が先頭、育成中の段が後ろ。
+
+        施設の段は、設計できる場所で足す: 家が建っていて家から PLAYBOOK_NEAR_HOME_M 以内（区画が読み込まれて
+        いる）、街の引っ越し中でない。そうでない間は、その段で待つ（次の段へ飛ばさない）。設計や判定に
+        PLAYBOOK_TRIES 回失敗した段は飛ばす（それまでは、次の機会にまたその段から。ログ）。
+        """
+        events: list[DomainEvent] = []
+        growing: dict[str, bool] = {}
+        for step in plan.playbook:
+            if step.keep and step.name in plan.playbook_done and await self._playbook_lost(step):
+                plan.unmark_playbook(step.name)
+                logger.info(f"定石の段 {step.name} は持っていた物を失った: また今の段にする")
+        for step in plan.playbook:
+            if step.name in plan.playbook_done:
+                continue
+            if self._playbook_failures.get(step.name, 0) >= PLAYBOOK_TRIES:
+                continue
+            opened = await self._playbook_open(plan, step, events)
+            if opened == "done":
+                continue
+            if opened == "wait":
+                break
+            growing[step.name] = await self._playbook_growing(step)
+            if not growing[step.name] or len(growing) >= PLAYBOOK_PARALLEL:
+                break
+        plan.order_playbook([n for n, g in growing.items() if not g] + [n for n, g in growing.items() if g])
+        for step in plan.playbook:
+            if step.name in growing:
+                self._absorb(plan, step)
+        return events
+
+    @staticmethod
+    def _absorb(plan: ObjectivePlan, step: PlaybookStep) -> None:
+        """
+        定石の段に含まれる、配信者自身の大目標（条件がすべてその段の条件の一部）を閉じる。同じ施設を作る
+        旧い大目標（設計書 72 の `facility(wheat_farm_1)` など）が枠を取って、リストがいっぱいになっていた
+        （2026-10-01）。視聴者の頼み、採った助言、街の段階と準備は閉じない。
+        """
+        mine = {c.describe() for c in step.conditions}
+        for goal in plan.pending:
+            if (
+                goal.playbook is None
+                and goal.stage is None
+                and not goal.prepares_town
+                and goal.requested_by is None
+                and goal.suggested_by is None
+                and {c.describe() for c in goal.conditions} <= mine
+            ):
+                plan.drop(goal.id, f"the playbook step {step.name} covers it")
+                logger.info(f"大目標 {goal.id} {goal.title} は定石の段 {step.name} に含まれる: 閉じた")
+
+    async def _playbook_lost(self, step: PlaybookStep) -> bool:
+        """済みにした `keep` の段の条件が、今は満たされていないか（調べられなければ失っていない）。"""
+        try:
+            return not all(s.met for s in await self._bridge.check(step.conditions))
+        except AILoveShenError as e:
+            logger.warning(f"定石の段 {step.name} の持ち物を調べられない: {e}")
+            return False
+
+    async def _playbook_growing(self, step: PlaybookStep) -> bool:
+        """設営ができて、育つのを待つだけの段か（`ready` が満たされている）。"""
+        if not step.ready:
+            return False
+        try:
+            return all(s.met for s in await self._bridge.check(step.ready))
+        except AILoveShenError as e:
+            logger.warning(f"定石の段 {step.name} の育成を調べられない: {e}")
+            return False
+
+    async def _playbook_open(
+        self, plan: ObjectivePlan, step: PlaybookStep, events: list[DomainEvent]
+    ) -> str:
+        """
+        定石の段を大目標にする。返すのは、"open"（大目標がある）、"done"（もう済んでいる）、
+        "wait"（今は足せない）。
+        """
+        if any(g.playbook == step.name for g in plan.pending):
+            return "open"  # 済んだかは judge が判定する
+        brief = f"{step.title}: {step.reason}".strip(": ")
+        try:
+            if any(c.predicate == GoalPredicate.FACILITY for c in step.conditions):
+                if not await self._playbook_site_ready(plan):
+                    return "wait"
+                await self._design_facilities(step.conditions, brief)
+            statuses = await self._bridge.check(step.conditions)
+        except GoalRejectedError as e:
+            failed = self._playbook_failures.get(step.name, 0) + 1
+            self._playbook_failures[step.name] = failed
+            logger.warning(f"定石の段 {step.name} を足せない（{failed} 回目）: {e}")
+            return "wait" if failed < PLAYBOOK_TRIES else "done"  # 飛ばす（次の段へ）
+        except AILoveShenError as e:
+            logger.warning(f"定石の段 {step.name} を調べられない: {e}")
+            return "wait"
+        if all(s.met for s in statuses):
+            plan.mark_playbook(step.name)
+            logger.info(f"定石の段 {step.name} はもう済んでいる")
+            return "done"
+        self._absorb(plan, step)  # リストがいっぱいでも、含まれる旧い大目標を閉じてから足す
+        try:
+            goal = plan.add(
+                title=step.title,
+                conditions=step.conditions,
+                reason=step.reason,
+                position=0,
+                playbook=step.name,
+            )
+        except ValueError as e:
+            logger.warning(f"定石の段 {step.name} はリストに空きが出るのを待つ: {e}")
+            return "wait"
+        logger.info(f"定石の段 {step.name} を大目標 {goal.id} にした: {goal.describe()}")
+        events.append(_added(plan, goal))
+        return "open"
+
+    async def _playbook_site_ready(self, plan: ObjectivePlan) -> bool:
+        """
+        施設を設計できる場所か: 家が建っていて近く、街の引っ越し中でない。答えは PLAYBOOK_RETRY_SECONDS の間
+        使い回す（1 回の `judge` で施設の段が 2 つあっても、ブリッジに 1 回しか聞かない）。
+        """
+        if self._facilities is None or plan.preparing_town:
+            return False
+        now = time.monotonic()
+        if now - self._playbook_at < PLAYBOOK_RETRY_SECONDS:
+            return self._playbook_site
+        self._playbook_at = now
+        obs = await self._bridge.observe()
+        near = obs.home_distance_m
+        self._playbook_site = bool(
+            obs.has_home and obs.house_complete and near is not None and near <= PLAYBOOK_NEAR_HOME_M
+        )
+        return self._playbook_site
+
     async def check_new(self, changes: Sequence[PlanChange]) -> None:
         """
         変更が足す大目標の条件を、ブリッジに確かめさせる。
@@ -377,6 +539,7 @@ class ObjectiveKeeper:
         """
         for change in changes:
             if change.proposal is not None:
+                self._check_infrastructure(change.proposal)
                 await self._design_builds(change.proposal)
                 await self._design_facilities(change.proposal.conditions, _brief(change.proposal))
                 await self._write_checks(change.proposal.conditions, _brief(change.proposal))
@@ -392,6 +555,31 @@ class ObjectiveKeeper:
         preview = copy.deepcopy(plan)
         _apply(preview, changes)
         return preview
+
+    def without_refused(
+        self, plan: ObjectivePlan, changes: Sequence[PlanChange]
+    ) -> tuple[PlanChange, ...]:
+        """
+        プランが断る並べ替えと断念を除いた変更（プラン自体には触れない）。
+
+        定石の大目標は動かせず、やめられず、ほかのものはその前に出せない（設計書 74）。モデルが
+        同じ `move` を書き続けると、決定ごと差し戻され続けて何も進まない（2026-10-03: 夜の野外で
+        4 分以上）。最後の試行で、この種の編集だけ捨てて、決定の残りを通すのに使う。足す変更は
+        そのまま残す（断られるなら、いつもどおり差し戻す）。
+        """
+        trial = copy.deepcopy(plan)
+        kept: list[PlanChange] = []
+        for change in changes:
+            try:
+                _apply(trial, [change])
+            except ValueError as e:
+                if change.op != PlanOp.ADD:
+                    logger.warning(
+                        f"プランが断る編集を捨てた: {change.op.value} {change.objective_id}: {e}"
+                    )
+                    continue
+            kept.append(change)
+        return tuple(kept)
 
     async def commit(self, plan: ObjectivePlan, changes: Sequence[PlanChange]) -> None:
         """
@@ -427,6 +615,7 @@ class ObjectiveKeeper:
             ValueError: 上限を破るとき（例: その視聴者はもう 1 つ持っている）
         """
         what = "の助言" if advice else "の頼み"
+        self._check_infrastructure(proposal)
         if proposal.job:
             return await self._accept_job(plan, proposal, requested_by, advice)
         same = plan.same_as(proposal.conditions)
@@ -639,6 +828,19 @@ class ObjectiveKeeper:
         logger.info(f"大目標 {goal.id} の中目標: " + " → ".join(s.spec.describe() for s in jobs))
         self._store.save(plan)
 
+    async def reset(self, plan: ObjectivePlan) -> None:
+        """
+        大目標を最初のリストに戻して保存する（管理画面。視聴者のものも消す）。足せずに飛ばした定石の段や
+        設計に失敗した数えも消す: 次の判定で最初からやり直す。
+        """
+        plan.reset()
+        self._design_failures.clear()
+        self._playbook_failures.clear()
+        self._playbook_at = -PLAYBOOK_RETRY_SECONDS
+        logger.info(f"大目標を最初のリストに戻した: {', '.join(g.describe() for g in plan.pending)}")
+        self._store.save(plan)
+        await self._publish([ObjectivesResetEvent(count=len(plan.pending))])
+
     async def step_counted(self, plan: ObjectivePlan, goal: Objective | None) -> None:
         """
         ステップを数えたあとにプランを保存する。予算を超えて断念した大目標（視聴者の中目標も）が
@@ -661,7 +863,12 @@ class ObjectiveKeeper:
 
 def _apply(plan: ObjectivePlan, changes: Sequence[PlanChange]) -> list[DomainEvent]:
     events: list[DomainEvent] = []
-    for change in changes:
+    # 大目標の断念は先に（足す・動かすより前）: 「足す、落とす」の順に書かれても、落として空いた枠に足せる
+    # （2026-10-01: 6 件で満杯のとき、add を先に書いた編集が drop を待たずに断られ、14 回続けて決定に失敗した）
+    def frees_a_slot(c: PlanChange) -> bool:
+        return c.op == PlanOp.DROP and not c.job_id
+
+    for change in sorted(changes, key=lambda c: not frees_a_slot(c)):  # 安定: 同じ組の中は書いた順
         if change.op == PlanOp.ADD:
             assert change.proposal is not None
             p = change.proposal

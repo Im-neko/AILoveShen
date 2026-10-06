@@ -17,6 +17,7 @@ from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import GoalRejectedError
 from ailoveshen.domain.value_objects import (
     ConditionStatus,
+    Goal,
     GoalPredicate,
     GoalStatus,
     GoalSpec,
@@ -308,7 +309,7 @@ class TestPlanner:
         # 2 回目の判定は、ふつうの判定に戻す
         calls = iter([GoalRejectedError("no such facility x"), None])
 
-        async def check(specs):
+        async def check(specs, materials=False):
             if next(calls) is not None:
                 raise GoalRejectedError("no such facility x")
             return [ConditionStatus(s, False) for s in specs]
@@ -352,6 +353,14 @@ class TestShown:
         plan = _plan(_job())
         prompt = GamePromptTemplateBuilder().build_plan_prompt(plan.current, _session(plan=plan).activity())
         assert "畑を広げる" in prompt and "前提（needs）" in prompt and "wheat_farm_3" in prompt
+
+    def test_the_plan_and_goal_prompts_say_the_fence_and_gate_come_after_the_farm_cells(self):
+        """畑の柵とゲートは最後（2026-10-04: 柵のための板が先に集められ、畑が 63 手進まなかった）。"""
+        plan = _plan(_job())
+        builder = GamePromptTemplateBuilder()
+        prompt = builder.build_plan_prompt(plan.current, _session(plan=plan).activity())
+        for text in (prompt, builder.build_goal_system()):
+            assert "柵とゲートは、畑のマス" in text and "最後に" in text and "placed(oak_fence" in text
 
     def test_the_current_job_shows_its_plan_with_prerequisites_to_the_llm(self):
         plan = _plan(_job())
@@ -435,6 +444,30 @@ class TestAdvancePlay:
         session.set_goal(session.goal, "day")
         await make()._change_goal(session, _obs(met=True))
         assert planner.plan.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_the_plan_does_not_see_an_ended_small_goal_of_another_objective(self, parts):
+        """死んだときの食料と鉄の束を、剣の大目標の計画に見せない（真似て、差し戻されて 40 秒無駄になった: 2026-10-03）。"""
+        make, planner, _, _, _ = parts
+        seen = []
+        inner = planner.plan.side_effect
+
+        async def plan(session, activity, replan_reason="", keep_done_steps=True):
+            seen.append(activity.goal)
+            return await inner(session, activity, replan_reason, keep_done_steps)
+
+        plan.calls = inner.calls
+        planner.plan.side_effect = plan
+        session = _session(plan=_plan())
+        session.set_goal(Goal(IRON, objective_id=None), "day")  # 生存の小目標
+        await make()._change_goal(session, _obs(met=True))
+        assert seen == [None]
+
+        # 同じ大目標の小目標は見せる（失敗の後の書き直しの手がかり）
+        session = _session(plan=_plan())
+        session.set_goal(Goal(IRON, objective_id=session.plan.current.id), "day")
+        await make()._change_goal(session, _obs(met=True))
+        assert seen[1] is not None
 
     @pytest.mark.asyncio
     async def test_without_a_planner_the_goal_decision_writes_the_jobs_as_before(self, parts):

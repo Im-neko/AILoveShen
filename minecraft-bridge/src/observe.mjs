@@ -1,6 +1,8 @@
 // ボットの状況を簡潔にまとめた観測。行動の列挙と /observe で共有する。
 
 import vec3Pkg from 'vec3'
+import { underwater } from './breath.mjs'
+import { isSwimming } from './swim.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -9,7 +11,15 @@ export const MOB_LIMIT = 16
 export const DROP_RADIUS = 24
 export const THREAT_RADIUS = 16
 const MELEE_RADIUS = 4 // ここまで近い敵対モブは、葉や角に隠れていても脅威とする
-export const HISTORY = 5
+// 観測に載せる直近の行動の数（Jev の選択と、目標・道具・実況のプロンプトの「直近の行動」。
+// 少ないと、預けては取り出す往復のような、前の手を打ち消す選択に気づけない）
+export const HISTORY = 8
+// 覚えておく行動の数（読むのは末尾の HISTORY 件。保存もされるので、切り詰めないと増え続ける）
+const HISTORY_KEPT = 100
+export function pushHistory (state, entry) {
+  state.history.push(entry)
+  if (state.history.length > HISTORY_KEPT) state.history.splice(0, state.history.length - HISTORY_KEPT)
+}
 
 // Mineflayer はこれらを "hostile" とするが、挑発されたときしか攻撃しない。
 const NEUTRAL = new Set(['enderman', 'zombified_piglin', 'piglin', 'wolf', 'bee', 'llama', 'trader_llama',
@@ -54,6 +64,9 @@ export function fillItem (bot) {
   }
   return null
 }
+
+// 穴を埋めるブロックを持っている数
+export const fillCount = (bot) => bot.inventory.items().filter((i) => FILL_ITEMS.includes(i.name)).reduce((n, i) => n + i.count, 0)
 
 // ブロックの状態（耕地の moisture 0–7、作物の age、ドアの open など）。なければ null
 export function blockProps (block) {
@@ -155,7 +168,8 @@ export function summarize (bot, history, extra = {}) {
       held_item: bot.heldItem ? bot.heldItem.name : null,
       equipment: equipment(bot),
       dark: isDark(bot),
-      in_water: !!bot.entity.isInWater,
+      in_water: isSwimming(bot),
+      ...(underwater(bot) ? { head_in_water: true, air: underwater(bot).air } : {}),
       riding: bot.vehicle?.name ?? null
     },
     inventory: inventoryCounts(bot),
@@ -202,9 +216,29 @@ function skyNear (bot) {
   return false
 }
 
-// 地下にいる（頭の上がふさがっていて、海面より下）: 夜でも家に帰らなくてよい（ここは夜も昼も暗い）
+// 深い地下にいる（頭の上がふさがっていて、海面より下で、空が開いた柱が近くにない: 空の光が届かない）:
+// ここは夜も昼も同じ暗さで、モブの湧き方も変わらない。夜でも家に帰らなくてよく、夕方・夜になったからと
+// 行動を止めない（いずれ掘る前に帰らなければならなくなる。2026-09-30 user）。浅い洞窟の入口や崖の下は、
+// 空が近いので含めない（昼は明るく、夜だけ危ない）
 const SEA_LEVEL = 62
-export const isUnderground = (bot) => bot.entity.position.y < SEA_LEVEL - 2 && isCovered(bot)
+export const UNDERGROUND_BELOW = SEA_LEVEL - 2
+// 頭の上の岩の厚さ（光を通さないブロックの数。COVER_HEIGHT まで）。葉・ガラスは数えない
+function roofThickness (bot) {
+  const head = headCell(bot)
+  let n = 0
+  for (let dy = 0; dy < COVER_HEIGHT; dy++) if (blocksLight(bot, bot.blockAt(head.offset(0, dy, 0)))) n++
+  return n
+}
+
+// 海面より高くても、頭の上に岩が DEEP_ROOF ブロック以上あれば地下（地表が高い所の洞窟は y が 60 以上でも深い:
+// 2026-10-04、地表 76 の畑の下、y63 の洞窟に、種を持ったまま降りて、地下の規則（松明がなければ地上へ、など）が
+// 何も効かなかった）。家の屋根や崖の庇、木の下は薄いので含めない
+export const DEEP_ROOF = 8
+export const isUnderground = (bot) => {
+  if (!isCovered(bot)) return false
+  if (bot.entity.position.y >= UNDERGROUND_BELOW && roofThickness(bot) < DEEP_ROOF) return false
+  return !skyNear(bot)
+}
 
 export function isDark (bot) {
   if (!isCovered(bot) || skyNear(bot)) return false

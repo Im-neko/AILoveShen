@@ -27,6 +27,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     GoalStatus,
     HouseBlueprint,
+    MaterialTree,
     SkillDraft,
     SkillInfo,
     SkillRun,
@@ -68,12 +69,18 @@ class MineflayerBridgeClient(IMinecraftBridge):
         keep: Sequence[GoalSpec] = (),
         also: Sequence[GoalSpec] = (),
         together: Sequence[GoalSpec] = (),
+        level_areas: Sequence[GoalSpec] = (),
     ) -> GoalStatus:
         """目標を設定する。ブリッジが返す 400 には、拒否した理由が入っている。"""
         body = {
             **spec.to_dict(),
             "keep": [{"item": k.item, "count": k.count} for k in keep],
             "also": [a for a in map(_gathered, also) if a],
+            "level_areas": [
+                {"where": a.where, "distance": a.distance}
+                for a in level_areas
+                if a.predicate == GoalPredicate.LEVELED
+            ],
         }
         if together:
             body["together"] = [t.to_dict() for t in together]
@@ -89,14 +96,17 @@ class MineflayerBridgeClient(IMinecraftBridge):
             )
         return _to_status(response.json())
 
-    async def check(self, specs: Sequence[GoalSpec]) -> list[ConditionStatus]:
+    async def check(
+        self, specs: Sequence[GoalSpec], materials: bool = False
+    ) -> list[ConditionStatus]:
         """目標を設定せずに条件を判定する。400 には、判定できない理由が入っている。"""
         if not specs:
             return []
+        body: dict[str, Any] = {"specs": [s.to_dict() for s in specs]}
+        if materials:
+            body["materials"] = True
         try:
-            response = await self._client.post(
-                "/check", json={"specs": [s.to_dict() for s in specs]}
-            )
+            response = await self._client.post("/check", json=body)
         except httpx.RequestError as e:
             raise GameBridgeError(f"Minecraft bridge unreachable (POST /check): {e}") from e
         if response.status_code == 400:
@@ -113,6 +123,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
                 impossible=tuple(r.get("impossible", [])),
                 next_step=_next_step(r.get("next_step")),
                 gather=bool(r.get("gather", False)),
+                materials=_to_materials(r.get("materials")),
             )
             for spec, r in zip(specs, response.json(), strict=True)
         ]
@@ -361,6 +372,15 @@ class MineflayerBridgeClient(IMinecraftBridge):
         )
         return bool(data.get("accepted", False))
 
+    async def set_collect(self, blocks: Sequence[str]) -> None:
+        """目標外でも集めるブロックを伝える。"""
+        await self._request("PUT", "/collect", json={"blocks": list(blocks)})
+
+    async def release_reflex(self, seconds: float) -> bool:
+        """長く続いた反射を手放す。"""
+        data = await self._request("POST", "/reflex/release", json={"seconds": seconds})
+        return bool(data.get("released", False))
+
     async def answer_judge(self, judge_id: int, answer: Any, confidence: float) -> None:
         """技の judge() に答える。"""
         await self._request(
@@ -430,12 +450,24 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         inside_home=bool(home and home["inside"]),
         bed_in_home=bool(home and home.get("bed")),
         chest_in_home=bool(home and home.get("chest")),
+        chest_blocks=_optional_int(home, "chest_blocks"),
+        chest_slots=_optional_int(home, "chest_slots"),
+        chest_free=_optional_int(home, "chest_free"),
+        chest_saving=_optional_int(home, "chest_saving"),
         unfinished_builds=tuple(
             str(b["name"]) for b in obs.get("builds") or [] if not b.get("complete")
         ),
         busy=bool(data.get("busy", False)),
         day=int(obs["time"]["day"]) if obs["time"]["day"] is not None else None,
         underground=bool(obs.get("underground", False)),
+    )
+
+
+def _to_materials(d: Optional[dict[str, Any]]) -> Optional[MaterialTree]:
+    if not d:
+        return None
+    return MaterialTree(
+        root=tuple(str(x) for x in d.get("root", [])), all=tuple(str(x) for x in d.get("all", []))
     )
 
 
@@ -484,3 +516,9 @@ def _next_step(data: Optional[dict[str, Any]]) -> Optional[GoalSpec]:
     if not data:
         return None
     return GoalSpec(GoalPredicate.HAVE, item=str(data["item"]), count=int(data["count"]))
+
+
+def _optional_int(home: Optional[dict], key: str) -> Optional[int]:
+    """家の観測の数字。ブリッジが送っていなければ None。"""
+    value = home.get(key) if home else None
+    return int(value) if value is not None else None

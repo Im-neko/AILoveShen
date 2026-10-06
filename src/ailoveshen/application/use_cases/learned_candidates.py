@@ -1,11 +1,11 @@
 """
-手の帳: LLM が選んで、うまくいった手を覚え、似た状況で Jev の選択肢にもう一度出す（docs/design/52）。
+覚えた候補: LLM が選んで、うまくいった手を覚え、似た状況で Jev の選択肢（候補）にもう一度出す（docs/design/52）。
 
 道具や種が足りなくなったときのように、ブリッジの候補に無い手を LLM が思いつくことがある（クラフト、
 持ち替え、チェストから出す…）。その手は 1 回きりで忘れられ、次に同じ状況になるとまた LLM を呼んで
 いた。ここでは、LLM が選んだ手が成功し、そのあと持ち物か小目標の進み具合が変わったときに、状況
 （目標の種類・対象・場所）といっしょに覚える。次に同じ状況になったら、その手を Jev の選択肢に
-`remembered …` として加える。選ぶのは Jev のままで、選ばれた手が効かなければ数えて、効かない手は消す。
+`learned …` として加える。選ぶのは Jev のままで、選ばれた手が効かなければ数えて、効かない手は消す。
 
 覚えるのは世界の座標を含まない道具の呼び出しだけ（座標は場所が変わると意味を失う）。
 """
@@ -19,14 +19,14 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from ailoveshen.application.ports.output.move_store import IMoveStore
+from ailoveshen.application.ports.output.learned_candidate_store import ILearnedCandidateStore
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
-from ailoveshen.domain.value_objects import Candidate, GameObservation, Move, ToolCall
+from ailoveshen.domain.value_objects import Candidate, GameObservation, LearnedCandidate, ToolCall
 
 # 覚えてよい道具: 何を作る・持つ・焼くかだけで決まり、場所を選ばないもの。待つ・寝る・戦う・逃げる・
 # 歩く・掘る・置く（場所が要る）や、ソルバーの提案は覚えない。チェストの出し入れ（withdraw / deposit）も
 # 覚えない: 数はそのときの不足で決まり、ブリッジが正しい数の候補（take N from the chest）を出している
-REMEMBERED_TOOLS = frozenset(
+LEARNED_TOOLS = frozenset(
     {
         "craft",
         "eat",
@@ -43,6 +43,11 @@ REMEMBERED_TOOLS = frozenset(
     }
 )
 COORDINATES = frozenset({"x", "y", "z", "to_x", "to_y", "to_z", "entity", "id"})
+# 成功した（失敗として返らなかった）こと自体が「世界が変わった」印になる道具。use_item は、何も変わらなければ
+# ブリッジが失敗にする（ドアの開閉などブロックの状態の変わりも変化に数える）。ドアを開けても持ち物も小目標の
+# 残りも変わらない（家に入るのは次の手）ので、この印がないと、効いた押し方を覚えられない。craft などは
+# 成功しても持ち物が変わったかを見る（足りない材料で作れなかった手を覚えない）
+WORLD_CHANGE_TOOLS = frozenset({"use_item"})
 # 数の引数は覚えない（そのときの不足で決まる。省略した既定で足りる: craft は 1 回、smelt は持っている分）。
 # 数だけ違う同じ手が別々に増えていた
 QUANTITIES = frozenset({"count", "times"})
@@ -58,10 +63,11 @@ class _Pending:
 
     situation: tuple[tuple[str, str], ...]
     call: ToolCall
-    move_id: Optional[str]  # 帳から選んだ手なら、その id
+    candidate_id: Optional[str]  # 覚えた候補から選んだ手なら、その id
     goal: str
     inventory: Mapping[str, int]
     remaining: int
+    changed: bool = False  # 成功自体が世界の変化の印（WORLD_CHANGE_TOOLS）
 
 
 def offers_of(candidates: Iterable[Candidate]) -> str:
@@ -74,64 +80,64 @@ def offers_of(candidates: Iterable[Candidate]) -> str:
     return "+".join(sorted(verbs)) or "none"
 
 
-def remembers(call: ToolCall) -> bool:
+def learnable(call: ToolCall) -> bool:
     """この道具の呼び出しは覚えてよいか（座標や対象の id を含まない、場所を選ばない道具）。"""
-    return call.name in REMEMBERED_TOOLS and not (COORDINATES & call.args.keys())
+    return call.name in LEARNED_TOOLS and not (COORDINATES & call.args.keys())
 
 
-class MoveBook:
+class LearnedCandidates:
     """うまくいった LLM の手を、状況ごとに覚えて思い出す。"""
 
     def __init__(
         self,
-        store: IMoveStore,
+        store: ILearnedCandidateStore,
         shown: int = 3,
-        max_moves: int = 100,
+        max_learned: int = 100,
         recorder: Optional[IWatchRecorder] = None,
     ) -> None:
         """
         Args:
             store: 保存先（再起動とワールドの作り直しをまたいで残す）
             shown: 1 回に Jev の選択肢へ加える手の数の上限
-            max_moves: 帳に持つ手の上限（超えたら効きの薄い順に消す）
+            max_learned: 覚えた候補の上限（超えたら効きの薄い順に消す）
             recorder: 覚えた・効いた・効かなかった・消したの記録
         """
         self._store = store
         self._shown = shown
-        self._max = max_moves
+        self._max = max_learned
         self._recorder = recorder
-        self._moves: list[Move] = []
+        self._learned: list[LearnedCandidate] = []
         self._next_id = 1
         self._pending: Optional[_Pending] = None
 
     @property
-    def moves(self) -> tuple[Move, ...]:
-        return tuple(self._moves)
+    def learned(self) -> tuple[LearnedCandidate, ...]:
+        return tuple(self._learned)
 
     def load(self) -> None:
         """保存した手を戻す（ワールドが変わっても捨てない: 場所によらない）。"""
         try:
             saved = self._store.load()
         except Exception as e:  # noqa: BLE001 - 読めなくてもプレイは始める
-            logger.warning(f"手の帳を読めなかった: {e}")
+            logger.warning(f"覚えた候補を読めなかった: {e}")
             return
         if saved is None:
             return
         # 覚え方が変わる前の手（今は覚えない道具、照合のキーが足りないもの）は使わない
         keys = tuple(MATCH_KEYS)
-        moves = [
-            m for m in saved[0] if m.tool in REMEMBERED_TOOLS and tuple(k for k, _ in m.situation) == keys
+        kept = [
+            m for m in saved[0] if m.tool in LEARNED_TOOLS and tuple(k for k, _ in m.situation) == keys
         ]
-        self._moves, self._next_id = moves, saved[1]
-        if len(moves) != len(saved[0]):
-            logger.info(f"手の帳: 今の覚え方に合わない {len(saved[0]) - len(moves)} 件を捨てた")
+        self._learned, self._next_id = kept, saved[1]
+        if len(kept) != len(saved[0]):
+            logger.info(f"覚えた候補: 今の覚え方に合わない {len(saved[0]) - len(kept)} 件を捨てた")
             self._save()
-        logger.info(f"手の帳: {len(self._moves)} 件")
+        logger.info(f"覚えた候補: {len(self._learned)} 件")
 
-    def recall(self, situation: Mapping[str, str]) -> list[Move]:
+    def recall(self, situation: Mapping[str, str]) -> list[LearnedCandidate]:
         """今の状況に合う手（効いたものが先）。合うのは目標の種類・対象・場所が同じ手。"""
         key = _key(situation)
-        found = [m for m in self._moves if m.situation == key]
+        found = [m for m in self._learned if m.situation == key]
         found.sort(key=lambda m: (m.worked - 2 * m.failed, m.last_used_at), reverse=True)
         return found[: self._shown]
 
@@ -142,26 +148,27 @@ class MoveBook:
         obs: GameObservation,
         goal: str,
         ok: bool,
-        move: Optional[Move] = None,
+        candidate: Optional[LearnedCandidate] = None,
     ) -> None:
         """1 手を選んで実行した（obs は実行する前の観測、goal は小目標の文）。実行が成功していれば、次の観測で効いたか見る。
 
-        `move` は帳から Jev が選んだ手。LLM が選んだ手は、覚えてよい道具のときだけ見る。
+        `candidate` は覚えた候補から Jev が選んだ手。LLM が選んだ手は、覚えてよい道具のときだけ見る。
         """
         self._pending = None
-        if move is None and not remembers(call):
+        if candidate is None and not learnable(call):
             return
         if not ok:
-            if move is not None:
-                self._effect(move.id, worked=False)
+            if candidate is not None:
+                self._effect(candidate.id, worked=False)
             return
         self._pending = _Pending(
             situation=_key(situation),
             call=replace(call, args={k: v for k, v in call.args.items() if k not in QUANTITIES}),
-            move_id=move.id if move else None,
+            candidate_id=candidate.id if candidate else None,
             goal=goal,
             inventory=dict(obs.state.get("inventory") or {}),
             remaining=obs.goal.remaining if obs.goal else 0,
+            changed=call.name in WORLD_CHANGE_TOOLS,
         )
 
     def settle(self, obs: GameObservation, goal: str) -> None:
@@ -173,21 +180,21 @@ class MoveBook:
         moved = obs.goal is not None and goal == pending.goal and (
             obs.goal.met or obs.goal.remaining < pending.remaining
         )
-        worked = inventory != dict(pending.inventory) or moved
-        if pending.move_id is not None:
-            self._effect(pending.move_id, worked)
+        worked = pending.changed or inventory != dict(pending.inventory) or moved
+        if pending.candidate_id is not None:
+            self._effect(pending.candidate_id, worked)
         elif worked:
             self._remember(pending)
 
     def _remember(self, pending: _Pending) -> None:
         now = _now()
-        for i, m in enumerate(self._moves):
+        for i, m in enumerate(self._learned):
             if m.situation == pending.situation and m.tool == pending.call.name and m.args == pending.call.args:
-                self._moves[i] = replace(m, worked=m.worked + 1, last_used_at=now)
+                self._learned[i] = replace(m, worked=m.worked + 1, last_used_at=now)
                 self._save()
                 return
-        move = Move(
-            id=f"m{self._next_id}",
+        candidate = LearnedCandidate(
+            id=f"l{self._next_id}",
             situation=pending.situation,
             tool=pending.call.name,
             args=dict(pending.call.args),
@@ -196,19 +203,19 @@ class MoveBook:
             last_used_at=now,
         )
         self._next_id += 1
-        self._moves.append(move)
-        logger.info(f"手を覚えた: {move.describe()}（{_describe(move)}）")
-        self._log("remember", move)
-        if len(self._moves) > self._max:
-            weakest = min(self._moves, key=lambda m: (m.worked - 2 * m.failed, m.last_used_at))
-            self._moves.remove(weakest)
+        self._learned.append(candidate)
+        logger.info(f"候補を覚えた: {candidate.describe()}（{_describe(candidate)}）")
+        self._log("remember", candidate)
+        if len(self._learned) > self._max:
+            weakest = min(self._learned, key=lambda m: (m.worked - 2 * m.failed, m.last_used_at))
+            self._learned.remove(weakest)
             self._log("forget", weakest)
         self._save()
 
-    def _effect(self, move_id: str, worked: bool) -> None:
-        """帳から選んだ手が効いたか。効かない手は消す。"""
-        for i, m in enumerate(self._moves):
-            if m.id != move_id:
+    def _effect(self, candidate_id: str, worked: bool) -> None:
+        """覚えた候補から選んだ手が効いたか。効かない手は消す。"""
+        for i, m in enumerate(self._learned):
+            if m.id != candidate_id:
                 continue
             m = replace(
                 m,
@@ -217,45 +224,45 @@ class MoveBook:
                 last_used_at=_now(),
             )
             if m.failed > m.worked:
-                del self._moves[i]
-                logger.info(f"効かない手を消した: {m.describe()}（{_describe(m)}）")
+                del self._learned[i]
+                logger.info(f"効かない覚えた候補を消した: {m.describe()}（{_describe(m)}）")
                 self._log("drop", m)
             else:
-                self._moves[i] = m
+                self._learned[i] = m
                 self._log("worked" if worked else "failed", m)
             self._save()
             return
 
-    def _log(self, event: str, move: Move) -> None:
+    def _log(self, event: str, candidate: LearnedCandidate) -> None:
         if self._recorder is None:
             return
         try:
             self._recorder.record(
                 {
                     "event": event,
-                    "move": move.id,
-                    "call": move.describe(),
-                    "situation": dict(move.situation),
-                    "worked": move.worked,
-                    "failed": move.failed,
+                    "candidate": candidate.id,
+                    "call": candidate.describe(),
+                    "situation": dict(candidate.situation),
+                    "worked": candidate.worked,
+                    "failed": candidate.failed,
                 }
             )
         except Exception as e:  # noqa: BLE001 - 記録の失敗で選択を止めない
-            logger.warning(f"手の帳の記録を書けなかった: {e}")
+            logger.warning(f"覚えた候補の記録を書けなかった: {e}")
 
     def _save(self) -> None:
         try:
-            self._store.save(self._moves, self._next_id)
+            self._store.save(self._learned, self._next_id)
         except Exception as e:  # noqa: BLE001 - 保存の失敗でプレイを止めない
-            logger.warning(f"手の帳を保存できなかった: {e}")
+            logger.warning(f"覚えた候補を保存できなかった: {e}")
 
 
 def _key(situation: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
     return tuple((k, situation.get(k, "")) for k in MATCH_KEYS)
 
 
-def _describe(move: Move) -> str:
-    return ", ".join(f"{k}={v}" for k, v in move.situation if v) or "any"
+def _describe(candidate: LearnedCandidate) -> str:
+    return ", ".join(f"{k}={v}" for k, v in candidate.situation if v) or "any"
 
 
 def _now() -> str:

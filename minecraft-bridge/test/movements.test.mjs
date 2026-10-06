@@ -36,3 +36,25 @@ test('歩きながら自然の地形を掘り、土を積んで登れる。家�
   assert.deepEqual(m.scafoldingBlocks, [bot.registry.itemsByName.dirt.id])
   assert.equal(m.allow1by1towers, true)
 })
+
+test('歩きながら掘る道具が要るブロック（石にツルハシ）は、その道具を持っていないと掘らない。持てば掘る（素手で深層岩を掘り続けた）', () => {
+  let m
+  const registry = minecraftData('1.21.4')
+  const pickaxe = registry.itemsByName.stone_pickaxe.id
+  const held = []
+  const bot = { registry, entities: {}, entity: { position: new Vec3(0, 70, 0) }, blockAt: () => null, inventory: { items: () => held }, pathfinder: { setMovements: (set) => { m = set } } }
+  configureMovements(bot, { home: null, formerHomes: [], plan: null })
+  const stone = { name: 'stone', type: 1, position: new Vec3(0, 60, 0), harvestTools: { [pickaxe]: true }, digTime: (tool) => tool === pickaxe ? 400 : 7500 }
+  const dirt = { name: 'dirt', type: 2, position: new Vec3(0, 60, 1), digTime: () => 750 }
+  assert.ok(m.exclusionBreak(stone) >= 100)
+  assert.equal(m.exclusionBreak(dirt), 0)
+  held.push({ name: 'stone_pickaxe', type: pickaxe, count: 1 })
+  // 持ち物の読み直しは数秒おき
+  const realNow = Date.now
+  Date.now = () => realNow() + 5000
+  try {
+    assert.equal(m.exclusionBreak(stone), 0)
+  } finally {
+    Date.now = realNow
+  }
+})

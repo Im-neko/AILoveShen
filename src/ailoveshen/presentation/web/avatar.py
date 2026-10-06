@@ -42,6 +42,7 @@ from ailoveshen.domain.events import (
     CommentaryGeneratedEvent,
     DomainEvent,
     GameActionExecutedEvent,
+    GoalDecidingEvent,
     GoalEndedEvent,
     GoalSetEvent,
     HouseCompletedEvent,
@@ -50,9 +51,10 @@ from ailoveshen.domain.events import (
     SkillLearnedEvent,
     SpeechCompletedEvent,
     SpeechStartedEvent,
+    SupportReceivedEvent,
     TownSiteChosenEvent,
 )
-from ailoveshen.domain.value_objects import EmotionType
+from ailoveshen.domain.value_objects import EmotionType, SupportKind
 
 AVATAR_HTML = Path(__file__).with_name("avatar.html")
 VENDOR_DIR = Path(__file__).with_name("vendor")
@@ -91,6 +93,8 @@ def emotion_from_text(text: str) -> EmotionType | None:
         if pattern.search(text):
             return emotion
     return None
+
+RETHINK_SECONDS = 8.0  # 考え直している間、表情を保つ長さ
 
 
 def _emote(emotion: EmotionType, intensity: float, seconds: float, gesture: str | None = None):
@@ -151,12 +155,14 @@ class AvatarStage:
             ChatResponseGeneratedEvent,
             GoalSetEvent,
             GoalEndedEvent,
+            GoalDecidingEvent,
             ObjectiveAddedEvent,
             ObjectiveCompletedEvent,
             HouseCompletedEvent,
             TownSiteChosenEvent,
             GameActionExecutedEvent,
             SkillLearnedEvent,
+            SupportReceivedEvent,
         ):
             bus.subscribe(event_type, self._on_event)
 
@@ -177,6 +183,10 @@ class AvatarStage:
             return [self._speak(event.text, speech_ms(event.text), emotion_from_text(event.text))]
         if isinstance(event, (ObjectiveCompletedEvent, HouseCompletedEvent, SkillLearnedEvent)):
             return [_emote(EmotionType.HAPPY, 1.0, 4.0, "cheer")]
+        if isinstance(event, SupportReceivedEvent) and event.support is not None:
+            # 配信への応援: お礼を言う間、喜ぶ。フォローとレイドは手を振り、贈り物とビッツは万歳
+            waves = event.support.kind in (SupportKind.FOLLOW, SupportKind.RAID)
+            return [_emote(EmotionType.HAPPY, 0.9 if waves else 1.0, 4.0, "wave" if waves else "cheer")]
         if isinstance(event, TownSiteChosenEvent):
             return [_emote(EmotionType.HAPPY, 0.8, 3.0, "nod")]
         if isinstance(event, ObjectiveAddedEvent) and event.requested_by:
@@ -187,6 +197,9 @@ class AvatarStage:
             if " is stuck " in event.ended_because or " stalled " in event.ended_because:
                 return [_emote(EmotionType.SAD, 0.6, 3.0, None)]
             return []
+        if isinstance(event, GoalDecidingEvent):
+            # うまくいかなかった後の考え直し（ふつうの次の目標の検討では表情を変えない）。表情は Jev が選ぶ
+            return [_emote(EmotionType.SAD, 0.5, RETHINK_SECONDS, "tilt")] if event.after_failure else []
         if isinstance(event, GoalSetEvent):
             return [{"type": "gesture", "gesture": "nod"}]
         if isinstance(event, GameActionExecutedEvent) and not event.ok:
@@ -333,6 +346,11 @@ def moment_of(event: DomainEvent) -> str:
     if isinstance(event, GoalEndedEvent):
         state = "done" if event.met else "gave up"
         return f"a small goal ended ({state}): {event.goal}, because {event.ended_because}"
+    if isinstance(event, GoalDecidingEvent):
+        return "something did not work out and the streamer is thinking again about how to go on"
     if isinstance(event, GameActionExecutedEvent):
         return f"took damage while doing {event.action_id}: {event.result}"
+    if isinstance(event, SupportReceivedEvent) and event.support is not None:
+        who = f"{event.count} viewers including {event.support.user_name}" if event.count > 1 else event.support.user_name
+        return f"a viewer supported the stream ({event.support.kind.value}) and the streamer is thanking {who}: be happy"
     return type(event).__name__

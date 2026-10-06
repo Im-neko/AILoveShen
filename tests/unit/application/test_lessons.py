@@ -72,6 +72,7 @@ def test_the_situation_comes_from_the_goal_and_the_observation():
         "place": "underground",
         "body": "hungry",
         "pickaxe": "no",
+        "dark": "yes",
         "ended": "stalled",
     }
     assert situation_of(None, _obs(inside_home=True, health=5))["place"] == "home"
@@ -188,3 +189,16 @@ def test_recalled_lessons_are_shown_as_unverified_memories():
     assert "思い出したこと" in text and "確かめていない" in text
     assert "夜は家で寝る（こういうとき: 夜になったとき）（nekoさんに教わった、効いた 2 回・効かなかった 0 回）" in text
     assert "思い出したこと" not in format_activity(Activity())
+
+
+def test_a_lesson_about_dark_places_is_recalled_in_a_cave_by_day_but_not_in_the_open_light():
+    """「暗い所では松明を置く」を夜・屋外と書くと、昼の洞窟で思い出せなかった（2026-10-03）: dark で書く。"""
+    from ailoveshen.application.use_cases.lessons import score
+    from ailoveshen.domain.value_objects import Lesson
+
+    lesson = Lesson(id="L1", text="暗い所では松明を置く", situation=(("dark", "yes"),), explicit=True)
+    cave_by_day = situation_of(None, _obs(time_phase="day", underground=True))
+    open_day = situation_of(None, _obs(time_phase="day"))
+    assert score(lesson, cave_by_day) is not None
+    assert score(lesson, open_day) is None
+    assert score(lesson, situation_of(None, _obs(time_phase="day", needs=("dark here: no light",)))) is not None

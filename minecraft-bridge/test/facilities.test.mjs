@@ -78,3 +78,14 @@ test('覚えている場所を種類ごとに 1 件、座標は近い順、取�
   assert.deepEqual(wheat.gives_ja, ['小麦', '小麦の種'])
   assert.equal(out.deaths[0].direction, 'S')
 })
+
+test('引っ越したら、施設の家は今の家に取り込み直す（旧家の座標のままにしない）', () => {
+  const bot = world()
+  const state = { home: home(), plantings: [] }
+  adoptExisting(bot, state)
+  assert.equal(state.facilities.home.entrance.z, 4)
+  state.home = { name: '新居', min: v(58, 77, -331), max: v(60, 77, -329), door: v(60, 77, -328), inside: v(59, 77, -330), outside: v(60, 77, -327) }
+  assert.equal(adoptExisting(bot, state), true)
+  assert.deepEqual(state.facilities.home.box, { min: { x: 57, y: 77, z: -332 }, max: { x: 61, y: 77, z: -328 } })
+  assert.equal(adoptExisting(bot, state), false)
+})

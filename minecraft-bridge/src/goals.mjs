@@ -21,23 +21,27 @@
 
 import vec3Pkg from 'vec3'
 import { solve, nextStep, isGather } from './solver.mjs'
-import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillItem } from './observe.mjs'
-import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside } from './home.mjs'
+import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillCount } from './observe.mjs'
+import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked } from './home.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
-import { levelStatus, levelTarget, describeLevel, toolsMissing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
-import { cooking } from './cooking.mjs'
+import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { cooking, isRawMeat, FAR_COOK_MIN } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
 import { placedToTake, takeableItem, HOME_FURNITURE, ownFurnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
 import { ensureSurvey, surveyedSites } from './survey.mjs'
 import { CROPS, cropOf, plantingStatus, isSaplingItem, saplingMatches } from './farming.mjs'
-import { toReplace, upgradesToTry, KEEP_WHEN_FIGHTING } from './wear.mjs'
-import { layoutStatus, updateStatus, mineStatus, cropFarms, designedFarms, designedTreeFarms, workCell, HOME_FARM } from './facilities.mjs'
+import { toReplace, upgradesToTry, replacementTiers, KEEP_WHEN_FIGHTING } from './wear.mjs'
+import { layoutStatus, updateStatus, mineStatus, ensureFarmShape, cropFarms, designedFarms, designedTreeFarms, workCell, HOME_FARM, FENCE_ITEM, FENCE_GATE_ITEM } from './facilities.mjs'
 import { isNoPathTo } from './move.mjs'
 import { checkPlacedSpec, countPlaced, placeSpots, describeWhere } from './placing.mjs'
-import { reachableThreats, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
+import { reachableThreats, knownFurnace, LEG, SLEEP_FROM, SLEEP_UNTIL, HEALTH_CRITICAL, HUNGER_URGENT, WATER_AHEAD_MS } from './primitives.mjs'
 import { boatItem, riding } from './boat.mjs'
 import { inBurrow, burrowSpotCached } from './burrow.mjs'
+import { campSiteCached, campMaterials } from './camp.mjs'
+import { waterNeed } from './breath.mjs'
+import { REGEN_FOOD, cannotHeal, needsFoodToHeal, valuablesCarried } from './healing.mjs'
+import { isSwimming } from './swim.mjs'
 
 const { Vec3 } = vec3Pkg
 const MAX_COUNT = 256
@@ -49,6 +53,8 @@ const MAX_LIT = 32
 const MAX_EXPLORE = 256
 const EXPLORE_STEP = 20 // 探索の1ステップで進むおよその距離
 const DAY_TICKS = 24000
+export const TORCH_LOW = 4 // これより少ない松明は「足りない」（Python の goal_chooser.TORCH_LOW と同じ）
+const isDusk = (phase) => phase === 'dusk' || phase === 'night' // 夕方と夜（夜を越す目標が「夜を見た」と数える）
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
@@ -187,7 +193,7 @@ function validGoal (spec, bot, state, knowledge) {
       return { spec: { predicate } }
     case 'through_night':
       // 家がなくても夜は越せる（近くのベッド、持っているベッド、地下）
-      return { spec: { predicate }, sawNight: dayPhase(bot.time.timeOfDay) !== 'day' }
+      return { spec: { predicate }, sawNight: isDusk(dayPhase(bot.time.timeOfDay)) }
     case 'explored': {
       const distance = Number(spec.distance)
       if (!Number.isInteger(distance) || distance < MIN_EXPLORE || distance > MAX_EXPLORE) {
@@ -272,6 +278,9 @@ function brokenDoor (bot, state) {
   const pos = state.plan.worldPos(door)
   const home = state.home.door
   if (!home || Math.abs(pos.x - home.x) + Math.abs(pos.z - home.z) > 0 || Math.abs(pos.y - home.y) > 1) return null
+  // 足元がない（爆発で地面ごと飛んだ）ドアは、先に足元を埋める（built）。ドアだけを置きに行っても、床がなくて置けず、
+  // 3 回の失敗で放棄された（2026-10-06）
+  if (bot.blockAt(pos.offset(0, -1, 0))?.boundingBox === 'empty') return null
   return door
 }
 
@@ -294,6 +303,15 @@ export function evaluate (bot, state, knowledge, world) {
   })
   out.lines.push(...(goal.togetherSkipped ?? []))
   return out
+}
+
+// 畑の柵とゲートの行（設計書 75）: 畑のマスと整地が済むまでは置かない。数だけを書くと、LLM は先に板を集める中目標や
+// placed(oak_fence) の中目標を書く（2026-10-04: 28/56 マスのまま板 35 枚と柵を先にそろえようとして 63 手進まなかった）
+function fenceNote (f, lv) {
+  if (!f.fence.length && !f.gate) return ''
+  const what = [f.fence.length ? `${f.fence.length} fence` : '', f.gate ? 'a fence gate' : ''].filter(Boolean).join(' and ')
+  if (f.done === f.total && !lv?.off) return `, ${what} to place now`
+  return `, ${what} come last: the facility places them itself once the ground is level and every cell is done (no planks or fences before then)`
 }
 
 function evaluateOne (bot, state, knowledge, world) {
@@ -353,14 +371,24 @@ function evaluateOne (bot, state, knowledge, world) {
     case 'built': {
       const name = goal.spec.name
       const plan = name ? state.builds[name] : state.plan
-      const status = plan.status(bot)
+      let status = plan.status(bot)
+      // 足元の地面が直せない家（深い穴、溶岩、埋めるより建て直したほうが安い）は、敷地を選び直して建て直す
+      // （建て直しが済めば今の家は前の家になる: settleHome）
+      if (!name && status.ruined) {
+        const why = status.ruined
+        console.log(`[build] 家を別の場所に建て直す: ${why}`)
+        plan.relocate()
+        status = plan.status(bot)
+        out.lines.push(`the old site is lost (${why}): the house is rebuilt on a new site`)
+      }
       out.met = status.complete
       if (out.met) break
       // 原木のブロックのぶんの原木を先に取り、それが板材にされないようにする
       const need = plan.materialsNeeded(bot)
       addSolved(['log', 'door', 'planks', 'cobblestone', 'dirt'].filter((k) => need[k]).map((k) => ({ spec: k, count: need[k] })))
       out.lines.unshift(`${name ? `blocks of the build ${name}` : 'house blocks'} placed ${status.placed}/${status.total}`)
-      out.remaining += status.total - status.placed
+      if (status.foundation) out.lines.push(`the ground under the house has fallen away: ${status.foundation} blocks of dirt to fill first (bottom up)`)
+      out.remaining += status.total - status.placed + status.foundation
       const next = plan.pending(bot)[0]
       const held = next && (next.block === 'air' || Object.keys(inventoryCounts(bot)).some((n) => knowledge.isMember(next.block, n)))
       if (name) {
@@ -444,16 +472,26 @@ function evaluateOne (bot, state, knowledge, world) {
     case 'at_home':
       out.met = inside && !isDoorOpen(bot, state.home) && !state.home.breach.length
       if (!out.met) {
-        out.leaves.push({ kind: 'go_home' })
+        const blocked = homeEntryBlocked(bot, state.home)
+        if (blocked) out.blocked.push(blocked)
+        else out.leaves.push({ kind: 'go_home' })
         out.remaining = 1
       }
       out.lines.push(`inside the house with the door closed: ${out.met ? 'yes' : 'no'}`)
       break
     case 'through_night': {
-      if (phase !== 'day') goal.sawNight = true
-      out.met = goal.sawNight && phase === 'day'
+      if (isDusk(phase)) goal.sawNight = true
+      // 明け方（23000〜24000）も夜が明けた: 日が昇るのを待たせて、朝なのに「夜を越す」が続かないように
+      out.met = goal.sawNight && (phase === 'day' || phase === 'dawn')
       out.lines.push(`the night has passed: ${out.met ? 'yes' : `no (${phase})`}`)
       if (out.met) break
+      // 昼（夜を一度も見ていない）に夜の目標を持っても、夜の過ごし方は出さない（2026-10-04: 昼に through_night を
+      // 選び、畑の中へ縦穴を掘って潜った）。夕方から始まる
+      if (phase === 'day' && !goal.sawNight) {
+        out.lines.push('it is day: through_night starts at dusk')
+        out.blocked.push('it is daytime: there is no night to get through yet; choose the goal for the day')
+        break
+      }
       // 朝までの分数: 待つことが進み具合に表れるので、停滞とみなされない
       const tod = bot.time.timeOfDay
       out.remaining = Math.max(1, Math.ceil(((MORNING - tod + DAY_TICKS) % DAY_TICKS) / TICKS_PER_MINUTE))
@@ -477,7 +515,9 @@ function evaluateOne (bot, state, knowledge, world) {
         out.leaves.push({ kind: 'stay_burrowed' })
         break
       }
-      if (state.home && !homeCut) out.leaves.push({ kind: 'go_home' })
+      const entryBlocked = state.home && homeEntryBlocked(bot, state.home)
+      if (entryBlocked) out.blocked.push(entryBlocked)
+      if (state.home && !homeCut && !entryBlocked) out.leaves.push({ kind: 'go_home' })
       if (homeCut) out.blocked.push('home: no path to its door a moment ago (see the last result); try another way through the night')
       if (sleepy) {
         const bed = nearbyBed(bot, state)
@@ -488,10 +528,30 @@ function evaluateOne (bot, state, knowledge, world) {
       if (isUnderground(bot)) out.leaves.push({ kind: 'stay_underground' })
       // 家がない・行けない・遠い夜は、足元に穴を掘って塞ぐ（docs/design/61）。ベッドで寝るのとは別の選択肢
       const homeFar = state.home && bot.entity.position.distanceTo(state.home.outside) > BURROW_HOME_DISTANCE
-      if (!state.home || homeCut || homeFar) {
+      if (!state.home || homeCut || homeFar || entryBlocked) {
         const { spot, why } = burrowSpotCached(bot, state)
         if (spot) out.leaves.push({ kind: 'dig_in', pos: spot.feet })
         else out.blocked.push(`digging in for the night: ${why}`)
+        // 縦穴が掘れない（砂浜・石・水のそば）夜は、立った所のまわりを土などで囲んで朝を待つ（docs/design/89）。
+        // 水の中では囲めない: 先に陸へ（reach_land）
+        if (!spot && !isSwimming(bot)) {
+          const { site, why: campWhy } = campSiteCached(bot, state)
+          const short = site && campMaterials(bot, state, site)
+          if (site && !short) out.leaves.push({ kind: 'wall_in', pos: site.feet, need: site.need })
+          else out.blocked.push(`making a camp: ${short ?? campWhy}`)
+        }
+        // 剣も斧もなければ、先に作る（夜の戦いと見張りのため。素手で木を殴って集めるところから）。
+        // 泳いでいる間は集める木がない: 先に陸へ
+        if (!armed(bot) && !isSwimming(bot)) {
+          // 夜の暗がりに木を探して歩かない（explore は出さない）: 見えている木を殴る・作れる物を作る手だけ
+          const r = solve(knowledge, world, [{ spec: 'sword', count: 1 }])
+          // 材料のどれかが近くに見えていなければ（blocked）、一部だけを出さない（棒だけ作れても剣にならない）
+          const leaves = r.blocked.length || r.impossible.length ? [] : r.leaves.filter((l) => l.kind !== 'explore')
+          if (leaves.length) {
+            out.leaves.push(...leaves.map((l) => ({ ...l, also: 'a weapon to fight with through the night' })))
+            out.lines.push('no sword or axe: make one (bare hands can punch the trees you can see) to fight what comes in the dark')
+          }
+        }
       }
       break
     }
@@ -557,7 +617,7 @@ function evaluateOne (bot, state, knowledge, world) {
       const nearHome = bot.entity.position.distanceTo(state.home.inside) <= NEAR_HOME
       const nothingHere = !r.leaves.some((l) => l.kind !== 'explore')
       const full = (bot.inventory.emptySlotCount?.() ?? 36) <= FULL_SLOTS
-      if (held.length && (carrying >= want || carrying >= DEPOSIT_BATCH || full || nearHome || nothingHere || phase !== 'day')) {
+      if (held.length && (carrying >= want || carrying >= DEPOSIT_BATCH || full || nearHome || nothingHere || (phase !== 'day' && !isUnderground(bot)))) {
         out.leaves.push({ kind: 'deposit', items: held })
       } else if (held.length) {
         out.lines.push(`carrying ${carrying}: take them to the chest at ${DEPOSIT_BATCH}, when nothing is left to gather here, or at dusk`)
@@ -594,7 +654,6 @@ function evaluateOne (bot, state, knowledge, world) {
         if (where === 'home') out.leaves.push({ kind: 'go_home' })
       }
       if (out.met || !s.off) break
-      const filler = fillItem(bot)
       // 石などは道具がないと掘れない（掘っても何も落ちない）: 足りない道具を作る
       const missing = toolsMissing(bot, s.cuts)
       const diggable = s.cuts.length - Object.values(missing).reduce((a, b) => a + b, 0)
@@ -602,8 +661,14 @@ function evaluateOne (bot, state, knowledge, world) {
         out.lines.push(`${n} blocks to dig need a ${tool} (or better)`)
         addSolved([{ spec: tool, count: 1 }])
       }
-      if (diggable || (filler && s.fills.length)) out.leaves.push({ kind: 'level', where, distance, pos: (s.cuts[0] ?? s.fills[0]), off: s.off })
-      if (!diggable && s.fills.length && !filler) addSolved([{ spec: 'dirt', count: Math.min(s.fills.length, 64) }])
+      // 埋めるだけなら、穴の数だけ土を持ってから（少しずつ掘っては埋める往復をしない）。土は整地の外から取る
+      const need = fillNeeded(s)
+      const enough = fillCount(bot) >= need
+      if (diggable || (s.fills.length && enough)) out.leaves.push({ kind: 'level', where, distance, pos: (s.cuts[0] ?? s.fills[0]), off: s.off })
+      if (!diggable && s.fills.length && !enough) {
+        out.lines.push(`${need} blocks to fill need ${need} dirt (carrying ${fillCount(bot)}): gather it outside the leveled area first`)
+        addSolved([{ spec: 'dirt', count: need }])
+      }
       break
     }
     case 'custom': {
@@ -643,14 +708,36 @@ function evaluateOne (bot, state, knowledge, world) {
         out.leaves.push({ kind: 'dig_mine', facility: fac.name })
         break
       }
+      ensureFarmShape(bot, state, fac) // 古い畑に長方形と高さを補う（段差を埋められるように）
       const f = layoutStatus(bot, fac)
       updateStatus(bot, fac)
-      out.met = f.done === f.total
-      out.remaining = f.total - f.done
+      // 畑は、地面の高さがそろっていて（四角と、まわり 2 マス）、柵とゲートが立っていて初めて済み（設計書 75）。
+      // 整地は耕す前。柵と門は、畑のマスが全部済んでから
+      const lv = fac.kind === 'farm' && fac.layout.rect ? farmLevel(bot, state, fac) : null
+      const fenceLeft = f.fence.length + (f.gate ? 1 : 0)
+      out.met = f.done === f.total && !fenceLeft && !(lv && (lv.off || lv.unloaded))
+      out.remaining = f.total - f.done + fenceLeft + (lv ? lv.off : 0)
       const what = fac.kind === 'farm' ? `farm ${fac.name} (${fac.layout.crop})` : `tree farm ${fac.name} (${fac.layout.sapling})`
-      out.lines.push(`${what}: ${f.done}/${f.total} cells done${f.till.length ? `, to till ${f.till.length}` : ''}${f.sow.length ? `, to sow ${f.sow.length}` : ''}${f.plant.length ? `, to plant ${f.plant.length}` : ''}${f.water.length ? `, water to place ${f.water.length}` : ''}${f.unseen ? `, out of view ${f.unseen}` : ''}`)
+      out.lines.push(`${what}: ${f.done}/${f.total} cells done${lv?.off ? `, ground to level ${lv.off} columns` : ''}${f.till.length ? `, to till ${f.till.length}` : ''}${f.sow.length ? `, to sow ${f.sow.length}` : ''}${f.plant.length ? `, to plant ${f.plant.length}` : ''}${f.water.length ? `, water to place ${f.water.length}` : ''}${fenceNote(f, lv)}${f.unseen || lv?.unloaded ? `, out of view ${f.unseen + (lv?.unloaded ?? 0)}` : ''}`)
       if (out.met) break
       const inv = inventoryCounts(bot)
+      if (lv?.off) {
+        // 先に高さをそろえる（そろえる前に耕すと、整地で掘り返される）。道具がないと掘れない石は道具を作り、穴は土を
+        // 持ってから埋める（土は畑の外から）
+        const missing = toolsMissing(bot, lv.cuts)
+        for (const [tool, n] of Object.entries(missing)) {
+          out.lines.push(`${n} blocks to dig need a ${tool} (or better)`)
+          addSolved([{ spec: tool, count: 1 }])
+        }
+        const diggable = lv.cuts.length - Object.values(missing).reduce((a, b) => a + b, 0)
+        const need = fillNeeded(lv)
+        if (diggable || (lv.fills.length && fillCount(bot) >= need)) out.leaves.push({ kind: 'level', facility: fac.name, pos: (lv.cuts[0] ?? lv.fills[0]), off: lv.off })
+        if (!diggable && lv.fills.length && fillCount(bot) < need) {
+          out.lines.push(`${need} blocks to fill need ${need} dirt (carrying ${fillCount(bot)}): gather it outside the farm first`)
+          addSolved([{ spec: 'dirt', count: need }])
+        }
+        break
+      }
       if (fac.kind === 'farm') {
         const seed = CROPS[fac.layout.crop].seed
         const seeds = inv[seed] ?? 0
@@ -671,12 +758,23 @@ function evaluateOne (bot, state, knowledge, world) {
           else if (seeds > f.sow.length) out.leaves.push({ kind: 'till', facility: fac.name })
           else if (!f.sow.length) addSolved([{ spec: seed, count: Math.min(f.till.length, 16) }])
         }
+        // 柵（畑のまわりの輪）とゲート: 畑のマスが全部済んでから（畑を作り終わってから）。持っていれば立てる。
+        // なければ作る（柵は板と棒、まとめて 3 本できる）
+        const built = f.done === f.total
+        if (built && f.fence.length) {
+          if (Object.keys(inv).some((n) => FENCE_ITEM.test(n) && inv[n] > 0)) out.leaves.push({ kind: 'fence', facility: fac.name })
+          else addSolved([{ spec: 'oak_fence', count: Math.min(f.fence.length, 64) }])
+        }
+        if (built && f.gate) {
+          if (Object.keys(inv).some((n) => FENCE_GATE_ITEM.test(n) && inv[n] > 0)) out.leaves.push({ kind: 'fence_gate', facility: fac.name })
+          else addSolved([{ spec: 'oak_fence_gate', count: 1 }])
+        }
       } else if (f.plant.length) {
         const held = Object.entries(inventoryCounts(bot)).find(([n, c]) => c > 0 && saplingMatches(fac.layout.sapling, n))
         if (held) out.leaves.push({ kind: 'plant', item: held[0], facility: fac.name })
         else addSolved([{ spec: fac.layout.sapling, count: f.plant.length }])
       }
-      if (f.unseen && !out.leaves.length) out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance })
+      if ((f.unseen || lv?.unloaded) && !out.leaves.length) out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance })
       break
     }
     case 'planted': {
@@ -803,13 +901,42 @@ function evaluateOne (bot, state, knowledge, world) {
   if (!out.met) {
     for (const { item, kind } of toReplace(bot, state)) {
       if (kind === 'sword' && out.lines.some((l) => l.startsWith('no sword'))) continue
-      const r = [item, kind].map((spec) => solve(knowledge, world, [{ spec, count: 1 }]))
-        .find((r) => r.leaves.length && r.leaves.every((l) => l.kind === 'craft' || l.kind === 'place'))
+      // 作れる一番良い格から（壊れたのが木のつるはしでも、石が手元にあれば石のつるはしを作る）。作るだけでできるもの、
+      // または家のチェストから出して作れるものだけ（取りに出かけるのは、それが要る目標のときにソルバーが組み立てる）
+      let r = null
+      let atHome = false
+      for (const spec of [...replacementTiers(item, kind), kind]) {
+        const tried = solve(knowledge, world, [{ spec, count: 1 }])
+        if (!tried.leaves.length || !tried.leaves.every((l) => l.kind === 'craft' || l.kind === 'place' || l.kind === 'withdraw')) continue
+        r = tried
+        atHome = tried.leaves.some((l) => l.kind === 'withdraw')
+        break
+      }
       if (r) {
         out.leaves.push(...r.leaves.map((l) => ({ ...l, also: `a new ${kind} (the ${item} broke)` })))
-        out.lines.push(`the ${item} broke: craft another ${kind}`)
+        out.lines.push(`the ${item} broke: ${atHome ? `take the materials out of the home's chest and craft another ${kind}` : `craft another ${kind}`}`)
       } else {
-        out.lines.push(`the ${item} broke: no materials at hand to craft another ${kind}`)
+        out.lines.push(`the ${item} broke: no materials at hand to craft another ${kind}; go home to make one (the crafting table and the chest are there)`)
+      }
+    }
+  }
+  // 生肉を持っているのに、かまどがどこにもない: 焼けば満腹度が 2.7 倍（牛肉 3 → 8）になるので、作って置く
+  // （2026-10-01: 夜中に 18 回食べたうち焼いたのは 2 回だけ。家にかまどがなく、焼く手が一度も出なかった。
+  // 走ると 40 m ごとに満腹度 1 を使うので、牛まで往復して生で食べる食料は赤字だった）
+  if (!out.met && bot.inventory) {
+    const inv = inventoryCounts(bot)
+    const raw = Object.keys(inv).filter((n) => isRawMeat(knowledge, n)).reduce((s, n) => s + inv[n], 0)
+    if (raw >= FAR_COOK_MIN && !knownFurnace(bot, state)) {
+      const why = `a furnace to cook the ${raw} raw meat (cooked restores 2.7 times as much hunger)`
+      if (inv.furnace > 0) {
+        out.leaves.push({ kind: 'place', item: 'furnace', also: why })
+        out.lines.push('raw meat and no furnace: place the furnace you carry, then cook it')
+      } else {
+        const r = solve(knowledge, world, [{ spec: 'furnace', count: 1 }])
+        if (r.leaves.length && r.leaves.every((l) => l.kind === 'craft' || l.kind === 'place')) {
+          out.leaves.push(...r.leaves.map((l) => ({ ...l, also: why })))
+          out.lines.push('raw meat and no furnace: craft one (8 cobblestone), place it, then cook the meat')
+        }
       }
     }
   }
@@ -883,7 +1010,29 @@ function nearbyBed (bot, state) {
 // 目標を立てずに条件を判定する: [{ spec, met, lines, impossible }]（impossible: いまボットに何を
 // しても手に入らないもの）。不正な条件なら投げる。
 // まだ判定できない条件（建っていない家のベッド）は満たしていないとする。
-export function checkConditions (specs, bot, state, knowledge, world) {
+// item を 1 から作るとき、材料の木に出てくるアイテム（持ち物やチェストの中身は使わない静的な木）。
+// root は item そのもの（グループなら中身）、all は木のすべて。計画の小目標が何のためかを確かめるのに使う
+// （docs/design/67: 計画に「チェストのための鉄インゴット」と書かれた。チェストは板材だけで作れる）
+export function materialsOf (knowledge, world, item) {
+  // 持ち物だけでなく、周りの世界も空にする。家があると地下の石は採掘場・階段掘りから（松明 8 本と剣が先）になり、
+  // 松明は石炭、石炭は地下の鉱石で、輪になって「不可能」と判定される。不可能は木ごと空にするので、石の道具の材料
+  // （丸石・棒）が一つも出なかった（2026-10-03: 預ける手が石のクワの材料を戻し続けた）
+  const empty = {
+    ...world, inventory: {}, stored: {}, table: null, furnace: null, furnaceAway: false, smelting: {},
+    blocks: {}, mobs: {}, remembered: undefined, buried: undefined, home: null, mine: null, mines: [], minePlan: undefined
+  }
+  const nodes = solve(knowledge, empty, [{ spec: item, count: 1 }]).nodes
+  const all = new Set()
+  const walk = (n) => {
+    if (n.spec) for (const m of knowledge.resolve(n.spec).members) all.add(m)
+    for (const c of n.children ?? []) walk(c)
+  }
+  nodes.forEach(walk)
+  return { root: knowledge.resolve(item).members, all: [...all] }
+}
+
+// options.materials: have / placed / stored の条件に、その物の材料の木（materialsOf）を添える
+export function checkConditions (specs, bot, state, knowledge, world, options = {}) {
   return specs.map((spec) => {
     if (!CONDITION_PREDICATES.includes(spec.predicate)) {
       throw new Error(`${spec.predicate} cannot be a condition; use one of ${CONDITION_PREDICATES.join(', ')}`)
@@ -896,7 +1045,15 @@ export function checkConditions (specs, bot, state, knowledge, world) {
       throw e
     }
     const r = evaluate(bot, { ...state, goal }, knowledge, world)
-    return { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)], next_step: r.next ? { predicate: 'have', item: r.next.item, count: r.next.count } : null, gather: !!r.gather }
+    const out = { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)], next_step: r.next ? { predicate: 'have', item: r.next.item, count: r.next.count } : null, gather: !!r.gather }
+    if (options.materials && ['have', 'placed', 'stored'].includes(goal.spec.predicate) && goal.spec.item) {
+      try {
+        out.materials = materialsOf(knowledge, world, goal.spec.item)
+      } catch {
+        // 材料の木を作れない物（作り方が分からない、など）は添えない
+      }
+    }
+    return out
   })
 }
 
@@ -904,15 +1061,33 @@ export function checkConditions (specs, bot, state, knowledge, world) {
 // 何をすべきか書くと悪くなった）
 export function needs (bot, state) {
   const out = []
-  if (bot.health <= HEALTH_CRITICAL) out.push(`health critical (${Math.round(bot.health)}/20)`)
+  // 自然回復は満腹度 18 以上のときだけ（満腹度 12 で体力 1.5 のまま、約 3 分動いて死んだ: 2026-10-01）
+  if (bot.health <= HEALTH_CRITICAL) {
+    let line = `health critical (${Math.round(bot.health)}/20)` + (bot.food < REGEN_FOOD ? `: it heals only while food is 18 or more (food ${bot.food})` : '')
+    // 回復の手段がない: 家にいても治らない。死んで失うのは持ち物だけ（数だけ書く。何をすべきかは書かない）
+    if (cannotHeal(bot)) {
+      const carried = valuablesCarried(bot)
+      line += `; you carry no food. A death drops only what you carry: ${carried ? `${carried} items besides weapons, armor and torches` : 'nothing besides weapons, armor and torches'}`
+    }
+    out.push(line)
+  }
+  // 体力が少し減っていて満腹度が 18 に届かない（危険なほどではない）: 数だけ。「hunger」とは書かない（Python が空腹と読む）
+  else if (needsFoodToHeal(bot)) out.push(`health ${Math.round(bot.health)}/20 and food ${bot.food}/20: it heals only while food is 18 or more`)
   if (bot.food <= HUNGER_URGENT) out.push(`hunger urgent (${bot.food}/20): healing stops below 18 and sprinting below 7`)
+  const wet = waterNeed(bot)
+  if (wet) out.push(wet)
+  // 水の中にいる間は、陸にいないと知らせる（陸に出たと思い込んで、水の中で次の手を選んでいた: 2026-10-01）
+  else if (isSwimming(bot)) out.push('you are swimming in water: you are not on land')
   const phase = dayPhase(bot.time.timeOfDay)
-  if (phase === 'dusk') out.push('night is coming: hostile mobs spawn outside in the dark')
-  if (phase === 'night' && !isInside(bot, state.home)) out.push('it is night and you are outside')
+  // 深い地下は夜も昼も同じ暗さ: 夜の知らせは出さない（帰らせない）
+  const below = phase !== 'day' && phase !== 'dawn' && isUnderground(bot)
+  if (phase === 'dusk' && !below) out.push('night is coming: hostile mobs spawn outside in the dark')
+  if (phase === 'night' && !isInside(bot, state.home) && !below) out.push('it is night and you are outside')
   if (isDark(bot)) {
     const torches = inventoryCounts(bot).torch ?? 0
     out.push('dark here (covered, no light near): hostile mobs can spawn around you' +
-      (torches ? '' : '; you carry no torch: turn back and make torches (a torch is 1 coal or charcoal + 1 stick)'))
+      (torches === 0 ? '; you carry no torch: turn back and make torches (a torch is 1 coal or charcoal + 1 stick)'
+        : torches < TORCH_LOW ? `; only ${torches} torch${torches > 1 ? 'es' : ''} left: place them every few blocks and make more before they run out (a torch is 1 coal or charcoal + 1 stick)` : ''))
   }
   for (const { e, dist } of reachableThreats(bot, state)) out.push(`hostile ${e.name} ${Math.round(dist)}m away`)
   for (const { e } of dangerOutside(bot, state.home)) out.push(`${e.name} waiting outside the door`)

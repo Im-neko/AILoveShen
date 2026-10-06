@@ -49,3 +49,19 @@ test('名前付きの建物（built(name)）: 知らない名前はまだ未達�
   assert.deepEqual(r.spec, { predicate: 'built', name: 'annex' })
   assert.match(r.lines[0], /build annex placed 1\/2/)
 })
+
+test('materials: 材料の木は have / placed / stored（家のあるとき）に、頼んだときだけ添える。持ち物は使わない（docs/design/67）', async () => {
+  const { materialsOf } = await import('../src/goals.mjs')
+  const held = world({ iron_ingot: 9, oak_planks: 64 }) // 持っていても、木は 1 から作るときのもの
+  const specs = [{ predicate: 'have', item: 'water_bucket', count: 1 }, { predicate: 'have', item: 'oak_door', count: 1 }]
+  assert.ok(checkConditions(specs, bot, state, k, held).every((c) => c.materials === undefined))
+  const [bucket, door] = checkConditions(specs, bot, state, k, held, { materials: true })
+  // バケツは鉄から: 鉄インゴットは水入りバケツの木に出る
+  assert.ok(bucket.materials.all.includes('bucket') && bucket.materials.all.includes('iron_ingot'))
+  assert.deepEqual(bucket.materials.root, ['water_bucket'])
+  assert.ok(door.materials.all.includes('crafting_table') && !door.materials.all.includes('iron_ingot'))
+  // チェストは板材と作業台だけ: 鉄は出ない（計画に「チェストのための鉄インゴット」と書かれた）
+  const chest = materialsOf(k, held, 'chest')
+  assert.ok(chest.all.includes('crafting_table') && chest.all.some((n) => n.endsWith('_planks')))
+  assert.ok(!chest.all.includes('iron_ingot'))
+})

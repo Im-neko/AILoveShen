@@ -11,6 +11,7 @@ from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import MAX_QUERIES_PER_STEP, AdvancePlayUseCase
 from ailoveshen.application.use_cases.tool_catalog import (
     ToolCallError,
+    is_query,
     parse_tool_call,
     tool_specs,
 )
@@ -402,6 +403,24 @@ class TestToolStep:
         self.text_generator.choose_tool.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_a_reflex_that_never_ends_is_released_after_the_limit(self, use_case, bridge, monkeypatch):
+        """反射が終わらないなら、待ち続けず手放して選ばせる（止まっている検知に届かなくなる）。"""
+        import ailoveshen.application.use_cases.play as play
+
+        monkeypatch.setattr(play, "REFLEX_POLL_SECONDS", 0.001)
+        monkeypatch.setattr(play, "REFLEX_WAIT_LIMIT_SECONDS", 0.005)
+        busy = {"action": None, "surroundings": {}, "mobs": [], "reflex": True}
+        quiet = {**busy, "reflex": False}
+        bridge.state.side_effect = [busy] * 20 + [quiet] * 5
+        bridge.release_reflex = AsyncMock(return_value=True)
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        bridge.release_reflex.assert_awaited_once_with(play.REFLEX_RELEASE_SECONDS)
+        self.text_generator.choose_tool.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_pickup_is_not_offered_when_nothing_lies_on_the_ground(self, use_case, bridge):
         bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": [], "pickup_ready": False}
         self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
@@ -416,6 +435,22 @@ class TestToolStep:
         assert "pickup" in offered
 
     @pytest.mark.asyncio
+    async def test_experiment_tools_are_offered_only_once_the_step_is_stuck(self, use_case, bridge):
+        bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": []}
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+        await use_case.execute(_session(HAVE_PLANKS))
+        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
+        assert "inspect" not in offered and "diagnostics" not in offered
+
+        stuck = _session(HAVE_PLANKS)
+        stuck.consecutive_failures = 2
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+        await use_case.execute(stuck)
+        offered = {t.name: t for t in self.text_generator.choose_tool.call_args.args[1]}
+        assert {"inspect", "diagnostics"} <= offered.keys()
+        assert "face" in offered["use_item"].parameters["properties"]
+
+    @pytest.mark.asyncio
     async def test_a_failing_small_goal_makes_the_model_think_and_try_another_way(self, use_case):
         session = _session(HAVE_PLANKS)
         self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})] * 2
@@ -427,6 +462,36 @@ class TestToolStep:
         assert purposes[-1] == "tool_stuck"
         failing = [c.kwargs["failing"] for c in self.prompt_builder.build_tool_prompt.call_args_list]
         assert failing == [0, 2]
+
+    @pytest.mark.asyncio
+    async def test_the_same_refusal_over_and_over_is_named_and_then_the_tool_is_not_offered(self, use_case):
+        """座標の数字を変えて同じ理由で断られ続ける（dig の z=285 が 8 回）: 理由を示し、続けば道具を出さない。"""
+        from ailoveshen.domain.value_objects import ToolCall, ToolOutcome
+
+        def refused(x: int) -> ToolOutcome:
+            return ToolOutcome(
+                call=ToolCall("dig", {"x": x, "y": 77, "z": 285}),
+                ok=False,
+                result=f"refused: the block at {x},77,285 is 575.7m away (at most 32m)",
+                seconds=0.0,
+                refused=True,
+            )
+
+        session = _session(HAVE_PLANKS)
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})] * 2
+        use_case._recent_tools.extend(refused(x) for x in (54, 55, 56))
+        await use_case.execute(session)
+        kw = self.prompt_builder.build_tool_prompt.call_args.kwargs
+        assert (kw["same_cause"].tool, kw["same_cause"].times, kw["same_cause"].withheld) == ("dig", 3, False)
+        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
+        assert "dig" in offered
+
+        use_case._recent_tools.clear()
+        use_case._recent_tools.extend(refused(x) for x in (54, 55, 56, 57))
+        await use_case.execute(session)
+        assert self.prompt_builder.build_tool_prompt.call_args.kwargs["same_cause"].withheld
+        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
+        assert "dig" not in offered and "goto" in offered
 
     @pytest.mark.asyncio
     async def test_when_nothing_changes_the_model_chooses_again_with_the_record_and_jev_is_skipped(
@@ -506,18 +571,18 @@ class TestToolStep:
         """設計書 52: LLM が選んで持ち物が変わった手は帳に入り、次の同じ状況で Jev の選択肢に出る。"""
         from dataclasses import replace
 
-        from ailoveshen.application.use_cases.moves import MoveBook
+        from ailoveshen.application.use_cases.learned_candidates import LearnedCandidates
         from ailoveshen.application.use_cases.step_picker import PickedStep, StepToGemini
 
         class Store:
             def load(self):
                 return None
 
-            def save(self, moves, next_id):
+            def save(self, learned, next_id):
                 pass
 
-        book = MoveBook(Store())
-        use_case._moves = book
+        book = LearnedCandidates(Store())
+        use_case._learned = book
         use_case._step_picker = Mock()
         use_case._step_picker.pick = AsyncMock(return_value=StepToGemini("test"))
         use_case._step_picker.note = Mock()
@@ -531,22 +596,22 @@ class TestToolStep:
         ]
 
         await use_case._act_with_tools(session, before)
-        assert book.moves == ()  # まだ効いたか分からない
+        assert book.learned == ()  # まだ効いたか分からない
         await use_case._act_with_tools(session, after)
-        (move,) = book.moves
+        (move,) = book.learned
         assert move.tool == "craft" and move.args == {"item": "wooden_hoe"}
         # 同じ状況の 2 手目: 覚えた手を Jev に渡す
-        assert use_case._step_picker.pick.await_args.kwargs["moves"] == [move]
+        assert use_case._step_picker.pick.await_args.kwargs["learned"] == [move]
 
         # Jev が選んだら、その道具をそのまま実行し、効いたか数える
         call = ToolCall("craft", {"item": "wooden_hoe"}, intent="クワを作る")
         use_case._step_picker.pick = AsyncMock(
-            return_value=PickedStep(call, "remembered craft(item=wooden_hoe)", 0.9, move=move)
+            return_value=PickedStep(call, "learned craft(item=wooden_hoe)", 0.9, learned=move)
         )
         await use_case._act_with_tools(session, after)
         assert watcher.run.await_args.args[0] == call
         await use_case._act_with_tools(session, after)  # 持ち物は変わらなかった
-        assert book.moves[0].failed == 1 and book.moves[0].worked == 1
+        assert book.learned[0].failed == 1 and book.learned[0].worked == 1
 
     def test_tools_control_needs_a_watcher(self, bridge):
         with pytest.raises(ValueError, match="needs a tool_watcher"):
@@ -602,5 +667,36 @@ def test_the_tool_prompt_lists_the_moves_the_bridge_refused():
     refusal = {"tool": "dig", "x": -73, "y": 65, "z": -151, "reason": "will not dig oak_log at -73,65,-151: it is part of the current home", "minutes_ago": 2}
     prompt = builder.build_tool_prompt(Activity(), {"surroundings": {}, "mobs": [], "refusals": [refusal]}, (), ())
     assert "しばらく使えない手" in prompt
-    assert "- dig (-73, 65, -151): will not dig oak_log at -73,65,-151: it is part of the current home（2 分前）" in prompt
+    assert "- dig (x=-73 y=65 z=-151): will not dig oak_log at -73,65,-151: it is part of the current home（2 分前）" in prompt
     assert "しばらく使えない手" not in builder.build_tool_prompt(Activity(), {"surroundings": {}, "mobs": [], "refusals": []}, (), ())
+
+
+class TestExperimentTools:
+    """行き詰まったときだけ出す実験の道具（設計書 85）。"""
+
+    def test_inspect_and_diagnostics_are_offered_only_when_stuck(self):
+        plain = {t.name for t in tool_specs()}
+        stuck = {t.name for t in tool_specs(experiment=True)}
+        assert {"inspect", "diagnostics"}.isdisjoint(plain)
+        assert {"inspect", "diagnostics"} <= stuck
+        assert is_query("inspect") and is_query("diagnostics")
+
+    def test_use_item_takes_a_bare_hand_a_face_and_sneak_only_when_stuck(self):
+        def use_item(experiment):
+            return next(t for t in tool_specs(experiment=experiment) if t.name == "use_item")
+
+        plain, stuck = use_item(False), use_item(True)
+        assert {"face", "sneak", "target"}.isdisjoint(plain.parameters["properties"])
+        assert "item" in plain.parameters["required"]
+        assert {"face", "sneak", "target"} <= stuck.parameters["properties"].keys()
+        assert "item" not in stuck.parameters["required"]  # 素手で押せる
+        assert "intent" in stuck.parameters["required"]
+
+    def test_a_door_click_with_the_home_door_alias_can_be_learned_but_one_with_coordinates_cannot(self):
+        from ailoveshen.application.use_cases.learned_candidates import learnable
+
+        alias = ToolCall("use_item", {"target": "home_door", "face": "south", "sneak": False}, intent="x")
+        coords = ToolCall("use_item", {"x": 2, "y": 70, "z": 4}, intent="x")
+        assert learnable(alias)
+        assert not learnable(coords)
+

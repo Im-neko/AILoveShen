@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from ailoveshen.domain.entities import PlaySession
-from ailoveshen.domain.value_objects import Activity, EmotionState, Objective
+from ailoveshen.domain.value_objects import (
+    Activity,
+    ConversationMessage,
+    EmotionState,
+    Objective,
+)
 
 
 @dataclass
@@ -65,6 +71,10 @@ class GenerateResponseRequest:
     # 配信の運営（管理画面のディレクター）の指示: 視聴者ではない。従い、大目標は視聴者の上限に数えず、
     # 今やるなら小目標も決め直す（docs/design/54_admin_panel.md）
     producer: bool = False
+    # コメントが届いた時刻（返事を書く間に会話が進むので、会話の中の位置と「N 秒前」に使う）と、
+    # そのときほかに届いてまだ返事していないコメント
+    received_at: Optional[datetime] = None
+    waiting: tuple[ConversationMessage, ...] = ()
 
 
 @dataclass

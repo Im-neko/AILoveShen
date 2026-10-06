@@ -49,6 +49,8 @@ function world ({ holes = [], at = new Vec3(0.5, 65, 4.5), items = [['dirt', 4]]
     look: async () => {},
     lookAt: async (p) => { look = p },
     activateBlock: async () => { open = !open },
+    on: () => {},
+    removeListener: () => {},
     setControlState: (k, v) => { controls[k] = v },
     clearControlStates: () => { for (const k of Object.keys(controls)) controls[k] = false },
     waitForTicks: async () => {
@@ -121,12 +123,12 @@ test('埋めるのは今の家のドアの前の床の列だけ（足と頭の�
   assert.equal(isDoorstepFloor({ home: null }, new Vec3(0, 64, 2)), false)
 })
 
-test('整地は、同じ高さならドアの前の穴を埋める列に数える（ほかの家のまわりは今までどおり外す）', () => {
+test('整地は、同じ高さならドアの前の穴を埋める列と、壁のすぐ外の列に数える（別の高さなら家のまわりは外す）', () => {
   const { bot } = world({ holes: [new Vec3(0, 64, 2)] })
   const work = columnWork(bot, state(), 0, 2, 65)
   assert.equal(work.off, true)
   assert.deepEqual(work.fills.map(key), ['0,64,2'])
-  assert.equal(columnWork(bot, state(), 1, 2, 65), 'house or build')
+  assert.equal(typeof columnWork(bot, state(), 1, 2, 65), 'object')
   assert.equal(columnWork(bot, state(), 0, 2, 66), 'house or build') // 別の高さに整地するなら触らない
 })
 
@@ -170,4 +172,26 @@ test('オートジャンプ: 前へ歩いていて、進む先に 1 段の完全
   const onFarmland = { entity: { position: new Vec3(0.5, 64.9375, 0.5), yaw: 0, onGround: true } }
   assert.equal(shouldAutoJump(at({ '0,64,0': 'farmland' }, onFarmland)), false)
   assert.equal(shouldAutoJump(at({ '0,64,0': 'farmland', '0,65,-1': 'dirt' }, onFarmland)), true)
+})
+
+test('ドアから遠いとき、失敗の理由はドアの状態でなく自分の位置（閉じた空間）を先に言う', async () => {
+  const { describeDoorstep } = await import('../src/home.mjs')
+  // 14 ブロック下の、石に囲まれた 1 マス
+  const here = new Vec3(10, 51, 10)
+  const solid = (p) => !(p.x === 10 && p.z === 10 && (p.y === 51 || p.y === 52))
+  const bot = {
+    entity: { position: here.offset(0.5, 0, 0.5), onGround: true, isInWater: false },
+    blockAt: (p) => ({ name: solid(p) ? 'stone' : 'air', position: p, boundingBox: solid(p) ? 'block' : 'empty', getProperties: () => ({}) })
+  }
+  const text = describeDoorstep(bot, home)
+  assert.match(text, /you are \d+ blocks away from the door and 14 blocks below it/)
+  assert.match(text, /the door itself is not the problem/)
+  assert.match(text, /closed space \(1 cells/)
+  assert.doesNotMatch(text, /door closed|door open/)
+})
+
+test('ドアの近くでは、これまでどおりドアの状態と前の床を言う', async () => {
+  const { describeDoorstep } = await import('../src/home.mjs')
+  const { bot } = world({ at: new Vec3(0.5, 65, 4.5) })
+  assert.match(describeDoorstep(bot, home), /^door (closed|open); in front of the door: floor dirt/)
 })

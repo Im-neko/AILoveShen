@@ -192,3 +192,11 @@ test('dig_in: 塞ぐのに失敗して穴が開いたままなら、次は掘り
 })
 
 test('BURROW_DEPTH は 3', () => assert.equal(BURROW_DEPTH, 3))
+
+test('畑・植林場（柵の輪を含む）の中には穴を掘らない', () => {
+  const bot = botIn(world())
+  const withFarm = { ...state, facilities: { wheat_farm_1: { name: 'wheat_farm_1', kind: 'farm', box: { min: { x: -3, y: 63, z: -3 }, max: { x: 3, y: 63, z: 3 } } } } }
+  assert.match(burrowAt(bot, withFarm, 0, 64, 0), /part of the facility wheat_farm_1/)
+  assert.match(burrowAt(bot, withFarm, 4, 64, 0), /part of the facility/, '1 マスのよゆう')
+  assert.equal(typeof burrowAt(bot, withFarm, 5, 64, 0), 'object')
+})

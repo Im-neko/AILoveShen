@@ -81,6 +81,8 @@ def situation_of(
         )
         inventory = obs.state.get("inventory") or {}
         keys["pickaxe"] = "yes" if any(str(k).endswith("_pickaxe") for k in inventory) else "no"
+        # 暗い所の教訓（松明を置く）は、夜・屋外では表せない: 洞窟は昼も暗く、屋外の夜は暗くない（設計書 50 §14）
+        keys["dark"] = "yes" if obs.underground or any("dark here" in n for n in obs.needs) else "no"
     if ended:
         keys["ended"] = ended
     return keys
@@ -112,7 +114,7 @@ def score(
     keys = lesson.keys
     targets = [now, *upcoming]
     if lesson.explicit:
-        for key in ("time", "place", "body", "pickaxe"):
+        for key in ("time", "place", "body", "pickaxe", "dark"):
             if key in keys and key in now and keys[key] != now[key]:
                 return None
         for key in ("goal", "item"):
@@ -141,6 +143,8 @@ def score(
     if same("body") and keys["body"] != "ok":
         total += 2
     if same("pickaxe") and keys["pickaxe"] == "no":
+        total += 1
+    if same("dark") and keys["dark"] == "yes":
         total += 1
     if same("ended") and keys["ended"] in FAILED_ENDINGS:
         total += 2

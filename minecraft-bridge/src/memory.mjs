@@ -81,26 +81,28 @@ const stale = (kind, place, now) => REMEMBERED_ANIMALS.has(kind) && now - place.
 
 const worthATrip = (kind, p, me, now) => !stale(kind, p, now) && flatDistance(p, me) > RECALL_BEYOND
 
-// これらの種類のうち、見えていなくて行く価値がまだある場所。近い順
-export function recall (memory, kinds, me, now) {
+// これらの種類のうち、見えていなくて行く価値がまだある場所（allowed が偽のものは除く）。近い順
+export function recall (memory, kinds, me, now, allowed = () => true) {
   return kinds.flatMap((kind) => (memory.places[kind] ?? [])
     .filter((p) => worthATrip(kind, p, me, now))
     .map((p) => ({ kind, ...p, distance: Math.round(flatDistance(p, me)), minutesAgo: Math.round((now - p.seen) / TICKS_PER_MINUTE) })))
+    .filter(allowed)
     .sort((a, b) => a.distance - b.distance)
     .slice(0, RECALLED_OFFERED)
 }
 
 // 行く価値のある場所がある種類（ソルバーはあてのない探索よりこちらを優先する）
-export function recallableKinds (memory, me, now) {
+export function recallableKinds (memory, me, now, allowed = () => true) {
   return new Set(Object.entries(memory.places ?? {})
-    .filter(([kind, list]) => list.some((p) => worthATrip(kind, p, me, now)))
+    .filter(([kind, list]) => list.some((p) => worthATrip(kind, p, me, now) && allowed(p)))
     .map(([kind]) => kind))
 }
 
 const chestKey = (p) => `${p.x},${p.y},${p.z}`
 
-export function rememberChest (memory, pos, contents, now) {
-  memory.chests[chestKey(pos)] = { x: pos.x, y: pos.y, z: pos.z, contents, seen: now }
+// slots: { used, size }（使っているスロットの数と、チェストのスロットの数。ラージチェストは 54）。開いたときだけ分かる
+export function rememberChest (memory, pos, contents, now, slots = null) {
+  memory.chests[chestKey(pos)] = { x: pos.x, y: pos.y, z: pos.z, contents, seen: now, ...(slots ? { slots } : {}) }
 }
 
 export function forgetChest (memory, pos) {
@@ -151,17 +153,18 @@ export function forgetFurnace (memory, pos) {
   delete memory.furnaces?.[chestKey(pos)]
 }
 
-// item を作っている一番近いかまど
-export function furnaceWith (memory, item, me) {
+// item を作っている一番近いかまど（accept: 取りに行ってよいかまどか。家のかまど以外へは行かない）
+export function furnaceWith (memory, item, me, accept = () => true) {
   return Object.values(memory.furnaces ?? {})
-    .filter((f) => (f.making[item] ?? 0) > 0)
+    .filter((f) => (f.making[item] ?? 0) > 0 && accept(f))
     .sort((a, b) => flatDistance(a, me) - flatDistance(b, me))[0] ?? null
 }
 
 // かまどが作っているもの。できるものごと
-export function smeltingCounts (memory) {
+export function smeltingCounts (memory, accept = () => true) {
   const out = {}
   for (const f of Object.values(memory.furnaces ?? {})) {
+    if (!accept(f)) continue
     for (const [name, n] of Object.entries(f.making)) out[name] = (out[name] ?? 0) + n
   }
   return out

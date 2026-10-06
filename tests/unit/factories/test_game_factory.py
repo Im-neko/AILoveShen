@@ -77,16 +77,41 @@ class TestCreateObjectivePlan:
 
     def test_default_mission_and_objectives(self):
         """設定した大目標が、順番どおり、上限つきでリストになる。"""
-        plan = create_objective_plan(MissionSettings(viewer_budget_steps=50))
+        plan = create_objective_plan(
+            MissionSettings(
+                viewer_budget_steps=50,
+                objectives=[
+                    {"title": "身を守る道具を持つ", "conditions": [{"predicate": "have", "item": "wooden_sword", "count": 1}]}
+                ],
+            )
+        )
 
         assert plan.mission.text == "生き延びながら家を建て、街にしていく"
-        assert [g.describe() for g in plan.pending] == [
-            "自分の家を作る (built())",
-            "夜に寝られるようにする (placed(bed, home))",
-            "身を守る道具を持つ (have(wooden_sword, 1))",
-            "食料を蓄える (have(food, 8))",
-        ]
+        assert [g.describe() for g in plan.pending] == ["身を守る道具を持つ (have(wooden_sword, 1))"]
         assert plan.viewer_budget == 50
+        assert plan.playbook == ()
+
+    def test_the_playbook_keeps_the_order_of_the_settings(self):
+        """定石は、設定の順にそのまま段になる（大目標にするのは今の段だけ。docs/design/74）。"""
+        plan = create_objective_plan(
+            MissionSettings(
+                playbook=[
+                    {"name": "bed", "title": "寝床", "conditions": [{"predicate": "placed", "item": "bed"}]},
+                    {
+                        "name": "food",
+                        "title": "畑",
+                        "conditions": [
+                            {"predicate": "facility", "name": "wheat_farm_1"},
+                            {"predicate": "have", "item": "wheat", "count": 3},
+                        ],
+                        "reason": "食料",
+                    },
+                ]
+            )
+        )
+        assert [s.name for s in plan.playbook] == ["bed", "food"]
+        assert [c.describe() for c in plan.playbook[1].conditions] == ["facility(wheat_farm_1)", "have(wheat, 3)"]
+        assert plan.pending == ()
 
     def test_condition_not_judged_from_the_world_is_rejected(self):
         """ブリッジが判定できない大目標は、開始時に失敗する。"""

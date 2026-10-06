@@ -19,6 +19,7 @@ function world (blocks = {}, items = []) {
     entity: { position: new Vec3(10, 64, 0) },
     inventory: { items: () => items },
     entities: {},
+    unlocked: () => true,
     findBlock: () => null,
     time: { timeOfDay: 1000, age: 0 },
     blockAt: (p) => {
@@ -35,8 +36,13 @@ function world (blocks = {}, items = []) {
       .filter((p) => p.distanceTo(point) <= maxDistance)
   }
 }
+// 畑のまわりの柵とゲートが立っている世界のブロック（設計書 75）
+const fenced = (fac) => ({
+  ...Object.fromEntries(fac.layout.fence.map((c) => [`${c.x},${c.y},${c.z}`, 'oak_fence'])),
+  [`${fac.layout.gate.x},${fac.layout.gate.y},${fac.layout.gate.z}`]: 'oak_fence_gate'
+})
 const home = { inside: new Vec3(0, 64, 0), min: new Vec3(-1, 64, -1), max: new Vec3(1, 64, 1), door: new Vec3(0, 64, 2), outside: new Vec3(0, 64, 3) }
-const state = (extra = {}) => ({ home, plan: null, builds: {}, formerHomes: [], ...extra })
+const state = (extra = {}) => ({ home, plan: null, builds: {}, formerHomes: [], recipeBook: { recipesFor: () => [1] }, ...extra })
 const ZONE = [{ min_x: 8, min_z: 0, max_x: 15, max_z: 7 }]
 
 test('畑の設計: 区画の中に幅 x 奥行きの耕せるマスを選ぶ（草花の上も耕せる）', () => {
@@ -73,6 +79,9 @@ test('植林場の設計: 間隔 4 以上の格子、足りなければ理由（
   assert.ok(Math.abs(a.x - b.x) % 4 === 0 && Math.abs(a.z - b.z) % 4 === 0)
   assert.ok(fac.layout.cells.every((c) => c.y === 64))
   assert.throws(() => registerFacility(bot, state(), 'gg', { kind: 'tree_farm', boxes: ZONE, design: { count: 9, spacing: 4 } }), /only 4 places/)
+  // 頼んだ数に半分以上あれば、ある所だけで作る
+  assert.equal(registerFacility(bot, state(), 'short', { kind: 'tree_farm', boxes: ZONE, design: { sapling: 'oak_sapling', count: 7, spacing: 4 } }).layout.cells.length, 4)
+  assert.throws(() => registerFacility(bot, state(), 'gg2', { kind: 'tree_farm', boxes: ZONE, design: { count: 9, spacing: 4 } }), /at least 5 are needed/)
   assert.throws(() => registerFacility(bot, state(), 'hh', { kind: 'tree_farm', boxes: ZONE, design: { count: 2, spacing: 2 } }), /spacing must be 4-6/)
 })
 
@@ -91,7 +100,7 @@ test('施設の今: 耕す・まく・済んだマス、次のマスは近い順
   assert.deepEqual([st.total, st.done, st.sow.length, st.till.length, st.water.length], [3, 0, 1, 1, 1])
   assert.deepEqual(nextCell(bot, fac, 'till'), new Vec3(c2.x, c2.y, c2.z))
   assert.deepEqual(nextCell(bot, fac, 'water'), new Vec3(w1.x, w1.y, w1.z))
-  const done = { [key(c1)]: 'farmland', [key(c1, 1)]: 'wheat', [key(c2)]: 'farmland', [key(c2, 1)]: { name: 'wheat', age: 7 } }
+  const done = { ...fenced(fac), [key(c1)]: 'farmland', [key(c1, 1)]: 'wheat', [key(c2)]: 'farmland', [key(c2, 1)]: { name: 'wheat', age: 7 } }
   // 作物が全部植わっても、水がなければ完成でない
   bot = world(done)
   assert.equal(updateStatus(bot, fac), true)
@@ -100,6 +109,12 @@ test('施設の今: 耕す・まく・済んだマス、次のマスは近い順
   assert.equal(updateStatus(bot, fac), true)
   assert.equal(fac.status, 'done')
   assert.equal(layoutStatus(bot, fac).water.length, 0)
+  // 柵が欠けていれば、作物と水がそろっても完成でない
+  const [gap] = fac.layout.fence
+  bot = world({ ...done, [key(w1)]: 'water', [`${gap.x},${gap.y},${gap.z}`]: 'air' })
+  assert.equal(updateStatus(bot, fac), true)
+  assert.equal(fac.status, 'building')
+  assert.deepEqual(layoutStatus(bot, fac).fence, [new Vec3(gap.x, gap.y, gap.z)])
 })
 
 test('facility(name) の目標: まだない名前は「まだ」、耕す・まく葉、設計した畑は家の畑に数えない', () => {
@@ -108,12 +123,12 @@ test('facility(name) の目標: まだない名前は「まだ」、耕す・ま
   assert.throws(() => makeGoal({ predicate: 'facility', name: 'wheat_farm' }, world(), s, k), /no facility named wheat_farm/)
   const fac = registerFacility(world(), s, 'wheat_farm', { kind: 'farm', boxes: ZONE, design: { width: 3, depth: 1 } })
   const [c1] = fac.layout.cells
-  const bot = world({ [`${c1.x},${c1.y},${c1.z}`]: 'farmland' }, [{ name: 'wooden_hoe', count: 1 }, { name: 'wheat_seeds', count: 3 }, { name: 'water_bucket', count: 1 }])
+  const bot = world({ [`${c1.x},${c1.y},${c1.z}`]: 'farmland' }, [{ name: 'wooden_hoe', count: 1 }, { name: 'wheat_seeds', count: 3 }, { name: 'water_bucket', count: 1 }, { name: 'oak_fence', count: 20 }, { name: 'oak_fence_gate', count: 1 }])
   s.goal = makeGoal({ predicate: 'facility', name: 'wheat_farm' }, bot, s, k)
   const r = evaluate(bot, s, k, {})
   assert.equal(r.met, false)
-  assert.equal(r.remaining, 3)
-  // 水のマスが先（水のバケツを持っているとき）。そのあと、まく・耕す
+  assert.equal(r.remaining, 3 + fac.layout.fence.length + 1) // 柵の輪とゲートも残り
+  // 水のマスが先（水のバケツを持っているとき）。そのあと、まく・耕す。柵とゲートは、畑のマスが全部済んでから
   assert.deepEqual(r.leaves.map((l) => [l.kind, l.facility]), [['water', 'wheat_farm'], ['sow', 'wheat_farm'], ['till', 'wheat_farm']])
   adoptExisting(bot, s)
   assert.equal(s.facilities.home_farm, undefined, '設計した畑の耕地は home_farm にしない')
@@ -166,7 +181,7 @@ test('畑も植林場もなければ、先に facility(name) で設計するよ�
   assert.deepEqual(r.leaves.filter((l) => l.kind === 'plant').map((l) => [l.item, l.facility]), [['oak_sapling', 'grove']])
   assert.equal(workCell(bot, s, 'plant', { sapling: 'birch_sapling' }), null) // オーク用の植林場
 
-  registerFacility(world(), s, 'small', { kind: 'farm', boxes: ZONE.map((z) => ({ ...z, min_z: 4 })), design: { width: 2, depth: 1 } })
+  registerFacility(world(), s, 'small', { kind: 'farm', boxes: [{ min_x: 20, min_z: 0, max_x: 27, max_z: 7 }], design: { width: 2, depth: 1 } })
   s.goal = makeGoal({ predicate: 'farmed', item: 'wheat', count: 5 }, bot, s, k)
   assert.match(evaluate(bot, s, k, {}).blocked.join('\n'), /the wheat farms have room for 1 \(asked 5\): for more, add another farm with a new name/)
 })
@@ -180,10 +195,11 @@ test('耕すのは、まく種が耕し済みのマスより多いときだけ�
   const tilled = { [`${c1.x},${c1.y},${c1.z}`]: 'farmland' } // 1 マス耕し済み、1 マスはまだ（あと水のマス 1）
   const hoe = { name: 'wooden_hoe', count: 1 }
   const bucket = { name: 'water_bucket', count: 1 } // 水のバケツがあれば水のマスの手が加わるだけ（ソルバーは呼ばれない）
+  const fences = [{ name: 'oak_fence', count: 30 }, { name: 'oak_fence_gate', count: 1 }] // 柵があれば、柵の手が加わるだけ
   const leaves = (items) => {
-    const bot = world(tilled, [...items, bucket])
+    const bot = world(tilled, [...items, bucket, ...fences])
     s.goal = makeGoal({ predicate: 'facility', name: 'wheat_farm' }, bot, s, k)
-    return evaluate(bot, s, k, {}).leaves.filter((l) => l.kind !== 'water')
+    return evaluate(bot, s, k, {}).leaves.filter((l) => !['water', 'fence', 'fence_gate'].includes(l.kind))
   }
   // 種 1 つで耕し済みが 1 マス: まくだけ。耕さない
   assert.deepEqual(leaves([hoe, { name: 'wheat_seeds', count: 1 }]).map((l) => l.kind), ['sow'])
@@ -192,7 +208,7 @@ test('耕すのは、まく種が耕し済みのマスより多いときだけ�
   // 種がなければ耕さない（種を集める）
   assert.ok(!leaves([hoe]).some((l) => l.kind === 'till'))
   // 何も耕していなくて種もなければ、耕さずに種を集める
-  const bot = world({}, [hoe, bucket])
+  const bot = world({}, [hoe, bucket, ...fences])
   s.goal = makeGoal({ predicate: 'facility', name: 'wheat_farm' }, bot, s, k)
   assert.ok(!evaluate(bot, s, k, {}).leaves.some((l) => l.kind === 'till'))
 

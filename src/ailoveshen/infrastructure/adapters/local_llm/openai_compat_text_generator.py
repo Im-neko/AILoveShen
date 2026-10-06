@@ -393,7 +393,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
             "purpose": purpose or "default",
             "thinking_level": "on" if think else "off",
             "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "system": messages[0].get("content") if messages and messages[0].get("role") == "system" else None,
             "prompt": messages[-1].get("content", "") if messages else "",
+            "tools": [(t.get("function") or {}).get("name") for t in body.get("tools") or []],
             "images": [],
         }
         if error is not None:

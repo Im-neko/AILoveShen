@@ -47,7 +47,15 @@ export function toReplace (bot, state, now = Date.now()) {
 // 道具の格（上ほど良い）。金は脆いので上に数えない
 export const TIERS = ['wooden', 'stone', 'iron', 'diamond', 'netherite']
 const UPGRADE_KINDS = ['pickaxe', 'axe', 'shovel', 'sword']
+const TIERED = [...UPGRADE_KINDS, 'hoe']
 export const tierOf = (name) => TIERS.indexOf(name.split('_')[0])
+
+// 壊れた道具の作り直しに試す品（作れる一番良い格から。ダイヤまで。壊れた格より下は試さない）
+export function replacementTiers (item, kind) {
+  if (!TIERED.includes(kind) || tierOf(item) < 0) return [item] // はさみなど、格のない道具
+  const from = tierOf(item)
+  return TIERS.slice(from, TIERS.indexOf('diamond') + 1).reverse().map((t) => `${t}_${kind}`)
+}
 
 // 持っている道具の種類ごとに、今より上の格（作る候補を調べる順: 上から）。2026-09-27: 石のつるはしを
 // 作れるのに、木のつるはしを使い続けていた

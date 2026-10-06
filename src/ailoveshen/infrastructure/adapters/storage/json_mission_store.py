@@ -71,6 +71,7 @@ class JsonMissionStore(IMissionStore):
                 stage_met=tuple(_spec(c) for c in data.get("stage_met", [])),
                 site=TownSite(**data["site"]) if data.get("site") else None,
                 town_map=_town_map(data["town_map"]) if data.get("town_map") else None,
+                playbook_done=tuple(data.get("playbook_done", [])),
             )
         except (ValueError, KeyError, TypeError, AttributeError) as e:
             aside = self._path.with_suffix(self._path.suffix + ".unreadable")
@@ -97,6 +98,7 @@ class JsonMissionStore(IMissionStore):
             "stage_met": [c.to_dict() for c in plan.stage_met],
             "site": asdict(plan.site) if plan.site else None,
             "town_map": asdict(plan.town_map) if plan.town_map else None,
+            "playbook_done": list(plan.playbook_done),
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
@@ -160,6 +162,7 @@ def _to_dict(goal: Objective) -> dict[str, Any]:
         "progress": list(goal.progress),
         "stage": goal.stage,
         "prepares_town": goal.prepares_town,
+        "playbook": goal.playbook,
     }
 
 
@@ -240,6 +243,7 @@ def _objective(data: dict[str, Any]) -> Objective:
         progress=tuple(data.get("progress", [])),
         stage=data.get("stage"),
         prepares_town=bool(data.get("prepares_town", False)),
+        playbook=data.get("playbook"),
     )
 
 

@@ -6,7 +6,15 @@ import pytest
 
 from ailoveshen.application.use_cases.job_planner import JobPlanner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
-from ailoveshen.application.use_cases.plan_lint import check_plan, unregistered_builds
+from ailoveshen.application.use_cases.plan_lint import (
+    aimless_jobs,
+    already_built,
+    check_plan,
+    own_condition_last,
+    preparation_of,
+    unneeded_materials,
+    unregistered_builds,
+)
 from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
 from ailoveshen.domain.value_objects import (
@@ -15,6 +23,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     Job,
     JobState,
+    MaterialTree,
     Mission,
     Step,
 )
@@ -163,7 +172,7 @@ class TestReconcile:
         plan = _two_objectives()
         bridge = AsyncMock()
 
-        async def check(specs):
+        async def check(specs, materials=False):
             if any(s == TOWER or s == PLANKS for s in specs):
                 raise GoalRejectedError("no")
             return [ConditionStatus(s, True) for s in specs]
@@ -315,3 +324,185 @@ def test_closed_jobs_survive_saving_and_loading(tmp_path):
     saved = store.load()
     assert [j.state for j in saved.finished[0].jobs] == [JobState.CLOSED] * 3
     assert all(j.met_now == () for j in saved.pending[0].jobs)  # 照合は保存しない（古い真偽を残さない）
+
+
+IRON = GoalSpec(GoalPredicate.HAVE, item="iron_ingot", count=3)
+CHEST = GoalSpec(GoalPredicate.PLACED, item="chest", where="home")
+STORED = GoalSpec(GoalPredicate.STORED, item="cobblestone", count=32)
+FARM = GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_1")
+BUCKET = GoalSpec(GoalPredicate.HAVE, item="water_bucket", count=1)
+
+
+def _tree(root: str, *rest: str) -> MaterialTree:
+    return MaterialTree(root=(root,), all=(root, *rest))
+
+
+TREES = {
+    IRON.describe(): _tree("iron_ingot", "raw_iron", "stone_pickaxe"),
+    CHEST.describe(): _tree("chest", "crafting_table", "oak_planks", "oak_log"),
+    STORED.describe(): _tree("cobblestone", "wooden_pickaxe", "oak_planks", "stick"),
+    BUCKET.describe(): _tree("water_bucket", "bucket", "iron_ingot", "raw_iron"),
+}
+
+
+class TestMaterials:
+    """計画に「チェストのための鉄インゴット」と書かれた（チェストは板材だけで作れる。2026-09-30、設計書 67）。"""
+
+    def test_a_material_the_rest_of_the_job_does_not_use_is_refused_with_what_it_does_need(self):
+        job = Job(
+            CHEST,
+            title="拠点の整理",
+            steps=(Step(IRON, "チェストを作るための鉄"), Step(CHEST, "置く"), Step(STORED, "しまう")),
+        )
+        why = unneeded_materials([job], None, TREES)
+        assert why and "have(iron_ingot, 3) is not needed" in why
+        assert "placed(chest, home) needs chest, crafting_table, oak_planks" in why
+        with pytest.raises(ValueError, match="iron_ingot is not part of"):
+            check_plan((job,), None, trees=TREES)
+
+    def test_a_prerequisite_the_recipe_uses_is_fine(self):
+        job = Job(
+            BUCKET,
+            title="水の用意",
+            steps=(Step(BUCKET, "水を汲む", needs=(Step(IRON, "バケツの鉄"),)),),
+        )
+        assert unneeded_materials([job], None, TREES) is None
+
+    def test_a_job_with_a_condition_of_unknown_needs_is_not_checked(self):
+        """畑・整地・建物など、材料の木がない条件がある中目標は、何が要るか分からないので確かめない。"""
+        job = Job(FARM, title="畑", steps=(Step(IRON, "何か"), Step(FARM, "耕す")))
+        assert unneeded_materials([job], None, {**TREES}) is None
+
+    def test_a_job_with_one_condition_and_a_missing_tree_is_not_checked(self):
+        job = Job(IRON, title="鉄", steps=(Step(IRON, "集める"),))
+        assert unneeded_materials([job], None, TREES) is None
+        assert unneeded_materials([Job(CHEST, title="x", steps=(Step(IRON, "y"), Step(CHEST, "z")))], None, {}) is None
+
+    def test_the_objectives_own_item_conditions_count_as_uses(self):
+        _, objective = _objective(BUCKET)
+        job = Job(CHEST, title="下ごしらえ", steps=(Step(IRON, "鉄"), Step(CHEST, "置く")))
+        assert unneeded_materials([job], objective, TREES) is None
+
+
+class TestAlreadyBuilt:
+    """夜に家の中にいる代わりに `built()` を中目標にして、書いた瞬間に済んだ（2026-09-30）。"""
+
+    def test_a_job_or_step_with_a_building_that_stands_is_refused(self):
+        _, objective = _objective(GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_3"))
+        met = {HOUSE.describe(): True}
+        job = Job(HOUSE, title="屋内待避")
+        with pytest.raises(ValueError, match=r"built\(\) already holds"):
+            check_plan((job,), objective, trees=None, met=met)
+        step_job = Job(DOOR, title="ドア", steps=(Step(HOUSE, "家に入る"), Step(DOOR, "作る")))
+        assert already_built([step_job], set(), met)
+
+    def test_a_building_not_built_yet_or_the_objectives_own_condition_is_fine(self):
+        _, objective = _objective()
+        assert already_built([Job(HOUSE, title="家")], set(), {HOUSE.describe(): False}) == ""
+        check_plan((Job(HOUSE, title="家の建築"),), objective, met={HOUSE.describe(): True})
+
+    def test_it_is_not_checked_when_the_bridge_did_not_say(self):
+        _, objective = _objective(GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_3"))
+        check_plan((Job(HOUSE, title="屋内待避"),), objective, met=None)
+
+    @pytest.mark.asyncio
+    async def test_the_planner_sends_such_a_plan_back(self):
+        text = AsyncMock()
+        text.generate_json.side_effect = [
+            _data(predicate="built", item=None, count=None, steps=[]),
+            _data(),
+        ]
+        bridge = AsyncMock()
+        bridge.check.side_effect = lambda specs, materials=False: [
+            ConditionStatus(s, s.predicate == GoalPredicate.BUILT)
+            for s in specs
+        ]
+        bridge.builds.return_value = []
+        keeper = ObjectiveKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
+        planner = JobPlanner(text, GamePromptTemplateBuilder(), bridge, keeper)
+        plan, _ = _objective(GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_3"))
+        session = _session(plan=plan)
+        assert await planner.plan(session, session.activity()) is True
+        assert "already holds" in text.generate_json.call_args_list[1].args[0]
+
+
+class TestUnwritableObjective:
+    @pytest.mark.asyncio
+    async def test_an_objective_whose_condition_is_not_a_step_condition_is_not_planned(self):
+        text = AsyncMock()
+        bridge = AsyncMock()
+        keeper = ObjectiveKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
+        planner = JobPlanner(text, GamePromptTemplateBuilder(), bridge, keeper)
+        plan, _ = _objective(GoalSpec(GoalPredicate.SURVEYED, count=9))
+        session = _session(plan=plan)
+        assert await planner.plan(session, session.activity()) is False
+        text.generate_json.assert_not_called()
+
+
+SURVEY = GoalSpec(GoalPredicate.SURVEYED, count=9)
+TORCHES = GoalSpec(GoalPredicate.HAVE, item="torch", count=8)
+FOOD = GoalSpec(GoalPredicate.HAVE, item="food", count=4)
+BOAT = GoalSpec(GoalPredicate.HAVE, item="oak_boat", count=1)
+LEVEL = GoalSpec(GoalPredicate.LEVELED, where="home", distance=8)
+
+
+class TestAimless:
+    """探す大目標の計画に「ドアの製作」や整地が並んだ（2026-09-30、設計書 50 §20）。"""
+
+    def test_preparations_are_told_by_the_item(self):
+        assert preparation_of(TORCHES) == "light"
+        assert preparation_of(FOOD) == "food"
+        assert preparation_of(BOAT) == "transport"
+        assert preparation_of(STONE_PICK) == "tool"
+        assert preparation_of(GoalSpec(GoalPredicate.LIT, distance=16)) == "light"
+        assert preparation_of(DOOR) is None
+        assert preparation_of(LEVEL) is None
+
+    def test_a_job_that_is_no_preparation_is_refused_for_an_objective_that_builds_nothing(self):
+        _, objective = _objective(SURVEY)
+        why = aimless_jobs([Job(TORCHES, title="明かり"), Job(DOOR, title="ドアの製作")], objective)
+        assert "ドアの製作" in why and "builds nothing" in why
+        assert "leveled" in aimless_jobs([Job(LEVEL, title="地形調査")], objective)
+        with pytest.raises(ValueError, match="builds nothing"):
+            check_plan((Job(DOOR, title="ドア"),), objective)
+
+    def test_preparations_are_fine_for_it(self):
+        _, objective = _objective(SURVEY)
+        jobs = [Job(TORCHES, title="明かり"), Job(FOOD, title="食料"), Job(BOAT, title="船")]
+        assert aimless_jobs(jobs, objective) == ""
+
+    def test_an_objective_with_things_to_build_is_not_checked_without_a_tree(self):
+        _, objective = _objective(GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_3"))
+        assert aimless_jobs([Job(DOOR, title="ドア")], objective) == ""
+        assert aimless_jobs([Job(DOOR, title="ドア")], objective, {}) == ""
+
+    def test_with_a_tree_a_job_outside_it_is_refused_unless_it_is_a_preparation(self):
+        bucket_tree = {BUCKET.describe(): _tree("water_bucket", "bucket", "iron_ingot")}
+        trees = {**bucket_tree, DOOR.describe(): _tree("oak_door", "oak_planks")}
+        _, objective = _objective(BUCKET)
+        why = aimless_jobs([Job(DOOR, title="ドア")], objective, trees)
+        assert "not part of what the objective needs" in why
+        assert aimless_jobs([Job(TORCHES, title="明かり")], objective, trees) == ""
+        assert aimless_jobs([Job(IRON, title="鉄")], objective, {**trees, IRON.describe(): _tree("iron_ingot")}) == ""
+
+
+class TestOwnConditionLast:
+    """大目標の条件そのものの中目標は、書き直させずに最後へ回す（街の段階 2 の計画が書けなかった）。"""
+
+    FOOD = GoalSpec(GoalPredicate.HAVE, item="food", count=16)
+
+    def test_the_job_that_is_the_objectives_condition_goes_last(self):
+        _, objective = _objective(self.FOOD)
+        hunt, torches = Job(self.FOOD, title="牛狩り"), Job(COBBLE, title="石")
+        before = (hunt, torches)
+        with pytest.raises(ValueError, match="not the last job"):
+            check_plan(before, objective, builds=set())
+        fixed = own_condition_last(before, objective)
+        assert fixed == [torches, hunt]
+        check_plan(fixed, objective, builds=set())
+
+    def test_nothing_changes_when_it_is_already_last_or_when_several_would_have_to_be(self):
+        _, objective = _objective(self.FOOD, COBBLE)
+        a, b, c = Job(WOOD_PICK, title="a"), Job(self.FOOD, title="b"), Job(COBBLE, title="c")
+        assert own_condition_last((a, b), objective) == [a, b]
+        assert own_condition_last((b, c, a), objective) == [b, c, a]  # 2 つあれば、どう並べても合わない

@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from loguru import logger
 
 from ailoveshen.application.ports.output.chat_source import IChatSource
+from ailoveshen.application.ports.output.support_source import ISupportSource
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
 from ailoveshen.domain.events import (
     GoalSetEvent,
@@ -22,6 +23,7 @@ from ailoveshen.domain.events import (
     SkillRevisedEvent,
 )
 from ailoveshen.presentation.services.chat_responder import ChatResponder
+from ailoveshen.presentation.services.support_responder import SupportResponder
 from ailoveshen.presentation.services.game_service import GameService
 from ailoveshen.presentation.services.live_narration import LiveNarration
 from ailoveshen.presentation.services.llm_service import LLMService
@@ -50,6 +52,8 @@ class Stream:
         responder: ChatResponder | None = None,
         closers: tuple[Callable[[], Awaitable[Any]], ...] = (),
         live: LiveNarration | None = None,
+        supports: tuple[ISupportSource, ...] = (),
+        thanker: SupportResponder | None = None,
     ) -> None:
         """
         Args:
@@ -61,9 +65,13 @@ class Stream:
             responder: チャットへの返事（chat と組で渡す）
             closers: 止めるときに呼ぶもの（アバターの close、TTS の stop など）
             live: 行動の途中の一言（docs/design/43）。None なら話さない
+            supports: 配信への応援（フォロー、サブスクなど）の出どころ（thanker と組で渡す）
+            thanker: 応援へのお礼（docs/design/71）
         """
         if (chat is None) != (responder is None):
             raise ValueError("chat and responder go together")
+        if bool(supports) != (thanker is not None):
+            raise ValueError("supports and thanker go together")
         self._game = game
         self._llm = llm
         self._board = board
@@ -72,6 +80,8 @@ class Stream:
         self._responder = responder
         self._closers = closers
         self._live = live
+        self._supports = supports
+        self._thanker = thanker
 
     def subscribe(self, bus: IEventSubscriber) -> None:
         """目標の変化をログに出す（配信の画面の外で、何が起きているかを追うため）。"""
@@ -132,6 +142,10 @@ class Stream:
                 chat = asyncio.create_task(self._responder.run(self._chat))
                 chat.add_done_callback(_report_end("チャットへの返事"))
                 tasks.append(chat)
+            if self._thanker is not None:
+                thanks = asyncio.create_task(self._thanker.run(self._supports))
+                thanks.add_done_callback(_report_end("応援へのお礼"))
+                tasks.append(thanks)
             if self._live is not None:
                 live = asyncio.create_task(self._live.run())
                 live.add_done_callback(_report_end("行動の途中の一言"))
@@ -147,6 +161,7 @@ class Stream:
         closers: list[Callable[[], Awaitable[Any]]] = []
         if self._chat is not None:
             closers.append(self._chat.close)
+        closers += [s.close for s in self._supports if s is not self._chat]
         closers += [self._game.close, self._llm.close, *self._closers]
         for close in closers:
             try:

@@ -5,7 +5,7 @@
 // いちばん上の固いブロックが y-1 になっていればそろっている。
 //   - 高い列（出っ張り）: y 以上にある自然の地形（TERRAIN）を掘る
 //   - 低い列（穴）: 地面の上から y-1 まで土で埋める
-// 触らない列: 家・前の家・建物とそのまわり 1 マス（inHouse）、植えた木のまわり、畑（耕地と作物）、
+// 触らない列: 家・前の家・建物とそのまわり 1 マス（inHouse）。ただし家の床と同じ高さに整地するなら、壁のすぐ外は整地する、植えた木のまわり、畑（耕地と作物）、
 // 木（原木・葉）、水・溶岩、自然でないブロック（家具、置いたもの）が y 以上にある列、DY より深い穴。
 // 見えていない列はそろっていないと数える（lit と同じ: 見えない所をそろったとはみなさない）。
 
@@ -19,6 +19,13 @@ export const MIN_LEVEL = 3
 export const MAX_LEVEL = 16
 const DY = 8 // 目標の高さからこれだけ上下まで見る（これより深い穴・高い崖は触らない）
 const PLANTING_GAP = 1 // 植えた木のまわりのこのマス数は触らない
+
+// 整地する（した）土地の下は、土や石を取るために掘らない（掘ると、そろえた地面の下が穴だらけ（スポンジ）に
+// なって、埋めた土がまた足りなくなる）。土は整地の外から取る。床の高さより上の出っ張りは、整地で掘るものなので
+// 掘ってよい。zones は 2 つから: wanted = 中目標にある leveled（Python が目標のたびに送る。まだ整地していない
+// 土地も守る）、done = 整地を始めた土地（ボット自身の記録。目標が終わった後も守る）
+const ZONE_MARGIN = 1 // 整地の半径のこのマス数外まで守る
+const MAX_ZONES = 8
 
 // 自然の地形（掘ってよい。歩きながら掘るのもこれと葉だけ: primitives.mjs の configureMovements）
 export const TERRAIN = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|mycelium|mud|clay|sand|red_sand|gravel|snow|snow_block|stone|granite|diorite|andesite|deepslate|tuff|calcite|dripstone_block|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|netherrack|moss_block|\w+_ore|dirt_path)$/
@@ -47,7 +54,10 @@ export function columnWork (bot, state, x, z, y) {
   const floor = y - 1
   // ドアの前の床は、同じ高さに整地するなら普通の列（穴を埋める。家のブロックは TERRAIN でないので削らない）
   const doorstep = isDoorstepFloor(state, new Vec3(x, floor, z)) && floor === state.home.outside.y - 1
-  if (!doorstep) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), 1)) return 'house or build'
+  // 家の床と同じ高さに整地するなら、壁のすぐ外も整地する（壁の下は足元の土として家の計画が直す）。
+  // 別の高さなら、壁のまわり 1 マスは触らない
+  const margin = state.home && floor === state.home.inside.y - 1 ? 0 : 1
+  if (!doorstep) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), margin)) return 'house or build'
   if ((state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
   if (onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
@@ -80,25 +90,86 @@ export function columnWork (bot, state, x, z, y) {
   return { off: true, cuts: [], fills }
 }
 
-// 範囲全体 → { y, center, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
+// 列の並び [[x, z]] を、立つ高さ y にそろえる → { y, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
 // cuts は列ごとに上から、fills は列ごとに下から
-export function levelStatus (bot, state, where, radius) {
-  const { center, y } = levelTarget(state, where)
-  const out = { y, center, total: 0, off: 0, cuts: [], fills: [], unloaded: 0, skipped: {} }
-  for (let dx = -radius; dx <= radius; dx++) {
-    for (let dz = -radius; dz <= radius; dz++) {
-      if (dx * dx + dz * dz > radius * radius) continue
-      out.total++
-      const w = columnWork(bot, state, center.x + dx, center.z + dz, y)
-      if (w === UNLOADED) { out.unloaded++; continue }
-      if (typeof w === 'string') { out.skipped[w] = (out.skipped[w] ?? 0) + 1; continue }
-      if (!w.off) continue
-      out.off++
-      out.cuts.push(...w.cuts)
-      out.fills.push(...w.fills)
-    }
+export function levelColumns (bot, state, columns, y) {
+  const out = { y, total: 0, off: 0, cuts: [], fills: [], unloaded: 0, skipped: {} }
+  for (const [x, z] of columns) {
+    out.total++
+    const w = columnWork(bot, state, x, z, y)
+    if (w === UNLOADED) { out.unloaded++; continue }
+    if (typeof w === 'string') { out.skipped[w] = (out.skipped[w] ?? 0) + 1; continue }
+    if (!w.off) continue
+    out.off++
+    out.cuts.push(...w.cuts)
+    out.fills.push(...w.fills)
   }
   return out
+}
+
+// 範囲全体 → { y, center, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
+export function levelStatus (bot, state, where, radius) {
+  const { center, y } = levelTarget(state, where)
+  const columns = []
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dz = -radius; dz <= radius; dz++) {
+      if (dx * dx + dz * dz <= radius * radius) columns.push([center.x + dx, center.z + dz])
+    }
+  }
+  return { center, ...levelColumns(bot, state, columns, y) }
+}
+
+// 畑の整地（設計書 75）: 畑の四角と、そのまわり FARM_MARGIN マスの列を、畑の地面の高さにそろえる。そろえてから
+// 畑を作る（耕す）。まわりは柵の輪（1 マス外）を含み、畑の外を歩く・柵を立てるのに段差がないように（2026-10-04、
+// user: 「畑はその周囲 2 マスくらいも畑と同じ高さになるように整地してから畑を作ってほしい」）。耕した所と作物、水、
+// 木は触らない（columnWork が飛ばす）ので、耕したあとは数えない。ただし、四角の中で地面が低い耕地（耕して作物が
+// ある所）は、作物を掘って、土で埋め上げる（user: 「低い 2 マスも埋めていい」）
+export const FARM_MARGIN = 2
+export function farmColumns (layout, { margin = FARM_MARGIN } = {}) {
+  const { x0, z0, w, d } = layout.rect
+  const out = []
+  for (let x = x0 - margin; x <= x0 + w - 1 + margin; x++) for (let z = z0 - margin; z <= z0 + d - 1 + margin; z++) out.push([x, z])
+  return out
+}
+
+// 畑の四角の中の 1 列。耕地が地面の高さ y より低いなら、作物を掘って土で埋め上げる。それ以外は columnWork と同じ
+function farmCellWork (bot, state, x, z, y, layout) {
+  const base = columnWork(bot, state, x, z, y + 1)
+  if (base !== 'farmland') return base
+  let h = y + DY
+  for (; h >= y - DY; h--) {
+    const b = bot.blockAt(new Vec3(x, h, z))
+    if (!b) return UNLOADED
+    if (FARM.test(b.name)) break
+  }
+  if (h < y - DY) return 'farmland'
+  if (h === y) return { off: false, cuts: [], fills: [] }
+  if (h > y) return 'farmland above the farm level'
+  const cuts = []
+  for (let hh = h + 1; hh <= y; hh++) {
+    const b = bot.blockAt(new Vec3(x, hh, z))
+    if (b && isPlant(b) && b.name !== 'air' && !/air$/.test(b.name)) cuts.push(b.position)
+  }
+  const fills = []
+  for (let hh = h + 1; hh <= y; hh++) fills.push(new Vec3(x, hh, z))
+  return { off: true, cuts, fills }
+}
+
+export function farmLevel (bot, state, fac, { margin = FARM_MARGIN } = {}) {
+  const { rect, y } = fac.layout
+  const out = { y: y + 1, total: 0, off: 0, cuts: [], fills: [], unloaded: 0, skipped: {} }
+  const inRect = (x, z) => x >= rect.x0 && x < rect.x0 + rect.w && z >= rect.z0 && z < rect.z0 + rect.d
+  for (const [x, z] of farmColumns(fac.layout, { margin })) {
+    out.total++
+    const w = inRect(x, z) ? farmCellWork(bot, state, x, z, y, fac.layout) : columnWork(bot, state, x, z, y + 1)
+    if (w === UNLOADED) { out.unloaded++; continue }
+    if (typeof w === 'string') { out.skipped[w] = (out.skipped[w] ?? 0) + 1; continue }
+    if (!w.off) continue
+    out.off++
+    out.cuts.push(...w.cuts)
+    out.fills.push(...w.fills)
+  }
+  return { ...out, center: new Vec3(rect.x0 + Math.floor(rect.w / 2), y + 1, rect.z0 + Math.floor(rect.d / 2)) }
 }
 
 export function describeLevel (s, radius) {
@@ -122,3 +193,66 @@ export function toolsMissing (bot, cuts) {
   }
   return out
 }
+
+// 埋めるブロックは、穴の数だけまとめて持ってから始める（2 個ずつ掘っては埋める往復で、1 回の整地に何十回も
+// 行き来していた）。1 回で持つのは MAX_FILL_BATCH まで
+export const MAX_FILL_BATCH = 64
+export const fillNeeded = (s) => Math.min(s.fills.length, MAX_FILL_BATCH)
+
+const wholeNumber = (n) => Number.isInteger(n)
+
+// Python が送る整地の予定地（[{where, distance}]）を、目標のたびに置き換える。読めないものは捨てる
+export function setLevelWanted (state, areas) {
+  if (!Array.isArray(areas)) return
+  const wanted = []
+  for (const a of areas.slice(0, MAX_ZONES)) {
+    const where = String(a?.where ?? 'home')
+    const distance = Number(a?.distance)
+    if (!wholeNumber(distance) || distance < MIN_LEVEL || distance > MAX_LEVEL) continue
+    try {
+      levelTarget(state, where)
+    } catch {
+      if (where !== 'home') continue // 家がまだない home は、家ができてから効く
+    }
+    wanted.push({ where, distance })
+  }
+  state.leveling = { done: [], ...state.leveling, wanted }
+}
+
+// 整地を始めた土地を覚える（同じ中心と半径は新しく置き直す）
+export function noteLevelZone (state, where, radius) {
+  const { center, y } = levelTarget(state, where)
+  noteLevelArea(state, { x: center.x, y, z: center.z, radius })
+}
+
+// 整地した土地の記録（畑は、四角を覆う円で）
+export function noteLevelArea (state, zone) {
+  const done = (state.leveling?.done ?? []).filter((z) => !(z.x === zone.x && z.z === zone.z && z.radius === zone.radius))
+  done.push(zone)
+  state.leveling = { wanted: [], ...state.leveling, done: done.slice(-MAX_ZONES) }
+}
+
+// 守る土地: [{ x, y, z, radius }]（y は立つ高さ。地面の上のブロックは y - 1）
+export function levelZones (state) {
+  const out = [...(state.leveling?.done ?? [])]
+  for (const w of state.leveling?.wanted ?? []) {
+    try {
+      const { center, y } = levelTarget(state, w.where)
+      out.push({ x: center.x, y, z: center.z, radius: w.distance })
+    } catch {
+      // 家がまだない
+    }
+  }
+  return out
+}
+
+// 整地する土地の、床の高さ以下にある自然の地形か（土を取るために掘らない所）
+export function keptGround (state, p, name) {
+  if (!TERRAIN.test(name ?? '')) return false
+  return levelZones(state).some((z) => p.y <= z.y - 1 && Math.hypot(p.x - z.x, p.z - z.z) <= z.radius + ZONE_MARGIN)
+}
+
+// 掘れないブロックが近くに多いと、近い順に 64 個では掘れるものが残らない: 整地の土地があるときは多めに探す
+export const findCount = (state, base = 64) => levelZones(state).length ? base * 8 : base
+
+export const KEPT_REMEDY = 'the ground there is being leveled (or was): take dirt and stone from outside that area (the bumps above its floor are fine)'

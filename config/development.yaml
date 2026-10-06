@@ -24,6 +24,7 @@ logging:
 tts:
   audio:
     device: "BlackHole 2ch"
+    gain_db: 6.0   # the voice was too quiet in OBS even with the fader at the maximum (0 dB): lower it if it sounds harsh
   # Neutral は Irodori-TTS が説明なしで読んだ音声から、感情のスタイルは感情つきで読んだ音声から
   # （tools/sbv2_add_styles.py）。元の録音の Neutral は Neutral-01
   emotion_style_map:
@@ -32,7 +33,7 @@ tts:
     surprised: "Surprised"
     sad: "Sad"
     angry: "Angry"
-    scared: "Fear"
-    excited: "Happy"
+    scared: "Scared"
+    excited: "Excited"
   synthesis:
     style_weight: 1.0   # 感情の強さ（1 で弱ければ上げる。上げすぎると声が崩れる）

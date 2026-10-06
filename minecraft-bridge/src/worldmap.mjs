@@ -25,6 +25,8 @@ export const ASPECT = 16 / 9 // 配信の POV クライアントの画面比
 export const RAY_STEP = 2 // レイの角度の刻み（度）。20 m 先の 1 ブロックは約 2.9°
 export const TICKS_PER_MINUTE = 1200
 export const FORMAT = 1
+// 見た時刻だけが変わった地域を書く間隔
+export const TIME_SAVE_MS = 5 * 60 * 1000
 const SECTION_CELLS = 4096
 const MINUTE_MASK = 0xffff
 const REGION_SECTIONS = 32 // 保存の単位: 32x32 断面（チャンク）
@@ -55,7 +57,9 @@ export const SET_CHANGED = 2
 export class WorldMap {
   constructor () {
     this.sections = new Map()
-    this.dirty = new Set() // 書き直す領域
+    this.dirty = new Set() // 書き直す領域（ブロックが変わった）
+    this.dirtyTime = new Set() // 見た時刻だけ変わった領域（まとめて、間をあけて書く）
+    this.timeSavedAt = 0
     this.total = { added: 0, changed: 0 }
     this._lastKey = NaN
     this._last = null
@@ -101,7 +105,7 @@ export class WorldMap {
     const timeChanged = s.seen[i] !== minute
     s.seen[i] = minute
     if (old === cell) {
-      if (timeChanged) this.dirty.add(regionKey(s.sx, s.sz))
+      if (timeChanged) this.dirtyTime.add(regionKey(s.sx, s.sz))
       return SET_SAME
     }
     s.ids[i] = cell
@@ -194,16 +198,21 @@ export class WorldMap {
   // ---- 保存 ----
 
   // 同時に 2 回走らせない（タイマーと停止が重なると、同じ .tmp に書き合う）。走っている間の変更は次の回に回す
-  save (dir, version) {
-    const run = (this._saving ?? Promise.resolve()).catch(() => {}).then(() => this._save(dir, version))
+  save (dir, version, { final = false } = {}) {
+    const run = (this._saving ?? Promise.resolve()).catch(() => {}).then(() => this._save(dir, version, final))
     this._saving = run
     return run
   }
 
-  async _save (dir, version) {
-    if (!this.dirty.size) return 0
-    const regions = [...this.dirty]
+  // 立っている地域は、見た時刻が変わるだけで 30 秒ごとに「変わった」ことになり、地域全体（探索が進むと
+  // 十数 MB）を作り直して圧縮していた（2026-10-01）。ブロックが変わった地域はすぐ、時刻だけの地域は
+  // TIME_SAVE_MS ごと（と停止のとき）に書く
+  async _save (dir, version, final = false) {
+    const timeDue = final || Date.now() - this.timeSavedAt >= TIME_SAVE_MS
+    if (!this.dirty.size && !(timeDue && this.dirtyTime.size)) return 0
+    const regions = [...new Set([...this.dirty, ...(timeDue ? this.dirtyTime : [])])]
     this.dirty = new Set()
+    if (timeDue) { this.dirtyTime = new Set(); this.timeSavedAt = Date.now() }
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ format: FORMAT, version }))
     const byRegion = new Map(regions.map((r) => [r, []]))

@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
+import minecraftData from 'minecraft-data'
+import { Knowledge } from '../src/knowledge.mjs'
 import { newMemory, remember, recall, rememberDeath, summarizeMemory, visited, frontierDistance, MAX_PLACES_PER_KIND, ANIMAL_STALE_TICKS } from '../src/memory.mjs'
 import { bearing } from '../src/observe.mjs'
 import { ground } from '../src/candidates.mjs'
@@ -69,7 +71,7 @@ test('探すときは覚えている場所を先に出し、次にまだ行っ�
   const state = { home: null, plan: null, unreachableDrops: new Set(), memory }
   const leaf = { kind: 'explore', item: 'wool', sources: ['sheep'] }
   const { candidates } = ground(bot, state, null, { dig: () => [], hunt: () => [] }, { leaves: [leaf] })
-  assert.equal(candidates[0].id, 'go to sheep seen at 0,-100')
+  assert.equal(candidates[0].id, 'go to sheep seen at x=0 z=-100')
   assert.equal(candidates[0].verb, 'goto_memory')
   const east = candidates.find((c) => c.id === 'explore east')
   assert.equal(east.been_there, true)
@@ -78,6 +80,31 @@ test('探すときは覚えている場所を先に出し、次にまだ行っ�
   assert.equal(east.go, 48)
   assert.equal(east.unexplored_land_m, 48)
   assert.equal(candidates.at(-1), east)
+})
+
+test('地下で見た水へは行かない（桶の水を洞窟の水に汲みに行って死んだ）。地下の別の物は、行きの松明があるときだけ', () => {
+  const memory = newMemory()
+  const spot = (kind, x, y, z) => ({ kind, pos: { x, y, z } })
+  remember(memory, [spot('water', 0, 29, -80), spot('water', 0, 63, -150), spot('coal_ore', 80, 20, 0)], { x: 500, y: 70, z: 500 }, 0)
+  const torches = (n) => (n ? [{ name: 'torch', count: n }] : [])
+  const run = (sources, items) => {
+    const bot = {
+      entity: { position: new Vec3(0, 70, 0) },
+      entities: {},
+      time: { timeOfDay: 1000, age: 1200 },
+      health: 20,
+      food: 20,
+      heldItem: null,
+      blockAt: () => null,
+      inventory: { items: () => items }
+    }
+    const state = { home: null, plan: null, unreachableDrops: new Set(), memory }
+    return ground(bot, state, new Knowledge(minecraftData('1.21.4')), { dig: () => [], hunt: () => [] }, { leaves: [{ kind: 'explore', item: 'x', sources }] })
+      .candidates.filter((c) => c.verb === 'goto_memory').map((c) => c.id)
+  }
+  assert.deepEqual(run(['water'], torches(20)), ['go to water seen at x=0 z=-150'])
+  assert.deepEqual(run(['coal_ore'], torches(0)), [])
+  assert.deepEqual(run(['coal_ore'], torches(20)), ['go to coal_ore seen at x=80 z=0'])
 })
 
 test('まわりを見尽くしたら、まだ見ていない土地まで区間ごとに進む（原木がなく同じ所を探し続けた）', () => {

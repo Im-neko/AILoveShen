@@ -22,10 +22,12 @@ httpx>=0.25
 typesafe-sdk>=0.7.1
 pillow>=10.0
 
-# stream: 目標ボード、デバッグのエンドポイント、OBS（配信の画面を Gemini に見せる）
+# stream: 目標ボード、デバッグのエンドポイント、OBS（配信の画面を Gemini に見せる）、
+# Twitch のフォロー通知（EventSub は WebSocket、購読は HTTP）
 fastapi>=0.110
 uvicorn>=0.29
 obsws-python>=1.7
+websockets>=12
 
 # tts: TTS サーバーのクライアントと音声の再生
 sounddevice>=0.4

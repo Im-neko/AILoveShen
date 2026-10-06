@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Any
 
 from loguru import logger
 
@@ -13,6 +14,7 @@ from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.screen_capture import IScreenCapture
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
 from ailoveshen.application.use_cases.danger import DangerWatcher
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook
@@ -55,6 +57,8 @@ class GameService:
         danger_watcher: DangerWatcher | None = None,
         notes: NoteKeeper | None = None,
         lessons: LessonBook | None = None,
+        run_recorder: IWatchRecorder | None = None,
+        run_info: dict[str, Any] | None = None,
     ) -> None:
         """
         ゲームサービスを初期化する。
@@ -72,6 +76,9 @@ class GameService:
                 間だけ動かす
             notes: 自分のメモ（チャットの返答が、視聴者のアドバイスを教訓として書く）
             lessons: 教訓帳（あれば、視聴者のアドバイスはメモではなくこちらに書く。docs/design/35）
+            run_recorder: プレイの始まりに、その実行の条件（commit、設定、モデル）を残す先。
+                小目標ごとの成績を実行ごとに比べるため（None なら残さない。docs/design/82）
+            run_info: run_recorder に残す条件
         """
         self._start = start_play
         self._advance = advance_play
@@ -84,6 +91,8 @@ class GameService:
         self._danger = danger_watcher
         self._notes = notes
         self._lessons = lessons
+        self._run_recorder = run_recorder
+        self._run_info = run_info
         self._session: PlaySession | None = None
 
     @property
@@ -133,6 +142,8 @@ class GameService:
         Returns:
             セッション、行った行動の数、家が完成したか
         """
+        if self._run_recorder is not None and self._run_info is not None:
+            self._run_recorder.record(self._run_info)
         failures = 0
         session = None
         while session is None:

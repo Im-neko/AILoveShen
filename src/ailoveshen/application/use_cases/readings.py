@@ -1,9 +1,9 @@
 """
-視聴者の名前の読みの辞書（docs/design/30_name_readings.md）。
+視聴者の名前と言葉の読みの辞書（docs/design/30_name_readings.md）。
 
-- 覚える: 本人のコマンド（`!yomi よみ`）、返答のときの Gemini（読みがなければ推測、本人が読み方を
-  言ったらその読み）。本人が決めた読みは、推測で上書きしない
-- 使う: 読み上げに渡すテキストだけ、名前を読みに置き換える（表示やログ、イベントは元のまま）
+- 覚える: 本人のコマンド（`!yomi よみ` は本人の名前、`!yomi 言葉 よみ` は言葉）、返答のときの Gemini
+  （読みがなければ推測、本人が読み方を言ったらその読み）。本人が決めた読みは、推測で上書きしない
+- 使う: 読み上げに渡すテキストだけ、名前と言葉を読みに置き換える（表示やログ、イベントは元のまま）
 - 引く: 目標ボードの GET /api/readings
 """
 
@@ -24,14 +24,31 @@ MAX_LENGTH = 30
 _KANA = re.compile(r"^[ぁ-ゟ゠-ヿー・　 ]+$")
 # 本人が読み方を言っているらしいコメント（このときの Gemini の読みは本人の読みとして扱う）
 _TELLS_READING = re.compile(r"読み|よみ|ヨミ|呼んで|よんで")
-# !yomi / !読み / !よみ のコマンド
-COMMAND = re.compile(r"^\s*!(?:yomi|読み|よみ)\s+(.+?)\s*$", re.IGNORECASE)
+# !yomi / !読み / !よみ のコマンド。引数は 1 つ（自分の名前の読み）か 2 つ（言葉と読み）
+COMMAND = re.compile(r"^\s*!(?:yomi|読み|よみ)\s+(\S+)(?:\s+(\S.*?))?\s*$", re.IGNORECASE)
+_HIRAGANA = re.compile(r"^[ぁ-ゟ]+$")
+_KANJI = re.compile(r"[一-鿿々〆]")
 
 
 def valid_reading(reading: str) -> str | None:
     """読みとして使えるなら整えたもの（前後の空白を取る）、使えなければ None。"""
     text = reading.strip()
     if not text or len(text) > MAX_LENGTH or not _KANA.match(text):
+        return None
+    return text
+
+
+def valid_word(word: str) -> str | None:
+    """
+    読みを直す言葉として使えるなら整えたもの、使えなければ None。
+
+    ひらがなだけの言葉は、読めている上に文の途中まで置き換わってしまうので受けない。
+    漢字を含まない 1 文字も、あちこちに当たるので受けない。
+    """
+    text = word.strip()
+    if not text or len(text) > MAX_LENGTH or _HIRAGANA.match(text):
+        return None
+    if len(text) < 2 and not _KANJI.search(text):
         return None
     return text
 
@@ -46,7 +63,7 @@ def _key(name: str) -> str:
 
 
 class NameReadings:
-    """名前 → 読みの辞書。変わるたびに保存する。"""
+    """名前・言葉 → 読みの辞書。変わるたびに保存する。"""
 
     def __init__(
         self,
@@ -94,8 +111,16 @@ class NameReadings:
         logger.info(f"名前の読みを覚えた: {new.name} → {new.reading}（{source}）")
         return new
 
+    def learn_word(self, word: str, reading: str) -> NameReading | None:
+        """言葉の読みを覚える。覚えたらその読み、使えない・変わらないなら None。"""
+        text = valid_word(word)
+        if text is None:
+            logger.info(f"読みを直す言葉として使えない: {word!r}")
+            return None
+        return self.learn(text, reading, VIEWER)
+
     def apply(self, text: str) -> str:
-        """読み上げるテキストの中の名前を読みに置き換える（長い名前から、英数字の途中は除く）。"""
+        """読み上げるテキストの中の名前と言葉を読みに置き換える（長い名前から、英数字の途中は除く）。"""
         if self._pattern is None:
             return text
         return self._pattern.sub(lambda m: self._readings[_key(m.group(0))].reading, text)

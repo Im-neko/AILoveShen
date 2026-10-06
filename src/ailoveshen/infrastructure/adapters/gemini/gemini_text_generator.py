@@ -417,6 +417,7 @@ class GeminiTextGenerator(ITextGenerator):
             "purpose": purpose or "default",
             "thinking_level": str(getattr(level, "value", level) or "").lower() or None,
             "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "system": config.system_instruction if isinstance(config.system_instruction, str) else None,
             "prompt": prompt,
             # 画像そのものは入れない（記録は 2 秒ごとに読まれる）。id で別に取れる
             "images": [
