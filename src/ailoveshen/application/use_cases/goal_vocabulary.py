@@ -514,11 +514,13 @@ def reply_schema() -> dict[str, Any]:
     チャットの返答と、それがコメントをどう扱うかの JSON スキーマ。
 
     返答と扱いは 1 回の生成から出るので、頼みを受けた返答は必ずそれを大目標に足す。
+    返答（reply）は最後に置く: モデルはキーの順に書くので、先に書くと、扱い（when、relevance）を
+    決める前に文が決まり、文と扱いが食い違う（「斧があれば楽」と言いながら「今の作業の後で作る」。
+    2026-10-07、docs/design/92）。
     """
     return {
         "type": "object",
         "properties": {
-            "reply": {"type": "string", "description": "What to say to the viewer"},
             "request": {
                 "type": "string",
                 "enum": [r.value for r in RequestHandling],
@@ -602,6 +604,13 @@ def reply_schema() -> dict[str, Any]:
                 "only a lesson says it will remember, never that it will do something",
             },
             "lesson_when": lesson_when_schema(),
+            "reply": {
+                "type": "string",
+                "description": "What to say to the viewer. Written after the decisions above and "
+                "it must agree with them: when=next means it comes after the current work (do not "
+                "say it helps the current work and also that it waits); when=now means you do it "
+                "now and say why",
+            },
             "name_reading": {
                 "type": "string",
                 "description": "the viewer's name read aloud, in hiragana: only when the prompt "

@@ -7,6 +7,11 @@
 
 ## Completed Work
 
+### 返事の文と判断の食い違い（設計書 92、2026-10-07、未確認: 実際の LLM での効果、user: 「確かに！…斧があったほうがずっと楽だよね。今の材料集めが終わったら、次は斧を作ることにするね！って矛盾してる」→「1、2 進めてみて」）
+- 原因: スキーマの `reply` が最初のキーで、判断（`relevance`、`when`）の前に文が決まる。`rethink` が荒らし対策の間は使えず、`unjudged` は `related` + `when=next` を検査しなかった（記録の 4 件が全部これ）
+- 直した: `reply_schema()` で `reply` を判断の後ろに、`unjudged` に「`rethink` が使えない間に、関わる助言を引き受けて後に回すなら、`when=now` か `partly` にして理由を言わせる」差し戻し。テスト `TestRelatedAdviceIsNotParkedForLater`（5 件、変異 2 つで落ちる）。`pytest` 1601 件通過（配信が動いていると落ちる `test_stream_factory` を除く）
+- 未確認: LLM での効果（順序を変えて 12 回ずつ比べる実験は、ローカルの LLM サーバーが `maintenance failed (restart required)` で 503 を返し続けて測れなかった）。別件: 同じ時間帯の返答に、完了条件が斧でなく `wooden_pickaxe` + `stick` のものがあった（設計書 92 §4）
+
 ### 目標の 3 層の見せ方: 小目標はいま実際にしている動作（設計書 91、2026-10-07、未確認: 配信の画面、user: 「小目標に家を建てるとか抽象的なものがきてます」→「1 と 2」→「小目標にはいま実際にしようとしてる動作を表記」）
 - 原因: 小目標の欄が述語の日本語（`built()` → 家を建てる）を出し、大目標・中目標・小目標が同じ言葉になった（設計書 50 §161 の設計どおりの結果）。user の選択: 動作は実行する手から日本語に変換、建築は表示だけ分解（内部の小目標は述語のまま）、「注目表」は中目標の打ち間違い
 - 作った: `action_label.py`（道具の呼び出しとブリッジの候補の verb から日本語の動作）、`item_names.py`（`ITEM_NAMES` を `goal_board.py` から移し、木の種類も引く）、`PlaySession.action` / `Activity.action`、`play.py` が `start_action` に動作を渡す、`/api/goals` の `action`、両方の overlay の小目標の欄（動作、めあては別の行）、`job_label`（題のない中目標を「種類: 条件」で）

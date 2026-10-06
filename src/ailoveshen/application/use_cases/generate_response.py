@@ -118,13 +118,25 @@ def unjudged(kind: str | None, data: dict[str, object], can_rethink: bool) -> st
             f"助言には relevance（{' / '.join(allowed)}）が要る。「今していること」の今の小目標・"
             "中目標・大目標と比べて、どれだけ関わるかを relevance_reason に 1 文で書く。"
         )
-    if relevance != AdviceRelevance.RELATED.value or not can_rethink:
+    if relevance != AdviceRelevance.RELATED.value:
         return ""
     if data.get("when") == "now":
         return ""  # 小目標はその大目標のために区切られる
     point = data.get("rethink")
     if isinstance(point, str) and point.strip():
         return ""
+    if not can_rethink:
+        if handling != RequestHandling.ACCEPT.value:
+            return ""
+        # rethink は間引かれて使えない。引き受けて「今の作業の後」に回すと、関わる（今の作業に効く）と
+        # 言いながら後で作ると言う食い違いになる（「斧があれば楽」「材料集めが終わったら斧を作る」）
+        return (
+            "この助言は今の小目標か中目標に関わる（related）と見ているのに、今の作業の後（when=next）に"
+            "回すと、その効果は今の作業に届かず、返答も食い違う（効くと言いながら後で作ると言う）。"
+            "今やるほうがよければ when=now にして、返答で「今やるね」と理由を言う。後でよいなら、"
+            "relevance を partly にして、なぜ後でよいか（今の作業を途中でやめると無駄が大きい、など）を"
+            "返答で言う。"
+        )
     return (
         "この助言は今の小目標か中目標に関わる（related）と見ていて、納得して受けるなら、今の小目標を"
         "そのまま続けない: rethink に何を考え直すかを英語 1 文で書く（大目標にするなら when=now でもよい）。"

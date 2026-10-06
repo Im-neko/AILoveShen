@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
-from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase
+from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unjudged
+from ailoveshen.application.use_cases.goal_vocabulary import reply_schema
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent, ObjectiveAddedEvent
@@ -1362,6 +1363,50 @@ class TestAdviceIsComparedWithTheCurrentGoal:
         await use_case.execute(self._request(session, "こっちにも木あるよ"))
 
         assert mock_text_generator.generate_json.await_count == 2
+
+
+class TestRelatedAdviceIsNotParkedForLater:
+    """
+    「斧があれば楽」と言いながら「材料集めが終わったら斧を作る」と言う食い違い（2026-10-07、docs/design/92）。
+    関わる（related）と見た助言を引き受けて今の作業の後（when=next）に回すと、効果が今の作業に届かない。
+    """
+
+    AXE = {
+        "reply": "斧があるとずっと楽だね。作るね！",
+        "request": "accept",
+        "suggestion": True,
+        "relevance": "related",
+        "relevance_reason": "An axe makes gathering logs faster",
+        "level": "job",
+        "title": "斧を作る",
+        "conditions": [{"predicate": "have", "item": "wooden_axe", "count": 1}],
+        "position": 2,
+        "reason": "faster logs",
+        "when": "next",
+    }
+
+    def test_the_reply_is_written_after_the_decisions_it_must_agree_with(self):
+        keys = list(reply_schema()["properties"])
+        assert keys[0] == "request"
+        for decided in ("relevance", "relevance_reason", "level", "position", "when", "rethink", "lesson"):
+            assert keys.index(decided) < keys.index("reply"), decided
+        assert keys.index("reply") < keys.index("name_reading") < keys.index("self_facts")
+
+    def test_accepting_related_advice_for_later_is_sent_back_when_a_rethink_cannot_be_used(self):
+        problem = unjudged("advice", self.AXE, can_rethink=False)
+        assert "when=now" in problem and "partly" in problem
+
+    def test_now_partly_or_a_rethink_are_fine(self):
+        assert unjudged("advice", {**self.AXE, "when": "now"}, can_rethink=False) == ""
+        assert unjudged("advice", {**self.AXE, "relevance": "partly"}, can_rethink=False) == ""
+        assert unjudged("advice", {**self.AXE, "rethink": "make the axe first"}, can_rethink=False) == ""
+
+    def test_when_a_rethink_can_be_used_it_still_asks_for_one(self):
+        assert "rethink" in unjudged("advice", self.AXE, can_rethink=True)
+
+    def test_a_reply_that_only_remembers_is_not_sent_back_while_the_rethink_is_throttled(self):
+        lesson = {"reply": "覚えておくね", "request": "none", "relevance": "related", "relevance_reason": "x"}
+        assert unjudged("advice", lesson, can_rethink=False) == ""
 
 
 class TestProducerInstruction:
