@@ -7,15 +7,16 @@
 
 ## Completed Work
 
-### 製品のエージェント実行系を DeepSeek Harness と比べて直した: 判断の記録と再生、ガードの契約、文脈の予算、事故の再現（設計書 90、2026-10-06、未確認: 配信の再起動後に記録が書かれること、`cage` の再実行、user: 「deepseek harness 等を参考にこのプロジェクト向けの物を用意したい。検討してみて」→「製品のエージェント実行系」→「候補に上がった対応は全てやって良いです。順に進めながら動作確認も進めてください」）
+### 製品のエージェント実行系を DeepSeek Harness と比べて直した: 判断の記録と再生、ガードの契約、文脈の予算、事故の再現（設計書 90、2026-10-06、未確認: 配信の再起動後に記録が書かれること、user: 「deepseek harness 等を参考にこのプロジェクト向けの物を用意したい。検討してみて」→「製品のエージェント実行系」→「候補に上がった対応は全てやって良いです。順に進めながら動作確認も進めてください」）
 - 開発用ハーネス（CLAUDE.md、WORKLOG、メモリ、hooks）は別に検討する（user）: issue #20 を作った
 - 作った: `JsonlGenerationLog`（LLM の呼び出しを `logs/generations/gen-*.jsonl` に全文で。`gemini.generation_log_dir` / `generation_log_keep_days`、`stream.py` で配線、記録に `system` と `tools` を追加）、`tools/replay_decisions.py`（記録した出力を今の `parse_tool_call` / `parse_decision` に通し直す）、`tools/prompt_budget.py`（記録からプロンプトの節ごとの内訳）、`tools/refusal_report.py`（断られた手を理由の種類ごとに）、`tools/unverified.py`（WORKLOG の未確認の一覧）、`test_context_budget.py`（道具の定義とルールの文の上限）、`tool-gates.test.mjs` と `test_tool_catalog_bridge.py`（`callTool` の関門の順序と、Python とブリッジの道具の一覧の一致）、ベンチの `scenarios`（`night` / `pond` / `cage`、`Task.setup` と `freeze_day`）
 - 確かめた: 動いているローカルの LLM（`Gemma-4-26B-A4B-NVFP4`）に実際の定義 38 個で道具の選択を送り、記録 → 再生を通した（入力 6,943 トークン）。ベンチ用の Paper サーバーで 3 つの状況づくりの RCON を実際に流し、効果（夕方になる、水の中、石の殻の水の中）を確かめた。変異（再生の検証、関門の順序、定義の増加、道具の一覧の食い違い）でテストが落ちることを確認した
 - 数字: Python `pytest` 1530 件通過（配信を止めたので `test_stream_factory` も通る）、ブリッジ `npm test` 724 件（+7）。始める前は Python 1469（factories 21 件を除く）、ブリッジ 717
 - 分かったこと: 拒否は全結果 12,775 件の 19.3%（材料・食料・道具がない 5.7%、距離の間違い 3.6%、古い対象 3.0%、反射 2.3%、水・閉所 0.8%、夜の籠もり 0.2%）。状況別のツール集合を入れても減らせるのは約 1% なので入れなかった。「約半分が未確認」と最初に言ったのは、本文に「未確認」を書いた記録（111/233）の数で、全体が未確認なのは見出しに印のある 11 件。`logs/steps` の `by: "gemini"` と `gemini_model` は実際に答えたモデルを表さない（`.env` の `LOCAL_LLM=1` で画像のない呼び出しはローカル）。ブリッジに `unhandledRejection` のハンドラはないが、ログに落ちた痕跡はなく、足していない
 - 再現課題を LLM で走らせた（配信を止めたあと、各 1 回、10 分）: `pond` 成功 108 秒（6 ステップ）、`night` タイムアウト・死亡 0（`through_night` の小目標は成立）、`cage` タイムアウト（途中で LLM サーバーが落ちた）。**`cage` で事故を再現できた**: 水の入った土の小部屋で `swim to the nearest land` を座標違いで 4 回試して失敗し、掘って出ない。原因（コードの読み、未確認）: `climb_out` は土・丸石の持ち物がないと候補に出ず、`reach_land` は壁の外の陸を壁の高さを見ずに急ぎの手にする。直していない（user の指示を待つ）
+- `cage` を LLM サーバーが戻ったあとに再実行（モデル名は同じ）: 同じ失敗（13 ステップ中 9 手が `swim to the nearest land`、掘らない、死亡 0）。目標の決定 19 回中 6 回が差し戻された（`explored` が大目標の条件に使えない 3 回ほか）。`night` の `through_night` と同じ種類のモデルの誤り
 - 走らせて見つかった不具合: 大目標の条件に使えない述語（`through_night`、`explored`）で課題を書いていた（ドライランとテストを通り、実行で断られた。テストを `Objective` まで見るよう直し、`have(log, 4)` に変えた）。`replay_decisions.py` が目標の決定を全部「JSON でない」と断った（コードの囲みを `extract_json` で取り出していなかった。直した）。LLM サーバーの停止がタイムアウトに数えられた（終わりに 3 回以上続けて失敗したら `error` にした）。ベンチの `play` が LLM の記録を残さなかった（実行ごとのディレクトリに残す）
-- 実機で見ること: 再起動後に `logs/generations/` ができて `python tools/prompt_budget.py` が内訳を出すこと、ファイルの大きさ（見積もり 1 日 45MB）。LLM サーバーが戻ったら `cage` を再実行（`mise run bench -- --tasks cage`）
+- 実機で見ること: 再起動後に `logs/generations/` ができて `python tools/prompt_budget.py` が内訳を出すこと、ファイルの大きさ（見積もり 1 日 45MB）。`night` と `pond` を各 3 回走らせて揺れを見る（`mise run bench -- --tasks night,pond`）
 - 残り: 設計書 90 §8。拒否の上位 3 つ（材料・道具、距離、古い対象）を減らす手
 
 ### 家も道具もない夜: 陸に上がる、素手で戦う、囲んで籠もる、ドアの補修の穴（設計書 89、2026-10-06、未確認、user: 「ログ見てもらえる？」→「なぜ何もしないことになったのか」「戦ったりしながら野営地を確保してほしい」「ドアの件は調べてほしい」→「陸に上がる＋素手の戦闘＋野営地」「道具を作る → 戦う → 土で囲って籠もる」「ゾンビ・ドロウンド・クモ・スケルトンまで」「ドアも今回直す」）
