@@ -99,7 +99,7 @@ const isolatedFrom = (bot, region) => bot.entity && !region.open && region.cliff
 
 // 結果を 3 秒だけ覚える（候補を作るたびに、広い所では 3000 マスを読み直さないように）
 const regionMemo = new WeakMap()
-function regionCached (bot, now) {
+export function regionCached (bot, now = Date.now()) {
   const me = standingCell(bot)
   const memo = regionMemo.get(bot)
   if (memo && memo.at === `${me.x},${me.y},${me.z}` && now - memo.time < 3000) return memo.value

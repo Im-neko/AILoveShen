@@ -503,6 +503,25 @@ async def test_shut_in_by_day_the_streamer_climbs_out_without_asking_jev_but_at_
     selector.select.assert_called_once()
 
 
+DIG_OUT = Candidate("dig out of the closed space through the wall", {"verb": "dig_out", "urgent": True})
+
+
+@pytest.mark.asyncio
+async def test_shut_in_without_dirt_the_streamer_digs_out_without_asking_jev():
+    """閉じ込められて積む物がない（urgent の dig_out: 水の中、または昼の小部屋）なら、聞かずに壁を掘って出る（設計書 90 §5.1）。"""
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    picked = await picker.pick({"goal": "x"}, "", CANDS + (DIG_OUT,), [], True)
+    assert isinstance(picked, PickedStep) and picked.option_id == DIG_OUT.action_id
+    selector.select.assert_not_called()
+    failed = await picker.pick({"goal": "x"}, "", CANDS + (DIG_OUT,), [], False)
+    assert not isinstance(failed, PickedStep)
+    # 失敗のあと（urgent を外した候補）は、普通の選択肢
+    picker, selector, _ = _picker(ActionDecision("wait", 0.9))
+    quiet = Candidate(DIG_OUT.action_id, {"verb": "dig_out"})
+    await picker.pick({"goal": "x"}, "", CANDS + (quiet,), [], True)
+    selector.select.assert_called_once()
+
+
 CLIMB_DOWN = Candidate("climb down the pillar you stand on by digging it away", {"verb": "climb_down", "urgent": True})
 
 

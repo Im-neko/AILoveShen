@@ -442,13 +442,13 @@
   see: [climb_out]
 
 - key: climb_out
-  title: 閉じた所（出られない穴）から土か丸石を積んで出る
+  title: 閉じた所（出られない穴）から、土か丸石を積んで、または壁を掘って出る
   words: climb out closed space stuck pocket trapped shut pile pillar tower dirt cobblestone stairs shaft hole pickaxe broke
   when: go_home や goto が「No path」「closed space」で失敗する、深い穴・採掘場の底・岩に囲まれた所から出られない、ツルハシが壊れて石を掘れない
   how: |
     歩いて出られない閉じた所にいて、土か丸石を持っていれば、候補 `climb out of the closed space by piling up dirt or cobblestone` が出る
     （do_suggestion で実行する。昼は聞かずに実行される）。足元に積んで、歩いて出られる高さまで上がる。頭の上が岩なら素手でも掘る（閉じ込められたときだけ）
-    - 積むものがなければ、素手でも掘って出る道を空ける（go_home が閉じ込められたときだけ素手で掘ってよい）
+    - 積むものがなければ（素手の始まり）、候補 `dig out of the closed space through the wall` が出る: 掘る数がいちばん少ない壁を素手でも掘って、歩いて出る（水が入った小部屋では、夜も聞かずに実行される）。家・建物の壁、溶岩に接する壁、池や海を止める壁は掘らない
     - 出たら go_home や surface で戻る。ツルハシが壊れていたら、家に戻って作る（候補 `go home to make a new pickaxe`）
     - ドアの前でなければ、ドアは原因ではない: inspect（座標なし）の closed_space と home_door で確かめる
     - 水が入った小部屋（空気が数マスの水たまり）でも出る。水の中では夜も聞かずに実行される。reflex_surface という skill はない（息の反射はブリッジが自分でやる）

@@ -278,7 +278,10 @@ def _conditions_schema() -> dict[str, Any]:
         "type": "array",
         "description": "All must hold for the objective to be done (judged from the world). An "
         "objective that builds (built) or lays out a facility (facility) holds only that one "
-        "kind of condition: put its materials, leveling and furnishing in the jobs",
+        "kind of condition: put its materials, leveling and furnishing in the jobs. Never "
+        "through_night, at_home, cleared or explored: those are small goals (the predicate of "
+        "this decision), not conditions of an objective. Getting through the night, going home "
+        "or getting away from a place is a small goal now, never an objective of its own",
         "minItems": 1,
         "maxItems": MAX_CONDITIONS,
         "items": {

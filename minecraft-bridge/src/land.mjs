@@ -6,6 +6,7 @@
 import vec3Pkg from 'vec3'
 import { holdsWater, passable } from './breath.mjs'
 import { swimToward, isSwimming, onLand } from './swim.mjs'
+import { closedSpace } from './reach.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -99,6 +100,8 @@ export function findLandCached (bot, now = Date.now()) {
 // 水から陸へ泳いで上がる。着けなかった陸は外して、LAND_TRIES 回まで別の陸を試す
 export async function reachLand (bot, signal) {
   if (!isSwimming(bot)) return 'already on land'
+  // 壁や天井で閉じた所（水が入った小部屋）の「陸」は、壁の外か天井の上で、泳いでも着けない（docs/design/90 §5.1）
+  if (closedSpace(bot)) throw new Error('you are shut in by walls: the land you can see is outside them, so swimming cannot reach it (dig out through a wall: dig_out)')
   const tried = []
   let why = ''
   const deadline = Date.now() + SWIM_MS

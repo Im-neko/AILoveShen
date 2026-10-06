@@ -21,7 +21,8 @@ import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked } from './home
 import { inBurrow, inOpenShaft, burrowSpotCached } from './burrow.mjs'
 import { campSiteCached, campCount } from './camp.mjs'
 import { findLandCached } from './land.mjs'
-import { closedSpaceCached, isolatedSpaceCached, pillarUnder } from './reach.mjs'
+import { closedSpaceCached, isolatedSpaceCached, pillarUnder, regionCached } from './reach.mjs'
+import { digOutRoute } from './dig-out.mjs'
 import { storageUsage, contentsSignature } from './storage.mjs'
 import { memoryView } from './worldmap-places.mjs'
 import { inHomeRoom } from './builds.mjs'
@@ -407,7 +408,8 @@ export function forNeeds (bot, state, knowledge) {
     out.push({ id: `flee from ${e.name} #${e.id}`, verb: 'flee', target: e.name, distance: round(dist), entityId: e.id, inPlace: false, pos: e.position })
   }
   // 水の中: 経路探索器は水の中から動かないので、目標が何でも進まない。先に陸へ泳ぐ（聞かずに実行。docs/design/89）
-  if (isSwimming(bot) && !riding(bot)) {
+  // （壁で閉じた小部屋の水の中は除く: 陸は壁の外で、泳いでも着けない。出るには dig_out / climb_out。docs/design/90 §5.1）
+  if (isSwimming(bot) && !riding(bot) && !closedSpaceCached(bot)) {
     const land = findLandCached(bot)
     if (land) {
       out.push({ id: `swim to the nearest land at ${land.x},${land.y},${land.z}`, verb: 'reach_land', target: 'land', pos: land.pos, distance: land.distance, urgent: true, purpose: 'you are in the water: walking, digging and building all need land (the pathfinder cannot plan from the water); swim to the shore first' })
@@ -519,6 +521,14 @@ export function forNeeds (bot, state, knowledge) {
   const shut = !isInside(bot, state.home) && !inBurrow(bot) ? closedSpaceCached(bot) : null
   if (shut && fillItem(bot)) {
     out.push({ id: 'climb out of the closed space by piling up dirt or cobblestone', verb: 'climb_out', target: 'the closed space', inPlace: true, cells: shut.cells, ...((bot.entity.isInWater || (dayPhase(bot.time.timeOfDay) === 'day' && shut.cells <= SHUT_IN_SMALL)) && !(state.climbBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: `you cannot walk out of here (${shut.cells} cells you can reach): pile up what you carry under your feet until you can; no pickaxe is needed` })
+  }
+  // 積む土も丸石もない（素手の始まり）か、積んで出るのに失敗したあと: 壁を掘って歩いて出る（docs/design/90 §5.1）。
+  // 水が入った小部屋の水の中では、夜も聞かずに実行する（climb_out と同じ）
+  if (shut && (!fillItem(bot) || state.climbBlockedUntil > Date.now())) {
+    const route = digOutRoute(bot, state, regionCached(bot))
+    if (!route.why) {
+      out.push({ id: 'dig out of the closed space through the wall', verb: 'dig_out', target: 'the closed space', inPlace: true, cells: shut.cells, blocks: route.cells.length, ...((bot.entity.isInWater || (dayPhase(bot.time.timeOfDay) === 'day' && shut.cells <= SHUT_IN_SMALL)) && !(state.digOutBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: `you cannot walk out of here (${shut.cells} cells you can reach) and carry no dirt or cobblestone to pile up: dig through the wall (${route.cells.length} blocks, bare hands are enough) and walk out` })
+    }
   }
   // 1 本の柱の頂上にいる（自分で積んだ塔。まわりは崖で、積んでも出られない）: 足元を掘って降りる。昼は聞かずに降りる
   const pillar = !shut && !isInside(bot, state.home) && !inBurrow(bot) && isolatedSpaceCached(bot) ? pillarUnder(bot) : null

@@ -161,3 +161,14 @@ def test_leveled_is_a_condition_around_home_or_a_spot():
     assert goal_label(spec) == "家のまわり 8m を整地する"
     with pytest.raises(ValueError):
         GoalSpec(GoalPredicate.LEVELED, where="home")
+
+
+def test_objective_conditions_exclude_survival_predicates_and_the_schema_says_why():
+    """目標の決定が through_night / explored を大目標の条件に書いて差し戻されていた（2026-10-06、ベンチマークの記録）。"""
+    from ailoveshen.application.use_cases.goal_vocabulary import _conditions_schema
+
+    schema = _conditions_schema()
+    allowed = schema["items"]["properties"]["predicate"]["enum"]
+    for name in ("through_night", "at_home", "cleared", "explored"):
+        assert name not in allowed
+        assert name in schema["description"]

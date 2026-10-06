@@ -40,6 +40,7 @@ import { isSwimming, swimToward } from './swim.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder } from './reach.mjs'
 import { holdsWater } from './breath.mjs'
 import { reachLand } from './land.mjs'
+import { digOutRoute } from './dig-out.mjs'
 import { campSite, campAt, campSources, campCount, buildCamp, campExit } from './camp.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
@@ -110,10 +111,11 @@ export function planBlockToPlace (bot, plan, planBlock) {
   return wanted && !(floorBelow && floorBelow.boundingBox === 'empty') ? wanted : plan.pending(bot)[0]
 }
 
-const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
+const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'dig_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
 const CLIMB_MAX = 24 // 閉じた所から出るために積む高さの上限
 const DESCEND_MAX = 200 // 柱を掘り下げる最大の数
 const CLIMB_BLOCK_MS = 5 * 60 * 1000 // 積んで出るのに失敗したあと、聞かずに実行しない間
+const DIG_OUT_ROUNDS = 3 // 壁を掘って出るのを、道を選び直して試す回数
 const HANDLESS_CACHE_MS = 2000 // 持ち物が変わる（道具を作る・壊れる）のを、この間隔で読み直す
 
 export function configureMovements (bot, state) {
@@ -747,6 +749,15 @@ async function equipToolFor (bot, state, block, { drops = true } = {}) {
 }
 const TOOL_ITEM = /_(pickaxe|axe|shovel|hoe|sword)$|^shears$/
 
+// 閉じた所の中、または壁の外のセルへ動く: 水の中は泳ぎ（経路探索器は水の中から動かない）、乾いていれば歩く
+async function stepTo (bot, cell, signal) {
+  if (isSwimming(bot)) {
+    await swimToward(bot, { x: cell.x + 0.5, y: cell.y, z: cell.z + 0.5 }, signal, { maxMs: 20000 })
+    return
+  }
+  await goto(bot, new goals.GoalBlock(cell.x, cell.y, cell.z), signal)
+}
+
 // 階段掘り（docs/design/17_dig_down.md）: 1 マス幅・2 マスの高さで、前に 1、下に 1 ずつ下りる。
 // 真下には掘らない（溶岩に落ちる、出られない穴になる）。階段なら歩いて戻れる
 const FALLING = /(^|_)(sand|gravel)$|concrete_powder$/
@@ -1139,6 +1150,40 @@ export const PRIMITIVES = {
     }
     const at = standingCell(bot)
     return `piled up ${raised} block${raised === 1 ? '' : 's'} and can walk out now (at ${at.x},${at.y},${at.z})`
+  },
+  // 閉じた所から、壁を掘って歩いて出る（docs/design/90 §5.1）。土や丸石がなくても、素手でも掘る。壁は
+  // 掘る数がいちばん少ない向きを選び、掘れない壁（保護、溶岩に接する、大きな水を止める）は避ける
+  async dig_out (bot, state, c, signal) {
+    if (!closedSpace(bot)) return 'not shut in: you can walk out from here'
+    let dug = 0
+    try {
+      for (let round = 0; round < DIG_OUT_ROUNDS; round++) {
+        signal.throwIfAborted()
+        const route = digOutRoute(bot, state)
+        if (route.why) throw new Error(`no way to dig out: ${route.why}`)
+        // 掘る壁に届く所まで（小部屋の中で）寄る
+        if (bot.entity.position.distanceTo(route.from.offset(0.5, 0, 0.5)) > 2.5) await stepTo(bot, route.from, signal)
+        for (const cell of route.cells) {
+          signal.throwIfAborted()
+          const block = bot.blockAt(cell)
+          if (block?.boundingBox !== 'block') continue
+          await equipToolFor(bot, state, block, { drops: false })
+          await bot.dig(block, true)
+          dug++
+        }
+        await stepTo(bot, route.outside, signal)
+        if (!closedSpace(bot)) {
+          await collectNearbyDrops(bot, state, signal)
+          const at = standingCell(bot)
+          return `dug out through the wall (${dug} block${dug === 1 ? '' : 's'}) and can walk out now (at ${at.x},${at.y},${at.z})`
+        }
+      }
+      throw new Error(`dug ${dug} blocks and still cannot walk out`)
+    } catch (e) {
+      // 続けて出し直さない（反射や中止で止められたのは失敗ではない）
+      if (!signal.aborted) state.digOutBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      throw e
+    }
   },
   // 1 本の柱の頂上（自分で積んだ塔。まわりは崖）から降りる: 足元のブロックを掘って 1 つずつ落ちる。掘ったブロックは
   // 拾えるので、降りるほど持ち物が戻る。柱でない所（自然の崖の縁）は掘らない。落ちる先が 3 ブロックを超えるなら止まる
