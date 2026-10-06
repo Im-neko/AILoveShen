@@ -982,6 +982,8 @@ class PlaySession(Entity):
     last_observation: Optional[GameObservation] = field(default=None, init=False)
     # 道具で操作しているとき、今やろうとしていること（実況と返答も見る。12 の一致）
     intent: str = field(default="", init=False)
+    # いま実行している手の、視聴者向けの動作（「原木を集める」。次の手に変わるか小目標が変わるまで残す）
+    action: str = field(default="", init=False)
     # 行動を実行している間だけ真（選んでいる間・目標を決めている間は偽）。一言の実況はこの間だけ話す
     acting: bool = field(default=False, init=False)
     # 位置・持ち物・小目標の進み具合が変わらない時間（秒。動かないと数えるときだけ 0 より大きい。一言は黙る）
@@ -1032,6 +1034,7 @@ class PlaySession(Entity):
             recent_goals=self.recent_goals,
             notes=self.notebook.notes,
             intent=self.intent,
+            action=self.action,
             acting=self.acting,
             failing=self.consecutive_failures if self.goal else 0,
             stagnant_seconds=self.stagnant_seconds,
@@ -1162,6 +1165,7 @@ class PlaySession(Entity):
         self.least_remaining = None
         self.members_met = frozenset()
         self.intent = ""
+        self.action = ""
         seen = self._rethink_seq if rethinks_seen is None else rethinks_seen
         self._rethinks = [r for r in self._rethinks if r[0] > seen]
         self.updated_at = _utc_now()
@@ -1214,13 +1218,14 @@ class PlaySession(Entity):
         self.screen_note = note
         self.updated_at = _utc_now()
 
-    def start_action(self, intent: str = "") -> None:
+    def start_action(self, intent: str = "", action: str = "") -> None:
         """
-        行動を実行し始める。道具を呼ぶときに配信者が書いた、今やろうとしていること（intent）を
-        持つ。
+        行動を実行し始める。道具を呼ぶときに配信者が書いた、今やろうとしていること（intent）と、
+        実行する手から作った視聴者向けの動作（action。小目標の欄に出す）を持つ。
         """
         self.acting = True
         self.intent = intent.strip()
+        self.action = action.strip()
         self.updated_at = _utc_now()
 
     def end_action(self) -> None:

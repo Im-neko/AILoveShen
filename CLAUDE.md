@@ -30,7 +30,7 @@ The per-feature details (what each does, its settings, logs and tests, with date
 | Local LLM, skills, screen vision | ローカル LLM・スキル・画面 | 22, 23, 36 |
 | Small goals, bundles, failure diagnosis, town stages, objective plans, plan linting | 目標の階層・計画 | 15, 26, 27, 31, 44, 50, 67 |
 | Liquid / trees, leftover logs, sleepers, goto through rock, stuck-walk report, world map from sight | ブリッジの世界の扱い | 55–60 |
-| Chat flow, viewer advice, decision latency, admin page, goal board, avatar, builds, live narration, burrow, mining, speech, small talk, readings, support thanks, the stream | チャット・配信・アバター | 12, 24, 25, 30, 40, 43, 49, 51, 54, 61, 65, 68, 71, 81 |
+| Chat flow, viewer advice, decision latency, admin page, goal board, avatar, builds, live narration, burrow, mining, speech, small talk, readings, support thanks, the stream | チャット・配信・アバター | 12, 24, 25, 30, 40, 43, 49, 51, 54, 61, 65, 68, 71, 81, 91 |
 
 When you add or change a feature: update its entry in `docs/feature_reference.md` (new feature → new bullet in the matching section), add or update the tool's entry in `src/ailoveshen/infrastructure/adapters/prompts/abilities.yaml` (a test checks the tools named exist and appear in `how`, and that `see` keys exist), and write the reasoning in `docs/design/`. Keep CLAUDE.md to what every session needs.
 

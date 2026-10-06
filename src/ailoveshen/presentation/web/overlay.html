@@ -32,6 +32,7 @@
   <div class="town hidden" id="town"></div>
   <ol id="objective"></ol>
   <div class="goal"><span class="label">小目標:</span> <span id="goal"></span></div>
+  <div class="progress" id="aim"></div>
   <div class="progress" id="progress"></div>
 </div>
 <script>
@@ -93,9 +94,12 @@
     }
     const goal = data.goal;
     const thinking = data.thinking ? (data.thinking.after_failure ? '考え直し中…' : '考え中…') : '';
+    // 小目標の欄は、いま実際にしている動作（なければ目標の述語）。述語は「めあて」に回す
+    const now = data.action || (goal ? goal.label : '');
     el('goal').textContent = goal
-      ? goal.goal + (goal.survival ? '（身を守るため）' : '') + (thinking ? `　💭 ${thinking}` : '')
+      ? now + (goal.survival ? '（身を守るため）' : '') + (thinking ? `　💭 ${thinking}` : '')
       : (thinking ? `💭 ${thinking}` : '考え中');
+    el('aim').textContent = goal && data.action ? `めあて: ${goal.label}` : '';
     el('progress').textContent = goal ? goal.progress.join(' / ') : '';
   }
 

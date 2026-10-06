@@ -32,6 +32,7 @@ from loguru import logger
 
 from ailoveshen.application.ports.output.event_publisher import IEventSubscriber
 from ailoveshen.application.ports.output.reading_store import NameReading
+from ailoveshen.application.use_cases.item_names import item_name as _item
 from ailoveshen.domain.events import (
     DomainEvent,
     GameActionExecutedEvent,
@@ -134,58 +135,11 @@ def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
         "home": _home(obs),
         # 道具で操作しているとき、今やろうとしていること（配信者が書いた 1 文）
         "intent": activity.intent or None,
+        # 実行している手の動作（小目標の欄。docs/design/91）。まだ手がなければ None で、述語の label を出す
+        "action": activity.action or None,
         # 街の理想図（docs/design/47 §6。/town が描く）
         "town_map": asdict(activity.town_map) if activity.town_map else None,
     }
-
-
-# 視聴者向けの名前（Minecraft の日本語版に合わせる）。ないものは英語の ID のまま
-ITEM_NAMES = {
-    "log": "原木",
-    "planks": "板材",
-    "food": "食べ物",
-    "bed": "ベッド",
-    "white_bed": "白いベッド",
-    "wool": "羊毛",
-    "white_wool": "白い羊毛",
-    "door": "ドア",
-    "stick": "棒",
-    "crafting_table": "作業台",
-    "furnace": "かまど",
-    "chest": "チェスト",
-    "torch": "松明",
-    "coal": "石炭",
-    "charcoal": "木炭",
-    "cobblestone": "丸石",
-    "stone": "石",
-    "iron_ore": "鉄鉱石",
-    "raw_iron": "鉄の原石",
-    "iron_ingot": "鉄インゴット",
-    "wooden_sword": "木の剣",
-    "stone_sword": "石の剣",
-    "iron_sword": "鉄の剣",
-    "wooden_pickaxe": "木のツルハシ",
-    "stone_pickaxe": "石のツルハシ",
-    "iron_pickaxe": "鉄のツルハシ",
-    "wooden_axe": "木の斧",
-    "stone_axe": "石の斧",
-    "shield": "盾",
-    "bread": "パン",
-    "cooked_beef": "ステーキ",
-    "cooked_porkchop": "焼き豚",
-    "cooked_mutton": "焼き羊肉",
-    "cooked_chicken": "焼き鳥",
-    "wheat": "小麦",
-    "wheat_seeds": "小麦の種",
-    "bucket": "バケツ",
-    "water_bucket": "水入りバケツ",
-}
-
-
-def _item(name: str | None) -> str:
-    if not name:
-        return ""
-    return ITEM_NAMES.get(name, name.replace("_", " "))
 
 
 def goal_label(spec: GoalSpec) -> str:
@@ -227,6 +181,27 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.FACILITY:
         return f"{spec.name} を作る"
     return spec.describe()
+
+
+# 中目標に題がないときの種類（大目標に必要なことの 1 つ。例: 材料集め、ブロックの設置、整地）
+_JOB_KINDS = {
+    GoalPredicate.HAVE: "材料集め",
+    GoalPredicate.STORED: "材料の保管",
+    GoalPredicate.PLACED: "ブロックの設置",
+    GoalPredicate.BUILT: "ブロックの設置",
+    GoalPredicate.LEVELED: "整地",
+    GoalPredicate.PLANTED: "植林",
+    GoalPredicate.FARMED: "畑づくり",
+    GoalPredicate.LIT: "明かりの設置",
+    GoalPredicate.SURVEYED: "場所の選定",
+    GoalPredicate.FACILITY: "施設づくり",
+}
+
+
+def job_label(spec: GoalSpec) -> str:
+    """題のない中目標の表示: 「種類: 条件」（例: ブロックの設置: 家を建てる）。種類が決まらなければ条件だけ。"""
+    kind = _JOB_KINDS.get(spec.predicate)
+    return f"{kind}: {goal_label(spec)}" if kind else goal_label(spec)
 
 
 def _town(activity: Activity) -> dict[str, Any] | None:
@@ -337,7 +312,7 @@ def _jobs(goal: Objective, live: bool = False) -> list[dict[str, Any]]:
         {
             "id": s.id,
             "label": s.title
-            or goal_label(s.spec) + (f"（ほか {len(s.together)} つ）" if s.together else ""),
+            or job_label(s.spec) + (f"（ほか {len(s.together)} つ）" if s.together else ""),
             "steps": _steps(s, live and s is first_open),
             "state": state(s),
             "reason": s.reason,

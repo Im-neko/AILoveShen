@@ -43,7 +43,7 @@ def test_the_board_lists_the_jobs_done_current_and_waiting():
     assert goal["jobs_done"] == 1
     assert goal["jobs"][1]["progress"] == ["cobblestone (3/32)"]
     assert goal["jobs"][2]["requested_by"] == "neko"
-    assert goal["jobs"][0]["label"] == "原木を 12 個そろえる"
+    assert goal["jobs"][0]["label"] == "材料集め: 原木を 12 個そろえる"
 
 
 def test_the_prompts_show_done_now_and_waiting_with_who_asked():

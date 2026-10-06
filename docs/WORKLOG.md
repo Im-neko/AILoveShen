@@ -7,6 +7,13 @@
 
 ## Completed Work
 
+### 目標の 3 層の見せ方: 小目標はいま実際にしている動作（設計書 91、2026-10-07、未確認: 配信の画面、user: 「小目標に家を建てるとか抽象的なものがきてます」→「1 と 2」→「小目標にはいま実際にしようとしてる動作を表記」）
+- 原因: 小目標の欄が述語の日本語（`built()` → 家を建てる）を出し、大目標・中目標・小目標が同じ言葉になった（設計書 50 §161 の設計どおりの結果）。user の選択: 動作は実行する手から日本語に変換、建築は表示だけ分解（内部の小目標は述語のまま）、「注目表」は中目標の打ち間違い
+- 作った: `action_label.py`（道具の呼び出しとブリッジの候補の verb から日本語の動作）、`item_names.py`（`ITEM_NAMES` を `goal_board.py` から移し、木の種類も引く）、`PlaySession.action` / `Activity.action`、`play.py` が `start_action` に動作を渡す、`/api/goals` の `action`、両方の overlay の小目標の欄（動作、めあては別の行）、`job_label`（題のない中目標を「種類: 条件」で）
+- 変えていない: LLM のプロンプト（`built()` の括弧にブリッジの分解がすでに出ている）、ブリッジ。Python の再起動だけ要る
+- テスト: `pytest` 1596 件通過（配信が動いていると落ちる `test_stream_factory` を除く）。新規 `test_action_label.py`。verb の突き合わせで足し忘れ 5 つを見つけた
+- 未確認: OBS の画面での見え方。直接呼んだ `dig(x,y,z)` は「ブロックを掘る」までしか言えない
+
 ### 製品のエージェント実行系を DeepSeek Harness と比べて直した: 判断の記録と再生、ガードの契約、文脈の予算、事故の再現（設計書 90、2026-10-06、未確認: 配信の再起動後に記録が書かれること、user: 「deepseek harness 等を参考にこのプロジェクト向けの物を用意したい。検討してみて」→「製品のエージェント実行系」→「候補に上がった対応は全てやって良いです。順に進めながら動作確認も進めてください」）
 - 開発用ハーネス（CLAUDE.md、WORKLOG、メモリ、hooks）は別に検討する（user）: issue #20 を作った
 - 作った: `JsonlGenerationLog`（LLM の呼び出しを `logs/generations/gen-*.jsonl` に全文で。`gemini.generation_log_dir` / `generation_log_keep_days`、`stream.py` で配線、記録に `system` と `tools` を追加）、`tools/replay_decisions.py`（記録した出力を今の `parse_tool_call` / `parse_decision` に通し直す）、`tools/prompt_budget.py`（記録からプロンプトの節ごとの内訳）、`tools/refusal_report.py`（断られた手を理由の種類ごとに）、`tools/unverified.py`（WORKLOG の未確認の一覧）、`test_context_budget.py`（道具の定義とルールの文の上限）、`tool-gates.test.mjs` と `test_tool_catalog_bridge.py`（`callTool` の関門の順序と、Python とブリッジの道具の一覧の一致）、ベンチの `scenarios`（`night` / `pond` / `cage`、`Task.setup` と `freeze_day`）

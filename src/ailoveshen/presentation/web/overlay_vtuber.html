@@ -117,6 +117,7 @@
   .new { font-size: 13px; font-weight: 800; color: var(--accent-deep); opacity: 0; }
   .new.show { animation: newtag 2.4s ease-out forwards; }
   .now-text { font-size: 27px; font-weight: 800; margin-top: 6px; line-height: 1.3; }
+  .aim { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin-top: 2px; }
   .intent { font-size: 17px; font-weight: 700; color: var(--accent-deep); margin-top: 4px; }
   .intent::before { content: "💭 "; }
   .why { font-size: 14px; color: var(--ink-soft); margin-top: 4px; }
@@ -184,6 +185,7 @@
     </div>
     <div class="thinking hidden" id="thinking"><span id="thinking-text"></span><span class="dots"><i></i><i></i><i></i></span></div>
     <div class="now-text" id="now-text"></div>
+    <div class="aim hidden" id="aim"></div>
     <div class="intent hidden" id="intent"></div>
     <div class="bar hidden" id="now-bar"><i></i></div>
     <div class="why hidden" id="why"></div>
@@ -296,7 +298,10 @@
     const goal = data.goal
     $('thinking').classList.toggle('hidden', !data.thinking)
     if (data.thinking) $('thinking-text').textContent = data.thinking.after_failure ? '🤔 うまくいかなかったから考え直し中' : '🤔 つぎにやることを考え中'
-    $('now-text').textContent = goal ? goal.label : (data.thinking ? '' : 'つぎにやることを考え中…')
+    // 小目標の欄は、いま実際にしている動作（なければ目標の述語）。述語は「めあて」の行に回す
+    $('now-text').textContent = goal ? (data.action || goal.label) : (data.thinking ? '' : 'つぎにやることを考え中…')
+    $('aim').classList.toggle('hidden', !(goal && data.action))
+    $('aim').textContent = goal && data.action ? `めあて: ${goal.label}` : ''
     $('survival').classList.toggle('hidden', !(goal && goal.survival))
     $('intent').classList.toggle('hidden', !data.intent)
     $('intent').textContent = data.intent ?? ''
@@ -316,6 +321,8 @@
     }
     if ((before.goal && before.goal.goal) !== (after.goal && after.goal.goal)) {
       restart($('now'), 'pop'); restart($('new'), 'show')
+    } else if (before.action !== after.action) {
+      restart($('now'), 'pop') // 小目標は同じで、動作が次の手に変わった
     }
     const was = Object.fromEntries(before.objectives.map((g) => [g.id, g.state]))
     for (const g of after.objectives) {

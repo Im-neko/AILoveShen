@@ -301,7 +301,7 @@ class TestToolStep:
 
         async def watched(call):
             a = session.activity()  # 実況と返答も同じものを見る
-            during.append((a.intent, a.acting))
+            during.append((a.intent, a.action, a.acting))
             return run(call)
 
         watcher.run.side_effect = watched
@@ -312,9 +312,11 @@ class TestToolStep:
         assert watcher.run.await_args.args[0].name == "dig"
         assert report.decision.action_id == "dig(x=1, y=70, z=2)"
         assert report.result.ok
-        assert during == [("原木を掘る", True)]
+        assert during == [("原木を掘る", "ブロックを掘る", True)]
         # 終わったら消す（次を選んでいる間に、終わった行動を「これからする」と言わない）
         assert session.intent == "" and not session.activity().acting
+        # 動作は次の手か小目標が変わるまで残す（手の間に述語の表示へ戻ってちらつかない）
+        assert session.action == "ブロックを掘る"
         # 2 回目のプロンプトは調べた結果を見る
         recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
         assert [o.call.name for o in recent] == ["recipe_of"]

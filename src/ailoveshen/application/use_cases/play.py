@@ -23,6 +23,7 @@ from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridg
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
+from ailoveshen.application.use_cases.action_label import action_label
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.goal_ends import goal_end_entry
 from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
@@ -585,7 +586,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         if picked is None:
             return None
         call = picked.call
-        session.start_action(call.intent)
+        session.start_action(call.intent, action_label(call, obs.candidates))
         logger.info(f"死んだので、決め直す前に持ち物を取りに戻る: {call.describe()}")
         assert self._watcher is not None
         try:
@@ -640,7 +641,11 @@ class AdvancePlayUseCase(IAdvancePlay):
                 f"候補（{len(candidates)}）: " + " | ".join(c.action_id for c in candidates)
             )
             decision = await self._action_selector.select(state, candidates, instructions)
-        session.start_action()
+        session.start_action(
+            action=action_label(
+                ToolCall("do_suggestion", {"id": decision.action_id}), candidates
+            )
+        )
         return decision, await self._bridge.act(decision.action_id)
 
     @staticmethod
@@ -807,7 +812,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 )
                 logger.info(f"調べた: {call.describe()} -> {result[:200]}")
                 continue
-            session.start_action(call.intent)
+            session.start_action(call.intent, action_label(call, obs.candidates))
             logger.info(
                 f"道具: {call.describe()}「{call.intent}」"
                 + (f" 見張り: {[w.question for w in call.watch]}" if call.watch else "")
@@ -854,7 +859,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             logger.info(f"1 手は Gemini が決める: {picked.why}")
             return None
         call = picked.call
-        session.start_action(call.intent)
+        session.start_action(call.intent, action_label(call, obs.candidates))
         logger.info(f"1 手は Jev が選んだ（確信度 {picked.confidence:.2f}）: {call.describe()}")
         assert self._watcher is not None
         if picked.skill is not None:

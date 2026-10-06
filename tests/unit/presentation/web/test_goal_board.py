@@ -312,16 +312,29 @@ def test_the_vtuber_overlay_reads_the_label_and_the_intent():
     session.set_goal(
         Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3), reason="壁の材料"), "day"
     )
-    session.start_action("近くの木を切りにいく")
+    session.start_action("近くの木を切りにいく", "オークの原木を集める")
     client = TestClient(GoalBoard(session.activity).app)
 
     goals = client.get("/api/goals").json()
     assert goals["goal"]["label"] == "原木を 3 個そろえる"
     assert goals["intent"] == "近くの木を切りにいく"
+    # 小目標の欄は実行している動作、述語の label は「めあて」（docs/design/91）
+    assert goals["action"] == "オークの原木を集める"
     page = client.get("/overlay/vtuber").text
     assert "/api/goals/stream" in page and "goal.label" in page
     assert "技を覚えた！" in page and "skill_learned" in page
     assert "data.thinking" in page and "data.thinking" in client.get("/overlay").text
+    assert "data.action" in page and "data.action" in client.get("/overlay").text
+
+
+def test_the_action_stays_until_the_goal_changes_and_a_new_goal_clears_it():
+    session = PlaySession(blueprint=None, plan=ObjectivePlan(mission=Mission("街にしていく")))
+    session.set_goal(Goal(GoalSpec(GoalPredicate.BUILT)), "day")
+    session.start_action("", "家づくり: オークの原木を置く（1/115）")
+    session.end_action()
+    assert session.action == "家づくり: オークの原木を置く（1/115）"
+    session.set_goal(Goal(GoalSpec(GoalPredicate.HAVE, item="log", count=3)), "day")
+    assert session.action == ""
 
 
 def test_the_overlays_name_all_four_layers():
@@ -387,3 +400,14 @@ def test_name_readings_can_be_looked_up():
         {"name": "Neko", "reading": "ねこ", "source": "viewer", "updated_at": "t"}
     ]
     assert TestClient(GoalBoard(lambda: None).app).get("/api/readings").json() == []
+
+
+def test_an_untitled_job_is_shown_as_the_kind_of_need_then_the_condition():
+    """中目標は大目標に必要なことの 1 つ（材料集め、ブロックの設置…）。題がなければ種類を前に付ける。"""
+    from ailoveshen.presentation.web.goal_board import job_label
+
+    assert job_label(GoalSpec(GoalPredicate.HAVE, item="log", count=16)) == "材料集め: 原木を 16 個そろえる"
+    assert job_label(GoalSpec(GoalPredicate.BUILT)) == "ブロックの設置: 家を建てる"
+    assert job_label(GoalSpec(GoalPredicate.LEVELED, where="home", distance=6)) == "整地: 家のまわり 6m を整地する"
+    # 種類のない条件はそのまま
+    assert job_label(GoalSpec(GoalPredicate.THROUGH_NIGHT)) == "夜を越す"
