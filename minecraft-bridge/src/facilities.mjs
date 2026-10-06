@@ -437,9 +437,14 @@ function storeFacility (state, name, kind, body, layout) {
 }
 
 // 設計した施設の今: 済んだマス、耕す・まく・植えるマス、見えていないマス
+// 畑・植林場の最初に植える量（全マスの割合）。種・苗木は、これだけ集めたら植え、残りは育ったものから回収して増やす
+// （探し回らない。設計書 74）。済んだ（`started`）の判定にも同じ値を使う
+export const START_SHARE = 0.25
+export const startQuota = (cells) => Math.max(1, Math.ceil(cells * START_SHARE))
+
 export function layoutStatus (bot, fac) {
   const water = fac.layout.water ?? []
-  const out = { total: fac.layout.cells.length + water.length, done: 0, till: [], sow: [], plant: [], water: [], unseen: 0, fence: [], gate: null, all: fac.layout.cells.length + water.length + (fac.layout.fence?.length ?? 0) + (fac.layout.gate ? 1 : 0) }
+  const out = { total: fac.layout.cells.length + water.length, done: 0, planted: 0, quota: startQuota(fac.layout.cells.length), started: false, till: [], sow: [], plant: [], water: [], unseen: 0, fence: [], gate: null, all: fac.layout.cells.length + water.length + (fac.layout.fence?.length ?? 0) + (fac.layout.gate ? 1 : 0) }
   // 柵（畑）: 立っているか、固いブロックで塞がっていれば済み。ゲートは柵のゲートが立っていれば済み
   for (const c of fac.layout.fence ?? []) {
     const p = new Vec3(c.x, c.y, c.z)
@@ -467,14 +472,15 @@ export function layoutStatus (bot, fac) {
     if (!b) { out.unseen++; continue }
     if (fac.kind === 'farm') {
       const above = bot.blockAt(p.offset(0, 1, 0))
-      if (b.name === 'farmland' && cropByBlock(above?.name) === fac.layout.crop) out.done++
+      if (b.name === 'farmland' && cropByBlock(above?.name) === fac.layout.crop) { out.done++; out.planted++ }
       else if (b.name === 'farmland') out.sow.push(p)
       else out.till.push(p)
     } else {
-      if (SAPLING.test(b.name) || isLog(b.name)) out.done++
+      if (SAPLING.test(b.name) || isLog(b.name)) { out.done++; out.planted++ }
       else out.plant.push(p)
     }
   }
+  out.started = out.planted >= out.quota
   return out
 }
 

@@ -131,12 +131,18 @@ export function configureMovements (bot, state) {
   const step = (cost) => m.exclusionAreasStep.push((block) => block.position ? cost(block) : 0)
   // 建築中の建物の上は歩かない: 途中の壁が段差になってボットが登り、壁の上から屋根を置いたり、
   // 上で動けなくなったりする。
+  // 壁の輪の内側（部屋）は、足が 1 段高い所（ベッド、チェスト、作業台の上）とその頭の高さ（o.y + 2 まで）を
+  // 除く: 100 以上は「通れない」なので、ベッドの上に立つと頭のセルがここに掛かり、どこへも経路が立たず、
+  // 家の中から出る道も戦いに行く道も「No path to the goal!」になった（2026-10-07、docs/design/93）
   step((block) => {
     const o = state.plan?.origin
     if (!o) return 0
     const p = block.position
-    const inside = p.x >= o.x && p.x < o.x + state.plan.size.width && p.z >= o.z && p.z < o.z + state.plan.size.depth
-    return inside && p.y > o.y + 1 ? 101 : 0
+    const { width, depth } = state.plan.size
+    const inside = p.x >= o.x && p.x < o.x + width && p.z >= o.z && p.z < o.z + depth
+    if (!inside || p.y <= o.y + 1) return 0
+    const room = p.x > o.x && p.x < o.x + width - 1 && p.z > o.z && p.z < o.z + depth - 1
+    return room && p.y <= o.y + 2 ? 0 : 101
   })
   // 敵対モブから離れる: そのまわりを通る経路のコストを上げ、家に歩いて帰るときに、逃げた直後の
   // クリーパーにまた突っ込まずに迂回するようにする。

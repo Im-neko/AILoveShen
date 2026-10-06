@@ -304,3 +304,69 @@ test('water の道具: バケツがなければ断り、畑の水のマスにだ
   assert.equal((await call(bucket, { x: w1.x, y: w1.y, z: w1.z })).ok, true)
   assert.equal(waterAt(s, new Vec3(w1.x, w1.y, w1.z)).name, 'wheat_farm')
 })
+
+const FULL = (items) => ({ inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, dig: () => [], hunt: () => [], ...items })
+
+// 2026-10-07: 種・苗木は最初に全マスの 1/4 だけ集めて植え、残りは育ったものから回収して増やす（設計書 74）
+test('畑: 全マスの 1/4 が植わっていれば started が成り立つ（全マスの facility は成り立たない）', () => {
+  const k = new Knowledge(md)
+  const s = state()
+  const fac = registerFacility(world(), s, 'wheat_farm', { kind: 'farm', boxes: ZONE, design: { width: 3, depth: 2 } })
+  assert.equal(fac.layout.cells.length, 5)
+  const planted = (n) => Object.fromEntries(fac.layout.cells.slice(0, n).flatMap((c) => [[`${c.x},${c.y},${c.z}`, 'farmland'], [`${c.x},${c.y + 1},${c.z}`, 'wheat']]))
+  const check = (n, started) => {
+    const bot = world(planted(n))
+    s.goal = makeGoal({ predicate: 'facility', name: 'wheat_farm', ...(started ? { started: true } : {}) }, bot, s, k)
+    return evaluate(bot, s, k, FULL())
+  }
+  assert.equal(layoutStatus(world(), fac).quota, 2)
+  assert.equal(check(1, true).met, false)
+  assert.equal(check(2, true).met, true)
+  assert.equal(check(2, true).leaves.length, 0)
+  assert.equal(check(2, false).met, false)
+  assert.match(check(1, true).lines.join('\n'), /1\/2 cells planted to start/)
+})
+
+test('畑: 種は最初に全マスの 1/4 だけ集める。そのあとは種を持ったぶんだけまく', () => {
+  const k = new Knowledge(md)
+  const s = state()
+  registerFacility(world(), s, 'wheat_farm', { kind: 'farm', boxes: ZONE, design: { width: 3, depth: 2 } })
+  const hoe = { name: 'wooden_hoe', count: 1 }
+  const seeds = (blocks, items) => {
+    const bot = world(blocks, [hoe, { name: 'water_bucket', count: 1 }, ...items])
+    s.goal = makeGoal({ predicate: 'facility', name: 'wheat_farm' }, bot, s, k)
+    return evaluate(bot, s, k, FULL())
+  }
+  // 何も植わっていなくて種もなければ、集めるのは 2 つ（全マス 5 の 1/4）
+  const first = seeds({}, [])
+  assert.ok(JSON.stringify(first.leaves).includes('wheat_seeds'), JSON.stringify(first.leaves))
+  assert.match(first.lines.join('\n'), /have 2 wheat_seeds \(0\/2\)/)
+  // 種を 4 つ持っていれば、まく手（5 マスのうち持った分だけ。集めに出ない）
+  const held = seeds({}, [{ name: 'wheat_seeds', count: 4 }])
+  assert.ok(held.leaves.some((l) => l.kind === 'till' || l.kind === 'sow'))
+  assert.doesNotMatch(held.lines.join('\n'), /wheat_seeds/)
+})
+
+test('植林場: 全マスの 1/4 の苗木を植えたら、育った木がなければ探しに出ず待つ。育った木があれば葉から集める', () => {
+  const k = new Knowledge(md)
+  const s = state({ plantings: [], memory: {} })
+  const fac = registerFacility(world(), s, 'grove', { kind: 'tree_farm', boxes: ZONE, design: { sapling: 'oak_sapling', count: 4, spacing: 4 } })
+  const [c1] = fac.layout.cells
+  const at = (c, name) => ({ [`${c.x},${c.y},${c.z}`]: name })
+  const run = (blocks, items = []) => {
+    const bot = world(blocks, items)
+    s.goal = makeGoal({ predicate: 'facility', name: 'grove' }, bot, s, k)
+    return evaluate(bot, s, k, FULL())
+  }
+  // 何も植わっていなくて苗木もなければ、集めるのは 1 本（全マス 4 の 1/4）
+  assert.match(JSON.stringify(run({}).leaves), /oak_sapling/)
+  // 1 本植わった（苗木）: もう探さない
+  s.plantings = [{ x: c1.x, y: c1.y, z: c1.z, item: 'oak_sapling' }]
+  const waiting = run(at(c1, 'oak_sapling'))
+  assert.equal(waiting.leaves.length, 0)
+  assert.match(waiting.lines.join('\n'), /wait for the trees to grow/)
+  // 苗木を拾えば植える（増やす）
+  assert.deepEqual(run(at(c1, 'oak_sapling'), [{ name: 'oak_sapling', count: 1 }]).leaves.map((l) => l.kind), ['plant'])
+  // 育った木があれば、その葉から苗木を集める手を出す
+  assert.match(JSON.stringify(run(at(c1, 'oak_log')).leaves), /oak_sapling/)
+})

@@ -1,11 +1,12 @@
 """定石: 寝床 → 食料（畑）→ 建材（植林場）→ 資材（鉄）の順を、コードが守る（docs/design/74）。"""
 
+from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from ailoveshen.application.use_cases import objectives
-from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, PlanChange, PlanOp
+from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, PlanChange, PlanOp, parse_spec
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.plan_lint import aimless_jobs
 from ailoveshen.domain.entities import ObjectivePlan
@@ -251,6 +252,34 @@ ASYNC_STEPS = (
 def test_ready_must_be_some_of_the_conditions():
     with pytest.raises(ValueError, match="ready must be some of its conditions"):
         PlaybookStep("x", "x", (FARM,), ready=(GROVE,))
+
+
+FARM_STARTED = GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_1", started=True)
+
+
+def test_ready_may_be_a_started_facility_of_a_condition_that_needs_all_of_it():
+    step = PlaybookStep("food", "畑", (FARM, WHEAT), ready=(FARM_STARTED,))
+    assert step.ready == (FARM_STARTED,)
+    assert FARM_STARTED.to_dict() == {"predicate": "facility", "name": "wheat_farm_1", "started": True}
+    assert FARM_STARTED.describe() != FARM.describe()
+    assert "started" not in FARM.to_dict()
+    assert parse_spec({"predicate": "facility", "name": "wheat_farm_1", "started": True}) == FARM_STARTED
+    with pytest.raises(ValueError, match="ready must be some of its conditions"):
+        PlaybookStep("x", "x", (FARM,), ready=(replace(GROVE, started=True),))
+    with pytest.raises(ValueError, match="started is only for facility"):
+        GoalSpec(GoalPredicate.HAVE, item="wheat", count=3, started=True)
+
+
+@pytest.mark.asyncio
+async def test_a_quarter_planted_farm_lets_the_next_step_start_while_the_rest_waits_for_harvested_seeds():
+    steps = (
+        PlaybookStep("food", "畑", (FARM, WHEAT), "食料", ready=(FARM_STARTED,)),
+        PlaybookStep("lumber", "植林場", (GROVE, LOGS), "建材", ready=(GROVE,)),
+    )
+    keeper, _, _ = _keeper(met={FARM_STARTED.describe()})  # 全マスは植わっていないが、1/4 は植わった
+    plan = _plan(steps)
+    await keeper.judge(plan)
+    assert [g.playbook for g in plan.pending] == ["lumber", "food"]  # 畑は育成中で、次の段が先
 
 
 @pytest.mark.asyncio

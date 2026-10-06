@@ -655,7 +655,9 @@ minecraft:
     # `keep` (a step that has to stay true) reopens the step when its conditions stop holding.
     # `ready` (some of the conditions) is the set-up being finished while the plants only have to grow:
     # the next step may then be worked on at the same time (two steps at most; a third waits until both
-    # are done), the step that needs hands first and the growing one behind it.
+    # are done), the step that needs hands first and the growing one behind it. A facility in `ready` with
+    # `started: true` holds once a quarter of its cells are planted: seeds and saplings are searched for
+    # only up to that quarter, the rest is filled from what the grown plants give (docs/design/74 §7).
     # To add a rule, add an entry here: name (unique), title, conditions, reason. A facility name is
     # designed on first use (the farm / tree farm layout), so keep it short and unique.
     playbook:
@@ -676,8 +678,8 @@ minecraft:
       - name: food
         title: "小麦畑を作って、最初の収穫まで回す"
         conditions: [{predicate: facility, name: wheat_farm_1}, {predicate: have, item: wheat, count: 3}]
-        ready: [{predicate: facility, name: wheat_farm_1}]   # set up: the crops only have to grow, the next step may start
-        reason: "食料を安定して手に入れる基盤。牛や羊を探して遠くまで往復すると、走るぶんの空腹で得がほとんど残らない。畑の水に要る桶（鉄 3）は、この段の中目標として鉄を集めてよい"
+        ready: [{predicate: facility, name: wheat_farm_1, started: true}]   # a quarter planted: the crops only have to grow, the next step may start
+        reason: "食料を安定して手に入れる基盤。牛や羊を探して遠くまで往復すると、走るぶんの空腹で得がほとんど残らない。種は全マスの 1/4 だけ集めてまき、残りは育った小麦を収穫して出る種で増やす（草を掘って探し回らない）。畑の水に要る桶（鉄 3）は、この段の中目標として鉄を集めてよい"
       - name: yard
         title: "家のまわりを床と同じ高さの平地にそろえる"
         conditions: [{predicate: leveled, where: home, distance: 6}]
@@ -689,8 +691,8 @@ minecraft:
       - name: lumber
         title: "植林場を作って、最初の原木を取るまで回す"
         conditions: [{predicate: facility, name: oak_grove_1}, {predicate: have, item: oak_log, count: 16}]
-        ready: [{predicate: facility, name: oak_grove_1}]
-        reason: "建材（木）を安定して手に入れる基盤。木を探して歩き回らずに、家のそばで原木を取る"
+        ready: [{predicate: facility, name: oak_grove_1, started: true}]
+        reason: "建材（木）を安定して手に入れる基盤。木を探して歩き回らずに、家のそばで原木を取る。苗木は全マスの 1/4 だけ集めて植え、残りは育った木の葉から出る苗木で増やす（森を探し回らない）"
       - name: iron
         title: "鉄の道具をそろえる"
         conditions: [{predicate: have, item: iron_pickaxe, count: 1}, {predicate: have, item: iron_sword, count: 1}]

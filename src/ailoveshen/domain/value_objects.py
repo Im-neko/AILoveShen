@@ -392,7 +392,8 @@ class GoalPredicate(str, Enum):
     - CUSTOM: `name` の判定（Gemini が書いた JS。ブリッジが世界を読んで動かす）が成り立っている
       （組み込みの述語で書けない頼み。docs/design/42_custom_conditions.md）
     - FACILITY: `name` の施設（設計した畑・植林場、docs/design/47 §7）のマスがすべて済んでいる
-      （畑は耕してまいた、植林場は苗木を植えた）
+      （畑は耕してまいた、植林場は苗木を植えた）。`started` なら、全マスの 1/4 が済んでいれば成り立つ
+      （残りは、育ったものから種・苗木を回収して埋める。docs/design/74）
     """
 
     HAVE = "have"
@@ -433,6 +434,8 @@ class GoalSpec:
     dig_depth: Optional[int] = None
     # built の建物の名前（None: 家）、custom の判定の名前、facility の施設の名前
     name: Optional[str] = None
+    # facility だけ: 全マスでなく、全マスの 1/4 が済んでいれば成り立つ（定石の `ready` に使う）
+    started: bool = False
 
     def __post_init__(self) -> None:
         """述語に要る引数を確かめる。"""
@@ -459,6 +462,8 @@ class GoalSpec:
             raise ValueError("custom needs the name of its check")
         if self.predicate == GoalPredicate.FACILITY and not self.name:
             raise ValueError("facility needs the name of the facility")
+        if self.started and self.predicate != GoalPredicate.FACILITY:
+            raise ValueError("started is only for facility")
         radius = (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
         if self.predicate in radius and (self.distance is None or self.distance < 1):
             raise ValueError(
@@ -472,6 +477,8 @@ class GoalSpec:
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
+        if self.started:
+            out["started"] = True
         return out
 
     def same_kind(self, other: GoalSpec) -> bool:
@@ -492,6 +499,8 @@ class GoalSpec:
         ]
         if self.dig_depth is not None:
             args.append(f"dig_depth={self.dig_depth}")
+        if self.started:
+            args.append("started")
         return f"{self.predicate.value}({', '.join(args)})"
 
 
@@ -696,7 +705,8 @@ class PlaybookStep:
     定石の 1 段: 街づくりの土台として、この順にやる（設定 `minecraft.playbook`。docs/design/74）。
     条件がすべて満たされたら済み。畑なら施設と最初の収穫、というように、作って回るところまでを 1 段にする
     ので、建てる・施設の条件にほかの条件が混ざってよい（街の段階と同じ）。
-    `ready` は、その段の設営ができて育つのを待つだけの状態の条件（畑なら施設ができた）。満たしている間、
+    `ready` は、その段の設営ができて育つのを待つだけの状態の条件（畑なら施設ができた。施設は `started`
+    で、全マスの 1/4 が済んだ時点にしてよい）。満たしている間、
     その段は「育成中」で、次の段を同時に進めてよい（ただし 2 段まで。3 段目は、2 つとも済んでから）。
     `keep` は、済んだあとも持ち続けるもの（武器）の段: 条件が崩れたら（死んで失った）また今の段にする。
     作ったものが残る段（畑）は、壊れても作り直さない（済みのまま）。家は `keep` で、壊れたら直す（docs/design/88）。
@@ -718,7 +728,11 @@ class PlaybookStep:
             raise ValueError("a playbook step needs a name and a title")
         if not self.conditions:
             raise ValueError(f"playbook step {self.name} needs at least one condition")
-        missing = [c.describe() for c in self.ready if c not in self.conditions]
+        missing = [
+            c.describe()
+            for c in self.ready
+            if replace(c, started=False) not in self.conditions
+        ]
         if missing:
             raise ValueError(
                 f"playbook step {self.name}: ready must be some of its conditions ({', '.join(missing)})"

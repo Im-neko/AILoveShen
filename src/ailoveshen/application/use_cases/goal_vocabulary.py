@@ -721,6 +721,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             if predicate in (GoalPredicate.BUILT, GoalPredicate.CUSTOM, GoalPredicate.FACILITY)
             and data.get("name")
             else None,
+            started=bool(data.get("started", False)),
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e

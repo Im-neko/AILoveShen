@@ -123,6 +123,7 @@ function together (spec, lead, bot, state, knowledge) {
 
 export function describeSpec (spec) {
   const args = [spec.name, spec.item, spec.count, spec.where, spec.distance].filter((v) => v != null)
+  if (spec.started) args.push('started')
   return `${spec.predicate}(${args.join(', ')})`
 }
 
@@ -235,7 +236,7 @@ function validGoal (spec, bot, state, knowledge) {
       const fac = state.facilities?.[name]
       if (!fac) throw new NotYetError(`there is no facility named ${name} yet: it is designed when the objective is added`)
       if (!fac.layout) throw new Error(`${name} was not designed (it was already there): facility() is for designed farms and tree farms`)
-      return { spec: { predicate, name } }
+      return { spec: { predicate, name, ...(spec.started ? { started: true } : {}) } }
     }
     case 'planted': {
       needHome()
@@ -711,6 +712,13 @@ function evaluateOne (bot, state, knowledge, world) {
       ensureFarmShape(bot, state, fac) // 古い畑に長方形と高さを補う（段差を埋められるように）
       const f = layoutStatus(bot, fac)
       updateStatus(bot, fac)
+      if (goal.spec.started) {
+        // 全マスの 1/4 が植わっていれば成り立つ（定石の育成中の判定。残りは育ったものから回収して埋める）
+        out.met = f.started
+        out.remaining = Math.max(0, f.quota - f.planted)
+        out.lines.push(`${fac.name}: ${f.planted}/${f.quota} cells planted to start (of ${fac.layout.cells.length})`)
+        break
+      }
       // 畑は、地面の高さがそろっていて（四角と、まわり 2 マス）、柵とゲートが立っていて初めて済み（設計書 75）。
       // 整地は耕す前。柵と門は、畑のマスが全部済んでから
       const lv = fac.kind === 'farm' && fac.layout.rect ? farmLevel(bot, state, fac) : null
@@ -741,6 +749,9 @@ function evaluateOne (bot, state, knowledge, world) {
       if (fac.kind === 'farm') {
         const seed = CROPS[fac.layout.crop].seed
         const seeds = inv[seed] ?? 0
+        // 種は、最初は全マスの 1/4 だけ集める（探し回らない）。それ以上は、育った小麦を収穫して出る種で埋める
+        // （種を持てば、まけるだけまく。畑に作物があれば、solver が収穫するか育つのを待つ。設計書 74）
+        const startingSeeds = Math.min(f.sow.length + f.till.length, Math.max(1, f.quota - f.planted), 16)
         // 水のマス（掘って水のバケツを置く）が先。水が届けば、耕しただけの地面も土に戻らない。バケツがなければ
         // 水のバケツを手に入れる（鉄でバケツを作り、水を汲む）。耕す・まくは、待たずに進めてよい
         if (f.water.length) {
@@ -749,14 +760,14 @@ function evaluateOne (bot, state, knowledge, world) {
         }
         if (f.sow.length) {
           if (seeds > 0) out.leaves.push({ kind: 'sow', item: seed, facility: fac.name })
-          else addSolved([{ spec: seed, count: Math.min(f.sow.length + f.till.length, 16) }])
+          else addSolved([{ spec: seed, count: startingSeeds }])
         }
         if (f.till.length) {
           // 耕すのは、まく種が耕し済みのマスより多いときだけ: 水が近くにない畑は、耕しただけで何も植わって
           // いない地面が土に戻る（種のないまま耕し続け、最初に耕した所が土に戻った）。耕す → まく を順に
           if (!Object.keys(inv).some((n) => n.endsWith('_hoe'))) addSolved([{ spec: 'hoe', count: 1 }])
           else if (seeds > f.sow.length) out.leaves.push({ kind: 'till', facility: fac.name })
-          else if (!f.sow.length) addSolved([{ spec: seed, count: Math.min(f.till.length, 16) }])
+          else if (!f.sow.length) addSolved([{ spec: seed, count: startingSeeds }])
         }
         // 柵（畑のまわりの輪）とゲート: 畑のマスが全部済んでから（畑を作り終わってから）。持っていれば立てる。
         // なければ作る（柵は板と棒、まとめて 3 本できる）
@@ -772,7 +783,9 @@ function evaluateOne (bot, state, knowledge, world) {
       } else if (f.plant.length) {
         const held = Object.entries(inventoryCounts(bot)).find(([n, c]) => c > 0 && saplingMatches(fac.layout.sapling, n))
         if (held) out.leaves.push({ kind: 'plant', item: held[0], facility: fac.name })
-        else addSolved([{ spec: fac.layout.sapling, count: f.plant.length }])
+        else if (f.planted < f.quota) addSolved([{ spec: fac.layout.sapling, count: Math.min(f.plant.length, f.quota - f.planted) }]) // 最初は全マスの 1/4 だけ
+        else if (plantingStatus(bot, state, fac.layout.sapling).trees > 0) addSolved([{ spec: fac.layout.sapling, count: f.plant.length }]) // 育った木の葉から
+        else out.lines.push(`${f.planted}/${f.plant.length + f.planted} cells planted: wait for the trees to grow, then break their leaves for saplings for the rest (do not search for saplings elsewhere)`)
       }
       if ((f.unseen || lv?.unloaded) && !out.leaves.length) out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance })
       break
