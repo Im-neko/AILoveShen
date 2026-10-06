@@ -100,6 +100,29 @@ DeepSeek Harness（`deepseek-ai/deepseek-harness`、MIT）は、モデルは考�
 
 **5.2 `cage` の再実行**（LLM サーバーを戻したあと。モデル名は同じ `Gemma-4-26B-A4B-NVFP4`）: 同じ失敗が再現した。timeout、13 ステップ、死亡 0、環境の不具合なし。13 手のうち 9 手が `swim to the nearest land at …`（座標が 1〜2 ブロックずつ違う。台帳は止められない）で、すべて `could not climb onto land`（24〜39 秒）。掘る手は一度も選ばれなかった。15:15 から 15:20 までの 4 分半は手が 1 つもなく、目標の決定（`goal_after_failure`）が 19 回中 6 回（31.6%）差し戻されていた（`explored cannot be a condition of an objective` が 3 回、引数が足りない・形が違うが 2 回、JSON が壊れているが 1 回）。**モデルが「そこから離れる」を `explored` の大目標として書きたがり、それが使えない述語として断られる**のは、`night` の `through_night` と同じ種類の誤りで、目標の決定のプロンプトが大目標の条件に使える述語を十分に示していない可能性がある（読んでいない。推測）。
 
+### 5.3 直したこと: 閉じた所から壁を掘って出る、壁の外の陸へ泳がない、大目標の条件の説明（2026-10-07、user: 「1. やってほしい 2. 確認してほしい 3. やってください」）
+
+原因（5.1 / 5.2 の記録とコードの読みで確かめた）: (a) `findLand` は檻の屋根（水面から 4 上、上は空）も陸に数え、`reach_land` が `urgent` で出て、壁の外・上の陸へ泳いで着けず失敗する（座標が 1〜2 ずれるので台帳が止めない）。(b) `climb_out` は土か丸石がないと出ず、壁を掘る手の候補はなかった。
+
+- `minecraft-bridge/src/dig-out.mjs`（新）`digOutRoute`: 歩いて出られない領域（`walkableRegion`）の各セルから 4 方向に、壁を最大 4 層（足と頭の 2 ブロックずつ）見て、外に立てる所（足と頭が空き、3 段までの下に床か水）がある道のうち掘る数がいちばん少ないものを選ぶ。掘らない壁: 保護（家・建物・囲い）、溶岩に接する、上が砂・砂利・コンクリートパウダー、つながった水が 80 マス以上を止めている（自分の小部屋の水は小さいので掘ってよい）、掘れないブロック。出た先が別の小さな閉所なら選ばない（外が開けているか、今の領域より広いこと）。
+- 手 `dig_out`（`primitives.mjs`）: 最大 3 回、道を選び直して、素手でも掘り（`equipToolFor`）、水の中なら泳ぎ、乾いていれば歩いて外へ出て、`closedSpace` が解けたら終わる。失敗したら `state.digOutBlockedUntil`（5 分、`climb_out` と同じ長さ）を置き、`ROCK_ESCAPE` に入れた。
+- 候補 `dig out of the closed space through the wall`: 閉所で、積む土・丸石がない、または積んで出るのに失敗したあと（`climbBlockedUntil`）に出る。水の中、または昼の小部屋（24 マス以下）なら `urgent`（`StepPicker` が聞かずに実行。`DIG_OUT_VERB`）。
+- `reach_land`: 壁で閉じた所（`closedSpaceCached`）では候補に出さず、`reachLand` 自体も `shut in by walls … dig_out` で断る。
+- 目標の決定のスキーマ: 大目標の条件（`conditions`）の説明に「through_night、at_home、cleared、explored は条件でなく小目標。夜を越す・帰る・その場から離れるは小目標」と書いた。実際のプロンプトを読むと、計画の文には `through_night` と `at_home` の注意があった（`explored` は無かった）が、**それは中目標・小目標を書く計画のプロンプト**で、大目標の編集（`plan_changes`）を出す目標の決定には条件の説明しかなく、列挙（enum）は述語の一覧を絞っているのに、LLM は枠の外の値を返していた（記録 17 件のうち 4 件がスキーマ違反: `explored`、存在しない id）。**ローカルのサーバーがスキーマを強制していないこと**が根にある。説明の追加はそれを弱める手当てでしかなく、効果は測っていない。
+- テスト: `dig-out.test.mjs`（15 件。壁の厚さ、大きな水、溶岩、保護、砂、閉じていない所、候補とその条件、`reach_land` の断り、掘る実行。変異 6 件 — 大きな水・溶岩・砂・保護の無視、候補の抑止、`reachLand` の断り — でそれぞれ落ちることを確認）、`test_step_picker.py`、`test_goal_vocabulary.py`。ブリッジ 739 件、Python 1532 件。
+
+**実機（ローカル LLM、ベンチ用 Paper、各 3 回、10 分）**:
+
+| 課題 | 直す前 | 直した後 |
+|---|---|---|
+| `cage` | 0/2（timeout 2 回、13 ステップ） | **3/3**（117 / 240 / 117 秒、14 ステップ、死亡 0） |
+| `pond` | 1/3（133 秒、死亡 1、timeout 2） | 3/3（97〜340 秒、死亡 0） |
+| `night` | 1/3（592 秒、timeout 2、死亡 0） | 走らせていない（下） |
+
+- `cage` の 3 回とも、最初の 1 手が `dig out of the closed space through the wall`（Jev が選んだ。2〜3 ブロック掘って外に出た）。そのあと壁から水が溢れて「水の中」になるが、`plug the hole` と `explore` で抜けた。
+- **`pond` の 1/3 → 3/3 は直したことの効果と言えない**: この変更は開けた水の中の動きを変えず（`closedSpaceCached` が null の所は変わらない）、直した後の記録にも「`could not climb onto land: arrived`」（岸に着いたのに上がれない）が 3 回出ている。標本が 3 と 3 で、差は偶然の範囲。**`pond` の本当の弱さは別にある**: 水の中の `swim to the nearest land` が「岸に着いたのに上がれない」「息の反射で中断」で失敗し続ける（直す前の `pond-1` は 40 ステップのうち 18 が拒否・失敗、底（y=59）の近くから動けない記録）。原因は調べていない。
+- `night` の上限: 夜は約 600 秒（12000 tick ÷ 20）なので、10 分の上限だと夜明けに食い込み、成功は偶然（592 秒の 1 回だけ）。**`night` の成功率は評価に使えない**。見るのは死亡数（0/3）。成功を見るなら `--cap-minutes 20` 以上にする。
+
 実記録でツールを動かして見つけた不具合: `replay_decisions.py` が目標の決定をすべて「JSON でない」と断った。ローカルの LLM は JSON をコードの囲み（```json）に入れて返し、配信は `extract_json` で取り出してから検証するのに、ツールは直接 `json.loads` していた。配信と同じ `extract_json` を使うよう直した。
 
 実記録の内訳（`prompt_budget.py`、`night`）: 道具の選択は入力 9.2k トークン・8.2 秒（定義 37 個で約 6.6k、「決まり」の節は推定 1,166 でプロンプト本文の 43%、「配信者が今していること」733）。目標の決定（`goal_after_failure`）は 8.7k〜10.2k トークン・約 10 秒で、「小目標を選び直す理由」の節が本文の約 80%（推定 2,060）。
@@ -128,14 +151,16 @@ DeepSeek Harness の preset（状況ごとに見せる道具を変える）を�
 - 追加: `src/ailoveshen/infrastructure/adapters/storage/jsonl_generation_log.py`、`tools/replay_decisions.py`、`tools/prompt_budget.py`、`tools/refusal_report.py`、`tools/unverified.py`
 - 変更: `infrastructure/config.py`、`config/default.yaml`（`gemini.generation_log_dir` / `generation_log_keep_days`）、`factories/stream.py`、`adapters/storage/__init__.py`、`adapters/local_llm/openai_compat_text_generator.py`（`system` / `tools` の記録）、`adapters/gemini/gemini_text_generator.py`（`system`）、`tools/benchmark.py`（`scenarios`、`setup`、`llm_outage`、実行ごとの LLM 記録）、`config/benchmark.yaml`、`minecraft-bridge/src/tools.mjs`（コメント 1 行）
 - テスト: `test_jsonl_generation_log.py`（5）、`test_replay_decisions.py`（11）、`test_prompt_budget.py`（4）、`test_refusal_report.py`（5）、`test_unverified.py`（5）、`test_context_budget.py`（3）、`test_tool_catalog_bridge.py`（2）、`test_benchmark.py`（+3）、`tool-gates.test.mjs`（7）
+- 追加（§5.3）: `minecraft-bridge/src/dig-out.mjs`、`minecraft-bridge/test/dig-out.test.mjs`。変更: `primitives.mjs`（`dig_out`、`stepTo`）、`candidates.mjs`、`land.mjs`、`reach.mjs`（`regionCached` を export）、`step_picker.py`、`goal_vocabulary.py`、`abilities.yaml`。
 - 設計書 51（決定の遅さ）、82（記録）、83（ベンチマーク）の続き。
 
 ## 8. 残り
 
 - 配信を再起動したあと、`logs/generations/` に書かれること、ファイルの大きさ（1 日あたり）。
-- `night` と `pond` を繰り返して揺れを見る（各 3 回）。`cage` は 2 回とも同じ失敗（§5.1、5.2）。
-- 閉じた所（特に水の中）の脱出: 土・丸石がなくても壁を掘って出る手、`reach_land` が壁で囲まれた陸を急ぎの手にしないこと（§5.1。実装していない。user の指示を待つ）。
-- 目標の決定が、大目標の条件に使えない述語（`through_night`、`explored`）を書いて差し戻される件数: `replay_decisions.py` で数える（`night` で 3 件中 1 件、`cage` で 19 件中 3 件）。プロンプトが使える述語を示しているかを読む。
+- `pond` の `swim to the nearest land` が「岸に着いたのに上がれない」で失敗する原因（§5.3。`reachLand` は `swimToward` が `arrived`（目標の水平 1.2 m 以内）で止まっても、まだ水の中なら失敗にする）。1 回ずつの再現ではなくベンチで数える。
+- `night` は上限 20 分で成功率を取り直す（§5.3）。
+- ローカルの LLM サーバーが JSON スキーマ（enum）を強制していない（目標の決定の出力 17 件中 4 件が違反）。サーバー側の指定（`response_format` / `guided_json`）が効いているかを調べる。説明文の追加は弱い手当て。
+- 壁を掘って出る（`dig_out`）は、配信の実機（本物のワールド、家・建物の近く）では未確認。
 - `by: "gemini"` / `gemini_model` の呼び名（実際のモデルを表さない）を直すか。
 - 拒否の上位（材料・道具がない 5.7%、距離の間違い 3.6%、古い対象 3.0%）を減らす手。`refusal_report.py` で前後を比べる。
 - `refusal_report.py` の「その他」（2.5%）の文面から、種類を足す。
