@@ -133,3 +133,17 @@ test('岸から始めると、水に入って渡り、向こう岸に上がっ�
   assert.ok(r.moved > 30, `moved ${r.moved}`)
   assert.ok(bot.entity.position.x >= 60)
 })
+
+test('目標が岸のいちばん手前の陸のマスでも、手前で「着いた」にせず、岸に上がるまで押す（2026-10-07 池で 5 分動けなかった）', async () => {
+  const { bot } = sea()
+  const r = await swimToward(bot, { x: 30.5, z: 0.5 }, new AbortController().signal, { climb: true })
+  assert.equal(r.landed, true, r.why)
+  assert.equal(onLand(bot), true)
+})
+
+test('岸に上がれない所（高すぎる岸）では、押し続けず理由を返す', async () => {
+  const { bot } = sea({ walls: [{ x: 30, z0: -50, z1: 50 }] })
+  const r = await swimToward(bot, { x: 30.5, z: 0.5 }, new AbortController().signal, { climb: true })
+  assert.equal(r.landed, false)
+  assert.ok(r.why)
+})

@@ -111,7 +111,7 @@ export async function reachLand (bot, signal) {
     // 反射が数秒ごとに呼ぶので、最初は候補の探索（3 秒）の結果を使う。陸が読み込まれていない海では探索が重い
     const land = i === 0 ? findLandCached(bot) : findLand(bot, { avoid: tried })
     if (!land) throw new Error(`no land within ${LAND_RADIUS} m in the loaded world${tried.length ? ` besides the ones that could not be reached (${why})` : ''}: swim toward ground you have not seen, or look for a boat`)
-    const r = await swimToward(bot, land, signal, { maxMs: Math.max(1000, deadline - Date.now()) })
+    const r = await swimToward(bot, land, signal, { maxMs: Math.max(1000, deadline - Date.now()), climb: true })
     if (r.landed || onLand(bot)) return `swam ${r.moved} m and climbed onto land at ${land.x},${land.y},${land.z}`
     why = r.why
     tried.push(land)

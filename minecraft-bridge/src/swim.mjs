@@ -16,6 +16,7 @@ const PROGRESS_M = 1 // この距離だけ目標に近づかないまま PROGRES
 const PROGRESS_MS = 12000
 const UNLOADED_WAIT_MS = 3000
 const DETOUR_TICKS = 15
+const CLIMB_MS = 4000 // 岸のマスの手前に着いてから、岸に上がろうと押し続ける時間
 // 前がふさがっているときの向きの変え方（目標の向きからの角度。順に試す）
 const TURNS = [30, -30, 60, -60, 90, -90, 135, -135, 180]
 const HAZARD = /lava|fire|magma/
@@ -53,7 +54,9 @@ export function aheadKind (bot, me, dir) {
 
 // target（{ x, z }）へ水面沿いに泳ぐ（水際に立った所からでもよい）。止まるのは: 水に入ったあと岸に上がった
 // （landed）、target の近く、進めない（目標に近づかない）、先が読み込まれていない、signal。時間では止めない。返すのは { landed, why, moved }
-export async function swimToward (bot, target, signal, { maxMs = Infinity, progressMs = PROGRESS_MS } = {}) {
+// climb: target が岸の陸のマス（陸を探して上がるとき）。手前の水の中で「着いた」にせず、上がるまで押す
+// （target は岸のいちばん手前の陸のマスなので、1.2 m 手前に着いた所はまだ水の中だった。2026-10-07: 池で 5 分動けなかった）
+export async function swimToward (bot, target, signal, { maxMs = Infinity, progressMs = PROGRESS_MS, climb = false } = {}) {
   const start = bot.entity.position.clone()
   const t0 = Date.now()
   let why = 'time is up'
@@ -63,6 +66,7 @@ export async function swimToward (bot, target, signal, { maxMs = Infinity, progr
   let best = Infinity
   let bestAt = Date.now()
   let unloadedSince = null
+  let arrivedAt = null
   // 岸から泳ぎ始めるときは、まだ水に入っていない: 一度水の中に入ってから、陸に上がったと数える
   let entered = isSwimming(bot)
   try {
@@ -74,10 +78,14 @@ export async function swimToward (bot, target, signal, { maxMs = Infinity, progr
       const flat = Math.hypot(dx, dz)
       if (isSwimming(bot)) entered = true
       else if (entered && onLand(bot)) { landed = true; why = 'on land'; break }
-      if (flat < ARRIVED_M) { why = 'arrived'; break }
+      if (flat < ARRIVED_M) {
+        if (!climb || !isSwimming(bot)) { why = 'arrived'; break }
+        arrivedAt ??= Date.now()
+        if (Date.now() - arrivedAt > CLIMB_MS) { why = 'arrived but could not climb onto the bank (too high or blocked)'; break }
+      }
       if (flat <= best - PROGRESS_M) { best = flat; bestAt = Date.now() }
       else if (Date.now() - bestAt > progressMs) { why = `did not get closer to ${Math.round(target.x)},${Math.round(target.z)} in ${progressMs / 1000}s`; break }
-      const want = [dx / flat, dz / flat]
+      const want = flat > 0 ? [dx / flat, dz / flat] : [0, 1]
       // 前がふさがっていれば、少しの間（DETOUR_TICKS）よけた向きに進み、また目標の向きを試す
       let dir = want
       let kind = 'open'
