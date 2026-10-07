@@ -103,6 +103,18 @@ test('stationRefusal: かまどは家の外に置かない。作業台は地下�
   assert.equal(stationRefusal(surface, state, 'torch', v(30, 70, 30)), '')
 })
 
+test('stationRefusal: 閉じた地下でツルハシがなくて掘れないときは、作業台を置いてよい（かまどは置かない）。ツルハシがあれば置かない', () => {
+  const shaft = (items) => {
+    const b = bot({ at: v(30.5, 40, 30.5), roof: 20, furnaces: [], items })
+    const open = (p) => p.x === 30 && p.z === 30 && p.y >= 40 && p.y <= 41 // 1 x 1 x 2 の閉じた縦穴。まわりは岩
+    b.blockAt = (p) => (open(p) ? { name: 'air', boundingBox: 'empty', position: p } : { name: 'stone', boundingBox: 'block', position: p })
+    return b
+  }
+  assert.equal(stationRefusal(shaft({ cobblestone: 74 }), { home: null }, 'crafting_table', v(30, 41, 30)), '')
+  assert.match(stationRefusal(shaft({ cobblestone: 74 }), { home: null }, 'furnace', v(30, 41, 30)), /not placed underground/)
+  assert.match(stationRefusal(shaft({ wooden_pickaxe: 1 }), { home: null }, 'crafting_table', v(30, 41, 30)), /not placed underground/)
+})
+
 test('smelt の行動は、家の外のかまどを断る（候補や道具が出さなくても、古い記録からの呼び出しを止める）', async () => {
   const state = homeState()
   await assert.rejects(

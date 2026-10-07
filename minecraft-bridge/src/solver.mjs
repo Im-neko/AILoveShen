@@ -357,6 +357,15 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
       children.push(torches.node)
       cost += torches.cost
     }
+    // 予備の木のツルハシ（掘る道具のほかに 1 本）: 採掘場の底で道具が壊れると、作業台も置けず岩も掘れず、出られなくなった
+    // （2026-10-07: 石と木のツルハシが 72 マスで 2 本とも壊れ、約 40 分閉じ込められた）。木でも岩は掘れるので出られる
+    const spareTrial = cloneLedger(ledger)
+    const spare = need(k, world, 'wooden_pickaxe', 1, spareTrial, path, depth + 1)
+    if (spare.cost < IMPOSSIBLE) {
+      Object.assign(ledger, spareTrial)
+      children.push(spare.node)
+      cost += spare.cost
+    }
     if (!armedInWorld(world)) {
       const sword = need(k, world, 'sword', 1, ledger, path, depth + 1)
       children.push(sword.node)

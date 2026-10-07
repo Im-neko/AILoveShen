@@ -170,3 +170,13 @@ test('松明を持っていれば、今までどおり松明を持って地下�
   assert.deepEqual(r.impossible, [])
   assert.deepEqual(kinds(r), ['make_mine:cobblestone'])
 })
+
+test('地下へ下りる前に、予備の木のツルハシを 1 本持つ（道具が壊れても岩を掘って出られる。2026-10-07 閉じ込め）', () => {
+  // 石のツルハシ 1 本だけ: 予備の木のツルハシを作る手が先に出る（採掘場へはまだ下りない）
+  const none = solve(k, mineWorld({ wooden_pickaxe: 0, stone_pickaxe: 1, torch: 8, oak_planks: 3, stick: 2 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.ok(none.leaves.some((l) => l.kind === 'craft' && l.item === 'wooden_pickaxe'), JSON.stringify(none.leaves.map((l) => `${l.kind}:${l.item}`)))
+  assert.ok(!none.leaves.some((l) => l.kind === 'make_mine'))
+  // 予備を持っていれば、そのまま下りる
+  const held = solve(k, mineWorld({ wooden_pickaxe: 1, stone_pickaxe: 1, torch: 8 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.ok(held.leaves.some((l) => l.kind === 'make_mine'), JSON.stringify(held.leaves.map((l) => `${l.kind}:${l.item}`)))
+})

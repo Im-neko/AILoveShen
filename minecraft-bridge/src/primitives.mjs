@@ -696,7 +696,10 @@ export function stationRefusal (bot, state, item, pos) {
       ? ''
       : `a ${item} is placed only inside the house (smelting and cooking are done where it is safe, not in the field or underground): go home and place it there`
   }
-  if ((FURNACE_ITEM.test(item) || item === 'crafting_table') && isUnderground(bot)) {
+  // 閉じた地下で、ツルハシがなくて掘れない（採掘場の底で壊れた）ときの作業台だけは置く: 作業台がなければツルハシを作れず、
+  // 岩を掘って出ることも、積んで出ることもできないまま閉じ込められた（2026-10-07: 約 40 分）。モブは閉じた所に湧きにくい
+  const trapped = item === 'crafting_table' && !(bot.inventory?.items?.() ?? []).some((i) => i.name.endsWith('_pickaxe')) && !!closedSpaceCached(bot)
+  if ((FURNACE_ITEM.test(item) || item === 'crafting_table') && isUnderground(bot) && !trapped) {
     return `a ${item} is not placed underground (monsters spawn in the dark and you stand still while using it): do it on the surface or in the house`
   }
   return ''
@@ -860,12 +863,16 @@ async function torchInMine (bot, cells, index) {
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const wall = bot.blockAt(head.offset(dx, 0, dz))
     if (wall?.boundingBox !== 'block' || planned.has(`${wall.position.x},${wall.position.y},${wall.position.z}`)) continue
+    // 置いたあとは、持っていた物（ツルハシ）に戻す: 松明を持ったまま掘ると素手と同じ遅さになる（2026-10-07）
+    const before = bot.heldItem
     try {
       await bot.equip(torch, 'hand')
       await bot.placeBlock(wall, new Vec3(-dx, 0, -dz))
       return null
     } catch (e) {
       console.log(`[mine] 松明を置けなかった: ${e.message}`)
+    } finally {
+      if (before && before.name !== 'torch') await bot.equip(before, 'hand').catch(() => {})
     }
   }
   return null

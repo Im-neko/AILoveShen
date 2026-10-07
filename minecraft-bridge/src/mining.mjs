@@ -121,6 +121,9 @@ function coverAbove (bot, p) {
 // 鉱石、土、砂利、砂は対象外。上が空いた所までの固いブロックの数が SURFACE_DEPTH 未満なら真
 export function shallowStone (bot, state, p, name) {
   if (!mineFromHome(state) || !STONE.test(name ?? bot.blockAt(p)?.name)) return false
+  // 家の床より SURFACE_DEPTH 以上下なら、深い: 自分で掘った縦穴（採掘場の階段）の下は、頭の上が空気で岩の厚みが
+  // 薄く見えるので、地表に近いと誤判定していた（2026-10-07: 地下 28 ブロックの岩を「地表に近い」と断られ、出られなかった）
+  if (p.y < Math.floor((state.home.inside ?? state.home.min).y) - SURFACE_DEPTH) return false
   const cover = coverAbove(bot, p)
   return cover !== null && cover < SURFACE_DEPTH
 }

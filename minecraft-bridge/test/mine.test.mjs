@@ -138,11 +138,11 @@ test('深い鉄は、下りきった採掘場があればそこから下りて�
   const { solve } = await import('../src/solver.mjs')
   const k = new Knowledge(md)
   const mine = { name: 'mine_1', bottom: { x: 8, y: 16, z: 0 }, above: true }
-  const w = (extra) => ({ inventory: { stone_pickaxe: 1, torch: 8, wooden_sword: 1 }, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set(), digDepth: Infinity, ...extra })
+  const w = (extra) => ({ inventory: { stone_pickaxe: 1, wooden_pickaxe: 1, torch: 8, wooden_sword: 1 }, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set(), digDepth: Infinity, ...extra })
   const deep = solve(k, w({ mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 20, 0), depth: 44 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
   assert.deepEqual(deep.leaves.map((l) => [l.kind, l.mine?.name]), [['go_mine', 'mine_1']])
   // 武器がなければ、まず作る（武器なしで地下に出ない）
-  const unarmed = solve(k, w({ inventory: { stone_pickaxe: 1, torch: 8 }, mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 20, 0), depth: 44 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
+  const unarmed = solve(k, w({ inventory: { stone_pickaxe: 1, wooden_pickaxe: 1, torch: 8 }, mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 20, 0), depth: 44 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
   assert.ok(!unarmed.leaves.some((l) => l.kind === 'go_mine'))
   // 浅いものはその場で掘り下げる
   const shallow = solve(k, w({ mine, buried: (name) => name === 'iron_ore' ? [{ pos: new Vec3(0, 60, 0), depth: 4 }] : [] }), [{ spec: 'raw_iron', count: 3 }])
@@ -203,6 +203,22 @@ test('掘っている途中で松明が尽きたら、暗いまま先へ掘ら�
   const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
   assert.match(r, /^dug \d+ cells of the mine mine_1; stopped: out of torches/)
   assert.ok(Number(/^dug (\d+)/.exec(r)[1]) >= 12)
+})
+
+test('松明を置いたあとは、持っていたツルハシに持ち替える（松明を持ったまま掘ると素手と同じ遅さ。2026-10-07）', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 1 }]
+  const bot = digger(fac, items)
+  bot.heldItem = items[0]
+  const held = []
+  bot.equip = async (it) => { bot.heldItem = it; held.push(it.name) }
+  bot.placeBlock = async () => {}
+  await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  const i = held.indexOf('torch')
+  assert.ok(i >= 0, 'a torch was placed')
+  assert.equal(held[i + 1], 'stone_pickaxe', held.join(','))
 })
 
 test('部屋は階段の床を消さない: どの深さでも、どの段も床が残り、部屋から階段へ 1 段ずつ上がれる（mine_1 の底で閉じ込められた）', () => {

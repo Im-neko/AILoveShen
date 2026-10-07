@@ -142,11 +142,20 @@ test('地表に近い石は掘らず、10 マス下からは掘る。鉱石・�
   assert.equal(shallowStone(bot, { home: null }, new Vec3(5, 62, 5), 'stone'), false)
 })
 
+test('自分で掘った縦穴の下の岩（頭の上が空気）は、深い所なら掘れる（地表に近いと誤判定しない。2026-10-07）', () => {
+  const s = state()
+  const shaft = {}
+  for (let y = 36; y <= 63; y++) shaft[`5,${y},5`] = 'air'
+  const bot = world(shaft)
+  assert.equal(shallowStone(bot, s, new Vec3(5, 35, 5), 'stone'), false) // 床 64 より 29 下
+  assert.equal(shallowStone(bot, s, new Vec3(5, 62, 5), 'stone'), true) // 浅いままは浅い
+})
+
 test('solver: 家があれば、地下の鉄は採掘場を作ってから。なければ探す。家がなければ今までどおり', () => {
   const s = state()
   const bot = world()
   const base = {
-    inventory: { stone_pickaxe: 1, torch: 8, wooden_sword: 1 }, stored: {}, remembered: new Set(), blocks: {}, mobs: {}, table: 'near', furnace: 'near',
+    inventory: { stone_pickaxe: 1, wooden_pickaxe: 1, torch: 8, wooden_sword: 1 }, stored: {}, remembered: new Set(), blocks: {}, mobs: {}, table: 'near', furnace: 'near',
     unlocked: () => true, dig: () => [], hunt: () => [], buried: () => [], digDepth: Infinity, mines: []
   }
   const withHome = { ...base, home: true, minePlan: (sources) => minePlan(bot, s, sources) }
@@ -161,7 +170,7 @@ test('solver: 地下へ下りる手は、松明を持ってから（松明は石
   const s = state()
   const bot = world()
   const base = {
-    inventory: { stone_pickaxe: 1, stick: 4, coal: 2, wooden_sword: 1 }, stored: {}, remembered: new Set(), blocks: {}, mobs: {}, table: 'near', furnace: 'near',
+    inventory: { stone_pickaxe: 1, wooden_pickaxe: 1, stick: 4, coal: 2, wooden_sword: 1 }, stored: {}, remembered: new Set(), blocks: {}, mobs: {}, table: 'near', furnace: 'near',
     unlocked: () => true, dig: () => [], hunt: () => [], buried: () => [], digDepth: Infinity, mines: [], home: true,
     minePlan: (sources) => minePlan(bot, s, sources)
   }
