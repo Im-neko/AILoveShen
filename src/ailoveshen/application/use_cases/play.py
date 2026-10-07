@@ -1352,7 +1352,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     raise ValueError(
                         f"the small goal {_bundle_label(decision)} cannot progress now: "
                         f"{'; '.join(status.dead_end)}. Choose a small goal that can be done now "
-                        "(what it needs first)"
+                        "(what it needs first)" + _doable_note(job_status)
                     )
                 # ここで初めて、今のままのプランに反映する（その間に返答が足しているかもしれない）
                 preview = self._objectives.rehearse(plan, decision.changes)
@@ -1404,6 +1404,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             return
         if await self._spend_the_night(session, obs, reason, rethinks_seen):
             return
+        if await self._take_a_doable_job(session, obs, reason, rethinks_seen, job_status):
+            return
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"
         )
@@ -1443,6 +1445,48 @@ class AdvancePlayUseCase(IAdvancePlay):
         )
         await self._start_goal(session, obs, goal, reason, status, rethinks_seen)
         return True
+
+    async def _take_a_doable_job(
+        self,
+        session: PlaySession,
+        obs: GameObservation,
+        reason: str,
+        rethinks_seen: Optional[int],
+        job_status: tuple[ConditionStatus, ...],
+    ) -> bool:
+        """
+        決定が決まらないまま回り続けるのを、いま進められる中目標の次の一歩で止める。昼に、進められない
+        小目標（手に入る手立てがない丸石）を選び続け、17 分以上行動が 0 件だった（2026-10-07 02:42Z〜: 松明の
+        輪で石・石炭が「手立てなし」になっていた）。夜は `_spend_the_night` が先に受ける。
+        進められる中目標がなければ、作り出さずに False（決定の失敗のまま）。
+        """
+        plan = session.plan
+        current = plan.current
+        if current is None:
+            return False
+        for spec in _doable_goals(job_status):
+            try:
+                status = await self._bridge.set_goal(spec, _kept(plan), _also(plan, (spec,)))
+            except GoalRejectedError as e:
+                logger.debug(f"進められる中目標をブリッジが断った: {spec.describe()}: {e}")
+                continue
+            if status.met or status.dead_end:
+                continue
+            logger.warning(
+                f"小目標が {self._max_goal_attempts} 回決まらなかった: "
+                f"進められる中目標 {spec.describe()} にする"
+            )
+            goal = Goal(
+                spec=spec,
+                reason=(
+                    f"no small goal could be decided in {self._max_goal_attempts} attempts: "
+                    "this job of the objective can progress now"
+                ),
+                objective_id=current.id,
+            )
+            await self._start_goal(session, obs, goal, reason, status, rethinks_seen)
+            return True
+        return False
 
     def _objective_stuck(self, session: PlaySession) -> str:
         """
@@ -1847,6 +1891,29 @@ def _stay_note(decision, obs: GameObservation) -> str:
             "not an outdoor task"
         )
     return ""
+
+
+def _doable_goals(job_status: tuple[ConditionStatus, ...]) -> tuple[GoalSpec, ...]:
+    """
+    中目標の条件のうち、いま進められるものの小目標（済みでなく、手に入る手立てがある）。集めに出る
+    材料があれば、その次の一歩（have）、なければ条件そのもの。
+    """
+    out: list[GoalSpec] = []
+    for status in job_status:
+        if status.met or status.impossible:
+            continue
+        spec = status.next_step or status.spec
+        if spec not in out:
+            out.append(spec)
+    return tuple(out)
+
+
+def _doable_note(job_status: tuple[ConditionStatus, ...]) -> str:
+    """進められない小目標を差し戻すとき、いま進められる中目標を添える（選び直しの答え）。"""
+    doable = _doable_goals(job_status)[:3]
+    if not doable:
+        return ""
+    return ". Jobs that can progress now: " + ", ".join(s.describe() for s in doable)
 
 
 def _night_note(decision: Optional[GoalDecision], obs: GameObservation) -> str:

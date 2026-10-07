@@ -120,6 +120,22 @@ def _judged(met: set[GoalSpec] = frozenset()):
     return check
 
 
+COBBLE = GoalSpec(GoalPredicate.HAVE, item="cobblestone", count=3)
+COBBLES = {**PLANKS, "item": "cobblestone", "count": 3}
+
+
+def _judged_impossible(impossible: set[GoalSpec]):
+    """bridge.check: `impossible` の条件は手に入る手立てがなく、ほかは進められる（どれも済んでいない）。"""
+
+    async def check(specs, materials=False):
+        return [
+            ConditionStatus(s, False, impossible=("no way to get it",) if s in impossible else ())
+            for s in specs
+        ]
+
+    return check
+
+
 @pytest.fixture
 def text_generator():
     """構造化出力つきの LLM のモック。"""
@@ -877,6 +893,75 @@ class TestAdvancePlay:
 
         with pytest.raises(TextGenerationError, match="no acceptable goal"):
             await use_case.execute(_session())
+
+    @pytest.mark.asyncio
+    async def test_a_dead_end_says_which_jobs_can_progress(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """進められない小目標の差し戻しに、いま進められる中目標を添える（2026-10-07 昼: 丸石を選び続けた）。"""
+        from ailoveshen.domain.value_objects import Job
+
+        bridge.observe.return_value = _obs(goal=False, time_phase="day")
+        text_generator.generate_json.side_effect = [COBBLES, COBBLES]
+        bridge.set_goal.side_effect = [
+            GoalStatus(False, 4, dead_end=("no way to get cobblestone",)),
+            GoalStatus(False, 4),
+        ]
+        session = _session()
+        session.plan.set_jobs("m1", (Job(COBBLE, "丸石"), Job(HAVE_PLANKS, "板材")))
+        bridge.check.side_effect = _judged_impossible({COBBLE})
+
+        await use_case.execute(session)
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "Jobs that can progress now: have(planks, 4)" in error
+        assert "cobblestone" not in error.split("Jobs that can progress now")[1]
+
+    @pytest.mark.asyncio
+    async def test_decisions_that_fail_by_day_become_a_job_that_can_progress(
+        self, use_case, text_generator, bridge
+    ):
+        """昼も決定が決まらなければ、いま進められる中目標の次の一歩にする（行動 0 件で回り続けない）。"""
+        from ailoveshen.domain.value_objects import Job
+
+        bridge.observe.return_value = _obs(goal=False, time_phase="day")
+        text_generator.generate_json.return_value = COBBLES
+        spec_seen: list = []
+
+        async def set_goal(spec, *args, **kwargs):
+            spec_seen.append(spec)
+            if spec == HAVE_PLANKS:
+                return GoalStatus(False, 2)
+            return GoalStatus(False, 4, dead_end=("no way to get cobblestone",))
+
+        bridge.set_goal.side_effect = set_goal
+        session = _session()
+        session.plan.set_jobs("m1", (Job(COBBLE, "丸石"), Job(HAVE_PLANKS, "板材")))
+        bridge.check.side_effect = _judged_impossible({COBBLE})
+
+        await use_case.execute(session)
+
+        assert session.goal.spec == HAVE_PLANKS
+        assert session.goal.objective_id == "m1"
+        assert "can progress now" in session.goal.reason
+        assert text_generator.generate_json.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_decisions_that_fail_by_day_with_no_job_that_can_progress_still_raise(
+        self, use_case, text_generator, bridge
+    ):
+        """進められる中目標がなければ、作り出さずに決定の失敗のまま。"""
+        from ailoveshen.domain.value_objects import Job
+
+        bridge.observe.return_value = _obs(goal=False, time_phase="day")
+        text_generator.generate_json.return_value = COBBLES
+        bridge.set_goal.return_value = GoalStatus(False, 4, dead_end=("no way to get cobblestone",))
+        session = _session()
+        session.plan.set_jobs("m1", (Job(COBBLE, "丸石"),))
+        bridge.check.side_effect = _judged_impossible({COBBLE})
+
+        with pytest.raises(TextGenerationError, match="no acceptable goal"):
+            await use_case.execute(session)
 
     @pytest.mark.asyncio
     async def test_single_candidate_skips_selector(self, use_case, selector, bridge):
