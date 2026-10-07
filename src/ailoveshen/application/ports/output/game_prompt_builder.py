@@ -83,7 +83,11 @@ class IGamePromptBuilder(ABC):
 
     @abstractmethod
     def build_house_design_prompt(
-        self, character: CharacterProfile, site_note: str = "", previous_error: str = ""
+        self,
+        character: CharacterProfile,
+        site_note: str = "",
+        previous_error: str = "",
+        provisional: bool = False,
     ) -> str:
         """
         LLM に小さな家の設計を頼むプロンプトを組み立てる。
@@ -92,6 +96,8 @@ class IGamePromptBuilder(ABC):
             character: 配信者。設計にはその性格を反映する
             site_note: 建てる場所の説明（引っ越し先の家。最初の家では空）
             previous_error: 前回の設計が拒否された理由（あれば）
+            provisional: 最初の家（仮の小屋）か。大きさ（5x5、壁 3、柱なし）は決まっていて、名前・
+                コンセプト・ドアだけを決めさせる
         """
         ...
 

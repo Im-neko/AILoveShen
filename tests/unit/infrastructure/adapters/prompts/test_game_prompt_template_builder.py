@@ -141,6 +141,13 @@ class TestGamePromptTemplateBuilder:
         assert "5〜7" in prompt and "3〜4" in prompt
         assert "前回の設計" not in prompt
 
+    def test_the_provisional_hut_prompt_fixes_the_size(self):
+        """最初の家（仮の小屋）は、大きさと柱を決めて、決めるのは名前・コンセプト・ドアだけと言う（設計書 109）。"""
+        builder = GamePromptTemplateBuilder()
+        prompt = builder.build_house_design_prompt(CharacterProfile(), provisional=True)
+        assert "仮の小屋" in prompt and "幅 5、奥行き 5、壁の高さ 3" in prompt and "corner_pillars は false" in prompt
+        assert "仮の小屋" not in builder.build_house_design_prompt(CharacterProfile())  # 引っ越し先の家は今までどおり
+
     def test_design_prompt_includes_previous_error(self):
         """通らなかった設計のエラーを、やり直しのために示す。"""
         prompt = GamePromptTemplateBuilder().build_house_design_prompt(

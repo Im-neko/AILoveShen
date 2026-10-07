@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.ports.output.mission_store import SavedPlan
-from ailoveshen.application.use_cases.house import HOUSE_SCHEMA, HouseDesigner
+from ailoveshen.application.use_cases.house import (
+    PROVISIONAL_HOUSE_SCHEMA,
+    HouseDesigner,
+)
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
@@ -229,17 +232,28 @@ class TestStartPlay:
     @pytest.mark.asyncio
     async def test_design_is_sent_to_bridge(self, text_generator, prompt_builder, bridge, events):
         """正しい設計ならセッションが始まり、その設計がブリッジに送られる。"""
-        text_generator.generate_json.return_value = VALID_DESIGN
+        # LLM が大きい家（7x7、壁 4、柱つき、ドアの位置は壁の外）を書いても、最初の家は仮の小屋に決まる（設計書 109）
+        text_generator.generate_json.return_value = {
+            **VALID_DESIGN,
+            "width": 7,
+            "depth": 7,
+            "wall_height": 4,
+            "corner_pillars": True,
+            "door_offset": 6,
+        }
 
         project = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
 
         assert project.blueprint.name == "ひだまり"
         assert project.blueprint.door_side == Side.SOUTH
+        assert (project.blueprint.width, project.blueprint.depth, project.blueprint.wall_height) == (5, 5, 3)
+        assert project.blueprint.corner_pillars is False and project.blueprint.door_offset == 3
         assert project.max_steps_per_goal == 7
         assert project.max_stalled_steps == 5
-        assert text_generator.generate_json.call_args.args[1] is HOUSE_SCHEMA
+        assert text_generator.generate_json.call_args.args[1] is PROVISIONAL_HOUSE_SCHEMA
         bridge.set_build_plan.assert_awaited_once_with(project.blueprint)
-        assert prompt_builder.build_house_design_prompt.call_args.kwargs["site_note"] == ""
+        kwargs = prompt_builder.build_house_design_prompt.call_args.kwargs
+        assert kwargs["site_note"] == "" and kwargs["provisional"] is True
         assert _published(events, HouseDesignedEvent)[0].name == "ひだまり"
 
     def _resumable(self, bridge, label="have(planks, 4)", store_saved=None):
@@ -284,13 +298,13 @@ class TestStartPlay:
         self, text_generator, prompt_builder, bridge, events
     ):
         """通らない設計は、検証エラーをつけて差し戻す。"""
-        text_generator.generate_json.side_effect = [{**VALID_DESIGN, "width": 9}, VALID_DESIGN]
+        text_generator.generate_json.side_effect = [{**VALID_DESIGN, "door_side": "up"}, VALID_DESIGN]
 
         project = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
 
         assert project.blueprint.width == 5
         second = prompt_builder.build_house_design_prompt.call_args_list[1]
-        assert "width" in second.kwargs["previous_error"]
+        assert "door_side" in second.kwargs["previous_error"] or "up" in second.kwargs["previous_error"]
 
     @pytest.mark.asyncio
     async def test_gives_up_after_max_attempts(

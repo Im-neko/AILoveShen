@@ -57,6 +57,7 @@ $site_note
   （見た目のアクセント。原木が4本×壁の高さぶん余分に必要）
 - 材料はすべて自分で木を切って集める。大きい家ほど時間がかかる
 
+$provisional_note
 ## ヒント
 - 配信で完成まで見せられる大きさが良い
 - あなたらしさが伝わる名前とコンセプトにする
@@ -64,6 +65,15 @@ $previous_error
 ## 出力
 指定された JSON だけを出力してください。
 """)
+
+# 最初の家は仮の小屋（設計書 109）: 大きさはコードで決まっていて、決めるのは名前・コンセプト・ドア
+PROVISIONAL_NOTE = """
+## 仮の小屋
+これは最初の夜を越すための、仮の小さな小屋です。大きさは決まっています:
+幅 5、奥行き 5、壁の高さ 3、corner_pillars は false（これ以外にはできません）。
+決めるのは名前、コンセプト、ドアの向き（door_side）と位置（door_offset は 1〜3）だけです。
+街の場所が決まったら、本家をあとで別に建てます。
+"""
 
 BUILD_DESIGN_TEMPLATE = Template("""\
 あなたは「$name」というAI配信者です。性格: $personality_traits
@@ -920,7 +930,11 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         )
 
     def build_house_design_prompt(
-        self, character: CharacterProfile, site_note: str = "", previous_error: str = ""
+        self,
+        character: CharacterProfile,
+        site_note: str = "",
+        previous_error: str = "",
+        provisional: bool = False,
     ) -> str:
         """LLM に小さな家を設計させるプロンプトを組み立てる。"""
         error = (
@@ -937,6 +951,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             min_height=HouseBlueprint.MIN_WALL_HEIGHT,
             max_height=HouseBlueprint.MAX_WALL_HEIGHT,
             site_note=f"\n## 建てる場所\n{site_note}\n" if site_note else "",
+            provisional_note=PROVISIONAL_NOTE if provisional else "",
             previous_error=error,
         )
 

@@ -229,7 +229,7 @@ class StartPlayUseCase(IStartPlay):
             session.completion_announced = obs.house_complete
             self._resume_goal(session, obs)
             return session
-        blueprint = await self._designer.design()
+        blueprint = await self._designer.design(provisional=True)
         await self._event_publisher.publish(
             HouseDesignedEvent(name=blueprint.name, concept=blueprint.concept)
         )
