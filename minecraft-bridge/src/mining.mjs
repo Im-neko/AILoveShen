@@ -128,6 +128,8 @@ export function shallowStone (bot, state, p, name) {
   return cover !== null && cover < SURFACE_DEPTH
 }
 
+export const CAVE_ORE_REMEDY = `ore this deep is taken only where it shows in the wall of a mine, never in a cave (a cave has spiders and no way to seal it): use the suggestion that makes or digs the mine`
+
 export const SHALLOW_REMEDY = `stone is taken from the mine (at least ${SURFACE_DEPTH} blocks below the surface), not from the surface: use the suggestion that makes or digs the mine`
 
 export { mineBottom }

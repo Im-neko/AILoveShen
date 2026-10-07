@@ -144,3 +144,15 @@ test('rememberedKinds: 種類がいくつあっても、地図をなめるのは
   assert.equal(remembered.has('coal_ore'), true)
   assert.equal(remembered.has('oak_planks'), false, '要約の種類にないものは、前と同じく覚えていない扱い')
 })
+
+test('memoryView: 洞窟の深い鉱石は覚えている場所に出さない。浅い鉱石や、ほかの物は出す（取らない物へ行かせない）', () => {
+  const home = { inside: { x: 0, y: 70, z: 0 }, min: { x: 0, y: 70, z: 0 }, found: false }
+  const state = { home, plan: null, memory: newMemory(), placed: {} }
+  state.memory.places.iron_ore = [{ x: 5, y: 52, z: 5, count: 2, seen: NOW }]
+  state.memory.places.coal_ore = [{ x: 8, y: 66, z: 8, count: 1, seen: NOW }]
+  state.memory.places.oak_log = [{ x: 9, y: 72, z: 9, count: 3, seen: NOW }]
+  const kinds = Object.keys(memoryView(state, me, NOW).places).sort()
+  assert.deepEqual(kinds, ['coal_ore', 'oak_log'])
+  state.home = null
+  assert.deepEqual(Object.keys(memoryView(state, me, NOW).places).sort(), ['coal_ore', 'iron_ore', 'oak_log']) // 家がなければ今までどおり
+})

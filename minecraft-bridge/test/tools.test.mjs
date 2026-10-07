@@ -158,6 +158,17 @@ test('家があるとき、地表に近い石は掘らない（採掘場から�
   assert.equal((await noHome('dig', { x: 10, y: 69, z: 10 })).ok, true)
 })
 
+test('洞窟の鉱石は、道具の dig でも掘らない（家の床より 10 以上下。浅い露頭は掘れる）', async () => {
+  const extra = { '10,49,10': 'iron_ore', '10,69,10': 'iron_ore' }
+  const { callTool, runs } = setup({ at: v(10.5, 50, 10.5), items: [['stone_pickaxe', 1]], extra })
+  const r = await callTool('dig', { x: 10, y: 49, z: 10 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /will not dig iron_ore.*never in a cave/)
+  assert.equal(runs.length, 0)
+  const { callTool: outcrop } = setup({ at: v(10.5, 70, 10.5), items: [['stone_pickaxe', 1]], extra })
+  assert.equal((await outcrop('dig', { x: 10, y: 69, z: 10 })).ok, true) // 浅い露頭
+})
+
 test('育ち途中の作物は掘らない（種しか出ず、畑が減る）', async () => {
   const { callTool } = setup({ at: v(10.5, 70, 10.5), extra: { '11,70,10': 'wheat' } })
   assert.match((await callTool('dig', { x: 11, y: 70, z: 10 })).result, /wheat at 11,70,10 is not ripe yet \(age 0\/7\)/)

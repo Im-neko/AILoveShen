@@ -9,7 +9,7 @@ import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing, blockProps, fillCount, isUnderground } from './observe.mjs'
 import { shelterOf, needsOutside, creeperNear, CREEPER_HOME_REASON } from './candidates.mjs'
 import { refusalAt, noteRefusal } from './refusals.mjs'
-import { shallowStone, SHALLOW_REMEDY } from './mining.mjs'
+import { shallowStone, caveOre, SHALLOW_REMEDY, CAVE_ORE_REMEDY } from './mining.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
 import { liquidReason } from './liquid.mjs'
 import { isTreeLog, isLeftoverLog, isNaturalLogName } from './trees.mjs'
@@ -263,6 +263,9 @@ export function createTools (deps) {
       if (body) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${body}. Dig the rock beside the mine instead`)
       // 家があるとき、地表に近い石は掘らない（採掘場から。設計書 68）
       if (shallowStone(bot, state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: it is close to the surface. ${SHALLOW_REMEDY}`)
+      // 洞窟の鉱石は取らない（採掘場の壁に出たものだけ。候補と寄り道には掛けていたが、道具の dig が抜けていた: 2026-10-07、
+      // 自然の洞窟で鉄を掘った）。壊すと決めたとき（demolish）は別
+      if (args.demolish !== true && caveOre(state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${CAVE_ORE_REMEDY}`)
       // 整地する土地の、床より下の地面は掘らない（そろえた地面の下が穴だらけになる）
       if (keptGround(state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${KEPT_REMEDY}`)
       // 耕地は畑の地面: 掘ると土になって畑が減る（小麦の収穫に、作物の下の耕地の座標で dig を呼んでいた）

@@ -14,6 +14,7 @@ import { isNaturalLogName, logClusterIsTree } from './trees.mjs'
 import { REMEMBERED_ANIMALS, REMEMBERED_BLOCK, REMEMBERED_STONE, recallableKinds } from './memory.mjs'
 import { AIR, TICKS_PER_MINUTE, minuteOf, minutesSince } from './worldmap.mjs'
 import { UNDERGROUND_BELOW } from './observe.mjs'
+import { caveOre, mineFromHome } from './mining.mjs'
 
 export const PLACES_RADIUS = 192
 const MAP_FIND_RADIUS = 96
@@ -125,9 +126,17 @@ export function mapPlaces (state, me, ticksNow, kinds = null) {
 // 場所を引くときの memory: 動物は memory.places のまま、ブロックは地図から。kinds: 探す種類（null で全部）
 export function memoryView (state, me, ticksNow, kinds = null) {
   const memory = state.memory
-  if (!state.worldMap) return memory
+  if (!state.worldMap) return mineFromHome(state) ? { ...memory, places: withoutCaveOre(state, memory.places ?? {}) } : memory
   const animals = Object.fromEntries(Object.entries(memory.places ?? {}).filter(([k]) => REMEMBERED_ANIMALS.has(k)))
-  return { ...memory, places: { ...animals, ...mapPlaces(state, me, ticksNow, kinds) } }
+  return { ...memory, places: withoutCaveOre(state, { ...animals, ...mapPlaces(state, me, ticksNow, kinds) }) }
+}
+
+// 洞窟の深い鉱石は、覚えている場所に出さない（出すと、LLM が見に行く。取らない物へは行かせない: 2026-10-07、
+// 覚えていた洞窟の鉄鉱石へ歩いて、自然の洞窟で鉄を掘った）
+function withoutCaveOre (state, places) {
+  return Object.fromEntries(Object.entries(places)
+    .map(([kind, list]) => [kind, list.filter((p) => !caveOre(state, p, kind))])
+    .filter(([, list]) => list.length))
 }
 
 // ソルバーの remembered: 種類ごとに、行く価値のある場所があるか（has だけ）。地図は要約の種類の分を 1 回だけ
