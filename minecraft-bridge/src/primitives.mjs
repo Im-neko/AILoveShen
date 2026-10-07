@@ -21,7 +21,7 @@ import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
 import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './move.mjs'
 import { teachDoors } from './doors.mjs'
-import { digTargets } from './world.mjs'
+import { digTargets, logHeightAbove, dirtForLogHeight, SCAFFOLD_SOURCES } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
 import { levelStatus, noteLevelZone, noteLevelArea, farmLevel, FARM_MARGIN, TERRAIN } from './leveling.mjs'
 import { noteDig, noteShaft, usableShaft } from './quarry.mjs'
@@ -42,7 +42,7 @@ import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
 import { reachLand } from './land.mjs'
 import { digOutRoute } from './dig-out.mjs'
-import { campSite, campAt, campSources, campCount, buildCamp, campExit } from './camp.mjs'
+import { campSite, campAt, campSources, campCount, buildCamp, campExit, HAND_BLOCKS } from './camp.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -118,6 +118,29 @@ function airBetween (bot, from, to, belowY) {
     if (!b || b.boundingBox !== 'empty') return false
   }
   return true
+}
+
+// 積む土として掘れる土（原木の真下とそのまわりの列は、積む足場の地面なので掘らない）: 原木に近い順
+function scaffoldSources (bot, state, log) {
+  return SCAFFOLD_SOURCES.flatMap((n) => digTargets(bot, state, n, 12))
+    .filter((p) => HAND_BLOCKS.test(bot.blockAt(p)?.name ?? '') && Math.max(Math.abs(p.x - log.x), Math.abs(p.z - log.z)) > 1)
+    .sort((a, b) => a.distanceTo(log) - b.distanceTo(log))
+}
+
+// 原木に届くのに積む土が足りなければ、素手で近くの土を掘って集める（docs/design/106）
+async function gatherScaffold (bot, state, log, signal) {
+  const height = logHeightAbove(bot, log)
+  if (height === null) return
+  const need = dirtForLogHeight(height)
+  let dug = 0
+  while ((inventoryCounts(bot).dirt ?? 0) < need) {
+    signal.throwIfAborted()
+    const have = inventoryCounts(bot).dirt ?? 0
+    const [target] = scaffoldSources(bot, state, log)
+    if (!target) throw new Error(`the log at ${log.x},${log.y},${log.z} is ${height} blocks above the ground: reaching it takes ${need} dirt and you carry ${have}; no dirt within reach to dig for the rest`)
+    if (++dug > need + 6) throw new Error(`dug ${dug - 1} blocks of dirt and still carry only ${have} of the ${need} needed to reach the log at ${log.x},${log.y},${log.z}`)
+    await PRIMITIVES.dig(bot, state, { block: bot.blockAt(target).name, pos: target }, signal)
+  }
 }
 
 // 次に置く計画のブロック: 候補が指したブロックがあればそれ。ただし足元がない（床が抜けたドア）なら、足元の土から
@@ -1000,6 +1023,8 @@ export const PRIMITIVES = {
     // 水や溶岩をせき止めているブロックは掘らない（候補にも道具にも出さないが、掘る直前にも確かめる）
     const wet = liquidReason(bot, c.pos, block)
     if (wet) throw new Error(`will not dig ${block.name} at ${c.pos.x},${c.pos.y},${c.pos.z}: ${wet}`)
+    // 高い原木には、土を積んで届く。持っていなければ、近くの土を先に掘って集める（取り残しの幹を全部取れるように）
+    if (isLog(c.block)) await gatherScaffold(bot, state, c.pos, signal)
     // 近くではなく、ブロックに届く場所に立つ: そうしないと、頭より高い原木には木の葉の上からしか
     // 「近く」にならない。
     // 当たり判定のない草・花・作物は、視線の先に見える位置を探す GoalLookAtBlock が決して成り立たない

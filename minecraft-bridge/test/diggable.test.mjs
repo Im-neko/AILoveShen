@@ -43,7 +43,7 @@ test('下の原木を切った後の浮いた幹も木と見なす（近くの�
     entity: { position: v(0, 70, 0) },
     entities: {},
     inventory: { items: () => inv },
-    findBlocks: () => [...logs, onLeaves],
+    findBlocks: ({ matching }) => ([].concat(matching).includes(md.blocksByName.oak_log.id) ? [...logs, onLeaves] : []), // 近くに掘れる土はない
     blockAt: (p) => {
       if (logs.some((l) => l.equals(p)) || onLeaves.equals(p)) return { name: 'oak_log', boundingBox: 'block', position: p }
       if (p.x === 6 && p.y === 79) return { name: 'oak_leaves', boundingBox: 'block' }

@@ -20,31 +20,51 @@ const DIG_RADIUS = 32
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
 const MAX_LOG_HEIGHT = 5 // 地面に立って手が届く、地面からの原木の高さ（目の高さ 1.6 ＋ 届く距離 4.5）
 const MAX_LOG_HEIGHT_TOWER = 16 // 土を積んで（1x1 の塔）届く上限。積める高さは持っている土の数まで
-const MIN_TOWER = 3 // 土が少なくても、この高さまでは届くとする（前は土があれば地面から 8 = 5 + 3 まで）
+const DIRT_SEARCH = 12 // 土を持っていないとき、積む土を掘って集められる近さ
+const DIRT_SEEN_MS = 3000
 const HUNT_RADIUS = 32
 const TARGETS_PER_KIND = 3
+export const SCAFFOLD_SOURCES = ['dirt', 'grass_block', 'coarse_dirt', 'podzol'] // 素手で掘れて、積む土が落ちるブロック
 
-// 地面から何段上の原木まで届くか: 立って届く高さに、積める土の分を足す
+// 地面のブロックから何段上の原木まで届くか: 立って届く高さに、積める土の分を足す（積んだ塔の上に立つので、1 つは余裕）
 export function reachableLogHeight (dirt) {
-  if (dirt <= 0) return MAX_LOG_HEIGHT
-  return Math.min(MAX_LOG_HEIGHT_TOWER, MAX_LOG_HEIGHT + Math.max(MIN_TOWER, dirt))
+  return Math.min(MAX_LOG_HEIGHT_TOWER, Math.max(MAX_LOG_HEIGHT, MAX_LOG_HEIGHT - 1 + dirt))
+}
+
+// 地面のブロックから何段上の原木に届くには、土がいくつ要るか（逆。立って届くなら 0）
+export const dirtForLogHeight = (height) => (height <= MAX_LOG_HEIGHT ? 0 : height - MAX_LOG_HEIGHT + 1)
+
+// 原木から、その下の最初の地面（葉でない固いブロック）までの段数（地面の 1 つ上に立つと、dy - 1 段上）。原木と空気は通り越す。水・溶岩の上や、上限までに地面がなければ null
+export function logHeightAbove (bot, pos, max = MAX_LOG_HEIGHT_TOWER) {
+  for (let dy = 1; dy <= max; dy++) {
+    const below = bot.blockAt(pos.offset(0, -dy, 0))
+    if (!below) return null
+    if (isLog(below.name) || below.boundingBox === 'empty') {
+      if (/water|lava/.test(below.name)) return null
+      continue
+    }
+    return isLeaves(below.name) ? null : dy
+  }
+  return null
+}
+
+// 持っていなくても、近くに掘れる土があれば、積む土は集められる（dig が先に集める）。数えるのは掘れる数だけ（3 秒覚える）
+const dirtSeen = new WeakMap()
+function nearbyDirt (bot, now = Date.now()) {
+  const seen = dirtSeen.get(bot)
+  if (seen && now - seen.at < DIRT_SEEN_MS) return seen.count
+  const ids = SCAFFOLD_SOURCES.map((n) => bot.registry.blocksByName[n]?.id).filter((i) => i != null)
+  const count = ids.length ? bot.findBlocks({ matching: ids, maxDistance: DIRT_SEARCH, count: MAX_LOG_HEIGHT_TOWER }).length : 0
+  dirtSeen.set(bot, { at: now, count })
+  return count
 }
 
 // 原木に届くか: 下へ、原木と空気を通り越して最初の地面（葉でない固いブロック）までの高さで決める。
 // 前は地面から原木が続いていることを求めていたので、下の原木を切った後の浮いた幹や、段差の上に
 // 張り出した木は、近くにあっても木と見なさなかった（2026-09-26）
 function logReachable (bot, block) {
-  const max = reachableLogHeight(inventoryCounts(bot).dirt ?? 0)
-  for (let dy = 1; dy <= max; dy++) {
-    const below = bot.blockAt(block.position.offset(0, -dy, 0))
-    if (!below) return false
-    if (isLog(below.name) || below.boundingBox === 'empty') {
-      if (/water|lava/.test(below.name)) return false
-      continue
-    }
-    return !isLeaves(below.name)
-  }
-  return false
+  const height = logHeightAbove(bot, block.position, reachableLogHeight((inventoryCounts(bot).dirt ?? 0) + nearbyDirt(bot)))
+  return height !== null
 }
 
 const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]

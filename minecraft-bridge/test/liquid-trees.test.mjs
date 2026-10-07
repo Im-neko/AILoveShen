@@ -4,7 +4,7 @@ import vec3Pkg from 'vec3'
 import { holdsBackLiquid, liquidReason } from '../src/liquid.mjs'
 import { isTreeLog, isLeftoverLog, gatherableLog, forgetTrees } from '../src/trees.mjs'
 import { recordPlaced, placedByMe, recordDug, leakingHoles, installLedger, DUG_TICKS } from '../src/ledger.mjs'
-import { digTargets, reachableLogHeight } from '../src/world.mjs'
+import { digTargets, reachableLogHeight, dirtForLogHeight } from '../src/world.mjs'
 import { aroundMe } from '../src/around.mjs'
 import { PRIMITIVES } from '../src/primitives.mjs'
 import { ground } from '../src/candidates.mjs'
@@ -229,23 +229,91 @@ test('取り残しの浮いた幹が候補に出る（葉が散っていても�
   assert.deepEqual(digTargets(bot, state, 'oak_log'), [v(2, 67, 0), v(2, 68, 0)])
 })
 
-test('土を積んで届く高さ: 土がなければ 5、あれば 5 + 積める数（少なくても 8 まで、最大 16）', () => {
-  assert.equal(reachableLogHeight(0), 5)
-  assert.equal(reachableLogHeight(1), 8)
-  assert.equal(reachableLogHeight(3), 8)
-  assert.equal(reachableLogHeight(6), 11)
-  assert.equal(reachableLogHeight(11), 16)
-  assert.equal(reachableLogHeight(64), 16)
+test('土を積んで届く高さ: 土がなければ 5、あれば 4 + 積める数（最大 16）。逆に、その高さに届くのに要る土の数', () => {
+  assert.deepEqual([0, 1, 2, 3, 6, 12, 64].map(reachableLogHeight), [5, 5, 6, 7, 10, 16, 16])
+  assert.deepEqual([3, 5, 6, 7, 10, 16].map(dirtForLogHeight), [0, 0, 2, 3, 6, 12])
+  for (const h of [6, 9, 12, 16]) assert.equal(reachableLogHeight(dirtForLogHeight(h)) >= h, true, `${h} 段上は、要る土で届く`)
 })
 
 test('高い幹は、積める土の数までの高さの原木だけ候補になる', () => {
   // 地面は y 63 まで。浮いた幹は y 70〜80（地面から 7〜17 段上）
   const ys = [70, 72, 74, 76, 78, 80]
   const { bot, state } = world(Object.fromEntries(ys.map((y) => [`2,${y},0`, 'oak_log'])))
-  bot.findBlocks = () => ys.map((y) => v(2, y, 0))
+  bot.findBlocks = ({ matching }) => ([].concat(matching).includes(md.blocksByName.oak_log.id) ? ys.map((y) => v(2, y, 0)) : []) // 近くに掘れる土はない
   const withDirt = (n) => { bot.inventory = { items: () => (n ? [{ name: 'dirt', count: n }] : []) }; forgetTrees(); return digTargets(bot, state, 'oak_log', 10).map((p) => p.y).sort((a, b) => a - b) }
   assert.deepEqual(withDirt(0), [])
-  assert.deepEqual(withDirt(1), [70]) // 8 段上まで（前と同じ）
-  assert.deepEqual(withDirt(6), [70, 72, 74]) // 11 段上まで
+  assert.deepEqual(withDirt(1), []) // 塔 1 つでは 5 段上のまま
+  assert.deepEqual(withDirt(3), [70]) // 7 段上まで
+  assert.deepEqual(withDirt(6), [70, 72]) // 10 段上まで
   assert.deepEqual(withDirt(64), [70, 72, 74, 76, 78]) // 上限は 16 段上。80 は 17 段上
+})
+
+test('土を持っていなくても、近くに掘れる土があれば、高い幹は候補になる（dig が先に集める）。掘れる土の数までの高さ', () => {
+  const ys = [70, 74, 78]
+  const dirtAt = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${6 + i},63,0`, 'dirt']))
+  const trunk = Object.fromEntries(ys.map((y) => [`2,${y},0`, 'oak_log']))
+  const targets = (n) => {
+    const { bot, state } = world({ ...trunk, ...dirtAt(n) })
+    const cells = Object.fromEntries(Object.entries({ ...trunk, ...dirtAt(n) }))
+    bot.findBlocks = ({ matching }) => Object.entries(cells).filter(([, name]) => [].concat(matching).includes(md.blocksByName[name]?.id)).map(([k]) => v(...k.split(',').map(Number)))
+    forgetTrees()
+    return digTargets(bot, state, 'oak_log', 10).map((p) => p.y).sort((a, b) => a - b)
+  }
+  assert.deepEqual(targets(0), [], '土がどこにもない')
+  assert.deepEqual(targets(3), [70], '土 3 つぶんで 7 段上まで')
+  assert.deepEqual(targets(8), [70, 74], '土 8 つぶんで 12 段上まで')
+})
+
+// 土を持っていないボットが、7 段上（土 3 つで届く）の原木を掘る。dirts: 近くの掘れる土の数
+function climber (dirts) {
+  const dirt = Object.fromEntries(Array.from({ length: dirts }, (_, i) => [`${6 + i},63,0`, 'dirt']))
+  const { bot, cells, state } = world({ '2,70,0': 'oak_log', ...dirt })
+  const held = { dirt: 0, oak_log: 0 }
+  bot.findBlocks = ({ matching }) => [...cells].filter(([, n]) => [].concat(matching).includes(md.blocksByName[n]?.id)).map(([k]) => v(...k.split(',').map(Number)))
+  bot.inventory = { items: () => Object.entries(held).filter(([, count]) => count).map(([name, count]) => ({ name, count })), emptySlotCount: () => 20 }
+  const dug = []
+  bot.dig = async (block) => {
+    dug.push(block.name)
+    cells.set(`${block.position.x},${block.position.y},${block.position.z}`, 'air')
+    held[block.name] += 1
+  }
+  bot.equip = async () => {}
+  bot.waitForTicks = async () => {}
+  bot.pathfinder = { bestHarvestTool: () => null, goto: async () => {}, setGoal: () => {} }
+  return { bot, state: { ...state, dug: [] }, dug, held }
+}
+
+test('高い原木は、積む土を持っていなければ、先に近くの土を掘って必要な数を集めてから掘る', async () => {
+  const { bot, state, dug, held } = climber(5)
+  forgetTrees()
+  await PRIMITIVES.dig(bot, state, { block: 'oak_log', pos: v(2, 70, 0) }, new AbortController().signal)
+  assert.equal(held.dirt, 3, '7 段上に届くのに要る 3 つ。それ以上は掘らない')
+  assert.deepEqual(dug, ['dirt', 'dirt', 'dirt', 'oak_log'])
+})
+
+test('積む土が近くになければ、何がどれだけ足りないかを言って止まる（原木は掘らない）', async () => {
+  const { bot, state, dug } = climber(1)
+  forgetTrees()
+  await assert.rejects(PRIMITIVES.dig(bot, state, { block: 'oak_log', pos: v(2, 70, 0) }, new AbortController().signal),
+    /the log at 2,70,0 is 7 blocks above the ground: reaching it takes 3 dirt and you carry 1; no dirt within reach to dig for the rest/)
+  assert.deepEqual(dug, ['dirt'])
+})
+
+test('立って届く低い原木では、土を集めない', async () => {
+  const { bot, state, dug } = climber(5)
+  bot.blockAt = ((blockAt) => (p) => (p.x === 2 && p.y === 66 && p.z === 0 ? { ...blockAt(p), name: 'oak_log', boundingBox: 'block' } : blockAt(p)))(bot.blockAt)
+  forgetTrees()
+  await PRIMITIVES.dig(bot, state, { block: 'oak_log', pos: v(2, 66, 0) }, new AbortController().signal)
+  assert.deepEqual(dug, ['oak_log'])
+})
+
+test('積む土は、原木の真下とそのまわりの列からは掘らない（積む足場の地面）', async () => {
+  const { bot, state, dug } = climber(0)
+  const cells = new Map([['3,63,0', 'dirt'], ['1,63,1', 'dirt'], ['2,63,0', 'dirt']])
+  const at = bot.blockAt
+  bot.blockAt = (p) => (cells.has(`${p.x},${p.y},${p.z}`) ? { ...at(p), name: cells.get(`${p.x},${p.y},${p.z}`) } : at(p))
+  bot.findBlocks = ({ matching }) => (matching.includes?.(md.blocksByName.dirt.id) || [].concat(matching).includes(md.blocksByName.dirt.id) ? [...cells.keys()].map((k) => v(...k.split(',').map(Number))) : [v(2, 70, 0)])
+  forgetTrees()
+  await assert.rejects(PRIMITIVES.dig(bot, state, { block: 'oak_log', pos: v(2, 70, 0) }, new AbortController().signal), /no dirt within reach/)
+  assert.deepEqual(dug, [])
 })
