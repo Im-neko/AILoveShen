@@ -1,7 +1,7 @@
 // 受けたダメージの原因を、ブリッジのログに残す（2026-10-01: 採掘中に体力が 19.5 から 1.5 まで落ちて死んだが、
 // 長い行動の間は 1 秒ごとの記録がなく、何で受けたか分からなかった）。原因は推定: 溶岩・火・溺れ・飢え・落下・
 // 状態異常（毒・衰弱）、燃焼、近くの敵対モブ、どれでもなければ不明。
-import { isHostile } from './observe.mjs'
+import { isHostile, neutralNear, provoke } from './observe.mjs'
 import { airLevel, headUnderwater, trackHead } from './breath.mjs'
 
 const FALL_VY = -0.8 // 直近の落下の速さ（ブロック/tick）。これ以上速く落ちていたら落下ダメージ
@@ -45,6 +45,12 @@ export function damageCause (bot, fell) {
     .filter((m) => m.d <= MOB_RANGE)
     .sort((a, b) => a.d - b.d)[0]
   if (near) return `${near.name} ${near.d.toFixed(1)}m`
+  // 中立のモブ（エンダーマン、オオカミ、ハチ…）が近くにいたなら、挑発されて攻撃している: 以後は敵に数える
+  const neutral = neutralNear(bot, MOB_RANGE)
+  if (neutral) {
+    provoke(bot, neutral.e)
+    return `${neutral.e.name} ${neutral.d.toFixed(1)}m (neutral, angry now)`
+  }
   // 水の中で原因が分からないのは、溺れているのに息の値が減っていないとき（2026-10-04 y54 で 2.0 ずつ 8 回: 息の反射も動かなかった）。値を残す
   if (bot.entity.isInWater) return `unknown (in water, oxygenLevel ${bot.oxygenLevel}, head cell ${bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0))?.name}: drowning with the air value not falling?)`
   return 'unknown (no hostile within 6 m: suffocation, an unseen shot, an explosion?)'

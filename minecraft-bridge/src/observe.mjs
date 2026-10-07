@@ -117,8 +117,31 @@ export function nearbyEntities (bot) {
     .sort((a, b) => a.dist - b.dist)
 }
 
+// 中立のモブは、近くにいてこちらがダメージを受けたら、挑発された（攻撃してきている）ものとして、この間は敵に数える
+// （2026-10-07 昼、羊を狩る間にエンダーマンが 16 m から 0.4 m まで寄って 4.5 ずつ 4 回、3 秒で死んだが、中立のままで
+// 原因にも脅威にも数えられず、「原因不明」だった）
+const PROVOKED_MS = 60000
+const provokedUntil = new WeakMap() // bot → Map(エンティティの id → 敵に数える期限)
+export const NEUTRAL_RANGE = 6
+
+// いちばん近い中立のモブ（敵の種類のもの。ダメージを受けた近くにいたら、挑発された）
+export function neutralNear (bot, range = NEUTRAL_RANGE) {
+  const me = bot.entity.position
+  return Object.values(bot.entities ?? {})
+    .filter((e) => e !== bot.entity && e.position && e.type === 'hostile' && NEUTRAL.has(e.name))
+    .map((e) => ({ e, d: e.position.distanceTo(me) }))
+    .filter((m) => m.d <= range)
+    .sort((a, b) => a.d - b.d)[0] ?? null
+}
+
+export function provoke (bot, e, now = Date.now()) {
+  if (!provokedUntil.has(bot)) provokedUntil.set(bot, new Map())
+  provokedUntil.get(bot).set(e.id, now + PROVOKED_MS)
+}
+
 export function isHostile (bot, e) {
-  if (e.type !== 'hostile' || NEUTRAL.has(e.name)) return false
+  if (e.type !== 'hostile') return false
+  if (NEUTRAL.has(e.name)) return (provokedUntil.get(bot)?.get(e.id) ?? 0) > Date.now()
   // 昼の洞窟のクモは敵: 日中でも暗いと襲ってくる（2026-10-07 昼、y 55 の洞窟でクモに毎秒 2.0 ずつ 12 回削られて死んだが、
   // 「昼のクモは中立」で脅威にも原因にも数えられず、反射も動かなかった）
   if (DAY_NEUTRAL.has(e.name) && dayPhase(bot.time.timeOfDay) === 'day' && !isUnderground(bot) && !isDark(bot)) return false

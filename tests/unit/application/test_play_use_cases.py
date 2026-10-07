@@ -2000,6 +2000,37 @@ class TestDeath:
         assert (lesson.keys["time"], lesson.keys["place"], lesson.keys["body"]) == ("night", "outside", "hurt")
 
 
+    @pytest.mark.asyncio
+    async def test_the_lesson_is_kept_even_if_the_goal_is_sent_back_and_written_once(
+        self, bridge, text_generator, prompt_builder, selector, events, conversation, objectives,
+        town, notes,
+    ):
+        from ailoveshen.application.use_cases.lessons import LessonBook
+
+        store = Mock()
+        store.load.return_value = None
+        book = LessonBook(store, mode="rules")
+        use_case = AdvancePlayUseCase(
+            bridge=bridge, text_generator=text_generator, prompt_builder=prompt_builder,
+            action_selector=selector, event_publisher=events, conversation=conversation,
+            objectives=objectives, town=town, notes=notes, lessons=book,
+        )
+        lesson = {"lesson": "夜に家の外で長い作業を続けず、暗くなる前に帰る", "lesson_when": {"goal": "have", "place": "outside"}}
+        not_offered = {**DIED_PLANKS, "predicate": "at_home", **lesson}
+        text_generator.generate_json.side_effect = [not_offered] * 3  # 3 回とも差し戻される
+        bridge.observe.return_value = self._with_deaths(0)
+        session = _session(HAVE_PLANKS)
+        session.observe(self._with_deaths(0))
+        session.set_goal(Goal(HAVE_PLANKS, objective_id="m1"), "day")
+        bridge.observe.return_value = self._with_deaths(1)
+        with pytest.raises(TextGenerationError):
+            await use_case.execute(session)
+
+        assert text_generator.generate_json.call_count == 3
+        (kept,) = book.lessons  # 目標は決まらなくても、書かせた教訓は残り、3 回書いても 1 件
+        assert kept.source == "death" and kept.taught == 1
+
+
 class TestLessons:
     """失敗から学んだ教訓を、似た状況の小目標の始まりに思い出す（docs/design/35）。"""
 

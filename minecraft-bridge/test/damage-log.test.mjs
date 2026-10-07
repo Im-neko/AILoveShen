@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import vec3Pkg from 'vec3'
 import { damageCause, installDamageLog } from '../src/damage-log.mjs'
+import { isHostile } from '../src/observe.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -75,6 +76,19 @@ test('1 件ごとに onDamage へ { at, lost, health, cause, what } を渡す（
   assert.deepEqual([got[0].lost, got[0].health, got[0].what], [2.5, 17.5, 'level the ground'])
   assert.match(got[0].cause, /^zombie /)
   assert.equal(typeof got[0].at, 'number')
+})
+
+test('中立のモブ（エンダーマン）が近くでダメージを受けたら、原因にその名前を言い、以後は敵に数える。遠ければ不明のまま', () => {
+  const near = fakeBot({ mobs: [{ name: 'enderman', d: 0.4 }] })
+  const enderman = near.entities[1]
+  assert.equal(isHostile(near, enderman), false, '挑発される前は中立')
+  assert.equal(damageCause(near, 0), 'enderman 0.5m (neutral, angry now)')
+  assert.equal(isHostile(near, enderman), true, 'ダメージを受けたあとは敵')
+  const far = fakeBot({ mobs: [{ name: 'enderman', d: 16 }] })
+  assert.match(damageCause(far, 0), /^unknown/)
+  assert.equal(isHostile(far, far.entities[1]), false)
+  const wolf = fakeBot({ mobs: [{ name: 'wolf', d: 3 }] })
+  assert.match(damageCause(wolf, 0), /^wolf 2\.5m \(neutral/)
 })
 
 test('毒・衰弱は、敵が離れたあとも続くので敵より先に推す。燃えているときもそう', () => {

@@ -1275,6 +1275,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         job_status = await self._job_status(plan)
         plan_owns_jobs = plan.current is not None and plan.current.planned
         error = ""
+        learned = False
         for attempt in range(1, self._max_goal_attempts + 1):
             prompt = self._prompt_builder.build_goal_prompt(
                 blueprint=session.blueprint,
@@ -1312,6 +1313,11 @@ class AdvancePlayUseCase(IAdvancePlay):
             try:
                 decision = parse_decision(data)
                 chosen = decision
+                # 教訓は過去の失敗の分析で、次の目標とは別: 目標が差し戻されても、書いたものは残す（死んだあと、持ち物を
+                # 取り戻して「食料は足りている」と 3 回差し戻され、書かせた教訓が消えた: 2026-10-07）
+                if not learned and decision.lesson:
+                    self._learn(decision, situation or {}, "death" if died_goal is not None else "failure")
+                    learned = True
                 # 最後の試行は、プランが断る並べ替え・断念（定石の順を破る move など）を捨てて、決定の
                 # 残りを通す（同じ編集を書き続けて、夜の野外で 4 分以上決まらなかった: 2026-10-03）
                 if attempt >= self._max_goal_attempts and decision.changes:
@@ -1430,7 +1436,6 @@ class AdvancePlayUseCase(IAdvancePlay):
                     # 決定を確かめたあとに、返答が視聴者の中目標を足して上限に届いた: 書き直しは見送る
                     logger.warning(f"中目標の書き直しを見送った: {e}")
             self._write_notes(session.notebook, data, obs.day, goals, viewers)
-            self._learn(decision, situation or {}, "death" if died_goal is not None else "failure")
             await self._start_goal(
                 session, obs, _goal(decision, plan), reason, status, rethinks_seen
             )
