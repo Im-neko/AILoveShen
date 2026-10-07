@@ -7,7 +7,7 @@
 // 切り替える。結果は行動の履歴に入れ、判断する側が何が起きたかを見られるようにする。
 import { riding } from './boat.mjs'
 import { round, bearing, nearbyEntities, isHostile, canSee } from './observe.mjs'
-import { reachableThreats, bestWeapon, fight, flee } from './primitives.mjs'
+import { reachableThreats, bestWeapon, fight, flee, FIGHT_OUT_OF_REACH } from './primitives.mjs'
 import { enterHome, isInside } from './home.mjs'
 import { inBurrow } from './burrow.mjs'
 import { breathTrigger, surface } from './breath.mjs'
@@ -267,6 +267,11 @@ export function startReflex (bot, state, hooks) {
         if (danger.next && danger.next !== choice) {
           choice = danger.next
           danger.next = null
+          continue
+        }
+        // 近づけない敵に撃たれてやめた戦い: 同じ場所で戦い直さず逃げる（逃げる手は、前の戦いの数え方で外れていても戻す）
+        if (choice === 'fight' && ok && FIGHT_OUT_OF_REACH.test(result) && all.includes('flee')) {
+          choice = 'flee'
           continue
         }
         break

@@ -73,3 +73,59 @@ test('素手の戦いは、体力が minHealth を切ったらやめる（次の
   const text = await fight(bot, target, new AbortController().signal, 20000, 8)
   assert.match(text, /zombie still alive: health is down to 7\/20: not trading blows with bare hands/)
 })
+
+// 撃たれ続けるのをやめる（2026-10-07: ピリジャーに 18 秒で 18 ダメージを受けて死んだ。武器があると体力の下限がなかった）
+function shooter (name, at, health) {
+  const target = { id: 7, name, type: 'hostile', height: 1.95, position: at }
+  const bot = {
+    entities: { 7: target },
+    entity: { position: new Vec3(0, 64, 0) },
+    health,
+    inventory: { items: () => [] },
+    pathfinder: { goal: null, setGoal () {} },
+    lookAt: async () => {},
+    attack: () => {},
+    waitForTicks: async () => {}
+  }
+  return { bot, target }
+}
+
+test('近づけない敵に撃たれてダメージが 6 たまったら、戦いをやめる（武器があっても）', async () => {
+  const { bot, target } = shooter('pillager', new Vec3(8, 64, 0), 18)
+  let ticks = 0
+  bot.waitForTicks = async () => { ticks++; bot.health -= 3 }
+  const text = await fight(bot, target, new AbortController().signal, 20000, 0)
+  assert.match(text, /pillager still alive: under fire: lost 6 health while pillager was 8m away, out of reach/)
+  assert.equal(ticks, 2) // 2 回撃たれたことを見た時点でやめる（3 回目の矢を待たない）
+})
+
+test('近づけない敵がいる間に体力が 6 を切ったら、戦いをやめる', async () => {
+  const { bot, target } = shooter('skeleton', new Vec3(10, 64, 0), 5)
+  const text = await fight(bot, target, new AbortController().signal, 20000, 0)
+  assert.match(text, /skeleton still alive: out of reach: health is down to 5\/20 and skeleton is 10m away/)
+})
+
+test('殴り合える距離で受けたダメージは数えない・狩りの獲物（敵でない）では、やめない', async () => {
+  const near = shooter('zombie', new Vec3(1, 64, 0), 18)
+  let n = 0
+  const controller = new AbortController()
+  near.bot.waitForTicks = async () => { near.bot.health -= 3; if (++n >= 5) controller.abort() }
+  assert.doesNotMatch(await fight(near.bot, near.target, controller.signal, 20000, 0), /under fire|out of reach/)
+  // 殴り合いで 9 受けたあと、相手が離れても、それまでのダメージは「撃たれた」に数えない
+  const away = shooter('zombie', new Vec3(1, 64, 0), 18)
+  let k = 0
+  const c3 = new AbortController()
+  away.bot.waitForTicks = async () => {
+    k++
+    if (k <= 3) away.bot.health -= 3
+    if (k === 3) away.target.position = new Vec3(5, 64, 0)
+    if (k >= 6) c3.abort()
+  }
+  assert.doesNotMatch(await fight(away.bot, away.target, c3.signal, 20000, 0), /under fire|out of reach/)
+  const prey = shooter('pig', new Vec3(10, 64, 0), 3)
+  prey.target.type = 'passive'
+  let m = 0
+  const c2 = new AbortController()
+  prey.bot.waitForTicks = async () => { if (++m >= 3) c2.abort() }
+  assert.doesNotMatch(await fight(prey.bot, prey.target, c2.signal, 20000, 0), /under fire|out of reach/)
+})

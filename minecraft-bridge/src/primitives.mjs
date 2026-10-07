@@ -65,6 +65,11 @@ const FLEE_DAMAGE = 6 // 逃げる間にこれだけ（骷髏の矢 2 本）ダ�
 const FIGHT_LOST_M = 24 // 相手がこれより離れたら見失った
 const FIGHT_NO_DIG_BELOW = 3 // 相手がこれ以上下にいる間は、掘って近づかない
 const FIGHT_MAX_DESCENT = 4 // 追って降りるのは、戦い始めの高さからこれまで（それより下の相手は追わない）
+const FIGHT_MELEE_M = 3 // これより近い相手とは殴り合える（遠くから撃たれているのとは別）
+const FIGHT_UNDER_FIRE = 6 // 近づけない相手から（殴り合えない距離で）これだけ（ピリジャーの矢 2 本）ダメージを受けたら、戦いをやめる
+const FIGHT_OUT_OF_REACH_HEALTH = 6 // 武器があっても、近づけない敵がいる間にこの体力を切ったら、戦いをやめる
+// 戦いがこの理由でやめた結果（反射が、同じ相手とまた戦わずに逃げる）
+export const FIGHT_OUT_OF_REACH = /still alive: (under fire|out of reach)/
 const FIGHT_LOST_SLACK = 4 // 始めから 24 m より遠い相手（狩りの候補は 32 m まで）は、始めの距離よりこれ以上離れたら見失った
 const PICKUP_WAIT_MS = 1500
 const DROP_COLLECT_RADIUS = 8
@@ -543,6 +548,8 @@ export async function fight (bot, target, signal, maxMs = Infinity, minHealth = 
   const lostAt = Math.max(FIGHT_LOST_M, target.position.distanceTo(bot.entity.position) + FIGHT_LOST_SLACK)
   const startedAt = Date.now()
   const startY = bot.entity.position.y
+  let lastHealth = bot.health
+  let underFire = 0
   const movements = bot.pathfinder.movements
   const canDig = movements?.canDig
   try {
@@ -556,6 +563,19 @@ export async function fight (bot, target, signal, maxMs = Infinity, minHealth = 
       // 素手で殴り合う反射の戦い: 体力がここまで減ったらやめる（次の反射は、体力が足りなければ逃げる）
       if (bot.health < minHealth) { why = `health is down to ${round(bot.health)}/20: not trading blows with bare hands any longer`; break }
       if (d > lostAt) { why = `lost it (${round(d)}m away)`; break }
+      // 近づけない敵に撃たれ続けない（ピリジャーに 18 秒で 18 ダメージを受けて死んだ: 2026-10-07。武器があると体力の下限が
+      // なく、「近づけない」の判定は 6 秒動かないことを待つので、立ったまま撃たれ続けた）。殴り合えない距離で受けた
+      // ダメージを数え、敵対のモブ（狩りの獲物ではない）の戦いだけやめる。続きは反射が、逃げる手で選ぶ
+      if (typeof bot.health === 'number') {
+        if (typeof lastHealth === 'number' && bot.health < lastHealth && d > FIGHT_MELEE_M) underFire += lastHealth - bot.health
+        lastHealth = bot.health
+        if (d > FIGHT_MELEE_M && (underFire >= FIGHT_UNDER_FIRE || bot.health <= FIGHT_OUT_OF_REACH_HEALTH) && isHostile(bot, target)) {
+          why = underFire >= FIGHT_UNDER_FIRE
+            ? `under fire: lost ${round(underFire)} health while ${target.name} was ${round(d)}m away, out of reach; not standing here to be shot`
+            : `out of reach: health is down to ${round(bot.health)}/20 and ${target.name} is ${round(d)}m away`
+          break
+        }
+      }
       if (d > 3 && stuck()) { why = `could not get to it (${round(d)}m away)`; break }
       // 洞窟へ逃げ込む相手を歩いて追い、持ち物を持ったまま地下へ降りた（2026-10-04: 畑から蜘蛛を追って y63 の洞窟へ）。
       // 離れた相手は、戦い始めの高さから FIGHT_MAX_DESCENT より下へは追わない（近寄ってくる相手とは戦う）

@@ -174,3 +174,25 @@ test('ダメージがなくても、FLEE_MS たっても離れられなければ
     mock.timers.reset()
   }
 })
+
+test('近づけない敵に撃たれて戦いをやめたら、同じ敵と戦い直さず逃げる（前の戦いで逃げる手が外れていても）', async () => {
+  mock.timers.enable({ apis: ['Date'], now: 5_000_000 })
+  try {
+    const { bot, skeleton } = fakeBot([['stone_sword', 1]])
+    skeleton.position = v(4.2, 70, 0) // 殴れない距離（反射の半径 5 の中）
+    bot.health = 5
+    const state = { home: null }
+    const records = []
+    startReflex(bot, state, { preempt: async () => true, record: (e) => records.push(e) })
+    const fire = async () => {
+      for (let i = 0; i < 4; i++) bot.emit('physicsTick')
+      while (state.reflex || state.danger) await new Promise((r) => setImmediate(r))
+    }
+    await fire()
+    await fire() // 2 回目は、逃げる手が外れる回（stalls）
+    for (const r of records) assert.match(r.result, /fight: skeleton still alive: out of reach.*→ flee: /)
+    assert.equal(records.length, 2)
+  } finally {
+    mock.timers.reset()
+  }
+})

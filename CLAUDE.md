@@ -24,7 +24,7 @@ The per-feature details (what each does, its settings, logs and tests, with date
 
 | Topic | `docs/feature_reference.md` section | Main design docs |
 |---|---|---|
-| Goal predicates, solver, recipes, world memory, death recovery, food / torches / night / doors / boats / leveling / farming / stuck walking / reflex | 3 層 | 10, 11, 14, 29, 33, 37–39, 41, 45, 50, 69, 84, 86–89, 94–110 |
+| Goal predicates, solver, recipes, world memory, death recovery, food / torches / night / doors / boats / leveling / farming / stuck walking / reflex | 3 層 | 10, 11, 14, 29, 33, 37–39, 41, 45, 50, 69, 84, 86–89, 94–111 |
 | POV mirror, tool control, Jev first, learned candidates, lessons, search tools, experiments when stuck | 視点ミラー・エージェント制御 | 19, 21, 34, 35, 47, 52, 53, 85 |
 | Infrastructure, playbook, tidying, spawn proofing, windfall, play report, benchmark, swimming, facilities, town map | 生活インフラ・安全・計測 | 47, 72–80, 82, 83 |
 | Local LLM, skills, screen vision | ローカル LLM・スキル・画面 | 22, 23, 36 |
