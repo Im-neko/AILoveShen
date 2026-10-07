@@ -147,3 +147,18 @@ test('岸に上がれない所（高すぎる岸）では、押し続けず理�
   assert.equal(r.landed, false)
   assert.ok(r.why)
 })
+
+test('水から跳び出して宙にいる間（泳いでいない・まだ地面にない）に目標の近くに着いても、「着いた」で止めず、着地まで待つ', async () => {
+  const { bot } = sea()
+  bot.entity.position = new Vec3(29.5, 62.2, 0.5) // 岸の 1 マス手前、水の中
+  let ticks = 0
+  const move = bot.waitForTicks
+  bot.waitForTicks = async () => {
+    ticks++
+    if (ticks === 1) { bot.entity.isInWater = false; bot.entity.onGround = false; bot.entity.position = new Vec3(30.2, 63.5, 0.5); return } // 跳び出した
+    if (ticks === 5) { bot.entity.onGround = true; return } // 着地
+    return move()
+  }
+  const r = await swimToward(bot, { x: 30.5, z: 0.5 }, new AbortController().signal, { climb: true })
+  assert.equal(r.landed, true, r.why)
+})

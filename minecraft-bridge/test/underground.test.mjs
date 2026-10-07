@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { isUnderground } from '../src/observe.mjs'
+import { isUnderground, isHostile } from '../src/observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -35,4 +35,15 @@ test('薄い屋根（家、崖の庇）は地下にしない。y が低ければ
 
 test('空が開けた柱が近くにあれば、厚い屋根でも地下にしない（崖の下）', () => {
   assert.equal(isUnderground(bot(63, 13, true)), false)
+})
+
+test('昼のクモは、明るい所では敵でないが、洞窟（地下）では敵。洞窟クモは昼も常に敵（2026-10-07 昼の洞窟でクモに殺された）', () => {
+  const day = { time: { timeOfDay: 1000 } }
+  const spider = { type: 'hostile', name: 'spider' }
+  const cave = { ...bot(55, 13), ...day }
+  const open = { ...bot(70, 0, true), ...day }
+  assert.equal(isHostile(cave, spider), true)
+  assert.equal(isHostile(open, spider), false)
+  assert.equal(isHostile(open, { type: 'hostile', name: 'cave_spider' }), true)
+  assert.equal(isHostile({ ...open, time: { timeOfDay: 14000 } }, spider), true)
 })

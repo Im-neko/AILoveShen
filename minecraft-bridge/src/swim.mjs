@@ -79,7 +79,9 @@ export async function swimToward (bot, target, signal, { maxMs = Infinity, progr
       if (isSwimming(bot)) entered = true
       else if (entered && onLand(bot)) { landed = true; why = 'on land'; break }
       if (flat < ARRIVED_M) {
-        if (!climb || !isSwimming(bot)) { why = 'arrived'; break }
+        // 水から跳び出した直後は、泳いでいる判定が外れて、まだ地面にも着いていない（空中）: 着くまで待つ
+        // （そこで「着いた」にして止めると、陸に上がれたのに失敗と返った: 2026-10-07 に 2 回）
+        if (!climb) { why = 'arrived'; break }
         arrivedAt ??= Date.now()
         if (Date.now() - arrivedAt > CLIMB_MS) { why = 'arrived but could not climb onto the bank (too high or blocked)'; break }
       }

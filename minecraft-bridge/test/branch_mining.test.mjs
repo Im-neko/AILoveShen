@@ -5,8 +5,9 @@ import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { designMine, mineStatus, stopMine, minesAt, BRANCH } from '../src/facilities.mjs'
-import { mineSites, protectedRock } from '../src/mining.mjs'
+import { mineSites, protectedRock, caveOre } from '../src/mining.mjs'
 import { configureMovements, PRIMITIVES } from '../src/primitives.mjs'
+import { diggable } from '../src/world.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -127,14 +128,17 @@ test('dig_mine: 探している鉱石が壁に出たら、そこで止めて掘�
   const blocks = {}
   const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }]
   const bot = digger(items, blocks)
-  // 10 セル掘ったあとから、(0,0,0) に空気に面した鉄鉱石が届くことにする（digTargets: findBlocks、空気に面す、届く）
-  const ore = new Vec3(0, 0, 0)
+  // 10 セル掘ったあとから、採掘場の最初のセルに接する壁に、空気に面した鉄鉱石が届くことにする（digTargets: findBlocks、空気に面す、届く。
+  // 採掘場のセルに接さない洞窟の鉱石は取らない: caveOre）
+  const c0 = fac.layout.cells[0]
+  const inCell = (p) => fac.layout.cells.some((c) => c.x === p.x && c.z === p.z && p.y >= c.y && p.y < c.y + c.h)
+  const ore = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]].map(([x, y, z]) => new Vec3(c0.x + x, c0.y + y, c0.z + z)).find((p) => !inCell(p))
   bot.findBlocks = ({ matching }) => (matching === md.blocksByName.iron_ore.id && Object.keys(blocks).length > 10 ? [ore] : [])
   const base = bot.blockAt
-  bot.blockAt = (p) => (p.equals(ore) ? { name: 'iron_ore', boundingBox: 'block', position: p } : (p.x === 0 && p.y === 1 && p.z === 0) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
-  bot.entity.position = new Vec3(0.5, 0, 0.5)
+  bot.blockAt = (p) => (p.equals(ore) ? { name: 'iron_ore', boundingBox: 'block', position: p } : base(p))
+  bot.entity.position = new Vec3(c0.x + 0.5, c0.y, c0.z + 0.5)
   const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1', sources: ['iron_ore'] }, new AbortController().signal)
-  assert.match(r, /iron_ore shows in the wall at 0,0,0: dig it/)
+  assert.match(r, new RegExp(`iron_ore shows in the wall at ${ore.x},${ore.y},${ore.z}: dig it`))
   assert.ok(Number(/^dug (\d+)/.exec(r)[1]) >= 3)
   assert.ok(mineStatus(bot, fac).next, '掘り終えていない: 続きは次の手')
 })
@@ -185,6 +189,37 @@ test('protectedRock: 自分で建てた家があるときだけ。見つけた�
   assert.equal(protectedRock({ home: { ...home, found: true } }, p, 'stone'), false)
   assert.equal(protectedRock({ home: null }, p, 'stone'), false)
   assert.equal(protectedRock(state(), p, 'dirt'), false)
+})
+
+test('caveOre: 洞窟に出ている深い鉱石は取らない。採掘場の壁（セルに接する）と浅い露頭は取る（2026-10-07 洞窟で蜘蛛に殺された）', () => {
+  const { fac } = design()
+  const s = state({ facilities: { mine_1: fac } })
+  const cell = fac.layout.cells.find((c) => c.part === 'tunnel_east')
+  const deep = new Vec3(100, 40, 100) // 家の床 64 より 10 以上下
+  assert.equal(caveOre(s, deep, 'iron_ore'), true)
+  assert.equal(caveOre(s, deep, 'deepslate_iron_ore'), true)
+  // 採掘場のセルに接する壁の鉱石
+  assert.equal(caveOre(s, new Vec3(cell.x, cell.y, cell.z + 1), 'iron_ore'), false)
+  assert.equal(caveOre(s, new Vec3(cell.x, cell.y, cell.z), 'iron_ore'), false)
+  // 浅い露頭（地表の石炭）、鉱石でないもの、家がないときは今までどおり
+  assert.equal(caveOre(s, new Vec3(100, 60, 100), 'coal_ore'), false)
+  assert.equal(caveOre(s, deep, 'stone'), false)
+  assert.equal(caveOre({ home: null }, deep, 'iron_ore'), false)
+  assert.equal(caveOre({ home: { ...home, found: true } }, deep, 'iron_ore'), false)
+})
+
+test('diggable: 洞窟に出ている深い鉱石は掘る対象にならない（歩いて行ける洞窟でも）。採掘場の壁と浅い露頭は対象', () => {
+  const { fac } = design()
+  const s = state({ facilities: { mine_1: fac } })
+  const deep = new Vec3(100, 40, 100)
+  const shallow = new Vec3(100, 62, 100)
+  // どちらも空気に面した鉄鉱石（洞窟の壁）
+  const blocks = { [`${deep.x},${deep.y},${deep.z}`]: 'iron_ore', [`${deep.x},${deep.y + 1},${deep.z}`]: 'air', [`${shallow.x},${shallow.y},${shallow.z}`]: 'iron_ore', [`${shallow.x},${shallow.y + 1},${shallow.z}`]: 'air' }
+  const bot = world(blocks)
+  bot.entity.position = new Vec3(100, 41, 100)
+  assert.equal(diggable(bot, s, 'iron_ore', deep), false)
+  bot.entity.position = new Vec3(100, 63, 100)
+  assert.equal(diggable(bot, s, 'iron_ore', shallow), true)
 })
 
 // ---- 空洞に出たら、丸石で床・壁・天井を作って塞ぐ（sealing.mjs）----

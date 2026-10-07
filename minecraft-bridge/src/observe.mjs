@@ -24,8 +24,8 @@ export function pushHistory (state, entry) {
 // Mineflayer はこれらを "hostile" とするが、挑発されたときしか攻撃しない。
 const NEUTRAL = new Set(['enderman', 'zombified_piglin', 'piglin', 'wolf', 'bee', 'llama', 'trader_llama',
   'polar_bear', 'dolphin', 'panda', 'goat', 'iron_golem'])
-// クモは日中は中立。
-const DAY_NEUTRAL = new Set(['spider', 'cave_spider'])
+// クモは日中、明るい所では中立（地下や暗い所では敵）。洞窟クモは昼も常に敵
+const DAY_NEUTRAL = new Set(['spider'])
 // 近づくと爆発する: 家の近くでは近接で戦わない
 export const EXPLODES = new Set(['creeper'])
 // 空の下では日光で燃える（ハスクとウィザースケルトンは燃えない）
@@ -118,7 +118,9 @@ export function nearbyEntities (bot) {
 
 export function isHostile (bot, e) {
   if (e.type !== 'hostile' || NEUTRAL.has(e.name)) return false
-  if (DAY_NEUTRAL.has(e.name) && dayPhase(bot.time.timeOfDay) === 'day') return false
+  // 昼の洞窟のクモは敵: 日中でも暗いと襲ってくる（2026-10-07 昼、y 55 の洞窟でクモに毎秒 2.0 ずつ 12 回削られて死んだが、
+  // 「昼のクモは中立」で脅威にも原因にも数えられず、反射も動かなかった）
+  if (DAY_NEUTRAL.has(e.name) && dayPhase(bot.time.timeOfDay) === 'day' && !isUnderground(bot) && !isDark(bot)) return false
   return true
 }
 

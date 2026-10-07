@@ -15,7 +15,7 @@ import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome, inHomeRoom } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { jumpAndPlace, shelteredFrom, enterHome, isDoorstepFloor, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
+import { jumpAndPlace, shelteredFrom, enterHome, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -190,6 +190,9 @@ export function configureMovements (bot, state) {
   // 採掘場のほかの深い岩は掘らない（岩の中は採掘場の坑道と枝だけ。設計書 86）。帰る・脱出する行動は、閉じた所から
   // 出られなくならないように除く
   m.exclusionAreasBreak.push((block) => block.position && !ROCK_ESCAPE.has(state.current?.verb) && protectedRock(state, block.position, block.name) ? 100 : 0)
+  // ドアの前の列（外に立つセルとその下）は、どの行動でも掘らない: 水を汲むのに戸口から 18 マス掘り下げて、家に入れない穴を
+  // 残した（2026-10-07、docs/design/100）
+  m.exclusionAreasBreak.push((block) => block.position && doorstepColumn(state, block.position) ? 100 : 0)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
   m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
@@ -2159,6 +2162,11 @@ export const PRIMITIVES = {
     const dropped = nearbyEntities(bot).filter(({ e }) => e.name === 'item' && !drops.has(e.id))
     if (dropped.length) changes.push(`${dropped.length} item(s) dropped nearby (pickup)`)
     if (!changes.length) throw new Error(`nothing changed after using ${what} ${on}`)
+    // 空のバケツは、水（溶岩・牛乳）が入ったバケツが増えて初めて成功: 無関係な持ち物の変化（積んだ土を拾い直した、落とし物）で
+    // 成功にしない（2026-10-07: 水に届かないまま「+6 dirt」で成功と返り、同じ手を 3 周した）
+    if (c.item === 'bucket' && !Object.keys(after).some((n) => n !== 'bucket' && n.endsWith('_bucket') && (after[n] ?? 0) > (before.items[n] ?? 0))) {
+      throw new Error(`the bucket was not filled (${changes.join(', ')}): stand within reach of the water source and aim at it`)
+    }
     return `used ${what} ${on}: ${changes.join(', ')}`
   },
   async explore (bot, state, c, signal) {

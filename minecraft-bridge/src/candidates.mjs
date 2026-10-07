@@ -34,6 +34,7 @@ import { surfaceExits } from './surface.mjs'
 import { UNDERGROUND_LEAVES } from './solver.mjs'
 import { riding } from './boat.mjs'
 import { isSwimming } from './swim.mjs'
+import { caveOre } from './mining.mjs'
 import { refusalAt } from './refusals.mjs'
 import { KEEP_WHEN_FIGHTING, toReplace } from './wear.mjs'
 import { REGEN_FOOD, cannotHeal, needsFoodToHeal } from './healing.mjs'
@@ -198,7 +199,9 @@ function fromLeaf (bot, state, world, leaf) {
       const me = bot.entity.position
       // 前に見た場所を先に出す。次に方角を、すでに行った場所には印をつけて出す
       const recalled = state.memory
-        ? recall(memoryView(state, me, Number(bot.time.age), leaf.sources), leaf.sources, me, Number(bot.time.age), (p) => recallTripOk(bot, p)).map((p) => ({
+        ? recall(memoryView(state, me, Number(bot.time.age), leaf.sources), leaf.sources, me, Number(bot.time.age), (p) => recallTripOk(bot, p))
+          .filter((p) => !caveOre(state, p, p.kind)) // 洞窟の深い鉱石へは歩いて行かない（採掘場の壁だけ）
+          .map((p) => ({
           id: `go to ${p.kind} seen at x=${p.x} z=${p.z}`, verb: 'goto_memory', target: p.kind, pos: new Vec3(p.x, p.y, p.z),
           distance: p.distance, seen_minutes_ago: p.minutesAgo, count: p.count
         }))

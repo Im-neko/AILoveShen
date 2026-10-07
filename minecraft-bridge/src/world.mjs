@@ -14,7 +14,7 @@ import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
 import { rememberedKinds } from './worldmap-places.mjs'
 import { isQuarryKind, quarrySpot, usableShaft, QUARRY_RADIUS } from './quarry.mjs'
 import { keptGround, findCount } from './leveling.mjs'
-import { mineFromHome, minePlan, shallowStone } from './mining.mjs'
+import { mineFromHome, minePlan, shallowStone, caveOre } from './mining.mjs'
 
 const DIG_RADIUS = 32
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
@@ -52,7 +52,19 @@ const NEIGHBORS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 
 const AIR = new Set(['air', 'cave_air'])
 export const exposed = (bot, p) => NEIGHBORS.some(([x, y, z]) => AIR.has(bot.blockAt(p.offset(x, y, z))?.name))
 
-// すくえる水（流れていない水源。空気に面したもの）: 一番近いもの。バケツで水を汲む先（solver の fill）
+// 上に岩が重なっていない（空が見える）か。葉は数えない
+const SKY_CHECK = 12
+function openToSky (bot, p) {
+  for (let dy = 1; dy <= SKY_CHECK; dy++) {
+    const b = bot.blockAt(p.offset(0, dy, 0))
+    if (!b) return true
+    if (b.boundingBox === 'block' && !isLeaves(b.name)) return false
+  }
+  return true
+}
+
+// すくえる水（流れていない水源。空気に面したもの）: 一番近いもの。バケツで水を汲む先（solver の fill）。
+// 地下の洞窟の水は選ばない（歩いて届かず、経路探索が戸口から掘り下げた: 2026-10-07。地表の池・川・海だけ）
 export function waterSource (bot, state) {
   const id = bot.registry.blocksByName.water?.id
   if (id == null) return null
@@ -60,7 +72,7 @@ export function waterSource (bot, state) {
   return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
     .filter((p) => {
       const b = bot.blockAt(p)
-      return Number(b?.getProperties?.().level ?? b?.metadata ?? 1) === 0 && !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p)
+      return Number(b?.getProperties?.().level ?? b?.metadata ?? 1) === 0 && !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && openToSky(bot, p)
     })
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
 }
@@ -72,6 +84,7 @@ export function diggable (bot, state, name, p) {
     !liquidReason(bot, p, bot.blockAt(p)) && (!isNaturalLogName(name) || gatherableLog(bot, state, p)) &&
     (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY) &&
     !shallowStone(bot, state, p, name) && // 家があるとき、地表に近い石は採掘場から（設計書 68）
+    !caveOre(state, p, name) && // 洞窟に出ている深い鉱石は取らない。採掘場の壁に出たものだけ（設計書 86 §4）
     !keptGround(state, p, name) && // 整地する土地の下は掘らない（土は整地の外から）
     !inMineBody(state, p) // 採掘場の階段の柱と段の床は掘らない（底から上がれなくなる）
 }

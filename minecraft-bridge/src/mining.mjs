@@ -38,6 +38,16 @@ export function protectedRock (state, p, name) {
 // 家のそばの採掘場から取る相手か（自分で建てた家がある）
 export const mineFromHome = (state) => !!state.home && !state.home.found
 
+// 洞窟（自然の空洞）に出ている深い鉱石か: 家の床より SURFACE_DEPTH 以上下の鉱石で、採掘場のセルに接していないもの。
+// 取らない（鉱石は採掘場の壁に出たものだけ。user: 「地下探索する時はブランチマイニング」。設計書 86 §4 で「歩いて行ける
+// 洞窟の鉱石は取ってよい」にしていたが、洞窟を歩いて蜘蛛に殺された: 2026-10-07 04:55Z）。浅い所の露頭（地表の石炭など）は取る
+const NEIGHBOURS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+export function caveOre (state, p, name) {
+  if (!mineFromHome(state) || !String(name).endsWith('_ore')) return false
+  if (p.y >= Math.floor((state.home.inside ?? state.home.min).y) - SURFACE_DEPTH) return false
+  return !onMineCell(state, p) && !NEIGHBOURS.some(([x, y, z]) => onMineCell(state, { x: p.x + x, y: p.y + y, z: p.z + z }))
+}
+
 // 掘る先（sources）を集めるのに合う採掘場の底の高さ: 鉱石の高さ。石だけなら null（どの採掘場でもよい）
 export function oreY (sources) {
   for (const s of sources) if (ORE_Y[plain(s)] !== undefined) return ORE_Y[plain(s)]

@@ -8,6 +8,7 @@
 import vec3Pkg from 'vec3'
 import { inventoryCounts, dayPhase, isUnderground, UNDERGROUND_BELOW } from './observe.mjs'
 import { diggable } from './world.mjs'
+import { caveOre } from './mining.mjs'
 import { emptySlots } from './spare.mjs'
 import { mapPlaces } from './worldmap-places.mjs'
 import { reachableThreats, HEALTH_CRITICAL, HUNGER_URGENT } from './primitives.mjs'
@@ -108,6 +109,7 @@ export function windfallTrips (bot, state, knowledge) {
   const places = mapPlaces(state, me, Number(bot.time.age), kinds)
   return Object.entries(places)
     .flatMap(([kind, list]) => list.map((p) => ({ kind, p, d: Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) })))
+    .filter(({ kind, p }) => !caveOre(state, p, kind)) // 洞窟の深い鉱石へは寄り道しない（採掘場の壁だけ）
     .filter(({ p, d }) => d > NOW_M && d <= TRIP_M && (p.y > UNDERGROUND_Y || torches >= torchesNeeded(d)))
     .sort((a, b) => a.d - b.d)
     .slice(0, OFFERED)

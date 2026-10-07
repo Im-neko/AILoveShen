@@ -354,6 +354,12 @@ export function isDoorstepFloor (state, p) {
   return !!o && p.x === o.x && p.z === o.z && p.y < o.y && p.y >= o.y - DOORSTEP_DEPTH
 }
 
+// ドアの前の列: 外に立つセルとその下すべて（経路探索に掘らせない。ここに縦穴が開くと、家の戸口の床が抜ける）
+export function doorstepColumn (state, p) {
+  const o = state.home?.outside
+  return !!o && p.x === o.x && p.z === o.z && p.y <= o.y
+}
+
 // ドアの前の床の抜けたセル（下から順）。空なら床はある
 export function doorstepHoles (bot, home) {
   const holes = []
