@@ -133,11 +133,27 @@ test('整地は、同じ高さならドアの前の穴を埋める列と、壁�
 })
 
 test('goto は歩いた後の実際の位置で着いたかを言う（穴の中で「着いた」と言わない）', () => {
-  const bot = { entity: { position: new Vec3(-75.5, 64, -149.7), onGround: true }, blockAt: () => ({ name: 'air', boundingBox: 'empty' }) }
+  // 目的地（ドアの前の床の上）は立てるセル: 下の 64 が床。ボットはその隣の穴の中にいる
+  const floor = (p) => p.x === -76 && p.z === -151 && p.y === 64
+  const bot = { entity: { position: new Vec3(-75.5, 64, -149.7), onGround: true }, blockAt: (p) => ({ name: floor(p) ? 'stone' : 'air', boundingBox: floor(p) ? 'block' : 'empty' }) }
   const target = new Vec3(-76, 65, -151)
   assert.throws(() => arrivalReport(bot, new goals.GoalNear(target.x, target.y, target.z, 1), target), /did not reach -76,65,-151: stopped at -75.5,64,-149.7 .*height -1/)
   bot.entity.position = new Vec3(-75.5, 65, -150.5)
   assert.match(arrivalReport(bot, new goals.GoalNear(target.x, target.y, target.z, 1), target), /arrived near -76,65,-151/)
+})
+
+test('goto: 目的地が空中で、水平には着いていれば着いた（y は地面の推測。2 ブロック上の空中を指していた）。穴の中や横にずれていれば失敗のまま', () => {
+  const ground = 63 // y 62 までが地面。63 から上は空気
+  const bot = (x, y, z) => ({
+    entity: { position: new Vec3(x, y, z), onGround: true },
+    blockAt: (p) => ({ name: p.y < ground ? 'grass_block' : 'air', boundingBox: p.y < ground ? 'block' : 'empty' })
+  })
+  const target = new Vec3(-103, 65, -78)
+  const goal = new goals.GoalNear(target.x, target.y, target.z, 1)
+  assert.match(arrivalReport(bot(-102.7, 63, -77.5), goal, target), /arrived near -103,65,-78 .*the target is in the air, the ground there is at y 63/)
+  assert.throws(() => arrivalReport(bot(-100.5, 63, -77.5), goal, target), /did not reach -103,65,-78: stopped at .*2 m away horizontally, height -2/, '横に 2 m ずれている')
+  const walled = { ...bot(-102.7, 63, -77.5), blockAt: (p) => ({ name: p.y === 64 && p.x === -103 ? 'stone' : 'air', boundingBox: p.y === 64 && p.x === -103 ? 'block' : p.y < ground ? 'block' : 'empty' }) }
+  assert.throws(() => arrivalReport(walled, goal, target), /did not reach/, '目的地の列に間に石があれば空中ではない')
 })
 
 test('耕地やハーフブロックの上は pathfinder と同じく 1 つ上のセルに立っている（着いたのに失敗にしない）', () => {

@@ -97,11 +97,27 @@ export function arrivalReport (bot, goal, target) {
     throw new Error(`did not reach ${target.x},${target.y},${target.z}: you are in the water at ${at}, not on land ` +
       `(${round(Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z))} m away horizontally)`)
   }
+  // 目的地が空中（そのマスも、その下の立っているセルまでも空気）で、水平には着いていれば、着いた: LLM が書いた y は地面の
+  // 高さの推測で、2 ブロック上の空中を指していた（水平 0 m で「高さ -2」の失敗が 3 回続いた: 2026-10-07）
+  const horizontal = Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z)
+  if (!goal.isEnd(f) && f.y < target.y && horizontal <= Math.sqrt(goal.rangeSq ?? 1) && airBetween(bot, f, target, target.y - 1)) {
+    return `arrived near ${target.x},${target.y},${target.z} (now at ${at}: the target is in the air, the ground there is at y ${f.y})`
+  }
   if (!goal.isEnd(f)) {
     throw new Error(`did not reach ${target.x},${target.y},${target.z}: stopped at ${at} ` +
       `(${round(Math.hypot(target.x + 0.5 - p.x, target.z + 0.5 - p.z))} m away horizontally, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`)
   }
   return `arrived near ${target.x},${target.y},${target.z} (now at ${at}, height ${f.y - target.y >= 0 ? '+' : ''}${f.y - target.y})`
+}
+
+// 目的地の列で、立っているセルの上から目的地まで（と、目的地の下の 1 マス）、すべて空気（通れる）か。
+// 目的地の下が床なら、目的地は立てるセルで、空中ではない（穴の中から壁のこちら側へ着けていない）
+function airBetween (bot, from, to, belowY) {
+  for (let y = Math.min(from.y + 1, belowY); y <= to.y; y++) {
+    const b = bot.blockAt(new Vec3(to.x, y, to.z))
+    if (!b || b.boundingBox !== 'empty') return false
+  }
+  return true
 }
 
 // 次に置く計画のブロック: 候補が指したブロックがあればそれ。ただし足元がない（床が抜けたドア）なら、足元の土から

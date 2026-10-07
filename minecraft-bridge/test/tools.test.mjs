@@ -72,6 +72,15 @@ test('ドアの前にクリーパーがいれば、危なさの数字に関わ�
   assert.equal(runs.length, 0)
 })
 
+test('座標が欠けた goto は、どれが欠けたかを言って断る（z を落とした手が同じまま続いた）', async () => {
+  const { callTool, runs } = setup()
+  const noZ = await callTool('goto', { x: -98, y: 65 })
+  assert.equal(noZ.refused, true)
+  assert.match(noZ.result, /x, y and z must be numbers: z is missing or not a number \(got x=-98, y=65, z=none\)/)
+  assert.match((await callTool('goto', { x: 'a', z: 3 })).result, /x and y are missing or not a number \(got x=a, y=none, z=3\)/)
+  assert.equal(runs.length, 0)
+})
+
 // 値打ちのある持ち物（ダイヤのツルハシ 15）を持って体力が低いと、外に出る危なさが極めて高い（risk.mjs）
 const VALUABLE = [['diamond_pickaxe', 1]]
 

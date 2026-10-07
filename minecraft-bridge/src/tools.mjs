@@ -70,7 +70,11 @@ const fmt = (p) => `${p.x},${p.y},${p.z}`
 
 function position (args) {
   const [x, y, z] = [args.x, args.y, args.z].map(Number)
-  if (![x, y, z].every(Number.isFinite)) refuse('x, y and z must be numbers')
+  if (![x, y, z].every(Number.isFinite)) {
+    // どれが欠けたかを言う（z を落とした goto(x=-98, y=65) が、同じ手のまま 2 回続いた: 2026-10-07）
+    const bad = ['x', 'y', 'z'].filter((k) => !Number.isFinite(Number(args[k])))
+    refuse(`x, y and z must be numbers: ${bad.join(' and ')} ${bad.length > 1 ? 'are' : 'is'} missing or not a number (got ${['x', 'y', 'z'].map((k) => `${k}=${args[k] ?? 'none'}`).join(', ')})`)
+  }
   return new Vec3(Math.floor(x), Math.floor(y), Math.floor(z))
 }
 
