@@ -129,6 +129,11 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     if fact_check is not None:
         closers.append(fact_check.close)
 
+    async def stop_designing() -> None:
+        game.objectives.cancel_designing()
+
+    closers.append(stop_designing)
+
     tts = None
     if settings.stream.speak:
         from ailoveshen.factories.tts import (
@@ -265,6 +270,14 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
             await tts.speak(
                 text, priority=SpeechPriority.HIGH, emotion=await voiced(text), source="chat"
             )
+
+    # 返事のあとに裏で設計していた建物が断られたら、頼んだ人に言う（docs/design/107。固定の一言）
+    async def design_failed(user_name: str, title: str, reason: str) -> None:
+        text = f"{user_name}、ごめんね、「{title}」の設計がうまくいかなかったから、あきらめるね。また頼んでね！"
+        conversation.add_streamer_message(text, MessageType.RESPONSE, addressed_to=user_name)
+        await say_reply(text)
+
+    game.objectives.on_design_failed = design_failed
 
     # 管理画面（設計書 54）で喋らせる文。実況の重複の判定は通さない（言わせたいことを言う）。読み上げは
     # 待たない（長い文で管理画面の操作が固まらない）

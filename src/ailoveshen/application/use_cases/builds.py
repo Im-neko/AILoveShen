@@ -119,6 +119,9 @@ def _point(p: dict[str, Any]) -> tuple[int, int, int]:
     return int(p["x"]), int(p["y"]), int(p["z"])
 
 
+NO_HOME = "there is no home yet: build the house first"
+
+
 class BuildDesigner:
     """
     名前付きの建物を設計させて登録する。まだない名前の `built(name)` を大目標に足すとき、
@@ -154,6 +157,12 @@ class BuildDesigner:
         """登録済みの建物の名前。"""
         return {str(b["name"]) for b in await self._bridge.builds()}
 
+    async def require_home(self) -> None:
+        """家がなければ断る（名前付きの建物は家の隣に登録される。設計しても、必ず断られる）。"""
+        _, _, has_home = await self._notes()
+        if not has_home:
+            raise GoalRejectedError(NO_HOME)
+
     async def design(
         self, name: str, brief: str, max_blocks: int = BuildDesign.MAX_BLOCKS
     ) -> BuildDesign:
@@ -172,7 +181,7 @@ class BuildDesigner:
         if not has_home:
             # 名前付きの建物は家の隣に登録される（ブリッジが断る）: 家がないまま設計させても、1 回 40〜200 秒の設計が
             # 3 回とも同じ理由で断られる（2026-10-07: 返事がその設計を待って、8 分遅れた）
-            raise GoalRejectedError("there is no home yet: build the house first")
+            raise GoalRejectedError(NO_HOME)
         map_data, images = await self._map()
         error = ""
         for attempt in range(1, self._max_attempts + 1):

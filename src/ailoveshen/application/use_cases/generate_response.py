@@ -149,7 +149,7 @@ def unjudged(kind: str | None, data: dict[str, object], can_rethink: bool) -> st
 class KeptPromise:
     """返答の約束から足した大目標（now: 今の小目標を区切って今やる）。"""
 
-    objective: Objective
+    objective: Objective | None  # None: 建物の設計を裏でしていて、まだ足されていない
     now: bool
 
 
@@ -482,26 +482,35 @@ class GenerateResponseUseCase(IGenerateResponse):
         user_name: str,
         proposal: ObjectiveProposal,
         advice: bool = False,
-    ) -> Objective:
+    ) -> Objective | None:
         """
         頼みを大目標に足す。今やる（now）なら、今の小目標を次のステップで区切り、その大目標の
         小目標を決めさせる（返答で「今やる」と言っている。待っている小目標は夜明けまで切れ目が
         来ない）。`advice`: 仕分けが助言と答えたコメント。配信者自身の大目標にする（提案者を
         残す。視聴者の頼みの上限に数えない）。
 
+        足すのが裏の設計を待つとき（まだない建物）は None（足せたら今やる考え直しをする。断られたら配信が話す）。
+
         Raises:
             GoalRejectedError: プランに入らないとき
         """
         assert self._objectives is not None
+
+        def rethink(objective: Objective) -> None:
+            if proposal.now:
+                was = session.goal.describe() if session.goal else "nothing"
+                session.request_rethink(
+                    f'you told {user_name} you would do "{objective.title}" now '
+                    f"(it is at the top of the objectives; you were on {was}, go back to it after)"
+                )
+
+        # 建物の設計（Gemini で 1 回 40〜200 秒）は返事のあとに裏でする: 返事が待つと、あとのコメントごと遅れる
+        # （2026-10-07: 8 分）。そのときは大目標がまだ足されていないので、今やるなら考え直しは足せてから
         objective = await self._objectives.accept(
-            session.plan, proposal, requested_by=user_name, advice=advice
+            session.plan, proposal, requested_by=user_name, advice=advice, on_added=rethink
         )
-        if proposal.now:
-            was = session.goal.describe() if session.goal else "nothing"
-            session.request_rethink(
-                f'you told {user_name} you would do "{objective.title}" now '
-                f"(it is at the top of the objectives; you were on {was}, go back to it after)"
-            )
+        if objective is not None:
+            rethink(objective)
         return objective
 
     async def _keep_promise(

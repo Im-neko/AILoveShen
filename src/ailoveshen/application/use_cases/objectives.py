@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Optional
 
 from loguru import logger
@@ -96,6 +97,10 @@ class ObjectiveKeeper:
         self._playbook_failures: dict[str, int] = {}  # 定石の段を足せなかった回数
         self._playbook_at = -PLAYBOOK_RETRY_SECONDS  # 施設の段の置き場所を最後に調べた時刻（time.monotonic）
         self._playbook_site = False  # そのときの答え
+        # 返事のあとに裏で設計している頼み（完了条件 → 設計の仕事。docs/design/107）
+        self._designing: dict[tuple[GoalSpec, ...], asyncio.Task[None]] = {}
+        # 裏の設計が断られたとき、頼んだ視聴者・題名・理由を受ける（配信が一言話す）。None: 話さない
+        self.on_design_failed: Optional[Callable[[str, str, str], Awaitable[None]]] = None
 
     async def judge(self, plan: ObjectivePlan) -> None:
         """
@@ -601,7 +606,8 @@ class ObjectiveKeeper:
         proposal: ObjectiveProposal,
         requested_by: str,
         advice: bool = False,
-    ) -> Objective:
+        on_added: Optional[Callable[[Objective], None]] = None,
+    ) -> Optional[Objective]:
         """
         視聴者の頼みを大目標として足す（今取り組んでいるものの後ろに）。`proposal.now`
         （配信者が今やると判断した）なら先頭に。呼び出し側が今の小目標を区切る。
@@ -609,6 +615,11 @@ class ObjectiveKeeper:
         `advice`: 視聴者の助言を配信者が納得して採った。配信者自身の大目標にし（提案者は
         `suggested_by`）、視聴者の頼みの上限と予算に数えない（2026-09-28: 助言をくれる人が
         1 人 1 つの上限に当たり、もっともな助言を「後で」と流していた）。
+
+        `on_added` を渡すと、まだない建物の設計（Gemini で 1 回 40〜200 秒）を待たない: 断る理由になる確認
+        （上限・家がない・同じ頼み）だけ先にして、設計と登録は裏で行い、足せたら `on_added(大目標)`、
+        断られたら `on_design_failed` を呼んで、ここでは None を返す（docs/design/107。返事が設計を待って、
+        あとのコメントごと 8 分遅れた）。設計が要らなければ、今までどおり足して返す。
 
         Raises:
             GoalRejectedError: 条件を判定できないとき
@@ -630,9 +641,80 @@ class ObjectiveKeeper:
             return same
         viewer = None if advice else requested_by
         plan.check_room(viewer)  # 設計（建物・施設の登録）の前に: 上限で断るなら何も残さない
-        blocks = await self._design_builds(
-            proposal, BuildDesign.MAX_BLOCKS if advice else BuildDesign.VIEWER_MAX_BLOCKS
-        )
+        max_blocks = BuildDesign.MAX_BLOCKS if advice else BuildDesign.VIEWER_MAX_BLOCKS
+        if on_added is not None and await self._designs_later(proposal):
+            key = tuple(proposal.conditions)
+            if key in self._designing:
+                logger.info(f"{requested_by} {what}は、同じ完了条件の設計がもう裏で進んでいる: 足さない")
+                return None
+            task = asyncio.create_task(
+                self._design_and_add(plan, proposal, requested_by, advice, max_blocks, on_added)
+            )
+            self._designing[key] = task
+            task.add_done_callback(lambda _t, k=key: self._designing.pop(k, None))
+            logger.info(f"{requested_by} {what}の建物は、返事のあとに裏で設計する: {proposal.title}")
+            return None
+        blocks = await self._design_builds(proposal, max_blocks)
+        return await self._add_objective(plan, proposal, requested_by, advice, blocks)
+
+    async def _designs_later(self, proposal: ObjectiveProposal) -> bool:
+        """まだない建物があり、設計できる（家がある）なら真。家がなければ、ここで断る（設計しても必ず断られる）。"""
+        if self._builder is None:
+            return False
+        names = _build_names(proposal)
+        if not names:
+            return False
+        known = await self._builder.known()
+        if all(n in known for n in names):
+            return False
+        await self._builder.require_home()
+        return True
+
+    async def _design_and_add(
+        self,
+        plan: ObjectivePlan,
+        proposal: ObjectiveProposal,
+        requested_by: str,
+        advice: bool,
+        max_blocks: int,
+        on_added: Callable[[Objective], None],
+    ) -> None:
+        """裏で、建物を設計して登録し、大目標を足す。足せなかったら、理由を `on_design_failed` に渡す。"""
+        try:
+            blocks = await self._design_builds(proposal, max_blocks)
+            goal = await self._add_objective(plan, proposal, requested_by, advice, blocks)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - 裏の仕事の失敗で配信を止めない
+            logger.warning(f"{requested_by} の頼み「{proposal.title}」を、裏で足せなかった: {e}")
+            if self.on_design_failed is not None:
+                try:
+                    await self.on_design_failed(requested_by, proposal.title, str(e))
+                except Exception as say_error:  # noqa: BLE001
+                    logger.warning(f"設計が断られたことを話せなかった: {say_error}")
+            return
+        on_added(goal)
+
+    async def drain(self) -> None:
+        """裏の設計がすべて終わるのを待つ（テスト用）。"""
+        await asyncio.gather(*self._designing.values(), return_exceptions=True)
+
+    def cancel_designing(self) -> None:
+        """裏の設計をやめる（配信を止めるとき）。"""
+        for task in list(self._designing.values()):
+            task.cancel()
+
+    async def _add_objective(
+        self,
+        plan: ObjectivePlan,
+        proposal: ObjectiveProposal,
+        requested_by: str,
+        advice: bool,
+        blocks: int,
+    ) -> Objective:
+        """設計のあとの、施設・判定・条件の確認と、大目標の登録。"""
+        what = "の助言" if advice else "の頼み"
+        viewer = None if advice else requested_by
         await self._design_facilities(proposal.conditions, _brief(proposal))
         await self._write_checks(proposal.conditions, _brief(proposal))
         await self._bridge.check(proposal.conditions)
@@ -740,11 +822,7 @@ class ObjectiveKeeper:
         Raises:
             GoalRejectedError: 設計できなかったとき
         """
-        names = [
-            c.name
-            for c in proposal.conditions
-            if c.predicate == GoalPredicate.BUILT and c.name is not None
-        ]
+        names = _build_names(proposal)
         if not names:
             return 0
         if self._builder is None:
@@ -888,6 +966,15 @@ def _apply(plan: ObjectivePlan, changes: Sequence[PlanChange]) -> list[DomainEve
         else:
             events.append(_dropped(plan.drop(change.objective_id, change.reason)))
     return events
+
+
+def _build_names(proposal: ObjectiveProposal) -> list[str]:
+    """条件の built(name) の name。"""
+    return [
+        c.name
+        for c in proposal.conditions
+        if c.predicate == GoalPredicate.BUILT and c.name is not None
+    ]
 
 
 def _brief(proposal: ObjectiveProposal) -> str:
