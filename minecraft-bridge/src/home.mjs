@@ -373,7 +373,12 @@ export function doorstepHoles (bot, home) {
 }
 
 // 跳んで、今立っているセルに足場を置く（穴の中から 1 段上がる）
+const FREE_CELL = new Set(['air', 'cave_air', 'void_air', 'water', 'lava'])
 export async function jumpAndPlace (bot, cell, item) {
+  // 立っているセルに松明・花など、通れるが置き換えられない物があると、足場を置けず上がれない（足元の松明で、約 5 分積めなかった:
+  // 2026-10-07）。先に壊す（素手で一瞬）
+  const here = bot.blockAt(cell)
+  if (here && here.boundingBox === 'empty' && !FREE_CELL.has(here.name)) await bot.dig(here, true)
   await bot.equip(item, 'hand')
   await bot.look(bot.entity.yaw, -Math.PI / 2, true)
   bot.setControlState('jump', true)

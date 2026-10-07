@@ -159,6 +159,16 @@ def already_built(jobs: Sequence[Job], own: Collection[str], met: Mapping[str, b
     return ""
 
 
+def _short(trees: Iterable[Optional[MaterialTree]]) -> Optional[set[str]]:
+    """木のどれかに、足りない物（`missing`）が分からないものがあれば None。"""
+    out: set[str] = set()
+    for t in trees:
+        if t is None or t.missing is None:
+            return None
+        out |= set(t.missing)
+    return out
+
+
 def unneeded_materials(
     jobs: Iterable[Job],
     objective: Optional[Objective],
@@ -191,7 +201,18 @@ def unneeded_materials(
                 continue
             used = {name for t in (*others_trees, *extra) if t for name in t.all}
             if used & set(mine.root):
-                continue
+                # 材料の木にはある。持ち物を数えて、まだ足りない物の中にもなければ、もう持っている（板材と棒を持って
+                # いるのに、木のツルハシの前に原木を集める計画: 2026-10-07）。足りない物が分からなければ確かめない
+                short = _short(others_trees)
+                if short is None or short & set(mine.root):
+                    continue
+                return (
+                    f"{spec.describe()} is not missing: the rest of the job needs "
+                    f"{', '.join(sorted(short)[:NAMES_SHOWN]) or 'nothing more'} and you already carry what "
+                    f"its recipe uses. List what the recipe uses directly, subtract what you carry (the "
+                    f"inventory in the state), and write steps only for what is still short, nearest the "
+                    f"goal first. Remove it"
+                )
             needs = "; ".join(
                 f"{s.describe()} needs {', '.join(t.all[:NAMES_SHOWN])}"
                 for s, t in zip(others, others_trees, strict=True)

@@ -563,6 +563,9 @@ class MaterialTree:
 
     root: tuple[str, ...]
     all: tuple[str, ...]
+    # 持ち物・チェスト・作業台を数えたうえで、まだ足りない物（None: 分からない）。レシピが直接使う材料を並べ、
+    # 持っているぶんを引いた残り。足りない物がなければ、その物を作る手だけが残る
+    missing: Optional[tuple[str, ...]] = None
 
 
 @dataclass(frozen=True)

@@ -65,3 +65,12 @@ test('materials: 材料の木は have / placed / stored（家のあるとき）�
   assert.ok(chest.all.includes('crafting_table') && chest.all.some((n) => n.endsWith('_planks')))
   assert.ok(!chest.all.includes('iron_ingot'))
 })
+
+test('materials.missing: 持っている物を引いた、まだ足りない物だけ。レシピの材料を持っていれば、その物を作る手だけが残る（原木を求めない）', () => {
+  const [have] = checkConditions([{ predicate: 'have', item: 'wooden_pickaxe', count: 1 }], bot, state, k, world({ oak_planks: 5, stick: 9, crafting_table: 1 }), { materials: true })
+  assert.deepEqual(have.materials.missing, ['wooden_pickaxe'])
+  assert.ok(!have.materials.missing.some((n) => n.endsWith('_log')))
+  // 材料がなければ、原木から足りない
+  const [none] = checkConditions([{ predicate: 'have', item: 'wooden_pickaxe', count: 1 }], bot, state, k, world({ crafting_table: 1 }), { materials: true })
+  assert.ok(none.materials.missing.includes('wooden_pickaxe') && none.materials.missing.some((n) => n.endsWith('_log') || n.endsWith('_planks')), none.materials.missing.join(','))
+})

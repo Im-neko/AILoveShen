@@ -467,7 +467,9 @@ def _to_materials(d: Optional[dict[str, Any]]) -> Optional[MaterialTree]:
     if not d:
         return None
     return MaterialTree(
-        root=tuple(str(x) for x in d.get("root", [])), all=tuple(str(x) for x in d.get("all", []))
+        root=tuple(str(x) for x in d.get("root", [])),
+        all=tuple(str(x) for x in d.get("all", [])),
+        missing=tuple(str(x) for x in d["missing"]) if d.get("missing") is not None else None,
     )
 
 

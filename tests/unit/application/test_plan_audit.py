@@ -368,6 +368,25 @@ class TestMaterials:
         )
         assert unneeded_materials([job], None, TREES) is None
 
+    def test_a_material_already_carried_is_refused_even_when_the_recipe_uses_it(self):
+        """板材 5 と棒 9 を持っているのに、木のツルハシの前に原木を集める計画（2026-10-07）。足りない物だけを書かせる。"""
+        pick = GoalSpec(GoalPredicate.HAVE, item="wooden_pickaxe", count=1)
+        logs = GoalSpec(GoalPredicate.HAVE, item="oak_log", count=3)
+        job = Job(pick, title="ツルハシ", steps=(Step(logs, "原木を集める"), Step(pick, "作る")))
+
+        def trees(short):
+            return {
+                pick.describe(): MaterialTree(("wooden_pickaxe",), ("wooden_pickaxe", "oak_planks", "oak_log", "stick"), short),
+                logs.describe(): MaterialTree(("oak_log",), ("oak_log",), ("oak_log",)),
+            }
+
+        why = unneeded_materials([job], None, trees(("wooden_pickaxe",)))
+        assert why and "have(oak_log, 3) is not missing" in why and "wooden_pickaxe" in why
+        # 原木がまだ足りないなら、その前提は正しい
+        assert unneeded_materials([job], None, trees(("wooden_pickaxe", "oak_log"))) is None
+        # 足りない物が分からないとき（ブリッジが言わなかった）は確かめない
+        assert unneeded_materials([job], None, trees(None)) is None
+
     def test_a_job_with_a_condition_of_unknown_needs_is_not_checked(self):
         """畑・整地・建物など、材料の木がない条件がある中目標は、何が要るか分からないので確かめない。"""
         job = Job(FARM, title="畑", steps=(Step(IRON, "何か"), Step(FARM, "耕す")))

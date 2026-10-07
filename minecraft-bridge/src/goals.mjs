@@ -1046,6 +1046,21 @@ export function materialsOf (knowledge, world, item) {
   return { root: knowledge.resolve(item).members, all: [...all] }
 }
 
+// 持ち物・チェスト・作業台を数えたうえで、まだ足りない物（ソルバーの木で、持っている数が要る数に届かない節の物）。
+// 物を作るとき、レシピが直接使う材料をまず並べ、持っているぶんを引いて、足りないものだけを順に追う
+// （2026-10-07: 板材 5 と棒 9 を持っているのに、木のツルハシの前に原木 3 個を集めるよう計画に書かれた）。
+// root は item そのもの。足りない物がなければ、その物を作る手だけが残る
+export function shortfallOf (knowledge, world, item, count = 1) {
+  const nodes = solve(knowledge, world, [{ spec: item, count }]).nodes
+  const short = new Set()
+  const walk = (n) => {
+    if (n.spec && n.have < n.need) for (const m of knowledge.resolve(n.spec).members) short.add(m)
+    for (const c of n.children ?? []) walk(c)
+  }
+  nodes.forEach(walk)
+  return [...short]
+}
+
 // options.materials: have / placed / stored の条件に、その物の材料の木（materialsOf）を添える
 export function checkConditions (specs, bot, state, knowledge, world, options = {}) {
   return specs.map((spec) => {
@@ -1063,7 +1078,7 @@ export function checkConditions (specs, bot, state, knowledge, world, options = 
     const out = { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)], next_step: r.next ? { predicate: 'have', item: r.next.item, count: r.next.count } : null, gather: !!r.gather }
     if (options.materials && ['have', 'placed', 'stored'].includes(goal.spec.predicate) && goal.spec.item) {
       try {
-        out.materials = materialsOf(knowledge, world, goal.spec.item)
+        out.materials = { ...materialsOf(knowledge, world, goal.spec.item), missing: shortfallOf(knowledge, world, goal.spec.item, goal.spec.count ?? 1) }
       } catch {
         // 材料の木を作れない物（作り方が分からない、など）は添えない
       }
