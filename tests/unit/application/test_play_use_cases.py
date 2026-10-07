@@ -804,6 +804,81 @@ class TestAdvancePlay:
         bridge.act.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_a_rejected_decision_at_night_says_how_to_spend_the_night(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """2026-10-07 00:42Z: 夜の差し戻しが時間帯に触れず、進められない小目標を選び続けた。"""
+        bridge.observe.return_value = _obs(
+            goal=False, time_phase="night", has_home=True, inside_home=True
+        )
+        text_generator.generate_json.side_effect = [PLANKS, PLANKS]
+        bridge.set_goal.side_effect = [
+            GoalStatus(False, 4, dead_end=("no way to get planks",)),
+            GoalStatus(False, 4),
+        ]
+        await use_case.execute(_session())
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "no way to get planks" in error
+        assert "It is night now" in error
+        assert "choose through_night" in error
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_night_goal_gets_no_night_note(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """夜を越す小目標（through_night / at_home / cleared）を選んだ差し戻しには、言い添えない。"""
+        bridge.observe.return_value = _obs(
+            goal=False, time_phase="night", has_home=True, inside_home=True
+        )
+        text_generator.generate_json.side_effect = [
+            {**PLANKS, "predicate": "at_home", "reason": "家にいる"},
+            PLANKS,
+        ]
+        bridge.set_goal.side_effect = [GoalStatus(True, 0), GoalStatus(False, 4)]
+        await use_case.execute(_session())
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "It is night now" not in error
+
+    @pytest.mark.asyncio
+    async def test_decisions_that_fail_all_night_become_through_night(
+        self, use_case, text_generator, bridge
+    ):
+        """夜のあいだ決定が決まらず、行動が 1 つもないまま夜が明けた（2026-10-07 00:42〜00:52Z）。"""
+        bridge.observe.return_value = _obs(
+            goal=False, time_phase="night", has_home=True, inside_home=True
+        )
+        text_generator.generate_json.return_value = PLANKS
+        spec_seen: list = []
+
+        async def set_goal(spec, *args, **kwargs):
+            spec_seen.append(spec)
+            if spec.predicate == GoalPredicate.THROUGH_NIGHT:
+                return GoalStatus(False, 1)
+            return GoalStatus(False, 4, dead_end=("no way to get planks",))
+
+        bridge.set_goal.side_effect = set_goal
+        session = _session()
+
+        await use_case.execute(session)
+
+        assert session.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
+        assert session.goal.objective_id is None
+        assert "no other small goal could be decided" in session.goal.reason
+        assert text_generator.generate_json.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_decisions_that_fail_by_day_still_raise(self, use_case, text_generator, bridge):
+        """昼は夜を越す小目標にしない（今までどおり決定の失敗）。"""
+        bridge.observe.return_value = _obs(goal=False, time_phase="day")
+        text_generator.generate_json.return_value = PLANKS
+        bridge.set_goal.return_value = GoalStatus(False, 4, dead_end=("no way to get planks",))
+
+        with pytest.raises(TextGenerationError, match="no acceptable goal"):
+            await use_case.execute(_session())
+
+    @pytest.mark.asyncio
     async def test_single_candidate_skips_selector(self, use_case, selector, bridge):
         """候補が 1 つだけなら、モデルを呼ばずにそれを選ぶ。"""
         bridge.observe.return_value = _obs(("wait inside",))

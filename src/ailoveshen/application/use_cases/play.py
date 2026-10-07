@@ -1275,8 +1275,10 @@ class AdvancePlayUseCase(IAdvancePlay):
                 images=images,
             )
             dropped = ""  # 設計できずに落とした建物（差し戻すとき Gemini に伝える）
+            chosen: Optional[GoalDecision] = None  # 差し戻す理由に、夜の言い添えをするため
             try:
                 decision = parse_decision(data)
+                chosen = decision
                 # 最後の試行は、プランが断る並べ替え・断念（定石の順を破る move など）を捨てて、決定の
                 # 残りを通す（同じ編集を書き続けて、夜の野外で 4 分以上決まらなかった: 2026-10-03）
                 if attempt >= self._max_goal_attempts and decision.changes:
@@ -1373,7 +1375,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                         f"write the jobs for the objective at the top ({preview.current.title})"
                     )
             except (ValueError, GoalRejectedError) as e:
-                error = str(e) + dropped
+                error = str(e) + dropped + _night_note(chosen, obs)
                 logger.warning(f"目標の決定 {attempt} を差し戻した: {data!r}: {error}")
                 continue
             if decision.diagnosis:
@@ -1400,9 +1402,47 @@ class AdvancePlayUseCase(IAdvancePlay):
                 session, obs, _goal(decision, plan), reason, status, rethinks_seen
             )
             return
+        if await self._spend_the_night(session, obs, reason, rethinks_seen):
+            return
         raise TextGenerationError(
             f"no acceptable goal after {self._max_goal_attempts} attempts: {error}"
         )
+
+    async def _spend_the_night(
+        self,
+        session: PlaySession,
+        obs: GameObservation,
+        reason: str,
+        rethinks_seen: Optional[int],
+    ) -> bool:
+        """
+        夕方・夜に、小目標が決まらないまま回り続けるのを、夜を越す小目標（through_night）で止める。
+        夜のあいだ、決定が毎回差し戻され（進められない小目標を選び続ける）、行動が 1 つもないまま
+        夜が明けた（2026-10-07 00:42〜00:52Z: 夜（朝まで 8 分）、ベッドが 0.7 m にあるのに、
+        have(raw_iron, 3) を 3 回ずつ選び続けた）。through_night は家に帰り、眠れる時間になれば
+        ベッドで寝る（家がなければ地下に潜る）。
+        """
+        if obs.time_phase not in ("dusk", "night"):
+            return False
+        spec = GoalSpec(GoalPredicate.THROUGH_NIGHT)
+        try:
+            status = await self._bridge.set_goal(spec, _kept(session.plan), _also(session.plan, (spec,)))
+        except GoalRejectedError as e:
+            logger.warning(f"夜を越す小目標をブリッジが断った: {e}")
+            return False
+        logger.warning(
+            f"小目標が {self._max_goal_attempts} 回決まらなかった（{obs.time_phase}）: "
+            "夜を越す小目標にする"
+        )
+        goal = Goal(
+            spec=spec,
+            reason=(
+                f"it is {obs.time_phase} and no other small goal could be decided: "
+                "spend the night at home (sleep in the bed)"
+            ),
+        )
+        await self._start_goal(session, obs, goal, reason, status, rethinks_seen)
+        return True
 
     def _objective_stuck(self, session: PlaySession) -> str:
         """
@@ -1807,6 +1847,26 @@ def _stay_note(decision, obs: GameObservation) -> str:
             "not an outdoor task"
         )
     return ""
+
+
+def _night_note(decision: Optional[GoalDecision], obs: GameObservation) -> str:
+    """
+    夕方・夜に、夜を越す以外の小目標を選んで差し戻すとき、選び直しの答えを添える。差し戻しの理由
+    （進められない、など）だけでは、時間帯に気づかず同じ種類を選び続けた（2026-10-07 00:42〜00:52Z）。
+    """
+    if decision is None or obs.time_phase not in ("dusk", "night"):
+        return ""
+    if decision.spec.predicate in (
+        GoalPredicate.THROUGH_NIGHT,
+        GoalPredicate.AT_HOME,
+        GoalPredicate.CLEARED,
+    ):
+        return ""
+    bed = "the bed in your home" if obs.has_home else "a bed or a hole in the ground"
+    return (
+        f". It is {obs.time_phase} now: if nothing outdoors can be done safely, choose "
+        f"through_night (it goes home and sleeps in {bed} when it is time)"
+    )
 
 
 def _carried_note(obs: GameObservation, decision: GoalDecision) -> str:
