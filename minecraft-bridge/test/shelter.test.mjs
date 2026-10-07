@@ -5,6 +5,7 @@ import { exitSpots } from '../src/home.mjs'
 import minecraftData from 'minecraft-data'
 import { ground } from '../src/candidates.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
+import { lightWorld } from './light-world.mjs'
 
 const { Vec3 } = vec3Pkg
 const v = (x, y, z) => new Vec3(x, y, z)
@@ -13,7 +14,7 @@ const DAY = 1000
 const NIGHT = 18000
 
 // y 70 の石の上の 5x5 の家: 壁は x 0..4、z 0..4（板材、高さ 2）、室内は 1..3、ドアは (2, 70, 4)
-function world ({ blocked = [], sky } = {}) {
+function world ({ blocked = [] } = {}) {
   const home = { door: v(2, 70, 4), inside: v(2, 70, 3), outside: v(2, 70, 5), min: v(1, 70, 1), max: v(3, 70, 3), bed: null, breach: [] }
   const blockAt = (p) => {
     const key = `${p.x},${p.y},${p.z}`
@@ -22,7 +23,7 @@ function world ({ blocked = [], sky } = {}) {
     if (p.x === 2 && p.z === 4 && p.y <= 71) return { name: 'oak_door', boundingBox: 'block', getProperties: () => ({ open: false }) }
     const wall = (p.x === 0 || p.x === 4 || p.z === 0 || p.z === 4) && p.x >= 0 && p.x <= 4 && p.z >= 0 && p.z <= 4
     if (wall && p.y <= 71 && !(p.x === 2 && p.z === 4)) return { name: 'oak_planks', boundingBox: 'block' }
-    return { name: 'air', boundingBox: 'empty', skyLight: sky }
+    return { name: 'air', boundingBox: 'empty' }
   }
   return { home, blockAt }
 }
@@ -49,11 +50,12 @@ const digOutside = { leaves: [{ kind: 'dig', sources: ['oak_log'] }] }
 const snap = { dig: () => [v(10, 70, 10)], hunt: () => [] }
 
 function run ({ time = DAY, mobs = [skeletonAtDoor], status = digOutside, blocked, sky, health, bed = false, items = [] } = {}) {
-  const { home, blockAt: base } = world({ blocked, sky })
+  const { home, blockAt: base } = world({ blocked })
   const bedAt = v(1, 70, 1)
   if (bed) home.bed = bedAt
   const blockAt = (p) => bed && p.equals(bedAt) ? { name: 'red_bed', boundingBox: 'block' } : base(p)
   const bot = fakeBot({ time, at: v(2.5, 70, 2.5), mobs, blockAt, health, items })
+  if (sky !== undefined) bot.world = lightWorld(() => 0, () => sky) // 空の光（サーバーが送る欄。light.mjs が読む）
   const state = { home, plan: null, unreachableDrops: new Set() }
   return ground(bot, state, knowledge, snap, status)
 }
