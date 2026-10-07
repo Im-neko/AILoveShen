@@ -150,3 +150,23 @@ test('何も見えていない食べ物は、野生の作物（メロン）で�
   const direct = solve(k, world(), [{ spec: 'melon_slice', count: 2 }])
   assert.deepEqual(sources(direct), ['melon'])
 })
+
+// 家があり、松明も石炭もない（死んで失った）世界。石は採掘場（地下）からしか取れず、地下へは松明を持って行く
+// 規則があるので、松明 ← 石炭 ← 地下 ← 松明、松明 ← 木炭 ← かまど ← 丸石 ← 地下 ← 松明 の輪で、何も手に入らなくなった
+// （2026-10-07: 3 回死んで松明を失い、丸石の目標が 17 分「手立てなし」のまま止まった）
+const mineWorld = (inventory = {}) => ({
+  inventory: { wooden_pickaxe: 1, wooden_sword: 1, stick: 3, ...inventory }, blocks: {}, mobs: {}, table: { x: 0, y: 0, z: 0 }, unlocked: () => true,
+  home: { name: 'home' }, buried: () => [], digDepth: 12, minePlan: () => ({ make: 10 }), mine: null, mines: []
+})
+
+test('松明も石炭もない: 輪にならず、石炭を先に（松明なしで）取りに行く', () => {
+  const r = solve(k, mineWorld(), [{ spec: 'cobblestone', count: 3 }])
+  assert.deepEqual(r.impossible, [])
+  assert.ok(r.leaves.some((l) => l.kind === 'make_mine' && l.item === 'coal'), JSON.stringify(r.leaves.map((l) => `${l.kind}:${l.item}`)))
+})
+
+test('松明を持っていれば、今までどおり松明を持って地下へ行く', () => {
+  const r = solve(k, mineWorld({ torch: 8 }), [{ spec: 'cobblestone', count: 3 }])
+  assert.deepEqual(r.impossible, [])
+  assert.deepEqual(kinds(r), ['make_mine:cobblestone'])
+})

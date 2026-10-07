@@ -348,9 +348,15 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   // 採掘場へ下りて、骷髏に撃たれ続けた: 2026-10-01）。松明は石炭か木炭と棒から作る手が先に出る
   // 武器も持ってから行く（武器なしで地下に出て、骷髏に撃たれ続けて死んだ: 2026-10-01 19:44。剣は木で作れる）
   if (UNDERGROUND_LEAVES.has(leaf.kind)) {
-    const torches = need(k, world, 'torch', UNDERGROUND_TORCHES, ledger, path, depth + 1)
-    children.push(torches.node)
-    cost += torches.cost
+    // 松明が（輪で）どうしても手に入らないときは、松明なしで下りる: 松明の石炭も、丸石で作るかまどの木炭も地下の
+    // 石からで、松明を要求し続けると何も手に入らなくなる（2026-10-07: 死んで松明を失い、石が「手立てなし」で 17 分止まった）
+    const trial = cloneLedger(ledger)
+    const torches = need(k, world, 'torch', UNDERGROUND_TORCHES, trial, path, depth + 1)
+    if (torches.cost < IMPOSSIBLE) {
+      Object.assign(ledger, trial)
+      children.push(torches.node)
+      cost += torches.cost
+    }
     if (!armedInWorld(world)) {
       const sword = need(k, world, 'sword', 1, ledger, path, depth + 1)
       children.push(sword.node)
