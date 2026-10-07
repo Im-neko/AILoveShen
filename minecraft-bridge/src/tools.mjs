@@ -30,6 +30,7 @@ import { usesOf, foodsInfo, loadNames } from './items.mjs'
 import { foodNow } from './foodnow.mjs'
 import { workCell, layoutAt, layoutStatus, waterAt, mineBodyReason } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
+import { holdsWater } from './breath.mjs'
 import { levelTarget, levelStatus, keptGround, findCount, fillNeeded, KEPT_REMEDY, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
 import { inspectCell, inspectSelf, readDiagnostics } from './inspect.mjs'
@@ -174,6 +175,17 @@ function entity (bot, args) {
 //         check(specs): 条件の判定（goals.mjs の checkConditions） }
 let names = null // 日本語名（find_foods。初めて使うとき読む）
 
+// 座標の下（8 マスまで）の最初の固い物の上が水か。読み込まれていなければ偽（分からない）
+function overWater (bot, pos) {
+  for (let dy = 0; dy <= 8; dy++) {
+    const b = bot.blockAt(pos.offset(0, -dy, 0))
+    if (!b) return false
+    if (holdsWater(b)) return true
+    if (b.boundingBox === 'block') return false
+  }
+  return false
+}
+
 export function createTools (deps) {
   const { bot, state, knowledge } = deps
 
@@ -241,6 +253,10 @@ export function createTools (deps) {
           refuse(`will not walk down to ${fmt(pos)}: it is ${Math.round(bot.entity.position.y - pos.y)} blocks below you, dark down there, and you carry ${have} torch${have === 1 ? '' : 'es'} ` +
             `(${need} needed: one is placed about every ${TORCH_SPACING} m on the way, so no monster can spawn behind you). Make torches first (a torch is 1 coal or charcoal + 1 stick)`)
         }
+      }
+      // 水の上の座標へは歩かない（海や川や湖の中を歩くと、息が続かず溺れる: 2026-10-07、遠い座標への goto が海を渡って溺死）
+      if (!riding(bot) && overWater(bot, pos)) {
+        refuse(`will not walk to ${fmt(pos)}: it is over water (sea, river or lake), and walking there goes underwater where you can drown. Pick a coordinate on land, or ride a boat`)
       }
       const range = Math.max(0, Math.min(8, Number(args.range ?? 1)))
       return { c: { verb: 'goto_pos', target: fmt(pos), pos, range } }

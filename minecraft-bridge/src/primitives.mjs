@@ -118,8 +118,12 @@ const CLIMB_BLOCK_MS = 5 * 60 * 1000 // 積んで出るのに失敗したあと�
 const DIG_OUT_ROUNDS = 3 // 壁を掘って出るのを、道を選び直して試す回数
 const HANDLESS_CACHE_MS = 2000 // 持ち物が変わる（道具を作る・壊れる）のを、この間隔で読み直す
 
+// 水に入るコスト（pathfinder の既定は 1 で、水の中がほぼ無料）: 遠い座標への goto が海を歩いて渡り、海底で息が尽きて溺れた
+// （2026-10-07）。水の中の 1 マスを、陸の 10 マスぶんの遠回りとして数える（浅い川を渡るのは今までどおり。ほかに道がなければ渡る）
+const LIQUID_STEP_COST = 10
 export function configureMovements (bot, state) {
   const m = new Movements(bot)
+  m.liquidCost = LIQUID_STEP_COST
   // ケルプ・海草は水の中の植物: pathfinder は当たり判定のない空気とみなし、海底を歩く道（水面から 3 ブロック下
   // から始まる）を作って、水面で動けなくなった（2026-10-01、docs/design/73_swimming.md）
   for (const name of ['kelp', 'kelp_plant', 'seagrass', 'tall_seagrass', 'bubble_column']) {

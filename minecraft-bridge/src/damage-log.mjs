@@ -2,6 +2,7 @@
 // 長い行動の間は 1 秒ごとの記録がなく、何で受けたか分からなかった）。原因は推定: 溶岩・火・溺れ・飢え・落下・
 // 状態異常（毒・衰弱）、燃焼、近くの敵対モブ、どれでもなければ不明。
 import { isHostile } from './observe.mjs'
+import { airLevel, headUnderwater, trackHead } from './breath.mjs'
 
 const FALL_VY = -0.8 // 直近の落下の速さ（ブロック/tick）。これ以上速く落ちていたら落下ダメージ
 const MOB_RANGE = 6
@@ -32,6 +33,11 @@ export function damageCause (bot, fell) {
   if (isBurning(bot)) return 'burning (on fire)'
   if (bot.food === 0) return 'starving (food 0)'
   if (typeof bot.oxygenLevel === 'number' && bot.oxygenLevel <= 2) return 'drowning'
+  // 頭が水の中にいた時間からの見積もりでも（bot.oxygenLevel が気泡の尺度でない: 設計書 69）
+  if (headUnderwater(bot)) {
+    trackHead(bot)
+    if (airLevel(bot) <= 2) return 'drowning (head under water, air estimated from the time under water)'
+  }
   if (fell) return `fall (${fell.toFixed(1)} blocks per second)`
   const near = Object.values(bot.entities ?? {})
     .filter((e) => e !== bot.entity && e.position && isHostile(bot, e))

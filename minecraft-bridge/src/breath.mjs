@@ -33,7 +33,24 @@ export function holdsWater (block) {
 export const passable = (block) => !!block && block.boundingBox === 'empty' && !HAZARD.test(block.name)
 const solid = (block) => !!block && block.boundingBox === 'block'
 
-export const airLevel = (bot) => bot.oxygenLevel ?? MAX_AIR
+// 頭が水の中にいる時間から息の残りを見積もる: bot.oxygenLevel は信用しない。実機では水の中で 294〜319 と、気泡（0〜20）では
+// ない尺度の値が出て、PLAN_AT（16）以下にならないまま、反射が一度も動かずに溺れ死んだ（2026-10-07、海を歩いて 10 秒で 20 → 0）。
+// 水の中の時間は、呼ばれた間隔が空いた（水から出ていた）ら数え直す。見積もりは息が尽きる前に出る側（水中呼吸や息の強化は無視）
+const underwaterSince = new WeakMap()
+const STALE_MS = 3000
+const BUBBLE_MS = TICKS_PER_BUBBLE * 50
+export function trackHead (bot, now = Date.now()) {
+  if (!headUnderwater(bot)) { underwaterSince.delete(bot); return }
+  const seen = underwaterSince.get(bot)
+  if (!seen || now - seen.seen > STALE_MS) underwaterSince.set(bot, { since: now, seen: now })
+  else seen.seen = now
+}
+export function airLevel (bot, now = Date.now()) {
+  const reported = typeof bot.oxygenLevel === 'number' && bot.oxygenLevel <= MAX_AIR ? bot.oxygenLevel : MAX_AIR
+  const seen = underwaterSince.get(bot)
+  if (!seen) return reported
+  return Math.max(0, Math.min(reported, MAX_AIR - Math.floor((now - seen.since) / BUBBLE_MS)))
+}
 
 export function headUnderwater (bot) {
   const p = bot.entity?.position
@@ -96,9 +113,10 @@ export const ticksToSwim = (cells) => Math.ceil((cells / SWIM_BLOCKS_PER_S) * 20
 
 // 反射のきっかけ: 頭が水の中で息が続かなくなりそうなら { path, air }（path は null か []）、そうでなければ null。
 // 探索は息が PLAN_AT 以下のときだけ（軽くはない）。呼ぶ側が間隔を空ける
-export function breathTrigger (bot) {
+export function breathTrigger (bot, now = Date.now()) {
   if (!bot.entity) return null
-  const air = airLevel(bot)
+  trackHead(bot, now)
+  const air = airLevel(bot, now)
   if (air > PLAN_AT || !headUnderwater(bot) || breathesWater(bot)) return null
   const path = findAir(bot)
   const left = air * TICKS_PER_BUBBLE

@@ -19,6 +19,22 @@ function fakeBot ({ feet = 'air', food = 20, mobs = [], oxygen = 20, effects = {
   })
 }
 
+test('水の中で頭が沈んで約 14 秒たったら、bot.oxygenLevel が気泡の尺度でなくても（300 前後）溺れと推す', () => {
+  const bot = fakeBot({ feet: 'water', oxygen: 307 })
+  bot.entity.isInWater = true
+  const real = Date.now
+  const base = real()
+  try {
+    Date.now = () => base
+    assert.match(damageCause(bot, 0), /^unknown \(in water/) // 入ったばかり
+    let last = ''
+    for (let k = 1; k <= 15; k++) { Date.now = () => base + k * 1000; last = damageCause(bot, 0) }
+    assert.match(last, /^drowning/)
+  } finally {
+    Date.now = real
+  }
+})
+
 test('原因は、溶岩・飢え・溺れ・落下・近くの敵対モブの順に推す。どれでもなければ不明', () => {
   assert.equal(damageCause(fakeBot({ feet: 'lava' }), 0), 'lava')
   assert.equal(damageCause(fakeBot({ food: 0 }), 0), 'starving (food 0)')

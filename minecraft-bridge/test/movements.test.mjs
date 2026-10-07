@@ -58,3 +58,10 @@ test('歩きながら掘る道具が要るブロック（石にツルハシ）�
     Date.now = realNow
   }
 })
+
+test('水の中は高い（pathfinder の既定は 1 で、海を歩いて渡って溺れた）。陸の遠回りを選ぶ', () => {
+  let m
+  const bot = { registry: minecraftData('1.21.4'), entities: {}, entity: { position: new Vec3(0, 70, 0) }, blockAt: () => null, inventory: { items: () => [] }, pathfinder: { setMovements: (set) => { m = set } } }
+  configureMovements(bot, { home: null, formerHomes: [], plan: null })
+  assert.ok(m.liquidCost >= 5)
+})

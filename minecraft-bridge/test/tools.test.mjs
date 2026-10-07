@@ -169,6 +169,16 @@ test('洞窟の鉱石は、道具の dig でも掘らない（家の床より 10
   assert.equal((await outcrop('dig', { x: 10, y: 69, z: 10 })).ok, true) // 浅い露頭
 })
 
+test('goto は水の上の座標へ歩かない（海を歩いて溺れた）。陸の座標と、ボートのときは通す', async () => {
+  const extra = { '8,71,8': 'water', '8,70,8': 'water', '8,69,8': 'water', '8,68,8': 'water' }
+  const { callTool, runs } = setup({ at: v(2.5, 70, 2.5), extra })
+  const r = await callTool('goto', { x: 8, y: 71, z: 8 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /over water.*drown/)
+  assert.equal(runs.length, 0)
+  assert.equal((await callTool('goto', { x: 6, y: 70, z: 6 })).ok, true) // 陸
+})
+
 test('育ち途中の作物は掘らない（種しか出ず、畑が減る）', async () => {
   const { callTool } = setup({ at: v(10.5, 70, 10.5), extra: { '11,70,10': 'wheat' } })
   assert.match((await callTool('dig', { x: 11, y: 70, z: 10 })).result, /wheat at 11,70,10 is not ripe yet \(age 0\/7\)/)

@@ -133,3 +133,24 @@ test('自覚: 頭が水の中なら欲求に息を出す。息が減れば浮上
   assert.equal(waterNeed(dive(20)), 'your head is underwater (air 20/20)')
   assert.equal(waterNeed(world(pond(2, 63), { at: new Vec3(0.5, 63, 0.5), air: 9 })), null)
 })
+
+test('息の見積もりは頭が水の中にいた時間から: oxygenLevel が気泡の尺度でなくても（水の中で 300 前後）、深い海で息が尽きる前に反射が出る', () => {
+  const b = pond(8, 70) // y 61〜70 が水: 水面まで 9 ブロックの深い水
+  const bot = world(b, { at: new Vec3(0.5, 61, 0.5), air: 307 })
+  assert.equal(breathTrigger(bot, 0), null) // 入ったばかり
+  assert.equal(breathTrigger(bot, 1000), null)
+  let late = null
+  for (let t = 2000; t <= 9000 && !late; t += 1000) late = breathTrigger(bot, t) // 反射は 1 秒おきに見る
+  assert.ok(late && late.air <= 12, JSON.stringify(late && late.air)) // 水面まで泳ぐのに足りなくなる前に出る
+})
+
+test('息の見積もり: 水から出ていた間（呼ばれない間）は数え直す。水の外では bot.oxygenLevel のまま', () => {
+  const bot = world(pond(8, 70), { at: new Vec3(0.5, 61, 0.5), air: 20 })
+  for (let t = 0; t <= 4000; t += 1000) breathTrigger(bot, t)
+  assert.equal(airLevel(bot, 4000) <= 16, true)
+  // 5 秒呼ばれなかった（水から出ていた）あと、また入った: 数え直し
+  breathTrigger(bot, 9000)
+  assert.equal(airLevel(bot, 9000), MAX_AIR)
+  const dry = world({}, { air: 20 })
+  assert.equal(airLevel(dry, 99999), 20)
+})
