@@ -23,11 +23,21 @@ function fakeBot ({ time = DAY, health = 20, food = 20, items = [], slots = [], 
   }
 }
 
-test('何も持たず元気なら、夜でも敵が近くにいても危なさは低い（失うものがない）', () => {
-  const r = assessRisk(fakeBot({ time: NIGHT, mobs: [['zombie', 3]] }), {})
+test('何も持たず元気なら、昼に敵が近くにいても危なさは低い（失うものがない）。夜は 1 体なら中くらい', () => {
+  const r = assessRisk(fakeBot({ time: DAY, mobs: [['zombie', 3]] }), {})
   assert.equal(r.stakes, 'nothing')
   assert.equal(r.level, 'low')
-  assert.match(describeRisk(r), /because night, hostiles: zombie 3m \(bare hands, almost nothing to lose\)/)
+  const night = assessRisk(fakeBot({ time: NIGHT, mobs: [['zombie', 3]] }), {})
+  assert.equal(night.level, 'medium')
+  assert.match(describeRisk(night), /because night, hostiles: zombie 3m \(bare hands, almost nothing to lose\)/)
+})
+
+test('夜に敵が近いと、何も持たなくても重みは下げない。体力や満腹度が減っていれば極めて高くなる（昼は軽いまま）', () => {
+  assert.equal(assessRisk(fakeBot({ time: NIGHT, mobs: [['zombie', 4], ['zombie', 5]] }), {}).level, 'high')
+  assert.equal(assessRisk(fakeBot({ time: NIGHT, health: 10, food: 5, mobs: [['zombie', 4], ['zombie', 5], ['skeleton', 8]] }), {}).level, 'extreme')
+  assert.equal(assessRisk(fakeBot({ time: NIGHT, health: 6, mobs: [['zombie', 3], ['zombie', 4], ['zombie', 5]] }), {}).level, 'extreme')
+  assert.equal(assessRisk(fakeBot({ time: NIGHT, health: 6 }), {}).level, 'medium') // 敵がいなければ下げたまま
+  assert.equal(assessRisk(fakeBot({ time: DAY, health: 6, mobs: [['zombie', 3], ['zombie', 4], ['zombie', 5]] }), {}).level, 'medium')
 })
 
 test('値打ちのある持ち物があると、同じ状況でも危なさが上がり、先にチェストへ預けるよう添える', () => {

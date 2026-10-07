@@ -129,7 +129,10 @@ export function assessRisk (bot, state) {
   const danger = Object.values(parts).reduce((s, n) => s + n, 0)
   const value = inventoryValue(bot)
   const stakes = value < NOTHING_BELOW ? 'nothing' : value < LITTLE_BELOW ? 'little' : 'valuable'
-  const score = Math.round(danger * WEIGHT[stakes] * 10) / 10
+  // 夕方・夜に敵が近いときは、失うものがなくても死ぬ損は消えない（持ち物を取りに外へ出直す、配信が止まる）ので
+  // 重みを下げない。昼の素手の殴り合いだけが、失うものなしで軽い（2026-10-07: 夜に素手で外へ出て 3 回死んだ）
+  const weight = stakes === 'nothing' && phase !== 'day' && mobs.length ? WEIGHT.valuable : WEIGHT[stakes]
+  const score = Math.round(danger * weight * 10) / 10
   const level = score >= LEVEL_AT.extreme ? 'extreme' : score >= LEVEL_AT.high ? 'high' : score >= LEVEL_AT.medium ? 'medium' : 'low'
 
   const factors = []
