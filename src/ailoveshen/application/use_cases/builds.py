@@ -168,7 +168,11 @@ class BuildDesigner:
         Raises:
             GoalRejectedError: 使える設計が出なかったとき（最後の理由を持つ）
         """
-        home_note, builds_note = await self._notes()
+        home_note, builds_note, has_home = await self._notes()
+        if not has_home:
+            # 名前付きの建物は家の隣に登録される（ブリッジが断る）: 家がないまま設計させても、1 回 40〜200 秒の設計が
+            # 3 回とも同じ理由で断られる（2026-10-07: 返事がその設計を待って、8 分遅れた）
+            raise GoalRejectedError("there is no home yet: build the house first")
         map_data, images = await self._map()
         error = ""
         for attempt in range(1, self._max_attempts + 1):
@@ -242,7 +246,7 @@ class BuildDesigner:
                     "use other materials"
                 )
 
-    async def _notes(self) -> tuple[str, str]:
+    async def _notes(self) -> tuple[str, str, bool]:
         obs = await self._bridge.observe()
         home = obs.state.get("home") or {}
         design = home.get("design") or {}
@@ -260,7 +264,7 @@ class BuildDesigner:
             f"{b.get('purpose', '')}"
             for b in builds
         )
-        return home_note, builds_note
+        return home_note, builds_note, bool(home)
 
 
 def column_label(index: int) -> str:

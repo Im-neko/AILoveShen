@@ -139,6 +139,16 @@ def _designer(outputs, check=None, reject=()):
 
 
 @pytest.mark.asyncio
+async def test_without_a_home_the_designer_refuses_at_once_without_asking_the_model():
+    designer, generator, prompts, bridge = _designer([ANNEX])
+    bridge.observe.return_value = GameObservation(state={"home": None}, candidates=(), health=20, food=20)
+    with pytest.raises(GoalRejectedError, match="there is no home yet: build the house first"):
+        await designer.design("house", "自分の家を作る")
+    generator.generate_json.assert_not_awaited()  # 1 回 40〜200 秒の設計を 3 回、無駄にしない
+    bridge.set_build.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_the_designer_retries_with_the_reason_until_the_bridge_accepts():
     bad = {
         **ANNEX,
