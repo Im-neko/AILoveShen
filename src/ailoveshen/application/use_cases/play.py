@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from collections import deque
@@ -725,6 +726,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         if self._screen is not None and last is not None and not last.ok:
             shot = await self._screen.after_failure()
             images = [shot] if shot else []
+        asked: set[str] = set()  # このステップで答えた調べもの（同じ問いを繰り返させない）
+        queries_closed = False
         for attempt in range(MAX_QUERIES_PER_STEP + 1):
             state = await self._bridge.state()
             cause = same_cause_run(self._recent_tools, lambda name: is_query(name) or name in SEARCH_TOOLS or name == LOOK_SCREEN)
@@ -756,7 +759,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             specs = specs_by_experiment[experiment]
             offered = (
                 specs
-                if attempt < MAX_QUERIES_PER_STEP
+                if attempt < MAX_QUERIES_PER_STEP and not queries_closed
                 else [t for t in specs if t.name in ACTION_TOOLS or is_skill_tool(t.name)]
             )
             if cause is not None and cause.withheld:  # 数字を変えて繰り返すのをやめさせる: 別の道具だけを出す
@@ -789,6 +792,23 @@ class AdvancePlayUseCase(IAdvancePlay):
                 )
                 self._recent_tools.append(outcome)
                 break
+            if is_query(call.name) or call.name in SEARCH_TOOLS:
+                # 同じ調べものを繰り返すと、答えは変わらないまま 1 回 5 秒かかる（2026-10-07 01:25Z: 食べ物がなくて
+                # find_foods を 5 回続け、動かなかった）。2 回目で断り、あとは行動の道具だけを出す
+                asked_key = json.dumps([call.name, call.args], sort_keys=True, default=str)
+                if asked_key in asked:
+                    self._recent_tools.append(
+                        ToolOutcome(
+                            call=call,
+                            ok=False,
+                            result="invalid call: this same lookup was just answered above and the answer has not changed; call an action tool",
+                            seconds=0.0,
+                            refused=True,
+                        )
+                    )
+                    queries_closed = True
+                    continue
+                asked.add(asked_key)
             if call.name == LOOK_SCREEN:
                 shot = await self._screen.look() if self._screen is not None else None
                 images = [shot] if shot else []

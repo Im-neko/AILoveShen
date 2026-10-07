@@ -331,7 +331,7 @@ class TestToolStep:
     @pytest.mark.asyncio
     async def test_after_too_many_lookups_only_actions_are_offered(self, use_case, watcher):
         self.text_generator.choose_tool.side_effect = [
-            *[ToolChoice("recipe_of", {"item": "stick"})] * MAX_QUERIES_PER_STEP,
+            *[ToolChoice("recipe_of", {"item": f"item{i}"}) for i in range(MAX_QUERIES_PER_STEP)],
             ToolChoice("wait", {"intent": "待つ"}),
         ]
         await use_case.execute(_session(HAVE_PLANKS))
@@ -341,6 +341,38 @@ class TestToolStep:
         ]
         assert "recipe_of" in offered[0] and "recipe_of" not in offered[MAX_QUERIES_PER_STEP]
         assert watcher.run.await_args.args[0].name == "wait"
+
+    @pytest.mark.asyncio
+    async def test_the_same_lookup_twice_is_refused_and_only_actions_are_offered(
+        self, use_case, bridge, watcher
+    ):
+        """食べ物がなくて find_foods を 5 回続け、動かなかった（2026-10-07 01:25Z）。答えは変わらない。"""
+        self.text_generator.choose_tool.side_effect = [
+            ToolChoice("recipe_of", {"item": "stick"}),
+            ToolChoice("recipe_of", {"item": "stick"}),
+            ToolChoice("wait", {"intent": "待つ"}),
+        ]
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        assert bridge.run_tool.await_count == 1  # 2 回目は送らない
+        offered = [
+            {t.name for t in c.args[1]} for c in self.text_generator.choose_tool.call_args_list
+        ]
+        assert "recipe_of" in offered[1] and "recipe_of" not in offered[2]
+        recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
+        assert recent[1].refused and "answer has not changed" in recent[1].result
+        assert watcher.run.await_args.args[0].name == "wait"
+
+    @pytest.mark.asyncio
+    async def test_a_lookup_with_other_arguments_is_still_answered(self, use_case, bridge, watcher):
+        self.text_generator.choose_tool.side_effect = [
+            ToolChoice("recipe_of", {"item": "stick"}),
+            ToolChoice("recipe_of", {"item": "planks"}),
+            ToolChoice("wait", {"intent": "待つ"}),
+        ]
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        assert bridge.run_tool.await_count == 2
 
     @pytest.mark.asyncio
     async def test_a_search_is_answered_in_python_from_the_bridges_list(
