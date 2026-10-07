@@ -15,7 +15,7 @@ import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome, inHomeRoom } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { jumpAndPlace, shelteredFrom, enterHome, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
+import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, doorRouteOk, exitSpots, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -522,6 +522,35 @@ export async function disembark (bot, state, signal, why = '') {
   const boat = bot.vehicle
   await leaveBoat(bot, why)
   if (boat) await pickUpBoat(bot, state, boat, signal)
+}
+
+// 家から出る。ドアの道が使えれば leaveHome。使えなければ（爆発で床とドアの前がなくなった、など）、壁を掘って出る。
+// 出口の外は EXIT_DROP 段まで低くてよい。出たら壁を閉じる（閉じられなければ、壁の穴を直す手が残る）
+export function planLeave (bot, home) {
+  if (doorRouteOk(bot, home)) return { route: 'door' }
+  const spot = exitSpots(bot, home, [], { drop: EXIT_DROP })[0] ?? null
+  return { route: 'wall', spot }
+}
+
+export async function leaveHouse (bot, state, home, signal, opts = {}) {
+  if (!isInside(bot, home)) return
+  const plan = planLeave(bot, home)
+  if (plan.route === 'door') return await leaveHome(bot, home, signal, opts)
+  const { sheltering, why } = shelterOf(bot, home)
+  if (sheltering && !opts.confront) throw new Error(`staying inside: ${why}`)
+  if (!plan.spot) throw new Error(`the way out through the door is gone (no floor in front of it, or no ground within ${EXIT_DROP} blocks outside) and no wall can be dug through to a place that is at most ${EXIT_DROP} blocks down`)
+  console.log(`[home] ドアの外に出る道がない: ${plan.spot.side} の壁を掘って出る（外は ${plan.spot.step.y} の高さ）`)
+  await digExit(bot, home, plan.spot, signal)
+  // 掘ったブロックは壁を閉じるのに使う: 出る前に拾う（出てから拾うと、取りに中へ戻って閉じ込められる）
+  await collectNearbyDrops(bot, state, signal)
+  signal.throwIfAborted()
+  await stepOut(bot, plan.spot, signal)
+  try {
+    await repairWall(bot, home, signal)
+  } catch (e) {
+    if (signal.aborted) throw e
+    console.log(`[home] 壁を閉じられない（あとで直す）: ${e.message}`)
+  }
 }
 
 // ボットに届く脅威: 閉じた家の中にいる間は外からのものはない

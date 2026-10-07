@@ -7,11 +7,11 @@
 // 待つので、行動が重なることはない。実行中は state.current を持ち（反射の割り込みと POST /abort が
 // 使う）、進み具合（state.mjs の共通の状態）を記録する。
 import { threats, round, dayPhase, isDark, isUnderground, inventoryCounts, pushHistory } from './observe.mjs'
-import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark } from './primitives.mjs'
+import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark, leaveHouse } from './primitives.mjs'
 import { riding } from './boat.mjs'
 import { isSwimming } from './swim.mjs'
 import { needsOutside } from './candidates.mjs'
-import { leaveHome, houseAround } from './home.mjs'
+import { houseAround } from './home.mjs'
 import { startTracking } from './progress.mjs'
 import { brokeSince } from './wear.mjs'
 import { carriesFood } from './healing.mjs'
@@ -113,7 +113,7 @@ export function createRunner (bot, state, deps = {}) {
       const house = houseAround(bot, state)
       if (house && needsOutside(c, house)) {
         bot.actionPhase = 'leaving the house'
-        await leaveHome(bot, house, controller.signal, { confront: !!c.confront })
+        await leaveHouse(bot, state, house, controller.signal, { confront: !!c.confront })
         bot.actionPhase = ''
       }
       controller.signal.throwIfAborted()

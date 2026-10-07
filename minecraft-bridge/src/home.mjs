@@ -608,9 +608,26 @@ const isWallBlock = (block) => !!block && (isPlanks(block.name) || isLog(block.n
 const standable = (bot, p) => bot.blockAt(p)?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' &&
   bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
 
+// p に立てるか（足と頭が空いている）、足元の固いブロックまで drop 段以内か（0 なら足元がすぐ固い）
+function standableWithin (bot, p, drop) {
+  if (bot.blockAt(p)?.boundingBox !== 'empty' || bot.blockAt(p.offset(0, 1, 0))?.boundingBox !== 'empty') return false
+  for (let k = 1; k <= 1 + drop; k++) if (bot.blockAt(p.offset(0, -k, 0))?.boundingBox === 'block') return true
+  return false
+}
+
+// ドアから外へ出る道が使えるか: 内側のドアの前に立て、ドアのセルと外のセルの下に（落ちても）3 段以内に地面がある。
+// クリーパーがドアの前で爆発して床・ドア・壁が吹き飛び、外が 7 ブロック下のクレーターになった
+// （2026-10-07 14:14: ボットは家の中に閉じ込められ、「No path to the goal!」を 1 時間返し続けた。設計書 112）
+export const EXIT_DROP = 3 // 出口の外が低くてもよい段数（落ちても 3 ブロックまでのダメージは軽い）
+export function doorRouteOk (bot, home) {
+  const solidBelow = (p) => bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
+  const ground = (p) => [1, 2, 3].some((k) => bot.blockAt(p.offset(0, -k, 0))?.boundingBox === 'block')
+  return solidBelow(home.inside) && ground(home.door) && ground(home.outside)
+}
+
 // 壁を掘って出口にできる場所。各辺で一番よいセル: 壁のブロックが2つともあり、内側と外側に立つ
-// 場所があり、ドアではない。与えられた敵対モブから遠い順。
-export function exitSpots (bot, home, hostiles) {
+// 場所があり、ドアではない。与えられた敵対モブから遠い順。drop: 外の足元がこの段数まで低くてもよい
+export function exitSpots (bot, home, hostiles, { drop = 0 } = {}) {
   const y = home.min.y
   const span = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
   const sides = [
@@ -627,7 +644,7 @@ export function exitSpots (bot, home, hostiles) {
       if (x === home.door.x && z === home.door.z) continue
       if (!isWallBlock(bot.blockAt(wall)) || !isWallBlock(bot.blockAt(wall.offset(0, 1, 0)))) continue
       const step = wall.offset(dx, 0, dz)
-      if (!standable(bot, wall.offset(-dx, 0, -dz)) || !standable(bot, step)) continue
+      if (!standable(bot, wall.offset(-dx, 0, -dz)) || !standableWithin(bot, step, drop)) continue
       const center = step.offset(0.5, 0, 0.5)
       const distance = Math.min(Infinity, ...hostiles.map((h) => h.position.distanceTo(center)))
       if (!best || distance > best.distance) best = { side, wall, step, distance }

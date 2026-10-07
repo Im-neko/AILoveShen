@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
-import { exitSpots } from '../src/home.mjs'
+import { exitSpots, doorRouteOk, EXIT_DROP } from '../src/home.mjs'
+import { planLeave } from '../src/primitives.mjs'
 import minecraftData from 'minecraft-data'
 import { ground } from '../src/candidates.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
@@ -146,4 +147,54 @@ test('夜の家の中にベッドがあれば、待たずに寝る候補を出�
 test('外でしたいことがなければ、何も控えない', () => {
   const { withheld } = run({ status: { leaves: [] } })
   assert.equal(withheld, null)
+})
+
+// ドアの前でクリーパーが爆発して、床とドアの前が吹き飛んだ家（2026-10-07 14:14）: 外が lower ブロック低い
+function blasted ({ lower = 0, floorGone = true, outsideGone = true, doorStays = false } = {}) {
+  const { home, blockAt: base } = world()
+  const blockAt = (p) => {
+    // 家の外（壁の外）の地面を lower 段下げる（y 70 - lower 未満だけ残す）
+    const outside = p.x < 0 || p.x > 4 || p.z < 0 || p.z > 4
+    if (lower && outside && p.y >= 70 - lower && p.y < 70) return { name: 'air', boundingBox: 'empty' }
+    // ドアの前の床（室内のドアの前）と、ドアの下・外の地面がない
+    if (floorGone && p.x === 2 && p.z === 3 && p.y < 70) return { name: 'air', boundingBox: 'empty' }
+    if (outsideGone && p.x === 2 && (p.z === 5 || (p.z === 4 && !doorStays)) && p.y < 70) return { name: 'air', boundingBox: 'empty' }
+    return base(p)
+  }
+  return { home, bot: { blockAt } }
+}
+
+test('ドアの道: 普通の家は使える。ドアの前の床がない家と、ドアの外に地面がない家は使えない', () => {
+  const { home, blockAt } = world()
+  assert.equal(doorRouteOk({ blockAt }, home), true)
+  const noFloor = blasted({ floorGone: true, outsideGone: false })
+  assert.equal(doorRouteOk(noFloor.bot, noFloor.home), false)
+  const noOutside = blasted({ floorGone: false, outsideGone: true })
+  assert.equal(doorRouteOk(noOutside.bot, noOutside.home), false)
+  // ドアの下には地面があるが、ドアの外のセルの下にない（外へ踏み出すと落ちる）
+  const noOutsideOnly = blasted({ floorGone: false, outsideGone: true, doorStays: true })
+  assert.equal(doorRouteOk(noOutsideOnly.bot, noOutsideOnly.home), false)
+})
+
+test('ドアの道が使えなければ、壁を掘って出る。外の足元が EXIT_DROP 段までなら出口になる', () => {
+  const { home, bot } = blasted({ lower: 2 })
+  const plan = planLeave(bot, home)
+  assert.equal(plan.route, 'wall')
+  assert.ok(plan.spot, 'a wall exit spot')
+  assert.ok(['west', 'east', 'north'].includes(plan.spot.side), plan.spot.side)
+  // いまの方法（外の足元がすぐ固いときだけ）では、出口がない
+  assert.deepEqual(exitSpots(bot, home, []), [])
+  assert.ok(exitSpots(bot, home, [], { drop: EXIT_DROP }).length >= 1)
+})
+
+test('外が EXIT_DROP 段より低ければ、壁を掘っても出られない（出口なし）', () => {
+  const { home, bot } = blasted({ lower: EXIT_DROP + 3 })
+  const plan = planLeave(bot, home)
+  assert.equal(plan.route, 'wall')
+  assert.equal(plan.spot, null)
+})
+
+test('ドアの道が使えるなら、壁は掘らない', () => {
+  const { home, blockAt } = world()
+  assert.deepEqual(planLeave({ blockAt }, home), { route: 'door' })
 })
