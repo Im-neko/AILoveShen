@@ -400,7 +400,7 @@
     失敗が続くと（2 回続けて失敗、同じ理由が 3 回、状況が動かない）、道具に inspect と diagnostics が加わり、use_item が拡張される
     0. 家に入れない・歩けないときは、まず inspect（座標なし）で自分を見る: closed_space（歩いて出られない閉じた所か）と home_door
        （ドアまで何ブロック離れ、何ブロック下か）。ドアから遠ければ、ドアを調べても意味がない（ドアの前に立っていない）
-    1. diagnostics {kind: door|place|stuck} でブリッジが残した失敗の記録を読む。inspect {x,y,z} でそのマス（ブロックの状態 props、
+    1. diagnostics {kind: door|place|boat|stuck} でブリッジが残した失敗の記録を読む。inspect {x,y,z} でそのマス（ブロックの状態 props、
        6 方向の隣、届くか、間にある物、断られる理由）を、inspect（座標なし）で自分（スニーク・手の物・視線の先）を見る
     2. 仮説を 1 つ立て、変えるものを 1 つだけ変えて試す: use_item {x,y,z, face: up|down|north|south|east|west, sneak: true|false}
        item を省くと素手で押す（ドア・レバー・ボタン）。家のドアは座標の代わりに target: home_door

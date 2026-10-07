@@ -11,6 +11,9 @@
 // - 降りたとき（set_passengers から自分が外れる）に bot.vehicle を消さない。watchVehicle が消す
 // - 乗っている間は自分の位置（bot.entity.position）を動かさない。ボートと一緒に動かす（距離の判定や
 //   見え方がずれないように）
+import { appendFileSync, mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import vec3Pkg from 'vec3'
 import { round } from './observe.mjs'
 
@@ -38,6 +41,12 @@ const isWater = (name) => /^(water|bubble_column|kelp|kelp_plant|seagrass|tall_s
 const CLEAR = /^(air|cave_air|lily_pad)$/ // 水面を探すときに飛ばすもの（睡蓮は当たり判定があるので boxFree が止まる）
 const SOFT = /^(short_grass|tall_grass|fern|large_fern|dead_bush|snow|vine|.*_carpet|.*_flower|dandelion|poppy)$/
 
+// ボートを置けない・乗れない（呼び出し側が泳ぎに切り替える。中断（signal）とは別）
+export class BoatUnusable extends Error {}
+
+const boatLog = (line) => console.log(`[boat] ${line}`)
+const at = (p) => `${round(p.x)},${round(p.y)},${round(p.z)}`
+
 export const boatItem = (bot) => (bot.inventory?.items?.() ?? []).find((i) => BOAT.test(i.name)) ?? null
 export const riding = (bot) => !!bot.vehicle && BOAT.test(bot.vehicle.name ?? '')
 
@@ -46,6 +55,7 @@ export function watchVehicle (bot) {
   bot._client.on('set_passengers', ({ entityId, passengers }) => {
     const v = bot.vehicle
     if (!v || v.id !== entityId || passengers.includes(bot.entity?.id)) return
+    boatLog(`サーバーがボートから外した（自分から降りたのではない）: ボート ${v.id} ${at(v.position)}、自分 ${at(bot.entity.position)}、ボートはまだある=${!!bot.entities?.[v.id]}`)
     bot.vehicle = null
     bot.emit('dismount', v)
   })
@@ -131,17 +141,51 @@ const rotate = (ux, uz, deg) => {
   return [ux * Math.cos(a) - uz * Math.sin(a), ux * Math.sin(a) + uz * Math.cos(a)]
 }
 
+// ボートを置く試みの記録（置けなかったとき: 向き、目の高さ、まわりのボート。原因を推測でなく見て決めるため。
+// docs/design/110_boat_unusable.md）。置く動きは何も変えない
+const REFUSALS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'logs', 'boat-refusals.jsonl')
+const NEAR_BOAT_M = 10
+export function boatRefusal (bot, water, file = process.env.BOAT_REFUSALS_FILE ?? REFUSALS_FILE) {
+  const me = bot.entity.position
+  const eye = me.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
+  const target = water.offset(0.5, 0.9, 0.5)
+  const snap = {
+    at: new Date().toISOString(),
+    water: { x: water.x, y: water.y, z: water.z },
+    water_block: bot.blockAt(water)?.name ?? null,
+    above_block: bot.blockAt(water.offset(0, 1, 0))?.name ?? null,
+    bot: { x: round(me.x), y: round(me.y), z: round(me.z), on_ground: !!bot.entity.onGround, in_water: !!bot.entity.isInWater, yaw: round(bot.entity.yaw ?? 0), pitch: round(bot.entity.pitch ?? 0) },
+    horizontal_to_water_m: round(Math.hypot(target.x - me.x, target.z - me.z)),
+    eye_to_target_m: round(eye.distanceTo(target)),
+    held: bot.heldItem?.name ?? null,
+    boats_near: Object.values(bot.entities ?? {}).filter((e) => BOAT.test(e.name ?? '') && e.position.distanceTo(me) <= NEAR_BOAT_M).map((e) => ({ id: e.id, name: e.name, at: at(e.position) })),
+    boats_in_inventory: (bot.inventory?.items?.() ?? []).filter((i) => BOAT.test(i.name)).length
+  }
+  boatLog(`置けなかった: ${JSON.stringify(snap)}`)
+  try {
+    mkdirSync(path.dirname(file), { recursive: true })
+    appendFileSync(file, `${JSON.stringify(snap)}\n`)
+  } catch (e) {
+    boatLog(`記録できなかった: ${e.message}`)
+  }
+}
+
 // 水のセル water に向けてボートを置き、出てきたボートのエンティティを返す
-export async function placeBoat (bot, water, signal) {
+export async function placeBoat (bot, water, signal, waitMs = 2000) {
   const item = boatItem(bot)
   if (!item) throw new Error('no boat')
   await bot.equip(item, 'hand')
   signal.throwIfAborted()
-  const spawned = waitFor(bot, 'entitySpawn', (e) => BOAT.test(e.name ?? '') && e.position.distanceTo(water) < PLACE_REACH + 2, 2000)
+  // 出てきたボートは、置く水のセルの近くとは限らない（サーバーが当たった所に置く）: 自分の近くに出たものを受け取る
+  const spawned = waitFor(bot, 'entitySpawn', (e) => BOAT.test(e.name ?? '') && e.position.distanceTo(bot.entity.position) < NEAR_BOAT_M, waitMs)
   await bot.lookAt(water.offset(0.5, 0.9, 0.5), true)
   bot.activateItem()
   const boat = await spawned
-  if (!boat) throw new Error(`the boat was not placed on the water at ${water.x},${water.y},${water.z}`)
+  if (!boat) {
+    boatRefusal(bot, water)
+    throw new BoatUnusable(`the boat was not placed on the water at ${water.x},${water.y},${water.z}`)
+  }
+  boatLog(`置いた: ボート ${boat.id} ${at(boat.position)}（水のセル ${water.x},${water.y},${water.z}、自分 ${at(bot.entity.position)}）`)
   return boat
 }
 
@@ -150,7 +194,8 @@ export async function mountBoat (bot, boat) {
   if (bot.vehicle === boat) return
   const mounted = waitFor(bot, 'mount', () => bot.vehicle?.id === boat.id, 2000)
   bot.mount(boat)
-  if (!(await mounted)) throw new Error('could not get into the boat')
+  if (!(await mounted)) throw new BoatUnusable('could not get into the boat')
+  boatLog(`乗った: ボート ${boat.id} ${at(boat.position)}`)
 }
 
 // target に向かって水の上を進む。止まるのは: target の 3m 以内、向こう岸に着いた、進めない、signal、
@@ -220,12 +265,39 @@ export async function drive (bot, boat, target, signal, { maxMs = Infinity, log 
     bot._client.off('vehicle_move', onCorrect)
   }
   if (corrected) log(`[boat] サーバーが位置を ${corrected} 回直した`)
-  return { moved: round(start.xzDistanceTo(pos)), why, landed }
+  // 止まった所の真下がまだ水か（目標が水の上なら、「着いた」でも岸ではない）
+  const onWater = isWater(bot.blockAt(new Vec3(Math.floor(pos.x), waterY, Math.floor(pos.z)))?.name)
+  const moved = round(start.xzDistanceTo(pos))
+  log(`[boat] 漕ぎ終えた: ${why}（${moved}m、岸に着いた=${landed}、水の上=${onWater}、位置 ${at(pos)}）`)
+  return { moved, why, landed, onWater }
+}
+
+// 目標が水の上なら（沖への探索）、着いたのは岸ではない: 岸に着くまで同じ向きに漕ぎ続ける（EXTEND_M ずつ、
+// maxExtensions 回まで）。ここで降りると、沖で取り残される（2026-10-07 12:49: 外洋の目標で降りて、水の中からは
+// ボートを置けなかった）。返すのは drive の結果に extended（さらに漕いだ回数）と openWater（まだ沖か）を足したもの
+export const EXTEND_M = 48
+export const MAX_EXTENSIONS = 6
+export async function driveToShore (bot, boat, target, signal, { log = () => {}, maxExtensions = MAX_EXTENSIONS } = {}) {
+  const from = boat.position.clone()
+  let r = await drive(bot, boat, target, signal, { log })
+  const way = Math.hypot(target.x - from.x, target.z - from.z)
+  const open = () => r.landed && r.why === 'arrived' && r.onWater
+  let extended = 0
+  while (open() && way > 0 && extended < maxExtensions) {
+    extended++
+    const k = (way + extended * EXTEND_M) / way
+    const onward = { x: from.x + (target.x - from.x) * k, z: from.z + (target.z - from.z) * k }
+    log(`[boat] 目標は水の上: 岸を探してさらに ${EXTEND_M}m 漕ぐ（${extended}/${maxExtensions}）`)
+    const next = await drive(bot, boat, onward, signal, { log })
+    r = { ...next, moved: round(r.moved + next.moved) }
+  }
+  return { ...r, extended, openWater: open() }
 }
 
 // ボートから降りる（スニーク）。サーバーが位置を送り直すまで待つ
-export async function leaveBoat (bot) {
+export async function leaveBoat (bot, why = '') {
   if (!bot.vehicle) return
+  boatLog(`降りる: ${why || '理由なし'}（自分 ${at(bot.entity.position)}、足元 ${bot.blockAt(bot.entity.position.floored().offset(0, -1, 0))?.name ?? '?'}）`)
   const moved = waitFor(bot, 'forcedMove', () => true, 2000)
   bot._client.write('entity_action', { entityId: bot.entity.id, actionId: 0, jumpBoost: 0 })
   await moved
@@ -235,6 +307,21 @@ export async function leaveBoat (bot) {
     bot.vehicle = null
     bot.emit('dismount', v)
   }
+}
+
+// いま水の上にいるとき、いちばん近い岸（水でない地面）。読み込まれている所（lookM m）まで、向きを 16 に分けて、
+// 近い輪から探す。なければ null
+export function nearestShore (bot, lookM = CROSSING_LOOK_M, me = bot.entity.position) {
+  for (let r = 6; r <= lookM; r += 3) {
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * 2 * Math.PI
+      const x = me.x + Math.cos(a) * r
+      const z = me.z + Math.sin(a) * r
+      const s = surfaceAt(bot, x, z, me.y)
+      if (s && !s.water) return new Vec3(Math.floor(x) + 0.5, s.y + 1, Math.floor(z) + 0.5)
+    }
+  }
+  return null
 }
 
 // ボートを叩いて壊す（アイテムに戻る）。壊れたら真

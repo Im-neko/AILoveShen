@@ -107,7 +107,7 @@ export function createRunner (bot, state, deps = {}) {
       if (riding(bot) && !TRAVELS.has(c.verb)) {
         // ボートに乗ったまま: 水の上を進む行動でなければ、先に降りてボートを拾う（設計書 37）
         bot.actionPhase = 'getting off the boat'
-        await disembark(bot, state, controller.signal)
+        await disembark(bot, state, controller.signal, `次の行動 ${c.verb} は水の上を進む行動ではない`)
         bot.actionPhase = ''
       }
       const house = houseAround(bot, state)

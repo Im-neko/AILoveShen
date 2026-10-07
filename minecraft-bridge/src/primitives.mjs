@@ -43,7 +43,7 @@ import { holdsWater } from './breath.mjs'
 import { reachLand } from './land.mjs'
 import { digOutRoute } from './dig-out.mjs'
 import { campSite, campAt, campSources, campCount, buildCamp, campExit, HAND_BLOCKS } from './camp.mjs'
-import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, BOAT } from './boat.mjs'
+import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, nearestShore, driveToShore, EXTEND_M, BoatUnusable, CROSSING_LOOK_M, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
 const { Vec3 } = vec3Pkg
@@ -355,6 +355,8 @@ async function legToward (bot, state, target, what, signal) {
   for (;;) {
     signal.throwIfAborted()
     const crossed = await crossWater(bot, state, target, what, signal)
+    // 渡った結果は、行動の結果には出ない（呼び出し側が捨てる）ので、ここで残す
+    if (crossed) console.log(`[boat] ${what} への途中で水を渡った: ${crossed}`)
     // 岸に着かずにボートの上で止まった（進めない、先が読み込まれていない）: 乗ったままでは歩けない
     // （pathfinder は乗っている間に動かない）ので、理由を返して次の手に任せる
     if (riding(bot)) throw new Error(crossed ?? `still in the boat on the way to ${what}`)
@@ -373,7 +375,8 @@ async function legToward (bot, state, target, what, signal) {
 // 材料があればボートを作ることを勧める）
 export const WATER_AHEAD_MS = 10 * 60 * 1000
 const BOARD_WITHIN_M = 24 // 水がこれより先から始まるなら、まず歩く（次の区間でまた見る）
-async function crossWater (bot, state, target, what, signal, minWater = undefined) {
+const MIN_BOARD_M = 1.8 // ボートを置くセルの中心から自分までの、水平の最小の距離
+export async function crossWater (bot, state, target, what, signal, minWater = undefined) {
   if (riding(bot)) return await rideBoat(bot, state, target, what, signal)
   const crossing = waterCrossing(bot, target, undefined, undefined, minWater)
   if (!crossing) return null
@@ -384,7 +387,29 @@ async function crossWater (bot, state, target, what, signal, minWater = undefine
     return await swimAcross(bot, target, what, signal, crossing)
   }
   if (crossing.from > BOARD_WITHIN_M) return null
-  return await rideBoat(bot, state, target, what, signal, crossing)
+  try {
+    return await rideBoat(bot, state, target, what, signal, crossing)
+  } catch (e) {
+    if (!(e instanceof BoatUnusable)) throw e
+    return await swimInstead(bot, target, what, signal, crossing, e)
+  }
+}
+
+// ボートを置けない・乗れないとき（水の中で毎回置けず、沖で動けなくなった: 2026-10-07）、泳いで渡る。
+// すでに水の中で、向こう岸が見えないなら（沖へ向かう途中）、目標へ泳がず、いちばん近い岸へ戻る
+async function swimInstead (bot, target, what, signal, crossing, why) {
+  console.log(`[boat] ボートが使えない（${why.message}）: 泳ぐ`)
+  const note = `the boat could not be used (${why.message}); `
+  if (crossing.landAfter || !isSwimming(bot)) return note + await swimAcross(bot, target, what, signal, crossing)
+  const shore = nearestShore(bot)
+  if (!shore) throw new Error(`${why.message}; you are in open water and no shore is loaded within ${CROSSING_LOOK_M}m to swim to`)
+  bot.actionPhase = `swimming back to the nearest shore (${round(shore.x)},${round(shore.z)})`
+  const r = await swimToward(bot, shore, signal)
+  bot.actionPhase = ''
+  signal.throwIfAborted()
+  const p = bot.entity.position
+  if (!r.landed && r.why !== 'arrived') throw new Error(`${note}swam ${r.moved}m toward the shore at ${round(shore.x)},${round(shore.z)} but ${r.why}: you are still in the water at ${round(p.x)},${round(p.y)},${round(p.z)}`)
+  return `${note}no shore was in sight toward ${what}, so swam ${r.moved}m back to the nearest shore at ${round(shore.x)},${round(shore.z)} (${r.why})`
 }
 
 // 水際まで歩き、向こう岸まで泳いで上がる。岸に着けなければ、水の中にいることを言って失敗にする
@@ -413,7 +438,7 @@ async function rideBoat (bot, state, target, what, signal, crossing = null) {
       bot.actionPhase = ''
       water = waterToBoard(bot, target)
     }
-    if (!water) throw new Error(`no open water within reach to put the boat on (toward ${what})`)
+    if (!water) throw new BoatUnusable(`no open water within reach to put the boat on (toward ${what})`)
     boat = await placeBoat(bot, water, signal)
     try {
       await mountBoat(bot, boat)
@@ -423,11 +448,12 @@ async function rideBoat (bot, state, target, what, signal, crossing = null) {
     }
   }
   bot.actionPhase = `riding a boat toward ${what}`
-  const r = await drive(bot, boat, target, signal, { log: (line) => console.log(line) })
+  const r = await driveToShore(bot, boat, target, signal, { log: (line) => console.log(line) })
   bot.actionPhase = ''
   signal.throwIfAborted()
   if (!r.landed) return `rode a boat ${r.moved}m toward ${what}; still on the water (${r.why})`
-  await leaveBoat(bot)
+  if (r.openWater) return `rode a boat ${r.moved}m toward ${what}; still on open water, no shore within ${r.extended * EXTEND_M}m past the target (stay in the boat)`
+  await leaveBoat(bot, `向こう岸に着いた（${r.why}）`)
   const kept = await pickUpBoat(bot, state, boat, signal)
   // 降りた所がまだ水の中なら、岸まで泳ぐ（降りたら陸、とは限らない: 2026-10-01）
   let swim = null
@@ -469,6 +495,9 @@ function waterToBoard (bot, target) {
     const s = surfaceAt(bot, x, z, me.y)
     if (!s?.water) continue
     const cell = new Vec3(Math.floor(x), s.y, Math.floor(z))
+    // 自分に近すぎる所には置かない: 水の中では、自分のすぐ隣のセル（中心まで 0.9m）に毎回置けなかった（2026-10-07。
+    // ボートの箱は半幅 0.69 で、自分の半幅 0.3 と合わせて 1m 離れていないと重なる、という推測。boat-refusals.jsonl で確かめる）
+    if (Math.hypot(cell.x + 0.5 - me.x, cell.z + 0.5 - me.z) < MIN_BOARD_M) continue
     if (open(cell) && cell.offset(0.5, 1, 0.5).distanceTo(bot.entity.position.offset(0, 1.6, 0)) <= REACH) return cell
   }
   return null
@@ -484,9 +513,9 @@ async function pickUpBoat (bot, state, boat, signal) {
 }
 
 // 行動の前に、乗っているボートから降りる（水の上を移動する行動は crossWater が続きを漕ぐ。runner が使う）
-export async function disembark (bot, state, signal) {
+export async function disembark (bot, state, signal, why = '') {
   const boat = bot.vehicle
-  await leaveBoat(bot)
+  await leaveBoat(bot, why)
   if (boat) await pickUpBoat(bot, state, boat, signal)
 }
 
@@ -2295,9 +2324,12 @@ export const PRIMITIVES = {
   async explore (bot, state, c, signal) {
     const start = bot.entity.position.clone()
     const go = c.go ?? EXPLORE_DISTANCE
-    const target = start.offset(c.dx * go, 0, c.dz * go)
+    let target = start.offset(c.dx * go, 0, c.dz * go)
     // まだ見ていない土地へ、着くまで区間（LEG m）ごとに進む。長い水はボートで（近くても）
     await legToward(bot, state, target, `the unexplored land ${c.target}`, signal)
+    // 目標が水の上で、ボートが岸まで先へ漕いだなら、最後に戻って歩かない（岸が目標）
+    const gone = ((bot.entity.position.x - start.x) * c.dx + (bot.entity.position.z - start.z) * c.dz) / (c.dx * c.dx + c.dz * c.dz)
+    if (gone > go) target = start.offset(c.dx * gone, 0, c.dz * gone)
     let error = ''
     try {
       await goto(bot, new goals.GoalNearXZ(target.x, target.z, 3), signal)

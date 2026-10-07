@@ -23,6 +23,7 @@ const NEIGHBOURS = { up: [0, 1, 0], down: [0, -1, 0], north: [0, 0, -1], south: 
 export const DIAGNOSTICS = {
   door: [() => process.env.DOOR_TOGGLES_FILE || path.join(LOGS, 'door-toggles.jsonl'), 'a home door that would not open or close (each way tried, the door state, block updates the server sent)'],
   place: [() => process.env.PLACE_REFUSALS_FILE ?? path.join(LOGS, 'place-refusals.jsonl'), 'a block the server refused to place (the cell, what is around it, where the bot stood)'],
+  boat: [() => process.env.BOAT_REFUSALS_FILE ?? path.join(LOGS, 'boat-refusals.jsonl'), 'a boat the server did not let the bot place (the cell, yaw and pitch, eye height, boats nearby)'],
   stuck: [() => process.env.STUCK_WALKS_FILE ?? path.join(LOGS, 'stuck-walks.jsonl'), 'a walk that got stuck (position, the path, the blocks around)']
 }
 

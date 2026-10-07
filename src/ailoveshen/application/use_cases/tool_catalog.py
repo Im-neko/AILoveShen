@@ -345,10 +345,10 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
     ),
     "diagnostics": (
         "ブリッジが残した直近の失敗の記録を読む（door: 開かない・閉まらない家のドア、place: サーバーに"
-        "置けないと断られたブロック、stuck: 歩けなくなったとき）。kind を省くと種類ごとの最後の 1 件。"
+        "置けないと断られたブロック、boat: ボートを置けなかったとき、stuck: 歩けなくなったとき）。kind を省くと種類ごとの最後の 1 件。"
         "すぐ返る",
         {
-            "kind": {**_str("door / place / stuck（省略可）"), "enum": ["door", "place", "stuck"]},
+            "kind": {**_str("door / place / boat / stuck（省略可）"), "enum": ["door", "place", "boat", "stuck"]},
             "n": _int("見る件数（1〜5、既定 1）"),
         },
         [],
