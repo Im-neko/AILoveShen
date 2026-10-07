@@ -3,7 +3,7 @@
 import vec3Pkg from 'vec3'
 import { underwater } from './breath.mjs'
 import { isSwimming } from './swim.mjs'
-import { blockLightAt, MIN_LIGHT } from './light.mjs'
+import { blockLightAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -36,7 +36,7 @@ const FULL_SKY_LIGHT = 15
 // いまいる場所でモブが日光で燃えるか（ヘルメットは確認しない）
 export function burningInDaylight (bot, e) {
   if (!BURNS.has(e.name) || dayPhase(bot.time.timeOfDay) !== 'day') return false
-  return bot.blockAt(e.position.offset(0, e.height ?? 1.8, 0).floored())?.skyLight === FULL_SKY_LIGHT
+  return skyLightAt(bot, e.position.offset(0, e.height ?? 1.8, 0)) === FULL_SKY_LIGHT
 }
 
 export const round = (v, d = 1) => Math.round(v * 10 ** d) / 10 ** d
@@ -183,9 +183,10 @@ export function summarize (bot, history, extra = {}) {
   }
 }
 
-// 昼でも暗い: 洞窟や深い屋根の下など、空の光が届かず近くに光源もない。光のデータではなくブロックから
-// 判定する: mineflayer の 1.21.4 の光は、サーバーが明るいとした屋外で空の光 0 を読んだ
-// （location_check の述語で確認）ので信用できない。覆い（頭上の不透明ブロック）だけでは、木陰や
+// 昼でも暗い: 洞窟や深い屋根の下など、空の光が届かず近くに光源もない。空の光は、ブロックから判定する
+// （光のデータは、足元のブロックの光だけ使う: isDark）: mineflayer の光は x が入れ替わって読めるので、
+// 屋外で空の光 0 を読んだ（2026-10 の location_check）。今は light.mjs が正しく読む（設計書 104）が、
+// 空が近いかは今までどおりブロックから決める。覆い（頭上の不透明ブロック）だけでは、木陰や
 // 張り出しの下まで暗いことになるので、空の光が横へ 1 ブロックごとに 1 減ることから、空が開いた柱が
 // 近くにあれば（空の光 8 以上 = モブが湧かない明るさ）暗くないとする
 const COVER_HEIGHT = 32

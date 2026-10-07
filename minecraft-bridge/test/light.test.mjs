@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { blockLightAt, skyLightAt, tooDarkAt, mirrorX, MIN_LIGHT } from '../src/light.mjs'
-import { isDark } from '../src/observe.mjs'
+import { isDark, burningInDaylight } from '../src/observe.mjs'
 import { lightWorld } from './light-world.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -79,4 +79,14 @@ test('isDark: 光が分からなければ、近く（8 マス）の光源で見�
   assert.equal(isDark(cave()), true)
   assert.equal(isDark(cave({ torchAt: 6 })), false)
   assert.equal(isDark(cave({ torchAt: 9 })), true)
+})
+
+test('burningInDaylight: 日光で燃えるモブの頭の高さの空の光が 15 のときだけ（入れ替わっていない光で読む）', () => {
+  const at = (sky) => ({ time: { timeOfDay: 1000 }, world: lightWorld(() => 0, sky) })
+  const zombie = { name: 'zombie', height: 1.95, position: new Vec3(3.5, 70, 5.5) }
+  assert.equal(burningInDaylight(at((x, y) => (y >= 71 ? 15 : 0)), zombie), true, '頭の高さ（71.95 → 71）から上が空の光 15')
+  assert.equal(burningInDaylight(at(() => 14), zombie), false, '15 未満')
+  assert.equal(burningInDaylight({ time: { timeOfDay: 1000 } }, zombie), false, '光が届いていない')
+  assert.equal(burningInDaylight(at(() => 15), { ...zombie, name: 'husk' }), false, '燃えないモブ')
+  assert.equal(burningInDaylight({ ...at(() => 15), time: { timeOfDay: 18000 } }, zombie), false, '夜')
 })
