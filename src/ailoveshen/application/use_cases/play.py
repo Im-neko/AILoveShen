@@ -617,7 +617,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         try:
             while not task.done():
                 await asyncio.wait({task}, timeout=RETHINK_POLL_SECONDS)
-                if task.done() or session.rethink_mark <= mark:
+                if task.done() or session.rethink_mark <= mark or session.defers_rethink():
                     continue
                 try:
                     if await self._bridge.abort(f"rethink: {session.rethink_reason}"):

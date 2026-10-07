@@ -1101,8 +1101,10 @@ class PlaySession(Entity):
             and self.goal_phase in ("dusk", "night")
             and obs.time_phase in ("dawn", "day")
         ):
-            return f"goal {name} is over: the night has passed ({obs.time_phase})"
-        if self.rethink_reason:
+            # 夜のあいだ待たせた考え直しの依頼も、朝の決定に伝える
+            waiting = f"; {self.rethink_reason}" if self.rethink_reason else ""
+            return f"goal {name} is over: the night has passed ({obs.time_phase}){waiting}"
+        if self.rethink_reason and not self.defers_rethink(obs):
             return f"goal {name} is reconsidered: {self.rethink_reason}"
         objective_id = self.goal.objective_id
         if objective_id is not None and self.plan.get(objective_id) is None:
@@ -1195,6 +1197,20 @@ class PlaySession(Entity):
     def rethink_reason(self) -> str:
         """次の切れ目で今の小目標を終わらせる理由（溜まった順に「; 」でつなぐ。なければ ""）。"""
         return "; ".join(text for _, text in self._rethinks)
+
+    def defers_rethink(self, obs: Optional[GameObservation] = None) -> bool:
+        """
+        夜を越している間（夜を越す目標で、いまも夕方か夜）は、考え直しの依頼を待たせる（朝に決める）。
+        コメントへの約束で夜越しが切られ、夜の外で家作りを始めかけた（2026-10-07、2 晩続けて）。
+        依頼は消えず、朝の決定に伝わる。
+        """
+        obs = obs or self.last_observation
+        return (
+            self.goal is not None
+            and self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
+            and obs is not None
+            and obs.time_phase in ("dusk", "night")
+        )
 
     @property
     def rethink_mark(self) -> int:

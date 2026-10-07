@@ -1396,6 +1396,44 @@ class TestAdvancePlay:
         # 理由は次の切れ目で使うので残る
         assert session.rethink_reason == "neko pointed out in chat: a tree is right there"
 
+    def test_a_rethink_waits_while_sheltering_through_the_night_and_reaches_the_morning_decision(self):
+        """夜を越している間は、コメントへの約束の考え直しで夜越しを切らない（朝の決定に伝える）。"""
+        night = GoalSpec(GoalPredicate.THROUGH_NIGHT)
+        session = _session()
+        session.set_goal(Goal(night), "night")
+        session.request_rethink('you told neko you would do "自分の家を作る" now')
+        assert session.goal_end_reason(_obs(time_phase="night")) == ""
+        assert session.defers_rethink(_obs(time_phase="night"))
+        morning = session.goal_end_reason(_obs(time_phase="dawn"))
+        assert "the night has passed (dawn)" in morning and 'you told neko you would do' in morning
+        # 夜を越す目標でなければ、今までどおり考え直す
+        other = _session(HAVE_PLANKS)
+        other.request_rethink("neko pointed out in chat: a tree is right there")
+        assert "is reconsidered" in other.goal_end_reason(_obs(time_phase="night"))
+
+    @pytest.mark.asyncio
+    async def test_a_rethink_does_not_stop_the_wait_in_the_shelter(self, use_case, bridge, monkeypatch):
+        monkeypatch.setattr("ailoveshen.application.use_cases.play.RETHINK_POLL_SECONDS", 0.01)
+        session = _session()
+        session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT)), "night")
+        session.observe(_obs(time_phase="night"))
+        bridge.observe.return_value = _obs(time_phase="night")
+        aborted: list[str] = []
+
+        async def act(action_id):
+            session.request_rethink("you told neko you would do something now")
+            await asyncio.sleep(0.1)
+            return ActionResult(action_id, True, "waited", 1.0)
+
+        async def abort(reason):
+            aborted.append(reason)
+            return True
+
+        bridge.act.side_effect = act
+        bridge.abort.side_effect = abort
+        await use_case.execute(session)
+        assert aborted == []
+
     @pytest.mark.asyncio
     async def test_a_rethink_before_the_action_starts_stops_it_once_it_runs(
         self, use_case, bridge, monkeypatch
