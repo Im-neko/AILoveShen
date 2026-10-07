@@ -91,7 +91,7 @@ test('昼にドアの前に敵対モブがいて、危なさが極めて高け�
   const verbs = candidates.map((c) => c.verb)
   assert.ok(!verbs.includes('dig'))
   assert.ok(verbs.includes('exit_wall'))
-  assert.match(withheld, /staying inside: 1 actions outside are held back \(risk extreme \(health 4\/20/)
+  assert.match(withheld, /staying inside: 1 actions outside are held back \(risk extreme, do first: stash valuables/)
 })
 
 test('cleared の目標なら、ドアの前で待つものと戦いに出てよい（素手でも）', () => {

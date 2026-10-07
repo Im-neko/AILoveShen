@@ -745,7 +745,8 @@ def _format_risk(risk: dict) -> list[str]:
     """
     if not risk or risk.get("level") not in _RISK_LEVELS:
         return []
-    line = f"- 外に出る危なさ: {_RISK_LEVELS[risk['level']]}（{'; '.join(risk.get('factors') or [])}）"
+    reasons = [*(risk.get("factors") or []), *(risk.get("context") or [])]
+    line = f"- 外に出る危なさ: {_RISK_LEVELS[risk['level']]}（{'; '.join(reasons)}）"
     advice = risk.get("advice") or []
     if advice:
         line += f"。出る前に: {'; '.join(advice)}"

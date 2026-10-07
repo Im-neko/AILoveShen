@@ -18,7 +18,7 @@ import { rockBetween } from './reach.mjs'
 import { watchDoor, reportDoor } from './door-report.mjs'
 import { FOUND_BASE_NAME } from './landmarks.mjs'
 import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
-import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem, standingCell } from './observe.mjs'
+import { nearbyEntities, isHostile, EXPLODES, isLog, isPlanks, dayPhase, fillItem, standingCell } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
 const { goals } = pathfinderPkg
@@ -485,7 +485,11 @@ export function shelterOf (bot, home) {
   const day = dayPhase(bot.time.timeOfDay) === 'day'
   const danger = dangerOutside(bot, home)
   const risk = assessRisk(bot, { home })
-  return { inside, day, danger, risk, sheltering: inside && SHELTER_LEVEL !== 'none' && atLeast(risk, SHELTER_LEVEL) }
+  // ドアの前のクリーパーは、リスクの数字に関わらず外に出さない（出ればドアのそばで爆発し、壁が壊れる）
+  const creeper = danger.some(({ e }) => EXPLODES.has(e.name))
+  const sheltering = inside && ((SHELTER_LEVEL !== 'none' && atLeast(risk, SHELTER_LEVEL)) || creeper)
+  const why = creeper ? `a creeper is at the door (it explodes and breaks the walls); ${describeRisk(risk)}` : describeRisk(risk)
+  return { inside, day, danger, risk, why, sheltering }
 }
 
 export function dangerOutside (bot, home) {
@@ -686,8 +690,8 @@ function bedInHome (bot, home) {
 // `confront`: ドアの前で待つものと戦いに出る（cleared の目標）ので、それらがいても止めない
 export async function leaveHome (bot, home, signal, { confront = false } = {}) {
   if (!isInside(bot, home)) return
-  const { sheltering, risk } = shelterOf(bot, home)
-  if (sheltering && !confront) throw new Error(`staying inside: ${describeRisk(risk)}`)
+  const { sheltering, why } = shelterOf(bot, home)
+  if (sheltering && !confront) throw new Error(`staying inside: ${why}`)
   if (bot.entity.position.floored().xzDistanceTo(home.inside) > 0) {
     // 閉じた家の中の経路移動は問題ない: 内部に障害物はない
     await walkTo(bot, new goals.GoalBlock(home.inside.x, home.inside.y, home.inside.z), signal)

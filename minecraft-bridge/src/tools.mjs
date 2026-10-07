@@ -8,7 +8,6 @@ import { isQuarryKind, quarrySpot, inQuarry, QUARRY_RADIUS } from './quarry.mjs'
 import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing, blockProps, fillCount, isUnderground } from './observe.mjs'
 import { shelterOf, needsOutside, creeperNear, CREEPER_HOME_REASON } from './candidates.mjs'
-import { describeRisk } from './risk.mjs'
 import { refusalAt, noteRefusal } from './refusals.mjs'
 import { shallowStone, SHALLOW_REMEDY } from './mining.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
@@ -703,14 +702,14 @@ export function createTools (deps) {
       const { c, label } = build[name](args)
       const home = state.home
       if (home && needsOutside(c, home)) {
-        const { sheltering, day, risk } = shelterOf(bot, home)
+        const { sheltering, day, why } = shelterOf(bot, home)
         // 外に出る危なさが極めて高いとき（risk.mjs の SHELTER_LEVEL）だけ止める。昼にドアの前で待つ敵とは
         // 戦ってよい（cleared と同じ）。夜は、今の小目標が cleared（倒しに出ると決めた）のときだけ
         const fighting = day || state.goal?.spec?.predicate === 'cleared'
         const confront = fighting && c.verb === 'attack' && c.hostile
         if (sheltering && !confront) {
-          refuse(`staying inside: going out is too dangerous right now (${describeRisk(risk)}). ` +
-            (day ? 'Attack them by day, wait, or reduce the risk first' : 'Wait until morning, reduce the risk first, or choose the small goal cleared to fight'))
+          refuse(`staying inside: too dangerous to go out (${why}). ` +
+            (day ? 'Attack them, wait, or reduce the risk' : 'Wait, reduce the risk, or choose cleared to fight'))
         }
         if (confront) c.confront = true
       }

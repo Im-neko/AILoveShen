@@ -1,8 +1,8 @@
 ## Current Status
 
-**Active Phase**: 設計書 90（製品のエージェント実行系の記録・再生・計測。実機の配信での確認は再起動後）を実装した。その前は 設計書 89（家も道具もない夜: 陸に上がる・素手で戦う・囲んで籠もる・ドアの補修の穴）を実装した（実機未確認、再起動が要る）。その前は 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
+**Active Phase**: 設計書 94（リスク評価: 閉じこもりを極めて危ないときだけにし、危なさを LLM に見せる。実機は再起動後）を実装した。その前は 設計書 90（製品のエージェント実行系の記録・再生・計測。実機の配信での確認は再起動後）を実装した。その前は 設計書 89（家も道具もない夜: 陸に上がる・素手で戦う・囲んで籠もる・ドアの補修の穴）を実装した（実機未確認、再起動が要る）。その前は 設計書 47（施設と検索）の段階 1〜5 を実装した: 検索の道具（search_facility / search_memory / item_info / uses_of / search_abilities）、街の理想図（区画ごとの用途）、施設の設計と `facility(name)`（畑・植林場・採掘場）、作物と植林は施設で数える、進める手のない小目標の差し戻し。どれも実機では未確認。次はユーザーの環境でブリッジと Python を再起動して、`/town`、`GET /facilities`、`logs/search`、施設の設計（`purpose=facility_design`）を見ること。残りは囲い・トラップ（別の設計書）、畑の水、採掘場の坑道を延ばす・松明。ブランチ `claude/peaceful-edison-prr51v`
 **Last Updated**: 2026-10-07
-**Test Status**: 2026-10-06: ブリッジ `npm test` 724 件、`python -m pytest tests/` 1530 件（配信を止めて全部）。その前: `python -m pytest tests/` 1386 passed + 1 failed（2026-10-02、`test_stream_factory` の 1 件は配信が 8765 を使っているため。配信を止めれば全部通る）。ブリッジ `npm test` 555。その前は 1291 passed（配信が動いていると `test_stream_factory.py` が盤のポート 8765 の使用で落ちる。それを除いた数）。ブリッジ `npm test` 546 件
+**Test Status**: 2026-10-07: ブリッジ `npm test` 759 件、`python -m pytest tests/` 1586 件（`tests/unit/factories` を除く）。その前: 2026-10-06: ブリッジ `npm test` 724 件、`python -m pytest tests/` 1530 件（配信を止めて全部）。その前: `python -m pytest tests/` 1386 passed + 1 failed（2026-10-02、`test_stream_factory` の 1 件は配信が 8765 を使っているため。配信を止めれば全部通る）。ブリッジ `npm test` 555。その前は 1291 passed（配信が動いていると `test_stream_factory.py` が盤のポート 8765 の使用で落ちる。それを除いた数）。ブリッジ `npm test` 546 件
 **実機の状態**: ブリッジは `npm run dev`（ファイルの変更で再起動）が使える。道具モードと最近の機能（植林・畑、夜、道具の作り直し、動けないとき、Jev の 5 つ）は実機で試していない
 
 ## Completed Work
@@ -10,6 +10,7 @@
 ### リスク評価: 禁止を減らし、危なさと失うものを数字にして LLM に見せる（設計書 94、2026-10-07、未確認: 実機の再起動後、user: 「絶対禁止は無くても良い」「リスク評価を盛り込むと柔軟」→「順に全部やってみて」）
 - 新しい `risk.mjs`（`assessRisk`: 体力・満腹度・時間帯・敵（装備で割引）・家から遠い × 失うものの重み）。`/observe` の `risk` と、状況の「外に出る危なさ」の 1 行（`stream_context._format_risk`）
 - 二択の閉じこもり（`shelterOf` / `ground()` / `callTool` / `leaveHome` / `cleared` の夜の武器・体力）を、risk が extreme のときだけ止めるに置き換え。夕方・夜の実行の中断は high 以上のときだけ。断りの文に risk と先にすることを添える
+- ドアの前にクリーパーがいるときは、数字に関わらず外に出さない（発端の場面はこれで変わらない。設計書 94 §6）
 - `place` / `use_item` / `move_furniture` に `override: true`（保護と断られた台帳を通り越す。`tool_catalog.py`、`abilities.yaml`）
 - 変えなかった禁止: 設計書 94 §4（クリーパー、液体、溶岩・砂、畑、建築中、入力の検証、反射、暗さ・空腹・体力の中断）
 - テスト: ブリッジ `npm test` 全件、`pytest`（配信が動いているときの `test_stream_factory` を除く）全件。`risk.test.mjs` 6 件、`test_stream_context_risk.py` 3 件

@@ -57,12 +57,15 @@ const NOTHING_BELOW = 2
 const LITTLE_BELOW = 8
 const WEIGHT = { nothing: 0.4, little: 0.7, valuable: 1 }
 
-// 持ち物と身につけているものの値打ち
+// 失うもの（死んで落とす、チェストに預ければ守れる物）の値打ち。剣・斧と着ている防具は戦うために
+// 持っていく物（預けない。strength で数える）なので入れない
 export function inventoryValue (bot) {
   let value = 0
+  const worn = new Set((bot.inventory?.slots ?? []).filter((it) => it && it.slot >= 5 && it.slot <= 8).map((it) => it.name))
   for (const it of bot.inventory?.items?.() ?? []) {
-    const tool = it.name.match(/^(\w+)_(sword|axe|pickaxe|shovel|hoe)$/)
-    if (tool) { value += (TOOL_VALUE[tool[1]] ?? 1) * 1; continue }
+    const tool = it.name.match(/^(\w+)_(pickaxe|shovel|hoe)$/)
+    if (tool) { value += TOOL_VALUE[tool[1]] ?? 1; continue }
+    if (/_(sword|axe)$/.test(it.name) || worn.has(it.name)) continue
     const armor = it.name.match(/^(\w+)_(helmet|chestplate|leggings|boots)$/)
     if (armor) { value += (ARMOR_VALUE[armor[1]] ?? 1) * (armor[2] === 'chestplate' || armor[2] === 'leggings' ? 1.5 : 1); continue }
     const each = ITEM_VALUE[it.name]
@@ -105,7 +108,7 @@ function exposure (bot) {
   return out
 }
 
-// 外に出る・戦うときの危なさ: { level, score, danger, stakes, value, factors, advice, sheltered }
+// 外に出る・戦うときの危なさ: { level, score, danger, stakes, value, factors, context, advice }
 export function assessRisk (bot, state) {
   const phase = dayPhase(bot.time.timeOfDay)
   const mobs = exposure(bot)
@@ -133,31 +136,28 @@ export function assessRisk (bot, state) {
   if (parts.health) factors.push(`health ${Math.round(bot.health)}/20`)
   if (parts.food) factors.push(`food ${bot.food}/20`)
   if (parts.time) factors.push(phase)
-  if (mobs.length) factors.push(`hostiles: ${mobs.slice(0, 4).map((m) => `${m.name} ${m.distance}m`).join(', ')}${mobs.length > 4 ? ` +${mobs.length - 4}` : ''}`)
-  if (far) factors.push(`over ${FAR_FROM_HOME_M}m from home`)
-  factors.push(power.total > 0 ? `armed/armored (${power.weapon ? 'weapon' : 'no weapon'}${power.armor ? ', armor' : ''})` : 'bare hands, no armor')
-  factors.push(stakes === 'nothing' ? 'almost nothing to lose' : stakes === 'little' ? 'little to lose' : 'valuable items would drop on death')
+  if (mobs.length) factors.push(`hostiles: ${mobs.slice(0, 3).map((m) => `${m.name} ${m.distance}m`).join(', ')}${mobs.length > 3 ? ` +${mobs.length - 3}` : ''}`)
+  if (far) factors.push(`${FAR_FROM_HOME_M}m+ from home`)
+  // 数字を動かす理由（factors）と、背景（context: 装備と失うもの）
+  const context = [
+    power.total > 0 ? `${power.weapon ? 'weapon' : 'no weapon'}${power.armor ? ' + armor' : ''}` : 'bare hands',
+    stakes === 'nothing' ? 'almost nothing to lose' : stakes === 'little' ? 'little to lose' : 'valuables at stake'
+  ]
 
   const advice = []
-  if (stakes === 'valuable' && mobs.length) advice.push('put your valuables in the home chest before fighting (death drops everything you carry)')
-  if (parts.health >= 2) advice.push('eat or rest to heal first')
-  if (!power.weapon && mobs.length && stakes !== 'nothing') advice.push('make or equip a sword or axe first')
-  if (parts.food) advice.push('eat first')
-  if (mobs.some((m) => m.name === 'creeper')) advice.push('a creeper explodes: keep away from the home and the door while it is near')
+  if (stakes === 'valuable') advice.push('stash valuables in the chest')
+  if (parts.health >= 2 || parts.food) advice.push('eat or rest')
+  if (!power.weapon && mobs.length && stakes !== 'nothing') advice.push('equip a weapon')
+  if (mobs.some((m) => m.name === 'creeper')) advice.push('keep the creeper away from home')
 
-  const sheltered = !!state?.home && isInsideHome(bot, state.home)
-  return { level, score, danger: Math.round(danger * 10) / 10, stakes, value: Math.round(value), factors, advice, sheltered }
-}
-
-function isInsideHome (bot, home) {
-  const p = bot.entity.position
-  return !!home.min && !!home.max && p.x >= home.min.x && p.x < home.max.x + 1 && p.z >= home.min.z && p.z < home.max.z + 1 &&
-    p.y >= home.min.y - 1 && p.y <= home.min.y + 6
+  return { level, score, danger: Math.round(danger * 10) / 10, stakes, value: Math.round(value), factors, context, advice }
 }
 
 export const atLeast = (risk, level) => LEVELS.indexOf(risk.level) >= LEVELS.indexOf(level)
 
-// 1 行の説明（拒否の理由や状況に添える）
+// 1 行の説明（拒否の理由や、進められない理由に添える）。LLM に渡る道具の結果は 300 字で切られる
+// （game_prompt_template_builder の TOOL_RESULT_CHARS）ので、先にすること（advice）を前に、短く
 export function describeRisk (risk) {
-  return `risk ${risk.level} (${risk.factors.join('; ')})${risk.advice.length ? `. Before going out: ${risk.advice.join('; ')}` : ''}`
+  const first = risk.advice.length ? `do first: ${risk.advice.slice(0, 2).join(', ')}; ` : ''
+  return `risk ${risk.level}, ${first}because ${risk.factors.join(', ')} (${risk.context.join(', ')})`
 }

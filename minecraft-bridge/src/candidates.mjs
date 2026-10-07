@@ -18,7 +18,6 @@ import { round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inv
 import { leakingHoles } from './ledger.mjs'
 import { sleepersInBeds } from './sleepers.mjs'
 import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked } from './home.mjs'
-import { describeRisk } from './risk.mjs'
 import { inBurrow, inOpenShaft, burrowSpotCached } from './burrow.mjs'
 import { campSiteCached, campCount } from './camp.mjs'
 import { findLandCached } from './land.mjs'
@@ -72,7 +71,7 @@ export function ground (bot, state, knowledge, world, status) {
   out.push(...tidyUp(bot, state, knowledge, world, status))
   out.push(...defragUp(bot, state))
   const home = state.home
-  const { inside, day, danger, sheltering, risk } = shelterOf(bot, home)
+  const { inside, day, danger, sheltering, why } = shelterOf(bot, home)
   // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている
   const distinct = [...out.reduce((m, c) => m.has(c.id) ? m : m.set(c.id, c), new Map()).values()]
   // 断られた・着けなかった場所への同じ手は出さない（refusals.mjs）。何を外したかは withheld に
@@ -89,7 +88,7 @@ export function ground (bot, state, knowledge, world, status) {
   const also = (text) => { withheld = withheld ? `${withheld}; ${text}` : text }
   if (leadsHome.length) also(`${CREEPER_HOME_REASON}; left out: ${leadsHome.map((c) => c.id).join(', ')}`)
   if (held) {
-    also(`staying inside: ${held} actions outside are held back (${describeRisk(risk)}). ` +
+    also(`staying inside: ${held} actions outside are held back (${why}). ` +
       (day ? 'cleared() goes out to fight them; an exit can be dug through another wall' : 'wait for morning, or cleared() goes out to fight'))
   }
   // ドアの前の敵を避けて、壁に出口を掘る手（昼）。外に出てよいときも、ドアの前の敵を避ける選択肢として出す

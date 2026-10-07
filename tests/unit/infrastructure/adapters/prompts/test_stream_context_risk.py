@@ -7,14 +7,17 @@ class TestFormatRisk:
             {
                 "level": "high",
                 "factors": ["night", "hostiles: zombie 3m"],
-                "advice": ["eat first"],
+                "context": ["bare hands", "almost nothing to lose"],
+                "advice": ["eat or rest"],
             }
         )
-        assert lines == ["- 外に出る危なさ: 高い（night; hostiles: zombie 3m）。出る前に: eat first"]
+        assert lines == [
+            "- 外に出る危なさ: 高い（night; hostiles: zombie 3m; bare hands; almost nothing to lose）。出る前に: eat or rest"
+        ]
 
     def test_omits_advice_when_none(self):
-        (line,) = _format_risk({"level": "low", "factors": ["bare hands, no armor"], "advice": []})
-        assert line == "- 外に出る危なさ: 低い（bare hands, no armor）"
+        (line,) = _format_risk({"level": "low", "factors": [], "context": ["bare hands"], "advice": []})
+        assert line == "- 外に出る危なさ: 低い（bare hands）"
 
     def test_nothing_without_a_known_level(self):
         assert _format_risk({}) == []

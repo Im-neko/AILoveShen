@@ -64,6 +64,14 @@ function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra
   return { callTool, runs, checks, bot, state }
 }
 
+test('ドアの前にクリーパーがいれば、危なさの数字に関わらず外に出る道具は断る（ドアのそばで爆発する）', async () => {
+  const { callTool, runs } = setup({ mobs: [{ name: 'creeper', position: v(2.5, 70, 6.5) }] })
+  const r = await callTool('goto', { x: 10, y: 70, z: 10 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /a creeper is at the door/)
+  assert.equal(runs.length, 0)
+})
+
 // 値打ちのある持ち物（ダイヤのツルハシ 15）を持って体力が低いと、外に出る危なさが極めて高い（risk.mjs）
 const VALUABLE = [['diamond_pickaxe', 1]]
 
@@ -78,8 +86,9 @@ test('外に出る危なさが極めて高ければ、理由（risk）をつけ�
   const { callTool, runs } = setup({ time: NIGHT, health: 4, items: VALUABLE })
   const r = await callTool('goto', { x: 10, y: 70, z: 10 })
   assert.equal(r.refused, true)
-  assert.match(r.result, /staying inside: going out is too dangerous right now \(risk extreme \(health 4\/20; night/)
-  assert.match(r.result, /put your valuables in the home chest|eat or rest/)
+  assert.match(r.result, /staying inside: too dangerous to go out \(risk extreme, do first: stash valuables in the chest, eat or rest; because health 4\/20, night/)
+  // LLM に渡る道具の結果は 300 字で切られる: 先にすることまで届く長さにする
+  assert.ok(r.result.length <= 300, `${r.result.length}: ${r.result}`)
   assert.equal(runs.length, 0)
   assert.equal((await callTool('wait')).ok, true)
   assert.equal(runs[0].c.inside, true)
@@ -90,7 +99,7 @@ test('昼にドアの前に敵がいても、元気で失うものがなけれ�
   const calm = setup({ mobs: [skeleton] })
   assert.equal((await calm.callTool('goto', { x: 10, y: 70, z: 10 })).ok, true)
   const { callTool, runs } = setup({ mobs: [skeleton], health: 4, items: VALUABLE })
-  assert.match((await callTool('goto', { x: 10, y: 70, z: 10 })).result, /too dangerous right now \(risk extreme/)
+  assert.match((await callTool('goto', { x: 10, y: 70, z: 10 })).result, /too dangerous to go out \(risk extreme/)
   const r = await callTool('attack', { entity: 1 })
   assert.equal(r.ok, true)
   assert.equal(runs[0].c.confront, true)
