@@ -212,7 +212,7 @@
   how: |
     家があれば go_home で入ってドアを閉め、sleep で家のベッドで寝る（夜だけ）
     家から遠いときは、ベッドを持っていれば置いて寝る（小目標 through_night の提案 do_suggestion）か、地下にいる
-    夜に家の中にいると、外に出る道具は断られる。家の中なら敵は来ない
+    家の中なら敵は来ない。外に出るかは「外に出る危なさ」（体力・時間帯・近くの敵・装備・失うものから測る）を見て決める。極めて高いときだけ、外に出る道具が断られる（理由と、先にすること）。危なければ、先に持ち物をチェストに預ける・食べる・剣を持つ・家に戻る
     ベッドに村人などが寝ていると「the bed is occupied」で寝られない。夜、そばのベッドに寝ている村人がいれば「wake up the sleeping … (one hit)」が候補に出る（do_suggestion）。素手で 1 回殴って起こし、ベッドが空いたら寝る。attack は倒すまで戦うので使わない
     家もベッドもない夜（家がない・行けない・64 ブロックより遠い）は、平らな土の地面で「dig into the ground here and seal yourself in until morning」が候補に出る（do_suggestion）。足元に 3 マスの縦穴を掘って入り、上を掘った土で塞ぐ。朝まで「stay in the sealed hole until morning」で待つ。夜の外で立って待たない。朝になったら「climb out of the hole」で上がる。石や崖・水のそばでは出ない（理由は blocked に出る）
     縦穴が掘れない所（砂浜・石の上・水のそば）の家もベッドもない夜は、「wall yourself in with dirt here and wait until morning」が候補に出る（do_suggestion）。立った所の四方と真上を土・丸石・板で囲む（13 ブロックほど。持っていなければ近くの土を素手で掘って集める）。囲んだら「stay in the sealed hole until morning」で朝まで待ち、朝は「climb out of the hole」で壁の 1 方を掘って出る
@@ -284,6 +284,7 @@
     家・建てている家・建物は、ふつうは dig が断る。壊すのが目的のときだけ dig {x,y,z, demolish: true}
     近くに置いてある作業台・かまど・チェスト・ベッドは、have(その物) で作らず拾う手が出る（家の家具は家の中でだけ move_furniture）
     中身のあるチェストは先に withdraw で出す
+    place・use_item・move_furniture も、保護された所へ承知で置く・使う・動かすときは override: true（普段は断られる）
   tools: [dig, move_furniture, withdraw]
   see: [place_things]
 

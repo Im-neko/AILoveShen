@@ -17,6 +17,7 @@ import { walkTo } from './move.mjs'
 import { rockBetween } from './reach.mjs'
 import { watchDoor, reportDoor } from './door-report.mjs'
 import { FOUND_BASE_NAME } from './landmarks.mjs'
+import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
 import { nearbyEntities, isHostile, isLog, isPlanks, dayPhase, fillItem, standingCell } from './observe.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -476,11 +477,15 @@ const brokenDoorNote = (trouble) => trouble
 // 外のドアの近くで待っている敵対モブ
 // 家に避難しているか: 家の中にいて、夜か、ドアの前に敵対モブがいる。避難中は外での行動を出さない
 // （候補）・断る（道具、設計書 21）。作業台は家の中に置く（夜の待ち時間にクラフトできるように）
+// 家の中で外に出る手を止めるのは、外に出たときの危なさ（risk.mjs）が SHELTER_LEVEL に届いたときだけ
+// （夜、またはドアの前の敵、だけでは止めない: 持ち物も体力も敵の強さも見ずに、昼に敵 1 体で 1 時間以上
+// 閉じこもった。2026-10-07、docs/design/94）。夜と敵の有無は、risk の理由として LLM に見せる
 export function shelterOf (bot, home) {
   const inside = isInside(bot, home)
   const day = dayPhase(bot.time.timeOfDay) === 'day'
   const danger = dangerOutside(bot, home)
-  return { inside, day, danger, sheltering: inside && (!day || danger.length > 0) }
+  const risk = assessRisk(bot, { home })
+  return { inside, day, danger, risk, sheltering: inside && SHELTER_LEVEL !== 'none' && atLeast(risk, SHELTER_LEVEL) }
 }
 
 export function dangerOutside (bot, home) {
@@ -681,8 +686,8 @@ function bedInHome (bot, home) {
 // `confront`: ドアの前で待つものと戦いに出る（cleared の目標）ので、それらがいても止めない
 export async function leaveHome (bot, home, signal, { confront = false } = {}) {
   if (!isInside(bot, home)) return
-  const danger = dangerOutside(bot, home)
-  if (danger.length && !confront) throw new Error(`staying inside: ${danger.map(({ e }) => e.name).join(', ')} waiting outside the door`)
+  const { sheltering, risk } = shelterOf(bot, home)
+  if (sheltering && !confront) throw new Error(`staying inside: ${describeRisk(risk)}`)
   if (bot.entity.position.floored().xzDistanceTo(home.inside) > 0) {
     // 閉じた家の中の経路移動は問題ない: 内部に障害物はない
     await walkTo(bot, new goals.GoalBlock(home.inside.x, home.inside.y, home.inside.z), signal)

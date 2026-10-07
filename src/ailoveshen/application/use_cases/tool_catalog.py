@@ -105,6 +105,7 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
                 "面を借りる側: floor（下のブロックの上）/ wall（横の壁に付ける）/ ceiling（上から"
                 "吊るす）。省略: 壁に付けられる物は壁を先に、ほかは床を先に"
             ),
+            "override": _bool("家・建てている家・建物の保護を承知で、それでも置くときだけ true（既定 false）"),
         },
         ["item", "x", "y", "z"],
     ),
@@ -152,6 +153,7 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
             "to_x": _int("置き先の x（省略可）"),
             "to_y": _int("置き先の y（足元の高さ）"),
             "to_z": _int("置き先の z"),
+            "override": _bool("家・建てている家・建物の保護を承知で、それでも動かすときだけ true（既定 false）"),
         },
         ["x", "y", "z"],
     ),
@@ -206,6 +208,7 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
             "entity": _int("使う相手の mobs の id（省略可）"),
             **{k: _int(f"使うブロックの {k}（省略可）") for k in ("x", "y", "z")},
             "hold": _int("押し続ける秒数（0〜3、既定 0）"),
+            "override": _bool("家・建てている家・建物の保護を承知で、それでも使うときだけ true（既定 false）"),
         },
         ["item"],
     ),

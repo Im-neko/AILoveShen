@@ -47,13 +47,17 @@ test('置く場所がなければ候補に出さず、代わりに理由を示�
 })
 
 // 室内 3x3（x 101..103、z 1..3、床 y 69）、ドアは北 (102, 70, 0)、ベッドはドアからまっすぐ奥
-function room (timeOfDay, extra = {}) {
+// dangerous: 外に出る危なさが極めて高い（値打ちのある持ち物を持って体力 4。risk.mjs）。家の中で避難する
+function room (timeOfDay, extra = {}, dangerous = true) {
   const blocks = { '102,70,2': 'red_bed', '102,70,3': 'red_bed', ...extra }
   const wall = (x, z) => x === 100 || x === 104 || z === 0 || z === 4
   return {
     time: { timeOfDay },
     entity: { position: v(102.5, 70, 1.5) },
     entities: {},
+    health: dangerous ? 4 : 20,
+    food: 20,
+    inventory: { items: () => (dangerous ? [{ name: 'diamond_pickaxe', count: 1 }] : []) },
     registry: { blocksByName: { crafting_table: { id: 7 } } },
     blockAt: (p) => {
       let name = blocks[`${p.x},${p.y},${p.z}`] ?? 'air'
@@ -76,8 +80,9 @@ test('夜に家の中にいれば、作業台は家の中に置く（夜の待�
   assert.ok(!['102,2', '102,3'].includes(`${night.x},${night.z}`)) // ベッドの上ではない
   // 夜（避難中）は家の中だけ
   assert.deepEqual(stationSpots(room(18000), state, 'crafting_table').map((s) => s.where), ['inside'])
-  // 昼は家の中と外の両方を出し、選ぶ側が決める
+  // 昼は家の中と外の両方を出し、選ぶ側が決める。危なさが低ければ、夜も同じ
   assert.deepEqual(stationSpots(room(1000), state, 'crafting_table').map((s) => s.where), ['inside', 'nearby'])
+  assert.deepEqual(stationSpots(room(18000, {}, false), state, 'crafting_table').map((s) => s.where), ['inside', 'nearby'])
 })
 
 test('ベッドがまだなければ、ベッドの場所を残せないときは家の中に置かない', async () => {

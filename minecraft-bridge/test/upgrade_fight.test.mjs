@@ -24,9 +24,9 @@ test('持っている道具より上の格を、上から順に作れるか調�
   assert.deepEqual(upgradesToTry(bot({ diamond_pickaxe: 1, wooden_hoe: 1 })), [])
 })
 
-test('夜の cleared は武器があるときだけ。戦いに出る前に預けない物は武器・防具・食べ物・松明', () => {
+test('夜の cleared は、武器がなくても目標にできる（危なさは evaluate が見る）。戦いに出る前に預けない物は武器・防具・食べ物・松明', () => {
   const state = { home, plan: null }
-  assert.throws(() => makeGoal({ predicate: 'cleared' }, bot({ dirt: 10 }, 15000), state, k), /without a sword or an axe/)
+  assert.deepEqual(makeGoal({ predicate: 'cleared' }, bot({ dirt: 10 }, 15000), state, k).spec, { predicate: 'cleared' })
   assert.deepEqual(makeGoal({ predicate: 'cleared' }, bot({ stone_sword: 1 }, 15000), state, k).spec, { predicate: 'cleared' })
   for (const keep of ['stone_sword', 'iron_axe', 'leather_helmet', 'shield', 'torch', 'cooked_beef', 'bread']) assert.ok(KEEP_WHEN_FIGHTING.test(keep), keep)
   for (const put of ['cobblestone', 'oak_log', 'raw_iron', 'wheat_seeds', 'beef']) assert.ok(!KEEP_WHEN_FIGHTING.test(put), put)

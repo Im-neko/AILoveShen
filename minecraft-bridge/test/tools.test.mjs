@@ -33,7 +33,7 @@ function blockAt (p, extra = {}) {
   return { name: 'air', boundingBox: 'empty', position: p }
 }
 
-function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra = {}, candidates = [], check = null } = {}) {
+function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra = {}, candidates = [], check = null, health = 20 } = {}) {
   const entity = { position: at, eyeHeight: 1.62 }
   const entities = { 0: entity }
   mobs.forEach((m, i) => { entities[i + 1] = { id: i + 1, type: 'hostile', height: 1.99, ...m } })
@@ -42,7 +42,7 @@ function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra
     entities,
     registry: md,
     time: { timeOfDay: time },
-    health: 20,
+    health,
     food: 20,
     blockAt: (p) => blockAt(p, extra),
     findBlock: () => null,
@@ -64,23 +64,48 @@ function setup ({ time = DAY, at = v(2.5, 70, 2.5), items = [], mobs = [], extra
   return { callTool, runs, checks, bot, state }
 }
 
-test('夜に家の中にいれば、外に出る道具は理由をつけて断り、実行しない', async () => {
+// 値打ちのある持ち物（ダイヤのツルハシ 15）を持って体力が低いと、外に出る危なさが極めて高い（risk.mjs）
+const VALUABLE = [['diamond_pickaxe', 1]]
+
+test('夜でも、危なさが低ければ（体力も満タンで失うものがない）外に出る道具は断らない', async () => {
   const { callTool, runs } = setup({ time: NIGHT })
   const r = await callTool('goto', { x: 10, y: 70, z: 10 })
+  assert.equal(r.ok, true, r.result)
+  assert.equal(runs.length, 1)
+})
+
+test('外に出る危なさが極めて高ければ、理由（risk）をつけて断り、実行しない。家の中での道具は使える', async () => {
+  const { callTool, runs } = setup({ time: NIGHT, health: 4, items: VALUABLE })
+  const r = await callTool('goto', { x: 10, y: 70, z: 10 })
   assert.equal(r.refused, true)
-  assert.match(r.result, /staying inside for the night/)
+  assert.match(r.result, /staying inside: going out is too dangerous right now \(risk extreme \(health 4\/20; night/)
+  assert.match(r.result, /put your valuables in the home chest|eat or rest/)
   assert.equal(runs.length, 0)
-  // 家の中での道具は夜でも使える
   assert.equal((await callTool('wait')).ok, true)
   assert.equal(runs[0].c.inside, true)
 })
 
-test('昼にドアの前に敵がいれば外に出る道具は断るが、その敵と戦うことはできる（cleared と同じ）', async () => {
-  const { callTool, runs } = setup({ mobs: [{ name: 'skeleton', position: v(2.5, 70, 6.5) }] })
-  assert.match((await callTool('goto', { x: 10, y: 70, z: 10 })).result, /hostile mobs wait near the door/)
+test('昼にドアの前に敵がいても、元気で失うものがなければ外に出られる。危なさが極めて高いときだけ断り、敵と戦うことはできる', async () => {
+  const skeleton = { name: 'skeleton', position: v(2.5, 70, 6.5) }
+  const calm = setup({ mobs: [skeleton] })
+  assert.equal((await calm.callTool('goto', { x: 10, y: 70, z: 10 })).ok, true)
+  const { callTool, runs } = setup({ mobs: [skeleton], health: 4, items: VALUABLE })
+  assert.match((await callTool('goto', { x: 10, y: 70, z: 10 })).result, /too dangerous right now \(risk extreme/)
   const r = await callTool('attack', { entity: 1 })
   assert.equal(r.ok, true)
   assert.equal(runs[0].c.confront, true)
+})
+
+test('override: true は、保護された所（家のドアの内側）へ承知で置く。台帳に断られた所へも、保護を承知なら再び試せる', async () => {
+  const { callTool, runs } = setup({ items: [['crafting_table', 1], ['dirt', 4]] })
+  const refused = await callTool('place', { item: 'crafting_table', x: 2, y: 70, z: 3 })
+  assert.match(refused.result, /current home.*override: true places it anyway/)
+  assert.equal(runs.length, 0)
+  const again = await callTool('place', { item: 'crafting_table', x: 2, y: 70, z: 3, override: true })
+  assert.equal(again.ok, true, again.result)
+  assert.equal(runs.at(-1).c.verb, 'place_at')
+  // override でも、立っている場所・壁そのものなどの物理的な断りは残る
+  assert.match((await callTool('place', { item: 'dirt', x: 0, y: 70, z: 2, override: true })).result, /taken by oak_planks/)
 })
 
 test('今の家は掘らないが、前の家（置いてきたベッド）は名指しすれば掘れる（town4d）', async () => {

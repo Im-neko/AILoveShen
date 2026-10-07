@@ -92,18 +92,36 @@ test('反射が動いている間と、別の行動の実行中は始めない',
   await running
 })
 
-test('時間では止めない: 夕方になった・空腹になったときだけ止め、失敗には数えない', async () => {
+// 危なさが高い（risk.mjs）: 値打ちのある持ち物（ダイヤのツルハシ）を持って体力が 8。夕方 1 を足して 5 になる
+const endangered = (bot) => {
+  bot.health = 8
+  bot.inventory = { items: () => [{ name: 'diamond_pickaxe', count: 1 }, { name: 'torch', count: 4 }] }
+}
+
+test('夕方になっても、危なさが低ければ（元気で、失うものもない）止めない', async () => {
+  const walking = (bot, state, c, signal) => waitsForAbort(bot, state, c, signal)
+  const { bot, state, run } = setup({ explore: walking })
+  const running = run({ verb: 'explore' }, 'explore east')
+  setTimeout(() => { bot.time.timeOfDay = 12500 }, 100)
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  assert.ok(state.current, 'still walking at dusk')
+  await abortCurrent(state, 'stop')
+  assert.match((await running).result, /^failed: stop$/)
+})
+
+test('時間では止めない: 危なさが高い夕方になった・空腹になったときだけ止め、失敗には数えない', async () => {
   const walking = (bot, state, c, signal) => {
     bot.actionPhase = 'walking toward home (280m away)'
     bot.entity.position = bot.entity.position.offset(20, 0, 0)
     return waitsForAbort(bot, state, c, signal)
   }
   const { bot, state, run } = setup({ explore: walking, sleep: walking })
+  endangered(bot)
   setTimeout(() => { bot.time.timeOfDay = 12500 }, 700)
   const dusk = await run({ verb: 'explore' }, 'explore east')
   assert.equal(dusk.ok, false)
   assert.equal(dusk.interrupted, true)
-  assert.match(dusk.result, /^failed: stopped: it is dusk now \(while walking toward home \(280m away\); moved 20m\)/)
+  assert.match(dusk.result, /^failed: stopped: it is dusk now and going on is too dangerous \(while walking toward home \(280m away\); moved 20m\)/)
   // 夜を過ごす行動は止めない（始めたときより暗くなっても）。止めるのは POST /abort
   bot.time.timeOfDay = 1000
   const sleeping = run({ verb: 'sleep' }, 'sleep')
@@ -203,7 +221,7 @@ test('深い地下では、夕方・夜になっても止めない。浅い所�
     const { bot, state, run } = setup({ dig_mine: walking })
     bot.registry = md
     bot.findBlock = () => null
-    bot.inventory = { items: () => [{ name: 'torch', count: 4 }] } // 暗いのは地下では当たり前: 松明があれば止めない
+    endangered(bot) // 地下でなければ止まるだけの危なさ。暗いのは地下では当たり前: 松明があれば止めない
     bot.entity.position = new Vec3(0, 30, 0)
     bot.blockAt = (p) => (p.y > 31 && p.y < 37 && !open(p) ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' })
     return { bot, state, run }
@@ -220,5 +238,5 @@ test('深い地下では、夕方・夜になっても止めない。浅い所�
   const shallow = deep((p) => p.x >= 3)
   const cave = shallow.run({ verb: 'dig_mine' }, 'dig the mine')
   setTimeout(() => { shallow.bot.time.timeOfDay = 12500 }, 100)
-  assert.match((await cave).result, /^failed: stopped: it is dusk now/)
+  assert.match((await cave).result, /^failed: stopped: it is dusk now and going on is too dangerous/)
 })

@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### リスク評価: 禁止を減らし、危なさと失うものを数字にして LLM に見せる（設計書 94、2026-10-07、未確認: 実機の再起動後、user: 「絶対禁止は無くても良い」「リスク評価を盛り込むと柔軟」→「順に全部やってみて」）
+- 新しい `risk.mjs`（`assessRisk`: 体力・満腹度・時間帯・敵（装備で割引）・家から遠い × 失うものの重み）。`/observe` の `risk` と、状況の「外に出る危なさ」の 1 行（`stream_context._format_risk`）
+- 二択の閉じこもり（`shelterOf` / `ground()` / `callTool` / `leaveHome` / `cleared` の夜の武器・体力）を、risk が extreme のときだけ止めるに置き換え。夕方・夜の実行の中断は high 以上のときだけ。断りの文に risk と先にすることを添える
+- `place` / `use_item` / `move_furniture` に `override: true`（保護と断られた台帳を通り越す。`tool_catalog.py`、`abilities.yaml`）
+- 変えなかった禁止: 設計書 94 §4（クリーパー、液体、溶岩・砂、畑、建築中、入力の検証、反射、暗さ・空腹・体力の中断）
+- テスト: ブリッジ `npm test` 全件、`pytest`（配信が動いているときの `test_stream_factory` を除く）全件。`risk.test.mjs` 6 件、`test_stream_context_risk.py` 3 件
+- 実機で見ること: 設計書 94 §6（元気で何も持たないとき外に出る、値打ちのある物を持って体力が低いと止まる、死亡が増えないか、数字の調整）
+- 要る操作: ブリッジと配信の再起動
+
+
 ### 定石: 種・苗木は全マスの 1/4 だけ集めて、残りは育ったものから増やす（設計書 74 §7、2026-10-07、未確認: 実機、user: 「小麦の種や苗木はある程度集まったらその後は成長させたものからさらに回収する形で目標数まで数を揃えるほうが探索せずに済み、その間に別のことも出来て効率的です。このことを定石の戦略に追加してほしい」→「文言＋橋も変える」「全マスの 1/4」）
 - 原因（遅さ）: 畑の種は全マスぶん（上限 16、草から 1 割）、植林場の苗木は全マスぶん（葉から 5%）を先に集めていた。畑は全マスが植わるまで `facility(...)` が成り立たず、定石の `ready` も成り立たなかった
 - 直した: `GoalSpec.started`（`facility` だけ。`to_dict` / `describe` / `parse_spec`、`PlaybookStep` の `ready` 検証）、橋の `facilities.mjs`（`START_SHARE`、`startQuota`、`layoutStatus` の `planted` / `quota` / `started`）、`goals.mjs`（`facility` の `started` 判定、種・苗木の最初の調達量を 1/4 に、1/4 のあとは探しに出ない）、`config/default.yaml`（`food`・`lumber` の `ready` と `reason`）、定石のプロンプト、`abilities.yaml`（`get_seeds`・`plant_trees`）

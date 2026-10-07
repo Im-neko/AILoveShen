@@ -94,6 +94,7 @@ import { makeGoal, evaluate, needs, checkConditions } from './goals.mjs'
 import { ground, describe } from './candidates.mjs'
 import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed, protectedReason } from './home.mjs'
+import { assessRisk } from './risk.mjs'
 import { startReflex, steerReflex, releaseReflex, dangerView } from './reflex.mjs'
 import { storageUsage } from './storage.mjs'
 import { countPlaced } from './placing.mjs'
@@ -217,6 +218,8 @@ function observation () {
   const spot = quarrySpot(state, bot.entity.position)
   if (spot) extra.quarry = { x: spot.x, y: spot.y, z: spot.z, distance_m: round(spot.distanceTo(bot.entity.position)), direction: bearing(bot.entity.position, spot), shafts: (state.quarry?.shafts ?? []).map((s) => ({ top: s.top, bottom: s.bottom })) }
   extra.underground = isUnderground(bot)
+  // 外に出る・戦うときの危なさ（risk.mjs。家の中でも、外に出たときの）
+  extra.risk = assessRisk(bot, state)
   trackSurface(bot, state, extra.underground)
   // 手持ちのストック（食べ物の個数、松明の本数。Python が、切らす前に集める小目標を出す）
   // 家のチェストにある数は最後に開けたときの中身（備蓄。手持ちと合わせて数える）。mines は設計した鉱山の数

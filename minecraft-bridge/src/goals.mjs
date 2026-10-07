@@ -23,6 +23,7 @@ import vec3Pkg from 'vec3'
 import { solve, nextStep, isGather } from './solver.mjs'
 import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillCount } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked } from './home.mjs'
+import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
 import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
@@ -256,10 +257,9 @@ function validGoal (spec, bot, state, knowledge) {
     }
     case 'cleared': {
       needHome()
-      // 夜も、武器があれば出て倒してよい（敵がいて眠れないとき。2026-09-27: 夜の行動が制約されすぎ）。
-      // 暗いうちは次々に湧くので、持ち物は先に家のチェストに預ける（evaluate の stash）
-      const phase = dayPhase(bot.time.timeOfDay)
-      if (phase !== 'day' && !armed(bot)) throw new Error(`it is ${phase}: without a sword or an axe, stay inside until morning (hostile mobs keep spawning in the dark)`)
+      // 夜も出て倒してよい（敵がいて眠れないとき。2026-09-27: 夜の行動が制約されすぎ）。素手でも、危なさ
+      // （risk.mjs）が極めて高いとき以外は止めない。暗いうちは次々に湧くので、持ち物は先に家のチェストに預ける
+      // （evaluate の stash）
       return { spec: { predicate } }
     }
     default:
@@ -503,7 +503,7 @@ function evaluateOne (bot, state, knowledge, world) {
         const near = dangerOutside(bot, state.home)
         if (sleepy && near.length) {
           out.lines.push(`hostiles near the house (${near.map(({ e }) => e.name).join(', ')}): you cannot sleep while they are close` +
-            (armed(bot) ? '; with your weapon you could go out and fight them (cleared: items go into the chest first)' : ''))
+            `; you could go out and fight them (cleared: valuable items go into the chest first; ${describeRisk(assessRisk(bot, state))})`)
         }
         break
       }
@@ -879,14 +879,17 @@ function evaluateOne (bot, state, knowledge, world) {
         out.blocked.push('a creeper is near the door: it explodes when fought in melee; wait for it to leave')
         break
       }
-      if (phase !== 'day') {
-        // 夜: 武器を持ち、体力が十分なときだけ。持ち物は先に家のチェストへ（死んでも失わない）
-        if (!armed(bot)) { out.blocked.push(`it is ${phase}: no sword or axe; stay inside until morning`); break }
-        if (bot.health < NIGHT_FIGHT_HEALTH) { out.blocked.push(`it is ${phase}: health ${bot.health}; heal (eat, wait) before going out to fight`); break }
+      // 外に出て戦う危なさ（risk.mjs）。極めて高いときだけ止める（敵、体力、時間帯、装備を合わせた数字）。
+      // 失うものがあるときは、先に持ち物を家のチェストへ（死んでも失わない。昼も）。武器がなくても、素手で出る
+      // 手は出す（夜に素手で出るかは、risk を見て選ぶ側が決める）
+      const risk = assessRisk(bot, state)
+      if (atLeast(risk, SHELTER_LEVEL) && SHELTER_LEVEL !== 'none') { out.blocked.push(`going out to fight is too dangerous now: ${describeRisk(risk)}`); break }
+      out.lines.push(describeRisk(risk))
+      if (risk.stakes === 'valuable') {
         const stash = stashLeaf(bot, state)
         if (stash) {
           out.leaves.push(stash)
-          out.lines.push(`before fighting at night: put ${stash.items.length} kinds of items in the home's chest (keep the weapon, armor, food, torches)`)
+          out.lines.push(`before fighting: put ${stash.items.length} kinds of items in the home's chest (keep the weapon, armor, food, torches)`)
           out.remaining += 1
           break
         }
@@ -992,7 +995,6 @@ function evaluateOne (bot, state, knowledge, world) {
   return out
 }
 
-const NIGHT_FIGHT_HEALTH = 14
 const STASH_MIN_ITEMS = 8
 
 export const armed = (bot) => (bot.inventory?.items?.() ?? []).some((i) => /_(sword|axe)$/.test(i.name))

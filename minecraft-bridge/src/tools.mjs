@@ -8,6 +8,7 @@ import { isQuarryKind, quarrySpot, inQuarry, QUARRY_RADIUS } from './quarry.mjs'
 import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing, blockProps, fillCount, isUnderground } from './observe.mjs'
 import { shelterOf, needsOutside, creeperNear, CREEPER_HOME_REASON } from './candidates.mjs'
+import { describeRisk } from './risk.mjs'
 import { refusalAt, noteRefusal } from './refusals.mjs'
 import { shallowStone, SHALLOW_REMEDY } from './mining.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
@@ -285,8 +286,9 @@ export function createTools (deps) {
       if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}`)
       // 家の部屋の中、または建築予定地への仮設（建っているもののまわりでなければ。建てる番が来たら壊す）
       const temporary = TEMPORARY.test(args.item) && !inStandingBuilding(bot, state, pos, 1)
-      const why = inRoom(args.item, pos) || temporary ? null : protectedReason(state, pos)
-      if (why) refuse(`will not place at ${fmt(pos)}: ${why}${state.plan?.origin && /current home/.test(why) ? ' (the missing blocks of the house are placed by build_next or the place_plan candidate of built(), which also fills the ground under the house first)' : ''}`)
+      // override: true は、家・建てている家・建物の保護を承知で置くとき（置く先が保護されていても置く）
+      const why = inRoom(args.item, pos) || temporary || args.override === true ? null : protectedReason(state, pos)
+      if (why) refuse(`will not place at ${fmt(pos)}: ${why} (override: true places it anyway if you mean to)${state.plan?.origin && /current home/.test(why) ? ' (the missing blocks of the house are placed by build_next or the place_plan candidate of built(), which also fills the ground under the house first)' : ''}`)
       const stationWhy = stationRefusal(bot, state, args.item, pos)
       if (stationWhy) refuse(`will not place at ${fmt(pos)}: ${stationWhy}`)
       const feet = bot.entity.position.floored()
@@ -439,8 +441,8 @@ export function createTools (deps) {
       const why = moveRefusal(bot, state, pos, block, to)
       if (why) refuse(why)
       // 家のものでなければ、建物や建てている家の一部でないか（ふつうの掘る決まり）
-      const guard = isHomeFurniture(state, pos) ? null : protectedReason(state, pos, 0, block)
-      if (guard) refuse(`will not move ${block.name} at ${fmt(pos)}: ${guard}`)
+      const guard = isHomeFurniture(state, pos) || args.override === true ? null : protectedReason(state, pos, 0, block)
+      if (guard) refuse(`will not move ${block.name} at ${fmt(pos)}: ${guard} (override: true moves it anyway if you mean to)`)
       if (to) {
         const cell = bot.blockAt(to)
         if (!cell || !REPLACEABLE.has(cell.name)) refuse(`${fmt(to)} is not free`)
@@ -573,8 +575,8 @@ export function createTools (deps) {
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       if (OWN_TOOL_BLOCKS.test(block.name)) refuse(`${block.name} has its own tools (sleep, deposit, withdraw, craft, smelt, move_furniture)`)
-      const why = protectedReason(state, pos, 0, block)
-      if (why) refuse(`will not use ${args.item} on ${block.name} at ${fmt(pos)}: ${why}`)
+      const why = args.override === true ? null : protectedReason(state, pos, 0, block)
+      if (why) refuse(`will not use ${args.item} on ${block.name} at ${fmt(pos)}: ${why} (override: true uses it anyway if you mean to)`)
       return { c: { verb: 'use_item', target: `${args.item} on ${block.name}`, item: args.item, pos, hold, ...how } }
     },
     // ボートで水の上を x,z に向かって進む（設計書 37）。岸に着いたら降りてボートを拾う
@@ -695,21 +697,20 @@ export function createTools (deps) {
       if (state.reflex) refuse('the reflex is handling a nearby threat')
       if (state.busy) refuse('another action is running')
       // 前に同じ場所へ同じ手を断られた・着けなかったなら、やり直さない（理由と、別の手を選ぶよう返す）
-      // （壊すと決めた掘り直し demolish は、家や建物を断られた台帳を通り越す）
-      const tried = args.demolish === true ? null : refusalAt(state, name, positionOf(args))
+      // （壊すと決めた掘り直し demolish と、保護を承知の override は、家や建物を断られた台帳を通り越す）
+      const tried = args.demolish === true || args.override === true ? null : refusalAt(state, name, positionOf(args))
       if (tried) refuse(`${name} at ${fmt(tried.pos)} was tried before and will not work: ${tried.reason}; choose another place or another way`)
       const { c, label } = build[name](args)
       const home = state.home
       if (home && needsOutside(c, home)) {
-        const { sheltering, day } = shelterOf(bot, home)
-        // 昼にドアの前で待つ敵とは戦ってよい（cleared と同じ）。夜は、今の小目標が cleared（武器を
-        // 持って倒しに出ると決めた）のときだけ
+        const { sheltering, day, risk } = shelterOf(bot, home)
+        // 外に出る危なさが極めて高いとき（risk.mjs の SHELTER_LEVEL）だけ止める。昼にドアの前で待つ敵とは
+        // 戦ってよい（cleared と同じ）。夜は、今の小目標が cleared（倒しに出ると決めた）のときだけ
         const fighting = day || state.goal?.spec?.predicate === 'cleared'
         const confront = fighting && c.verb === 'attack' && c.hostile
         if (sheltering && !confront) {
-          refuse(day
-            ? 'staying inside while hostile mobs wait near the door (attack them by day, or wait)'
-            : 'staying inside for the night: actions outside the house wait until morning (to fight the hostiles near the house with a weapon, choose the small goal cleared)')
+          refuse(`staying inside: going out is too dangerous right now (${describeRisk(risk)}). ` +
+            (day ? 'Attack them by day, wait, or reduce the risk first' : 'Wait until morning, reduce the risk first, or choose the small goal cleared to fight'))
         }
         if (confront) c.confront = true
       }

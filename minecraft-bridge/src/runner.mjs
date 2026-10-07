@@ -17,6 +17,7 @@ import { brokeSince } from './wear.mjs'
 import { carriesFood } from './healing.mjs'
 import { TRAIL_VERBS, startTrail } from './trail.mjs'
 import { noteRefusal } from './refusals.mjs'
+import { assessRisk, atLeast } from './risk.mjs'
 
 const NEED_CHECK_MS = 500
 // 夕方・夜になっても止めない行動（夜を過ごす、家に入る、戦う・逃げる、食べる）
@@ -64,7 +65,9 @@ export function createRunner (bot, state, deps = {}) {
       if (riding(bot)) return null // 水の上: 岸まで漕ぐ
       const phase = dayPhase(bot.time.timeOfDay)
       // 深い地下は夜も昼も同じ: 夕方・夜になっても止めない（isUnderground）
-      if (DARKER[start.phase]?.includes(phase) && !NIGHT_VERBS.has(c.verb) && !isUnderground(bot)) return `it is ${phase} now`
+      // 暗くなったら、危なさが高い（risk.mjs: 敵、体力、持ち物の値打ち）ときだけ止める。武器を持った元気なボットや、
+      // 失うものがほとんどないボットは、夕方・夜も続ける（時間帯だけで止めると、昼に始めた作業が毎日夕方に切れた）
+      if (DARKER[start.phase]?.includes(phase) && !NIGHT_VERBS.has(c.verb) && !isUnderground(bot) && atLeast(assessRisk(bot, state), 'high')) return `it is ${phase} now and going on is too dangerous`
       if (!DARK_OK_VERBS.has(c.verb) && !start.tooDark && tooDark()) return 'too dark to see and no torch'
       // 空腹で止めるのは、食べに行くため。夜を過ごす・家に帰る・戦う・逃げる・食べる（NIGHT_VERBS）は止めない:
       // 食べ物がないと、帰る歩きを途中で止めるだけになる（2026-09-30 18:07: 家まで 64 m の帰り道を 14 m で止め、

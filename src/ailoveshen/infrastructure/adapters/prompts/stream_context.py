@@ -735,6 +735,23 @@ def _format_farm(farm: dict) -> list[str]:
     ]
 
 
+_RISK_LEVELS = {"low": "低い", "medium": "やや高い", "high": "高い", "extreme": "極めて高い"}
+
+
+def _format_risk(risk: dict) -> list[str]:
+    """
+    外に出る・戦うときの危なさ（ブリッジが体力・時間帯・敵・装備・失うものから測った。docs/design/94）。
+    禁止ではなく、選ぶ材料: 危なければ、行動の前にリスクを下げる手（預ける・食べる・装備する）を先に選ぶ。
+    """
+    if not risk or risk.get("level") not in _RISK_LEVELS:
+        return []
+    line = f"- 外に出る危なさ: {_RISK_LEVELS[risk['level']]}（{'; '.join(risk.get('factors') or [])}）"
+    advice = risk.get("advice") or []
+    if advice:
+        line += f"。出る前に: {'; '.join(advice)}"
+    return [line]
+
+
 def _format_situation(obs: GameObservation) -> str:
     s = obs.state
     lines = [
@@ -749,6 +766,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
         *_format_broken(s.get("broken_tools") or []),
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
+        *_format_risk(s.get("risk") or {}),
         *_format_farm(s.get("farm") or {}),
         f"- チェストの中身: {_format_chests(s.get('memory') or {})}",
         f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",
