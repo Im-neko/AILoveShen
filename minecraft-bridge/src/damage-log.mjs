@@ -51,8 +51,8 @@ export function damageCause (bot, fell) {
 }
 
 // bot の health イベントのたびに、体力が減っていれば 1 行（console.log: logs/bridge.log にも入る）。
-// what: いま実行している行動の名前（state.busy など。なければ空）
-export function installDamageLog (bot, what = () => '') {
+// what: いま実行している行動の名前（state.busy など。なければ空）。onDamage: 1 件ごとに { at, lost, health, cause, what } を渡す（death-report.mjs）
+export function installDamageLog (bot, what = () => '', onDamage = () => {}) {
   let last = null
   let vy = 0
   bot.on('physicsTick', () => { vy = Math.min(vy * 0.9, bot.entity?.velocity?.y ?? 0) })
@@ -61,7 +61,9 @@ export function installDamageLog (bot, what = () => '') {
     if (lost >= MIN_LOSS) {
       const p = bot.entity.position
       const fell = vy <= FALL_VY ? Math.abs(vy) * 20 : 0
-      console.log(`[damage] -${lost.toFixed(1)} -> ${bot.health.toFixed(1)}/20 food ${bot.food}: ${damageCause(bot, fell)} at ${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}${what() ? ` while ${what()}` : ''}`)
+      const cause = damageCause(bot, fell)
+      console.log(`[damage] -${lost.toFixed(1)} -> ${bot.health.toFixed(1)}/20 food ${bot.food}: ${cause} at ${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}${what() ? ` while ${what()}` : ''}`)
+      onDamage({ at: Date.now(), lost: Math.round(lost * 10) / 10, health: Math.round(bot.health * 10) / 10, cause, what: what() })
     }
     last = bot.health
   })

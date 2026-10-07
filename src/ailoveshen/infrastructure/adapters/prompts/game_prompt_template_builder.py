@@ -1152,6 +1152,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         offered: Sequence[Candidate] = (),
         retry_allowed: bool = True,
         job_status: Sequence[ConditionStatus] = (),
+        death_report: str = "",
     ) -> str:
         """LLM に次の目標を決めさせるプロンプトを組み立てる。"""
         error = (
@@ -1166,7 +1167,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             activity=format_activity(activity, with_ids=True),
             recent_messages=format_messages(tuple(recent_messages)),
             reason=goal_ended_because or "なし",
-            failure=_format_failure(failure_record, offered, retry_allowed),
+            failure=_format_failure(failure_record, offered, retry_allowed) + _format_death(death_report),
             previous_error=error,
             jobs=_format_job_status(job_status),
             town_map=format_town_map(activity.town_map),
@@ -1342,6 +1343,19 @@ def _format_failure(
     if not retry_allowed:
         lines.append("この小目標は続けて失敗している。やり直しは選べない（change にする）")
     return "\n".join(lines) + "\n"
+
+
+def _format_death(report: str) -> str:
+    """死んだときの様子（docs/design/105）。死んだ直後だけ。教訓を必ず書かせる。"""
+    if not report:
+        return ""
+    return (
+        "\n## 死んだときの様子（ブリッジの記録。復活して状況が変わっているので、これだけが死ぬ前の事実）\n"
+        f"{report}\n"
+        "持ち物は死んだ場所に落ちて 5 分で消える。まず原因を分析（diagnosis）し、同じ死に方をしないために"
+        "次からどうするか（いつ・どこで何をやめる／先にする）を、教訓（lesson と lesson_when）に必ず書く。"
+        "教訓は一般的な 1 文（座標は書かない）で、似た状況で思い出される\n"
+    )
 
 
 def _format_offered(c: Candidate) -> str:

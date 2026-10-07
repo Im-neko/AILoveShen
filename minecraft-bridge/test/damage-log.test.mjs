@@ -60,6 +60,23 @@ test('体力が減ったときだけ 1 行出す（回復と小さな変化は�
   assert.match(lines[0], /^\[damage\] -4\.0 -> 16\.0\/20 food 20: creeper .* at 0,70,0 while dig the mine$/)
 })
 
+test('1 件ごとに onDamage へ { at, lost, health, cause, what } を渡す（死んだときの様子に使う）', () => {
+  const bot = fakeBot({ mobs: [{ name: 'zombie', d: 2 }] })
+  const got = []
+  installDamageLog(bot, () => 'level the ground', (d) => got.push(d))
+  const log = console.log
+  console.log = () => {}
+  try {
+    bot.health = 20; bot.emit('health')
+    bot.health = 17.5; bot.emit('health')
+    bot.health = 17.6; bot.emit('health') // 回復
+  } finally { console.log = log }
+  assert.equal(got.length, 1)
+  assert.deepEqual([got[0].lost, got[0].health, got[0].what], [2.5, 17.5, 'level the ground'])
+  assert.match(got[0].cause, /^zombie /)
+  assert.equal(typeof got[0].at, 'number')
+})
+
 test('毒・衰弱は、敵が離れたあとも続くので敵より先に推す。燃えているときもそう', () => {
   const poisoned = fakeBot({ effects: { 19: { id: 19, amplifier: 0, duration: 240 } }, mobs: [{ name: 'cave_spider', d: 20 }] })
   assert.equal(damageCause(poisoned, 0), 'poison (level 1, 12 s left)')

@@ -332,6 +332,7 @@ def goal_schema(
     after_failure: bool = False,
     retry_allowed: bool = True,
     plan_owns_jobs: bool = False,
+    died: bool = False,
 ) -> dict[str, Any]:
     """
     目標の決定の JSON スキーマ: 小目標、大目標リストの編集、自分のメモの編集。
@@ -341,6 +342,7 @@ def goal_schema(
     出力はスキーマの順に書かれるので、分析してから決める）。`retry_allowed` が False なら
     同じ小目標のやり直しは選べない。`plan_owns_jobs` なら、一番上の大目標の中目標は計画（LLM が
     段階と小目標の並びとして書いた。docs/design/50 §18）が持つので、`jobs` は書かせない。
+    `died`（失敗のうち、死んだとき。docs/design/105）なら、教訓（lesson）を必ず書かせる。
     """
     change: dict[str, Any] = {
         "type": "object",
@@ -478,8 +480,14 @@ def goal_schema(
         },
         "lesson_when": lesson_when_schema(),
     }
+    if died:
+        tail["lesson"]["description"] = (
+            "Required, last: what to remember from this death so the same death does not "
+            "happen again (general, no coordinates; the situation and what you could have done "
+            "differently), one Japanese sentence of at most 80 characters"
+        )
     schema["properties"] = {**head, **schema["properties"], **tail}
-    schema["required"] = ["diagnosis", "remedy", *schema["required"]]
+    schema["required"] = ["diagnosis", "remedy", *schema["required"], *(["lesson"] if died else [])]
     return schema
 
 

@@ -26,6 +26,7 @@ from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
 from ailoveshen.application.use_cases.action_label import action_label
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
+from ailoveshen.application.use_cases.death_report import death_situation, describe_death
 from ailoveshen.application.use_cases.goal_ends import goal_end_entry
 from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
 from ailoveshen.application.use_cases.repetition import Repetition
@@ -994,6 +995,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         ended = ended_kind(reason)
         # 終わった小目標の状況（教訓の条件と、思い出す手がかり。docs/design/35）
         situation = situation_of(session.goal.spec if session.goal else None, obs, ended)
+        if ended == "died":
+            # 復活すると家の中・体力満タンになる: 教訓の「どんなときか」は、死ぬ前の様子から（設計書 105）
+            situation = {**situation, **death_situation(obs.state.get("last_death"))}
         if self._lessons is not None and self._in_play:
             self._lessons.settle(self._in_play, ended)
         self._in_play = ()
@@ -1240,21 +1244,28 @@ class AdvancePlayUseCase(IAdvancePlay):
         )
         purpose = "goal_after_failure" if failed else "goal"
         # 行き詰まった・進まなかったときは、原因を分析してから決める（docs/design/27）
-        failed_goal = (
-            session.recent_goals[-1].goal.spec
-            if _no_progress(reason) and session.recent_goals
-            else None
-        )
-        same_failures = _same_failures(session) if failed_goal else 0
-        # 死んだときは、死んだ小目標をそのまま再開させない（持ち物が消えている。2026-10-01: 死んだ直後に
-        # 同じ have(raw_iron, 3) を決め、また同じ地下へ戻った）
+        # 死んだときも分析させる（原因と、同じ死に方をしないための教訓。docs/design/105: 今まで死んだときは
+        # 分析も教訓も書かせず、96 回死んで教訓が 0 件だった）
         died_goal = (
             session.recent_goals[-1].goal.spec
             if " died and " in reason and session.recent_goals
             else None
         )
+        failed_goal = (
+            session.recent_goals[-1].goal.spec
+            if (_no_progress(reason) or died_goal is not None) and session.recent_goals
+            else None
+        )
+        same_failures = _same_failures(session) if failed_goal and died_goal is None else 0
+        # 死んだときは、死んだ小目標をそのまま再開させない（持ち物が消えている。2026-10-01: 死んだ直後に
+        # 同じ have(raw_iron, 3) を決め、また同じ地下へ戻った）。やり直し（retry）は選べない
         # 大目標が進まないときは、同じやり方のやり直しを出さない（別のやり方に変える）
-        retry_allowed = same_failures < MAX_SAME_FAILURES and OBJECTIVE_STALLED not in reason
+        retry_allowed = (
+            same_failures < MAX_SAME_FAILURES
+            and OBJECTIVE_STALLED not in reason
+            and died_goal is None
+        )
+        death_report = describe_death(obs.state.get("last_death")) if died_goal is not None else ""
         record = tuple(self._goal_steps) if failed_goal else ()
         offered = self._offered if failed_goal else ()
         images: list[Screenshot] = []
@@ -1276,6 +1287,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 offered=offered,
                 retry_allowed=retry_allowed,
                 job_status=job_status,
+                death_report=death_report,
             )
             schema = goal_schema(
                 predicates,
@@ -1286,6 +1298,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 after_failure=failed_goal is not None,
                 retry_allowed=retry_allowed,
                 plan_owns_jobs=plan_owns_jobs,
+                died=died_goal is not None,
             )
             data = await self._text_generator.generate_json(
                 prompt,
@@ -1417,7 +1430,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     # 決定を確かめたあとに、返答が視聴者の中目標を足して上限に届いた: 書き直しは見送る
                     logger.warning(f"中目標の書き直しを見送った: {e}")
             self._write_notes(session.notebook, data, obs.day, goals, viewers)
-            self._learn(decision, situation or {})
+            self._learn(decision, situation or {}, "death" if died_goal is not None else "failure")
             await self._start_goal(
                 session, obs, _goal(decision, plan), reason, status, rethinks_seen
             )
@@ -1655,7 +1668,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         except ValueError as e:
             logger.warning(f"メモの編集を飛ばした: {data.get('note_changes')!r}: {e}")
 
-    def _learn(self, decision: GoalDecision, situation: dict[str, str]) -> None:
+    def _learn(
+        self, decision: GoalDecision, situation: dict[str, str], source: str = "failure"
+    ) -> None:
         """失敗の後の決定が書いた教訓を、教訓帳に書く（条件がなければ行き詰まった状況）。"""
         if self._lessons is None or not decision.lesson:
             return
@@ -1666,7 +1681,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             condition if isinstance(condition, str) else "",
             keys or situation,
             explicit=bool(keys),
-            source="failure",
+            source=source,
         )
 
     async def _recall_for(self, goal: Goal, obs: GameObservation) -> tuple[Lesson, ...]:

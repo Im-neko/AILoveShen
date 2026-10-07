@@ -577,6 +577,10 @@ export function forNeeds (bot, state, knowledge) {
 // 地下で死んだ場所へ戻るのは、武器と行きの松明があるときだけ（死んだあとの持ち物は空で、素手のまま
 // 前の死に場所へ潜って 7 回続けて死んだ: 2026-10-01。docs/design/80_underground_deaths.md）
 function recoverTripOk (bot, death) {
+  // 夕方と夜は取りに行かない（復活した直後は素手で、死んだ場所には殺したモブが残っている。2026-10-07 に夜の外で死んだ
+  // 3 秒後に取りに出て、同じ場所の手前でまた死んだ。落とし物は 5 分で消えるので、夜に死ねば諦めることになる。設計書 105）
+  const phase = dayPhase(bot.time.timeOfDay)
+  if (phase === 'dusk' || phase === 'night') return false
   if (death.y >= UNDERGROUND_BELOW) return true
   const items = bot.inventory?.items?.() ?? []
   const armed = items.some((i) => /_(sword|axe)$/.test(i.name))

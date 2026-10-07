@@ -62,6 +62,20 @@ test('死んだ直後は、目標に関係なく持ち物を取りに戻る候�
   assert.equal(offered(bot(now + 10 * MIN), memory).length, 0) // 5 分たつと消えている
 })
 
+test('夕方と夜は、死んだ場所へ取りに戻る候補を出さない（地上でも地下でも）。朝・昼は出す', () => {
+  const now = 100 * MIN
+  const surface = { deaths: [{ x: 30, y: 70, z: 2, seen: now - 1 * MIN }], places: {}, explored: {}, chests: {}, furnaces: {} }
+  const at = (timeOfDay) => ({ ...bot(now), time: { timeOfDay, age: now } })
+  assert.equal(offered(at(1000), surface).length, 1, '昼')
+  assert.equal(offered(at(23500), surface).length, 1, '明け方')
+  assert.equal(offered(at(12600), surface).length, 0, '夕方')
+  assert.equal(offered(at(18000), surface).length, 0, '夜')
+  const deep = { deaths: [{ x: 30, y: -20, z: 2, seen: now - 1 * MIN }], places: {}, explored: {}, chests: {}, furnaces: {} }
+  const armed = (timeOfDay) => ({ ...at(timeOfDay), inventory: { items: () => [{ name: 'stone_sword', count: 1 }, { name: 'torch', count: 20 }] } })
+  assert.equal(offered(armed(1000), deep).length, 1, '武器と松明があれば昼は戻る')
+  assert.equal(offered(armed(18000), deep).length, 0, '地下でも、夜は地上を通って行くので戻らない')
+})
+
 test('死んだ場所へ戻って拾う。何も落ちていなければ失敗にして、その死は諦める記録が残る', async () => {
   const items = []
   const drop = { id: 7, name: 'item', position: new Vec3(31, 70, 2) }

@@ -82,6 +82,7 @@ import { summarize, bearing, round, inventoryCounts, isUnderground, blockInfo, p
 import { foodCount, foodIn, foodPointsIn } from './cooking.mjs'
 import { trackSurface } from './surface.mjs'
 import { installDamageLog } from './damage-log.mjs'
+import { noteDamage, deathReport } from './death-report.mjs'
 import { configureMovements, DAMAGE_TOLERANT, knownFurnace, nearbyDrops } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools, DROP_RADIUS as PICKUP_RADIUS } from './tools.mjs'
@@ -203,6 +204,7 @@ function observation () {
   // 調べた候補地の数字（ブリッジが測ったものだけ。まだ調べていない候補地は入らない）
   if (state.survey) extra.survey = { planned: state.survey.sites.length, sites: surveyedSites(state).map((s) => state.memory.sites[s.id]) }
   extra.deaths = state.deaths
+  extra.last_death = state.lastDeath ?? null // 死んだ瞬間の様子（死んだあとの目標の決定が教訓にする。設計書 105）
   // まわりの目印（ベッド、ドア、作業台、かまど、チェスト、松明）と、それが家のものか
   extra.nearby = landmarks(bot, state)
   // 目の前にあるもの（半径 8、足元の高さ ±2 の、見えているブロックと落ちているアイテム）
@@ -606,9 +608,10 @@ startReflex(bot, state, {
   record (entry) { pushHistory(state, entry) }
 })
 
-installDamageLog(bot, () => state.current?.id ?? (state.reflex ? 'the reflex' : ''))
+installDamageLog(bot, () => state.current?.id ?? (state.reflex ? 'the reflex' : ''), (d) => noteDamage(state, d))
 bot.on('death', () => {
   state.deaths += 1
+  state.lastDeath = deathReport(bot, state)
   rememberDeath(state.memory, bot.entity.position, worldAge())
   persist()
   console.log(`[bot] ${bot.entity.position} で死んだ`)

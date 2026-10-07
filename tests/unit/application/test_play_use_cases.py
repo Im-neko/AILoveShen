@@ -91,6 +91,17 @@ RETRY_PLANKS = {
     "remedy": "retry",
     "advice": "Explore west.",
 }
+# 死んだあとの決定: 分析、対処（やり直しは選べない）、教訓（設計書 105）
+DIED_PLANKS = {
+    "predicate": "have",
+    "item": "wooden_sword",
+    "count": 1,
+    "serves": "current",
+    "reason": "死んだので、先に身を守る剣を作る",
+    "diagnosis": "夜に外で長い作業を続けて囲まれた",
+    "remedy": "change",
+    "lesson": "夜は外の作業を止めて家に入る",
+}
 BUILT = GoalSpec(GoalPredicate.BUILT)
 BED = GoalSpec(GoalPredicate.PLACED, item="bed", where="home")
 SWORD = GoalSpec(GoalPredicate.HAVE, item="wooden_sword", count=1)
@@ -1910,7 +1921,7 @@ class TestDeath:
     async def test_after_a_death_gemini_decides_with_the_screen(
         self, use_case, text_generator, bridge, prompt_builder
     ):
-        text_generator.generate_json.return_value = PLANKS
+        text_generator.generate_json.return_value = DIED_PLANKS
         bridge.observe.return_value = self._with_deaths(0)
         session = _session(HAVE_PLANKS)
         session.observe(self._with_deaths(0))
@@ -1923,9 +1934,70 @@ class TestDeath:
         reason = prompt_builder.build_goal_prompt.call_args.kwargs["goal_ended_because"]
         assert "died and respawned" in reason
         assert text_generator.generate_json.call_args.kwargs["purpose"] == "goal_after_failure"
-        # 死んだことは失敗の分析（行き詰まった・進まない）ではない
+        # 死んだことは行き詰まった失敗ではないので、行動の記録はないが、分析と教訓は書かせる（設計書 105）
         assert prompt_builder.build_goal_prompt.call_args.kwargs["failure_record"] == ()
+        assert prompt_builder.build_goal_prompt.call_args.kwargs["retry_allowed"] is False
+        schema = text_generator.generate_json.call_args.args[1]
+        assert {"diagnosis", "remedy", "lesson"} <= set(schema["required"])
+        assert schema["properties"]["remedy"]["enum"] == ["change"]
         assert session.deaths_at_goal == 1  # 新しい小目標は、今の数から数える
+
+    @pytest.mark.asyncio
+    async def test_a_death_without_a_lesson_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """死んだあとの決定は、原因の分析と教訓を書くまで差し戻される。"""
+        text_generator.generate_json.return_value = PLANKS
+        bridge.observe.return_value = self._with_deaths(0)
+        session = _session(HAVE_PLANKS)
+        session.observe(self._with_deaths(0))
+        session.set_goal(Goal(HAVE_PLANKS, objective_id="m1"), "day")
+        bridge.observe.return_value = self._with_deaths(1)
+        with pytest.raises(TextGenerationError, match="diagnosis first"):
+            await use_case.execute(session)
+
+    @pytest.mark.asyncio
+    async def test_the_death_report_is_shown_and_the_lesson_keeps_the_situation_before_the_death(
+        self, bridge, text_generator, prompt_builder, selector, events, conversation, objectives,
+        town, notes,
+    ):
+        from ailoveshen.application.use_cases.lessons import LessonBook
+
+        store = Mock()
+        store.load.return_value = None
+        book = LessonBook(store, mode="rules")
+        use_case = AdvancePlayUseCase(
+            bridge=bridge, text_generator=text_generator, prompt_builder=prompt_builder,
+            action_selector=selector, event_publisher=events, conversation=conversation,
+            objectives=objectives, town=town, notes=notes, lessons=book,
+        )
+        text_generator.generate_json.return_value = {
+            **DIED_PLANKS,
+            "lesson": "夜に家の外で長い作業を続けず、暗くなる前に帰る",
+            "lesson_when": {"text": "夕方から夜に外で作業しているとき"},
+        }
+        bridge.observe.return_value = self._with_deaths(0)
+        session = _session(HAVE_PLANKS)
+        session.observe(self._with_deaths(0))
+        session.set_goal(Goal(HAVE_PLANKS, objective_id="m1"), "day")
+        # 復活した後の様子は、昼の家の中。ブリッジの記録は、夜の外で死んだと言う
+        died = self._with_deaths(1, time_phase="day")
+        last_death = {
+            "phase": "night", "place": "outside", "from_home_m": 48, "seconds": 38,
+            "health_before": 20, "damage": {"zombie": 10, "skeleton": 3}, "hits": 6,
+            "doing": ["level the ground", "the reflex"],
+        }
+        bridge.observe.return_value = replace(died, state={**died.state, "last_death": last_death})
+        await use_case.execute(session)
+
+        shown = prompt_builder.build_goal_prompt.call_args.kwargs["death_report"]
+        assert "夜、家の外で死んだ" in shown and "家のドアから約 48 m" in shown
+        assert "zombie 10" in shown and "level the ground → the reflex" in shown
+        (lesson,) = book.lessons
+        assert lesson.source == "death"
+        assert lesson.keys["ended"] == "died"
+        # 復活後の「昼・家の中・体力満タン」ではなく、死ぬ前の様子
+        assert (lesson.keys["time"], lesson.keys["place"], lesson.keys["body"]) == ("night", "outside", "hurt")
 
 
 class TestLessons:
