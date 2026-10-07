@@ -6,6 +6,7 @@ import { registerFacility, mineStatus, onMineCell, inMineBody, finishedMine, upd
 import { columnWork } from '../src/leveling.mjs'
 import { makeGoal, evaluate } from '../src/goals.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
+import { lightWorld } from './light-world.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -195,14 +196,14 @@ test('掘っている途中で松明が尽きたら、暗いまま先へ掘ら�
   const { PRIMITIVES } = await import('../src/primitives.mjs')
   const s = state()
   const fac = registerFacility(world(), s, 'mine_1', MINE)
-  // 松明 1 本: 階段 12 段ごとに 1 本、置く番は 12 段目。持っている 1 本は使い切れないので、12 段目で置いた後、
-  // 24 段目の番で尽きる
+  // 松明 1 本: 階段 6 段ごとに 1 本、置く番は 6 段目。持っている 1 本は使い切れないので、6 段目で置いた後、
+  // 12 段目の番で尽きる
   const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 1 }]
   const bot = digger(fac, items)
   bot.placeBlock = async () => { items.splice(items.findIndex((i) => i.name === 'torch'), 1) } // 使い切ると持ち物から消える
   const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
   assert.match(r, /^dug \d+ cells of the mine mine_1; stopped: out of torches/)
-  assert.ok(Number(/^dug (\d+)/.exec(r)[1]) >= 12)
+  assert.equal(Number(/^dug (\d+)/.exec(r)[1]), 11) // 入口の 1 段目は空気で、掘った数に入らない
 })
 
 test('松明を置いたあとは、持っていたツルハシに持ち替える（松明を持ったまま掘ると素手と同じ遅さ。2026-10-07）', async () => {
@@ -219,6 +220,126 @@ test('松明を置いたあとは、持っていたツルハシに持ち替え�
   const i = held.indexOf('torch')
   assert.ok(i >= 0, 'a torch was placed')
   assert.equal(held[i + 1], 'stone_pickaxe', held.join(','))
+})
+
+// 設計の並びを全部掘りながら、松明を置いた所（セルの番号）を集める。light は、(x, y, z) のブロックの光（省けば光は届いていない）
+async function digAll ({ design, light, sky, torches = 60, blocks = {} } = {}) {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(blocks), s, 'mine_1', { ...MINE, design: { bottom_y: 40, ...design } })
+  const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: torches }]
+  const bot = digger(fac, items)
+  Object.assign(bot, world(blocks, items), { entity: { position: new Vec3(10, 40, 0), onGround: true } })
+  bot.dig = async (b) => { blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air' }
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async () => {}, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  const placed = []
+  if (light) bot.world = lightWorld((x, y, z) => light(x, y, z, placed), sky && ((x, y, z) => sky(x, y, z)))
+  bot.placeBlock = async (wall, face) => { placed.push(wall.position.plus(face)) }
+  const result = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  const at = (p) => fac.layout.cells.findIndex((c) => c.x === p.x && c.z === p.z && c.y + 1 === p.y)
+  return { result, fac, placed, indexes: placed.map(at), torchesLeft: items.find((i) => i.name === 'torch').count }
+}
+const kth = (fac, indexes, part) => indexes.filter((i) => fac.layout.cells[i]?.part === part).map((i) => fac.layout.cells.slice(0, i).filter((c) => c.part === part).length)
+
+test('松明は、階段 6 段ごと・坑道 6 マスごと（枝の根本を避けて 4 マス目から）・部屋の入口・枝の 5 マス目に置く（枝の先は坑道の松明から 13 先で光 1 になるので、枝にも置く）', async () => {
+  const { fac, indexes } = await digAll({ design: { tunnels: 1, tunnel_length: 16, branch_length: 10 } })
+  assert.deepEqual(kth(fac, indexes, 'stairs'), [5, 11, 17, 23])
+  assert.deepEqual(kth(fac, indexes, 'room'), [0])
+  assert.deepEqual(kth(fac, indexes, fac.layout.cells.find((c) => c.part.startsWith('tunnel')).part), [3, 9, 15])
+  const branches = [...new Set(fac.layout.cells.filter((c) => c.part.startsWith('branch')).map((c) => c.part))]
+  assert.ok(branches.length >= 4, branches.join())
+  for (const part of branches) {
+    const length = fac.layout.cells.filter((c) => c.part === part).length
+    assert.deepEqual(kth(fac, indexes, part), length >= 5 ? [4] : [], `${part} (${length} cells)`)
+  }
+})
+
+// 光は、置いた松明のまわりだけ（松明は 14、1 マスごとに 1 下がる。reach: 光が届く距離の上限。短くして、間隔どおりでは足りない世界にする）
+const torchLight = (reach = 13) => (x, y, z, placed) => Math.max(0, ...placed.map((p) => 14 - Math.abs(p.x - x) - Math.abs(p.y - y) - Math.abs(p.z - z)).filter((v) => 14 - v <= reach), 0)
+
+test('実際の光を見る: 近くの掘り終えたセルが暗ければ、間隔の外でもここに 1 本置く。明るい・光が分からないときは間隔どおり', async () => {
+  const design = { tunnels: 1, tunnel_length: 16, branch_length: 10 }
+  const real = Date.now
+  let t = 0
+  Date.now = () => (t += 5000) // 松明を置いたあとの待ち（LIGHT_SETTLE_MS）が過ぎたことにする
+  try {
+    const scheduled = await digAll({ design })
+    const bright = await digAll({ design, light: torchLight() })
+    // 間隔どおりで足りていれば増えない（最初の松明より前の、まだ何も照らしていない入口のセルだけは、先に 1 本）
+    const first = (r, part) => Math.min(...kth(r.fac, r.indexes, part))
+    const extra = bright.indexes.filter((i) => !scheduled.indexes.includes(i))
+    for (const i of extra) {
+      const part = bright.fac.layout.cells[i].part
+      assert.ok(kth(bright.fac, [i], part)[0] < first(scheduled, part), `${part} ${kth(bright.fac, [i], part)}`)
+    }
+    const dim = await digAll({ design, light: torchLight(5) }) // 松明の光が 5 マスまでしか届かない世界
+    assert.ok(dim.placed.length > scheduled.placed.length + 5, `${dim.placed.length} vs ${scheduled.placed.length}`)
+    assert.doesNotMatch(dim.result, /too dark/)
+  } finally {
+    Date.now = real
+  }
+})
+
+test('空の光が届く所（入口の近く）は、ブロックの光が 0 でも暗いと数えない', async () => {
+  const design = { tunnels: 1, tunnel_length: 16 }
+  const real = Date.now
+  let t = 0
+  Date.now = () => (t += 5000)
+  try {
+    const scheduled = (await digAll({ design })).placed.length
+    assert.equal((await digAll({ design, light: () => 0, sky: () => 15 })).placed.length, scheduled)
+    assert.ok((await digAll({ design, light: () => 0, sky: () => 0 })).placed.length > scheduled)
+  } finally {
+    Date.now = real
+  }
+})
+
+test('松明を置いた直後は、光が届くまで暗いと数えない（暗い所にいても、1 セルごとには置かない）', async () => {
+  const design = { tunnels: 1, tunnel_length: 16 }
+  const dark = () => 0 // 光が届かないまま
+  const real = Date.now
+  let t = 0
+  let unguarded
+  try {
+    Date.now = () => (t += 5000)
+    unguarded = (await digAll({ design, light: dark })).placed.length
+  } finally {
+    Date.now = real
+  }
+  const guarded = (await digAll({ design, light: dark })).placed.length
+  assert.ok(guarded < unguarded - 5, `${guarded} vs ${unguarded}`)
+})
+
+test('すでに掘ったセルが暗ければ、掘り始める前に松明で明るくする。松明がなければ、暗いと言って作らせる', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  const blocks = dug(fac)
+  const placed = []
+  const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 80 }]
+  const bot = digger(fac, items)
+  Object.assign(bot, world(blocks, items), { entity: { position: new Vec3(10, 40, 0), onGround: true } })
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async () => {}, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  bot.world = lightWorld((x, y, z) => torchLight(5)(x, y, z, placed))
+  bot.placeBlock = async (wall, face) => { placed.push(wall.position.plus(face)) }
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.ok(placed.length >= 4, `${placed.length}`)
+  assert.match(r, /the mine is complete/)
+  assert.doesNotMatch(r, /too dark/)
+  // 明るくなったので、もう置かない
+  const before = placed.length
+  await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.equal(placed.length, before)
+  // 松明がない: 暗い所は暗いと言う
+  placed.length = 0
+  items.splice(1, 1)
+  await assert.rejects(PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal), /dark cells \(light below 2.*no torch.*make torches first/)
 })
 
 test('部屋は階段の床を消さない: どの深さでも、どの段も床が残り、部屋から階段へ 1 段ずつ上がれる（mine_1 の底で閉じ込められた）', () => {

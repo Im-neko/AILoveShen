@@ -38,6 +38,7 @@ import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
 import { sealStock, openings, sealCell, plugCell } from './sealing.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder } from './reach.mjs'
+import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
 import { reachLand } from './land.mjs'
 import { digOutRoute } from './dig-out.mjs'
@@ -834,7 +835,13 @@ async function afterDig (bot, state, c, before, signal) {
 
 // 実行関数: (bot, state, candidate, signal) -> 結果の文字列。対象は候補が持っている
 const MINE_SITE_WALK = 32 // 採掘場を設計するとき、家からこの内にいないと近づく（外周の輪は家から 40 m まである）
-const MINE_TORCH = { stairs: 12, tunnel: 8 } // 松明を置く間隔（掘ったセルの数）
+// 松明を置く間隔（掘ったセルの数）と、枝で置く番（枝の何マス目か）。松明は置いた所が 14 で、1 マスごとに 1 下がる。
+// 坑道の松明の間は最大 3 マス離れ、枝の先まで 10 マス行くと 13 先（光 1）になるので、枝の途中にも 1 本置く
+// 坑道の松明は、枝の根本（坑道の 3 マス目から 3 マスおき）を避けた 4 マス目から（根本のセルは両側の壁が枝で空くので、置けない）
+const MINE_TORCH = { stairs: 6, tunnel: 6, tunnelFrom: 3, branch: 5 }
+const LIGHT_WINDOW = 6 // 掘ったあと、この内（直線の距離）にある、掘り終えたセルの明るさを見る
+const LIGHT_SETTLE_MS = 1500 // 松明を置いてから、光が届くまで待つ（この間は暗いと数えない）
+const RELIGHT_MAX = 10 // 1 回の見直しで足す松明の上限
 const ORE_CHECK_EVERY = 3 // 探している鉱石が壁に出たかを、これだけ掘るごとに見る
 
 // 探している鉱石で、今掘れるもの（空気に面して、届き、さっき断られていない）: { name, pos } か null。solver の見え方
@@ -849,36 +856,69 @@ function oreShowing (bot, state, sources) {
 const cutNote = (cut) => cut.length ? `; branches cut short for danger: ${cut.join('; ')}` : ''
 const sealNote = (n) => n ? `; walled off ${n} cave openings with cobblestone (floor, walls and ceiling)` : ''
 
-// 掘り終えたセルの壁に、間隔をおいて松明を 1 本（置けなくても掘りは続ける）。置く番なのに持っていなければ
-// 'missing' を返す（暗いまま掘り進めない: 呼ぶ側が止めて、足りないと知らせる）
-async function torchInMine (bot, cells, index) {
-  const cell = cells[index]
-  const k = cells.slice(0, index).filter((x) => x.part === cell.part).length
-  // 枝には置かない: 幹の松明が枝の奥まで届く（1.18 以降、モブが湧くのは明るさ 0 だけ。枝は幹から 10 マス）
-  if (cell.part.startsWith('branch')) return null
-  const due = cell.part === 'stairs' ? k % MINE_TORCH.stairs === MINE_TORCH.stairs - 1
-    : cell.part === 'room' ? k === 0
-      : k % MINE_TORCH.tunnel === MINE_TORCH.tunnel - 1
-  if (!due) return null
-  const torch = bot.inventory.items().find((i) => i.name === 'torch')
-  if (!torch) return 'missing'
+// セルの壁に松明を 1 本（置けなければ false）。置いたあとは、持っていた物（ツルハシ）に戻す:
+// 松明を持ったまま掘ると素手と同じ遅さになる（2026-10-07）
+async function wallTorch (bot, cells, cell, torch) {
   const head = new Vec3(cell.x, cell.y + 1, cell.z)
-  if (bot.blockAt(head)?.boundingBox !== 'empty') return null
+  if (bot.blockAt(head)?.boundingBox !== 'empty') return false
   const planned = plannedBlocks(cells)
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const wall = bot.blockAt(head.offset(dx, 0, dz))
     if (wall?.boundingBox !== 'block' || planned.has(`${wall.position.x},${wall.position.y},${wall.position.z}`)) continue
-    // 置いたあとは、持っていた物（ツルハシ）に戻す: 松明を持ったまま掘ると素手と同じ遅さになる（2026-10-07）
     const before = bot.heldItem
     try {
       await bot.equip(torch, 'hand')
       await bot.placeBlock(wall, new Vec3(-dx, 0, -dz))
-      return null
+      return true
     } catch (e) {
       console.log(`[mine] 松明を置けなかった: ${e.message}`)
     } finally {
       if (before && before.name !== 'torch') await bot.equip(before, 'hand').catch(() => {})
     }
+  }
+  return false
+}
+const torchOf = (bot) => bot.inventory.items().find((i) => i.name === 'torch')
+
+// 掘り終えたセルの壁に、間隔をおいて松明を 1 本（置けなくても掘りは続ける）。置く番なのに持っていなければ
+// 'missing' を返す（暗いまま掘り進めない: 呼ぶ側が止めて、足りないと知らせる）。置いたら 'placed'
+async function torchInMine (bot, cells, index) {
+  const cell = cells[index]
+  const k = cells.slice(0, index).filter((x) => x.part === cell.part).length
+  const due = cell.part === 'stairs' ? k % MINE_TORCH.stairs === MINE_TORCH.stairs - 1
+    : cell.part === 'room' ? k === 0
+      : cell.part.startsWith('branch') ? k === MINE_TORCH.branch - 1
+        : k % MINE_TORCH.tunnel === MINE_TORCH.tunnelFrom
+  if (!due) return null
+  const torch = torchOf(bot)
+  if (!torch) return 'missing'
+  return (await wallTorch(bot, cells, cell, torch)) ? 'placed' : null
+}
+
+// 掘り終えて空いている（足元と頭の上）セルのうち、光が MIN_LIGHT 未満と分かっているもの（光が届いていないセルは数えない）。
+// 空の光が届く所（入口の近く）は、地下の暗がりとは別なので数えない
+const openCell = (bot, c) => mineBlocks(c).slice(0, 2).every((p) => bot.blockAt(p)?.boundingBox === 'empty')
+const darkCells = (bot, cells) => cells.filter((c) => {
+  const at = new Vec3(c.x, c.y, c.z)
+  return openCell(bot, c) && tooDarkAt(bot, at) && !(skyLightAt(bot, at) > 0)
+})
+
+// 暗いセルを、近いものから松明で明るくする。分かる光が 0 のセルが残らないまで（上限 RELIGHT_MAX 本）。
+// 持っていなければ 'missing'
+async function relightMine (bot, cells, signal) {
+  const failed = new Set()
+  for (let n = 0; n < RELIGHT_MAX; n++) {
+    signal.throwIfAborted()
+    const here = bot.entity.position
+    const dark = darkCells(bot, cells).filter((c) => !failed.has(c))
+      .sort((a, b) => here.distanceTo(new Vec3(a.x, a.y, a.z)) - here.distanceTo(new Vec3(b.x, b.y, b.z)))
+    if (!dark.length) return null
+    const torch = torchOf(bot)
+    if (!torch) return 'missing'
+    const cell = dark[0]
+    await goto(bot, new goals.GoalBlock(cell.x, cell.y, cell.z), signal)
+    if (!(await wallTorch(bot, cells, cell, torch))) { failed.add(cell); continue }
+    await bot.waitForTicks(Math.ceil(LIGHT_SETTLE_MS / 50))
   }
   return null
 }
@@ -1708,10 +1748,15 @@ export const PRIMITIVES = {
     if (!fac?.layout || fac.kind !== 'mine') throw new Error(`there is no mine named ${c.facility}`)
     // 松明なしでは掘り始めない（暗い坑道はモブが湧く。夜も昼も同じ）: 足りないと知らせて、作りに戻らせる
     if (mineStatus(bot, fac).next && !bot.inventory.items().some((i) => i.name === 'torch')) {
-      throw new Error(`no torch to light the mine ${fac.name} (a torch goes on the wall every ${MINE_TORCH.tunnel}–${MINE_TORCH.stairs} cells): make torches first (a torch is 1 coal or charcoal + 1 stick)`)
+      throw new Error(`no torch to light the mine ${fac.name} (a torch goes on the wall every ${MINE_TORCH.tunnel} cells in a tunnel, ${MINE_TORCH.stairs} on the stairs, once in each branch): make torches first (a torch is 1 coal or charcoal + 1 stick)`)
+    }
+    // すでに掘ったセルに暗い所があれば、先に明るくする（松明が壊された、枝の先に届いていなかった、など）
+    if (await relightMine(bot, fac.layout.cells, signal) === 'missing') {
+      throw new Error(`the mine ${fac.name} has dark cells (light below ${MIN_LIGHT}: monsters spawn there) and you carry no torch: make torches first (a torch is 1 coal or charcoal + 1 stick)`)
     }
     let dug = 0
     let last = -1
+    let lastTorchAt = 0
     let walled = 0 // 丸石で塞いだ面の数
     const cut = [] // 危なくて打ち切った枝
     for (;;) {
@@ -1780,9 +1825,25 @@ export const PRIMITIVES = {
       if (!dugAny && !gaps.length) continue
       dug++
       // 置く番で松明が尽きた: 暗いまま先へ掘らない。ここまでは掘ったので、成功として理由を返す
-      if (await torchInMine(bot, cells, m.index) === 'missing') {
+      const placed = await torchInMine(bot, cells, m.index)
+      if (placed === 'placed') lastTorchAt = Date.now()
+      if (placed === 'missing') {
         updateStatus(bot, fac)
-        return `dug ${dug} cells of the mine ${fac.name}; stopped: out of torches (one is due on the wall here, ${MINE_TORCH.tunnel}–${MINE_TORCH.stairs} cells apart): make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}`
+        return `dug ${dug} cells of the mine ${fac.name}; stopped: out of torches (one is due on the wall here, every ${MINE_TORCH.tunnel} cells in a tunnel, ${MINE_TORCH.stairs} on the stairs, ${MINE_TORCH.branch}th in a branch): make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}`
+      }
+      // 実際の光を見る: 間隔どおりに置いても、枝の先や、壊された松明のあとは暗いままになる。ここから近い、掘り終えた
+      // セル（いま掘ったセルは光がまだ届かないので除く）に光が足りないものがあれば、ここにも 1 本。松明を置いた直後は
+      // 光が届くまで見ない
+      if (Date.now() - lastTorchAt > LIGHT_SETTLE_MS) {
+        const near = darkCells(bot, cells.filter((c) => c !== cell && Math.hypot(c.x - cell.x, c.y - cell.y, c.z - cell.z) <= LIGHT_WINDOW))
+        if (near.length) {
+          const torch = torchOf(bot)
+          if (!torch) {
+            updateStatus(bot, fac)
+            return `dug ${dug} cells of the mine ${fac.name}; stopped: ${near.length} cells near ${cell.x},${cell.y},${cell.z} are too dark (light below ${MIN_LIGHT}) and you carry no torch: make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}`
+          }
+          if (await wallTorch(bot, cells, cell, torch)) lastTorchAt = Date.now()
+        }
       }
       // 探している鉱石が壁に出た（見えているのは、空気に面した、届くもの: 設計書 86）: 掘るのは次の手に任せる。
       // 3 セルごとに見る（探す処理が重い）。1 セルは掘ってから止まる（同じ鉱石の拒否でここで止まり続けない）
@@ -1796,8 +1857,10 @@ export const PRIMITIVES = {
     }
     updateStatus(bot, fac)
     await collectNearbyDrops(bot, state, signal)
+    // 掘り終えたら、最後のセルを含めて、暗い所を残さない
+    const unlit = await relightMine(bot, fac.layout.cells, signal) === 'missing' ? `; some cells are still too dark (light below ${MIN_LIGHT}) and you carry no torch: make torches first` : ''
     const shown = c.sources?.length ? oreShowing(bot, state, c.sources) : null
-    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}${shown ? `; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it` : ''}${cutNote(cut)}${sealNote(walled)}`
+    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}${unlit}${shown ? `; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it` : ''}${cutNote(cut)}${sealNote(walled)}`
   },
   // 採掘場を自分で設計して掘る（設計書 68）: 家の外周（壁から 10〜30 m）の、鉱石の高さまで下りられる所に、
   // 階段と坑道を設計し、そのまま掘り始める。掘り切る前に止まっても、次は dig_mine が続きから掘る

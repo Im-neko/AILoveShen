@@ -3,6 +3,7 @@
 import vec3Pkg from 'vec3'
 import { underwater } from './breath.mjs'
 import { isSwimming } from './swim.mjs'
+import { blockLightAt, MIN_LIGHT } from './light.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -242,9 +243,15 @@ export const isUnderground = (bot) => {
   return !skyNear(bot)
 }
 
+// 暗い所にいるか。サーバーが送った足元の光が分かれば、それで決める（光源が壁の向こうや遠くにあっても、
+// 実際の明るさが答え。light.mjs）。分からないときだけ、近くの光源（LIT_RADIUS）で見る。
+// 光源が足元のすぐそば（NEAR_LIT）にあれば、置いた直後で光がまだ届いていないだけなので、暗いとしない
+const NEAR_LIT = 2
 export function isDark (bot) {
   if (!isCovered(bot) || skyNear(bot)) return false
   const ids = LIGHT_SOURCES.map((n) => bot.registry.blocksByName[n]?.id).filter((id) => id !== undefined)
+  const light = blockLightAt(bot, bot.entity.position.floored())
+  if (light !== null) return light < MIN_LIGHT && !bot.findBlock({ matching: ids, maxDistance: NEAR_LIT })
   return !bot.findBlock({ matching: ids, maxDistance: LIT_RADIUS })
 }
 

@@ -11,6 +11,7 @@ import { createTools } from '../src/tools.mjs'
 import { PRIMITIVES } from '../src/primitives.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
 import { noteRefusal } from '../src/refusals.mjs'
+import { lightWorld } from './light-world.mjs'
 
 const { Vec3 } = vec3Pkg
 const v = (x, y, z) => new Vec3(x, y, z)
@@ -125,6 +126,17 @@ test('inspect: 座標がなければ自分の今、あればそのマスの状�
   noteRefusal(state, 'dig', v(2, 70, 4), 'No path to there')
   const again = (await callTool('inspect', { x: 2, y: 70, z: 4 })).result
   assert.deepEqual(again.refused_before.map((r) => r.tool).sort(), ['dig', 'use_item'])
+})
+
+test('inspect: そのマスの光（ブロックの光と空の光）も言う。サーバーの光が届いていなければ null', async () => {
+  const { callTool, bot } = setup()
+  const none = (await callTool('inspect', { x: 2, y: 70, z: 4 })).result
+  assert.deepEqual([none.light, none.sky_light], [null, null])
+  bot.world = lightWorld((x, y, z) => (x === 2 && y === 70 && z === 4 ? 13 : 0), (x, y) => (y >= 70 ? 15 : 0))
+  const lit = (await callTool('inspect', { x: 2, y: 70, z: 4 })).result
+  assert.deepEqual([lit.light, lit.sky_light], [13, 15])
+  const dark = (await callTool('inspect', { x: 2, y: 69, z: 4 })).result
+  assert.deepEqual([dark.light, dark.sky_light], [0, 0])
 })
 
 test('diagnostics: 種類ごとの最後の記録を読む。種類を指定すれば件数も', async () => {

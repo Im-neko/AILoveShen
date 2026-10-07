@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { round } from './observe.mjs'
+import { blockLightAt, skyLightAt } from './light.mjs'
 import { protectedReason } from './home.mjs'
 import { closedSpace, isolatedSpace, pillarUnder } from './reach.mjs'
 import { liquidReason } from './liquid.mjs'
@@ -80,6 +81,9 @@ export function inspectCell (bot, state, pos) {
     block: block.name,
     props: block.getProperties?.() ?? null,
     solid: block.boundingBox === 'block',
+    // サーバーが送った光（ブロックの光 0〜15。0 はモブが湧く暗さ）。届いていなければ null（light.mjs）
+    light: blockLightAt(bot, pos),
+    sky_light: skyLightAt(bot, pos),
     neighbours,
     eye_distance: round(distance),
     within_reach: distance <= REACH,
