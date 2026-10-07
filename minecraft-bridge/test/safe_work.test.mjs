@@ -90,7 +90,7 @@ test('作業台は外にも置けるが、地下では置かない。かまど�
   assert.ok(stationSpots(surface, homeState(), 'crafting_table').some((s) => s.where === 'nearby'))
 })
 
-test('stationRefusal: かまどは家の外に置かない。作業台は地下に置かない', () => {
+test('stationRefusal: かまどは家の外に置かない。作業台は止めない', () => {
   const state = homeState()
   const surface = bot({ furnaces: [] })
   assert.equal(stationRefusal(surface, state, 'furnace', v(2, 70, 2)), '')
@@ -99,20 +99,21 @@ test('stationRefusal: かまどは家の外に置かない。作業台は地下�
   assert.equal(stationRefusal(surface, state, 'crafting_table', v(30, 70, 30)), '') // 建築予定地への仮設など
   const cave = bot({ at: v(30.5, 40, 30.5), roof: 20, furnaces: [] })
   assert.match(stationRefusal(cave, { home: null }, 'furnace', v(30, 40, 30)), /not placed underground/)
-  assert.match(stationRefusal(cave, { home: null }, 'crafting_table', v(30, 40, 30)), /not placed underground/)
   assert.equal(stationRefusal(surface, state, 'torch', v(30, 70, 30)), '')
 })
 
-test('stationRefusal: 閉じた地下でツルハシがなくて掘れないときは、作業台を置いてよい（かまどは置かない）。ツルハシがあれば置かない', () => {
-  const shaft = (items) => {
-    const b = bot({ at: v(30.5, 40, 30.5), roof: 20, furnaces: [], items })
-    const open = (p) => p.x === 30 && p.z === 30 && p.y >= 40 && p.y <= 41 // 1 x 1 x 2 の閉じた縦穴。まわりは岩
-    b.blockAt = (p) => (open(p) ? { name: 'air', boundingBox: 'empty', position: p } : { name: 'stone', boundingBox: 'block', position: p })
-    return b
-  }
-  assert.equal(stationRefusal(shaft({ cobblestone: 74 }), { home: null }, 'crafting_table', v(30, 41, 30)), '')
-  assert.match(stationRefusal(shaft({ cobblestone: 74 }), { home: null }, 'furnace', v(30, 41, 30)), /not placed underground/)
-  assert.match(stationRefusal(shaft({ wooden_pickaxe: 1 }), { home: null }, 'crafting_table', v(30, 41, 30)), /not placed underground/)
+test('stationRefusal: 作業台は地下でも置ける（置くかは LLM が決める）。かまどは置かない', () => {
+  const cave = bot({ at: v(30.5, 40, 30.5), roof: 20, furnaces: [] })
+  assert.equal(stationRefusal(cave, { home: null }, 'crafting_table', v(30, 40, 30)), '')
+  assert.match(stationRefusal(cave, { home: null }, 'furnace', v(30, 40, 30)), /not placed underground/)
+})
+
+test('craft: 近くに作業台がなくて、作業台を持っているときは、置いてからやり直すよう返す（遠い作業台へ歩こうとしなくてよい）', async () => {
+  const b = bot({ furnaces: [], items: { crafting_table: 1, oak_planks: 5, stick: 9 } })
+  const state = { home: null, recipeBook: { recipesFor: () => [1] } }
+  await assert.rejects(PRIMITIVES.craft(b, state, { item: 'wooden_pickaxe', needsTable: true, times: 1 }, new AbortController().signal), /no crafting table nearby: you carry a crafting_table, place it next to you/)
+  const none = bot({ furnaces: [], items: { oak_planks: 5 } })
+  await assert.rejects(PRIMITIVES.craft(none, state, { item: 'wooden_pickaxe', needsTable: true, times: 1 }, new AbortController().signal), (e) => e.message === 'no crafting table nearby')
 })
 
 test('checkHarvestable: ツルハシがなくても、閉じた所（地下の判定に届かない浅い縦穴でも）では岩を素手で掘る。開けた所と家の中は断る', () => {

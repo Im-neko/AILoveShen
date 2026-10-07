@@ -548,6 +548,14 @@ class GenerateResponseUseCase(IGenerateResponse):
                     reason or "it cannot be written as conditions",
                     str(data.get("rewritten_reply", "") or "").strip(),
                 )
+            if data.get("level") not in ("objective", "job"):
+                # 層を先に決めさせる（層のない約束は、必ず大目標になっていた: 「ツルハシを作る」が大目標に入った）
+                error = (
+                    "level is missing: decide first whether this is an objective of its own or a job "
+                    "of the objective worked on now, then write the title and conditions"
+                )
+                logger.warning(f"約束の層がない: {data!r}")
+                continue
             if handling == RequestHandling.DECLINE.value:
                 decision = PromiseHandling.LATER.value  # 断った返答では今やらない
             now = decision == PromiseHandling.NOW.value

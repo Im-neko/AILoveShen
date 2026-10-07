@@ -696,10 +696,9 @@ export function stationRefusal (bot, state, item, pos) {
       ? ''
       : `a ${item} is placed only inside the house (smelting and cooking are done where it is safe, not in the field or underground): go home and place it there`
   }
-  // 閉じた地下で、ツルハシがなくて掘れない（採掘場の底で壊れた）ときの作業台だけは置く: 作業台がなければツルハシを作れず、
-  // 岩を掘って出ることも、積んで出ることもできないまま閉じ込められた（2026-10-07: 約 40 分）。モブは閉じた所に湧きにくい
-  const trapped = item === 'crafting_table' && !(bot.inventory?.items?.() ?? []).some((i) => i.name.endsWith('_pickaxe')) && !!closedSpaceCached(bot)
-  if ((FURNACE_ITEM.test(item) || item === 'crafting_table') && isUnderground(bot) && !trapped) {
+  // かまどは地下に置かない（立ち止まって焼く間に撃たれる）。作業台は置くかどうかを LLM が決める: 作業台がなければツルハシを
+  // 作れず、閉じ込められたまま出られなかった（2026-10-07: 約 55 分）。置く場所を選ぶ側（候補）は今までどおり地下に出さない
+  if (FURNACE_ITEM.test(item) && isUnderground(bot)) {
     return `a ${item} is not placed underground (monsters spawn in the dark and you stand still while using it): do it on the surface or in the house`
   }
   return ''
@@ -1266,8 +1265,15 @@ export const PRIMITIVES = {
     let table = null
     if (c.needsTable) {
       table = findTable(bot, state)
-      if (!table) throw new Error('no crafting table nearby')
-      await goNear(bot, table.position, 3, signal)
+      const carried = itemCount(bot, 'crafting_table') > 0
+      if (!table) throw new Error(`no crafting table nearby${carried ? ': you carry a crafting_table, place it next to you (place) and craft again' : ''}`)
+      try {
+        await goNear(bot, table.position, 3, signal)
+      } catch (e) {
+        // 壁の向こうの作業台へ歩こうとして届かない（閉じた縦穴の中で、持っている作業台を置かずに No path）
+        if (!carried || /abort/i.test(e.message)) throw e
+        throw new Error(`${e.message} (the crafting table at ${table.position.x},${table.position.y},${table.position.z} cannot be reached; you carry a crafting_table: place it next to you (place) and craft again)`)
+      }
     }
     const before = itemCount(bot, c.item)
     for (let i = 0; i < c.times; i++) {

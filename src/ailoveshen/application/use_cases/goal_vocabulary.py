@@ -668,7 +668,18 @@ def promise_schema(allow_now: bool = True) -> dict[str, Any]:
                 "most important now); cannot: only when its result cannot be written as "
                 "conditions",
             },
-            "title": {"type": "string", "description": "now / later: the objective's title"},
+            "level": {
+                "type": "string",
+                "enum": ["objective", "job"],
+                "description": "now / later (required): decide this FIRST, before the title and "
+                "conditions. objective = an objective of its own (a named build or facility, or a "
+                "wish unrelated to the objective worked on now). job = a job of the objective "
+                "worked on now: a tool or material it needs, or the one step that removes what "
+                "blocks it (a pickaxe to get out of a hole and go on, wood for the planks it "
+                "uses). When in doubt between the two, it is a job. The first condition is the "
+                "job, the others are chased with it",
+            },
+            "title": {"type": "string", "description": "now / later: the title"},
             "conditions": _conditions_schema(),
             "position": {
                 "type": "integer",

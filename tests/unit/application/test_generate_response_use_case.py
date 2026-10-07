@@ -703,6 +703,7 @@ class TestEmptyPromise:
             },
             {
                 "decision": "now",
+                "level": "objective",
                 "title": "牛からお肉をもらう",
                 "conditions": [{"predicate": "have", "item": "beef", "count": 3}],
                 "reason": "牛が目の前にいて、お腹が空いている",
@@ -755,6 +756,7 @@ class TestEmptyPromise:
             },
             {
                 "decision": "later",
+                "level": "objective",
                 "title": "牛を増やす",
                 "conditions": [{"predicate": "have", "item": "wheat", "count": 4}],
                 "position": 2,
@@ -935,9 +937,10 @@ class TestEmptyPromise:
         )
         mock_text_generator.generate_json.side_effect = [
             {"reply": "松明を置いておくね！", "request": "none"},
-            {"decision": "later", "title": "明るく", "conditions": [], "reason": "r"},
+            {"decision": "later", "level": "objective", "title": "明るく", "conditions": [], "reason": "r"},
             {
                 "decision": "later",
+                "level": "objective",
                 "title": "明るく",
                 "conditions": [{"predicate": "placed", "item": "torch", "count": 2}],
                 "reason": "r",
@@ -951,6 +954,45 @@ class TestEmptyPromise:
         assert response.objective is not None and response.objective.title == "明るく"
         error = mock_prompt_builder.build_promise_prompt.call_args.kwargs["previous_error"]
         assert "needs conditions" in error
+
+    @pytest.mark.asyncio
+    async def test_a_promise_without_a_level_is_sent_back_and_a_job_goes_into_the_current_objective(
+        self,
+        mock_text_generator,
+        mock_prompt_builder,
+        mock_event_publisher,
+        conversation,
+        bridge,
+        store,
+    ):
+        """層（大目標か中目標か）を先に決めさせる。層のない約束は、必ず大目標になっていた（2026-10-07）。"""
+        use_case, _, _ = self._use_case(
+            mock_text_generator,
+            mock_prompt_builder,
+            mock_event_publisher,
+            conversation,
+            bridge,
+            store,
+            [True],
+        )
+        pick = [{"predicate": "have", "item": "wooden_pickaxe", "count": 1}]
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ツルハシ作るね！", "request": "none"},
+            {"decision": "now", "title": "木のツルハシ", "conditions": pick, "reason": "r"},
+            {"decision": "now", "level": "job", "title": "木のツルハシ", "conditions": pick, "reason": "r"},
+        ]
+        session = _playing()
+        before = len(session.plan.objectives) if hasattr(session.plan, "objectives") else None
+
+        response = await use_case.execute(self._request(session, "ツルハシ作ったら？"))
+
+        error = mock_prompt_builder.build_promise_prompt.call_args.kwargs["previous_error"]
+        assert "level is missing" in error
+        # 中目標として、今の大目標（m1）に入った。大目標は増えていない
+        assert response.objective is not None and response.objective.id == "m1"
+        assert any(j.spec.item == "wooden_pickaxe" for j in session.plan.current.jobs)
+        if before is not None:
+            assert len(session.plan.objectives) == before
 
     @pytest.mark.asyncio
     async def test_now_right_after_a_chat_rethink_waits_behind(
@@ -975,10 +1017,11 @@ class TestEmptyPromise:
         beef = [{"predicate": "have", "item": "beef", "count": 3}]
         mock_text_generator.generate_json.side_effect = [
             {"reply": "牛さん倒してくるね！", "request": "none"},
-            {"decision": "now", "title": "牛", "conditions": beef, "reason": "r"},
+            {"decision": "now", "level": "objective", "title": "牛", "conditions": beef, "reason": "r"},
             {"reply": "羊さんも倒してくるね！", "request": "none"},
             {
                 "decision": "now",
+                "level": "objective",
                 "title": "羊",
                 "conditions": [{"predicate": "have", "item": "mutton", "count": 3}],
                 "reason": "r",
