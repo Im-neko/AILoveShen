@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
-import { tendFurnace, findFurnace, knownFurnace, stationSpots, stationRefusal, PRIMITIVES } from '../src/primitives.mjs'
+import { tendFurnace, findFurnace, knownFurnace, stationSpots, stationRefusal, checkHarvestable, PRIMITIVES } from '../src/primitives.mjs'
 import { ground } from '../src/candidates.mjs'
 import { smeltingCounts, furnaceWith, newMemory } from '../src/memory.mjs'
 
@@ -113,6 +113,18 @@ test('stationRefusal: 閉じた地下でツルハシがなくて掘れないと�
   assert.equal(stationRefusal(shaft({ cobblestone: 74 }), { home: null }, 'crafting_table', v(30, 41, 30)), '')
   assert.match(stationRefusal(shaft({ cobblestone: 74 }), { home: null }, 'furnace', v(30, 41, 30)), /not placed underground/)
   assert.match(stationRefusal(shaft({ wooden_pickaxe: 1 }), { home: null }, 'crafting_table', v(30, 41, 30)), /not placed underground/)
+})
+
+test('checkHarvestable: ツルハシがなくても、閉じた所（地下の判定に届かない浅い縦穴でも）では岩を素手で掘る。開けた所と家の中は断る', () => {
+  const stone = { name: 'stone', harvestTools: { 1: true } }
+  const pocket = (extra = {}) => {
+    const b = bot({ at: v(30.5, 63, 30.5), furnaces: [], ...extra })
+    b.blockAt = (p) => (p.x === 30 && p.z === 30 && p.y >= 63 && p.y <= 64 ? { name: 'air', boundingBox: 'empty', position: p } : { name: 'stone', boundingBox: 'block', position: p })
+    return b
+  }
+  assert.doesNotThrow(() => checkHarvestable(pocket(), { home: null }, stone, null))
+  assert.throws(() => checkHarvestable(bot({ furnaces: [] }), { home: null }, stone, null), /no tool that can mine stone/) // 開けた所
+  assert.throws(() => checkHarvestable(pocket(), { home: { ...home, min: v(29, 63, 29), max: v(31, 66, 31), inside: v(30, 63, 30) } }, stone, null), /no tool that can mine stone/) // 家の中
 })
 
 test('smelt の行動は、家の外のかまどを断る（候補や道具が出さなくても、古い記録からの呼び出しを止める）', async () => {

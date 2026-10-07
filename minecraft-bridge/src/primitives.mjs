@@ -741,9 +741,11 @@ export function chooseTool (bot, block) {
 
 // 採るのに道具が要るブロック（石にツルハシ）を素手で掘っても何も落ちない: 掘らずに理由を返す
 // （ツルハシが壊れたあとも、素手で石を掘り続けていた）
-function checkHarvestable (bot, state, block, tool = chooseTool(bot, block)) {
+export function checkHarvestable (bot, state, block, tool = chooseTool(bot, block)) {
   if (tool || !block?.harvestTools || !Object.keys(block.harvestTools).length) return
-  if (isUnderground(bot) && closedSpace(bot)) return // 閉じ込められたら素手でも掘る（出る道を空けるため。何も落ちなくてよい）
+  // 閉じ込められたら素手でも掘る（出る道を空けるため。何も落ちなくてよい）。地下の判定（岩の厚み 8 以上）は要らない:
+  // 家の床より 6 下の縦穴（屋根が岩 3 + 土 2）は地下と数えられず、素手で屋根を掘れないまま約 40 分閉じ込められた（2026-10-07）。家の中は除く
+  if (closedSpace(bot) && !(state?.home && isInside(bot, state.home))) return
   const last = (state?.brokenTools ?? []).at(-1)
   throw new Error(`no tool that can mine ${block.name}${last ? ` (the ${last.item} broke)` : ''}: make one first`)
 }
