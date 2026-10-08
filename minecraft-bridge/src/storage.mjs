@@ -4,11 +4,67 @@
 // 空きは、チェストを開いたときに覚えた slots（使っている数と、チェストのスロット数）から。開いたことのない
 // チェストは、中身の数から見積もる。
 
-import { homeChests } from './memory.mjs'
+import vec3Pkg from 'vec3'
+import { homeChests, rememberChest, forgetChest } from './memory.mjs'
 import { chestSpot } from './home.mjs'
 
+const { Vec3 } = vec3Pkg
+
 export const SINGLE_CHEST = 27
+export const LARGE_CHEST = 54
 const stackOf = (bot, name) => bot.registry.itemsByName[name]?.stackSize ?? 64
+
+// 記録するチェストの位置: ラージチェストなら左の半分（もう片方の位置の記録は消す）、そうでなければそのチェスト
+export function chestRecordPos (bot, block) {
+  const type = block.getProperties?.().type
+  if (type !== 'left' && type !== 'right') return { pos: block.position, same: true }
+  const facing = block.getProperties().facing
+  const other = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => bot.blockAt(block.position.offset(dx, 0, dz)))
+    .find((b) => b?.name === 'chest' && b.getProperties?.().facing === facing && b.getProperties().type !== type)
+  if (!other) return { pos: block.position, same: true }
+  const left = type === 'left' ? block : other
+  return { pos: left.position, same: left === block }
+}
+
+// 家にあるチェストを、記録と合わせる（設計書 121）: 置いたのに記録されないチェストは、開かれることがなく、空きとして
+// 数えられない（`place` で置いた 4 つのチェストが使われず、満杯の 1 つに預け続けて「また増設」になった: 2026-10-08）。
+// ない記録は消し、あるブロックで記録にないものは、中身を空として覚える（開いたとき本当の中身に直る）。
+// 家の中が読み込まれていないマスは触らない
+export function syncHomeChests (bot, state) {
+  const { home, memory } = state
+  if (!home || !memory) return
+  const now = Number(bot.time?.age ?? 0)
+  for (let x = home.min.x - 1; x <= home.max.x + 1; x++) {
+    for (let z = home.min.z - 1; z <= home.max.z + 1; z++) {
+      for (let y = home.min.y - 1; y <= home.min.y + 3; y++) {
+        const block = bot.blockAt(new Vec3(x, y, z))
+        if (!block) continue
+        const key = `${x},${y},${z}`
+        if (block.name !== 'chest') {
+          if (memory.chests[key]) forgetChest(memory, { x, y, z })
+          continue
+        }
+        const at = chestRecordPos(bot, block)
+        if (!at.same) { forgetChest(memory, { x, y, z }); continue }
+        const type = block.getProperties?.().type
+        const size = type === 'left' || type === 'right' ? LARGE_CHEST : SINGLE_CHEST
+        const known = memory.chests[key]
+        if (!known) rememberChest(memory, at.pos, {}, now, { used: 0, size })
+        else if (known.slots && known.slots.size !== size) known.slots.size = size
+      }
+    }
+  }
+}
+
+// 預け先の順: 空きのあるチェストが先（満杯の記録のチェストを毎回先に開けない）、その中でボットに近い順
+export function roomyChests (bot, state) {
+  if (!state.home || !state.memory) return []
+  const free = new Map(chestRecords(bot, state).map((r) => [r.key, r.size - r.used]))
+  const me = bot.entity.position
+  const away = (c) => Math.hypot(c.x + 0.5 - me.x, c.y - me.y, c.z + 0.5 - me.z)
+  return homeChests(state.memory, state.home)
+    .sort((a, b) => ((free.get(`${a.x},${a.y},${a.z}`) ?? 0) <= 0) - ((free.get(`${b.x},${b.y},${b.z}`) ?? 0) <= 0) || away(a) - away(b))
+}
 
 // 記録からのチェストごとの使用状況
 export function chestRecords (bot, state) {

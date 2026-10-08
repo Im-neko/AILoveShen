@@ -29,7 +29,7 @@ import { canHold, isTossed, noteTossed, emptySlots } from './spare.mjs'
 import { liquidReason } from './liquid.mjs'
 import { supportFor } from './placing.mjs'
 import { isSleeping, sleeperOf } from './sleepers.mjs'
-import { SINGLE_CHEST, defragChests, contentsSignature } from './storage.mjs'
+import { SINGLE_CHEST, defragChests, contentsSignature, chestRecordPos } from './storage.mjs'
 import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
 import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
@@ -2470,18 +2470,6 @@ async function putInChests (bot, state, c, signal, items) {
     })
   }
   return put
-}
-
-// 記録するチェストの位置: ラージチェストなら左の半分（もう片方の位置の記録は消す）、そうでなければそのチェスト
-function chestRecordPos (bot, block) {
-  const type = block.getProperties?.().type
-  if (type !== 'left' && type !== 'right') return { pos: block.position, same: true }
-  const facing = block.getProperties().facing
-  const other = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => bot.blockAt(block.position.offset(dx, 0, dz)))
-    .find((b) => b?.name === 'chest' && b.getProperties?.().facing === facing && b.getProperties().type !== type)
-  if (!other) return { pos: block.position, same: true }
-  const left = type === 'left' ? block : other
-  return { pos: left.position, same: left === block }
 }
 
 // 目の高さからブロックの中心までが届く距離か

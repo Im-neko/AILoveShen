@@ -96,6 +96,14 @@ test('家の中で持ち物が一杯なら、余っている大きいスタッ�
     'put 60 cobblestone in the chest at 1,70,1',
     'put 30 dirt in the chest at 1,70,1'
   ])
+  // 近い 1,70,1 が満杯なら、空きのある 3,70,3 に預ける
+  rememberChest(memory, v(1, 70, 1), { oak_log: 99 }, 0, { used: 27, size: 27 })
+  rememberChest(memory, v(3, 70, 3), {}, 0, { used: 0, size: 27 })
+  const { candidates: next } = ground(bot, state, k, world(), { leaves: [] })
+  assert.deepEqual(next.filter((c) => c.verb === 'deposit').map((c) => c.id), [
+    'put 60 cobblestone in the chest at 3,70,3',
+    'put 30 dirt in the chest at 3,70,3'
+  ])
 })
 
 test('大目標がチェストに取っておく物は取り出さない（飢えているときの食料は除く）', () => {

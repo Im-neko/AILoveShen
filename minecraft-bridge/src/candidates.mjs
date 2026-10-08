@@ -23,7 +23,7 @@ import { campSiteCached, campCount } from './camp.mjs'
 import { findLandCached } from './land.mjs'
 import { closedSpaceCached, isolatedSpaceCached, pillarUnder, regionCached } from './reach.mjs'
 import { digOutRoute } from './dig-out.mjs'
-import { storageUsage, contentsSignature } from './storage.mjs'
+import { storageUsage, contentsSignature, roomyChests } from './storage.mjs'
 import { memoryView } from './worldmap-places.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { recoverableDeath, recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
@@ -605,9 +605,9 @@ function awayFrom (bot, start, dx, dz) {
   return Math.hypot(vx, vz) < 1 || vx * dx + vz * dz >= 0
 }
 
-// 一番近いチェスト（家のもの）にアイテムを入れる
+// 空きのある一番近いチェスト（家のもの）にアイテムを入れる
 function toChest (bot, state, item, count) {
-  const chest = state.memory && homeChests(state.memory, state.home).sort((a, b) => dist(bot, new Vec3(a.x, a.y, a.z)) - dist(bot, new Vec3(b.x, b.y, b.z)))[0]
+  const [chest] = roomyChests(bot, state)
   if (!chest) return []
   const pos = new Vec3(chest.x, chest.y, chest.z)
   return [{ id: `put ${count} ${item} in the chest at ${fmt(pos)}`, verb: 'deposit', target: item, item, count, pos, distance: dist(bot, pos) }]
@@ -688,7 +688,7 @@ export function recentlyTaken (state, bot, name) {
 export function stashWhenNothingHeals (bot, state, knowledge, world) {
   if (!knowledge || !state.home || !state.memory || !isInside(bot, state.home) || !cannotHeal(bot)) return []
   if (Number(bot.time.age) < (state.tidyBlockedUntil ?? 0)) return []
-  const [chest] = homeChests(state.memory, state.home)
+  const [chest] = roomyChests(bot, state)
   if (!chest) return []
   const keep = goalNeeds(knowledge, state, world)
   const items = Object.entries(inventoryCounts(bot))
@@ -706,7 +706,7 @@ export function stashWhenNothingHeals (bot, state, knowledge, world) {
 function tidyUp (bot, state, knowledge, world, status) {
   if (!knowledge || !state.home || !state.memory) return []
   if (Number(bot.time.age) < (state.tidyBlockedUntil ?? 0)) return []
-  const [chest] = homeChests(state.memory, state.home)
+  const [chest] = roomyChests(bot, state)
   if (!chest) return []
   const food = new Set(knowledge.resolve('food').members)
   const surplus = new Map(seedsToToss(bot, state, goalKeep(knowledge, state.goal?.spec)).map((s) => [s.item, s.count])) // 余った種は預けず捨てる
