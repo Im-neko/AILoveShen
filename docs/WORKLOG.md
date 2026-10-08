@@ -7,6 +7,14 @@
 
 ## Completed Work
 
+### 断りの標準と free を、同じ場面・2 つの LLM で比べた（設計書 125、2026-10-08、未確認: 実機。user: 「1,2,3を進めてください」の 3。「モデルの性能依存の問題かどうかは gemini 3.8 flash を使って比較検証します」）
+- ベンチマークに場面 `grove` を足した（`tools/bench_fixtures.py`: RCON で家と植林場を作り、ブリッジを止めて `state.json` を書いて起動し直す。最後の 1 マスが設計の高さと 2 段ずれて整地の記録に載る）。成績の行に `guards` と `tool_calls` / `tool_refused` / `tool_advised`（`bridge.log` の `[tool]` 行）を足した。`600d563`、`5278370`
+- 4 条件 × 3 回（10 分まで）: local-standard 1/3、local-free 2/3、**gemini-standard 0/3**、gemini-free 3/3。標準 1/6 対 free 5/6（Fisher p = 0.08。5% では有意でない）。free の成功はすべて「失敗 → 掘る → 植える」の 4〜5 手。標準では Gemini も同じ手を繰り返し、`demolish: true` / `override` / `place` を一度も試さなかった。Gemma は標準でも `level` の中心をずらして 1 回抜けた
+- 分かったこと: 失敗の文が勧める手（`dig it if it may be removed`）を標準のゲートが断る矛盾。Gemma は 3 回、失敗を「満杯」と読んで `birch_grove_2` を足し、残りの苗木を使い切った（free でも防げない。Gemini は 0/6）
+- 言えない: この場面は free の効く事故から作った。ほかの作業での害は測っていない。3 回ずつ
+- 次: user の判断。提案は、全部を free にせず、文とゲートの矛盾・抜け道のない断り・台帳の禁止を直し、`night` / `pond` / `food` で free と標準を比べて害がないことを確かめてから既定を決める（設計書 125 §8）
+- 要る操作: なし（比較用の設定。配信用のブリッジは標準のまま）
+
 ### 作業知識の断りを警告にするモード BRIDGE_GUARDS=free（設計書 124、2026-10-08、未確認: 実機。user: 「1,2,3を進めてください」の 2）
 - 設計書 123 の上位の作業知識の断り（設計したマスにしか植えない・耕さない、家から近すぎる、整地の保護、熟す前の作物、かまどの置き場所、断られた手の台帳）を、`BRIDGE_GUARDS=free` のとき断らず、結果に `(not enforced: 理由)` と添えて通す（`tools.mjs` `advise`）。安全（壁のそば、家の保護、水・溶岩）と事実は断る。標準は今のまま
 - `farmRefusal` を `farmProtected`（安全）と `farmDistance`（作業知識）に分けた。植林場のマスは柱（-1〜+6）の苗木・木で植わりと数える（世界から判定）
