@@ -7,6 +7,12 @@
 
 ## Completed Work
 
+### 実った作物を刈れず、昼に夜を越す小目標が通る（設計書 126、2026-10-09、f57a7ff、未確認: 実機。user: 「なんでいま目的がすぐに夜を越すになっちゃってるんだろう」→「修正してほしいです」）
+- 原因: `farmed` は植わっている数の判定なので、小麦 64/64 が実っていると `farmed(wheat, 64)` が「済み」で 2 回差し戻され、3 回目は昼の `through_night` の検査が飛ばされて通った（20:02Z・20:07Z）。収穫は `have(wheat, n)` だが、差し戻しも語彙も言っていなかった
+- 直し: `_harvest_note`（`farmed` の差し戻しに「収穫は have」）、`farmed` の説明に「収穫は have」（長さの上限のため「（クワで耕す）」を削った）。テスト 1 件追加。Python 1631 件通過
+- 直していない: 最後の試行の昼の `through_night` の通過、先頭の大目標 `m21`「安全の確保」が昼から先頭にあること
+- 要る操作: 配信（Python）の再起動。ブリッジは変更なし
+
 ### 既定を free にした（設計書 125 §11、2026-10-09、未確認: 実機。user: 「デフォルトfreeにしておいてもらえる？」）
 - `BRIDGE_GUARDS` が `standard` 以外（未設定を含む）なら、作業知識の断りを警告にして通す（`guards.mjs`）。`standard` は比較用。起動ログは standard のときだけ出る。ベンチマークの行の `guards` も未設定なら `free`。`.env.example` を更新
 - 標準の断りを前提にしていたテスト 4 件（`tools.test.mjs` 台帳、`tool-gates.test.mjs` 台帳、`failure-hints.test.mjs` plant / till、`facility-design.test.mjs` till の種）は `BRIDGE_GUARDS=standard` を明示。既定のテストを足した（変異で落ちる）。ブリッジ 897 件、Python 1630 件通過
