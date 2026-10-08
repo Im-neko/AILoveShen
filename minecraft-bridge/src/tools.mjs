@@ -19,6 +19,7 @@ import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingIt
 import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, stationRefusal, nearbyDrops, blockedDrops, FACE_VECTORS } from './primitives.mjs'
 import { goalKeep, spareStacks, isTossable, RESERVE } from './spare.mjs'
+import { seedsToToss, isSurplusSeed } from './seeds.mjs'
 import { smeltingProduct, FUELS, FOOD_EXCLUDED } from './knowledge.mjs'
 import { torchesNeeded, TORCH_SPACING } from './trail.mjs'
 import { homeChests, chestWith } from './memory.mjs'
@@ -412,11 +413,15 @@ export function createTools (deps) {
     toss (args) {
       const inv = inventoryCounts(bot)
       if (args.item === undefined) {
-        const items = spareStacks(bot, goalKeep(knowledge, state.goal?.spec))
+        const keep = goalKeep(knowledge, state.goal?.spec)
+        const items = [...spareStacks(bot, keep), ...seedsToToss(bot, state, keep)]
         if (!items.length) refuse(`nothing spare to throw away (dirt and cobblestone are kept up to ${RESERVE.dirt}; tools, food, torches and what the goal needs are never thrown)`)
         return { c: { verb: 'toss', target: 'items', inPlace: true, items } }
       }
       holding(bot, args.item)
+      const surplusSeed = seedsToToss(bot, state, goalKeep(knowledge, state.goal?.spec)).find((x) => x.item === args.item)
+      if (surplusSeed) return { c: { verb: 'toss', target: args.item, inPlace: true, items: [{ item: args.item, count: args.count === undefined ? surplusSeed.count : Math.min(Math.floor(Number(args.count)), surplusSeed.count) }] } }
+      if (isSurplusSeed(args.item)) refuse(`${args.item} is thrown away only beyond one stack per farm (inventory and chests together): there is no surplus now`)
       if (!isTossable(args.item)) refuse(`${args.item} is not thrown away by this tool (only natural ground blocks, cobblestone, flowers and wool); put it in a chest (deposit) instead`)
       const count = args.count === undefined ? inv[args.item] - (RESERVE[args.item] ?? 0) : Math.floor(Number(args.count))
       if (!(count >= 1)) refuse(`${args.item}: only ${inv[args.item]} held, ${RESERVE[args.item] ?? 0} are kept; pass count to throw more`)
