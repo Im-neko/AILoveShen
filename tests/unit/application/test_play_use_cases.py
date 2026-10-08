@@ -720,6 +720,22 @@ class TestAdvancePlay:
         assert "n in total, not n more" in error
 
     @pytest.mark.asyncio
+    async def test_farmed_already_met_says_harvesting_is_have(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """小麦が実っていて farmed(wheat, 64) を選んだ（植わっている数は済み）: 収穫は have(wheat, n) と添える。"""
+        farmed = {"predicate": "farmed", "item": "wheat", "count": 64, "serves": "current"}
+        text_generator.generate_json.side_effect = [farmed, PLANKS]
+        bridge.observe.return_value = _obs(has_home=True)
+        bridge.set_goal.side_effect = [GoalStatus(True, 0), GoalStatus(False, 4)]
+
+        await use_case.execute(_session())
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "farmed(wheat, 64) is already met now" in error
+        assert "to harvest the ripe wheat, choose have(wheat, n)" in error
+
+    @pytest.mark.asyncio
     async def test_a_goal_that_cannot_progress_is_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):

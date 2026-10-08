@@ -123,8 +123,9 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     ),
     GoalPredicate.FARMED: (
         "farmed(item, count): 畑（facility で設計した畑と前からの家の畑の合計）に作物を count マス"
-        "植える（クワで耕す）。item は wheat（種は草からときどき）か、持っていれば carrots / potatoes /"
-        " beetroots。畑がないか空きがなければ、先に facility で別の名前の畑を足す。例: farmed(wheat, 9)"
+        "植える。item は wheat（種は草からときどき）か、持っていれば carrots / potatoes /"
+        " beetroots。畑がないか空きがなければ、先に facility で別の名前の畑を足す。"
+        "収穫は have。例: farmed(wheat, 9)"
     ),
     GoalPredicate.FACILITY: (
         "facility(name): 施設（畑、植林場、採掘場）を設計どおりに作る（畑は全部耕してまく、植林場は全部植える、"

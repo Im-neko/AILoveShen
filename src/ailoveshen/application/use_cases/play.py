@@ -1384,7 +1384,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     raise ValueError(
                         f"the small goal {_bundle_label(decision)} is already met now"
                         f"{_carried_note(obs, decision)}; choose one that is not met yet "
-                        "(see the jobs' state now)" + _stay_note(decision, obs)
+                        "(see the jobs' state now)" + _stay_note(decision, obs) + _harvest_note(decision)
                     )
                 if status.dead_end:
                     # 進める手がない小目標（畑がないのに farmed など）は、行き詰まるまで回さずに差し戻す
@@ -1931,6 +1931,21 @@ def _stay_note(decision, obs: GameObservation) -> str:
             "not an outdoor task"
         )
     return ""
+
+
+def _harvest_note(decision: GoalDecision) -> str:
+    """
+    farmed(crop, n) は畑に植わっている数で、収穫の有無は見ない。実った作物を刈りたくて farmed を選び、
+    「済んでいる」と差し戻され続けた（2026-10-09: 小麦 64/64 が実っているのに farmed(wheat, 64) を
+    2 回選び、3 回目に昼の through_night が通った）。収穫は have(crop, n)。
+    """
+    if decision.spec.predicate != GoalPredicate.FARMED:
+        return ""
+    crop = decision.spec.item or "wheat"
+    return (
+        f". farmed counts crops planted on the farms, not harvested: to harvest the ripe {crop}, "
+        f"choose have({crop}, n) (n is the total you want to carry)"
+    )
 
 
 def _doable_goals(job_status: tuple[ConditionStatus, ...]) -> tuple[GoalSpec, ...]:
