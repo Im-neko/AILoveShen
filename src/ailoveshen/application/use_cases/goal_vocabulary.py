@@ -264,7 +264,7 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
         "where": {
             "type": "string",
             "description": "placed: where to place the item: home (inside the home's room), "
-            "near_home (around the home, 3-12 m), build:<name> (at a named build), or x,y,z "
+            "near_home (around the home, 3-12 m; a chest is always kept in the home), build:<name> (at a named build), or x,y,z "
             "(within 2 m of a spot you know, e.g. from find_blocks). Default home. home and "
             "near_home need a finished home: before that use build:<name> or x,y,z. leveled: home "
             "(the ground around the home at its floor) or x,y,z (the ground around it; y is the "
@@ -729,7 +729,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             else _placed_count(data)
             if predicate == GoalPredicate.PLACED
             else None,
-            where=str(data.get("where") or "home").strip()
+            where=_where(data, predicate)
             if predicate in (GoalPredicate.PLACED, GoalPredicate.LEVELED)
             else None,
             distance=int(data["distance"])
@@ -744,6 +744,18 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e
+
+
+def _where(data: dict[str, Any], predicate: GoalPredicate) -> str:
+    """
+    置く場所。チェストは家の中にまとめる: near_home と書かれても home に読む（2026-10-08: チェストの増設を
+    near_home と書き、家の外に 1 つ置いた。user: 「チェストはまとめて家の中において欲しい」）。build:<名前> と
+    x,y,z は、置く場所を決めて書いたものなので、そのまま。
+    """
+    where = str(data.get("where") or "home").strip()
+    if predicate == GoalPredicate.PLACED and data.get("item") == "chest" and where == "near_home":
+        return "home"
+    return where
 
 
 def _placed_count(data: dict[str, Any]) -> int | None:

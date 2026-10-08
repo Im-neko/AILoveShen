@@ -172,3 +172,18 @@ def test_objective_conditions_exclude_survival_predicates_and_the_schema_says_wh
     for name in ("through_night", "at_home", "cleared", "explored"):
         assert name not in allowed
         assert name in schema["description"]
+
+
+def test_a_chest_is_kept_in_the_home_even_when_near_home_is_written():
+    """チェストの増設を near_home と書き、家の外に置いた（2026-10-08）。チェストは家の中にまとめる。"""
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+
+    def chest(**kw):
+        return parse_spec({"predicate": "placed", "item": "chest", **kw}).describe()
+
+    assert chest(where="near_home") == "placed(chest, home)"
+    assert chest(where="near_home", count=2) == "placed(chest, 2, home)"
+    # 置く場所を決めて書いたものと、ほかの物は、そのまま
+    assert chest(where="build:shed") == "placed(chest, build:shed)"
+    assert chest(where="3,70,4") == "placed(chest, 3,70,4)"
+    assert parse_spec({"predicate": "placed", "item": "torch", "where": "near_home"}).describe() == "placed(torch, near_home)"
