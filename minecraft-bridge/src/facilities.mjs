@@ -443,8 +443,10 @@ export const START_SHARE = 0.25
 export const startQuota = (cells) => Math.max(1, Math.ceil(cells * START_SHARE))
 
 // 植林場のマスが、設計のあとに固い地面になっていたら（地面が1段上がった）、苗木を置ける1つ上に直す。
+// 上に苗木・原木があるなら、このマスに植わった木なので、同じく1つ上に直す（済みと数えられる）。
 // 設計のマスが地面の中だと、植える手は「固い」と断り、掘る手は整地の保護で断り、整地は「平ら」と断って、
-// 出口がなくなる（2026-10-08: 白樺の植林場の最後の1マスが3時間半植えられなかった）。何度呼んでも同じ。直したら true
+// 出口がなくなる（2026-10-08: 白樺の植林場の最後の1マスが3時間半植えられなかった。そのマスにはもう木が育っていた）。
+// 何度呼んでも同じ。直したら true
 export function ensureTreeCells (bot, fac) {
   if (fac?.kind !== 'tree_farm' || !fac.layout?.cells) return false
   let moved = false
@@ -452,7 +454,7 @@ export function ensureTreeCells (bot, fac) {
     const here = bot.blockAt(new Vec3(c.x, c.y, c.z))
     if (!here || !SAPLING_GROUND.test(here.name)) continue
     const above = bot.blockAt(new Vec3(c.x, c.y + 1, c.z))
-    if (!above || !(above.name === 'air' || CLEARABLE.test(above.name))) continue
+    if (!above || !(above.name === 'air' || CLEARABLE.test(above.name) || SAPLING.test(above.name) || isLog(above.name))) continue
     console.log(`[bridge] 植林場 ${fac.name} のマス ${c.x},${c.y},${c.z} は地面（${here.name}）になっていた: 1 つ上 ${c.y + 1} に直す`)
     c.y += 1
     moved = true

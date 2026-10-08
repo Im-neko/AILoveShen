@@ -36,10 +36,22 @@ test('設計のマスが地面になっていたら、1つ上に直して、植�
   assert.ok(workCell(bot, { facilities: { grove: fac } }, 'plant', { sapling: 'birch_sapling' }))
 })
 
-test('上が空いていない地面・植えた苗木・木・畑は動かさない。草花の上は空いているとみなす', () => {
+test('上に木・苗木があるなら、そのマスに植わった木なので1つ上に直し、済みと数える', () => {
   const fac = grove()
-  // 上が丸太: 動かさない。苗木が植わったマスは地面でないので動かさない
-  const blocked = botWith({ '50,68,-194': 'birch_log', '45,68,-194': 'birch_sapling' })
+  const bot = botWith({ '50,68,-194': 'birch_log', '50,69,-194': 'birch_log' })
+  const s = layoutStatus(bot, fac)
+  assert.deepEqual(fac.layout.cells.map((c) => c.y), [68, 68, 68])
+  assert.equal(s.done, 1)
+  assert.ok(!s.plant.some((p) => p.x === 50 && p.z === -194))
+  const sapling = grove()
+  ensureTreeCells(botWith({ '50,68,-194': 'birch_sapling' }), sapling)
+  assert.equal(sapling.layout.cells[1].y, 68)
+})
+
+test('上が地面・石などの固いブロックなら動かさない。植えた苗木・畑も動かさない。草花の上は空いているとみなす', () => {
+  const fac = grove()
+  // 上が石: 動かさない。苗木が植わったマスは地面でないので動かさない
+  const blocked = botWith({ '50,68,-194': 'stone', '45,68,-194': 'birch_sapling' })
   ensureTreeCells(blocked, fac)
   assert.deepEqual(fac.layout.cells.map((c) => c.y), [68, 67, 68])
   const flower = grove()
