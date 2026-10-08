@@ -13,7 +13,7 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { surfaceExits } from './surface.mjs'
 import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
-import { buildAllowsDig, growHome, inHomeRoom } from './builds.mjs'
+import { buildAllowsDig, growHome, inHomeRoom, isHomeCell } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, doorRouteOk, exitSpots, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
 import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
@@ -2037,6 +2037,8 @@ export const PRIMITIVES = {
   async place_at (bot, state, c, signal) {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
+    // 家の中のセルは、家に入ってから（閉じた家の外から経路を探すと、時間切れになる: 2026-10-08）
+    if (state.home && isHomeCell(state.home, c.pos) && !isInside(bot, state.home)) await enterHome(bot, state.home, signal)
     await goto(bot, new goals.GoalPlaceBlock(c.pos, bot.world, { range: REACH }), signal)
     signal.throwIfAborted()
     const against = bot.blockAt(c.against)

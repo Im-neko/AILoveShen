@@ -198,6 +198,25 @@ export function createTools (deps) {
   // （通り道: 足と頭の 2 マス）でなく、ベッドがまだなければ床に置いてもベッドの場所が残るとき。
   // どこに置くかは Gemini が決める（2026-09-27: 松明が家の一部として断られ、placed(torch, home) が
   // 進まなかった）
+  // 置く先がふさがっているとき、隣の置ける所を教える（既存のチェストの位置に置こうとして断られ、隣に置き直せなかった:
+  // 2026-10-08）。同じ高さの 2 マス以内で、空いていて、面を借りる隣があり、置いてよい所を近い順に
+  const nearbySpots = (args, pos) => {
+    const found = []
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        const p = pos.offset(dx, 0, dz)
+        if (p.equals(pos) || !REPLACEABLE.has(bot.blockAt(p)?.name)) continue
+        const feet = bot.entity.position.floored()
+        if (p.equals(feet) || p.equals(feet.offset(0, 1, 0))) continue
+        if (!supportFor(bot, p, args.item, null)) continue
+        if (!(inRoom(args.item, p) || (TEMPORARY.test(args.item) && !inStandingBuilding(bot, state, p, 1)) || !protectedReason(state, p))) continue
+        if (stationRefusal(bot, state, args.item, p)) continue
+        found.push(p)
+      }
+    }
+    found.sort((a, b) => a.distanceTo(pos) - b.distanceTo(pos))
+    return found.length ? `. Free spots next to it: ${found.slice(0, 4).map((p) => fmt(p)).join('; ')} (place there instead)` : ''
+  }
   const inRoom = (item, pos) => {
     const home = state.home
     if (!home || !inHomeRoom(home, pos)) return false
@@ -306,7 +325,7 @@ export function createTools (deps) {
       within(bot, pos, MAX_BLOCK_DISTANCE, `${fmt(pos)}`)
       const cell = bot.blockAt(pos)
       if (!cell) refuse(`${fmt(pos)} is not loaded`)
-      if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}`)
+      if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}${nearbySpots(args, pos)}`)
       // 家の部屋の中、または建築予定地への仮設（建っているもののまわりでなければ。建てる番が来たら壊す）
       const temporary = TEMPORARY.test(args.item) && !inStandingBuilding(bot, state, pos, 1)
       // override: true は、家・建てている家・建物の保護を承知で置くとき（置く先が保護されていても置く）
@@ -319,7 +338,7 @@ export function createTools (deps) {
       // 面を借りる隣: on（floor / wall / ceiling）。省略なら、壁に付けられる物（松明など）は壁を先に
       const on = ['floor', 'wall', 'ceiling'].includes(args.on) ? args.on : null
       const against = supportFor(bot, pos, args.item, on)
-      if (!against) refuse(`nothing ${on ? `on the ${on} side` : 'next to'} ${fmt(pos)} to place against (chests, tables, doors and beds would open instead)`)
+      if (!against) refuse(`nothing ${on ? `on the ${on} side` : 'next to'} ${fmt(pos)} to place against (chests, tables, doors and beds would open instead)${nearbySpots(args, pos)}`)
       return { c: { verb: 'place_at', target: args.item, item: args.item, pos, against } }
     },
     craft (args) {
