@@ -1662,7 +1662,9 @@ export const PRIMITIVES = {
   // 余った物を捨てる（家のチェストがない・遠いとき。spare.mjs）。前に向かって捨てる: 下を向いたまま
   // 捨てると、足元に落ちて数秒後に拾い直す。捨てた物は state.tossed に覚えて、拾う候補に出さない
   async toss (bot, state, c, signal) {
-    await bot.look(bot.entity.yaw, 0, true)
+    // 場所の指定（余った種: 街から離れた所）があれば、そこまで歩いて、街から離れる向きに捨てる
+    if (c.pos) await goto(bot, new goals.GoalNear(c.pos.x, c.pos.y, c.pos.z, 2), signal)
+    await bot.look(c.yaw ?? bot.entity.yaw, 0, true)
     const threw = []
     for (const { item, count } of c.items) {
       signal.throwIfAborted()

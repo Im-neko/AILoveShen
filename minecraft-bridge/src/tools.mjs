@@ -19,7 +19,7 @@ import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingIt
 import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, stationRefusal, nearbyDrops, blockedDrops, FACE_VECTORS } from './primitives.mjs'
 import { goalKeep, spareStacks, isTossable, RESERVE } from './spare.mjs'
-import { seedsToToss, isSurplusSeed } from './seeds.mjs'
+import { seedsToToss, seedToss, isSurplusSeed } from './seeds.mjs'
 import { smeltingProduct, FUELS, FOOD_EXCLUDED } from './knowledge.mjs'
 import { torchesNeeded, TORCH_SPACING } from './trail.mjs'
 import { homeChests, chestWith } from './memory.mjs'
@@ -428,18 +428,23 @@ export function createTools (deps) {
       return { c: { verb: 'deposit', target: args.item, item: args.item, count, pos: new Vec3(chest.x, chest.y, chest.z) } }
     },
     // 余った物を捨てて、持ち物の空きを作る。item を書かなければ、余り全部（目標が使う物、道具、食料、
-    // 松明は捨てない。土と丸石は 64 個ずつ残す）。item を書けば、その物を count 個（省略は残す数を超えた分）
+    // 松明は捨てない。土と丸石は 64 個ずつ残す。余りがなければ、余った種）。item を書けば、その物を count 個
+    // （省略は残す数を超えた分）
     toss (args) {
       const inv = inventoryCounts(bot)
+      // 余った種は、街から離れた所へ歩いて捨てる（足元に捨てると、拾い直す）
+      const tossSeeds = (items) => seedToss(bot, state, items) ?? refuse('no place outside the town to throw the seeds away (the ground around the town is not loaded or cannot be stood on)')
       if (args.item === undefined) {
         const keep = goalKeep(knowledge, state.goal?.spec)
-        const items = [...spareStacks(bot, keep), ...seedsToToss(bot, state, keep)]
-        if (!items.length) refuse(`nothing spare to throw away (dirt and cobblestone are kept up to ${RESERVE.dirt}; tools, food, torches and what the goal needs are never thrown)`)
-        return { c: { verb: 'toss', target: 'items', inPlace: true, items } }
+        const items = spareStacks(bot, keep)
+        if (items.length) return { c: { verb: 'toss', target: 'items', inPlace: true, items } }
+        const seeds = seedsToToss(bot, state, keep)
+        if (!seeds.length) refuse(`nothing spare to throw away (dirt and cobblestone are kept up to ${RESERVE.dirt}; tools, food, torches and what the goal needs are never thrown)`)
+        return { c: tossSeeds(seeds) }
       }
       holding(bot, args.item)
       const surplusSeed = seedsToToss(bot, state, goalKeep(knowledge, state.goal?.spec)).find((x) => x.item === args.item)
-      if (surplusSeed) return { c: { verb: 'toss', target: args.item, inPlace: true, items: [{ item: args.item, count: args.count === undefined ? surplusSeed.count : Math.min(Math.floor(Number(args.count)), surplusSeed.count) }] } }
+      if (surplusSeed) return { c: tossSeeds([{ item: args.item, count: args.count === undefined ? surplusSeed.count : Math.min(Math.floor(Number(args.count)), surplusSeed.count) }]) }
       if (isSurplusSeed(args.item)) refuse(`${args.item} is thrown away only beyond one stack per farm (inventory and chests together): there is no surplus now`)
       if (!isTossable(args.item)) refuse(`${args.item} is not thrown away by this tool (only natural ground blocks, cobblestone, flowers and wool); put it in a chest (deposit) instead`)
       const count = args.count === undefined ? inv[args.item] - (RESERVE[args.item] ?? 0) : Math.floor(Number(args.count))

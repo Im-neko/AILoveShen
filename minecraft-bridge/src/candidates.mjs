@@ -41,7 +41,7 @@ import { REGEN_FOOD, cannotHeal, needsFoodToHeal } from './healing.mjs'
 import { windfallNow, windfallTrips } from './windfall.mjs'
 import { torchesNeeded } from './trail.mjs'
 import { goalKeep, spareStacks, emptySlots, TOSS_BELOW } from './spare.mjs'
-import { seedsToToss, seedsToTake } from './seeds.mjs'
+import { seedsToToss, seedsToTake, seedToss } from './seeds.mjs'
 import { knownFurnace, FURNACE_ITEM, reachableThreats, SLEEP_FROM, SLEEP_UNTIL, bestWeapon, nearbyDrops, findTable, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EAT_WASTE_OK, EXPLORE_DISTANCE } from './primitives.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -779,22 +779,24 @@ function storeSpare (bot, state, knowledge) {
     .flatMap(([name, n]) => toChest(bot, state, name, n))
 }
 
-// 種の余り（seeds.mjs）: 持ち物の余りはその場で捨てる。チェストの余りは、家の中なら出しに行く（出せば持ち物の余りになり、
-// 次に捨てる）。目標が種を集めているときは出さない
+// 種の余り（seeds.mjs）: 持ち物の残す数を超えた分は、街から離れた所で捨てる。余りがあるなら、チェストの種は、家の中なら
+// 出しに行く（出せば持ち物の超えた分になり、次に捨てる）。目標が種を集めているときは出さない
 function surplusSeeds (bot, state, knowledge) {
   if (!knowledge) return []
   const keep = goalKeep(knowledge, state.goal?.spec)
   const out = []
   const toss = seedsToToss(bot, state, keep)
-  if (toss.length) {
-    out.push({ id: `throw away the surplus ${toss.map((s) => s.item).join(', ')}`, verb: 'toss', target: 'items', inPlace: true, items: toss, purpose: 'the farms need one stack of seeds each (in the inventory and the chests together): the rest is thrown away' })
+  const away = toss.length ? seedToss(bot, state, toss) : null
+  if (away) {
+    out.push({ id: `throw away the surplus ${toss.map((s) => s.item).join(', ')}`, ...away, purpose: 'the farms need one stack of seeds each (in the inventory and the chests together): the rest is thrown away, far from the town (a pile at your feet is picked up again)' })
   }
   const chest = state.memory && state.home ? homeChests(state.memory, state.home).find((c) => seedsToTake(bot, state, keep).some((t) => (c.contents?.[t.item] ?? 0) > 0)) : null
   const take = seedsToTake(bot, state, keep).find((t) => (chest?.contents?.[t.item] ?? 0) > 0)
   if (chest && take && isInside(bot, state.home) && emptySlots(bot) > 0) {
-    const count = Math.min(take.count, chest.contents[take.item])
+    const stack = bot.registry?.itemsByName?.[take.item]?.stackSize ?? 64
+    const count = Math.min(take.count, chest.contents[take.item], emptySlots(bot) * stack)
     const pos = new Vec3(chest.x, chest.y, chest.z)
-    out.push({ id: `take ${count} surplus ${take.item} from the chest at ${fmt(pos)} to throw away`, verb: 'withdraw', target: take.item, item: take.item, count, pos, distance: dist(bot, pos), purpose: 'the farms need one stack of seeds each: this much is more than that' })
+    out.push({ id: `take ${count} ${take.item} from the chest at ${fmt(pos)} (what is over one stack per farm is then thrown away)`, verb: 'withdraw', target: take.item, item: take.item, count, pos, distance: dist(bot, pos), purpose: 'there are more seeds than the farms need (one stack each, in the inventory and the chests together): take them out to throw the rest away' })
   }
   return out
 }
@@ -814,6 +816,6 @@ function tossSpare (bot, state, knowledge) {
 
 // 選ぶ側に見せる候補の中身（位置のオブジェクトやエンティティの参照は除く）
 export function describe (c) {
-  const { id, pos, entityId, inPlace, inside, dx, dz, block, needsTable, item, spot, confront, site, stow, ...rest } = c
+  const { id, pos, entityId, inPlace, inside, dx, dz, block, needsTable, item, spot, confront, site, stow, yaw, ...rest } = c
   return rest
 }
