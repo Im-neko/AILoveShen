@@ -15,7 +15,7 @@ import { liquidReason } from './liquid.mjs'
 import { isTreeLog, isLeftoverLog, isNaturalLogName } from './trees.mjs'
 import { placedByMe } from './ledger.mjs'
 import { rockBetween, closedSpace } from './reach.mjs'
-import { CROPS, CLEARABLE, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
+import { CROPS, CLEARABLE, cropBySeed, cropByBlock, isRipe, ageOf, farmProtected, farmDistance, isSaplingItem } from './farming.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, stationRefusal, nearbyDrops, blockedDrops, FACE_VECTORS } from './primitives.mjs'
 import { goalKeep, spareStacks, isTossable, RESERVE } from './spare.mjs'
@@ -26,6 +26,7 @@ import { homeChests, chestWith } from './memory.mjs'
 import { mapFind } from './worldmap-places.mjs'
 import { exposed } from './world.mjs'
 import { moveRefusal, isHomeFurniture } from './furniture.mjs'
+import { freeGuards } from './guards.mjs'
 import { describeRecipe } from './recipes.mjs'
 import { usesOf, foodsInfo, loadNames } from './items.mjs'
 import { foodNow } from './foodnow.mjs'
@@ -67,6 +68,8 @@ export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_
 
 class Refused extends Error {}
 const refuse = (why) => { throw new Refused(why) }
+// 作業知識の断り（設計書 123）。BRIDGE_GUARDS=free なら断らず、結果に添えて通す。それ以外は断る
+const RULE_NOTE = 'not enforced'
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 
 function position (args) {
@@ -263,6 +266,10 @@ export function createTools (deps) {
     const p = defaultCell(kind, opts)
     return p ? `. The next cell to work on is ${fmt(p)} (leave x, y, z out to use it)` : ''
   }
+  const advise = (why) => {
+    if (!freeGuards()) refuse(why)
+    notes.push(`${RULE_NOTE}: ${why}`)
+  }
   const NO_FACILITY = 'new farmland and saplings go only in the cells of a designed farm or tree farm (add facility(<name>) to an objective to design one; search_facility shows them)'
 
   // 行動の道具の引数から、実行するもの（PRIMITIVES の c）を作る
@@ -336,14 +343,14 @@ export function createTools (deps) {
       // 自然の洞窟で鉄を掘った）。壊すと決めたとき（demolish）は別
       if (args.demolish !== true && caveOre(state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${CAVE_ORE_REMEDY}`)
       // 整地する土地の、床より下の地面は掘らない（そろえた地面の下が穴だらけになる）
-      if (keptGround(state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${KEPT_REMEDY}`)
+      if (keptGround(state, pos, block.name)) advise(`will not dig ${block.name} at ${fmt(pos)}: ${KEPT_REMEDY}`)
       // 耕地は畑の地面: 掘ると土になって畑が減る（小麦の収穫に、作物の下の耕地の座標で dig を呼んでいた）
       if (block.name === 'farmland' && args.demolish !== true) {
         const crop = bot.blockAt(pos.offset(0, 1, 0))
         const above = cropByBlock(crop?.name) ? `; the ${crop.name} on it is at ${fmt(pos.offset(0, 1, 0))} (dig that one when it is ripe)` : ''
         refuse(`will not dig farmland at ${fmt(pos)}: it is the ground of a farm and digging it turns the farm into dirt${above}. If taking the farm down is the point of this goal, dig it again with demolish: true`)
       }
-      if (!isRipe(block)) refuse(`the ${block.name} at ${fmt(pos)} is not ripe yet (age ${ageOf(block)}/${CROPS[cropByBlock(block.name)].mature}): digging it now gives only seeds and loses the crop`)
+      if (!isRipe(block)) advise(`the ${block.name} at ${fmt(pos)} is not ripe yet (age ${ageOf(block)}/${CROPS[cropByBlock(block.name)].mature}): digging it now gives only seeds and loses the crop`)
       const tools = knowledge.harvestTools(block.name)
       if (tools && !tools.some((t) => inventoryCounts(bot)[t] > 0) && !(isUnderground(bot) && closedSpace(bot))) refuse(`${block.name} drops nothing without one of: ${tools.join(', ')}`)
       return { c: { verb: 'dig', target: block.name, block: block.name, pos } }
@@ -360,7 +367,7 @@ export function createTools (deps) {
       const why = inRoom(args.item, pos) || temporary || args.override === true ? null : protectedReason(state, pos)
       if (why) refuse(`will not place at ${fmt(pos)}: ${why} (override: true places it anyway if you mean to)${state.plan?.origin && /current home/.test(why) ? ' (the missing blocks of the house are placed by build_next or the place_plan candidate of built(), which also fills the ground under the house first)' : ''}`)
       const stationWhy = stationRefusal(bot, state, args.item, pos)
-      if (stationWhy) refuse(`will not place at ${fmt(pos)}: ${stationWhy}`)
+      if (stationWhy) advise(`will not place at ${fmt(pos)}: ${stationWhy}`)
       const feet = bot.entity.position.floored()
       if (pos.equals(feet) || pos.equals(feet.offset(0, 1, 0))) refuse(`you are standing in ${fmt(pos)}; move first`)
       // 面を借りる隣: on（floor / wall / ceiling）。省略なら、壁に付けられる物（松明など）は壁を先に
@@ -537,10 +544,12 @@ export function createTools (deps) {
       if (!cell) refuse(`no free cell for ${item} in the tree farms in view: ${NO_FACILITY}`)
       const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
       const fac = layoutAt(state, 'tree_farm', pos)
-      if (!fac) refuse(`will not plant at ${fmt(pos)}: ${NO_FACILITY}${nextCell('plant', { sapling: item })}`)
-      if (fac.layout.sapling !== 'sapling' && fac.layout.sapling !== item) refuse(`the tree farm ${fac.name} is for ${fac.layout.sapling}, not ${item}`)
-      const why = farmRefusal(state, pos)
-      if (why) refuse(`will not plant at ${fmt(pos)}: ${why}`)
+      if (!fac) advise(`will not plant at ${fmt(pos)}: ${NO_FACILITY}${nextCell('plant', { sapling: item })}`)
+      else if (fac.layout.sapling !== 'sapling' && fac.layout.sapling !== item) advise(`the tree farm ${fac.name} is for ${fac.layout.sapling}, not ${item}`)
+      const kept = farmProtected(state, pos)
+      if (kept) refuse(`will not plant at ${fmt(pos)}: ${kept}`)
+      const why = farmDistance(state, pos)
+      if (why) advise(`will not plant at ${fmt(pos)}: ${why}`)
       const here = bot.blockAt(pos)?.name ?? ''
       if ((here !== 'air' && !CLEARABLE.test(here)) || bot.blockAt(pos.offset(0, -1, 0))?.boundingBox !== 'block') refuse(`${fmt(pos)} is not free ground (give the cell above dirt or grass; it holds ${here || 'nothing loaded'}, and flowers or grass there are cleared)${nextCell('plant', { sapling: item })}`)
       return { c: { verb: 'plant', target: item, item, pos } }
@@ -550,17 +559,19 @@ export function createTools (deps) {
       const cell = args.x != null ? position(args) : defaultCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
       if (!cell) refuse(`no cell left to till in the farms in view: ${NO_FACILITY}`)
       const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
-      if (!layoutAt(state, 'farm', pos)) refuse(`will not till at ${fmt(pos)}: ${NO_FACILITY}${nextCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })}`)
-      const why = farmRefusal(state, pos)
-      if (why) refuse(`will not till at ${fmt(pos)}: ${why}`)
+      if (!layoutAt(state, 'farm', pos)) advise(`will not till at ${fmt(pos)}: ${NO_FACILITY}${nextCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })}`)
+      const kept = farmProtected(state, pos)
+      if (kept) refuse(`will not till at ${fmt(pos)}: ${kept}`)
+      const why = farmDistance(state, pos)
+      if (why) advise(`will not till at ${fmt(pos)}: ${why}`)
       if (!/^(dirt|grass_block|dirt_path)$/.test(bot.blockAt(pos)?.name ?? '')) refuse(`${fmt(pos)} is not dirt or grass (give the ground block itself)`)
       // 耕しただけで何も植わっていない地面は、水が近くになければ土に戻る: まく種がある分だけ耕す
       const farm = layoutAt(state, 'farm', pos)
-      const seed = CROPS[farm.layout.crop].seed
-      const seeds = inventoryCounts(bot)[seed] ?? 0
-      const tilled = layoutStatus(bot, farm).sow.length
-      if (seeds <= tilled) {
-        refuse(`will not till more: you have ${seeds} ${seed} for ${tilled} tilled cells with nothing planted, and tilled ground with nothing planted turns back to dirt without water. ` +
+      const seed = farm ? CROPS[farm.layout.crop].seed : null
+      const seeds = seed ? inventoryCounts(bot)[seed] ?? 0 : 0
+      const tilled = farm ? layoutStatus(bot, farm).sow.length : 0
+      if (farm && seeds <= tilled) {
+        advise(`will not till more: you have ${seeds} ${seed} for ${tilled} tilled cells with nothing planted, and tilled ground with nothing planted turns back to dirt without water. ` +
           `${seeds > 0 ? 'Sow the tilled cells first (sow)' : `Get ${seed} first (dig grass: about 1 in 10 drops a seed)`}, then till the next cell`)
       }
       return { c: { verb: 'till', target: 'farmland', pos } }
@@ -770,13 +781,14 @@ export function createTools (deps) {
     try {
       if (queries[name]) return { ok: true, result: queries[name](args), seconds: 0 }
       if (!build[name]) refuse(`unknown tool ${name}`)
+      notes = []
       if (state.reflex) refuse('the reflex is handling a nearby threat')
       if (state.busy) refuse('another action is running')
       // 前に同じ場所へ同じ手を断られた・着けなかったなら、やり直さない（理由と、別の手を選ぶよう返す）
       // （壊すと決めた掘り直し demolish と、保護を承知の override は、家や建物を断られた台帳を通り越す）
       const tried = args.demolish === true || args.override === true ? null : refusalAt(state, name, positionOf(args))
-      if (tried) refuse(`${name} at ${fmt(tried.pos)} was tried before and will not work: ${tried.reason}; choose another place or another way`)
-      notes = []
+      if (tried && freeGuards()) notes.push(`an earlier ${name} at ${fmt(tried.pos)} failed ${Math.max(0, Math.round((Date.now() - tried.at) / 60000))} min ago: ${tried.reason}`)
+      else if (tried) refuse(`${name} at ${fmt(tried.pos)} was tried before and will not work: ${tried.reason}; choose another place or another way`)
       const { c, label } = build[name](args)
       const home = state.home
       if (home && needsOutside(c, home)) {

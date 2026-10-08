@@ -111,7 +111,16 @@ export function surfaceAt (bot, x, z, y0) {
 
 // 植えたり耕したりしてはいけない所: 理由の文か null
 export function farmRefusal (state, pos) {
-  if (inHouse(state, pos, 1)) return 'it is on or next to the home or a build'
+  return farmProtected(state, pos) ?? farmDistance(state, pos)
+}
+
+// 家・建物の壁のそば: 木や作物が壁を壊す・ふさぐ（安全。BRIDGE_GUARDS=free でも断る）
+export function farmProtected (state, pos) {
+  return inHouse(state, pos, 1) ? 'it is on or next to the home or a build' : null
+}
+
+// 家から離す距離（作業知識。BRIDGE_GUARDS=free では警告）
+export function farmDistance (state, pos) {
   if (!state.home) return 'there is no home yet'
   const d = xzDist(pos, state.home.inside)
   if (d < PLANT_RING.min - 2) return 'it is too close to the home (keep the door and walls clear)'

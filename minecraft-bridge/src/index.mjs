@@ -56,6 +56,7 @@ import { aroundMe } from './around.mjs'
 import { setLevelWanted } from './leveling.mjs'
 import { quarrySpot, liveShafts } from './quarry.mjs'
 import { listRefusals } from './refusals.mjs'
+import { freeGuards } from './guards.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops, installAutoJump } from './move.mjs'
 import { installLedger } from './ledger.mjs'
@@ -599,7 +600,7 @@ async function handle (req, res) {
 }
 
 http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
-  .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] 待ち受け中 http://127.0.0.1:${BRIDGE_PORT}`))
+  .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] 待ち受け中 http://127.0.0.1:${BRIDGE_PORT}${freeGuards() ? '（BRIDGE_GUARDS=free: 作業知識の断りは警告にして通す）' : ''}`))
 
 startReflex(bot, state, {
   async preempt (reason, force = false) {

@@ -463,6 +463,16 @@ export function ensureTreeCells (bot, fac) {
   return moved
 }
 
+// 植林場のマスの柱（マスの 1 つ下から 6 つ上まで）に苗木か木があれば植わっている。設計の高さと実際の地面が
+// 1 段でもずれると、マスそのものを見る判定では植えた木が見えない（設計書 124: 世界から判定する）
+const treeInColumn = (bot, p) => {
+  for (let dy = -1; dy <= 6; dy++) {
+    const b = bot.blockAt(p.offset(0, dy, 0))
+    if (b && (SAPLING.test(b.name) || isLog(b.name))) return true
+  }
+  return false
+}
+
 export function layoutStatus (bot, fac) {
   ensureTreeCells(bot, fac)
   const water = fac.layout.water ?? []
@@ -498,7 +508,7 @@ export function layoutStatus (bot, fac) {
       else if (b.name === 'farmland') out.sow.push(p)
       else out.till.push(p)
     } else {
-      if (SAPLING.test(b.name) || isLog(b.name)) { out.done++; out.planted++ }
+      if (treeInColumn(bot, p)) { out.done++; out.planted++ }
       else out.plant.push(p)
     }
   }
