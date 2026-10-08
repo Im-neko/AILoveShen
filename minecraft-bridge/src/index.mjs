@@ -600,7 +600,7 @@ async function handle (req, res) {
 }
 
 http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
-  .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] 待ち受け中 http://127.0.0.1:${BRIDGE_PORT}${freeGuards() ? '（BRIDGE_GUARDS=free: 作業知識の断りは警告にして通す）' : ''}`))
+  .listen(BRIDGE_PORT, '127.0.0.1', () => console.log(`[bridge] 待ち受け中 http://127.0.0.1:${BRIDGE_PORT}${freeGuards() ? '' : '（BRIDGE_GUARDS=standard: 作業知識の断りも断る）'}`))
 
 startReflex(bot, state, {
   async preempt (reason, force = false) {

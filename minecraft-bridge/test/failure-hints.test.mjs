@@ -95,7 +95,9 @@ test('経路探しの時間切れに、届かない目標だという見立て�
   assert.equal(explainPathFailure(bot, goal, other), other)
 })
 
-test('plant / till の断りに、次に作業するマスを添える。草花の乗ったマスは受ける', async () => {
+test('plant / till の断りに、次に作業するマスを添える。草花の乗ったマスは受ける', async (t) => {
+  process.env.BRIDGE_GUARDS = 'standard' // 標準の断り（設計書 125）
+  t.after(() => { delete process.env.BRIDGE_GUARDS })
   const fac = (cells) => ({ kind: 'tree_farm', name: 'grove', layout: { sapling: 'birch_sapling', spacing: 5, cells } })
   const { bot } = world({ '10,68,1': 'poppy' }, [['birch_sapling', 2]])
   const home = { door: new Vec3(0, 68, 0), inside: new Vec3(0, 68, 1), outside: new Vec3(0, 68, -1), min: new Vec3(-1, 68, 1), max: new Vec3(1, 68, 3), bed: null, breach: [] }

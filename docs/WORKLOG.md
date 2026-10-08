@@ -7,6 +7,12 @@
 
 ## Completed Work
 
+### 既定を free にした（設計書 125 §11、2026-10-09、未確認: 実機。user: 「デフォルトfreeにしておいてもらえる？」）
+- `BRIDGE_GUARDS` が `standard` 以外（未設定を含む）なら、作業知識の断りを警告にして通す（`guards.mjs`）。`standard` は比較用。起動ログは standard のときだけ出る。ベンチマークの行の `guards` も未設定なら `free`。`.env.example` を更新
+- 標準の断りを前提にしていたテスト 4 件（`tools.test.mjs` 台帳、`tool-gates.test.mjs` 台帳、`failure-hints.test.mjs` plant / till、`facility-design.test.mjs` till の種）は `BRIDGE_GUARDS=standard` を明示。既定のテストを足した（変異で落ちる）。ブリッジ 897 件、Python 1630 件通過
+- 測っていないこと: 警告の出る場面で free が害を出さないか（設計書 125 §10）。配信の記録で、ログの `not enforced`・死亡・家や建物の損壊を見る
+- 要る操作: ブリッジの再起動
+
 ### 断りの標準と free を、同じ場面・2 つの LLM で比べた（設計書 125、2026-10-08、未確認: 実機。user: 「1,2,3を進めてください」の 3。「モデルの性能依存の問題かどうかは gemini 3.8 flash を使って比較検証します」）
 - ベンチマークに場面 `grove` を足した（`tools/bench_fixtures.py`: RCON で家と植林場を作り、ブリッジを止めて `state.json` を書いて起動し直す。最後の 1 マスが設計の高さと 2 段ずれて整地の記録に載る）。成績の行に `guards` と `tool_calls` / `tool_refused` / `tool_advised`（`bridge.log` の `[tool]` 行）を足した。`600d563`、`5278370`
 - 4 条件 × 3 回（10 分まで）: local-standard 1/3、local-free 2/3、**gemini-standard 0/3**、gemini-free 3/3。標準 1/6 対 free 5/6（Fisher p = 0.08。5% では有意でない）。free の成功はすべて「失敗 → 掘る → 植える」の 4〜5 手。標準では Gemini も同じ手を繰り返し、`demolish: true` / `override` / `place` を一度も試さなかった。Gemma は標準でも `level` の中心をずらして 1 回抜けた

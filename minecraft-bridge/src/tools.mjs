@@ -68,7 +68,7 @@ export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_
 
 class Refused extends Error {}
 const refuse = (why) => { throw new Refused(why) }
-// 作業知識の断り（設計書 123）。BRIDGE_GUARDS=free なら断らず、結果に添えて通す。それ以外は断る
+// 作業知識の断り（設計書 123）。BRIDGE_GUARDS=standard 以外は断らず、結果に添えて通す。standard は断る
 const RULE_NOTE = 'not enforced'
 const fmt = (p) => `${p.x},${p.y},${p.z}`
 

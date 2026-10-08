@@ -204,7 +204,7 @@ def summarize_task(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "median_steps": median([r["steps"] for r in valid if isinstance(r.get("steps"), int)]),
         "deaths": sum(r["deaths"] for r in valid if isinstance(r.get("deaths"), int)),
-        # 道具の呼び出しのうち断られた数と、断らずに警告で通した数（BRIDGE_GUARDS=free）の中央値
+        # 道具の呼び出しのうち断られた数と、断らずに警告で通した数（BRIDGE_GUARDS が standard 以外）の中央値
         "median_refused": median([r["tool_refused"] for r in valid if isinstance(r.get("tool_refused"), int)]),
         "median_advised": median([r["tool_advised"] for r in valid if isinstance(r.get("tool_advised"), int)]),
     }
@@ -678,7 +678,7 @@ def run_fixture(task: Task, run_dir: Path, config: dict[str, Any], bridge: subpr
 
 
 def tool_counts(run_dir: Path) -> dict[str, int]:
-    """ブリッジのログから、道具の呼び出しの数と、断られた数、断らずに警告で通した数（BRIDGE_GUARDS=free）。"""
+    """ブリッジのログから、道具の呼び出しの数と、断られた数、断らずに警告で通した数（BRIDGE_GUARDS が standard 以外）。"""
     log = run_dir / "bridge" / "bridge.log"
     calls = refused = advised = 0
     if log.exists():
@@ -815,7 +815,7 @@ def run_one(
         "level": level,
         "seed": seed,
         "freeze_day": freeze_day,
-        "guards": os.environ.get("BRIDGE_GUARDS") or "standard",
+        "guards": os.environ.get("BRIDGE_GUARDS") or "free",
         "at": datetime.now(timezone.utc).isoformat(),
         **row,
         **tool_counts(run_dir),

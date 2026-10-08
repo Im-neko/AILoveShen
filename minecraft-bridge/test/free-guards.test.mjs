@@ -1,9 +1,10 @@
-// BRIDGE_GUARDS=free: 作業知識の断りは警告にして通し、安全の断りは残す（設計書 124）
+// 既定（BRIDGE_GUARDS が standard 以外）: 作業知識の断りは警告にして通し、安全の断りは残す（設計書 124）。standard は断る
 import { test, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { createTools } from '../src/tools.mjs'
+import { freeGuards } from '../src/guards.mjs'
 import { layoutStatus } from '../src/facilities.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
 
@@ -44,12 +45,21 @@ const home = { door: new Vec3(20, 68, -190), inside: new Vec3(21, 68, -190), out
 const stateOf = (extra = {}) => ({ home, plan: null, memory: {}, facilities: {}, busy: false, reflex: false, plantings: [], ...extra })
 const toolsOf = (bot, state) => createTools({ bot, state, knowledge: k, run: async (c) => ({ ok: true, result: c.verb, seconds: 0 }), candidates: () => [], check: async () => [] })
 const both = async (fn) => {
+  process.env.BRIDGE_GUARDS = 'standard'
   const standard = await fn()
   process.env.BRIDGE_GUARDS = 'free'
   const free = await fn()
   delete process.env.BRIDGE_GUARDS
   return { standard, free }
 }
+
+test('既定は free。BRIDGE_GUARDS=standard のときだけ作業知識も断る', () => {
+  assert.equal(freeGuards(), true)
+  process.env.BRIDGE_GUARDS = 'standard'
+  assert.equal(freeGuards(), false)
+  process.env.BRIDGE_GUARDS = 'free'
+  assert.equal(freeGuards(), true)
+})
 
 test('設計したマスの外に植える・耕す: 標準は断り、free は理由を添えて通す', async () => {
   const bot = world({}, [['birch_sapling', 2], ['stone_hoe', 1]])

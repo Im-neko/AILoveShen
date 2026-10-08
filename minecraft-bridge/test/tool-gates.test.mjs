@@ -83,7 +83,9 @@ test('実行中は、どの行動の道具も実行しない', async () => {
   assert.equal(runs.length, 0)
 })
 
-test('台帳に載った手は、実行中より後に断る。demolish だけが台帳を通り越す', async () => {
+test('台帳に載った手は、実行中より後に断る。demolish だけが台帳を通り越す', async (t) => {
+  process.env.BRIDGE_GUARDS = 'standard' // 標準の断り（設計書 125）
+  t.after(() => { delete process.env.BRIDGE_GUARDS })
   const { callTool, state, runs } = setup()
   const pos = { x: 5, y: 70, z: 5 }
   assert.ok(noteRefusal(state, 'dig', pos, 'will not dig stone: it holds back water'))

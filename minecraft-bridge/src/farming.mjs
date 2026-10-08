@@ -114,12 +114,12 @@ export function farmRefusal (state, pos) {
   return farmProtected(state, pos) ?? farmDistance(state, pos)
 }
 
-// 家・建物の壁のそば: 木や作物が壁を壊す・ふさぐ（安全。BRIDGE_GUARDS=free でも断る）
+// 家・建物の壁のそば: 木や作物が壁を壊す・ふさぐ（安全。BRIDGE_GUARDS=standard でなくても断る）
 export function farmProtected (state, pos) {
   return inHouse(state, pos, 1) ? 'it is on or next to the home or a build' : null
 }
 
-// 家から離す距離（作業知識。BRIDGE_GUARDS=free では警告）
+// 家から離す距離（作業知識。BRIDGE_GUARDS=standard 以外では警告）
 export function farmDistance (state, pos) {
   if (!state.home) return 'there is no home yet'
   const d = xzDist(pos, state.home.inside)

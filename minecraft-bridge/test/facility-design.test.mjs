@@ -217,7 +217,9 @@ test('耕すのは、まく種が耕し済みのマスより多いときだけ�
   assert.equal(cropFarms(withSeeds, s, 'wheat').sow, 1)
 })
 
-test('till の道具: まく種が耕し済みのマスに足りなければ断り、理由を言う', async () => {
+test('till の道具: まく種が耕し済みのマスに足りなければ断り、理由を言う', async (t) => {
+  process.env.BRIDGE_GUARDS = 'standard' // 標準の断り（設計書 125）
+  t.after(() => { delete process.env.BRIDGE_GUARDS })
   const k = new Knowledge(md)
   const s = state()
   const fac = registerFacility(world(), s, 'wheat_farm', { kind: 'farm', boxes: ZONE, design: { width: 3, depth: 1 } })

@@ -410,7 +410,9 @@ test('家具を動かす: 前の家のベッドは家に運べる、今の家の
   assert.match((await callTool('move_furniture', { x: 10, y: 69, z: 10 })).result, /no bed, crafting table, furnace or chest/)
 })
 
-test('断られた場所へ同じ手を呼び直すと、実行せずに前の理由と別の手を返す（台帳）', async () => {
+test('断られた場所へ同じ手を呼び直すと、実行せずに前の理由と別の手を返す（台帳）', async (t) => {
+  process.env.BRIDGE_GUARDS = 'standard' // 標準の断り（設計書 125）
+  t.after(() => { delete process.env.BRIDGE_GUARDS })
   const { callTool, runs, state } = setup()
   const first = await callTool('dig', { x: 0, y: 70, z: 2 })
   assert.match(first.result, /will not dig oak_planks at 0,70,2: it is part of the current home/)
