@@ -442,7 +442,27 @@ function storeFacility (state, name, kind, body, layout) {
 export const START_SHARE = 0.25
 export const startQuota = (cells) => Math.max(1, Math.ceil(cells * START_SHARE))
 
+// 植林場のマスが、設計のあとに固い地面になっていたら（地面が1段上がった）、苗木を置ける1つ上に直す。
+// 設計のマスが地面の中だと、植える手は「固い」と断り、掘る手は整地の保護で断り、整地は「平ら」と断って、
+// 出口がなくなる（2026-10-08: 白樺の植林場の最後の1マスが3時間半植えられなかった）。何度呼んでも同じ。直したら true
+export function ensureTreeCells (bot, fac) {
+  if (fac?.kind !== 'tree_farm' || !fac.layout?.cells) return false
+  let moved = false
+  for (const c of fac.layout.cells) {
+    const here = bot.blockAt(new Vec3(c.x, c.y, c.z))
+    if (!here || !SAPLING_GROUND.test(here.name)) continue
+    const above = bot.blockAt(new Vec3(c.x, c.y + 1, c.z))
+    if (!above || !(above.name === 'air' || CLEARABLE.test(above.name))) continue
+    console.log(`[bridge] 植林場 ${fac.name} のマス ${c.x},${c.y},${c.z} は地面（${here.name}）になっていた: 1 つ上 ${c.y + 1} に直す`)
+    c.y += 1
+    moved = true
+  }
+  if (moved && fac.box) fac.box.max.y = Math.max(fac.box.max.y, ...fac.layout.cells.map((c) => c.y))
+  return moved
+}
+
 export function layoutStatus (bot, fac) {
+  ensureTreeCells(bot, fac)
   const water = fac.layout.water ?? []
   const out = { total: fac.layout.cells.length + water.length, done: 0, planted: 0, quota: startQuota(fac.layout.cells.length), started: false, till: [], sow: [], plant: [], water: [], unseen: 0, fence: [], gate: null, all: fac.layout.cells.length + water.length + (fac.layout.fence?.length ?? 0) + (fac.layout.gate ? 1 : 0) }
   // 柵（畑）: 立っているか、固いブロックで塞がっていれば済み。ゲートは柵のゲートが立っていれば済み
