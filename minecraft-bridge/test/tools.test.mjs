@@ -572,14 +572,39 @@ test('松明が足りないと、8 ブロック以上下の地下へは歩いて
   assert.equal((await callTool('goto', { x: 8, y: 70, z: 8 })).ok, true)
 })
 
-test('座標のマイナスを落とすと遠すぎる拒否になる: 符号を戻すと近いなら指摘する（z=-285 を 285 と書いた）', async () => {
-  const { callTool, runs } = setup({ at: v(55.5, 77, -283.5) })
+test('座標のマイナスを落としたら、符号を戻すと届く座標に読み直して実行し、直したことを結果に添える（z=-285 を 285 と書いた）', async () => {
+  const { callTool, runs } = setup({ at: v(55.5, 77, -283.5), extra: { '54,77,-285': 'dirt', '54,77,-283': 'dirt' } })
   const r = await callTool('dig', { x: 54, y: 77, z: 285 })
-  assert.equal(r.refused, true)
-  assert.match(r.result, /is 56\dm away/)
-  assert.match(r.result, /did you drop a minus sign\?.*54,77,-285 is \d/)
-  assert.equal(runs.length, 0)
-  // 符号を戻しても遠いなら、指摘しない
+  assert.equal(r.refused, undefined, r.result)
+  assert.equal(runs.length, 1)
+  assert.deepEqual([runs[0].c.pos.x, runs[0].c.pos.y, runs[0].c.pos.z], [54, 77, -285])
+  assert.match(r.result, /^done \(read 54,77,285 as 54,77,-285: coordinates are signed, and 54,77,285 is 56\dm away.*write the minus sign next time\)$/)
+  // 次の呼び出しに前の直しを持ち越さない
+  assert.equal((await callTool('dig', { x: 54, y: 77, z: -283 })).result, 'done')
+  // 調べるも同じ（調べた座標は直した座標）
+  const seen = await callTool('inspect', { x: 54, y: 77, z: 285 })
+  assert.deepEqual(seen.result.cell, { x: 54, y: 77, z: -285 }, JSON.stringify(seen))
+  // 置くも同じ（空いた所へ。土を 1 つ持っている）
+  const put = setup({ at: v(55.5, 77, -283.5), items: [['dirt', 1]], extra: { '54,76,-285': 'dirt' } })
+  const placed = await put.callTool('place', { item: 'dirt', x: 54, y: 77, z: 285, intent: 'x' })
+  assert.equal(placed.refused, undefined, placed.result)
+  assert.deepEqual([put.runs[0].c.pos.x, put.runs[0].c.pos.z], [54, -285])
+  // 符号を戻しても遠いなら、直さず断る
   const far = await callTool('dig', { x: 900, y: 77, z: 900 })
+  assert.equal(far.refused, true)
   assert.doesNotMatch(far.result, /minus sign/)
+})
+
+test('マイナスの落ちを直すのは、届く座標がちょうど 1 つのときだけ（どれか分からなければ断って、候補を教える）。z=0 の符号違いは同じ座標', async () => {
+  // (-40,-11) は遠い。符号を戻した (40,-11) と (40,11) の両方が届く: どちらか決められない
+  const both = setup({ at: v(10.5, 70, 0.5), extra: { '40,70,-11': 'dirt', '40,70,11': 'dirt' } })
+  const r = await both.callTool('dig', { x: -40, y: 70, z: -11 })
+  assert.equal(r.refused, true)
+  assert.match(r.result, /did you drop a minus sign/)
+  assert.equal(both.runs.length, 0)
+  // z=0 なら、符号を戻した座標は 1 つ
+  const one = setup({ at: v(10.5, 70, 0.5), extra: { '30,70,0': 'dirt' } })
+  const fixed = await one.callTool('dig', { x: -30, y: 70, z: 0 })
+  assert.equal(fixed.refused, undefined, fixed.result)
+  assert.equal(one.runs[0].c.pos.x, 30)
 })

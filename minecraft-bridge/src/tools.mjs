@@ -162,6 +162,23 @@ function within (bot, p, max, what) {
   return round(d)
 }
 
+// 負の座標のマイナスを落とした座標（z=-285 を 285 と書く）を、符号を戻せば届く座標に読み直す。届く候補が複数あれば、
+// いちばん近いものが次の 2 倍以上近いときだけ（書くのは近くのものだから。同じくらいなら、どれか分からないので断る）。
+// 直したことは notes に残し、結果に添えて、次から正しい座標を書かせる
+const SIGN_FIX_RATIO = 2
+function signFixed (bot, p, max, notes) {
+  const me = bot.entity.position
+  const away = (q) => me.distanceTo(q.offset(0.5, 0.5, 0.5))
+  if (away(p) <= max) return p
+  const fits = [[1, -1], [-1, 1], [-1, -1]]
+    .map(([sx, sz]) => new Vec3(p.x * sx, p.y, p.z * sz))
+    .filter((q, i, all) => (q.x !== p.x || q.z !== p.z) && away(q) <= max && all.findIndex((o) => o.x === q.x && o.z === q.z) === i)
+    .sort((a, b) => away(a) - away(b))
+  if (!fits.length || (fits.length > 1 && away(fits[1]) < SIGN_FIX_RATIO * away(fits[0]))) return p
+  notes.push(`read ${fmt(p)} as ${fmt(fits[0])}: coordinates are signed, and ${fmt(p)} is ${round(away(p))}m away (you are at ${fmt(me.floored())}); write the minus sign next time`)
+  return fits[0]
+}
+
 const UNDERGROUND_Y = 54 // これより低い所を地下とみなす（海面は 62）
 
 function holding (bot, item) {
@@ -193,6 +210,14 @@ function overWater (bot, pos) {
 
 export function createTools (deps) {
   const { bot, state, knowledge } = deps
+  // 呼び出しの間に直した座標の説明（結果に添える。道具は一度に 1 つしか動かない）
+  let notes = []
+  // 届く座標か断る。マイナスの落ちは直した座標を返す
+  const reach = (p, max, what) => {
+    const q = signFixed(bot, p, max, notes)
+    within(bot, q, max, what(q))
+    return q
+  }
 
   // 家の部屋の中に置いてよいか（家具も松明・ランタン・花なども）: 室内の空いたセルで、ドアのすぐ内側
   // （通り道: 足と頭の 2 マス）でなく、ベッドがまだなければ床に置いてもベッドの場所が残るとき。
@@ -286,8 +311,7 @@ export function createTools (deps) {
       return { c: { verb: 'goto_pos', target: fmt(pos), pos, range } }
     },
     dig (args) {
-      const pos = position(args)
-      within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+      const pos = reach(position(args), MAX_BLOCK_DISTANCE, (q) => `the block at ${fmt(q)}`)
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       // 草・作物・苗木・花は当たり判定がないが掘れる（草から種、育った作物の収穫。設計書 33）
@@ -321,8 +345,7 @@ export function createTools (deps) {
     },
     place (args) {
       holding(bot, args.item)
-      const pos = position(args)
-      within(bot, pos, MAX_BLOCK_DISTANCE, `${fmt(pos)}`)
+      const pos = reach(position(args), MAX_BLOCK_DISTANCE, fmt)
       const cell = bot.blockAt(pos)
       if (!cell) refuse(`${fmt(pos)} is not loaded`)
       if (!REPLACEABLE.has(cell.name)) refuse(`${fmt(pos)} is taken by ${cell.name}${nearbySpots(args, pos)}`)
@@ -485,8 +508,7 @@ export function createTools (deps) {
     // 置いてある家具（ベッド、作業台、かまど、チェスト）を拾って置き直す。今の家の家具も動かせる
     // （家の中でだけ）。to を省くと、ベッドは家の中の空いた所、ほかは家の中（なければ近く）
     move_furniture (args) {
-      const pos = position(args)
-      within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+      const pos = reach(position(args), MAX_BLOCK_DISTANCE, (q) => `the block at ${fmt(q)}`)
       const block = bot.blockAt(pos)
       const to = args.to_x != null ? position({ x: args.to_x, y: args.to_y, z: args.to_z }) : null
       const why = moveRefusal(bot, state, pos, block, to)
@@ -506,9 +528,9 @@ export function createTools (deps) {
       const item = args.item ?? Object.keys(inventoryCounts(bot)).find(isSaplingItem)
       if (!item || !isSaplingItem(item)) refuse('item must be a sapling you have (e.g. oak_sapling)')
       holding(bot, item)
-      const pos = args.x != null ? position(args) : defaultCell('plant', { sapling: item })
-      if (!pos) refuse(`no free cell for ${item} in the tree farms in view: ${NO_FACILITY}`)
-      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const cell = args.x != null ? position(args) : defaultCell('plant', { sapling: item })
+      if (!cell) refuse(`no free cell for ${item} in the tree farms in view: ${NO_FACILITY}`)
+      const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
       const fac = layoutAt(state, 'tree_farm', pos)
       if (!fac) refuse(`will not plant at ${fmt(pos)}: ${NO_FACILITY}`)
       if (fac.layout.sapling !== 'sapling' && fac.layout.sapling !== item) refuse(`the tree farm ${fac.name} is for ${fac.layout.sapling}, not ${item}`)
@@ -519,9 +541,9 @@ export function createTools (deps) {
     },
     till (args) {
       if (!Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_hoe'))) refuse('you have no hoe (craft one: 2 sticks + 2 planks or cobblestone)')
-      const pos = args.x != null ? position(args) : defaultCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
-      if (!pos) refuse(`no cell left to till in the farms in view: ${NO_FACILITY}`)
-      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const cell = args.x != null ? position(args) : defaultCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
+      if (!cell) refuse(`no cell left to till in the farms in view: ${NO_FACILITY}`)
+      const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
       if (!layoutAt(state, 'farm', pos)) refuse(`will not till at ${fmt(pos)}: ${NO_FACILITY}`)
       const why = farmRefusal(state, pos)
       if (why) refuse(`will not till at ${fmt(pos)}: ${why}`)
@@ -543,9 +565,9 @@ export function createTools (deps) {
       if (!item || !cropBySeed(item)) refuse(`item must be seeds you have: ${Object.values(CROPS).map((c) => c.seed).join(', ')}`)
       holding(bot, item)
       const crop = cropBySeed(item)
-      const pos = args.x != null ? position(args) : defaultCell('sow', { crop })
-      if (!pos) refuse(`no free farmland for ${item} in the farms in view (till the farm's cells first)`)
-      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const cell = args.x != null ? position(args) : defaultCell('sow', { crop })
+      if (!cell) refuse(`no free farmland for ${item} in the farms in view (till the farm's cells first)`)
+      const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
       if (bot.blockAt(pos)?.name !== 'farmland') refuse(`${fmt(pos)} is not farmland (give the farmland block itself)`)
       const fac = layoutAt(state, 'farm', pos)
       if (fac && fac.layout.crop !== crop) refuse(`the farm ${fac.name} is for ${fac.layout.crop}, not ${crop}`)
@@ -556,9 +578,9 @@ export function createTools (deps) {
       if (!(inventoryCounts(bot).water_bucket > 0)) {
         refuse('you have no water_bucket (craft a bucket: 3 iron ingots, then use_item {item: bucket, x,y,z} on a water block to fill it)')
       }
-      const pos = args.x != null ? position(args) : defaultCell('water', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
-      if (!pos) refuse('no water cell left to fill in the farms in view (search_facility shows the farms)')
-      within(bot, pos, MAX_TOOL_DISTANCE, fmt(pos))
+      const cell = args.x != null ? position(args) : defaultCell('water', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
+      if (!cell) refuse('no water cell left to fill in the farms in view (search_facility shows the farms)')
+      const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
       if (!waterAt(state, pos)) refuse(`will not put water at ${fmt(pos)}: it is not a water cell of a designed farm (${NO_FACILITY})`)
       return { c: { verb: 'place_water', target: 'water', item: 'water_bucket', pos } }
     },
@@ -599,8 +621,7 @@ export function createTools (deps) {
       if (bare) {
         if (args.entity != null) refuse('to use something on a mob you need an item')
         if (args.x == null) refuse('without an item, say which block to click with an empty hand: x, y, z')
-        const pos = position(args)
-        within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+        const pos = reach(position(args), MAX_BLOCK_DISTANCE, (q) => `the block at ${fmt(q)}`)
         const block = bot.blockAt(pos)
         if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
         if (OWN_TOOL_BLOCKS.test(block.name)) refuse(`${block.name} has its own tools (sleep, deposit, withdraw, craft, smelt, move_furniture)`)
@@ -616,8 +637,7 @@ export function createTools (deps) {
       }
       if (bot.registry.foodsByName[args.item]) refuse(`to eat ${args.item} use eat (use_item with food is for feeding a mob: give entity)`)
       if (args.x == null) return { c: { verb: 'use_item', target: args.item, item: args.item, hold, inPlace: true } }
-      const pos = position(args)
-      within(bot, pos, MAX_BLOCK_DISTANCE, `the block at ${fmt(pos)}`)
+      const pos = reach(position(args), MAX_BLOCK_DISTANCE, (q) => `the block at ${fmt(q)}`)
       // 畑の中とそのまわりに、水を手で注がない: 穴の外に注ぐと水が畑の表面に流れる（水のマスは water の道具が掘って置く）
       const farm = args.item === 'water_bucket'
         ? Object.values(state.facilities ?? {}).find((f) => f.kind === 'farm' && f.box && pos.x >= f.box.min.x - 1 && pos.x <= f.box.max.x + 1 && pos.z >= f.box.min.z - 1 && pos.z <= f.box.max.z + 1)
@@ -724,8 +744,7 @@ export function createTools (deps) {
     // 1 マスの今（ブロックの状態、隣、届くか、間に何があるか、断られる理由）。座標を省けば自分の今（設計書 85）
     inspect (args) {
       if (args.x == null && args.y == null && args.z == null) return inspectSelf(bot, state)
-      const pos = position(args)
-      within(bot, pos, MAX_TOOL_DISTANCE, `the block at ${fmt(pos)}`)
+      const pos = reach(position(args), MAX_TOOL_DISTANCE, (q) => `the block at ${fmt(q)}`)
       return inspectCell(bot, state, pos)
     },
     // ブリッジが残した直近の失敗の記録（door: 開かないドア、place: 置けなかった、stuck: 歩けなかった）
@@ -751,6 +770,7 @@ export function createTools (deps) {
       // （壊すと決めた掘り直し demolish と、保護を承知の override は、家や建物を断られた台帳を通り越す）
       const tried = args.demolish === true || args.override === true ? null : refusalAt(state, name, positionOf(args))
       if (tried) refuse(`${name} at ${fmt(tried.pos)} was tried before and will not work: ${tried.reason}; choose another place or another way`)
+      notes = []
       const { c, label } = build[name](args)
       const home = state.home
       if (home && needsOutside(c, home)) {
@@ -765,7 +785,8 @@ export function createTools (deps) {
         }
         if (confront) c.confront = true
       }
-      return await deps.run(c, label ?? `${name}(${JSON.stringify(args)})`)
+      const r = await deps.run(c, label ?? `${name}(${JSON.stringify(args)})`)
+      return notes.length ? { ...r, result: `${r.result} (${notes.join('; ')})` } : r
     } catch (e) {
       // 実行の失敗は run() が結果として返す。ここに来るのは、断ったときと、引数が知識と合わない
       // とき（知らないアイテムなど）: どちらも理由を返し、プレイは止めない
