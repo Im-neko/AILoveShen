@@ -66,6 +66,13 @@
 - ブリッジ 876 件通過（新規 5 件、変異 7 つが落ちる）
 - 要る操作: ブリッジの再起動（user が行う）
 
+### 録音のページを HTML 1 ファイルにした（2026-10-08、確認済み: Chrome の file:// と偽のマイク。未確認: Safari / Firefox、フォルダーを選ぶ実際のダイアログ。user: 「ブラウザで完結出来るようなペライチにできないの？」「python番は不要です。HTMLをzipで送る予定です。台本は全部入りで優先だけ分かるように。いけるとこまで録音してもらいます」）
+- 録音を頼む相手（元の配信者）のパソコンに Python を入れさせたくないので、`tools/voice_recorder.py`（HTTP サーバー）を消し、台本を埋め込んだ 1 ファイルにした。`tools/voice_recorder.template.html`（台本の場所は `/*SCRIPT_JSON*/`）+ `tools/build_voice_recorder.py`（`docs/voice/*.tsv` を埋め込んで `data/voice_recorder/voice_recorder.html` を作る。台本の文を直したらここで作り直す。ここは「サーバーなし」の判断とは別に、TSV を正にするために残した）
+- 保存先は 2 つ: File System Access API でフォルダーに直接（`FolderStore`）、使えない・選ばないときは IndexedDB（`IdbStore`）。どちらも「zip に書き出す」（無圧縮、CRC32 つき。ライブラリなし）。IndexedDB のときは書き出していない本数を出す
+- 優先: 1. まずここから（ふつう・語り・ITA EMOTION100 の 164 文）、2. できれば（感情・実況・相づち 185 文）、3. 余裕があれば（ITA RECITATION324 の 324 文）。段ごとの進み具合と「まずここからだけ」
+- 確かめて分かったこと: `file://` では `blob:` の `addModule` が `AbortError`（origin が null）で落ちて、**音が入らないまま 0 秒の WAV を「保存しました」と出していた**。`data:` URL で読めた。それも読めないとき用に ScriptProcessor、0.1 秒に満たない録音は保存せず知らせる
+- 確かめた: ヘッドレス Chrome（偽のマイク）で `file://` から開き、録音・上書き（前の録音を残す）・zip（`unzip -t` と `zipfile` で正常、WAV は 44.1kHz モノラル 16bit）・`voice_dataset.py --dry-run` が読む。フォルダー保存は OPFS（同じハンドルの API）で一覧・上書き・消去を確かめた。`showDirectoryPicker` のダイアログと、Safari / Firefox は試していない（ページに「Chrome か Edge で開いて」と書いた）
+
 ### 同じ理由で失敗し続ける技は動かさない（設計書 120、2026-10-08、未確認: 再起動後の実機。user: 「2をまずやってほしいです」）
 - 畑の技が 143 回中 140 回、同じ理由で失敗しても止まらなかった。原因は、同じ理由の失敗を数える `same_cause_run` が、間の `equip`（成功）で切れていたことと、`verified` が 1 回の成功で永久に真だったこと（`NEVER_WITHHELD` の例外は原因ではなかった。前の説明は誤り）
 - 版ごとに連続する同じ理由の失敗を数え（`streak`）、5 回で `failing`: `verified` が偽になり、ブリッジが動かさず（10 分後に 1 回だけ試せる）、一覧の行に連続回数が出る

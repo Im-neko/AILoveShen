@@ -85,6 +85,21 @@ ol.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
 .line:not(.done) .badge{display:none}
 .hide-done .line.done{display:none}
 .gate{margin:16px 0;padding:14px 16px;border:1px dashed var(--line);border-radius:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.gate .choices{display:flex;gap:8px;flex-wrap:wrap}
+.gate p{margin:0;flex:1 1 100%;font-size:14px}
+.tiers{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:13px}
+.tiers span{background:var(--chip);border-radius:999px;padding:1px 10px;font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.tiers span b{color:var(--ink);font-weight:500}
+.tiers .t1{background:var(--ink);color:var(--bg)}
+.tiers .t1 b{color:var(--bg)}
+.tierhead{margin:40px 0 0;padding:10px 14px;border-left:4px solid var(--ink);background:var(--surface);border-radius:0 10px 10px 0}
+.tierhead.t2{border-left-color:var(--muted)}
+.tierhead.t3{border-left-color:var(--line)}
+.tierhead b{font-family:var(--f-display);font-size:18px}
+.tierhead p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.tierhead + section h2{margin-top:16px}
+.only-first .tierhead:not(.t1),.only-first section:not(.t1){display:none}
+.unsaved{color:var(--warn)}
 footer{margin:40px 0;color:var(--muted);font-size:13px}
 @media (prefers-reduced-motion:reduce){.level i{transition:none}}
 </style>
@@ -100,9 +115,12 @@ footer{margin:40px 0;color:var(--muted);font-size:13px}
         <button class="tbtn" id="smaller" type="button" aria-label="文字を小さく">A−</button>
         <button class="tbtn" id="larger" type="button" aria-label="文字を大きく">A＋</button>
         <button class="tbtn" id="hideDone" type="button" aria-pressed="false">未録音だけ</button>
+        <button class="tbtn" id="onlyFirst" type="button" aria-pressed="false">まずここからだけ</button>
         <button class="tbtn" id="autoNext" type="button" aria-pressed="true">録ったら次へ</button>
+        <button class="tbtn" id="exportZip" type="button">zip に書き出す</button>
       </span>
     </div>
+    <div class="tiers" id="tiers"></div>
     <nav class="jump" id="jump" aria-label="区分へ移動"></nav>
     <div class="status" id="status" role="status"></div>
   </div>
@@ -110,14 +128,20 @@ footer{margin:40px 0;color:var(--muted);font-size:13px}
 
 <main class="wrap">
   <h1>シェンの声 録音</h1>
-  <p class="lead">1 文ずつ録音して、その行の番号のファイル名（例 <kbd>N001.wav</kbd>）でこのパソコンに保存します。録り直すと上書きされます（前のものは <kbd>_previous</kbd> に残ります）。</p>
+  <p class="lead">1 文ずつ録音します。<b>全部でなくて大丈夫です。</b>上から順に、録れるところまで録ってください（いちばん上の「まずここから」が最優先です）。録り直すと上書きされます。</p>
   <div class="gate" id="gate">
-    <button class="tbtn primary" id="enable" type="button">マイクを使う</button>
-    <span>最初に押して、ブラウザのマイクの許可を「許可」にしてください。</span>
+    <p><b>Chrome か Edge で開いてください。</b>はじめに保存のしかたを選びます。マイクの許可を聞かれたら「許可」を押してください。</p>
+    <div class="choices">
+      <button class="tbtn primary" id="startFolder" type="button" hidden>フォルダーを選んで始める（おすすめ）</button>
+      <button class="tbtn" id="startBrowser" type="button">ブラウザの中に保存して始める</button>
+    </div>
+    <p id="gateNote" hidden></p>
   </div>
   <details class="tips">
     <summary>録り方とキー操作</summary>
     <ul>
+      <li><b>フォルダーに保存</b>: 1 文ごとに <kbd>N001.wav</kbd> のようなファイルがそのフォルダーに作られます。次に開いたときも同じフォルダーを選べば、続きから録れます。</li>
+      <li><b>ブラウザの中に保存</b>: ブラウザの履歴やサイトデータを消すと録音も消えます。ときどき上の「zip に書き出す」で書き出してください。</li>
       <li><kbd>Space</kbd> 選んでいる行の録音を開始・停止。<kbd>↓</kbd><kbd>↑</kbd> 行を移動。<kbd>P</kbd> 選んでいる行を再生。</li>
       <li>録音を押したら 0.3 秒ほど待ってから読み、読み終えて 0.3 秒ほどしてから止めてください。</li>
       <li>上の入力の棒が線より右まで届くと音割れの手前です。赤くなったら声かマイクの音量を下げてください。</li>
@@ -143,7 +167,12 @@ const HOW = {
   "ITA EMOTION100": ["ita", "ITA コーパス（パブリックドメイン）。日本語の音をまんべんなく含む 100 文。ふつうの話し方で、ふりがなのとおりに。"],
   "ITA RECITATION324": ["ita", "ITA コーパスの残りの 324 文（任意）。音の組み合わせを増やします。時間があるときに。"],
 };
-const ORDER = ["ふつう", "語り", "ITA EMOTION100", "楽しい", "驚き", "悲しい", "むっ", "怖い", "実況", "相づち", "ITA RECITATION324"];
+const TIERS = [
+  { label: "まずここから", about: "声の土台になる分です。最初にここから、上から順に。", sections: ["ふつう", "語り", "ITA EMOTION100"] },
+  { label: "できれば", about: "感情の声と、実況で使う言い回し。", sections: ["楽しい", "驚き", "悲しい", "むっ", "怖い", "実況", "相づち"] },
+  { label: "余裕があれば", about: "任意です。時間があるときだけ。", sections: ["ITA RECITATION324"] },
+];
+const SCRIPT = /*SCRIPT_JSON*/;
 const PREROLL_S = 0.2;   // 押す直前の音も少し入れる（最初の音が切れない）
 const CLIP = 0.99;
 
@@ -151,22 +180,23 @@ const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const ruby = (t) => esc(t).replace(/([一-龯々〆ヵヶ0-9０-９]+)\(([ぁ-ゖァ-ヺー]+)\)/g, "<ruby>$1<rt>$2</rt></ruby>");
 const prefs = (() => { try { return JSON.parse(localStorage.getItem("voice-recorder") || "{}"); } catch { return {}; } })();
-const state = Object.assign({ size: 20, hideDone: false, autoNext: true, device: "" }, prefs);
-const savePrefs = () => { try { localStorage.setItem("voice-recorder", JSON.stringify({ size: state.size, hideDone: state.hideDone, autoNext: state.autoNext, device: state.device })); } catch {} };
+const state = Object.assign({ size: 20, hideDone: false, onlyFirst: false, autoNext: true, device: "", exportedAt: 0 }, prefs);
+const savePrefs = () => { try { localStorage.setItem("voice-recorder", JSON.stringify({ size: state.size, hideDone: state.hideDone, onlyFirst: state.onlyFirst, autoNext: state.autoNext, device: state.device, exportedAt: state.exportedAt })); } catch {} };
 
-let script = [], recorded = {}, clipped = {}, current = null;
+let script = SCRIPT, recorded = {}, clipped = {}, current = null, store = null;
 let ctx = null, stream = null, source = null, node = null;
 let ring = [], ringLen = 0, take = null, peak = 0, startedAt = 0, timerId = 0;
 
 function status(text, error = false) { const el = $("#status"); el.textContent = text; el.classList.toggle("error", error); }
 
-async function load() {
-  script = await (await fetch("/api/script")).json();
-  recorded = await (await fetch("/api/recordings")).json();
-  const groups = ORDER.filter((s) => script.some((r) => r.section === s)).map((s) => ({ name: s, rows: script.filter((r) => r.section === s) }));
+function build() {
+  const groups = TIERS.flatMap((t, ti) => t.sections.filter((s) => script.some((r) => r.section === s)).map((s) => ({ name: s, tier: ti, rows: script.filter((r) => r.section === s) })));
   $("#sections").innerHTML = groups.map((g, gi) => {
     const [emo, how] = HOW[g.name] || ["neutral", ""];
-    return `<section id="s${gi}">
+    const t = TIERS[g.tier];
+    const head = gi === 0 || groups[gi - 1].tier !== g.tier
+      ? `<div class="tierhead t${g.tier + 1}"><b>${g.tier + 1}. ${esc(t.label)}</b><p>${esc(t.about)}</p></div>` : "";
+    return head + `<section id="s${gi}" class="t${g.tier + 1}">
       <h2><span class="dot" style="background:var(--e-${emo})"></span>${esc(g.name)} <small><span data-count="${gi}">0</span>/${g.rows.length}</small></h2>
       <p class="how">${esc(how)}</p>
       <ol class="lines">${g.rows.map((r) => `
@@ -181,32 +211,38 @@ async function load() {
         </li>`).join("")}</ol>
     </section>`;
   }).join("");
-  $("#jump").innerHTML = groups.map((g, gi) => `<a href="#s${gi}"><span class="dot" style="background:var(--e-${(HOW[g.name] || ["neutral"])[0]})"></span>${esc(g.name)} <small data-chip="${gi}"></small></a>`).join("");
-  $("#footer").textContent = `全 ${script.length} 文。保存先はコマンドを起動したときのフォルダー（既定 data/voice_recordings/）。`;
-  select(document.querySelector(".line:not(.done)") || document.querySelector(".line"), false);
+  $("#jump").innerHTML = groups.map((g, gi) => `<a href="#s${gi}"><span class="dot" style="background:var(--e-${(HOW[g.name] || ["neutral"])[0]})"></span>${g.tier + 1}. ${esc(g.name)} <small data-chip="${gi}"></small></a>`).join("");
+  $("#footer").textContent = `全 ${script.length} 文。`;
+  select(document.querySelector(".line"), false);
   render();
 }
 
 function render() {
   document.documentElement.style.setProperty("--size", state.size + "px");
   document.body.classList.toggle("hide-done", state.hideDone);
+  document.body.classList.toggle("only-first", state.onlyFirst);
   $("#hideDone").setAttribute("aria-pressed", String(state.hideDone));
+  $("#onlyFirst").setAttribute("aria-pressed", String(state.onlyFirst));
   $("#autoNext").setAttribute("aria-pressed", String(state.autoNext));
-  let done = 0;
+  let done = 0, unsaved = 0;
   for (const li of document.querySelectorAll(".line")) {
-    const secs = recorded[li.dataset.id];
-    const on = secs !== undefined;
+    const rec = recorded[li.dataset.id];
+    const on = rec !== undefined;
     li.classList.toggle("done", on);
-    li.querySelector(".secs").textContent = on && secs != null ? ` · ${secs.toFixed(1)} 秒` : "";
+    li.querySelector(".secs").textContent = on && rec.seconds != null ? ` · ${rec.seconds.toFixed(1)} 秒` : "";
     li.querySelector(".warn").textContent = clipped[li.dataset.id] ? "音割れのおそれ（録り直し推奨）" : "";
-    if (on) done++;
+    if (on) { done++; if (rec.at > state.exportedAt) unsaved++; }
   }
   document.querySelectorAll("section").forEach((sec, gi) => {
     const lines = sec.querySelectorAll(".line"), n = sec.querySelectorAll(".line.done").length;
     sec.querySelector(`[data-count="${gi}"]`).textContent = n;
     const chip = document.querySelector(`[data-chip="${gi}"]`); if (chip) chip.textContent = `${n}/${lines.length}`;
   });
-  $("#progress").innerHTML = `録音済み <b>${done}</b> / ${script.length}`;
+  $("#tiers").innerHTML = TIERS.map((t, ti) => {
+    const ids = script.filter((r) => t.sections.includes(r.section)).map((r) => r.id);
+    return `<span class="t${ti + 1}">${ti + 1}. ${esc(t.label)} <b>${ids.filter((id) => recorded[id]).length}</b>/${ids.length}</span>`;
+  }).join("");
+  $("#progress").innerHTML = `録音済み <b>${done}</b> / ${script.length}` + (store && store.kind === "idb" && unsaved ? ` <span class="unsaved">· zip 未書き出し ${unsaved} 本</span>` : "");
 }
 
 function select(li, scroll = true) {
@@ -226,22 +262,178 @@ async function enable() {
       deviceId: state.device ? { exact: state.device } : undefined,
       echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
   } catch (e) {
-    status(`マイクが使えない: ${e.message}。ブラウザのマイクの許可と、http://localhost で開いているかを確かめてください。`, true);
-    return;
+    status(`マイクが使えない: ${e.message}。アドレスバーのマイクの許可を確かめて、Chrome か Edge で開き直してください。`, true);
+    return false;
   }
   ctx = ctx || new AudioContext();
   if (ctx.state === "suspended") await ctx.resume();
-  if (!node) {
-    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
-  }
   source = ctx.createMediaStreamSource(stream);
-  node = new AudioWorkletNode(ctx, "tap");
-  node.port.onmessage = (e) => onAudio(e.data);
+  node = await makeTap();
   source.connect(node);
-  $("#gate").hidden = true;
   await listDevices();
   const label = stream.getAudioTracks()[0]?.label || "マイク";
   status(`${label}（${ctx.sampleRate} Hz、モノラル、自動音量・雑音除去なし）で録ります。`);
+  return true;
+}
+
+// ---- 保存先（フォルダー / ブラウザの中）----
+const wavSeconds = async (blob) => {
+  const v = new DataView(await blob.slice(0, 44).arrayBuffer());
+  return v.byteLength < 44 ? null : v.getUint32(40, true) / (v.getUint32(24, true) * 2);
+};
+const known = (id) => script.some((r) => r.id === id);
+
+class FolderStore {
+  kind = "folder";
+  constructor(dir) { this.dir = dir; }
+  async list() {
+    const out = {};
+    for await (const [name, h] of this.dir.entries()) {
+      const id = name.replace(/\.wav$/, "");
+      if (h.kind !== "file" || id === name || !known(id)) continue;
+      const file = await h.getFile();
+      out[id] = { seconds: await wavSeconds(file), at: file.lastModified };
+    }
+    return out;
+  }
+  async #keepPrevious(id) {
+    let old;
+    try { old = await (await this.dir.getFileHandle(`${id}.wav`)).getFile(); } catch { return false; }
+    await this.#write(await this.dir.getDirectoryHandle("_previous", { create: true }), id, old);
+    return true;
+  }
+  async #write(dir, id, blob) {
+    const w = await (await dir.getFileHandle(`${id}.wav`, { create: true })).createWritable();
+    await w.write(blob); await w.close();
+  }
+  async put(id, blob) { await this.#keepPrevious(id); await this.#write(this.dir, id, blob); }
+  async get(id) { try { return await (await this.dir.getFileHandle(`${id}.wav`)).getFile(); } catch { return null; } }
+  async del(id) { if (await this.#keepPrevious(id)) await this.dir.removeEntry(`${id}.wav`); }
+}
+
+class IdbStore {
+  kind = "idb";
+  static async open() {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open("voice-recorder", 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore("take"); req.result.createObjectStore("previous"); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return new IdbStore(db);
+  }
+  constructor(db) { this.db = db; }
+  #run(name, mode, fn) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(name, mode), os = tx.objectStore(name);
+      const req = fn(os);
+      tx.oncomplete = () => resolve(req?.result);
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    });
+  }
+  async list() {
+    const out = {};
+    const keys = await this.#run("take", "readonly", (os) => os.getAllKeys());
+    const rows = await this.#run("take", "readonly", (os) => os.getAll());
+    keys.forEach((id, i) => { if (known(id)) out[id] = { seconds: rows[i].seconds, at: rows[i].at }; });
+    return out;
+  }
+  async put(id, blob, seconds) {
+    const old = await this.#run("take", "readonly", (os) => os.get(id));
+    if (old) await this.#run("previous", "readwrite", (os) => os.put(old, id));
+    await this.#run("take", "readwrite", (os) => os.put({ blob, seconds, at: Date.now() }, id));
+  }
+  async get(id) { return (await this.#run("take", "readonly", (os) => os.get(id)))?.blob || null; }
+  async del(id) {
+    const old = await this.#run("take", "readonly", (os) => os.get(id));
+    if (!old) return;
+    await this.#run("previous", "readwrite", (os) => os.put(old, id));
+    await this.#run("take", "readwrite", (os) => os.delete(id));
+  }
+}
+
+async function begin(kind) {
+  try {
+    if (kind === "folder") {
+      store = new FolderStore(await showDirectoryPicker({ id: "shen-voice", mode: "readwrite", startIn: "documents" }));
+    } else {
+      store = await IdbStore.open();
+      if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+    }
+    recorded = await store.list();
+  } catch (e) {
+    store = null;
+    if (e.name !== "AbortError") status(`保存先を使えない: ${e.message}`, true);
+    return;
+  }
+  if (!(await enable())) return;
+  $("#gate").hidden = true;
+  const n = Object.keys(recorded).length;
+  select(document.querySelector(".line:not(.done)") || document.querySelector(".line"));
+  render();
+  status((kind === "folder" ? `フォルダー「${store.dir.name}」に保存します。` : "ブラウザの中に保存します（ときどき「zip に書き出す」で書き出してください）。") + (n ? ` 録音済みの ${n} 本を読み込みました。` : ""));
+}
+
+// ---- zip（無圧縮）----
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = (u8) => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+async function makeZip(files) {
+  const d = new Date(), time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  for (const { name, blob } of files) {
+    const nameBytes = enc.encode(name), crc = crc32(new Uint8Array(await blob.arrayBuffer()));
+    const head = new DataView(new ArrayBuffer(30));
+    head.setUint32(0, 0x04034b50, true); head.setUint16(4, 20, true); head.setUint16(10, time, true); head.setUint16(12, date, true);
+    head.setUint32(14, crc, true); head.setUint32(18, blob.size, true); head.setUint32(22, blob.size, true); head.setUint16(26, nameBytes.length, true);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(12, time, true); cd.setUint16(14, date, true);
+    cd.setUint32(16, crc, true); cd.setUint32(20, blob.size, true); cd.setUint32(24, blob.size, true); cd.setUint16(28, nameBytes.length, true); cd.setUint32(42, offset, true);
+    parts.push(head, nameBytes, blob); central.push(cd, nameBytes);
+    offset += 30 + nameBytes.length + blob.size;
+  }
+  const cdSize = central.reduce((s, p) => s + (p.byteLength ?? p.length), 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: "application/zip" });
+}
+
+async function exportZip() {
+  if (!store) { status("先に保存のしかたを選んでください。", true); return; }
+  try {
+    status("zip を作っています…");
+    const ids = Object.keys(await store.list()).sort();
+    if (!ids.length) { status("まだ録音がありません。", true); return; }
+    const files = [];
+    for (const id of ids) files.push({ name: `voice_recordings/${id}.wav`, blob: await store.get(id) });
+    const url = URL.createObjectURL(await makeZip(files));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `shen_voice_${new Date().toISOString().slice(0, 10)}.zip` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    state.exportedAt = Date.now(); savePrefs(); render();
+    status(`${ids.length} 本を zip に書き出しました（ダウンロードのフォルダーを見てください）。`);
+  } catch (e) {
+    status(`zip を作れませんでした: ${e.message}`, true);
+  }
+}
+
+// file:// で開いたページ（origin が null）は blob: の worklet を読めないので data: で読み、だめなら ScriptProcessor で受ける
+let workletOk = null;
+async function makeTap() {
+  if (workletOk !== false) {
+    try {
+      if (workletOk === null) await ctx.audioWorklet.addModule("data:text/javascript;charset=utf-8," + encodeURIComponent(WORKLET));
+      workletOk = true;
+      const n = new AudioWorkletNode(ctx, "tap");
+      n.port.onmessage = (e) => onAudio(e.data);
+      return n;
+    } catch { workletOk = false; }
+  }
+  const n = ctx.createScriptProcessor(4096, 1, 1);
+  n.onaudioprocess = (e) => onAudio(e.inputBuffer.getChannelData(0).slice());
+  n.connect(ctx.destination);   // 出力は無音（つなげないと動かない）
+  return n;
 }
 
 async function stopMic() {
@@ -274,7 +466,7 @@ function onAudio(buf) {
 }
 
 function startTake(li) {
-  if (!stream) { status("先に「マイクを使う」を押してください。", true); return; }
+  if (!stream) { status("先に上の「始める」ボタンで保存のしかたを選んでください。", true); return; }
   if (take) stopTake();
   select(li, false);
   take = ring.slice(); ring = []; ringLen = 0; peak = 0;
@@ -289,14 +481,14 @@ async function stopTake() {
   take = null; clearInterval(timerId);
   li.classList.remove("recording");
   const wav = encodeWav(chunks, ctx.sampleRate);
+  const seconds = (wav.size - 44) / 2 / ctx.sampleRate;
+  if (seconds < 0.1) { status(`${li.dataset.id}: 音が入ってきていません。マイクの許可とマイクの選択を確かめて、もう一度録ってください。保存していません。`, true); return; }
   status(`${li.dataset.id} を保存中…`);
   try {
-    const res = await fetch(`/api/recordings/${li.dataset.id}`, { method: "PUT", body: wav, headers: { "Content-Type": "audio/wav" } });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || res.status);
-    recorded[li.dataset.id] = data.seconds;
+    await store.put(li.dataset.id, wav, seconds);
+    recorded[li.dataset.id] = { seconds, at: Date.now() };
     if (clip) clipped[li.dataset.id] = true; else delete clipped[li.dataset.id];
-    status(`${li.dataset.id}.wav を保存しました（${data.seconds} 秒）${clip ? "。音割れのおそれがあります" : ""}。`, clip);
+    status(`${li.dataset.id}.wav を保存しました（${seconds.toFixed(1)} 秒）${clip ? "。音割れのおそれがあります" : ""}。`, clip);
     render();
     if (state.autoNext && !clip) {
       const lines = [...document.querySelectorAll(".line")].filter((l) => !state.hideDone || !l.classList.contains("done") || l === li);
@@ -304,7 +496,7 @@ async function stopTake() {
       if (next) select(next);
     }
   } catch (e) {
-    status(`${li.dataset.id} を保存できませんでした: ${e.message}。録音のコマンドが動いているか確かめてください。`, true);
+    status(`${li.dataset.id} を保存できませんでした: ${e.message}。この録音は残っていません。もう一度録ってください。`, true);
   }
 }
 
@@ -324,9 +516,12 @@ function encodeWav(chunks, rate) {
 }
 
 let player = null;
-function play(li) {
+async function play(li) {
   player?.pause();
-  player = new Audio(`/audio/${li.dataset.id}.wav?t=${Date.now()}`);
+  const blob = await store?.get(li.dataset.id);
+  if (!blob) { status(`${li.dataset.id} の録音が見つかりません。`, true); return; }
+  if (player) URL.revokeObjectURL(player.src);
+  player = new Audio(URL.createObjectURL(blob));
   player.play().catch((e) => status(`再生できない: ${e.message}`, true));
 }
 
@@ -334,12 +529,19 @@ async function remove(li) {
   const id = li.dataset.id;
   const btn = li.querySelector(".xbtn");
   if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "本当に消す"; setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "消す"; }, 3000); return; }
-  const res = await fetch(`/api/recordings/${id}`, { method: "DELETE" });
-  if (res.ok) { delete recorded[id]; delete clipped[id]; status(`${id}.wav を消しました（_previous に移しました）。`); render(); }
+  try {
+    await store.del(id);
+    delete recorded[id]; delete clipped[id]; status(`${id}.wav を消しました。`); render();
+  } catch (e) {
+    status(`${id} を消せませんでした: ${e.message}`, true);
+  }
 }
 
 // ---- 操作 ----
-$("#enable").addEventListener("click", enable);
+$("#startFolder").addEventListener("click", () => begin("folder"));
+$("#startBrowser").addEventListener("click", () => begin("idb"));
+$("#exportZip").addEventListener("click", exportZip);
+$("#onlyFirst").addEventListener("click", () => { state.onlyFirst = !state.onlyFirst; savePrefs(); render(); });
 $("#device").addEventListener("change", (e) => { state.device = e.target.value; savePrefs(); enable(); });
 $("#larger").addEventListener("click", () => { state.size = Math.min(34, state.size + 2); savePrefs(); render(); });
 $("#smaller").addEventListener("click", () => { state.size = Math.max(14, state.size - 2); savePrefs(); render(); });
@@ -363,8 +565,9 @@ document.addEventListener("keydown", (e) => {
   } else if (e.key === "p" || e.key === "P") { if (current?.classList.contains("done")) play(current); }
 });
 window.addEventListener("beforeunload", (e) => { if (take) { e.preventDefault(); e.returnValue = ""; } });
-if (!window.isSecureContext) status("このページは http://localhost:8770 で開いてください（それ以外のアドレスではマイクが使えません）。", true);
-load().catch((e) => status(`台本を読めない: ${e.message}`, true));
+window.showDirectoryPicker ? ($("#startFolder").hidden = false) : ($("#gateNote").hidden = false, $("#gateNote").textContent = "このブラウザはフォルダーに直接保存できないので、ブラウザの中に保存します。Chrome か Edge で開くとフォルダーに保存できます。");
+if (!navigator.mediaDevices?.getUserMedia) status("このブラウザではマイクが使えません。Chrome か Edge で開いてください。", true);
+build();
 </script>
 </body>
 </html>
