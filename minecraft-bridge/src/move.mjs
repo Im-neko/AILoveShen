@@ -159,6 +159,8 @@ export async function walkTo (bot, goal, signal, stuckMs = STUCK_MS, noProgressM
       if (attempt === 2) await backOff(bot, stuckMs)
       signal.throwIfAborted()
     }
+  } catch (e) {
+    throw explainPathFailure(bot, goal, e)
   } finally {
     if (original && bot.pathfinder.movements !== original) bot.pathfinder.setMovements(original)
   }
@@ -233,6 +235,21 @@ async function walkWatched (bot, goal, stuckMs, noProgressMs = NO_PROGRESS_MS) {
     bot.pathfinder.setGoal(null)
     await doors.stop()
   }
+}
+
+// 経路探しの時間切れに、原因の見立てと次の手を添える（元の文はそのまま先頭に残す: refusals.mjs が見る）。
+// 「Took to long to decide path」だけでは、目標に着けないことが分からない（閉じた家の中のセルなど、届かない目標で
+// 5 秒の探索が空回りする: 2026-10-08 に 25 回）。pathfinder はドアを通れない。「No path」は届かないとすでに言っている
+const PATH_FAILURE = /^Took to long to decide path to goal!/
+export function explainPathFailure (bot, goal, e) {
+  if (!PATH_FAILURE.test(String(e?.message ?? '')) || e.explained) return e
+  const at = goalPoint(goal)
+  const me = bot.entity?.position
+  const where = at ? ` ${Math.round(at.x)},${at.y === null ? '?' : Math.round(at.y)},${Math.round(at.z)}${me ? ` (${Math.round(distanceTo(me, at))}m away)` : ''}` : ''
+  const out = new Error(`${e.message} The goal${where} is probably unreachable from here (behind a closed door or a wall, inside a sealed place, or across water): walk to a cell next to it that you can reach, open the door, or choose another place`)
+  out.name = e.name
+  out.explained = true
+  return out
 }
 
 // pathfinder の goto は、経路が空のとき（状態が noPath でも timeout でも）失敗にせず成功として返す

@@ -29,7 +29,7 @@ import { canHold, isTossed, noteTossed, emptySlots } from './spare.mjs'
 import { liquidReason } from './liquid.mjs'
 import { supportFor } from './placing.mjs'
 import { isSleeping, sleeperOf } from './sleepers.mjs'
-import { SINGLE_CHEST, defragChests, contentsSignature, chestRecordPos } from './storage.mjs'
+import { SINGLE_CHEST, defragChests, contentsSignature, chestRecordPos, storageUsage } from './storage.mjs'
 import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
 import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
@@ -1656,7 +1656,7 @@ export const PRIMITIVES = {
     const n = Math.min(c.count, inventoryCounts(bot)[c.item] ?? 0)
     if (!n) throw new Error(`no ${c.item} to put in`)
     const put = await putInChests(bot, state, c, signal, [{ item: c.item, count: n }])
-    if (!put.length) throw new Error('could not put anything in the chest: it is full')
+    if (!put.length) throw new Error(noRoomReason(bot, state, [{ item: c.item }]))
     return `put ${put.join(', ')} in the chest`
   },
   // 余った物を捨てる（家のチェストがない・遠いとき。spare.mjs）。前に向かって捨てる: 下を向いたまま
@@ -1681,7 +1681,7 @@ export const PRIMITIVES = {
     try {
       const items = c.items.map(({ item }) => ({ item, count: inventoryCounts(bot)[item] ?? 0 })).filter((i) => i.count > 0)
       const put = await putInChests(bot, state, c, signal, items)
-      if (!put.length) throw new Error('could not put anything in the chest: it is full')
+      if (!put.length) throw new Error(noRoomReason(bot, state, items))
       return `put ${put.join(', ')} in the chest (kept the weapon, armor, food and torches)`
     } catch (e) {
       state.tidyBlockedUntil = Number(bot.time.age) + 5 * 60 * 20 // いっぱいなどで預けられない: しばらく出さない
@@ -1700,7 +1700,7 @@ export const PRIMITIVES = {
     }
     if (!put.length) {
       state.tidyBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
-      throw new Error('could not put anything in the chest: it is full (or it is all gone from the inventory)')
+      throw new Error(noRoomReason(bot, state, c.stow))
     }
     return `put ${put.join(', ')} in the chest`
   },
@@ -1770,7 +1770,10 @@ export const PRIMITIVES = {
     if (!torch) throw new Error('no torch')
     await goNear(bot, c.pos, 2, signal)
     const floor = bot.blockAt(c.pos.offset(0, -1, 0))
-    if (floor?.boundingBox !== 'block' || bot.blockAt(c.pos)?.boundingBox !== 'empty') throw new Error(`no ground for a torch at ${c.pos.x},${c.pos.z} any more`)
+    const cell = bot.blockAt(c.pos)
+    if (floor?.boundingBox !== 'block' || cell?.boundingBox !== 'empty') {
+      throw new Error(`no ground for a torch at ${c.pos.x},${c.pos.z} any more (${floor?.boundingBox !== 'block' ? `the floor under it is ${floor?.name ?? 'unloaded'}` : `${cell?.name ?? 'unloaded'} is in the cell`})`)
+    }
     await bot.equip(torch, 'hand')
     await bot.placeBlock(floor, { x: 0, y: 1, z: 0 })
     if (bot.blockAt(c.pos)?.name !== 'torch') throw new Error('the torch was not placed')
@@ -2044,7 +2047,10 @@ export const PRIMITIVES = {
     await goto(bot, new goals.GoalPlaceBlock(c.pos, bot.world, { range: REACH }), signal)
     signal.throwIfAborted()
     const against = bot.blockAt(c.against)
-    if (against?.boundingBox !== 'block') throw new Error(`nothing to place against at ${c.against.x},${c.against.y},${c.against.z} any more`)
+    if (against?.boundingBox !== 'block') throw new Error(`nothing to place against at ${c.against.x},${c.against.y},${c.against.z} any more (it is ${against?.name ?? 'unloaded'}; place the block next to a solid one)`)
+    // 草花の乗ったセルには置けない（サーバーが「the block is still white_tulip」と断る）: 先にどける
+    const flower = bot.blockAt(c.pos)
+    if (flower && CLEARABLE.test(flower.name)) await bot.dig(flower)
     await bot.equip(item, 'hand')
     const before = bot.blockAt(c.pos)?.name
     await bot.placeBlock(against, c.pos.minus(c.against))
@@ -2233,7 +2239,10 @@ export const PRIMITIVES = {
     const above = bot.blockAt(c.pos.offset(0, 1, 0))
     if (!/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') || above?.name !== 'air') {
       // 何が邪魔かを言う（土なのに耕せない理由は上のブロック。「土」とだけ言うと、なぜか分からない）
-      const why = !/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '') ? `the ground is ${block?.name ?? 'unloaded'}` : `${above?.name ?? 'unloaded'} is on top of the ${block.name}`
+      // 何が邪魔かと、次の手を言う（穴は土で埋める、上の固いブロックは掘る）
+      const why = !/^(dirt|grass_block|dirt_path)$/.test(block?.name ?? '')
+        ? `the ground is ${block?.name ?? 'unloaded'}${!block || block.name === 'air' ? ': a hole in the farm, fill it with dirt first (the farm level step, or place dirt there)' : block.boundingBox === 'block' ? ': the farm level step rebuilds it with dirt' : ''}`
+        : `${above?.name ?? 'unloaded'} is on top of the ${block.name}${above?.boundingBox === 'block' ? ': dig it first' : ''}`
       throw new Error(`nothing to till at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${why})`)
     }
     await bot.equip(hoe, 'hand')
@@ -2247,7 +2256,10 @@ export const PRIMITIVES = {
     if (!seed) throw new Error(`no ${c.item}`)
     await goNear(bot, c.pos, 3, signal)
     const farmland = bot.blockAt(c.pos)
-    if (farmland?.name !== 'farmland' || bot.blockAt(c.pos.offset(0, 1, 0))?.name !== 'air') throw new Error(`no free farmland at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+    const onTop = bot.blockAt(c.pos.offset(0, 1, 0))
+    if (farmland?.name !== 'farmland' || onTop?.name !== 'air') {
+      throw new Error(`no free farmland at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${farmland?.name !== 'farmland' ? `it is ${farmland?.name ?? 'unloaded'}, not farmland: till it first` : `${onTop?.name ?? 'unloaded'} is on it already`})`)
+    }
     await bot.equip(seed, 'hand')
     await bot.activateBlock(farmland, { x: 0, y: 1, z: 0 })
     await bot.waitForTicks(4)
@@ -2453,6 +2465,15 @@ async function withOpenChest (bot, state, c, signal, use) {
 
 // items（{ item, count }）を、c.pos のチェストから順に、家のチェストへ入れる。いっぱいなら次のチェストへ。
 // 入れた分の文（"3 dirt"）の配列を返す
+// 預けられなかった理由と、次の手。どのチェストにも空きがないのか、預ける物がもう手元にないのか
+export function noRoomReason (bot, state, items) {
+  const held = items.filter(({ item }) => (inventoryCounts(bot)[item] ?? 0) > 0).map(({ item }) => item)
+  if (!held.length) return 'could not put anything in the chest: what was to be put in is no longer in the inventory'
+  const u = storageUsage(bot, state)
+  return `could not put anything in the chest: none of the ${u.chests} known chests has room for ${held.join(', ')} (${u.free} free slots by the records; a chest not opened yet counts as empty). ` +
+    'Make room: place another chest in the home (craft one from 8 planks), or throw away what you do not need (toss)'
+}
+
 async function putInChests (bot, state, c, signal, items) {
   const todo = new Map(items.map(({ item, count }) => [item, count]))
   const first = c.pos

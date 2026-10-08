@@ -15,7 +15,7 @@ import { liquidReason } from './liquid.mjs'
 import { isTreeLog, isLeftoverLog, isNaturalLogName } from './trees.mjs'
 import { placedByMe } from './ledger.mjs'
 import { rockBetween, closedSpace } from './reach.mjs'
-import { CROPS, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
+import { CROPS, CLEARABLE, cropBySeed, cropByBlock, isRipe, ageOf, farmRefusal, isSaplingItem } from './farming.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { findTable, findFurnace, stationRefusal, nearbyDrops, blockedDrops, FACE_VECTORS } from './primitives.mjs'
 import { goalKeep, spareStacks, isTossable, RESERVE } from './spare.mjs'
@@ -257,6 +257,11 @@ export function createTools (deps) {
     const spec = state.goal?.spec
     const facility = spec?.predicate === 'facility' && state.facilities?.[spec.name]?.layout ? spec.name : null
     return workCell(bot, state, kind, facility ? { facility } : { crop, sapling })?.pos ?? null
+  }
+  // 設計した畑・植林場の、次に作業するマス（座標を省けばそこを使う）を、断りに添える
+  const nextCell = (kind, opts) => {
+    const p = defaultCell(kind, opts)
+    return p ? `. The next cell to work on is ${fmt(p)} (leave x, y, z out to use it)` : ''
   }
   const NO_FACILITY = 'new farmland and saplings go only in the cells of a designed farm or tree farm (add facility(<name>) to an objective to design one; search_facility shows them)'
 
@@ -532,11 +537,12 @@ export function createTools (deps) {
       if (!cell) refuse(`no free cell for ${item} in the tree farms in view: ${NO_FACILITY}`)
       const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
       const fac = layoutAt(state, 'tree_farm', pos)
-      if (!fac) refuse(`will not plant at ${fmt(pos)}: ${NO_FACILITY}`)
+      if (!fac) refuse(`will not plant at ${fmt(pos)}: ${NO_FACILITY}${nextCell('plant', { sapling: item })}`)
       if (fac.layout.sapling !== 'sapling' && fac.layout.sapling !== item) refuse(`the tree farm ${fac.name} is for ${fac.layout.sapling}, not ${item}`)
       const why = farmRefusal(state, pos)
       if (why) refuse(`will not plant at ${fmt(pos)}: ${why}`)
-      if (bot.blockAt(pos)?.name !== 'air' || bot.blockAt(pos.offset(0, -1, 0))?.boundingBox !== 'block') refuse(`${fmt(pos)} is not free ground (give the air cell above dirt or grass)`)
+      const here = bot.blockAt(pos)?.name ?? ''
+      if ((here !== 'air' && !CLEARABLE.test(here)) || bot.blockAt(pos.offset(0, -1, 0))?.boundingBox !== 'block') refuse(`${fmt(pos)} is not free ground (give the cell above dirt or grass; it holds ${here || 'nothing loaded'}, and flowers or grass there are cleared)${nextCell('plant', { sapling: item })}`)
       return { c: { verb: 'plant', target: item, item, pos } }
     },
     till (args) {
@@ -544,7 +550,7 @@ export function createTools (deps) {
       const cell = args.x != null ? position(args) : defaultCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })
       if (!cell) refuse(`no cell left to till in the farms in view: ${NO_FACILITY}`)
       const pos = reach(cell, MAX_TOOL_DISTANCE, fmt)
-      if (!layoutAt(state, 'farm', pos)) refuse(`will not till at ${fmt(pos)}: ${NO_FACILITY}`)
+      if (!layoutAt(state, 'farm', pos)) refuse(`will not till at ${fmt(pos)}: ${NO_FACILITY}${nextCell('till', { crop: state.goal?.spec?.predicate === 'farmed' ? state.goal.spec.item : null })}`)
       const why = farmRefusal(state, pos)
       if (why) refuse(`will not till at ${fmt(pos)}: ${why}`)
       if (!/^(dirt|grass_block|dirt_path)$/.test(bot.blockAt(pos)?.name ?? '')) refuse(`${fmt(pos)} is not dirt or grass (give the ground block itself)`)
