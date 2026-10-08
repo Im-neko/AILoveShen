@@ -63,7 +63,39 @@ test('作業台・かまど・チェストも、家の外に置いてあれば h
   assert.equal(placedToTake(at('crafting_table', near), { home }, 'torch'), null)
   const chests = { home, memory: { chests: { '12,70,10': { contents: { oak_log: 3 } } } } }
   assert.equal(placedToTake(at('chest', near), chests, 'chest'), null) // 先に中身を出す
-  assert.deepEqual(placedToTake(at('chest', near), { home }, 'chest'), { pos: near, block: 'chest' })
+  // チェストは自分で置いた物だけ（村のチェストは中身が分からず、壊すと散らばる）
+  assert.equal(placedToTake(at('chest', near), { home }, 'chest'), null)
+  const mine = { home, placed: { '12,70,10': { name: 'chest', at: 0 } } }
+  assert.deepEqual(placedToTake(at('chest', near), mine, 'chest'), { pos: near, block: 'chest' })
+})
+
+test('チェストをもう 1 つ家に置くとき、家の外に自分で置いたチェストがあれば、作らずに拾って運ぶ', async () => {
+  const { makeGoal, evaluate } = await import('../src/goals.mjs')
+  const { Knowledge } = await import('../src/knowledge.mjs')
+  const k = new Knowledge(md)
+  const outside = new Vec3(12, 70, 10)
+  const homeChest = new Vec3(1, 70, 1)
+  const b = {
+    ...bot([outside]),
+    time: { timeOfDay: 1000 },
+    inventory: { items: () => [] },
+    blockAt: (p) => (p.equals(outside) || p.equals(homeChest) ? { name: 'chest', position: p } : { name: p.y < 70 ? 'stone' : 'air', boundingBox: p.y < 70 ? 'block' : 'empty', position: p })
+  }
+  const world = { inventory: {}, stored: {}, smelting: {}, blocks: {}, mobs: {}, table: 'near', furnace: null, unlocked: () => true, remembered: new Set(), dig: () => [], hunt: () => [] }
+  const run = (placed, where = 'home') => {
+    const state = { home, plan: null, placed, builds: {}, formerHomes: [] }
+    const goal = makeGoal({ predicate: 'placed', item: 'chest', where, count: 2 }, b, state, k)
+    return evaluate(b, { ...state, goal }, k, world)
+  }
+  const mine = run({ '12,70,10': { name: 'chest', at: 0 } })
+  assert.equal(mine.met, false)
+  assert.deepEqual(mine.leaves.map((l) => l.kind), ['take_placed'])
+  assert.deepEqual([mine.leaves[0].pos, mine.leaves[0].block], [outside, 'chest'])
+  // 家の中でなく、ほかの場所に置く頼みなら、拾って運ばない
+  assert.ok(!run({ '12,70,10': { name: 'chest', at: 0 } }, 'near_home').leaves.some((l) => l.kind === 'take_placed'))
+  // 自分で置いたのでない外のチェスト（村の物）は拾わず、作る
+  const theirs = run({})
+  assert.ok(!theirs.leaves.some((l) => l.kind === 'take_placed'), JSON.stringify(theirs.leaves))
 })
 
 test('建物の一部の作業台は、拾える家具に数えない', async () => {

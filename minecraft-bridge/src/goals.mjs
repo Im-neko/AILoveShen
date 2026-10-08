@@ -433,7 +433,10 @@ function evaluateOne (bot, state, knowledge, world) {
         out.lines.push(`${item} ${describeWhere(where, state)}: ${have}/${count}`)
         if (out.met) break
         const held = inventoryCounts(bot)[item] ?? 0
-        if (held < need) addSolved([{ spec: item, count: need - held }])
+        // 家の中に置く家具（チェスト）は、家の外に置いてしまった自分の物を拾って運ぶ。作らない（設計書 117）
+        const outside = held < need && where === 'home' && isHomeFurnitureItem(item) ? placedToTake(bot, state, item) : null
+        if (outside) out.leaves.push({ kind: 'take_placed', ...outside })
+        else if (held < need) addSolved([{ spec: item, count: need - held }])
         if (held) {
           const [spot] = placeSpots(bot, state, where, 1, item)
           if (spot) out.leaves.push({ kind: 'place_at', item, where, pos: spot.pos, against: spot.against })

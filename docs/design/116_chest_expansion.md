@@ -22,7 +22,14 @@
 - 代償: 「部屋を明るく」(`placed(torch, home, 2)`) のように、もう満たしている頼みも 1 つ増える。毎回のことではなく、実害は小さいと見た。
 
 ### 2.4 チェストは家の中にまとめる（追記）
-増設の計画で Gemini が `placed(chest, near_home)` と書き、家の外（41,68,-199）に 1 つ置いた（2026-10-08 01:05Z。同じ決定の見直しの文は「家の中でチェストを増設します」）。user: 「チェストはまとめて家の中において欲しいのに家の外に置いちゃった」。`parse_spec` が、チェストの `near_home` を `home` に読む。`build:<名前>` と x,y,z は、置く場所を決めて書いたものなので、そのまま。スキーマの `where` の説明にも書いた。家の外に置いてしまった 1 つは、そのまま残っている（家のチェストの数に入らず、中身は預けられない）。拾って家に置き直すかは、user に確認する。
+増設の計画で Gemini が `placed(chest, near_home)` と書き、家の外（41,68,-199）に 1 つ置いた（2026-10-08 01:05Z。同じ決定の見直しの文は「家の中でチェストを増設します」）。user: 「チェストはまとめて家の中において欲しいのに家の外に置いちゃった」。`parse_spec` が、チェストの `near_home` を `home` に読む。`build:<名前>` と x,y,z は、置く場所を決めて書いたものなので、そのまま。スキーマの `where` の説明にも書いた。
+
+### 2.5 家の外に置いたチェストを、拾って家に置き直す（追記）
+user: 「置き直したいです」。`placed(chest, N, home)`（N ≥ 2。数が 1 のときは前からこの形だった）で、持っていないチェストは、作る前に、家の外に自分で置いたチェストを拾う（`goals.mjs` の `placed`、`take_placed` の手: 「take the chest placed at x,y,z」）。拾えば持ち物に入り、家の中の空きに置く。
+- 拾うのは自分で置いたチェストだけ（`furniturePlacedByMe`。置いた記録は `state.placed`）。村のチェストは中身が分からず、壊すと散らばる。この条件を `placedToTake` に足したので、数が 1 のときの拾う手も同じ。
+- 家の中でなく `near_home` などに置く頼みでは、拾って運ばない。
+- 中身のあるチェスト（覚えている中身がある）は、前から拾わない（先に出す）。外に置いたチェストは、まだ何も入れていない。
+- 使われ方: ディレクターさんの「家の中に置いて」→ `placed(chest, home)` → 家にあるので 2 に直る（2.3）→ 外のチェストを拾って家に置く。
 
 ## 3. 未対応
 - 配信者自身の決定（`check_new` 経由の大目標）が、同じ形の条件を書いても直さない。次に同じことが起きたら足す。
@@ -34,6 +41,7 @@
 - `tests/unit/application/test_supply_tiers.py`: 空き 0〜2 の昼は強制、3 は強制しない、夜・夕方・地下は強制しない、`chest_spot` が false なら出さない、観測からの読み取り。
 - `tests/unit/application/test_placed_more.py`: 1 つある → 2、3 つある → 4、未達や `have` は変えない、`accept` で足した大目標が `placed(chest, 2, home)`。
 - `tests/unit/application/test_goal_vocabulary.py`: チェストの `near_home` は `home`、`build:` と x,y,z と松明はそのまま。
+- `minecraft-bridge/test/furniture.test.mjs`: 自分で置いた外のチェストは拾う手を出し、作らない。自分のでないチェスト・`near_home` では拾わない。
 - `minecraft-bridge/test/chest.test.mjs`: `chestSpotFact`（あり・ふさがれ・未読み込み）。
 - 変異で確認: 直しを外す、判定を常に true にする、読み込み確認を外す。
 

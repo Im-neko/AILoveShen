@@ -89,7 +89,7 @@ export function placedToTake (bot, state, item, radius = TAKE_RADIUS) {
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
     .map((p) => ({ pos: p, block: bot.blockAt(p) }))
     .filter((b) => b.block && pattern.test(b.block.name) && !protectedReason(state, b.pos, 0, b.block) &&
-      !(/chest|barrel/.test(b.block.name) && knownContents(state, b.pos)))
+      !(/chest|barrel/.test(b.block.name) && (knownContents(state, b.pos) || !furniturePlacedByMe(bot, state, b.pos))))
     .map((b) => ({ pos: b.pos, block: b.block.name }))[0] ?? null
 }
 
