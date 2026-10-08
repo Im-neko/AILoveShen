@@ -43,6 +43,7 @@ import { holdsWater } from './breath.mjs'
 import { reachLand } from './land.mjs'
 import { digOutRoute } from './dig-out.mjs'
 import { campSite, campAt, campSources, campCount, buildCamp, campExit, HAND_BLOCKS } from './camp.mjs'
+import { straySources, scoopBack } from './water-spill.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, nearestShore, driveToShore, EXTEND_M, BoatUnusable, CROSSING_LOOK_M, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -2267,13 +2268,28 @@ export const PRIMITIVES = {
     if (!solid(c.pos.offset(0, -1, 0))) throw new Error(`no solid floor under the hole at ${at}: the water would drain away`)
     await bot.equip(bucket, 'hand')
     await bot.lookAt(c.pos.offset(0.5, 0.05, 0.5), true)
+    const cursor = bot.blockAtCursor?.(5)
+    console.log(`[water] ${at} に水を置く: 立つ位置 ${bot.entity.position.x.toFixed(1)},${bot.entity.position.y.toFixed(1)},${bot.entity.position.z.toFixed(1)}、視線の先 ${cursor ? `${cursor.name} ${cursor.position.x},${cursor.position.y},${cursor.position.z}` : 'なし'}`)
     bot.activateItem()
     await bot.waitForTicks(8)
     const now = bot.blockAt(c.pos)?.name
-    // 水が畑の表面に出ていないか（出ていたら、バケツは空で、水が流れている）
+    // 水が畑の表面に出ていないか（出ていたら、バケツは空で、水が流れている）。穴の外の水源は、汲み戻して流れを止める
     const spilled = around.map((p) => p.offset(0, 1, 0)).filter((p) => bot.blockAt(p)?.name === 'water')
+    const strays = straySources(bot, c.pos)
+    if (spilled.length || strays.length) {
+      let back = ''
+      try {
+        const { scooped, left } = await scoopBack(bot, c.pos, (p) => goNear(bot, p, 3, signal))
+        back = scooped ? `; scooped ${scooped} stray source back${left ? `, ${left} more left running` : ''}` : `; could not scoop it back${left ? ` (${left} stray source${left === 1 ? '' : 's'} left running)` : ''}`
+      } catch (e) {
+        if (signal.aborted) throw e
+        back = `; could not scoop it back (${e.message})`
+      }
+      const where = [...spilled, ...strays].map((p) => `${p.x},${p.y},${p.z}`)
+      const emptyNow = bot.inventory.items().some((i) => i.name === 'bucket')
+      throw new Error(`the water ran onto the farm at ${[...new Set(where)].join(' ')} instead of staying in the hole at ${at} (${emptyNow ? 'the bucket is empty now' : 'the water_bucket is full again'}${back})`)
+    }
     const empty = bot.inventory.items().some((i) => i.name === 'bucket')
-    if (spilled.length) throw new Error(`the water ran onto the farm at ${spilled.map((p) => `${p.x},${p.y},${p.z}`).join(' ')} instead of staying in the hole at ${at} (${empty ? 'the bucket is empty now' : 'the water_bucket is still full'})`)
     if (now !== 'water') throw new Error(`the water was not placed at ${at} (${now ?? 'unloaded'} there; ${empty ? 'the bucket is empty now' : 'the water_bucket is still full'})`)
     return `placed water at ${at} (the water_bucket is empty again: bucket)`
   },
