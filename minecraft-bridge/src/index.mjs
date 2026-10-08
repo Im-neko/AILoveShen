@@ -54,7 +54,7 @@ import { teeConsole } from './bridge-log.mjs'
 import { plantingStatus, cropOf } from './farming.mjs'
 import { aroundMe } from './around.mjs'
 import { setLevelWanted } from './leveling.mjs'
-import { quarrySpot } from './quarry.mjs'
+import { quarrySpot, liveShafts } from './quarry.mjs'
 import { listRefusals } from './refusals.mjs'
 import { watchWear, recentBreaks } from './wear.mjs'
 import { guardDigLoops, installAutoJump } from './move.mjs'
@@ -218,7 +218,7 @@ function observation () {
   )
   // 石・土を掘る採掘の場所と、続きから下りられる階段（設計書 64）
   const spot = quarrySpot(state, bot.entity.position)
-  if (spot) extra.quarry = { x: spot.x, y: spot.y, z: spot.z, distance_m: round(spot.distanceTo(bot.entity.position)), direction: bearing(bot.entity.position, spot), shafts: (state.quarry?.shafts ?? []).map((s) => ({ top: s.top, bottom: s.bottom })) }
+  if (spot) extra.quarry = { x: spot.x, y: spot.y, z: spot.z, distance_m: round(spot.distanceTo(bot.entity.position)), direction: bearing(bot.entity.position, spot), shafts: liveShafts(state).map((s) => ({ top: s.top, bottom: s.bottom })) }
   extra.underground = isUnderground(bot)
   // 外に出る・戦うときの危なさ（risk.mjs。家の中でも、外に出たときの）
   extra.risk = assessRisk(bot, state)

@@ -59,7 +59,8 @@ export function levelTarget (state, where) {
 const isPlant = (b) => b.boundingBox === 'empty' && !FLUID.test(b.name)
 
 // 1 列を見る → { off: bool, cuts: [Vec3], fills: [Vec3] } か、触らない理由の文字列か UNLOADED
-export function columnWork (bot, state, x, z, y) {
+// stairs: false は、階段の入口のまわりも見る（設計した畑のマスは、階段の記録より先に直す）
+export function columnWork (bot, state, x, z, y, { stairs = true } = {}) {
   const floor = y - 1
   // ドアの前の床は、同じ高さに整地するなら普通の列（穴を埋める。家のブロックは TERRAIN でないので削らない）
   const doorstep = isDoorstepFloor(state, new Vec3(x, floor, z)) && floor === state.home.outside.y - 1
@@ -69,7 +70,7 @@ export function columnWork (bot, state, x, z, y) {
   if (!doorstep) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), margin)) return 'house or build'
   if ((state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
-  if (onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
+  if (stairs && onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
   let top = null
   for (let h = floor + DY; h >= floor - DY; h--) {
     const b = bot.blockAt(new Vec3(x, h, z))
@@ -143,7 +144,7 @@ export function farmColumns (layout, { margin = FARM_MARGIN } = {}) {
 
 // 畑の四角の中の 1 列。耕地が地面の高さ y より低いなら、作物を掘って土で埋め上げる。それ以外は columnWork と同じ
 function farmCellWork (bot, state, x, z, y, layout) {
-  const base = columnWork(bot, state, x, z, y + 1)
+  const base = columnWork(bot, state, x, z, y + 1, { stairs: false })
   if (base !== 'farmland') {
     // 作物のマスの地面が耕せない固いブロック（丸石など）なら、掘って土で埋め直す（高さは合っていても直す）
     if (base?.off === false && layout.cells.some((c) => c.x === x && c.z === z)) {

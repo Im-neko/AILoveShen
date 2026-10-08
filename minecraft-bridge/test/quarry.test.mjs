@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { noteDig, noteShaft, quarrySpot, usableShaft, onShaftTop, isQuarryKind, QUARRY_REACH, QUARRY_RADIUS } from '../src/quarry.mjs'
+import { noteDig, noteShaft, quarrySpot, usableShaft, onShaftTop, liveShafts, isQuarryKind, QUARRY_REACH, QUARRY_RADIUS } from '../src/quarry.mjs'
 import { digTargets, buriedTargets } from '../src/world.mjs'
 import { aroundMe } from '../src/around.mjs'
 import { columnWork } from '../src/leveling.mjs'
@@ -158,4 +158,16 @@ test('dig_down: 前の階段があれば、その底まで歩いて続きから�
   assert.deepEqual([goals[0].x, goals[0].y, goals[0].z], [19, 62, 0])
   assert.equal(state.quarry.shafts.length, 1) // 同じ階段
   assert.equal(state.unreachableBlocks.size, 0)
+})
+
+test('施設の中にある階段の入口は、今の階段として数えない（あとから畑が建って入口がなくなった）', () => {
+  const shafts = [{ top: { x: 24, y: 70, z: -207 }, bottom: { x: 24, y: 43, z: -206 } }, { top: { x: 60, y: 70, z: 0 }, bottom: { x: 60, y: 50, z: 3 } }]
+  const state = { quarry: { spot: null, shafts }, facilities: { wheat_farm: { box: { min: { x: 19, y: 69, z: -212 }, max: { x: 29, y: 70, z: -202 } } }, mine_1: {} } }
+  assert.equal(onShaftTop(state, 24, -209), false)
+  assert.equal(onShaftTop(state, 60, 2), true)
+  assert.deepEqual(liveShafts(state).map((s) => s.top.x), [60])
+  assert.equal(usableShaft(state, v(24, 70, -207), 40), null)
+  assert.equal(usableShaft(state, v(58, 70, 0), 40).top.x, 60)
+  // 施設がなければ、どちらも今の階段
+  assert.equal(liveShafts({ quarry: { shafts } }).length, 2)
 })

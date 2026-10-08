@@ -57,9 +57,17 @@ export function byQuarry (points, spot) {
 // 採掘の場所の内か
 export const inQuarry = (spot, p) => !!spot && spot.distanceTo(p) <= QUARRY_RADIUS
 
+// 今もある階段: 入口が施設（畑・採掘場など）の中にあるものは、あとから施設が建って入口がなくなった記録なので除く
+// （2026-10-08: 畑の水のマスにあった古い入口が、畑の穴を直す整地を止めた）
+export function liveShafts (state) {
+  const inBox = (p, b) => p.x >= b.min.x && p.x <= b.max.x && p.z >= b.min.z && p.z <= b.max.z
+  const boxes = Object.values(state.facilities ?? {}).map((f) => f.box).filter(Boolean)
+  return (state.quarry?.shafts ?? []).filter((s) => !boxes.some((b) => inBox(s.top, b)))
+}
+
 // 続きから下りられる階段: ボットの近くで、底が鉱石の高さ（targetY）以上のもの。底が鉱石に近いものを先に
 export function usableShaft (state, me, targetY) {
-  return (state.quarry?.shafts ?? [])
+  return liveShafts(state)
     .filter((s) => Math.hypot(s.top.x - me.x, s.top.z - me.z) <= QUARRY_REACH && s.bottom.y >= targetY)
     .sort((a, b) => (a.bottom.y - targetY) - (b.bottom.y - targetY))[0] ?? null
 }
@@ -78,4 +86,4 @@ export function noteShaft (state, top, bottom) {
 
 // 階段の入口の列（埋めない: leveling が穴として埋めてしまうと、階段が使えなくなる）
 export const onShaftTop = (state, x, z) =>
-  (state.quarry?.shafts ?? []).some((s) => Math.abs(s.top.x - x) <= SHAFT_MERGE && Math.abs(s.top.z - z) <= SHAFT_MERGE)
+  liveShafts(state).some((s) => Math.abs(s.top.x - x) <= SHAFT_MERGE && Math.abs(s.top.z - z) <= SHAFT_MERGE)

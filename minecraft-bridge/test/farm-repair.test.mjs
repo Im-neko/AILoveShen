@@ -152,3 +152,22 @@ test('街: 家・建物・施設の範囲とそのまわり。土は街の外を
   s.unreachableBlocks = new Set()
   assert.deepEqual(digTargets(exposedBot, s, 'dirt').map((p) => `${p.x},${p.y},${p.z}`), [outside, near, field].map((p) => `${p.x},${p.y},${p.z}`))
 })
+
+test('畑の修理: 階段の入口の記録があっても、畑の設計したマスの穴は直す（古い入口が畑の中にあっても、外のそばにあっても）', () => {
+  const s = state()
+  const fac = design(s)
+  const [c] = fac.layout.cells
+  const hole = { [at(c)]: 'air' }
+  assert.equal(farmLevel(world(hole), s, fac).off, 1)
+  // 畑ができたあとの古い入口（畑の施設の中）: 記録は今の階段として数えない
+  s.quarry = { spot: null, shafts: [{ top: { x: c.x, y: c.y + 1, z: c.z }, bottom: { x: c.x, y: 40, z: c.z + 1 } }] }
+  assert.equal(farmLevel(world(hole), s, fac).off, 1)
+  // 畑の外のそばの入口: 畑のマスは直す。入口のまわりの畑の外の列（まわり 2 マス）は埋めない
+  const { rect } = fac.layout
+  const near = { x: rect.x0 - 3, z: c.z }
+  s.facilities.wheat_farm.box = { min: { x: rect.x0, y: 60, z: rect.z0 }, max: { x: rect.x0 + rect.w - 1, y: 70, z: rect.z0 + rect.d - 1 } }
+  s.quarry.shafts[0].top = { x: near.x, y: c.y + 1, z: near.z }
+  const lv = farmLevel(world({ ...hole, [`${rect.x0 - 2},${c.y},${near.z}`]: 'air' }), s, fac)
+  assert.equal(lv.off, 1)
+  assert.equal(lv.skipped['quarry stairs'] > 0, true)
+})
