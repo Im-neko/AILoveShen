@@ -304,15 +304,37 @@ export async function restoreDoor (bot, home) {
   return bot.blockAt(home.door)?.name.endsWith('_door') ? '' : 'the door was not placed back'
 }
 
+// まっすぐ歩いて進めなかったときの様子（2026-10-08: 開いたドアの 1 マス手前で 3 秒進めなかったが、同じ道が次は 1.2 秒で通れ、
+// 理由がログから分からなかった。設計書 114）。位置、速度、押しているキー、経路探しの目標、行き先のセルの床・足・頭
+export function describeWalkStall (bot, cell) {
+  const f = (n) => Number(n).toFixed(2)
+  const p = bot.entity.position
+  const vel = bot.entity.velocity
+  const name = (q) => {
+    const b = bot.blockAt(q)
+    if (!b) return 'unloaded'
+    const props = b.name.endsWith('_door') ? b.getProperties?.() : null
+    return props ? `${b.name}(${props.half} open=${props.open} facing=${props.facing})` : b.name
+  }
+  const keys = Object.entries(bot.controlState ?? {}).filter(([, on]) => on).map(([k]) => k)
+  return `from ${f(p.x)},${f(p.y)},${f(p.z)} velocity ${f(vel?.x ?? 0)},${f(vel?.y ?? 0)},${f(vel?.z ?? 0)} on_ground ${bot.entity.onGround} ` +
+    `controls [${keys.join(' ')}] pathfinder goal ${bot.pathfinder?.goal ? 'set' : 'none'} yaw ${f(bot.entity.yaw)}; ` +
+    `at the cell: floor ${name(cell.offset(0, -1, 0))}, feet ${name(cell)}, head ${name(cell.offset(0, 1, 0))}`
+}
+
 // `cell`（1ブロック先、開いたドアの向こう）の中心までまっすぐ歩く。
-async function walkInto (bot, cell) {
+export async function walkInto (bot, cell) {
   const target = cell.offset(0.5, 0, 0.5)
   await bot.lookAt(target.offset(0, bot.entity.eyeHeight, 0), true)
   bot.setControlState('forward', true)
   const start = Date.now()
   try {
     while (bot.entity.position.xzDistanceTo(target) > 0.35) {
-      if (Date.now() - start > WALK_THROUGH_TIMEOUT_MS) throw new Error(`could not walk to ${cell}`)
+      if (Date.now() - start > WALK_THROUGH_TIMEOUT_MS) {
+        const why = describeWalkStall(bot, cell)
+        console.log(`[door] 歩いて通れない: ${cell} ${why}`)
+        throw new Error(`could not walk to ${cell} (${why})`)
+      }
       await bot.lookAt(target.offset(0, bot.entity.eyeHeight, 0), true)
       await bot.waitForTicks(1)
     }
