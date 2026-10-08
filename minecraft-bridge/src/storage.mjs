@@ -5,6 +5,7 @@
 // チェストは、中身の数から見積もる。
 
 import { homeChests } from './memory.mjs'
+import { chestSpot } from './home.mjs'
 
 export const SINGLE_CHEST = 27
 const stackOf = (bot, name) => bot.registry.itemsByName[name]?.stackSize ?? 64
@@ -16,6 +17,12 @@ export function chestRecords (bot, state) {
     const est = Object.entries(c.contents ?? {}).reduce((n, [name, k]) => n + Math.ceil(k / stackOf(bot, name)), 0)
     return { key: `${c.x},${c.y},${c.z}`, pos: { x: c.x, y: c.y, z: c.z }, size: c.slots?.size ?? SINGLE_CHEST, used: c.slots?.used ?? est, contents: c.contents ?? {} }
   })
+}
+
+// 家にもう 1 つチェストを置ける場所があるか。家の中が読み込まれていなければ null（ないとは言わない）
+export function chestSpotFact (bot, home) {
+  if (!home || !bot.blockAt(home.inside)) return null
+  return !!chestSpot(bot, home)
 }
 
 // { chests, size, used, free, saving }: saving = まとめると空くスロットの数

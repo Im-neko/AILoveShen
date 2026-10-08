@@ -91,6 +91,7 @@ MAX_HOME_CHESTS = 6  # 家に置くチェストの上限（ブロック数。ラ
 CHEST_FREE_MIN = 4  # 家のチェストの空きがこれ以下（か総スロットの CHEST_FREE_RATIO 以下）になったら増やす
 CHEST_FREE_RATIO = 0.2
 CHEST_DEFRAG_ENOUGH = 3  # まとめると、これだけ空くなら増やさない（先にまとめる）
+CHEST_FULL = 2  # 家のチェストの空きがこれ以下なら、ほぼ満杯: 昼のうちに迷わず増やす（出すだけでは選ばれなかった）
 SLOT_ITEMS = 64  # 1 スロットに入る数（16 個や 1 個のものは少なく見積もる）
 
 
@@ -304,11 +305,17 @@ def _more_chests(obs: GameObservation) -> list[Option]:
         return []
     if obs.chest_free > max(CHEST_FREE_MIN, int(obs.chest_slots * CHEST_FREE_RATIO)):
         return []
+    if obs.chest_spot is False:
+        return []  # 置く場所がない: 出しても失敗する
+    # ほぼ満杯なら、昼のうちに選ぶ（強制）。預けられなくなり、預けることが条件の小目標（stored）が進まなかった
+    # （2026-10-08: 空き 0/27、チェストへの預け入れが 1 時間失敗し続けた。出すだけの選択肢は 121 回出て 1 回も選ばれなかった）
+    full = obs.chest_free <= CHEST_FULL and obs.time_phase == "day" and not obs.underground
     return [
         Option(
             GoalSpec(GoalPredicate.PLACED, item="chest", where="home", count=obs.chest_blocks + 1),
             f"家のチェストが埋まってきた（空き {obs.chest_free}/{obs.chest_slots} スロット）: "
             "チェストをもう 1 つ作って家に置く",
+            forced=full,
         )
     ]
 

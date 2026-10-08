@@ -306,3 +306,36 @@ class TestMoreChests:
         assert not chest_options(_home_obs(chest_blocks=2, chest_slots=54, chest_free=3, chest_saving=5))
         assert not chest_options(_home_obs(chest_blocks=6, chest_slots=162, chest_free=2, chest_saving=0))
         assert not chest_options(_home_obs())  # ブリッジが数を送っていない
+
+    def test_forced_when_the_chests_are_nearly_full_in_the_daytime(self):
+        from ailoveshen.application.use_cases.goal_chooser import chest_options
+
+        (opt,) = chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=0, chest_saving=0))
+        assert opt.forced and opt.spec.describe() == "placed(chest, 2, home)"
+        assert chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=2, chest_saving=0))[0].forced
+        # 少し空いている間は出すだけ（選ぶかは任せる）
+        assert not chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=3, chest_saving=0))[0].forced
+
+    def test_not_forced_at_night_or_underground(self):
+        from ailoveshen.application.use_cases.goal_chooser import chest_options
+
+        for kw in ({"time_phase": "night"}, {"time_phase": "dusk"}, {"underground": True}):
+            (opt,) = chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=0, chest_saving=0, **kw))
+            assert not opt.forced, kw
+
+    def test_not_offered_when_there_is_no_spot_for_another_chest(self):
+        from ailoveshen.application.use_cases.goal_chooser import chest_options
+
+        assert not chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=0, chest_saving=0, chest_spot=False))
+        assert chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=0, chest_saving=0, chest_spot=True))
+        assert chest_options(_home_obs(chest_blocks=1, chest_slots=27, chest_free=0, chest_saving=0, chest_spot=None))
+
+
+def test_the_chest_spot_fact_is_read_from_the_home_observation():
+    from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_client import _optional_bool
+
+    assert _optional_bool({"chest_spot": True}, "chest_spot") is True
+    assert _optional_bool({"chest_spot": False}, "chest_spot") is False
+    assert _optional_bool({"chest_spot": None}, "chest_spot") is None
+    assert _optional_bool({}, "chest_spot") is None
+    assert _optional_bool(None, "chest_spot") is None

@@ -97,7 +97,7 @@ import { snapshot, sightings } from './world.mjs'
 import { loadState, saveState, settleHome, isInside, isDoorOpen, hasBed, protectedReason } from './home.mjs'
 import { assessRisk } from './risk.mjs'
 import { startReflex, steerReflex, releaseReflex, dangerView } from './reflex.mjs'
-import { storageUsage } from './storage.mjs'
+import { storageUsage, chestSpotFact } from './storage.mjs'
 import { countPlaced } from './placing.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests, storedCounts } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
@@ -105,11 +105,11 @@ import { landmarks, adoptFoundBase } from './landmarks.mjs'
 import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
 
 // 家のチェストの数と空き（観測の home に付ける）: chest_blocks = 家にあるチェストのブロック数（ラージは 2）、
-// chest_slots / chest_free = 記録からのスロット数と空き、chest_saving = まとめると空くスロット（storage.mjs）
+// chest_slots / chest_free = 記録からのスロット数と空き、chest_saving = まとめると空くスロット、chest_spot = もう 1 つ置ける場所があるか（storage.mjs）
 function chestFacts (bot, state) {
   if (!state.memory) return {}
   const u = storageUsage(bot, state)
-  return { chest_blocks: countPlaced(bot, state, 'home', 'chest'), chest_slots: u.size, chest_free: u.free, chest_saving: u.saving }
+  return { chest_blocks: countPlaced(bot, state, 'home', 'chest'), chest_slots: u.size, chest_free: u.free, chest_saving: u.saving, chest_spot: chestSpotFact(bot, state.home) }
 }
 
 

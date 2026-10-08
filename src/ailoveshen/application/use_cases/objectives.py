@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import time
+from dataclasses import replace
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Optional
 
@@ -43,6 +44,7 @@ from ailoveshen.domain.value_objects import (
 )
 
 MAX_STAGE_DESIGN_TRIES = 2
+PLACED_PROBE = 8  # 置いた数を調べるとき、今の数に足して試す数（1 回の判定にまとめて送る）
 # 定石（docs/design/74）: 施設の段は、家のそばで設計する（区画が読み込まれている範囲 m）。待つ間に調べ直す間隔と、
 # 設計に失敗しても試す回数
 PLAYBOOK_NEAR_HOME_M = 64
@@ -387,6 +389,39 @@ class ObjectiveKeeper:
         await self._publish([_added(plan, goal)])
         return goal
 
+    async def _beyond_what_is_placed(self, proposal: ObjectiveProposal) -> ObjectiveProposal:
+        """
+        頼まれた時点でもう置いてある物は、「もう 1 つ」の頼みとして、今の数より 1 つ多い数に直す。
+
+        「チェストの増設」は placed(chest, home) と書かれ、家にチェストがあるので、足した途端に済みになった
+        （数は「その数以上ある」の条件で、増やす数ではない。2026-10-08, user: 「チェストの増設を依頼しても既に
+        チェストがあるからかすぐに目標達成扱いになってしまいます」）。置いてある物を置けという頼みに、ほかの
+        読みはない。判定できなければ、そのまま。
+        """
+        placed = [c for c in proposal.conditions if c.predicate == GoalPredicate.PLACED]
+        if not placed:
+            return proposal
+        try:
+            met = [st.met for st in await self._bridge.check(placed)]
+            fixed: dict[GoalSpec, GoalSpec] = {}
+            for spec, is_met in zip(placed, met):
+                if not is_met:
+                    continue
+                base = spec.count or 1
+                tries = [replace(spec, count=n) for n in range(base + 1, base + 1 + PLACED_PROBE)]
+                for bigger, ok in zip(tries, [st.met for st in await self._bridge.check(tries)]):
+                    if not ok:
+                        fixed[spec] = bigger
+                        break
+        except AILoveShenError as e:
+            logger.debug(f"置いた数を判定できなかった: {e}")
+            return proposal
+        if not fixed:
+            return proposal
+        for old, new in fixed.items():
+            logger.info(f"もう置いてある {old.describe()} は、もう 1 つの頼みとして {new.describe()} にする")
+        return replace(proposal, conditions=tuple(fixed.get(c, c) for c in proposal.conditions))
+
     @staticmethod
     def _check_infrastructure(proposal: ObjectiveProposal) -> None:
         """畑・植林場の題名で、それ自体が条件にない提案は、直し方を添えて断る。"""
@@ -627,6 +662,7 @@ class ObjectiveKeeper:
         """
         what = "の助言" if advice else "の頼み"
         self._check_infrastructure(proposal)
+        proposal = await self._beyond_what_is_placed(proposal)
         if proposal.job:
             return await self._accept_job(plan, proposal, requested_by, advice)
         same = plan.same_as(proposal.conditions)

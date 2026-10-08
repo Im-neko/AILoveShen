@@ -454,6 +454,7 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         chest_slots=_optional_int(home, "chest_slots"),
         chest_free=_optional_int(home, "chest_free"),
         chest_saving=_optional_int(home, "chest_saving"),
+        chest_spot=_optional_bool(home, "chest_spot"),
         unfinished_builds=tuple(
             str(b["name"]) for b in obs.get("builds") or [] if not b.get("complete")
         ),
@@ -518,6 +519,12 @@ def _next_step(data: Optional[dict[str, Any]]) -> Optional[GoalSpec]:
     if not data:
         return None
     return GoalSpec(GoalPredicate.HAVE, item=str(data["item"]), count=int(data["count"]))
+
+
+def _optional_bool(home: Optional[dict], key: str) -> Optional[bool]:
+    """家の観測の真偽。ブリッジが送っていない（分からない）なら None。"""
+    value = home.get(key) if home else None
+    return bool(value) if value is not None else None
 
 
 def _optional_int(home: Optional[dict], key: str) -> Optional[int]:

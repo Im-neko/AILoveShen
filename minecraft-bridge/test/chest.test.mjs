@@ -6,6 +6,7 @@ import { Knowledge } from '../src/knowledge.mjs'
 import { solve } from '../src/solver.mjs'
 import { makeGoal, evaluate, checkConditions } from '../src/goals.mjs'
 import { chestSpot } from '../src/home.mjs'
+import { chestSpotFact } from '../src/storage.mjs'
 import { ground } from '../src/candidates.mjs'
 import { newMemory, rememberChest, storedCounts } from '../src/memory.mjs'
 import { takeable } from '../src/world.mjs'
@@ -64,6 +65,14 @@ test('stored() は覚えているチェストの中身から判定する条件',
 
 test('チェストはドアからベッドへの列を避け、ドアから遠い所に置く', () => {
   assert.deepEqual(chestSpot({ blockAt }, home), v(1, 70, 1))
+})
+
+test('もう 1 つ置ける場所の知らせ: あれば true、ふさがれば false、家の中が読み込まれていなければ null', () => {
+  assert.equal(chestSpotFact({ blockAt }, home), true)
+  const full = (p) => (p.y === 70 && (p.x !== 2) ? { name: 'chest', boundingBox: 'block' } : blockAt(p))
+  assert.equal(chestSpotFact({ blockAt: full }, home), false)
+  assert.equal(chestSpotFact({ blockAt: () => null }, home), null)
+  assert.equal(chestSpotFact({ blockAt }, null), null)
 })
 
 test('家の中で持ち物が一杯なら、余っている大きいスタックからチェストに入れる候補を出す', () => {

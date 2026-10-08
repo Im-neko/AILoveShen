@@ -1458,6 +1458,8 @@ class GameObservation:
     chest_slots: Optional[int] = None
     chest_free: Optional[int] = None
     chest_saving: Optional[int] = None
+    # 家にもう 1 つチェストを置ける場所がある（家の中が読み込まれていなければ None）
+    chest_spot: Optional[bool] = None
     # まだできていない建物（Gemini が設計したもの）の名前
     unfinished_builds: tuple[str, ...] = ()
     busy: bool = False  # ブリッジが行動か反射を実行している
