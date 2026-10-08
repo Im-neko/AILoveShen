@@ -22,7 +22,7 @@ services:
       VERSION: "1.21.4"
       MEMORY: "2G"
       ONLINE_MODE: "FALSE"
-      DIFFICULTY: "easy"
+      DIFFICULTY: "peaceful"
       MODE: "survival"
       MOTD: "AILoveShen dev server"
       # A new world: a new LEVEL name (the old world stays in the volume) and an optional SEED
