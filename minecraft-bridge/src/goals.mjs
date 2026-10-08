@@ -26,7 +26,7 @@ import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked 
 import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
-import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, soilCount, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking, isRawMeat, FAR_COOK_MIN } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
 import { placedToTake, takeableItem, HOME_FURNITURE, ownFurnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
@@ -308,6 +308,24 @@ export function evaluate (bot, state, knowledge, world) {
 
 // 畑の柵とゲートの行（設計書 75）: 畑のマスと整地が済むまでは置かない。数だけを書くと、LLM は先に板を集める中目標や
 // placed(oak_fence) の中目標を書く（2026-10-04: 28/56 マスのまま板 35 枚と柵を先にそろえようとして 63 手進まなかった）
+// 畑の整地・修理の一歩（設計書 75、115）: 先に高さをそろえる（そろえる前に耕すと、整地で掘り返される）。道具がないと掘れない
+// 石は道具を作り、穴は土を持ってから埋める（畑は耕せる土だけで埋める。土は街の外から）
+function farmLevelStep (bot, fac, lv, out, addSolved) {
+  const missing = toolsMissing(bot, lv.cuts)
+  for (const [tool, n] of Object.entries(missing)) {
+    out.lines.push(`${n} blocks to dig need a ${tool} (or better)`)
+    addSolved([{ spec: tool, count: 1 }])
+  }
+  const diggable = lv.cuts.length - Object.values(missing).reduce((a, b) => a + b, 0)
+  const need = fillNeeded(lv)
+  const soil = soilCount(bot)
+  if (diggable || (lv.fills.length && soil >= need)) out.leaves.push({ kind: 'level', facility: fac.name, pos: (lv.cuts[0] ?? lv.fills[0]), off: lv.off })
+  if (!diggable && lv.fills.length && soil < need) {
+    out.lines.push(`${need} blocks to fill need ${need} dirt (carrying ${soil}): gather it outside the town (not from the farms or around the home) first`)
+    addSolved([{ spec: 'dirt', count: need }])
+  }
+}
+
 function fenceNote (f, lv) {
   if (!f.fence.length && !f.gate) return ''
   const what = [f.fence.length ? `${f.fence.length} fence` : '', f.gate ? 'a fence gate' : ''].filter(Boolean).join(' and ')
@@ -730,20 +748,7 @@ function evaluateOne (bot, state, knowledge, world) {
       if (out.met) break
       const inv = inventoryCounts(bot)
       if (lv?.off) {
-        // 先に高さをそろえる（そろえる前に耕すと、整地で掘り返される）。道具がないと掘れない石は道具を作り、穴は土を
-        // 持ってから埋める（土は畑の外から）
-        const missing = toolsMissing(bot, lv.cuts)
-        for (const [tool, n] of Object.entries(missing)) {
-          out.lines.push(`${n} blocks to dig need a ${tool} (or better)`)
-          addSolved([{ spec: tool, count: 1 }])
-        }
-        const diggable = lv.cuts.length - Object.values(missing).reduce((a, b) => a + b, 0)
-        const need = fillNeeded(lv)
-        if (diggable || (lv.fills.length && fillCount(bot) >= need)) out.leaves.push({ kind: 'level', facility: fac.name, pos: (lv.cuts[0] ?? lv.fills[0]), off: lv.off })
-        if (!diggable && lv.fills.length && fillCount(bot) < need) {
-          out.lines.push(`${need} blocks to fill need ${need} dirt (carrying ${fillCount(bot)}): gather it outside the farm first`)
-          addSolved([{ spec: 'dirt', count: need }])
-        }
+        farmLevelStep(bot, fac, lv, out, addSolved)
         break
       }
       if (fac.kind === 'farm') {
@@ -844,6 +849,13 @@ function evaluateOne (bot, state, knowledge, world) {
         const why = `the ${crop} farms have room for ${f.planted + f.free} (asked ${count}): for more, add another farm with a new name, facility(<new name>) (e.g. ${crop}_farm_2); a facility cannot be enlarged`
         out.blocked.push(why)
         if (!f.free) { out.impossible.push(why); break }
+      }
+      // 畑が崩れていたら（穴、丸石、流された所）、先に直す（設計書 115）。耕す・まくより前
+      const broken = designedFarms(state, crop).map((fac) => { ensureFarmShape(bot, state, fac); return { fac, lv: fac.layout.rect ? farmLevel(bot, state, fac) : null } }).find((x) => x.lv?.off)
+      if (broken) {
+        out.lines.push(`the farm ${broken.fac.name} has fallen apart: ${broken.lv.off} columns to repair (holes, cobblestone or stone where crops go)`)
+        farmLevelStep(bot, broken.fac, broken.lv, out, addSolved)
+        break
       }
       const inv = inventoryCounts(bot)
       // 水のバケツを持っていれば、畑の水のマスにも置く（湿った耕地は育ちが速い）。バケツを集めはしない（それは facility の目標）

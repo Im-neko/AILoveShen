@@ -12,6 +12,7 @@
 import vec3Pkg from 'vec3'
 import { inHouse, isDoorstepFloor } from './home.mjs'
 import { onMineCell } from './facilities.mjs'
+import { TILLABLE } from './farming.mjs'
 import { onShaftTop } from './quarry.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -32,6 +33,14 @@ export const TERRAIN = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|myceli
 const TREE = /_(log|leaves|wood)$|^(mangrove_roots|bamboo)$/
 const FLUID = /water|lava|bubble_column/
 const FARM = /^farmland$/
+// 畑の作物のマスの地面が、耕せない固いブロックに変わっていたら、掘って土で埋め直す。壊してよいのは自然の地形と、整地や
+// 足場に置いた丸石（家具や置いた物は壊さない）
+const FILLER_STONE = /^(cobblestone|mossy_cobblestone|cobbled_deepslate)$/
+export const farmRebuildable = (name) => TERRAIN.test(name ?? '') || FILLER_STONE.test(name ?? '')
+// 畑を埋める土: 畑の地面は耕せる土だけ（丸石で埋めると、そのマスは耕せない）
+export const SOIL_ITEMS = ['dirt', 'coarse_dirt']
+export const soilItem = (bot) => SOIL_ITEMS.map((n) => bot.inventory.items().find((i) => i.name === n)).find(Boolean) ?? null
+export const soilCount = (bot) => bot.inventory.items().filter((i) => SOIL_ITEMS.includes(i.name)).reduce((n, i) => n + i.count, 0)
 const UNLOADED = 'unloaded'
 
 // 中心と、足の高さ。where: 'home' か 'x,y,z'
@@ -135,7 +144,16 @@ export function farmColumns (layout, { margin = FARM_MARGIN } = {}) {
 // 畑の四角の中の 1 列。耕地が地面の高さ y より低いなら、作物を掘って土で埋め上げる。それ以外は columnWork と同じ
 function farmCellWork (bot, state, x, z, y, layout) {
   const base = columnWork(bot, state, x, z, y + 1)
-  if (base !== 'farmland') return base
+  if (base !== 'farmland') {
+    // 作物のマスの地面が耕せない固いブロック（丸石など）なら、掘って土で埋め直す（高さは合っていても直す）
+    if (base?.off === false && layout.cells.some((c) => c.x === x && c.z === z)) {
+      const ground = bot.blockAt(new Vec3(x, y, z))
+      if (ground?.boundingBox === 'block' && !TILLABLE.test(ground.name) && !FARM.test(ground.name) && farmRebuildable(ground.name)) {
+        return { off: true, cuts: [ground.position], fills: [ground.position] }
+      }
+    }
+    return base
+  }
   let h = y + DY
   for (; h >= y - DY; h--) {
     const b = bot.blockAt(new Vec3(x, h, z))

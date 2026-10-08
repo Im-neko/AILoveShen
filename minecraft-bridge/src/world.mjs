@@ -8,7 +8,7 @@ import { gatherableLog, isNaturalLogName } from './trees.mjs'
 import { findTable, findFurnace, knownFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms, finishedMine, mineSummaries, inMineBody } from './facilities.mjs'
+import { cropFarms, finishedMine, mineSummaries, inMineBody, inTown, onFarmGround } from './facilities.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
 import { rememberedKinds } from './worldmap-places.mjs'
@@ -17,6 +17,7 @@ import { keptGround, findCount } from './leveling.mjs'
 import { mineFromHome, minePlan, shallowStone, caveOre } from './mining.mjs'
 
 const DIG_RADIUS = 32
+const SOIL_KINDS = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol'])
 const DIG_DY = 4 // 登ったりトンネルを掘ったりせずに掘れる、足元から上下のブロック数
 const MAX_LOG_HEIGHT = 5 // 地面に立って手が届く、地面からの原木の高さ（目の高さ 1.6 ＋ 届く距離 4.5）
 const MAX_LOG_HEIGHT_TOWER = 16 // 土を積んで（1x1 の塔）届く上限。積める高さは持っている土の数まで
@@ -121,9 +122,13 @@ export function digTargets (bot, state, name, limit = TARGETS_PER_KIND) {
     const there = bot.findBlocks({ matching: id, point: spot, maxDistance: QUARRY_RADIUS, count: findCount(state) }).filter(ok)
     if (there.length) return there.sort((a, b) => a.distanceTo(spot) - b.distanceTo(spot) || a.distanceTo(me) - b.distanceTo(me)).slice(0, limit)
   }
-  return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: findCount(state) })
+  // 土は街の外から: 畑の地面、街の中、外の順に後回しにする（外が遠くても、なければ中から）。近い順の 64 個に街の
+  // 土だけが並ばないように、多めに探す
+  const soil = SOIL_KINDS.has(name)
+  const rank = (p) => soil ? (onFarmGround(state, p) ? 2 : inTown(state, p) ? 1 : 0) : 0
+  return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: soil ? findCount(state, 512) : findCount(state) })
     .filter(ok)
-    .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
+    .sort((a, b) => rank(a) - rank(b) || a.distanceTo(me) - b.distanceTo(me))
     .slice(0, limit)
 }
 

@@ -23,7 +23,7 @@ import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './mo
 import { teachDoors } from './doors.mjs'
 import { digTargets, logHeightAbove, dirtForLogHeight, SCAFFOLD_SOURCES } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
-import { levelStatus, noteLevelZone, noteLevelArea, farmLevel, FARM_MARGIN, TERRAIN } from './leveling.mjs'
+import { levelStatus, noteLevelZone, noteLevelArea, farmLevel, FARM_MARGIN, TERRAIN, farmRebuildable, soilItem } from './leveling.mjs'
 import { noteDig, noteShaft, usableShaft } from './quarry.mjs'
 import { canHold, isTossed, noteTossed, emptySlots } from './spare.mjs'
 import { liquidReason } from './liquid.mjs'
@@ -33,7 +33,7 @@ import { SINGLE_CHEST, defragChests, contentsSignature } from './storage.mjs'
 import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
 import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
-import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
+import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
 import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
 import { sealStock, openings, sealCell, plugCell } from './sealing.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
@@ -243,6 +243,9 @@ export function configureMovements (bot, state) {
   // ドアの前の列（外に立つセルとその下）は、どの行動でも掘らない: 水を汲むのに戸口から 18 マス掘り下げて、家に入れない穴を
   // 残した（2026-10-07、docs/design/100）
   m.exclusionAreasBreak.push((block) => block.position && doorstepColumn(state, block.position) ? 100 : 0)
+  // 畑の作物のマスの地面は、掘るのに費用をかける（禁止はしない: 直す手を妨げない。facilities.mjs の FARM_DIG_COST）。
+  // 閉じた所から出る行動は除く
+  m.exclusionAreasBreak.push((block) => block.position && !ROCK_ESCAPE.has(state.current?.verb) && onFarmGround(state, block.position) ? FARM_DIG_COST : 0)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
   m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
@@ -2083,7 +2086,7 @@ export const PRIMITIVES = {
       const me = bot.entity.position
       const near = (p) => p.distanceTo(me)
       const open = (p) => !skipped.has(`${p.x},${p.z}`)
-      const filler = fillItem(bot)
+      const filler = farm ? soilItem(bot) : fillItem(bot) // 畑の地面は耕せる土だけで埋める
       // 列ごとに上から掘る・下から埋める: 近い列のいちばん上 / いちばん下
       const cuts = s.cuts.filter(open).sort((a, b) => near(a) - near(b) || b.y - a.y)
       const fills = filler ? s.fills.filter(open).sort((a, b) => near(a) - near(b) || a.y - b.y) : []
@@ -2103,7 +2106,7 @@ export const PRIMITIVES = {
         if (next.cut) {
           const block = bot.blockAt(p)
           // 畑の整地は、低い耕地の作物（上に生えているもの）も掘る
-          if (!TERRAIN.test(block?.name ?? '') && !(farm && block?.boundingBox === 'empty')) throw new Error(`${block?.name} is not natural ground`)
+          if (!TERRAIN.test(block?.name ?? '') && !(farm && (block?.boundingBox === 'empty' || farmRebuildable(block?.name)))) throw new Error(`${block?.name} is not natural ground`)
           const wet = liquidReason(bot, p, block)
           if (wet) throw new Error(wet)
           if (!withinReach(bot, p)) await goto(bot, new goals.GoalLookAtBlock(p, bot.world, { reach: REACH }), signal)
@@ -2130,8 +2133,11 @@ export const PRIMITIVES = {
           if (!withinReach(bot, p) || bot.entity.position.floored().equals(p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH }), signal)
           if (bot.entity.position.floored().equals(p)) throw new Error('standing in the hole')
           // 出る途中で足元に積んで、土を使い切ることがある: 次の周で埋める物がなくなって終わる
-          const fill = fillItem(bot)
+          const fill = farm ? soilItem(bot) : fillItem(bot)
           if (!fill) continue
+          // 花や草が咲いていると置けない（「the block is still red_tulip」）: 先にどける
+          const here = bot.blockAt(p)
+          if (here && here.boundingBox === 'empty' && !/^(air|cave_air|void_air|water|lava)$/.test(here.name)) await bot.dig(here, true)
           await bot.equip(fill, 'hand')
           await bot.placeBlock(below, new Vec3(0, 1, 0)) // 断られたら place-report.mjs の installPlaceReport が記録する
           filled++

@@ -924,6 +924,31 @@ const mines = (state) => Object.values(state.facilities ?? {}).filter((f) => f.k
 // 設計した採掘場の名前と状態（planned / building / done）。地下の鉱石が見つからないとき、作るか続けるかを言う材料
 export const mineSummaries = (state) => mines(state).map((f) => ({ name: f.name, status: f.status }))
 
+// 街: 家・建物・施設の範囲と、そのまわり TOWN_MARGIN マス（施設の box は家・建物・畑・植林場・採掘場を含む）。土を集めるときは
+// 街の外から取る（街の中を掘ると、畑や道に穴があく。設計書 115）
+export const TOWN_MARGIN = 6
+export function inTown (state, p) {
+  if (inHouse(state, p, TOWN_MARGIN)) return true
+  return Object.values(state.facilities ?? {}).some((f) => f.box && p.x >= f.box.min.x - TOWN_MARGIN && p.x <= f.box.max.x + TOWN_MARGIN && p.z >= f.box.min.z - TOWN_MARGIN && p.z <= f.box.max.z + TOWN_MARGIN)
+}
+
+// 設計した畑の作物のマスの地面を掘る経路探しの費用（0 は無料、100 以上は掘れない。このマスを掘ると、畑に穴があいて直す手間が
+// 増える。禁止にしないのは、直す手を妨げないため: user 「守っちゃうと修正が効きにくくなるので掘るコストを高くして欲しい」）
+export const FARM_DIG_COST = 30
+const farmGround = new WeakMap()
+export function onFarmGround (state, p) {
+  const facs = state.facilities
+  if (!facs) return false
+  const farms = Object.values(facs).filter((f) => f.kind === 'farm' && f.layout?.rect)
+  const size = farms.reduce((n, f) => n + f.layout.cells.length, 0)
+  let index = farmGround.get(facs)
+  if (!index || index.size !== size || index.count !== farms.length) {
+    index = { size, count: farms.length, keys: new Set(farms.flatMap((f) => f.layout.cells.map((c) => `${c.x},${c.y},${c.z}`))) }
+    farmGround.set(facs, index)
+  }
+  return index.keys.has(`${p.x},${p.y},${p.z}`)
+}
+
 // 採掘場のセルか（空けておく所: 足場も土も置かない、整地で埋めない）
 export function onMineCell (state, p) {
   return mines(state).some((f) => mineIndex(f).open.has(`${p.x},${p.y},${p.z}`))

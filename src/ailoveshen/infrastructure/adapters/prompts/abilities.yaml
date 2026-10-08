@@ -24,6 +24,7 @@
     付ける。整地・柵・ゲートは、小目標 facility(name) の候補（do_suggestion: 「level the ground of the farm」
     「put up the fence around the farm」「put the fence gate of the farm」）で進める。柵は板と棒で作る
     （craft {item: oak_fence}、ゲートは oak_fence_gate）。全部そろって、畑が済みになる
+    畑が崩れたら（作物のマスの地面が穴・丸石・石になったら）、整地の候補で直す。掘って土で埋め直す。土は街の外から集める
     畑の場所・作物・残りのマスは search_facility（例: 畑、wheat farm）
   tools: [till, sow, water, craft, recipe_of, search_facility, do_suggestion]
   see: [get_seeds, harvest_crops, water_farm, plant_trees]
