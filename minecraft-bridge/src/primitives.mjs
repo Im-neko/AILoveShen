@@ -2205,8 +2205,16 @@ export const PRIMITIVES = {
     const item = bot.inventory.items().find((i) => i.name === c.item)
     if (!item) throw new Error(`no ${c.item}`)
     await goNear(bot, c.pos, 3, signal)
+    // 設計は草花の乗ったマスも苗木のマスに選ぶ（farming.mjs CLEARABLE）: 先にどける（耕す・水を置くのと同じ）
+    const plant = bot.blockAt(c.pos)
+    if (plant && CLEARABLE.test(plant.name)) await bot.dig(plant)
     const ground = bot.blockAt(c.pos.offset(0, -1, 0))
-    if (ground?.boundingBox !== 'block' || bot.blockAt(c.pos)?.name !== 'air') throw new Error(`no free ground for a sapling at ${c.pos.x},${c.pos.y},${c.pos.z} any more`)
+    const here = bot.blockAt(c.pos)
+    if (ground?.boundingBox !== 'block' || here?.name !== 'air') {
+      // 何が邪魔かを言う（till と同じ。「any more」だけでは、なぜか分からない）
+      const why = ground?.boundingBox !== 'block' ? `the ground under it is ${ground?.name ?? 'unloaded'}` : `${here?.name ?? 'unloaded'} is in the cell${here && here.boundingBox === 'block' ? ' (dig it if it may be removed)' : ''}`
+      throw new Error(`no free ground for a sapling at ${c.pos.x},${c.pos.y},${c.pos.z} any more (${why})`)
+    }
     await bot.equip(item, 'hand')
     await bot.placeBlock(ground, { x: 0, y: 1, z: 0 })
     const placed = bot.blockAt(c.pos)
