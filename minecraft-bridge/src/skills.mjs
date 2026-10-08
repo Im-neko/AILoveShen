@@ -224,6 +224,27 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
   }
 }
 
+// 同じ理由の失敗がこの回数続いた版は、続きを動かさない（2026-10-08: 畑の技が 143 回のうち 140 回、同じ理由で失敗した）。
+// 数えるのは技ごと: 間にほかの道具（持ち替えなど）が成功しても切れない。前に失敗してから SKILL_PROBE_MS たてば、
+// 世界が変わったかもしれないので 1 回だけ試せる
+export const SKILL_STREAK_LIMIT = 5
+export const SKILL_PROBE_MS = 10 * 60 * 1000
+// 失敗の理由が同じか: 数字（座標、個数、id）は無視する
+const reasonKey = (reason) => String(reason ?? '').replace(/-?\d+(\.\d+)?/g, '#').slice(0, 200)
+
+// 版が今、同じ理由で失敗し続けているか → 続いた回数（SKILL_STREAK_LIMIT 未満なら 0）
+export const failingStreak = (v) => ((v?.streak ?? 0) >= SKILL_STREAK_LIMIT ? v.streak : 0)
+
+// 動かさない理由（動かしてよければ null）。good は前に成功した版（なければ null）
+export function blockedReason (skill, good, now = Date.now()) {
+  const streak = failingStreak(skill)
+  const sinceMs = now - new Date(skill.last_used ?? 0).getTime()
+  if (!streak || sinceMs >= SKILL_PROBE_MS) return null
+  return `${skill.name} v${skill.version} failed ${streak} times in a row for the same reason (${skill.last_failure}): running it again will not change the result. ` +
+    `Read it (GET the skill) and write a revised version, ${good && good !== skill.version ? `run v${good}, which worked, ` : ''}or do the step with the other tools. ` +
+    `It can be tried again ${Math.ceil((SKILL_PROBE_MS - sinceMs) / 60000)} min from now`
+}
+
 // 技の保存（1 つの技 = 1 つの JSON。版を積む）。ワールドのリセットの後も残す（設計書 22 §8 の 3）
 export class SkillStore {
   constructor (dir = DEFAULT_DIR) {
@@ -261,7 +282,7 @@ export class SkillStore {
     const v = validateSkill(def)
     const skill = this.read(name) ?? { name, created_at: new Date().toISOString(), versions: [] }
     const version = (skill.versions.at(-1)?.version ?? 0) + 1
-    skill.versions.push({ version, ...v, created_at: new Date().toISOString(), uses: 0, successes: 0, failures: 0, last_failure: null })
+    skill.versions.push({ version, ...v, created_at: new Date().toISOString(), uses: 0, successes: 0, failures: 0, streak: 0, last_failure: null })
     this.write(skill)
     return version
   }
@@ -283,8 +304,14 @@ export class SkillStore {
     if (!v) return false
     const firstSuccess = ok && v.successes === 0
     v.uses += 1
-    if (ok) v.successes += 1
-    else { v.failures += 1; v.last_failure = reason }
+    if (ok) {
+      v.successes += 1
+      v.streak = 0
+    } else {
+      v.failures += 1
+      v.streak = reasonKey(reason) === reasonKey(v.last_failure) ? (v.streak ?? 0) + 1 : 1
+      v.last_failure = reason
+    }
     v.last_used = new Date().toISOString()
     this.write(skill)
     return firstSuccess
@@ -301,7 +328,9 @@ export class SkillStore {
         params: latest.params,
         expects: latest.expects,
         version: latest.version,
-        verified: latest.successes > 0,
+        verified: latest.successes > 0 && !failingStreak(latest),
+        streak: latest.streak ?? 0,
+        failing: failingStreak(latest) > 0,
         uses: sum('uses'),
         successes: sum('successes'),
         failures: sum('failures'),

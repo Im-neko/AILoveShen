@@ -304,6 +304,29 @@ class TestSkillStep:
         assert self._published(SkillRevisedEvent)[0].version == 3
 
     @pytest.mark.asyncio
+    async def test_a_refused_run_does_not_replace_the_failure_shown_for_the_fix(
+        self, bridge, watcher
+    ):
+        # 同じ理由の失敗が続いてブリッジが動かさなかった断りは、直すときに見せる「本当の失敗」ではない
+        use_case = self._use_case(bridge, watcher, AsyncMock())
+        failed = SkillRun(name="hunt", version=2, ok=False, ended="fail", reason="no pig")
+        refused = SkillRun(
+            name="hunt",
+            version=2,
+            ok=False,
+            ended="refused",
+            reason="hunt v2 failed 5 times in a row for the same reason (no pig)",
+        )
+        bridge.run_skill.side_effect = [failed, refused]
+        self.text_generator.choose_tool.return_value = ToolChoice(
+            "run_skill", {"name": "hunt", "intent": "狩る"}
+        )
+        session = _session(HAVE_PLANKS)
+        await use_case.execute(session)
+        await use_case.execute(session)
+        assert use_case._skill_failures["hunt"] == failed.describe()
+
+    @pytest.mark.asyncio
     async def test_a_skill_that_cannot_be_written_is_a_refused_step(self, bridge, watcher):
         writer = AsyncMock()
         writer.write.return_value = NotWritten("hunt was written 3 times in the last hour")
@@ -361,3 +384,21 @@ def test_a_failed_run_describes_why_with_the_record():
 def test_a_broken_fix_points_to_the_version_that_worked():
     fixed = SkillInfo(name="hunt", description="狩り", version=3, last_good_version=2)
     assert fixed.describe().startswith("hunt v3（試し中。v2 は成功した）: 狩り")
+
+
+def test_a_skill_failing_in_a_row_is_not_verified_and_says_so():
+    failing = SkillInfo(
+        name="farm", description="畑", version=1, verified=False, successes=3, uses=143,
+        failures=140, streak=140, failing=True, last_failure="remaining work 41 -> 41",
+    )
+    line = failing.describe()
+    assert "同じ理由で 140 回続けて失敗中" in line and "試し中" not in line
+    assert "成功 3/143" in line
+    # 上限の手前は、続いた回数を添える
+    warned = SkillInfo(name="farm", description="畑", version=1, verified=True, successes=3,
+                       uses=10, failures=2, streak=3, last_failure="x")
+    assert "（同じ理由で 3 回続けて失敗）" in warned.describe()
+    assert "続けて失敗中" not in warned.describe()
+    # 1 回だけなら添えない
+    assert "続けて" not in SkillInfo(name="farm", description="畑", version=1, verified=True,
+                                      streak=1, last_failure="x").describe()

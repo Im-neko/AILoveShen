@@ -102,7 +102,7 @@ import { countPlaced } from './placing.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests, storedCounts } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
 import { landmarks, adoptFoundBase } from './landmarks.mjs'
-import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, LIMITS, DEFAULT_DIR } from './skills.mjs'
+import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, blockedReason, LIMITS, DEFAULT_DIR } from './skills.mjs'
 
 // 家のチェストの数と空き（観測の home に付ける）: chest_blocks = 家にあるチェストのブロック数（ラージは 2）、
 // chest_slots / chest_free = 記録からのスロット数と空き、chest_saving = まとめると空くスロット、chest_spot = もう 1 つ置ける場所があるか（storage.mjs）
@@ -340,6 +340,9 @@ function reflexState () {
 async function runSkillOnce (name, args, version) {
   const skill = skills.get(name, version)
   if (!skill) return null
+  // 同じ理由の失敗が続いている版は動かさない（前の失敗から SKILL_PROBE_MS たてば、1 回試せる）
+  const blocked = blockedReason(skill, skills.list().find((s) => s.name === name)?.last_good_version)
+  if (blocked) return { ok: false, ended: 'refused', version: skill.version, reason: blocked, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
   let before
   try {
     before = expectsBaseline(skill.expects, args, skillDeps)

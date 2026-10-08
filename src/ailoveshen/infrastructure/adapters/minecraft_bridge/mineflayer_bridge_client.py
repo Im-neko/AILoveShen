@@ -485,6 +485,8 @@ def _to_skill(d: dict[str, Any]) -> SkillInfo:
         uses=int(d.get("uses", 0)),
         successes=int(d.get("successes", 0)),
         failures=int(d.get("failures", 0)),
+        streak=int(d.get("streak", 0)),
+        failing=bool(d.get("failing", False)),
         last_failure=d.get("last_failure"),
         last_good_version=d.get("last_good_version"),
         code=str(d.get("code", "")),

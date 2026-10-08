@@ -970,7 +970,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             logger.info(f"技: {run.describe()}（{run.seconds}秒、道具 {len(run.calls)}）")
             if run.ok:
                 self._skill_failures.pop(name, None)
-            else:
+            elif run.ended != "refused":  # 動かさなかった断りは、直すときに見せる失敗ではない
                 self._skill_failures[name] = run.describe()
             if run.learned:
                 await self._event_publisher.publish(
