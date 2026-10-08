@@ -52,7 +52,7 @@ benchmark:
       title: "白樺の植林場を完成させる"
       reason: "植林場の最後の 1 マスが設計の高さと地面でずれて、3 時間半詰まった（設計書 122、124）。植える手は固いと断り、掘る手は整地の保護で断り、整地は平らと断る。LLM がその行き止まりから出られるかを、BRIDGE_GUARDS（標準 / free）とモデルを替えて測る（設計書 125）"
       conditions: [{predicate: facility, name: birch_grove}]
-      give: {birch_sapling: 2, stone_pickaxe: 1}
+      give: {birch_sapling: 2, stone_pickaxe: 1, bread: 16}   # パンは、食料集めから始めて本題に着くのが遅れるのを防ぐ
       fixture: grove   # tools/bench_fixtures.py: 家と植林場（6 マス）を作り、ブリッジの状態を書き換える
     cage:
       title: "原木を 4 本集める"

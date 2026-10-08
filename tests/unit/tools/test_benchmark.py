@@ -457,7 +457,7 @@ class TestFixture:
         config = tool.load_config()
         task = tool.load_tasks(config, ["grove"])[0]
         assert task.fixture == "grove"
-        assert dict(task.give) == {"birch_sapling": 2, "stone_pickaxe": 1}
+        assert dict(task.give) == {"birch_sapling": 2, "stone_pickaxe": 1, "bread": 16}
         assert "grove" not in config["tasks"]  # 既定では走らない
         parse_spec(task.conditions[0])
 
