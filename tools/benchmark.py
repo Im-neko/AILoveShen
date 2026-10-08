@@ -41,6 +41,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import bench_fixtures  # noqa: E402
+
 CONFIG = REPO / "config" / "benchmark.yaml"
 COMPOSE_FILE = REPO / "docker" / "docker-compose.bench.yml"
 COMPOSE_PROJECT = "ailoveshen-bench"
@@ -73,6 +75,7 @@ class Task:
     give: tuple[tuple[str, int], ...] = ()  # 始まる前に渡す持ち物（アイテム名, 数）。空なら素手
     setup: tuple[str, ...] = ()  # ボットが入ったあとに RCON で行う、状況づくりのコマンド（SETUP_VERBS だけ）
     freeze_day: Optional[bool] = None  # False: この課題は時間が進むことを求める（夜）。None なら全体の設定に従う
+    fixture: Optional[str] = None  # 場面づくり（tools/bench_fixtures.py の名前）: 世界とブリッジの状態を作る
 
     def objective(self) -> dict[str, Any]:
         """`minecraft.mission.objectives` の 1 件。"""
@@ -107,6 +110,7 @@ def load_tasks(config: dict[str, Any], names: Optional[list[str]] = None) -> lis
             ),
             setup=tuple(known[n].get("setup") or ()),
             freeze_day=known[n].get("freeze_day"),
+            fixture=known[n].get("fixture"),
         )
         for n in chosen
     ]
@@ -200,6 +204,9 @@ def summarize_task(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "median_steps": median([r["steps"] for r in valid if isinstance(r.get("steps"), int)]),
         "deaths": sum(r["deaths"] for r in valid if isinstance(r.get("deaths"), int)),
+        # 道具の呼び出しのうち断られた数と、断らずに警告で通した数（BRIDGE_GUARDS=free）の中央値
+        "median_refused": median([r["tool_refused"] for r in valid if isinstance(r.get("tool_refused"), int)]),
+        "median_advised": median([r["tool_advised"] for r in valid if isinstance(r.get("tool_advised"), int)]),
     }
 
 
@@ -243,7 +250,7 @@ def _table(rows: list[list[str]]) -> str:
 def render_report(summary: dict[str, dict[str, Any]]) -> str:
     """課題ごとの表。"""
     rows = [
-        ["課題", "成功", "成功率", "秒(中央)", "設計後の秒", "歩(中央)", "死亡", "環境の不具合"]
+        ["課題", "成功", "成功率", "秒(中央)", "設計後の秒", "歩(中央)", "断り(中央)", "警告(中央)", "死亡", "環境の不具合"]
     ]
     for task, s in summary.items():
         rate = "-" if s["success_rate"] is None else f"{s['success_rate'] * 100:.0f}%"
@@ -255,6 +262,8 @@ def render_report(summary: dict[str, dict[str, Any]]) -> str:
                 _f(s["median_seconds"]),
                 _f(s["median_seconds_after_design"]),
                 _f(s["median_steps"]),
+                _f(s["median_refused"]),
+                _f(s["median_advised"]),
                 str(s["deaths"]),
                 str(s["errors"]),
             ]
@@ -264,7 +273,7 @@ def render_report(summary: dict[str, dict[str, Any]]) -> str:
 
 def render_compare(before: dict[str, dict[str, Any]], after: dict[str, dict[str, Any]]) -> str:
     """同じ課題を前後で並べる。"""
-    rows = [["課題", "成功(前)", "成功(後)", "秒(前)", "秒(後)", "歩(前)", "歩(後)", "死亡(前→後)"]]
+    rows = [["課題", "成功(前)", "成功(後)", "秒(前)", "秒(後)", "歩(前)", "歩(後)", "断り(前→後)", "死亡(前→後)"]]
     for task in [t for t in before if t in after]:
         b, a = before[task], after[task]
         rows.append(
@@ -276,6 +285,7 @@ def render_compare(before: dict[str, dict[str, Any]], after: dict[str, dict[str,
                 _f(a["median_seconds"]),
                 _f(b["median_steps"]),
                 _f(a["median_steps"]),
+                f"{_f(b['median_refused'])}→{_f(a['median_refused'])}",
                 f"{b['deaths']}→{a['deaths']}",
             ]
         )
@@ -627,6 +637,60 @@ def run_setup(task: Task) -> None:
             raise RuntimeError(f"状況づくりのコマンドが通らない: {command}: {out}")
 
 
+def bot_origin(config: dict[str, Any]) -> tuple[int, int, int]:
+    """ボットの足元のブロック。入った直後は落ちていることがあるので、2 回続けて同じ位置になるまで待つ。"""
+    import urllib.request
+
+    url = f"http://127.0.0.1:{config['bridge_port']}/observe"
+    last: Optional[tuple[int, int, int]] = None
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        with urllib.request.urlopen(url, timeout=5) as r:
+            p = json.loads(r.read())["observation"]["self"]["position"]
+        here = (int(p["x"] // 1), int(round(p["y"] - 0.01) // 1), int(p["z"] // 1))
+        if here == last:
+            return here
+        last = here
+        time.sleep(1.5)
+    raise RuntimeError("ボットの位置が落ち着かない")
+
+
+def run_fixture(task: Task, run_dir: Path, config: dict[str, Any], bridge: subprocess.Popen) -> subprocess.Popen:
+    """
+    場面づくり: ボットの足元を基準に世界を作り（RCON）、ブリッジを止めて state.json を書き換え、起動し直す。
+    ブリッジの状態は起動のときにしか読まれない。起動し直したボットは、同じ場所に入り直す。
+    """
+    if task.fixture is None:
+        return bridge
+    commands, state = bench_fixtures.build(task.fixture, bot_origin(config))
+    if "passed" not in _rcon("execute if entity @a"):
+        raise RuntimeError("場面をつくれない: サーバーにプレイヤーがいない")
+    for command in commands:
+        if command.split(" ", 1)[0] not in SETUP_VERBS:
+            raise ValueError(f"使えない場面づくりのコマンド: {command!r}")
+        out = _rcon(command)
+        if re.search(r"unknown|incomplete|could not|expected|error|cannot", out, re.IGNORECASE):
+            raise RuntimeError(f"場面づくりのコマンドが通らない: {command}: {out}")
+    stop_bridge(bridge)
+    (run_dir / "bridge").mkdir(parents=True, exist_ok=True)
+    (run_dir / "bridge" / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    return start_bridge(run_dir, config)
+
+
+def tool_counts(run_dir: Path) -> dict[str, int]:
+    """ブリッジのログから、道具の呼び出しの数と、断られた数、断らずに警告で通した数（BRIDGE_GUARDS=free）。"""
+    log = run_dir / "bridge" / "bridge.log"
+    calls = refused = advised = 0
+    if log.exists():
+        for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "[tool] " not in line:
+                continue
+            calls += 1
+            refused += "断った" in line
+            advised += "(not enforced:" in line
+    return {"tool_calls": calls, "tool_refused": refused, "tool_advised": advised}
+
+
 def give_items(task: Task) -> None:
     """ボットがサーバーに入ってから、課題の持ち物を渡す（サーバーの応答が失敗なら例外）。"""
     for command in give_commands(task):
@@ -708,6 +772,7 @@ def run_one(
         freeze_day = freeze_day and task.freeze_day is not False  # 夜の課題だけが、時間が進むことを求める
         start_server(level, seed, config, freeze_day)
         bridge = start_bridge(run_dir, config)
+        bridge = run_fixture(task, run_dir, config, bridge)
         give_items(task)
         run_setup(task)
         subprocess.run(
@@ -750,8 +815,10 @@ def run_one(
         "level": level,
         "seed": seed,
         "freeze_day": freeze_day,
+        "guards": os.environ.get("BRIDGE_GUARDS") or "standard",
         "at": datetime.now(timezone.utc).isoformat(),
         **row,
+        **tool_counts(run_dir),
         "run": run_info,
     }
 

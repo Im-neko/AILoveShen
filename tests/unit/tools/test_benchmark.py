@@ -411,3 +411,76 @@ class TestRun:
         )
 
         assert tool.count_steps(tmp_path) == 2
+
+
+class TestFixture:
+    """場面づくり（tools/bench_fixtures.py、設計書 125）。"""
+
+    def _origin(self):
+        return (100, 70, -50)
+
+    def test_grove_commands_use_allowed_verbs_and_fit_the_fill_limit(self):
+        from bench_fixtures import FILL_LIMIT, build
+
+        commands, _ = build("grove", self._origin())
+        assert commands
+        for command in commands:
+            assert command.split(" ", 1)[0] in tool.SETUP_VERBS, command
+            if command.startswith("fill "):
+                x0, y0, z0, x1, y1, z1 = (int(v) for v in command.split()[1:7])
+                assert (abs(x1 - x0) + 1) * (abs(y1 - y0) + 1) * (abs(z1 - z0) + 1) <= FILL_LIMIT, command
+
+    def test_grove_state_has_a_stale_cell_under_the_floor_inside_a_levelled_zone(self):
+        from bench_fixtures import build
+
+        px, py, pz = self._origin()
+        _, state = build("grove", self._origin())
+        cells = state["facilities"]["birch_grove"]["layout"]["cells"]
+        assert len(cells) == 6
+        stale = [c for c in cells if c["y"] != py]
+        assert stale == [{"x": px + 12, "y": py - 2, "z": pz + 6}]
+        zone = state["leveling"]["done"][0]
+        # 整地の記録は、そのマスの地面（py - 1 以下）を守る
+        assert (zone["x"], zone["z"], zone["y"]) == (stale[0]["x"], stale[0]["z"], py)
+        # 植わった苗木は 4 つ、空きのマスが 1 つ
+        assert len(state["plantings"]) == 4
+        home = state["home"]
+        assert home["inside"]["y"] == py and home["door"]["z"] == home["inside"]["z"] + 1
+
+    def test_unknown_fixture_is_rejected(self):
+        from bench_fixtures import build
+
+        with pytest.raises(ValueError, match="知らない場面"):
+            build("nope", self._origin())
+
+    def test_grove_scenario_is_a_named_scenario_with_a_fixture(self):
+        config = tool.load_config()
+        task = tool.load_tasks(config, ["grove"])[0]
+        assert task.fixture == "grove"
+        assert dict(task.give) == {"birch_sapling": 2, "stone_pickaxe": 1}
+        assert "grove" not in config["tasks"]  # 既定では走らない
+        parse_spec(task.conditions[0])
+
+
+class TestToolCounts:
+    def test_counts_calls_refusals_and_advisories_from_the_bridge_log(self, tmp_path):
+        (tmp_path / "bridge").mkdir()
+        (tmp_path / "bridge" / "bridge.log").write_text(
+            "t log [tool] plant {}: 成功 planted (not enforced: will not plant)\n"
+            "t log [tool] dig {}: 断った refused: will not dig\n"
+            "t log [act] dig: 失敗\n"
+            "t log [tool] equip {}: 成功 holding x\n",
+            encoding="utf-8",
+        )
+        assert tool.tool_counts(tmp_path) == {"tool_calls": 3, "tool_refused": 1, "tool_advised": 1}
+        assert tool.tool_counts(tmp_path / "none") == {"tool_calls": 0, "tool_refused": 0, "tool_advised": 0}
+
+    def test_summary_has_medians_of_refused_and_advised(self):
+        rows = [
+            _row("grove", "timeout", tool_refused=10, tool_advised=0),
+            _row("grove", "success", 100.0, 100.0, tool_refused=2, tool_advised=4),
+            _row("grove", "success", 90.0, 90.0, tool_refused=4, tool_advised=6),
+        ]
+        s = tool.summarize_task(rows)
+        assert s["median_refused"] == 4
+        assert s["median_advised"] == 4
