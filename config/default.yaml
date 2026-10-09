@@ -193,8 +193,13 @@ llm:
   # used only for calls with a screenshot (and a prompt too long even for the local context).
   # Before that (755215d) goal / reply / promise / planning stayed on Gemini because the local model
   # broke their schemas more often; the local adapter asks once again with the errors (docs/design/36 §7–8)
+  # The code-writing purposes (skill_write, check_write) have their own switch: CODE_LLM=remote sends only
+  # them to the LiteLLM model (LITELLM_CODE_MODEL=claude-sonnet-5-5 makes it Sonnet) while everything else
+  # stays local (docs/design/135)
   routes:
     default: "local"
+    skill_write: "${CODE_LLM:-local}"
+    check_write: "${CODE_LLM:-local}"
   fallback: "none"                       # none | remote: when the local model fails
 
   default_thinking_level: "low"

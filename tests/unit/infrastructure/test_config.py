@@ -492,3 +492,19 @@ def test_an_empty_value_with_a_comment_after_it_is_empty(tmp_path, monkeypatch):
     assert os.environ["LOCAL_LLM_MODEL"] == ""
     assert os.environ["LOCAL_LLM_URL"] == "http://h:1919/v1"
     assert os.environ["TOKEN"] == "abc#def"
+
+
+class TestCodeLlmSwitch:
+    """CODE_LLM でコードを書く用途だけをリモートへ回す（設計書 135）。"""
+
+    CONFIG = Path(__file__).parents[3] / "config"
+
+    def test_the_code_purposes_stay_local_by_default(self, monkeypatch):
+        monkeypatch.delenv("CODE_LLM", raising=False)
+        routes = load_settings(config_dir=self.CONFIG).llm.routes
+        assert routes == {"default": "local", "skill_write": "local", "check_write": "local"}
+
+    def test_code_llm_remote_sends_only_the_code_purposes_to_the_remote(self, monkeypatch):
+        monkeypatch.setenv("CODE_LLM", "remote")
+        routes = load_settings(config_dir=self.CONFIG).llm.routes
+        assert routes == {"default": "local", "skill_write": "remote", "check_write": "remote"}

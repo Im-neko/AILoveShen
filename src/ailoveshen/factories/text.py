@@ -85,6 +85,9 @@ def create_text_generator(
     remote = create_litellm_generator(llm, generation_log) if llm.litellm.model else None
     if remote is None:
         logger.warning("LITELLM_MODEL がない: 画像は送らず、すべてローカルの LLM で")
+    code_remote = [p for p in ("skill_write", "check_write") if llm.routes.get(p) == "remote"]
+    if code_remote and remote is None:
+        logger.warning(f"{code_remote} はリモートの設定だが LITELLM_MODEL がない: ローカルの LLM で書く")
     logger.info(
         f"LLM: ローカル {local.base_url}（{local.model or '/v1/models の最初'}）、振り分け {llm.routes}、"
         f"リモート LiteLLM {llm.litellm.base_url}（{llm.litellm.model or 'なし'}。画像・長すぎる呼び出し）、"

@@ -7,6 +7,10 @@
 
 ## Completed Work
 
+### ローカルのまま、コードを書く用途だけ Sonnet に回す口（設計書 135、2026-10-09、未確認: 実機。user: 「ローカルモデルを使いつつコーディングだけsonnetにする口もおいておいてほしい」）
+- `CODE_LLM=remote`（既定 `local`）で `llm.routes` の `skill_write` / `check_write` だけリモート（LiteLLM）に回る。`LITELLM_CODE_MODEL=claude-sonnet-5-5` と合わせて Sonnet。ほかはローカルのまま。`LITELLM_MODEL` がないときは起動のログに警告してローカルで書く
+- `docs/streaming.md` の古い「Gemini に戻す」の書き方を直した。テスト: `TestCodeLlmSwitch`（2）。pytest 1623 件通過（`tests/unit/factories` は配信が :8765 を使っていて 1 件落ちるため外している）
+- 要る操作: 配信の再起動、`.env` か起動のときに `CODE_LLM=remote LITELLM_CODE_MODEL=claude-sonnet-5-5`
 ### 鉱石を取った穴の埋め直しと、階段の洞窟対策（設計書 134、2026-10-09、9409ae9、未確認: 実機。user: 「水がなくても通路がわかりにくくなるので埋め直したい。階段掘りやブランチマイニング中に空洞にあたったときは壁や屋根を作る」）
 - 鉱石の穴: `dig` が鉱石を取って拾ったあと、その場で土（なければ丸石）で埋める（`backfill.mjs`）。通路のセル（採掘場の計画・家・建物）、敵が近い・体力 10 未満・水の穴・埋める物なしは埋めない（理由を結果に書く）。足元の鉱石で穴に落ちたら元のセルへ戻って埋める。失敗しても掘ったことは失敗にしない
 - 階段: 採掘場の階段と `dig_down` も、入口から 4 段より深い所で洞窟に面したら丸石で壁・天井・床を塞ぐ（`sealing.mjs` の `enclosure` に `skip` を足した）。丸石が足りなければ止まる（`dig_down` の止まる文に「先に石を掘る」）
