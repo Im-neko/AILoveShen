@@ -313,7 +313,7 @@ def create_game_service(
             recorder=JsonlWatchRecorder(minecraft.lessons_record_dir)
             if minecraft.lessons_record_dir
             else None,
-            compactor=LessonCompactor(text_generator),
+            compactor=LessonCompactor(text_generator, advisor=has_advisor(llm or LlmSettings())),
         )
         lessons.load()
     # 覚えた候補: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（設計書 52）

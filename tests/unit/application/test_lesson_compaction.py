@@ -176,3 +176,84 @@ async def test_the_compactor_asks_once_per_goal_with_the_record_and_drops_foreig
     assert "[L1] (goal=farmed; 教わった 1、効いた 0、失敗 0) 畑の水を置く（畑を作るとき）" in prompt
     assert "[L3]" not in prompt
     assert generator.generate_json.await_args.kwargs["purpose"] == "lesson_compaction"
+
+
+def _water_book():
+    book = LessonBook(_Store(), mode="rules", max_lessons=200)
+    for text in ("水は周囲より低い場所に置くと流出する", "水は周囲より低い場所にしか留まれない", "水の隣は同じ高さにする"):
+        book.learn(text, "", {"goal": "facility"}, True, "failure")
+    return book
+
+
+@pytest.mark.asyncio
+async def test_a_contradiction_the_compactor_cannot_decide_goes_to_the_advisor():
+    generator = AsyncMock()
+    generator.generate_json.side_effect = [
+        {"merges": [], "conflicts": [{"ids": ["L1", "L2"], "note": "低い場所に置くと流れる/留まる"}]},
+        {"resolutions": [{"ids": ["L1", "L2"], "text": "水は周囲より低い場所なら留まる", "condition": "水を置くとき"},
+                         {"ids": ["L1", "L3"], "text": "許されていない組"}]},
+    ]
+    result = await LessonCompactor(generator, advisor=True).propose(_water_book().lessons, 2)
+    assert result == [LessonMerge(("L1", "L2"), "水は周囲より低い場所なら留まる", "水を置くとき")]
+    first, second = generator.generate_json.await_args_list
+    assert first.kwargs["purpose"] == "lesson_compaction"
+    assert second.kwargs["purpose"] == "advice"
+    assert "### 話 1" in second.args[0] and "[L1]" in second.args[0] and "[L3]" not in second.args[0]
+    assert "(goal=facility; 教わった 1、効いた 0、失敗 0)" in second.args[0]
+
+
+@pytest.mark.asyncio
+async def test_without_an_advisor_or_when_it_fails_the_contradicting_lessons_stay():
+    conflict = {"merges": [], "conflicts": [{"ids": ["L1", "L2"]}]}
+    no_advisor = AsyncMock()
+    no_advisor.generate_json.return_value = conflict
+    assert await LessonCompactor(no_advisor).propose(_water_book().lessons, 2) == []
+    assert no_advisor.generate_json.await_count == 1
+
+    failing = AsyncMock()
+    failing.generate_json.side_effect = [conflict, TextGenerationError("down")]
+    assert await LessonCompactor(failing, advisor=True).propose(_water_book().lessons, 2) == []
+
+    undecided = AsyncMock()
+    undecided.generate_json.side_effect = [conflict, {"resolutions": []}]
+    assert await LessonCompactor(undecided, advisor=True).propose(_water_book().lessons, 2) == []
+
+
+@pytest.mark.asyncio
+async def test_the_advisors_resolution_merges_with_the_records_added_up():
+    generator = AsyncMock()
+    generator.generate_json.side_effect = [
+        {"merges": [], "conflicts": [{"ids": ["L1", "L2"]}]},
+        {"resolutions": [{"ids": ["L1", "L2"], "text": "水は周囲より低い場所なら留まる"}]},
+    ]
+    book = _water_book()
+    book._compactor = LessonCompactor(generator, advisor=True)
+    merges = await book._compactor.propose(book.lessons, 2)
+    book._merge(merges)
+    assert sorted(n.text for n in book.lessons) == ["水の隣は同じ高さにする", "水は周囲より低い場所なら留まる"]
+    assert next(n for n in book.lessons if n.text.startswith("水は周囲")).taught == 2
+
+
+@pytest.mark.asyncio
+async def test_a_merge_overlapping_the_advisors_resolution_keeps_the_rest_of_its_lessons():
+    generator = AsyncMock()
+    generator.generate_json.side_effect = [
+        {
+            "merges": [{"ids": ["L1", "L2", "L3"], "text": "水は同じ高さにする"}],
+            "conflicts": [{"ids": ["L1", "L2"]}],
+        },
+        {"resolutions": [{"ids": ["L1", "L2"], "text": "水は周囲より低い場所なら留まる"}]},
+    ]
+    result = await LessonCompactor(generator, advisor=True).propose(_water_book().lessons, 2)
+    assert [m.ids for m in result] == [("L1", "L2")]  # 残りは L3 の 1 件だけなので統合しない
+    generator.generate_json.side_effect = [
+        {
+            "merges": [{"ids": ["L1", "L2", "L3", "L4"], "text": "水は同じ高さにする"}],
+            "conflicts": [{"ids": ["L1", "L2"]}],
+        },
+        {"resolutions": [{"ids": ["L1", "L2"], "text": "水は周囲より低い場所なら留まる"}]},
+    ]
+    book = _water_book()
+    book.learn("水は壁で囲んで置く", "", {"goal": "facility"}, True, "failure")
+    result = await LessonCompactor(generator, advisor=True).propose(book.lessons, 2)
+    assert [m.ids for m in result] == [("L1", "L2"), ("L3", "L4")]
