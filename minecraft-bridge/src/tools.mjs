@@ -660,6 +660,9 @@ export function createTools (deps) {
         ? Object.values(state.facilities ?? {}).find((f) => f.kind === 'farm' && f.box && pos.x >= f.box.min.x - 1 && pos.x <= f.box.max.x + 1 && pos.z >= f.box.min.z - 1 && pos.z <= f.box.max.z + 1)
         : null
       if (farm) refuse(`will not pour water in or beside the farm ${farm.name} by hand (it would run over the farmland): use the water tool, which digs the farm's water cell and puts the water in the hole`)
+      // 畑の水のマスの水を汲むと、その畑の耕地が乾いて土に戻る（置き間違えの汲み戻しは、承知なら通す）
+      const drained = args.item === 'bucket' ? waterAt(state, pos) : null
+      if (drained) advise(`this water is the water cell of the farm ${drained.name}: taking it dries the farmland there (fine to take back a misplaced one; put it back with the water tool afterwards)`)
       const block = bot.blockAt(pos)
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       if (OWN_TOOL_BLOCKS.test(block.name)) refuse(`${block.name} has its own tools (sleep, deposit, withdraw, craft, smelt, move_furniture)`)

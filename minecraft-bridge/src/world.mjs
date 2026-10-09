@@ -8,7 +8,7 @@ import { gatherableLog, isNaturalLogName } from './trees.mjs'
 import { findTable, findFurnace, knownFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms, finishedMine, mineSummaries, inMineBody, inTown, onFarmGround } from './facilities.mjs'
+import { cropFarms, finishedMine, mineSummaries, inMineBody, inTown, onFarmGround, waterAt } from './facilities.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
 import { rememberedKinds } from './worldmap-places.mjs'
@@ -85,7 +85,8 @@ function openToSky (bot, p) {
 }
 
 // すくえる水（流れていない水源。空気に面したもの）: 一番近いもの。バケツで水を汲む先（solver の fill）。
-// 地下の洞窟の水は選ばない（歩いて届かず、経路探索が戸口から掘り下げた: 2026-10-07。地表の池・川・海だけ）
+// 地下の洞窟の水は選ばない（歩いて届かず、経路探索が戸口から掘り下げた: 2026-10-07。地表の池・川・海だけ）。
+// 畑の水のマスも選ばない（置いた水を次の水のマスのために汲み戻して、畑に水が残らなかった。設計書 137）
 export function waterSource (bot, state) {
   const id = bot.registry.blocksByName.water?.id
   if (id == null) return null
@@ -93,7 +94,7 @@ export function waterSource (bot, state) {
   return bot.findBlocks({ matching: id, maxDistance: DIG_RADIUS, count: 64 })
     .filter((p) => {
       const b = bot.blockAt(p)
-      return Number(b?.getProperties?.().level ?? b?.metadata ?? 1) === 0 && !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && openToSky(bot, p)
+      return Number(b?.getProperties?.().level ?? b?.metadata ?? 1) === 0 && !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && openToSky(bot, p) && !waterAt(state, p)
     })
     .sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0] ?? null
 }
