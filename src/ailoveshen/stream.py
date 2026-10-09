@@ -71,10 +71,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.debug:
         # 思考の要約は毎回の出力のトークンを使う: デバッグのときだけ（/debug/gemini に出る）
         settings.gemini.include_thoughts = True
+    litellm = settings.llm.remote.provider == "litellm"
     missing = [
         name
         for name, value in (
-            ("GEMINI_API_KEY", settings.gemini.api_key),
+            ("LITELLM_MODEL", settings.llm.remote.litellm.model) if litellm else ("GEMINI_API_KEY", settings.gemini.api_key),
             ("TYPESAFE_API_KEY", settings.jev.api_key),
         )
         if not value

@@ -135,7 +135,7 @@ async def test_a_real_local_call_is_written_whole_and_replayed(tmp_path):
     assert rows[0]["system"] == "SYSTEM-TEXT"
     assert rows[0]["prompt"] == "PROMPT-BODY"
     assert rows[0]["model"] == "local:m"
-    assert rows[0]["tokens"] == {"prompt": 7, "output": 3}
+    assert rows[0]["tokens"] == {"prompt": 7, "output": 3, "cached": 0, "cache_write": 0}
     verdicts = [tool.replay(r) for r in rows]
     assert [v.outcome for v in verdicts] == [tool.ACCEPTED, tool.REJECTED]
     assert "unknown tool 'reflex_surface'" in verdicts[1].reason

@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 LINE = re.compile(
-    r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*(?P<backend>Gemini|Local) .*?: (?P<ms>\d+)ms, "
+    r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*(?P<backend>Gemini|Local|LiteLLM) .*?: (?P<ms>\d+)ms, "
     r"purpose=(?P<purpose>\S+) images=(?P<images>\d+) prompt=(?P<prompt>\d+|None) "
     r"cached=(?P<cached>\d+|None) thoughts=(?P<thoughts>\d+|None) output=(?P<output>\d+|None)"
 )
@@ -57,6 +57,8 @@ def main() -> None:
                 purpose, images, cached = m["purpose"], int(m["images"]), _n(m["cached"])
                 if m["backend"] == "Local":
                     purpose = f"local:{purpose}"  # ローカルの LLM（docs/design/36）: 費用に数えない
+                elif m["backend"] == "LiteLLM":
+                    purpose = f"litellm:{purpose}"  # LiteLLM 経由のモデル（docs/design/127）: Gemini の値段では数えない
             else:
                 m = OLD_LINE.search(line)
                 if not m:
@@ -96,6 +98,8 @@ def main() -> None:
         )
         if priced and purpose.startswith("local:"):
             line += f"  {0:>8.0f}"
+        elif priced and purpose.startswith("litellm:"):
+            line += f"  {'(別の値段)':>8}"  # Gemini の値段では数えない
         elif priced:
             usd = (
                 r["prompt"] * args.input_price + (r["thoughts"] + r["output"]) * args.output_price

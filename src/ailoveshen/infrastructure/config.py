@@ -172,13 +172,44 @@ class LocalLlmSettings:
 
 
 @dataclass
+class LiteLlmSettings:
+    """LiteLLM 経由のモデル（Claude Haiku など。OpenAI 互換のプロキシ）の設定（docs/design/127）。"""
+
+    base_url: str = "https://llm.ideta.net/v1"
+    model: str = ""  # LiteLLM のモデル名（必須）
+    api_key: str = ""
+    context_tokens: int = 200000
+    max_output_tokens: int = 8192
+    response_format: str = "auto"  # auto | off
+    # 思考の渡し方: anthropic（Claude。思考の要る用途は thinking: adaptive + reasoning_effort、ほかは disabled）| none
+    thinking_param: str = "anthropic"
+    # Claude のプロンプトキャッシュ: system と、プロンプトの CACHE_BREAK の手前に cache_control を付ける。
+    # Gemini など Claude 以外のモデルを LiteLLM 経由で使うときは false（付けると明示キャッシュに切り替わる）
+    prompt_cache: bool = True
+    # 用途 → モデル（表にない用途は model）。コードを書く用途だけ上のモデルにする。LiteLLM に回った呼び出しにだけ効く
+    # （どの用途が回るかは llm.routes と、ローカルを切っているかで決まる）
+    models: dict[str, str] = field(default_factory=dict)
+    max_concurrent: int = 4
+    timeout_seconds: float = 120.0
+
+
+@dataclass
+class RemoteLlmSettings:
+    """リモートの役（画像のある呼び出し、ローカルに入らない呼び出し、失敗したとき、ローカルを切ったとき）を担うモデル。"""
+
+    provider: str = "gemini"  # gemini | litellm
+    litellm: LiteLlmSettings = field(default_factory=LiteLlmSettings)
+
+
+@dataclass
 class LlmSettings:
-    """ローカルの LLM と Gemini の振り分け（docs/design/36）。画像のある呼び出しはいつも Gemini。"""
+    """ローカルの LLM とリモート（Gemini か LiteLLM）の振り分け（docs/design/36、127）。画像のある呼び出しはいつもリモート。"""
 
     local: LocalLlmSettings = field(default_factory=LocalLlmSettings)
-    # 用途（purpose）→ local / gemini。default は表にない用途
+    remote: RemoteLlmSettings = field(default_factory=RemoteLlmSettings)
+    # 用途（purpose）→ local / remote。default は表にない用途
     routes: dict[str, str] = field(default_factory=lambda: {"default": "local"})
-    fallback: str = "none"  # none | gemini（ローカルが失敗したとき）
+    fallback: str = "none"  # none | remote（ローカルが失敗したとき）
 
 
 @dataclass
@@ -698,7 +729,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
     if "llm" in data:
         llm_data = data["llm"] or {}
         local_data = llm_data.get("local") or {}
+        remote_data = llm_data.get("remote") or {}
+        litellm_data = remote_data.get("litellm") or {}
         d = LocalLlmSettings()
+        lite = LiteLlmSettings()
         settings.llm = LlmSettings(
             local=LocalLlmSettings(
                 enabled=_truthy(local_data.get("enabled", d.enabled)),
@@ -722,6 +756,26 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 },
                 max_concurrent=int(local_data.get("max_concurrent", d.max_concurrent)),
                 timeout_seconds=float(local_data.get("timeout_seconds", d.timeout_seconds)),
+            ),
+            remote=RemoteLlmSettings(
+                provider=str(remote_data.get("provider", "gemini")),
+                litellm=LiteLlmSettings(
+                    base_url=str(litellm_data.get("base_url", lite.base_url)),
+                    model=str(litellm_data.get("model", lite.model) or ""),
+                    api_key=str(litellm_data.get("api_key", lite.api_key) or ""),
+                    context_tokens=int(litellm_data.get("context_tokens", lite.context_tokens)),
+                    max_output_tokens=int(litellm_data.get("max_output_tokens", lite.max_output_tokens)),
+                    response_format=str(litellm_data.get("response_format", lite.response_format)),
+                    thinking_param=str(litellm_data.get("thinking_param", lite.thinking_param)),
+                    prompt_cache=_truthy(litellm_data.get("prompt_cache", lite.prompt_cache)),
+                    models={
+                        str(k): str(v)
+                        for k, v in (litellm_data.get("models", lite.models) or {}).items()
+                        if v
+                    },
+                    max_concurrent=int(litellm_data.get("max_concurrent", lite.max_concurrent)),
+                    timeout_seconds=float(litellm_data.get("timeout_seconds", lite.timeout_seconds)),
+                ),
             ),
             routes={"default": "local", **dict(llm_data.get("routes") or {})},
             fallback=str(llm_data.get("fallback", "none")),

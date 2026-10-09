@@ -9,6 +9,7 @@ from string import Template
 from typing import Any, Optional
 
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
+from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
 from ailoveshen.domain.value_objects import (
     Activity,
@@ -604,25 +605,12 @@ $failure$previous_error
 
 # spikes/primitive_choice_eval.py で測った: 体が必要とするもの（needs）を状態に書くと効いた。
 # 指示に優先順位を書くと、選択器は 20m 先の敵からも逃げるようになった。
+# 並びは「変わらないものが前、変わるものが後ろ」（設計書 127 §5）: 決まり、（印）、目標の階層（format_activity が
+# 小目標の前にも印を置く）、いまの状態。印はキャッシュの境目で、ほかのアダプターは取り除く。決まりは
+# 状態の後ろにあり、先頭から同じ部分が全体の 26% しかなかった（2026-10-09 の記録の中央値）
 TOOL_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者として、自分の手で操作しています。
 今の小目標に向けて、次に呼ぶ道具を 1 つ選んでください。
-
-## 配信者が今していること
-$activity
-
-## まわり（ブリッジが今測ったもの）
-- 位置: $position
-- まわりの形（$legend）:
-$grid
-- 隣のうち歩いて上がれない（2 段以上の）ところ: $walls / 8、頭の上: $head、足元: $standing_on
-- 近くのモブ（attack / flee の entity にはこの id を使う）: $mobs
-
-## ソルバーの提案（参考。従わなくてよい。do_suggestion の id）
-$suggestions
-
-## 直近の道具（古い順）
-$recent
 
 ## 決まり
 - 行動の道具には intent（今やろうとしていること、配信者の口調の 1 文、日本語）を必ず書く。配信で
@@ -652,6 +640,22 @@ $recent
 - look_screen（使えるときだけ出ている）は配信の画面を撮り、次の選択に画像として添える。
   文字の状態で分からないとき（地形、何が起きているか）に使う。画像で完了は決めない
 - 画像が添えてあれば、それはいま配信に映っている自分の視点
+${cache_break}
+## 配信者が今していること
+$activity
+
+## まわり（ブリッジが今測ったもの）
+- 位置: $position
+- まわりの形（$legend）:
+$grid
+- 隣のうち歩いて上がれない（2 段以上の）ところ: $walls / 8、頭の上: $head、足元: $standing_on
+- 近くのモブ（attack / flee の entity にはこの id を使う）: $mobs
+
+## ソルバーの提案（参考。従わなくてよい。do_suggestion の id）
+$suggestions
+
+## 直近の道具（古い順）
+$recent
 """)
 
 # 続けて失敗しているとき（STUCK_FAILURES 回以上）に足す節: 同じ手を繰り返さず、原因を考えて別の方法を選ばせる
@@ -1213,7 +1217,8 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             for m in state.get("mobs", [])
         ]
         return TOOL_TEMPLATE.substitute(
-            activity=format_activity(activity),
+            cache_break=CACHE_BREAK,
+            activity=format_activity(activity, cache_break=True),
             position=f"{me.get('x')}, {me.get('y')}, {me.get('z')}" if me else "不明",
             legend=around.get("legend", ""),
             grid="\n".join(f"    {row}" for row in around.get("grid", [])) or "    （なし）",

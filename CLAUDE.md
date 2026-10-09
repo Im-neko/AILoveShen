@@ -8,6 +8,7 @@ AILoveShen is an AI Streamer project for **Twitch**. Components:
 - **[Jev](https://typesafe.ai/)** (TypeSafe AI's System One): picks the next primitive action among the candidates the Mineflayer bridge (`minecraft-bridge/`) grounds for the current goal (`docs/design/06_phase6_jev_integration.md`, `11_primitive_actions.md`)
 - **Gemini 3.8 Flash** (`main_model`): game commentary and thoughts, chat replies, and the high-level goal decisions handed to Jev; `filter_model` (comment filtering) is planned
 - **Local LLM** (optional, `llm.local.enabled`): OpenAI-compatible server for everything except calls with images (`docs/design/36_local_llm.md`)
+- **Remote LLM**: Gemini by default; `llm.remote.provider: litellm` (`REMOTE_LLM=litellm`, `LITELLM_MODEL`) swaps the whole Gemini role for a model served by LiteLLM, e.g. Claude Haiku 5.5 (`docs/design/127_litellm_remote.md`)
 - **Style-Bert-VITS2** (JP/EN/ZH TTS with style control) or **Irodori-TTS** (`tts.engine: irodori`, voice cloned from reference audio; `docs/setup/irodori_tts.md`, design 32)
 - **MCP**: memory management, expression control, extensibility
 

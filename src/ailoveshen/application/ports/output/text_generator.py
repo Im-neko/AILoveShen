@@ -9,6 +9,21 @@ from typing import Any, Optional
 
 from ailoveshen.domain.value_objects import Screenshot
 
+# プロンプトの中の「ここまでは次の呼び出しでも同じ」の印（docs/design/127 §5）。変わらない部分を前に、
+# 変わる部分を後ろに並べ、境目に 1 つ置く。キャッシュの境目を指定できるモデル（LiteLLM 経由の Claude）は
+# ここで分けて cache_control を付け、ほかのアダプターは印を取り除く（取り除いたあとは何も変わらない）
+CACHE_BREAK = "\ue000"
+
+
+def split_cache_breaks(prompt: str) -> list[str]:
+    """印で分けた部分（空の部分は捨てる）。印がなければ全体の 1 つ。"""
+    return [part for part in prompt.split(CACHE_BREAK) if part.strip()] or [prompt.replace(CACHE_BREAK, "")]
+
+
+def strip_cache_breaks(prompt: str) -> str:
+    """印を取り除いたプロンプト。"""
+    return prompt.replace(CACHE_BREAK, "")
+
 
 @dataclass(frozen=True)
 class ToolSpec:

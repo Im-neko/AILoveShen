@@ -212,6 +212,35 @@ class TestLoadSettings:
             del os.environ["TEST_CHANNEL"]
 
 
+class TestLoadRemoteLlmSettings:
+    """リモートの LLM（Gemini か LiteLLM）の設定の読み込み（docs/design/127）。"""
+
+    def test_the_remote_is_gemini_unless_litellm_is_chosen(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "default.yaml").write_text("llm:\n  local:\n    enabled: false")
+            settings = load_settings(config_dir=tmpdir)
+            assert settings.llm.remote.provider == "gemini"
+            assert settings.llm.remote.litellm.model == ""
+
+    def test_litellm_settings_are_read(self):
+        os.environ["TEST_LITELLM_MODEL"] = "haiku-5.5"
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                (Path(tmpdir) / "default.yaml").write_text(
+                    "llm:\n  remote:\n    provider: litellm\n    litellm:\n"
+                    "      base_url: http://proxy:4000/v1\n      model: ${TEST_LITELLM_MODEL}\n"
+                    "      max_output_tokens: 4096\n  fallback: remote\n"
+                )
+                settings = load_settings(config_dir=tmpdir)
+                assert settings.llm.remote.provider == "litellm"
+                assert settings.llm.remote.litellm.base_url == "http://proxy:4000/v1"
+                assert settings.llm.remote.litellm.model == "haiku-5.5"
+                assert settings.llm.remote.litellm.max_output_tokens == 4096
+                assert settings.llm.fallback == "remote"
+        finally:
+            del os.environ["TEST_LITELLM_MODEL"]
+
+
 class TestLoadGeminiAndCharacterSettings:
     """gemini と character の節の読み込みのテスト。"""
 

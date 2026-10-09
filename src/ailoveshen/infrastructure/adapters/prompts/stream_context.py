@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.domain.value_objects import (
     HERE_SITE,
     PLANNABLE_CONDITIONS,
@@ -192,11 +193,12 @@ def format_site_choice(site: TownSite) -> str:
     return f"「{site.name}」を{site_name(site.site_id)}（{site.x},{site.z}）に作る: {site.reason}"
 
 
-def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
+def format_activity(activity: Activity | None, with_ids: bool = False, cache_break: bool = False) -> str:
     """
     配信者が何をしていて、なぜか（最終目標から下へ）、ゲームの状況、最近の小目標。
     `with_ids` なら大目標とメモの ID、小目標の番号（メモの根拠）を出す（目標の決定での
     編集用。配信で読み上げられうる所では出さない）。
+    `cache_break` なら、目標の階層（変わりにくい）と今の小目標以下（変わる）の間にキャッシュの境目の印を置く。
     """
     if activity is None:
         return "ゲームはしていない"
@@ -217,6 +219,8 @@ def format_activity(activity: Activity | None, with_ids: bool = False) -> str:
     if finished:
         lines.append("- 最近終わった大目標:")
         lines += [f"  - {_format_finished(g)}" for g in finished]
+    if cache_break:
+        lines.append(CACHE_BREAK)
     recent = activity.recent_goals
     now = f" [{len(recent) + 1}]" if with_ids and activity.goal is not None else ""
     lines.append(f"- 今の小目標{now}: {_format_goal(activity.goal, activity.observation, titles)}")

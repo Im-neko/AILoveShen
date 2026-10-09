@@ -700,3 +700,46 @@ def test_jev_sees_the_last_eight_actions_in_order():
     obs = replace(obs, state={**obs.state, "recent_actions": actions})
     state, _ = GamePromptTemplateBuilder().build_action_context(PLANKS, obs)
     assert [a["action"] for a in state["recent_actions"]] == [f"step {i}" for i in range(4, 12)]
+
+
+class TestToolPromptCacheBreaks:
+    """道具の 1 手: 変わらない部分が前（決まり、目標の階層）、変わる部分が後ろ。境目に印（設計書 127 §5）。"""
+
+    def _prompt(self, **kwargs):
+        from ailoveshen.domain.value_objects import Activity
+
+        return GamePromptTemplateBuilder().build_tool_prompt(
+            Activity(), {"surroundings": {}, "mobs": []}, (), (), **kwargs
+        )
+
+    def test_the_rules_come_before_the_state_with_a_break_between_them(self):
+        from ailoveshen.application.ports.output.text_generator import (
+            CACHE_BREAK,
+            split_cache_breaks,
+            strip_cache_breaks,
+        )
+
+        prompt = self._prompt()
+        rules, state = prompt.split(CACHE_BREAK, 1)
+        assert "## 決まり" in rules and "## 配信者が今していること" not in rules
+        assert "## 配信者が今していること" in state and "## 決まり" not in state
+        assert state.index("## 配信者が今していること") < state.index("## まわり")
+        assert "## 決まり" in strip_cache_breaks(prompt) and CACHE_BREAK not in strip_cache_breaks(prompt)
+        assert split_cache_breaks(prompt)[0] == rules
+
+    def test_the_part_in_front_of_the_first_break_does_not_depend_on_the_state(self):
+        from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+        a = self._prompt()
+        b = self._prompt(failing=3, stagnant_seconds=120.0)
+        assert a.split(CACHE_BREAK)[0] == b.split(CACHE_BREAK)[0]
+
+    def test_a_break_separates_the_goal_hierarchy_from_the_current_goal(self):
+        from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+        from ailoveshen.infrastructure.adapters.prompts.stream_context import format_activity
+        from ailoveshen.domain.value_objects import Activity
+
+        text = format_activity(Activity(), cache_break=True)
+        before, after = text.split(CACHE_BREAK)
+        assert "大目標" in before and "今の小目標" in after
+        assert CACHE_BREAK not in format_activity(Activity())

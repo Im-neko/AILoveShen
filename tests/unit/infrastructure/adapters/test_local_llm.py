@@ -1,5 +1,6 @@
-"""ローカルの LLM のアダプターと振り分け（docs/design/36）のテスト。"""
+"""ローカルの LLM のアダプターと振り分け（docs/design/36）、LiteLLM のリモート（docs/design/127）のテスト。"""
 
+import base64
 import json
 from unittest.mock import AsyncMock
 
@@ -163,42 +164,88 @@ async def test_the_local_model_takes_no_images():
         await local.generate_json("x", SCHEMA, images=[Screenshot(b"png", "image/png")])
 
 
-def _router(**kwargs):
-    local, gemini = AsyncMock(), AsyncMock()
-    local.generate.return_value = "local"
-    gemini.generate.return_value = "gemini"
-    local.generate_json.return_value = {"by": "local"}
-    gemini.generate_json.return_value = {"by": "gemini"}
-    return RoutingTextGenerator(local, gemini, **kwargs), local, gemini
+class _Log:
+    def __init__(self):
+        self.entries, self.images = [], []
+
+    def record(self, entry):
+        self.entries.append(entry)
+
+    def record_image(self, data, mime_type):
+        self.images.append((data, mime_type))
+        return f"img{len(self.images)}"
 
 
 @pytest.mark.asyncio
-async def test_calls_go_by_purpose_and_images_always_go_to_gemini():
-    router, local, gemini = _router(routes={"build_design": "gemini"})
-    assert await router.generate("x", purpose="commentary") == "local"
-    assert await router.generate_json("x", SCHEMA, purpose="build_design") == {"by": "gemini"}
+async def test_a_model_that_reads_images_gets_them_as_data_urls_and_records_them():
+    """LiteLLM 経由の Claude など: 画像は image_url の部品で送り、記録には中身ではなく id を残す。"""
+    server = _Server(_answer('{"color": "red"}'), _answer(tool_calls=[{"function": {"name": "dig", "arguments": "{}"}}]))
+    log = _Log()
+    remote = OpenAICompatTextGenerator(
+        "http://proxy/v1", model="haiku", transport=httpx.MockTransport(server), label="LiteLLM", images=True,
+        thinking_param="none", thinking_purposes=[], generation_log=log,
+    )
+    shot = Screenshot(b"\x89PNGdata", "image/png")
+    assert await remote.generate_json("what is it", SCHEMA, purpose="screen_review", images=[shot]) == {"color": "red"}
+    content = server.requests[0]["messages"][-1]["content"]
+    assert content[0] == {"type": "text", "text": content[0]["text"]} and "what is it" in content[0]["text"]
+    assert content[1]["image_url"]["url"] == "data:image/png;base64," + base64.b64encode(b"\x89PNGdata").decode()
+    assert "chat_template_kwargs" not in server.requests[0]
+    assert log.images == [(b"\x89PNGdata", "image/png")]
+    assert log.entries[0]["model"] == "litellm:haiku"
+    assert log.entries[0]["images"] == [{"id": "img1", "mime_type": "image/png", "bytes": 8}]
+    assert "what is it" in log.entries[0]["prompt"]
+    assert await remote.choose_tool("go", TOOLS, purpose="tool", images=[shot]) == ToolChoice("dig", {})
+    assert server.requests[1]["messages"][-1]["content"][1]["type"] == "image_url"
+
+
+@pytest.mark.asyncio
+async def test_a_text_answer_to_a_tool_call_with_images_is_asked_again_with_the_images():
+    server = _Server(_answer("I would dig."), _answer('{"tool": "dig", "args": {"x": 5}}'))
+    remote = OpenAICompatTextGenerator(
+        "http://proxy/v1", model="haiku", transport=httpx.MockTransport(server), images=True
+    )
     shot = Screenshot(b"png", "image/png")
-    assert await router.generate_json("x", SCHEMA, purpose="goal_after_failure", images=[shot]) == {"by": "gemini"}
-    assert gemini.generate_json.await_args.args[4] == [shot]
+    assert await remote.choose_tool("go", TOOLS, images=[shot]) == ToolChoice("dig", {"x": 5})
+    assert server.requests[1]["messages"][-1]["content"][1]["type"] == "image_url"
+
+
+def _router(**kwargs):
+    local, remote = AsyncMock(), AsyncMock()
+    local.generate.return_value = "local"
+    remote.generate.return_value = "remote"
+    local.generate_json.return_value = {"by": "local"}
+    remote.generate_json.return_value = {"by": "remote"}
+    return RoutingTextGenerator(local, remote, **kwargs), local, remote
+
+
+@pytest.mark.asyncio
+async def test_calls_go_by_purpose_and_images_always_go_to_the_remote():
+    router, local, remote = _router(routes={"build_design": "remote"})
+    assert await router.generate("x", purpose="commentary") == "local"
+    assert await router.generate_json("x", SCHEMA, purpose="build_design") == {"by": "remote"}
+    shot = Screenshot(b"png", "image/png")
+    assert await router.generate_json("x", SCHEMA, purpose="goal_after_failure", images=[shot]) == {"by": "remote"}
+    assert remote.generate_json.await_args.args[4] == [shot]
     assert local.generate_json.await_count == 0
 
 
 @pytest.mark.asyncio
-async def test_a_prompt_too_long_for_the_local_model_goes_to_gemini():
-    router, local, gemini = _router(context_tokens=1000, reserve_output_tokens=500)
+async def test_a_prompt_too_long_for_the_local_model_goes_to_the_remote():
+    router, local, remote = _router(context_tokens=1000, reserve_output_tokens=500)
     assert await router.generate("あ" * 400, purpose="reply") == "local"
-    assert await router.generate("あ" * 600, purpose="reply") == "gemini"
+    assert await router.generate("あ" * 600, purpose="reply") == "remote"
 
 
 @pytest.mark.asyncio
-async def test_a_local_failure_is_an_error_unless_the_fallback_is_gemini():
-    router, local, gemini = _router()
+async def test_a_local_failure_is_an_error_unless_the_fallback_is_remote():
+    router, local, remote = _router()
     local.generate.side_effect = TextGenerationError("down")
     with pytest.raises(TextGenerationError):
         await router.generate("x", purpose="reply")
-    router, local, gemini = _router(fallback="gemini")
+    router, local, remote = _router(fallback="remote")
     local.generate.side_effect = TextGenerationError("down")
-    assert await router.generate("x", purpose="reply") == "gemini"
+    assert await router.generate("x", purpose="reply") == "remote"
 
 
 def test_unknown_routes_are_refused():
@@ -287,10 +334,10 @@ async def test_the_output_budget_shrinks_to_what_the_context_leaves():
 
 @pytest.mark.asyncio
 async def test_a_shared_router_is_closed_once():
-    router, local, gemini = _router()
+    router, local, remote = _router()
     await router.close()
     await router.close()
-    assert local.close.await_count == 1 and gemini.close.await_count == 1
+    assert local.close.await_count == 1 and remote.close.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -301,3 +348,116 @@ async def test_only_the_listed_purposes_think():
     for purpose in ("tool_after_failure", "goal_after_failure", "skill_write"):
         await local.generate("x", purpose=purpose)
     assert [r["chat_template_kwargs"]["enable_thinking"] for r in server.requests] == [False, False, True]
+
+
+def _claude(server, **kwargs):
+    return OpenAICompatTextGenerator(
+        "http://proxy/v1",
+        model="claude-haiku-5-5",
+        transport=httpx.MockTransport(server),
+        thinking_param="anthropic",
+        thinking_levels={"goal": "low", "goal_after_failure": "medium", "skill_write": "high"},
+        label="LiteLLM",
+        images=True,
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_claude_thinks_only_for_the_purposes_whose_level_is_medium_or_high():
+    """Haiku 5.5 は指定しないと思考が走る: 浅い用途は disabled を送り、深い用途は adaptive と effort を送る。"""
+    server = _Server(_answer("a"), _answer("b"), _answer("c"), _answer("d"))
+    claude = _claude(server)
+    await claude.generate("x", purpose="goal")
+    await claude.generate("x", purpose="goal_after_failure")
+    await claude.generate("x", purpose="skill_write")
+    await claude.generate("x", purpose="unlisted")
+    bodies = server.requests
+    assert bodies[0]["thinking"] == {"type": "disabled"} and "reasoning_effort" not in bodies[0]
+    assert bodies[1]["thinking"] == {"type": "adaptive"} and bodies[1]["reasoning_effort"] == "medium"
+    assert bodies[2]["thinking"] == {"type": "adaptive"} and bodies[2]["reasoning_effort"] == "high"
+    assert bodies[3]["thinking"] == {"type": "disabled"}
+    assert all("chat_template_kwargs" not in b for b in bodies)
+
+
+@pytest.mark.asyncio
+async def test_a_purpose_can_use_another_model_and_the_log_names_the_model_that_answered():
+    server = _Server(_answer("a"), _answer("b"))
+    log = _Log()
+    claude = _claude(server, models={"skill_write": "claude-sonnet-5-5", "empty": ""}, generation_log=log)
+    await claude.generate("x", purpose="skill_write")
+    await claude.generate("x", purpose="goal")
+    assert [r["model"] for r in server.requests] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
+    assert [e["model"] for e in log.entries] == ["litellm:claude-sonnet-5-5", "litellm:claude-haiku-5-5"]
+
+
+@pytest.mark.asyncio
+async def test_the_cache_tokens_the_proxy_reports_are_logged():
+    from loguru import logger
+
+    usage = {
+        "prompt_tokens": 3747,
+        "completion_tokens": 20,
+        "total_tokens": 3767,
+        "prompt_tokens_details": {"cached_tokens": 3000},
+        "cache_creation_input_tokens": 700,
+    }
+    server = _Server(_answer("a", usage=usage))
+    log, lines = _Log(), []
+    sink = logger.add(lambda m: lines.append(str(m)), level="INFO")
+    try:
+        await _claude(server, generation_log=log).generate("x", purpose="goal")
+    finally:
+        logger.remove(sink)
+    assert "cached=3000" in lines[0] and "cache_write=700" in lines[0]
+    assert log.entries[0]["tokens"]["cached"] == 3000 and log.entries[0]["tokens"]["cache_write"] == 700
+
+
+@pytest.mark.asyncio
+async def test_cache_control_goes_on_the_system_and_in_front_of_each_cache_break_for_claude():
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+    server = _Server(_answer("a"))
+    claude = _claude(server, prompt_cache=True)
+    await claude.generate(f"rules\n{CACHE_BREAK}goal\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
+    system, user = server.requests[0]["messages"]
+    assert system["content"] == [{"type": "text", "text": "persona", "cache_control": {"type": "ephemeral"}}]
+    assert user["content"] == [
+        {"type": "text", "text": "rules\n", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "goal\n", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "state"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_prompt_without_breaks_is_not_marked_and_there_are_at_most_four_marks():
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+    server = _Server(_answer("a"), _answer("b"))
+    claude = _claude(server, prompt_cache=True)
+    await claude.generate("plain prompt", purpose="goal")
+    assert server.requests[0]["messages"][-1]["content"] == "plain prompt"
+    await claude.generate(CACHE_BREAK.join("abcdefg"), system_instruction="s", purpose="goal")
+    marks = [
+        part for m in server.requests[1]["messages"] for part in m["content"] if "cache_control" in part
+    ]
+    assert len(marks) == 4
+
+
+@pytest.mark.asyncio
+async def test_without_prompt_cache_the_breaks_are_only_removed():
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+    server = _Server(_answer("a"))
+    await _claude(server).generate(f"rules\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
+    system, user = server.requests[0]["messages"]
+    assert system["content"] == "persona" and user["content"] == "rules\nstate"
+    assert CACHE_BREAK not in json.dumps(server.requests[0], ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_the_output_budget_counts_an_image_by_a_fixed_size_not_by_its_base64():
+    server = _Server(_answer('{"color": "red"}'))
+    claude = _claude(server, context_tokens=20000, max_output_tokens=16384)
+    await claude.generate_json("x", SCHEMA, purpose="goal", images=[Screenshot(b"\x00" * 400000, "image/png")])
+    assert server.requests[0]["max_tokens"] > 10000

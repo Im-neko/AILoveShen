@@ -7,6 +7,16 @@
 
 ## Completed Work
 
+### LiteLLM の Claude: 思考の切り替え・用途ごとのモデル・プロンプトキャッシュ（設計書 127 §5、2026-10-09、未確認: 並べ替え後の決定の質、実際の配信。user: 「順にすすめてほしい。状況に応じて思考もオンに。コード実装時は sonnet も」）
+- 実機の `llm.ideta.net` で確かめた（Haiku 5.5、Sonnet 5.5）: 指定しないと Haiku は思考が走る（`disabled` で止まる。`reasoning_effort: none` では止まらない）。思考の設定を途中で変えるとキャッシュが外れる。`json_schema` / `tool_choice: required` / 画像 / `cache_control`（system、ユーザーメッセージの部品、`ttl: 1h`）は通る
+- 1. 思考と用途ごとのモデル: `thinking_param: anthropic`（Gemini の `thinking_levels` が medium / high の用途は `thinking: adaptive` + `reasoning_effort`、ほかは `disabled`）。`llm.remote.litellm.models`（`LITELLM_CODE_MODEL=claude-sonnet-5-5` で `skill_write` / `check_write` が LiteLLM に回ったとき Sonnet になる。`llm.routes` が local の用途はローカルのまま: user「routes がローカルの場合はコードもローカルのモデルで書いてほしい」）。使用量の行と記録は実際に答えたモデル
+- 3. 測定: 使用量の行に `cache_write=`、記録の `tokens` に `cached` / `cache_write`
+- 2. キャッシュ: `prompt_cache`（`LITELLM_PROMPT_CACHE`）。`text_generator.CACHE_BREAK` を境目の印にして、system と印の手前に `cache_control`（最大 4、印のないプロンプトには付けない）。Gemini・ローカルは印を取り除く
+- 4. 並べ替え: `TOOL_TEMPLATE` を「決まり → 印 → 目標の階層 → 印 → 今の小目標と状態」にした（先頭から同じ部分は 26% → 約 40%）。実機で 4 回送り、2〜4 回目は 3958 トークン（8.2k のうち約 47%）を読み出した
+- 画像つきの出力枠の見積もりを、`data:` URL の長さではなく 1 枚 1600 トークンに直した（これまでの `str(content)` は base64 を数えていた）
+- テスト: `python -m pytest tests/unit` 1669 件が通る（`test_stream_factory.py` を除く）
+- 次: 並べ替え後の決定の質の確認（`mise run bench`）、3 つ目の境目（これまでの小目標・メモ・教訓を前に）、目標の決定・実況・返事の並べ替え
+
 ### 足場積みが「置けなかった」を繰り返す（設計書 131、2026-10-09、c33994c、未確認: 実機。user: 「なんかめっちゃブロックの設置失敗してない？」→「修正して」）
 - 原因: 経路探索の真上置きが、地面から浮いたらすぐ置こうとし（`ref.y + 1 < y`）、体が置くマスに重なっていてサーバーが断る。断られるたびに経路が作り直され、跳びも途切れる。10/3 から毎日数百〜千件超
 - 直し: `patches/mineflayer-pathfinder+2.4.5.patch`（`patch-package`）で、足が置くマスの上端に届いてから置く（`ref.y + 2 <= y`）。物理の計算で 1 回の跳びに 6 tick の置ける間がある。テスト 2 件追加、ブリッジ 903 件通過
@@ -22,6 +32,13 @@
 - 原因: 預けた数を預けた直後の `bot.inventory` の減りで数えていた（`36acf96`、10/6）。mineflayer は窓を閉じるまで `bot.inventory` を更新しないので、入ったのに 0 と数え、`tidy` / `stash` が 10/7 以降 125 回「もう持っていない」で失敗した（成功は 10/4 までの 176 回が最後）
 - 直し: 窓の中身（`containerItems()`）の増えで数える。預ける部分を `depositInto` に切り出した。`tidy.test.mjs` に 2 件（数え方を戻すと落ちる）。ブリッジ 901 件通過
 - 要る操作: ブリッジの再起動
+
+### リモートの LLM を Gemini か LiteLLM（Haiku 5.5）から選べるようにした（設計書 127、2026-10-09、未確認: 実際の LiteLLM と Haiku 5.5。user: 「litellm に haiku5.5 を追加したので gemini3.8 の代わりにこれも選べるようにしてほしい」→ 切り替えは「Gemini の役ごと入れ替える」）
+- Gemini の役（画像のある呼び出し・ローカルに入らない呼び出し・失敗したとき・ローカルを切ったとき全部）を `llm.remote.provider: gemini | litellm`（`REMOTE_LLM`）で入れ替える。`litellm` は `LITELLM_MODEL`（必須）、`LITELLM_URL`、`LITELLM_API_KEY`。Gemini のキーは要らない（`stream.py` の必須の確認も切り替わる）
+- `OpenAICompatTextGenerator` に `label`（"Local" / "LiteLLM"）と `images`（画像を `image_url` の data URL で添える。記録は id）を足した。思考の指定は送らない。`RoutingTextGenerator` の振り分けの値と `fallback` は `gemini` を `remote` に改名（リリース前なので互換は残さない）
+- `tools/gemini_usage.py` は `LiteLLM` の行を `litellm:<用途>` と数える（Gemini の値段では費用を出さない）。`collect_run_info` に `remote_llm`
+- テスト: 画像の送信と記録、ファクトリ（`tests/unit/factories/test_text_factory.py`）、設定の読み込み、実行情報。`python -m pytest tests/unit` 1655 件が通る（`test_stream_factory.py` は配信が 8765 を使っているため 1 件落ちる。既知）
+- 実機の確認はまだ: LiteLLM に実際に送って、モデル名、`json_schema` / `tool_choice: required` が通るか、画像の読み、出力 8192 が Haiku の上限に収まるか
 
 ### 畑の柵の輪に深い穴があり、畑が 2 時間済みにならなかった（設計書 128、2026-10-09、fb7aff8、未確認: 実機。user: 「畑の失敗調査して」→「修正して」）
 - 原因: 北東の角の輪の 2 マスの下が深さ 12 の穴で、整地は上下 8 段までしか見ず `too deep` で触らない列にした。柵は床の上にしか立たず 24 回失敗、`facility(wheat_farm_1)` は柵が残るので済まなかった（20:23Z〜22:15Z）

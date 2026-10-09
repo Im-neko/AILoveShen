@@ -1,11 +1,12 @@
 """
-ローカルの LLM（OpenAI 互換の /v1/chat/completions: FreeToken、Ollama、llama.cpp、vLLM）で
-テキストを生成するアダプター（docs/design/36 §3）。
+OpenAI 互換の /v1/chat/completions（FreeToken、Ollama、llama.cpp、vLLM、LiteLLM）で
+テキストを生成するアダプター（docs/design/36 §3、127）。
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 from collections.abc import Mapping, Sequence
@@ -20,6 +21,8 @@ from ailoveshen.application.ports.output.text_generator import (
     ITextGenerator,
     ToolChoice,
     ToolSpec,
+    split_cache_breaks,
+    strip_cache_breaks,
 )
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import Screenshot
@@ -31,21 +34,30 @@ from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     strip_thinking,
 )
 
-THINKING_PARAMS = ("chat_template_kwargs", "none")
+THINKING_PARAMS = ("chat_template_kwargs", "anthropic", "none")
 RESPONSE_FORMATS = ("auto", "off")
 THINKING_ON = ("medium", "high")  # Gemini の thinking_levels のうち、ローカルで思考させる深さ
 SCHEMA_ERRORS_SHOWN = 8
+IMAGE_TOKENS = 1600  # 画像 1 枚の見積もり（data: URL の長さではなく）
+EPHEMERAL = {"type": "ephemeral"}
+MAX_CACHE_MARKS = 4  # Claude は 1 リクエストに 4 つまで
 
 
 class OpenAICompatTextGenerator(ITextGenerator):
     """
-    OpenAI 互換のサーバーのインフラ側アダプター。画像は受け付けない（振り分けで Gemini に回す）。
+    OpenAI 互換のサーバーのインフラ側アダプター。画像は `images=True`（LiteLLM 経由の Claude など
+    画像を読めるモデル）のときだけ受け付ける。ローカルは画像なしで動かすので、振り分けでリモートに回す。
 
     - JSON: スキーマをいつもプロンプトに書き、`response_format: json_schema` も送る（断られたら
       以後送らない）。答えをスキーマの主な決まりで確かめ、違えば 1 回だけ書き直させる
     - 道具: `tools` と `tool_choice: required`（断られたら auto）。道具を呼ばなければ、道具の名前と
       引数の JSON で選ばせる
-    - 考える深さ: 用途の thinking_level が medium / high なら思考あり
+    - 考える深さ: 用途の thinking_level が medium / high なら思考あり。渡し方は thinking_param:
+      chat_template_kwargs（ローカルのサーバー）、anthropic（LiteLLM 経由の Claude: 思考ありは
+      `thinking: adaptive` と `reasoning_effort`、なしは `thinking: disabled`）、none
+    - モデル: 用途ごとに変えられる（models。コードを書く用途だけ上のモデルにする）
+    - キャッシュ: prompt_cache のとき、system と、プロンプトの CACHE_BREAK の手前に `cache_control`
+      （Claude のプロンプトキャッシュ。docs/design/127 §5）。そうでなければ印を取り除くだけ
     """
 
     def __init__(
@@ -66,6 +78,10 @@ class OpenAICompatTextGenerator(ITextGenerator):
         timeout_seconds: float = 180.0,
         generation_log: Optional[IGenerationLog] = None,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        label: str = "Local",
+        images: bool = False,
+        models: Optional[Mapping[str, str]] = None,
+        prompt_cache: bool = False,
     ) -> None:
         """
         Args:
@@ -76,7 +92,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 までに減らす
             context_tokens: サーバーの 1 回の最大の長さ
             response_format: "auto"（json_schema を送り、断られたらやめる）か "off"
-            thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）か "none"
+            thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）、"anthropic"（thinking と
+                reasoning_effort。LiteLLM 経由の Claude）か "none"
             thinking_levels: 用途ごとの深さ（Gemini の表をそのまま使う）
             default_thinking_level: 表にない用途の深さ
             thinking_purposes: 思考させる用途（与えれば thinking_levels より優先。ローカルは思考が
@@ -89,12 +106,21 @@ class OpenAICompatTextGenerator(ITextGenerator):
             timeout_seconds: 1 回の上限
             generation_log: デバッグの記録の残し先
             transport: テスト用
+            label: ログに出す名前（使用量の行の頭: "Local" か "LiteLLM"）
+            images: 画像を受け付けるか（画像を読めるモデルだけ）
+            models: 用途 → モデル（表にない用途は model）
+            prompt_cache: system と CACHE_BREAK の手前に cache_control を付ける（Claude だけ。
+                Gemini などに付けると、暗黙のキャッシュが止まる）
         """
         if response_format not in RESPONSE_FORMATS:
             raise ValueError(f"response_format must be one of {RESPONSE_FORMATS}")
         if thinking_param not in THINKING_PARAMS:
             raise ValueError(f"thinking_param must be one of {THINKING_PARAMS}")
         self._model = model
+        self._label = label
+        self._images = images
+        self._prompt_cache = prompt_cache
+        self._models = {k: v for k, v in (models or {}).items() if v}
         self._max_output = max_output_tokens
         self._context = context_tokens
         self._use_response_format = response_format == "auto"
@@ -117,7 +143,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
 
     @property
     def name(self) -> str:
-        return self._model or "local"
+        return self._model or self._label.lower()
 
     async def generate(
         self,
@@ -125,7 +151,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
     ) -> str:
-        message = await self._chat(_messages(prompt, system_instruction), purpose)
+        message = await self._chat(_messages(prompt, system_instruction, cache=self._prompt_cache), purpose)
         return strip_thinking(message.get("content") or "")
 
     async def generate_json(
@@ -136,8 +162,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
         purpose: Optional[str] = None,
         images: Sequence[Screenshot] = (),
     ) -> dict[str, Any]:
-        _no_images(images)
-        messages = _messages(_with_schema(prompt, schema), system_instruction)
+        self._check_images(images)
+        messages = _messages(_with_schema(prompt, schema), system_instruction, images, self._prompt_cache)
         message = await self._chat(messages, purpose, schema=schema)
         text = message.get("content") or ""
         try:
@@ -146,7 +172,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         except ValueError as e:
             data, errors = None, [str(e)]
         if errors:
-            logger.info(f"ローカルの JSON を書き直させる（{purpose}）: {'; '.join(errors[:3])}")
+            logger.info(f"{self._label} の JSON を書き直させる（{purpose}）: {'; '.join(errors[:3])}")
             messages += [
                 {"role": "assistant", "content": text},
                 {
@@ -160,13 +186,13 @@ class OpenAICompatTextGenerator(ITextGenerator):
             try:
                 data = drop_empty(extract_json(message.get("content") or ""), schema)
             except ValueError as e:
-                raise TextGenerationError(f"local model gave no JSON object: {e}") from e
+                raise TextGenerationError(f"{self._label} gave no JSON object: {e}") from e
             left = check(data, schema)
             if left:
                 # 残りは呼び出し側の確かめ（使えない決定の差し戻し）に任せる
-                logger.warning(f"ローカルの JSON がまだスキーマに合わない（{purpose}）: {left[:3]}")
+                logger.warning(f"{self._label} の JSON がまだスキーマに合わない（{purpose}）: {left[:3]}")
         if not isinstance(data, dict):
-            raise TextGenerationError("local model's answer is not a JSON object")
+            raise TextGenerationError(f"{self._label}'s answer is not a JSON object")
         return data
 
     async def choose_tool(
@@ -177,8 +203,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
         purpose: Optional[str] = None,
         images: Sequence[Screenshot] = (),
     ) -> ToolChoice:
-        _no_images(images)
-        messages = _messages(prompt, system_instruction)
+        self._check_images(images)
+        messages = _messages(prompt, system_instruction, images, self._prompt_cache)
         message = await self._chat(messages, purpose, tools=tools)
         calls = message.get("tool_calls") or []
         if calls:
@@ -191,7 +217,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
                     args = {}
             return ToolChoice(name=str(function.get("name") or ""), args=dict(args))
         # 道具を呼ばずに文で答えた: 道具の名前と引数の JSON で選ばせる
-        logger.info(f"ローカルが道具を呼ばなかったので、JSON で選ばせる（{purpose}）")
+        logger.info(f"{self._label} が道具を呼ばなかったので、JSON で選ばせる（{purpose}）")
         data = await self.generate_json(
             _with_tools(prompt, tools),
             {
@@ -204,9 +230,14 @@ class OpenAICompatTextGenerator(ITextGenerator):
             },
             system_instruction,
             purpose,
+            images,
         )
         args = data.get("args")
         return ToolChoice(name=str(data.get("tool") or ""), args=args if isinstance(args, dict) else {})
+
+    def _check_images(self, images: Sequence[Screenshot]) -> None:
+        if images and not self._images:
+            raise TextGenerationError(f"{self._label} takes no images (route them to the remote model)")
 
     async def close(self) -> None:
         if not self._client.is_closed:
@@ -220,13 +251,13 @@ class OpenAICompatTextGenerator(ITextGenerator):
                     response.raise_for_status()
                     self._model = response.json()["data"][0]["id"]
                 except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
-                    raise TextGenerationError(f"local LLM: could not read /models: {e}") from e
-                logger.info(f"ローカルの LLM: {self._model}")
+                    raise TextGenerationError(f"{self._label} LLM: could not read /models: {e}") from e
+                logger.info(f"{self._label} の LLM: {self._model}")
             return self._model
 
     def _output_budget(self, messages: list[dict[str, Any]], tools: Sequence[ToolSpec]) -> int:
         """出力の上限: 設定の値か、コンテキストの残り（見積もり）の小さい方（最低 1024）。"""
-        used = sum(estimate_tokens(str(m.get("content") or "")) for m in messages)
+        used = sum(estimate_tokens(_text(m.get("content"))) + IMAGE_TOKENS * len(_images_in([m])) for m in messages)
         used += sum(estimate_tokens(json.dumps(t.parameters)) + estimate_tokens(t.description) for t in tools)
         return max(1024, min(self._max_output, self._context - used))
 
@@ -234,6 +265,11 @@ class OpenAICompatTextGenerator(ITextGenerator):
         if self._think_purposes is not None:
             return (purpose or "default") in self._think_purposes
         return self._levels.get(purpose or "default", self._levels["default"]) in THINKING_ON
+
+    def _effort(self, purpose: Optional[str]) -> Optional[str]:
+        """思考させるときの深さ（Gemini の表の medium / high をそのまま使う）。"""
+        level = self._levels.get(purpose or "default", self._levels["default"])
+        return level if level in THINKING_ON else None
 
     async def _chat(
         self,
@@ -243,7 +279,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         tools: Sequence[ToolSpec] = (),
         allow_thinking: bool = True,
     ) -> dict[str, Any]:
-        model = await self._model_id()
+        model = self._models.get(purpose or "default") or await self._model_id()
         think = allow_thinking and self._thinking(purpose)
         body: dict[str, Any] = {
             "model": model,
@@ -253,6 +289,10 @@ class OpenAICompatTextGenerator(ITextGenerator):
         }
         if self._thinking_param == "chat_template_kwargs":
             body["chat_template_kwargs"] = {"enable_thinking": think}
+        elif self._thinking_param == "anthropic":
+            body["thinking"] = {"type": "adaptive" if think else "disabled"}
+            if think and (effort := self._effort(purpose)):
+                body["reasoning_effort"] = effort
         if schema is not None and self._use_response_format:
             body["response_format"] = {
                 "type": "json_schema",
@@ -278,7 +318,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
             choice = data["choices"][0]
             message = choice["message"]
         except (KeyError, IndexError, TypeError) as e:
-            raise TextGenerationError(f"local LLM: unexpected answer {str(data)[:200]}") from e
+            raise TextGenerationError(f"{self._label} LLM: unexpected answer {str(data)[:200]}") from e
         if (
             choice.get("finish_reason") == "length"
             and not (message.get("content") or "").strip()
@@ -288,13 +328,13 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 # 上限（thinking_max_tokens）を思考で使い切った: 思考なしで聞き直す。上限を決めていない用途は、
                 # 同じことを頼み直しても同じなのでエラーにする
                 logger.warning(
-                    f"ローカルの思考が上限（{body['max_tokens']} トークン）で答えに届かなかった: "
+                    f"{self._label} の思考が上限（{body['max_tokens']} トークン）で答えに届かなかった: "
                     f"思考なしで聞き直す（{purpose}）"
                 )
                 return await self._chat(messages, purpose, schema, tools, allow_thinking=False)
             raise TextGenerationError(
-                f"local LLM output was cut at {body['max_tokens']} tokens with no answer "
-                f"({purpose}): raise llm.local.max_output_tokens or think less for this purpose"
+                f"{self._label} LLM output was cut at {body['max_tokens']} tokens with no answer "
+                f"({purpose}): raise max_output_tokens or think less for this purpose"
             )
         return message
 
@@ -311,16 +351,16 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 if retry.status_code < 400:
                     self._drop(field)
                     logger.warning(
-                        f"ローカルの LLM は {field} を受け付けない（{response.status_code}）: 以後は送らない"
+                        f"{self._label} は {field} を受け付けない（{response.status_code}）: 以後は送らない"
                     )
                 response = retry
                 break
         if response.status_code >= 400:
-            error = f"local LLM error {response.status_code}: {response.text[:300]}"
+            error = f"{self._label} LLM error {response.status_code}: {response.text[:300]}"
             self._record(body, purpose, think, started, error=error)
             raise TextGenerationError(error)
         data = response.json()
-        self._log_usage(data, started, purpose, think)
+        self._log_usage(data, body, started, purpose, think)
         self._record(body, purpose, think, started, data=data)
         return data
 
@@ -334,7 +374,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 # 読み取りの時間切れは str(e) が空になる: 種類と待った秒数を書く
                 why = f"{type(e).__name__} after {time.monotonic() - started:.0f}s: {e}".rstrip(": ")
                 self._record(body, purpose, think, started, error=why)
-                raise TextGenerationError(f"local LLM request failed: {why}") from e
+                raise TextGenerationError(f"{self._label} LLM request failed: {why}") from e
 
     @staticmethod
     def _optional_fields(body: dict[str, Any]) -> list[str]:
@@ -361,18 +401,20 @@ class OpenAICompatTextGenerator(ITextGenerator):
         elif field == "chat_template_kwargs":
             self._thinking_param = "none"
 
-    def _log_usage(self, data: dict[str, Any], started: float, purpose: Optional[str], think: bool) -> None:
+    def _log_usage(
+        self, data: dict[str, Any], body: dict[str, Any], started: float, purpose: Optional[str], think: bool
+    ) -> None:
         """使用量の行（Gemini と同じ形: tools/gemini_usage.py が読む）。"""
         usage = data.get("usage") or {}
         prompt = usage.get("prompt_tokens")
-        cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+        cached, written = _cache_tokens(usage)
         thoughts = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
         output = usage.get("completion_tokens")
         logger.info(
-            f"Local {self.name}（thinking {'on' if think else 'off'}）: "
+            f"{self._label} {body.get('model') or self.name}（thinking {'on' if think else 'off'}）: "
             f"{int((time.monotonic() - started) * 1000)}ms, "
-            f"purpose={purpose or 'default'} images=0 prompt={prompt} cached={cached} "
-            f"thoughts={thoughts} output={output} total={usage.get('total_tokens')}"
+            f"purpose={purpose or 'default'} images={len(_images_in(body.get('messages', [])))} prompt={prompt} cached={cached} "
+            f"thoughts={thoughts} output={output} total={usage.get('total_tokens')} cache_write={written}"
         )
 
     def _record(
@@ -389,14 +431,18 @@ class OpenAICompatTextGenerator(ITextGenerator):
         messages = body.get("messages", [])
         entry: dict[str, Any] = {
             "at": datetime.now(timezone.utc).isoformat(),
-            "model": f"local:{self.name}",
+            "model": f"{self._label.lower()}:{body.get('model') or self.name}",
             "purpose": purpose or "default",
             "thinking_level": "on" if think else "off",
             "elapsed_ms": int((time.monotonic() - started) * 1000),
-            "system": messages[0].get("content") if messages and messages[0].get("role") == "system" else None,
-            "prompt": messages[-1].get("content", "") if messages else "",
+            "system": _text(messages[0].get("content")) if messages and messages[0].get("role") == "system" else None,
+            "prompt": _text(messages[-1].get("content", "")) if messages else "",
             "tools": [(t.get("function") or {}).get("name") for t in body.get("tools") or []],
-            "images": [],
+            # 画像そのものは入れない（記録は 2 秒ごとに読まれる）。id で別に取れる
+            "images": [
+                {"id": self._log.record_image(data, mime), "mime_type": mime, "bytes": len(data)}
+                for mime, data in _images_in(messages)
+            ],
         }
         if error is not None:
             entry["error"] = error
@@ -411,22 +457,79 @@ class OpenAICompatTextGenerator(ITextGenerator):
             ]
             entry["finish_reason"] = choice.get("finish_reason")
             usage = data.get("usage") or {}
+            cached, written = _cache_tokens(usage)
             entry["tokens"] = {
                 "prompt": usage.get("prompt_tokens"),
                 "output": usage.get("completion_tokens"),
+                "cached": cached,
+                "cache_write": written,
             }
         try:
             self._log.record(entry)
         except Exception as e:  # noqa: BLE001 - 記録の失敗で生成を止めない
-            logger.debug(f"ローカルの呼び出しを記録できなかった: {e}")
+            logger.debug(f"{self._label} の呼び出しを記録できなかった: {e}")
 
 
-def _messages(prompt: str, system: Optional[str]) -> list[dict[str, Any]]:
+def _cache_tokens(usage: Mapping[str, Any]) -> tuple[int, int]:
+    """キャッシュから読んだトークンと、書き込んだトークン（Claude の cache_control。LiteLLM が返す）。"""
+    details = usage.get("prompt_tokens_details") or {}
+    cached = details.get("cached_tokens") or usage.get("cache_read_input_tokens") or 0
+    written = usage.get("cache_creation_input_tokens") or details.get("cache_creation_tokens") or 0
+    return int(cached), int(written)
+
+
+def _messages(
+    prompt: str, system: Optional[str], images: Sequence[Screenshot] = (), cache: bool = False
+) -> list[dict[str, Any]]:
+    """メッセージ。cache のとき、system の終わりと、プロンプトの CACHE_BREAK の手前に cache_control を付ける。"""
     out: list[dict[str, Any]] = []
+    marks = MAX_CACHE_MARKS
     if system:
-        out.append({"role": "system", "content": system})
-    out.append({"role": "user", "content": prompt})
+        if cache:
+            out.append({"role": "system", "content": [{"type": "text", "text": system, "cache_control": EPHEMERAL}]})
+            marks -= 1
+        else:
+            out.append({"role": "system", "content": system})
+    segments = split_cache_breaks(prompt) if cache else [strip_cache_breaks(prompt)]
+    parts: list[dict[str, Any]] = []
+    for i, segment in enumerate(segments):
+        part: dict[str, Any] = {"type": "text", "text": segment}
+        if cache and i < len(segments) - 1 and marks > 0:
+            part["cache_control"] = EPHEMERAL
+            marks -= 1
+        parts.append(part)
+    parts += [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:{i.mime_type};base64,{base64.b64encode(i.data).decode('ascii')}"},
+        }
+        for i in images
+    ]
+    plain = len(parts) == 1 and "cache_control" not in parts[0]
+    out.append({"role": "user", "content": segments[0] if plain else parts})
     return out
+
+
+def _text(content: Any) -> str:
+    """メッセージの本文（画像つきは部品の並びなので、文の部品だけ）。"""
+    if isinstance(content, str):
+        return content
+    return "".join(str(p.get("text") or "") for p in content or [] if p.get("type") == "text")
+
+
+def _images_in(messages: Sequence[Mapping[str, Any]]) -> list[tuple[str, bytes]]:
+    """メッセージに添えた画像（mime と中身）。"""
+    found: list[tuple[str, bytes]] = []
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str) or not content:
+            continue
+        for part in content:
+            url = (part.get("image_url") or {}).get("url") if part.get("type") == "image_url" else None
+            if url and url.startswith("data:") and ";base64," in url:
+                head, _, payload = url.partition(";base64,")
+                found.append((head[len("data:"):], base64.b64decode(payload)))
+    return found
 
 
 def _with_schema(prompt: str, schema: dict[str, Any]) -> str:
@@ -444,7 +547,3 @@ def _with_tools(prompt: str, tools: Sequence[ToolSpec]) -> str:
         f"arguments as args.\n{json.dumps(listed, ensure_ascii=False)}"
     )
 
-
-def _no_images(images: Sequence[Screenshot]) -> None:
-    if images:
-        raise TextGenerationError("the local model takes no images (route them to Gemini)")

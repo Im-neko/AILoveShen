@@ -74,6 +74,11 @@ def collect_run_info(
         "step_picker": minecraft.step_picker,
         "failure_routing": minecraft.failure_routing,
         "gemini_model": gemini.main_model,
+        "remote_llm": (
+            {"provider": "litellm", "model": llm.remote.litellm.model}
+            if llm is not None and llm.remote.provider == "litellm"
+            else {"provider": "gemini", "model": gemini.main_model}
+        ),
         "jev_model": jev.model,
         "local_llm": (
             {

@@ -18,6 +18,7 @@ from ailoveshen.application.ports.output.text_generator import (
     ITextGenerator,
     ToolChoice,
     ToolSpec,
+    strip_cache_breaks,
 )
 from ailoveshen.domain.exceptions import TextGenerationError
 from ailoveshen.domain.value_objects import Screenshot
@@ -323,6 +324,7 @@ class GeminiTextGenerator(ITextGenerator):
         """レート制限、使用量のログ、呼び出しの記録つきで API を呼ぶ。画像はテキストの後。"""
         await self._wait_for_rate_limit()
 
+        prompt = strip_cache_breaks(prompt)
         contents: Any = prompt
         if images:
             contents = [
