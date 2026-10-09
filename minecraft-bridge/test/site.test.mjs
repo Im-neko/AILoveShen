@@ -105,6 +105,7 @@ test('候補地の数字: 平らな区画、水、急な所', () => {
   assert.equal(plain.water_pct, 0)
   assert.equal(plain.steep_pct, 0)
   assert.equal(plain.distance, 0)
+  assert.equal(plain.stand_y, 70, '中心に立つ足の高さ（地面の 1 つ上。leveled / placed の where の y）')
 
   // 西半分は海、東の端は崖（x >= 20 で 6 段高い）
   const coast = (p) => {

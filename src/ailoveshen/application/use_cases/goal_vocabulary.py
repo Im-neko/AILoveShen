@@ -249,7 +249,13 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
     return {
         "predicate": {"type": "string", "enum": [p.value for p in predicates]},
         "item": {"type": "string", "description": ITEM_DESCRIPTION},
-        "count": {"type": "integer", "minimum": 1, "maximum": MAX_GOAL_COUNT},
+        "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": MAX_GOAL_COUNT,
+            "description": "have / stored: 1-256; farmed and placed: 1-64; planted: 1-32 "
+            "(a bigger number is sent back)",
+        },
         "distance": {
             "type": "integer",
             "minimum": MIN_DISTANCE,
@@ -268,7 +274,9 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
             "(within 2 m of a spot you know, e.g. from find_blocks). Default home. home and "
             "near_home need a finished home: before that use build:<name> or x,y,z. leveled: home "
             "(the ground around the home at its floor) or x,y,z (the ground around it; y is the "
-            "height you stand at there, the ground is y-1)",
+            "height you stand at there, the ground is y-1). Write x,y,z only when you know all "
+            "three numbers (the town site line gives the standing height y of a surveyed site); "
+            "x,z alone is sent back. A bed goes in the home only: placed(bed, home)",
         },
     }
 

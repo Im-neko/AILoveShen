@@ -74,3 +74,26 @@ test('materials.missing: 持っている物を引いた、まだ足りない物�
   const [none] = checkConditions([{ predicate: 'have', item: 'wooden_pickaxe', count: 1 }], bot, state, k, world({ crafting_table: 1 }), { materials: true })
   assert.ok(none.materials.missing.includes('wooden_pickaxe') && none.materials.missing.some((n) => n.endsWith('_log') || n.endsWith('_planks')), none.materials.missing.join(','))
 })
+
+test('判定できない条件が複数あれば、全部をまとめて言う。1 件だけなら、その理由のまま', () => {
+  const specs = [
+    { predicate: 'have', item: 'stick', count: 1 },
+    { predicate: 'placed', item: 'stick', where: 'home' },
+    { predicate: 'have', item: 'nonsense_item', count: 1 },
+    { predicate: 'explored', distance: 30 }
+  ]
+  assert.throws(() => checkConditions(specs, bot, state, k, world({ stick: 1 })), (e) => {
+    assert.match(e.message, /placed\(stick, home\): placed needs an item that is a block/)
+    assert.match(e.message, /have\(nonsense_item, 1\): /)
+    assert.match(e.message, /explored\(30\): explored cannot be a condition/)
+    return true
+  })
+  assert.throws(() => checkConditions([specs[1]], bot, state, k, world({})), (e) => e.message.startsWith('placed needs an item that is a block'))
+})
+
+test('ベッドは家の中だけ: 家以外の場所の placed(bed, …) は、直し方を言って断る', () => {
+  const ok = checkConditions([{ predicate: 'placed', item: 'bed', where: 'home' }], bot, state, k, world({}))
+  assert.equal(ok[0].met, false)
+  assert.throws(() => checkConditions([{ predicate: 'placed', item: 'bed', where: '160,64,-462' }], bot, state, k, world({})),
+    /a bed is placed in the home only: write placed\(bed, home\)/)
+})

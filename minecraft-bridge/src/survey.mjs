@@ -108,10 +108,13 @@ export function surveySite (bot, state, site) {
   const animals = nearbyEntities(bot)
     .filter(({ e }) => HUNTABLE.has(e.name) && Math.hypot(e.position.x - site.x, e.position.z - site.z) <= SITE_RADIUS).length
   const from = state.survey?.center ?? site
+  const middle = heights.get('0,0')
   return {
     id: site.id,
     x: site.x,
     z: site.z,
+    // 中心に立つ足の高さ（地面の 1 つ上。leveled / placed の where は x,y,z で、y はこの高さ）。読み込めていなければ null
+    stand_y: middle ? middle.y + 1 : null,
     distance: Math.round(Math.hypot(site.x - from.x, site.z - from.z)),
     flat_plots: plots,
     water_pct: loaded ? round((water / loaded) * 100, 0) : 0,

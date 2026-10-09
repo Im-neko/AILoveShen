@@ -65,3 +65,27 @@ def test_dusk_says_how_long_until_night_not_only_until_morning():
     assert format_time(dusk) == "夕方（暗くなってきた。夜になるまで約 0 分、そのあと朝まで約 9 分）"
     assert format_time_en(dusk).startswith("dusk (night in 0 minutes")
     assert format_time({"phase": "night", "time_of_day": 18000}) == "夜（朝まで約 5 分）"
+
+
+def test_the_town_site_says_the_standing_height_so_a_where_can_be_written_as_x_y_z():
+    """計画が `leveled(160,-462)` と y を抜いて、3 回とも差し戻された（2026-10-09）: 立つ高さを見せる。"""
+    from ailoveshen.domain.value_objects import TownSite
+    from ailoveshen.infrastructure.adapters.prompts.stream_context import (
+        format_site_choice,
+        format_site_facts,
+    )
+
+    row = {
+        "id": "E", "x": 160, "z": -462, "stand_y": 64, "distance": 96, "flat_plots": 12,
+        "water_pct": 0, "steep_pct": 0, "stone": 0, "coal": 0, "iron": 0, "logs": 6,
+        "lava": 0, "animals": 3, "loaded_pct": 100,
+    }  # fmt: skip
+    assert "（x=160 z=-462 立つ高さ y=64、家から 96m）" in format_site_facts(row)
+    assert "立つ高さ" not in format_site_facts({**row, "stand_y": None})
+    site = TownSite(site_id="E", reason="広い", name="エコー・プレイン", x=160, z=-462)
+    assert "（160,64,-462）に作る" in format_site_choice(site, 64)
+    assert "（160,-462）に作る" in format_site_choice(site)
+
+    obs = GameObservation(state={"survey": {"sites": [row], "planned": 9}}, candidates=(), health=20, food=20)
+    text = format_activity(Activity(observation=obs, site=site))
+    assert "街の場所（決めたこと）: 「エコー・プレイン」を東（160,64,-462）に作る" in text

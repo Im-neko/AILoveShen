@@ -179,8 +179,9 @@ def site_name(site_id: str) -> str:
 
 def format_site_facts(row: dict) -> str:
     """ブリッジが測った候補地 1 か所の数字（半径 32 ブロック）。"""
+    stand = f" 立つ高さ y={row['stand_y']}" if row.get("stand_y") is not None else ""
     return (
-        f"{site_name(str(row['id']))}（x={row['x']} z={row['z']}、家から {row['distance']}m）: "
+        f"{site_name(str(row['id']))}（x={row['x']} z={row['z']}{stand}、家から {row['distance']}m）: "
         f"家を建てられる平らな区画 {row['flat_plots']}、水 {row['water_pct']}%、"
         f"急な段差 {row['steep_pct']}%、地表の石 {row['stone']}・石炭 {row['coal']}・"
         f"鉄 {row['iron']}、原木 {row['logs']}、溶岩 {row['lava']}、動物 {row['animals']}"
@@ -188,9 +189,10 @@ def format_site_facts(row: dict) -> str:
     )
 
 
-def format_site_choice(site: TownSite) -> str:
-    """選んだ街の場所（決めたこと）。"""
-    return f"「{site.name}」を{site_name(site.site_id)}（{site.x},{site.z}）に作る: {site.reason}"
+def format_site_choice(site: TownSite, stand_y: int | None = None) -> str:
+    """選んだ街の場所（決めたこと）。`stand_y` はそこに立つ足の高さ（where に x,y,z と書くときの y）。"""
+    at = f"{site.x},{stand_y},{site.z}" if stand_y is not None else f"{site.x},{site.z}"
+    return f"「{site.name}」を{site_name(site.site_id)}（{at}）に作る: {site.reason}"
 
 
 def format_activity(activity: Activity | None, with_ids: bool = False, cache_break: bool = False) -> str:
@@ -378,7 +380,9 @@ def _format_site(activity: Activity) -> list[str]:
     if activity.site is None and not rows:
         return []
     if activity.site is not None:
-        lines = [f"- 街の場所（決めたこと）: {format_site_choice(activity.site)}"]
+        row = next((r for r in rows if r.get("id") == activity.site.site_id), None)
+        stand_y = row.get("stand_y") if row else None
+        lines = [f"- 街の場所（決めたこと）: {format_site_choice(activity.site, stand_y)}"]
     else:
         done = f"{len(rows)}/{survey.get('planned', 0)}"
         lines = [f"- 街の場所: まだ決めていない（候補地を調べた数 {done}）"]

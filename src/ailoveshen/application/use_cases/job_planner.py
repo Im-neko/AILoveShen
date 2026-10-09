@@ -132,26 +132,33 @@ def parse_plan(data: dict[str, Any]) -> tuple[Job, ...]:
     if not raws:
         raise ValueError("write at least one job")
     jobs = []
+    problems = []
     for i, raw in enumerate(raws[:MAX_JOBS], 1):
+        # 見つかった間違いは全部まとめて言う（1 件ずつ差し戻すと、直したそばから次を踏んで書き直しが尽きる）
+        errors = []
+        title = str(raw.get("title", "")).strip()
+        if not title:
+            errors.append("a job needs a title (the stage's name)")
+        steps = []
+        for j, step in enumerate(raw.get("steps") or [], 1):
+            try:
+                steps.append(_parse_step(step))
+            except ValueError as e:
+                errors.append(f"step {j}: {e}")
+        spec = None
         try:
-            title = str(raw.get("title", "")).strip()
-            if not title:
-                raise ValueError("a job needs a title (the stage's name)")
-            steps = []
-            for j, step in enumerate(raw.get("steps") or [], 1):
-                try:
-                    steps.append(_parse_step(step))
-                except ValueError as e:
-                    raise ValueError(f"step {j}: {e}") from e
             spec = parse_spec(raw)
             if spec.predicate not in STEP_PREDICATES:
                 allowed = ", ".join(sorted(p.value for p in STEP_PREDICATES))
-                raise ValueError(f"{spec.predicate.value} cannot be a job here (use {allowed})")
-            jobs.append(
-                Job(spec, str(raw.get("reason", "")).strip(), title=title, steps=tuple(steps))
-            )
+                errors.append(f"{spec.predicate.value} cannot be a job here (use {allowed})")
         except ValueError as e:
-            raise ValueError(f"job {i}: {e}") from e
+            errors.append(str(e))
+        if errors:
+            problems.append(f"job {i}: " + "; ".join(errors))
+        else:
+            jobs.append(Job(spec, str(raw.get("reason", "")).strip(), title=title, steps=tuple(steps)))
+    if problems:
+        raise ValueError("; ".join(problems))
     return tuple(jobs)
 
 

@@ -250,6 +250,17 @@ class TestParse:
         with pytest.raises(ValueError, match=why):
             parse_plan(_data(**over))
 
+    def test_every_problem_is_named_at_once(self):
+        """1 件ずつ差し戻すと、直したそばから次を踏んで書き直しが尽きる。"""
+        data = _data()
+        bad = {"title": " ", "predicate": "custom", "name": "x", "reason": "r", "steps": [{"predicate": "custom", "name": "x", "reason": "r"}, {"predicate": "have", "reason": "r"}]}
+        data["jobs"] = [bad, dict(data["jobs"][0]), {**data["jobs"][0], "title": ""}]
+        with pytest.raises(ValueError) as e:
+            parse_plan(data)
+        text = str(e.value)
+        assert text.count("job 1:") == 1 and "job 3:" in text and "job 2:" not in text
+        assert "needs a title" in text and "step 1: " in text and "step 2: " in text and "cannot be a job here" in text
+
     def test_no_jobs_is_refused(self):
         with pytest.raises(ValueError, match="at least one job"):
             parse_plan({"outline": "", "jobs": []})
@@ -613,3 +624,11 @@ class TestDecisionCannotEraseThePlan:
         job = session.plan.current.jobs[0]
         assert len(session.plan.current.jobs) == 1 and job.title == "水の確保"
         assert job.steps == WATER_STEPS
+
+
+def test_the_schema_tells_the_count_limits_and_that_a_where_needs_all_three_numbers():
+    """count 100 / 200 と、y のない座標が、3 回とも差し戻された（2026-10-09）。"""
+    step = plan_schema()["properties"]["jobs"]["items"]["properties"]["steps"]["items"]["properties"]
+    assert "farmed and placed: 1-64" in step["count"]["description"]
+    assert "x,z alone is sent back" in step["where"]["description"]
+    assert "placed(bed, home)" in step["where"]["description"]

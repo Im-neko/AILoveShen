@@ -189,6 +189,8 @@ function validGoal (spec, bot, state, knowledge) {
         needHome()
         return { spec: { predicate, item: spec.item, where: 'home' } }
       }
+      // ベッドは家の中だけ（家具）。「bed」はどの色のベッドでもという意味で、置ける物の名前ではない（ほかの場所は色つきの名前）
+      if (spec.item === 'bed') throw new Error('a bed is placed in the home only: write placed(bed, home) (the house comes first: built())')
       return { spec: checkPlacedSpec(bot, state, spec) }
     case 'at_home':
       needHome()
@@ -1078,28 +1080,45 @@ export function shortfallOf (knowledge, world, item, count = 1) {
 
 // options.materials: have / placed / stored の条件に、その物の材料の木（materialsOf）を添える
 export function checkConditions (specs, bot, state, knowledge, world, options = {}) {
-  return specs.map((spec) => {
-    if (!CONDITION_PREDICATES.includes(spec.predicate)) {
-      throw new Error(`${spec.predicate} cannot be a condition; use one of ${CONDITION_PREDICATES.join(', ')}`)
-    }
-    let goal
+  // 判定できない条件は、見つかった全部をまとめて言う（1 件ずつ差し戻すと、直したそばから次を踏んで書き直しが尽きる）
+  const rejected = []
+  const out = specs.map((spec) => {
     try {
-      goal = makeGoal(spec, bot, state, knowledge)
+      return checkCondition(spec, bot, state, knowledge, world, options)
     } catch (e) {
-      if (e instanceof NotYetError) return { spec, met: false, lines: [e.message], impossible: [] }
-      throw e
+      rejected.push({ spec, error: e })
+      return null
     }
-    const r = evaluate(bot, { ...state, goal }, knowledge, world)
-    const out = { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)], next_step: r.next ? { predicate: 'have', item: r.next.item, count: r.next.count } : null, gather: !!r.gather }
-    if (options.materials && ['have', 'placed', 'stored'].includes(goal.spec.predicate) && goal.spec.item) {
-      try {
-        out.materials = { ...materialsOf(knowledge, world, goal.spec.item), missing: shortfallOf(knowledge, world, goal.spec.item, goal.spec.count ?? 1) }
-      } catch {
-        // 材料の木を作れない物（作り方が分からない、など）は添えない
-      }
-    }
-    return out
   })
+  if (rejected.length === 1) throw rejected[0].error
+  if (rejected.length) {
+    const label = ({ spec }) => `${spec.predicate}(${Object.entries(spec).filter(([k, v]) => k !== 'predicate' && v != null).map(([, v]) => v).join(', ')})`
+    throw new Error(rejected.map((r) => `${label(r)}: ${r.error.message}`).join('; '))
+  }
+  return out
+}
+
+function checkCondition (spec, bot, state, knowledge, world, options) {
+  if (!CONDITION_PREDICATES.includes(spec.predicate)) {
+    throw new Error(`${spec.predicate} cannot be a condition; use one of ${CONDITION_PREDICATES.join(', ')}`)
+  }
+  let goal
+  try {
+    goal = makeGoal(spec, bot, state, knowledge)
+  } catch (e) {
+    if (e instanceof NotYetError) return { spec, met: false, lines: [e.message], impossible: [] }
+    throw e
+  }
+  const r = evaluate(bot, { ...state, goal }, knowledge, world)
+  const out = { spec: goal.spec, met: r.met, lines: r.lines, impossible: [...new Set(r.impossible)], next_step: r.next ? { predicate: 'have', item: r.next.item, count: r.next.count } : null, gather: !!r.gather }
+  if (options.materials && ['have', 'placed', 'stored'].includes(goal.spec.predicate) && goal.spec.item) {
+    try {
+      out.materials = { ...materialsOf(knowledge, world, goal.spec.item), missing: shortfallOf(knowledge, world, goal.spec.item, goal.spec.count ?? 1) }
+    } catch {
+      // 材料の木を作れない物（作り方が分からない、など）は添えない
+    }
+  }
+  return out
 }
 
 // 体の欲求。数値と重さだけで、行動の名前は書かない（選ぶ側は、これを明示すると判断がよくなり、

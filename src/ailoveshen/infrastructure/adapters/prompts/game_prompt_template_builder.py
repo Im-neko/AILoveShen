@@ -980,7 +980,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
 
     def describe_site(self, site: TownSite, facts: dict[str, Any]) -> str:
         """選んだ街の場所の説明（決めたことと、そこの数字）。"""
-        lines = [f"街「{site.name}」の場所。{format_site_choice(site)}"]
+        lines = [f"街「{site.name}」の場所。{format_site_choice(site, facts.get('stand_y') if facts else None)}"]
         if facts:
             lines.append(f"そこの地形: {format_site_facts(facts)}")
         return "\n".join(lines)
