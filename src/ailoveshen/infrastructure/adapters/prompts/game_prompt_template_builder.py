@@ -1393,7 +1393,12 @@ def _format_offered(c: Candidate) -> str:
 def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> str:
     if b is None:
         return "なし（前に建てた家が完成していて、拠点になっている）"
-    counts = ", ".join(f"{k.value} {v}" for k, v in b.material_counts().items())
+    materials = b.material_counts()
+    counts = ", ".join(f"{k.value} {v}" for k, v in materials.items())
+    planks = next((v for k, v in materials.items() if k.value == "planks"), 0)
+    if planks:
+        # 板材の数を原木の数と取り違えて have(log, 71) を決めた（原木 18 本で足りる: 2026-10-09）
+        counts += f"。planks {planks} は原木 {-(-planks // 4)} 本ぶん（原木 1 本で 4 枚）"
     size = f"{b.width}x{b.depth}、壁の高さ {b.wall_height}"
     build = obs.state.get("build") if obs else None
     if obs is not None and obs.house_complete:

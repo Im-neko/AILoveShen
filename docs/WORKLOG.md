@@ -7,6 +7,11 @@
 
 ## Completed Work
 
+### 最初の家の材料集めで夕方までに建てきれない（設計書 132、2026-10-09、未確認: 実機。user: 「仮の家の場合は柱に原木つかったり装飾は不要です。より早くつくれるようにしてほしいです」）
+- 確認: 仮の家はすでに柱なし・飾りなし（109。72 ブロックは板材 71 + ドア）。遅かったのは材料集め: 板材 71 を原木 71 と取り違えた `have(log, 71)` と、出していない `planted` を束ねたこと（0 日目、夕方まで約 10 分で板材がそろわず穴で夜を越した）
+- 直し: 「建てる家」の行に原木の本数（71 枚 = 18 本）も書く。`together` の条件も「今使える小目標」から選ばせる。テスト 2 件追加、Python 1651 件通過
+- 判断待ち: 壁の高さ 2、土・丸石の壁、斧を先に（設計書 132 §3）
+- 要る操作: 配信（Python）の再起動
 ### LiteLLM の Claude: 思考の切り替え・用途ごとのモデル・プロンプトキャッシュ（設計書 127 §5、2026-10-09、未確認: 並べ替え後の決定の質、実際の配信。user: 「順にすすめてほしい。状況に応じて思考もオンに。コード実装時は sonnet も」）
 - 実機の `llm.ideta.net` で確かめた（Haiku 5.5、Sonnet 5.5）: 指定しないと Haiku は思考が走る（`disabled` で止まる。`reasoning_effort: none` では止まらない）。思考の設定を途中で変えるとキャッシュが外れる。`json_schema` / `tool_choice: required` / 画像 / `cache_control`（system、ユーザーメッセージの部品、`ttl: 1h`）は通る
 - 1. 思考と用途ごとのモデル: `thinking_param: anthropic`（Gemini の `thinking_levels` が medium / high の用途は `thinking: adaptive` + `reasoning_effort`、ほかは `disabled`）。`llm.remote.litellm.models`（`LITELLM_CODE_MODEL=claude-sonnet-5-5` で `skill_write` / `check_write` が LiteLLM に回ったとき Sonnet になる。`llm.routes` が local の用途はローカルのまま: user「routes がローカルの場合はコードもローカルのモデルで書いてほしい」）。使用量の行と記録は実際に答えたモデル

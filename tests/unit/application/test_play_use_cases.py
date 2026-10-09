@@ -688,6 +688,21 @@ class TestAdvancePlay:
         bridge.set_goal.assert_awaited_once_with(HAVE_PLANKS, (), (), together=(), level_areas=())
 
     @pytest.mark.asyncio
+    async def test_a_bundle_member_that_is_not_offered_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """家がなくて出していない planted を束に入れた決定は差し戻す（植林場がなく、進まなかった）。"""
+        bundled = {**PLANKS, "together": [{"predicate": "planted", "item": "sapling", "count": 4}]}
+        text_generator.generate_json.side_effect = [bundled, PLANKS]
+        session = _session()
+
+        await use_case.execute(session)
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "planted in together is not one of the goals offered" in error
+        assert session.goal.spec == HAVE_PLANKS
+
+    @pytest.mark.asyncio
     async def test_a_goal_already_met_is_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):

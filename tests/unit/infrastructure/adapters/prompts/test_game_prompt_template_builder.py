@@ -218,6 +218,14 @@ class TestGamePromptTemplateBuilder:
         assert "家: 建ててある、ベッドあり、チェスト 0\n- 今いる場所: 家の中\n" in prompt
         assert "チェストの中身: なし" in prompt
 
+    def test_goal_prompt_house_planks_are_also_told_as_logs(self):
+        """板材の数を原木の数と取り違えない（have(log, 71) を決めた: 原木 18 本ぶん）。"""
+        prompt = _goal_prompt()
+
+        counts = BLUEPRINT.material_counts()
+        planks = next(v for k, v in counts.items() if k.value == "planks")
+        assert f"planks {planks} は原木 {-(-planks // 4)} 本ぶん（原木 1 本で 4 枚）" in prompt
+
     def test_goal_prompt_found_base_is_not_a_house_she_built(self):
         """見つけた拠点（村の家など）は仮の宿と書き、建ててある家・自分のベッドとは読ませない。"""
         obs = replace(_obs(), has_home=True, inside_home=False, bed_in_home=True)

@@ -1352,6 +1352,14 @@ class AdvancePlayUseCase(IAdvancePlay):
                     raise ValueError(
                         f"{decision.spec.predicate.value} is not one of the goals offered"
                     )
+                # 束に入れる条件も、出している小目標から（家がないのに planted を束ねて、植林場がなく
+                # 2 回続けて進まなかった: 2026-10-09 最初の家の材料集め）
+                for extra in decision.together:
+                    if extra.predicate not in predicates:
+                        raise ValueError(
+                            f"{extra.predicate.value} in together is not one of the goals offered "
+                            "now: bundle only goals from the list"
+                        )
                 if failed_goal is not None:
                     _check_remedy(decision, failed_goal, same_failures)
                 _check_time(decision, obs)
