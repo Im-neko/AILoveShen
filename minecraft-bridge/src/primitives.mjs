@@ -2474,6 +2474,24 @@ export function noRoomReason (bot, state, items) {
     'Make room: place another chest in the home (craft one from 8 planks), or throw away what you do not need (toss)'
 }
 
+// 開いたチェストの窓へ todo（品物 → 残りの数）を持っている分だけ入れ、入った分の文（"3 dirt"）を put に足す。
+// 入った分は窓の中身で数える: bot.inventory は窓を閉じるまで変わらない（mineflayer が閉じるときに写す）
+export async function depositInto (bot, window, todo, put) {
+  for (const [item, want] of todo) {
+    const n = Math.min(want, inventoryCounts(bot)[item] ?? 0)
+    if (n <= 0) { todo.set(item, 0); continue }
+    const inChest = () => window.containerItems().filter((i) => i.name === item).reduce((sum, i) => sum + i.count, 0)
+    const before = inChest()
+    try {
+      await window.deposit(bot.registry.itemsByName[item].id, null, n)
+    } catch {
+      // このチェストには入らない（いっぱい）: 入った分だけ数えて、次のチェストへ
+    }
+    const moved = inChest() - before
+    if (moved > 0) { put.push(`${moved} ${item}`); todo.set(item, want - moved) }
+  }
+}
+
 async function putInChests (bot, state, c, signal, items) {
   const todo = new Map(items.map(({ item, count }) => [item, count]))
   const first = c.pos
@@ -2483,20 +2501,7 @@ async function putInChests (bot, state, c, signal, items) {
   for (const pos of [first, ...others]) {
     if (![...todo.values()].some((n) => n > 0)) break
     signal.throwIfAborted()
-    await withOpenChest(bot, state, { pos }, signal, async (window) => {
-      for (const [item, want] of todo) {
-        const n = Math.min(want, inventoryCounts(bot)[item] ?? 0)
-        if (n <= 0) { todo.set(item, 0); continue }
-        const before = inventoryCounts(bot)[item] ?? 0
-        try {
-          await window.deposit(bot.registry.itemsByName[item].id, null, n)
-        } catch {
-          // このチェストには入らない（いっぱい）: 入った分だけ数えて、次のチェストへ
-        }
-        const moved = before - (inventoryCounts(bot)[item] ?? 0)
-        if (moved > 0) { put.push(`${moved} ${item}`); todo.set(item, want - moved) }
-      }
-    })
+    await withOpenChest(bot, state, { pos }, signal, (window) => depositInto(bot, window, todo, put))
   }
   return put
 }

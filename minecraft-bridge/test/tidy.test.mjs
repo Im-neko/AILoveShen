@@ -5,7 +5,7 @@ import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
 import { ground } from '../src/candidates.mjs'
 import { newMemory, rememberChest } from '../src/memory.mjs'
-import { PRIMITIVES } from '../src/primitives.mjs'
+import { PRIMITIVES, depositInto } from '../src/primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -153,4 +153,39 @@ test('地下からでも、価値の高い物を持っていれば戻って預�
   const under = setup({ stone_pickaxe: 1, diamond: 2 }, { at: v(5.5, 45, 2.5) })
   under.bot.blockAt = (p) => (p.y < 45 || p.y === 48 ? { name: 'stone', boundingBox: 'block' } : { name: 'cave_air', boundingBox: 'empty' })
   assert.ok(under.tidy())
+})
+
+// チェストの窓: 入れた物は窓の中身に入り、bot.inventory は窓を閉じるまで変わらない（mineflayer の動き）
+function chestWindow (room = Infinity) {
+  const slots = []
+  return {
+    slots,
+    deposit: async (id, _meta, n) => {
+      const taken = Math.min(n, room - slots.reduce((sum, i) => sum + i.count, 0))
+      if (taken > 0) slots.push({ name: md.items[id].name, count: taken })
+    },
+    containerItems: () => slots
+  }
+}
+
+test('チェストに入れた数は窓の中身で数える（bot.inventory は窓を閉じるまで変わらない: 2026-10-08 入ったのに「もう持っていない」と失敗した）', async () => {
+  const { bot } = setup({ dirt: 38, peony: 3 })
+  const win = chestWindow()
+  const todo = new Map([['dirt', 38], ['peony', 3]])
+  const put = []
+  await depositInto(bot, win, todo, put)
+  assert.deepEqual(put, ['38 dirt', '3 peony'])
+  assert.deepEqual([...todo.values()], [0, 0])
+})
+
+test('チェストがいっぱいで一部しか入らなかったら、入った分だけ数えて残りを次のチェストへ', async () => {
+  const { bot } = setup({ dirt: 38 })
+  const todo = new Map([['dirt', 38]])
+  const put = []
+  await depositInto(bot, chestWindow(30), todo, put)
+  assert.deepEqual(put, ['30 dirt'])
+  assert.equal(todo.get('dirt'), 8)
+  const none = []
+  await depositInto(bot, chestWindow(0), todo, none)
+  assert.deepEqual(none, [], '何も入らなければ何も数えない')
 })
