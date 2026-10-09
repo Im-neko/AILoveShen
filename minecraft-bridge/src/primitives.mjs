@@ -45,6 +45,7 @@ import { reachLand } from './land.mjs'
 import { digOutRoute } from './dig-out.mjs'
 import { campSite, campAt, campSources, campCount, buildCamp, campExit, HAND_BLOCKS } from './camp.mjs'
 import { straySources, scoopBack } from './water-spill.mjs'
+import { lookingAt, cellsBeside, blockedNote } from './sightline.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, nearestShore, driveToShore, EXTEND_M, BoatUnusable, CROSSING_LOOK_M, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -2313,10 +2314,7 @@ export const PRIMITIVES = {
       if (!solid(p)) throw new Error(`the ground beside the hole at ${at} (${p.x},${p.y},${p.z}) is lower: the water would run out of the hole`)
     }
     // 立つ隣のマス: 上が空いている（作物は通れる）、近い順。穴そのものには立たない
-    const me = bot.entity.position
-    const stand = around
-      .filter((p) => bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 2, 0))?.boundingBox === 'empty')
-      .sort((a, b) => a.offset(0.5, 1, 0.5).distanceTo(me) - b.offset(0.5, 1, 0.5).distanceTo(me))[0]
+    const stand = cellsBeside(bot, c.pos)[0]
     if (!stand) throw new Error(`no free cell to stand on beside the water cell ${at}`)
     await goto(bot, new goals.GoalBlock(stand.x, stand.y + 1, stand.z), signal)
     signal.throwIfAborted()
@@ -2330,8 +2328,8 @@ export const PRIMITIVES = {
     if (!solid(c.pos.offset(0, -1, 0))) throw new Error(`no solid floor under the hole at ${at}: the water would drain away`)
     await bot.equip(bucket, 'hand')
     await bot.lookAt(c.pos.offset(0.5, 0.05, 0.5), true)
-    const cursor = bot.blockAtCursor?.(5)
-    console.log(`[water] ${at} に水を置く: 立つ位置 ${bot.entity.position.x.toFixed(1)},${bot.entity.position.y.toFixed(1)},${bot.entity.position.z.toFixed(1)}、視線の先 ${cursor ? `${cursor.name} ${cursor.position.x},${cursor.position.y},${cursor.position.z}` : 'なし'}`)
+    const cursor = lookingAt(bot, 5)
+    console.log(`[water] ${at} に水を置く: 立つ位置 ${bot.entity.position.x.toFixed(1)},${bot.entity.position.y.toFixed(1)},${bot.entity.position.z.toFixed(1)}、視線の先 ${cursor ? `${cursor.name} ${cursor.x},${cursor.y},${cursor.z}` : 'なし'}`)
     bot.activateItem()
     await bot.waitForTicks(8)
     const now = bot.blockAt(c.pos)?.name
@@ -2352,7 +2350,7 @@ export const PRIMITIVES = {
       throw new Error(`the water ran onto the farm at ${[...new Set(where)].join(' ')} instead of staying in the hole at ${at} (${emptyNow ? 'the bucket is empty now' : 'the water_bucket is full again'}${back})`)
     }
     const empty = bot.inventory.items().some((i) => i.name === 'bucket')
-    if (now !== 'water') throw new Error(`the water was not placed at ${at} (${now ?? 'unloaded'} there; ${empty ? 'the bucket is empty now' : 'the water_bucket is still full'})`)
+    if (now !== 'water') throw new Error(`the water was not placed at ${at} (${now ?? 'unloaded'} there; ${empty ? 'the bucket is empty now' : 'the water_bucket is still full'})${blockedNote(bot, c.pos, c.pos.offset(0.5, 0.05, 0.5))}`)
     return `placed water at ${at} (the water_bucket is empty again: bucket)`
   },
   // 道具 ride_boat（設計書 37）: c.pos に向かって水の上をボートで進む（短い水でも）。岸に着いたら降りて拾う
@@ -2376,6 +2374,7 @@ export const PRIMITIVES = {
       else if (bot.heldItem) await bot.unequip('hand')
     }
     let on = 'in the air'
+    let aimed = null // 水や空気を狙って押したマス（効かなかったとき、間のブロックを調べる）
     let blockBefore = null
     let propsBefore = null
     // 押し方を指定したときだけスニークを触る（指定がなければ、そのまま）
@@ -2407,6 +2406,7 @@ export const PRIMITIVES = {
         } else {
           await bot.lookAt(c.pos.offset(0.5, 0.5, 0.5), true)
           bot.activateItem()
+          aimed = c.pos
         }
         on = `at ${block.name} ${c.pos.x},${c.pos.y},${c.pos.z}`
       } else {
@@ -2440,11 +2440,12 @@ export const PRIMITIVES = {
     }
     const dropped = nearbyEntities(bot).filter(({ e }) => e.name === 'item' && !drops.has(e.id))
     if (dropped.length) changes.push(`${dropped.length} item(s) dropped nearby (pickup)`)
-    if (!changes.length) throw new Error(`nothing changed after using ${what} ${on}`)
+    const blocked = () => (aimed ? blockedNote(bot, aimed) : '')
+    if (!changes.length) throw new Error(`nothing changed after using ${what} ${on}${blocked()}`)
     // 空のバケツは、水（溶岩・牛乳）が入ったバケツが増えて初めて成功: 無関係な持ち物の変化（積んだ土を拾い直した、落とし物）で
     // 成功にしない（2026-10-07: 水に届かないまま「+6 dirt」で成功と返り、同じ手を 3 周した）
     if (c.item === 'bucket' && !Object.keys(after).some((n) => n !== 'bucket' && n.endsWith('_bucket') && (after[n] ?? 0) > (before.items[n] ?? 0))) {
-      throw new Error(`the bucket was not filled (${changes.join(', ')}): stand within reach of the water source and aim at it`)
+      throw new Error(`the bucket was not filled (${changes.join(', ')}): stand within reach of the water source and aim at it${blocked()}`)
     }
     return `used ${what} ${on}: ${changes.join(', ')}`
   },

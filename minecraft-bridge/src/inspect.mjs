@@ -13,6 +13,7 @@ import { protectedReason } from './home.mjs'
 import { closedSpace, isolatedSpace, pillarUnder } from './reach.mjs'
 import { liquidReason } from './liquid.mjs'
 import { listRefusals } from './refusals.mjs'
+import { eyeOf, firstBlockBetween, lookingAt } from './sightline.mjs'
 
 const LOGS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'logs')
 const REACH = 4.5 // 右クリックと掘りが届く、目からの距離の目安
@@ -35,7 +36,7 @@ const ago = (iso) => {
 // 自分の今: 位置・向き・スニーク・持ち物・視線の先
 export function inspectSelf (bot, state = null) {
   const me = bot.entity.position
-  const ray = bot.blockAtCursor?.(5)
+  const ray = lookingAt(bot, 5)
   // 家のドアに入れないとき、ドアが開かないのか、そこへ行く道がないのかを分ける: 家のドアまでの距離と、閉じた所にいるか
   const door = state?.home?.outside
   const shut = closedSpace(bot)
@@ -51,7 +52,7 @@ export function inspectSelf (bot, state = null) {
       sneaking: !!bot.controlState?.sneak, sprinting: !!bot.controlState?.sprint,
       held: bot.heldItem?.name ?? null,
       on_ground: !!bot.entity.onGround, in_water: !!bot.entity.isInWater, riding: !!bot.vehicle,
-      looking_at: ray ? { block: ray.name, x: ray.position.x, y: ray.position.y, z: ray.position.z } : null
+      looking_at: ray ? { block: ray.name, x: ray.x, y: ray.y, z: ray.z } : null
     }
   }
 }
@@ -60,20 +61,14 @@ export function inspectSelf (bot, state = null) {
 export function inspectCell (bot, state, pos) {
   const block = bot.blockAt(pos)
   if (!block) return { cell: { x: pos.x, y: pos.y, z: pos.z }, loaded: false }
-  const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
+  const eye = eyeOf(bot)
   const center = pos.offset(0.5, 0.5, 0.5)
   const distance = eye.distanceTo(center)
   const neighbours = {}
   for (const [name, [dx, dy, dz]] of Object.entries(NEIGHBOURS)) neighbours[name] = bot.blockAt(pos.offset(dx, dy, dz))?.name ?? null
-  // 目からそのマスの中心までの線上で、最初に当たるブロック（それがそのマスでなければ、間にある）
-  let between = null
-  try {
-    const dir = center.minus(eye)
-    const hit = bot.world.raycast(eye, dir.normalize(), Math.min(distance + 1, 8))
-    if (hit && !hit.position.equals(pos)) between = { block: hit.name, x: hit.position.x, y: hit.position.y, z: hit.position.z }
-  } catch {
-    between = null
-  }
+  // 目からそのマスの中心までの線上で、最初に当たるブロック（サーバーのレイと同じく、小麦や草の選択枠にも当たる）
+  const hit = firstBlockBetween(bot, eye, center, pos)
+  const between = hit ? { block: hit.name, x: hit.x, y: hit.y, z: hit.z, ...(hit.age !== undefined ? { age: hit.age } : {}) } : null
   const entities = Object.values(bot.entities ?? {})
     .filter((e) => e !== bot.entity && e.position && e.position.distanceTo(center) <= NEAR_ENTITY)
     .map((e) => ({ name: e.name ?? e.type, id: e.id }))

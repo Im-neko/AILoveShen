@@ -499,12 +499,12 @@ class TestCodeLlmSwitch:
 
     CONFIG = Path(__file__).parents[3] / "config"
 
-    def test_the_code_purposes_stay_local_by_default(self, monkeypatch):
+    def test_the_code_purposes_stay_local_by_default(self, monkeypatch, tmp_path):
         monkeypatch.delenv("CODE_LLM", raising=False)
-        routes = load_settings(config_dir=self.CONFIG).llm.routes
+        routes = load_settings(config_dir=self.CONFIG, env_file=tmp_path / "none.env").llm.routes
         assert routes == {"default": "local", "skill_write": "local", "check_write": "local"}
 
-    def test_code_llm_remote_sends_only_the_code_purposes_to_the_remote(self, monkeypatch):
+    def test_code_llm_remote_sends_only_the_code_purposes_to_the_remote(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CODE_LLM", "remote")
-        routes = load_settings(config_dir=self.CONFIG).llm.routes
+        routes = load_settings(config_dir=self.CONFIG, env_file=tmp_path / "none.env").llm.routes
         assert routes == {"default": "local", "skill_write": "remote", "check_write": "remote"}
