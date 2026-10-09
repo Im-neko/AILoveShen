@@ -48,7 +48,7 @@ test('植えたばかりの低い小麦は、線の下を通るので邪魔に�
   assert.equal(blockedNote(bot, WATER), '')
 })
 
-test('水の隣に立てば、間に何もなく、立っているマスの小麦は数えない', () => {
+test('水の隣に立てば、間に何もなく、立つマスの小麦の上を線が越える（目が小麦の高さより上で、すぐ降りる）', () => {
   const bot = botAt(wheat(7, [45, -477], [45, -478]), v(45.5, 74, -477.5))
   assert.equal(firstBlockBetween(bot, v(45.5, 75.62, -477.5), v(44.5, 74.5, -477.5), WATER), null)
 })
@@ -157,4 +157,20 @@ test('水のマスが地面の高さの穴なら、横の地面の上（1 つ上
   assert.match(note, /wheat \(age 5\) at 44,78,-463 is in the line/)
   assert.match(note, /goto (45|43|44),78,-46[123] .*then use the bucket at 44,77,-462 again/)
   assert.equal(standSpotsBeside(bot, hole).every((p) => p.y === 78), true)
+})
+
+test('目のあるマスの背の高い小麦も数える: 畑 2 で、立つマスの熟した小麦に水のバケツが当たって水が流れた', () => {
+  const blocks = { '44,77,-462': { name: 'water' }, '45,78,-462': { name: 'wheat', age: 7 } }
+  const at = (p) => {
+    const spec = blocks[`${p.x},${p.y},${p.z}`] ?? (p.y <= 77 ? { name: 'dirt' } : { name: 'air' })
+    const solid = spec.name === 'dirt'
+    return { name: spec.name, position: p, boundingBox: solid ? 'block' : 'empty', shapes: solid ? [[0, 0, 0, 1, 1, 1]] : [], getProperties: () => (spec.age !== undefined ? { age: String(spec.age) } : {}) }
+  }
+  const bot = { entity: { position: v(45.5, 78, -461.5), eyeHeight: 1.62 }, blockAt: at }
+  const eye = v(45.5, 79.62, -461.5)
+  const aim = v(44.5, 77.05, -461.5)
+  assert.deepEqual(firstBlockBetween(bot, eye, aim, v(44, 77, -462)), { name: 'wheat', x: 45, y: 78, z: -462, age: 7 })
+  // 低い小麦なら目より下で、線の上を通る
+  blocks['45,78,-462'] = { name: 'wheat', age: 1 }
+  assert.equal(firstBlockBetween(bot, eye, aim, v(44, 77, -462)), null)
 })

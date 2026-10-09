@@ -33,7 +33,7 @@ import { foodNow } from './foodnow.mjs'
 import { workCell, layoutAt, layoutStatus, waterAt, mineBodyReason } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { holdsWater } from './breath.mjs'
-import { levelTarget, levelStatus, keptGround, findCount, fillNeeded, KEPT_REMEDY, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { levelTarget, levelStatus, keptGround, findCount, fillNeeded, KEPT_REMEDY, MIN_LEVEL, MAX_LEVEL, FARM_MARGIN } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
 import { inspectCell, inspectSelf, readDiagnostics } from './inspect.mjs'
 
@@ -605,10 +605,20 @@ export function createTools (deps) {
     // 次々にそろえる（1 回の呼び出しで届くところを全部）
     level (args) {
       const where = String(args.where ?? 'home')
+      let target
       try {
-        levelTarget(state, where)
+        target = levelTarget(state, where)
       } catch (e) {
         refuse(e.message)
+      }
+      // 設計した畑の上（と周囲 FARM_MARGIN マス）を畑の地面と違う高さにそろえると、周りだけが下がる（畑の耕地・作物・水は
+      // 触らないので畑が高く残る）。y は立つ足の高さ（地面はその 1 つ下）: 畑の地面の高さの座標を渡した間違いを防ぐ
+      const farm = Object.values(state.facilities ?? {}).find((f) => {
+        const r = f.kind === 'farm' && f.layout?.rect
+        return r && target.center.x >= r.x0 - FARM_MARGIN && target.center.x < r.x0 + r.w + FARM_MARGIN && target.center.z >= r.z0 - FARM_MARGIN && target.center.z < r.z0 + r.d + FARM_MARGIN
+      })
+      if (farm && target.y - 1 !== farm.layout.y) {
+        refuse(`${target.center.x},${target.center.z} is on the farm ${farm.name}, whose ground is y=${farm.layout.y}: where's y is the height you STAND on (the ground is one lower), so use ${target.center.x},${farm.layout.y + 1},${target.center.z}. The farm levels itself with the candidate "level the ground of the farm ${farm.name}"`)
       }
       const radius = Number(args.radius ?? 8)
       if (!Number.isInteger(radius) || radius < MIN_LEVEL || radius > MAX_LEVEL) refuse(`radius must be ${MIN_LEVEL}-${MAX_LEVEL}`)

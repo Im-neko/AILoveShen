@@ -54,26 +54,27 @@ function shapesOf (block) {
 }
 
 // from から to へ引いた線で、最初に当たるブロック。to のあるマスに着くまでに何もなければ null。
-// {name, x, y, z, age}。`ignore` のマス（狙うマス）は数えない
+// {name, x, y, z, age}。`ignore` のマス（狙うマス）は数えない。目のあるマスも数える（背の高い作物の上に目がある
+// とき、線は降りるまでその作物の中を通る。Mineflayer の raycast は最初のマスを数えない）
 export function firstBlockBetween (bot, from, to, ignore = null) {
   const dir = to.minus(from)
   const dist = dir.norm()
   if (dist < EPSILON) return null
   const iter = new RaycastIterator(from, dir.scaled(1 / dist), dist)
   const aim = to.floored()
-  for (let cell = iter.next(); cell; cell = iter.next()) {
-    const at = new Vec3(cell.x, cell.y, cell.z)
+  const first = from.floored()
+  for (let at = first, cell = null; ; at = new Vec3(cell.x, cell.y, cell.z)) {
     if (at.equals(aim) || (ignore && at.equals(ignore))) return null
     const block = bot.blockAt(at)
-    if (!block) continue
-    const shapes = shapesOf(block)
-    if (!shapes) continue
-    const hit = iter.intersect(shapes, at)
-    if (!hit || hit.pos.distanceTo(from) > dist + EPSILON) continue
-    const age = block.getProperties?.().age
-    return { name: block.name, x: at.x, y: at.y, z: at.z, ...(age !== undefined ? { age: Number(age) } : {}) }
+    const shapes = block && shapesOf(block)
+    const hit = shapes && iter.intersect(shapes, at)
+    if (hit && hit.pos.distanceTo(from) <= dist + EPSILON) {
+      const age = block.getProperties?.().age
+      return { name: block.name, x: at.x, y: at.y, z: at.z, ...(age !== undefined ? { age: Number(age) } : {}) }
+    }
+    cell = iter.next()
+    if (!cell) return null
   }
-  return null
 }
 
 // ボットの目から正面へ maxDistance の間で、サーバーのレイが最初に当たるブロック（水や空気は通り抜ける）

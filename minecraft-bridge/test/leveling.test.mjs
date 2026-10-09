@@ -243,3 +243,28 @@ test('level: 浅い穴に立っていて、足元に積まずに外へ出られ�
   assert.match(r, /filled 1/)
   assert.equal(levelStatus(bot, state(), '0,64,0', 3).off, 0)
 })
+
+// 畑の地面は y=63（耕地は 63）。立つ高さは 64。畑の地面の高さの座標（y=63）を where に渡すと、周りだけが 1 段下がる
+test('level: 設計した畑の上で、畑の地面と違う高さを渡したら断り、正しい高さを教える', async () => {
+  const farm = { name: 'wheat_farm', kind: 'farm', layout: { rect: { x0: 0, z0: 0, w: 8, d: 8 }, y: 63, cells: [], water: [] } }
+  const make = (st) => createTools({
+    bot: { ...fakeBot(world({ '-2,63,0': 'air' }), []), time: { timeOfDay: 1000 } },
+    state: { ...state(), ...st, memory: {}, busy: false, reflex: false },
+    knowledge: new Knowledge(md),
+    run: async (c) => ({ ok: true, result: c.verb, seconds: 0 }),
+    candidates: () => [],
+    check: () => []
+  })
+  const callTool = make({ facilities: { wheat_farm: farm } })
+  // 畑の枠（と周囲 2 マス）の中で、足の高さ 63（地面は 62）: 1 段下がってしまう
+  const wrong = await callTool('level', { where: '4,63,4', radius: 8 })
+  assert.match(wrong.result, /on the farm wheat_farm, whose ground is y=63.*use 4,64,4/)
+  const edge = await callTool('level', { where: '-2,63,4', radius: 8 })
+  assert.match(edge.result, /use -2,64,4/, '周囲 2 マスも畑のうち')
+  // 正しい高さなら通る（この盤面は土がなく穴だけなので、土の不足で断られる）
+  assert.doesNotMatch((await callTool('level', { where: '4,64,4', radius: 8 })).result, /whose ground is/)
+  // 畑から離れた所は別の高さでもよい
+  assert.doesNotMatch((await callTool('level', { where: '20,63,20', radius: 8 })).result, /whose ground is/)
+  // 畑がなければ今までどおり
+  assert.doesNotMatch((await make({})('level', { where: '4,63,4', radius: 8 })).result, /whose ground is/)
+})

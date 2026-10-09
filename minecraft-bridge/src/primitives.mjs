@@ -45,7 +45,7 @@ import { reachLand } from './land.mjs'
 import { digOutRoute } from './dig-out.mjs'
 import { campSite, campAt, campSources, campCount, buildCamp, campExit, HAND_BLOCKS } from './camp.mjs'
 import { straySources, scoopBack } from './water-spill.mjs'
-import { lookingAt, cellsBeside, blockedNote } from './sightline.mjs'
+import { lookingAt, cellsBeside, blockedNote, firstBlockBetween, eyeOf } from './sightline.mjs'
 import { boatItem, riding, waterCrossing, surfaceAt, placeBoat, mountBoat, drive, leaveBoat, breakBoat, nearbyBoat, nearestShore, driveToShore, EXTEND_M, BoatUnusable, CROSSING_LOOK_M, BOAT } from './boat.mjs'
 
 const { Movements, goals } = pathfinderPkg
@@ -2314,7 +2314,10 @@ export const PRIMITIVES = {
       if (!solid(p)) throw new Error(`the ground beside the hole at ${at} (${p.x},${p.y},${p.z}) is lower: the water would run out of the hole`)
     }
     // 立つ隣のマス: 上が空いている（作物は通れる）、近い順。穴そのものには立たない
-    const stand = cellsBeside(bot, c.pos)[0]
+    // 立つマス: 穴の横の地面。バケツの視線が作物の枠にさえぎられないマスを先に選ぶ（さえぎられると水が穴に入らず畑の表面に流れた）
+    const aim = c.pos.offset(0.5, 0.05, 0.5)
+    const spots = cellsBeside(bot, c.pos)
+    const stand = spots.find((p) => !firstBlockBetween(bot, p.offset(0.5, 1 + (bot.entity.eyeHeight ?? 1.62), 0.5), aim, c.pos)) ?? spots[0]
     if (!stand) throw new Error(`no free cell to stand on beside the water cell ${at}`)
     await goto(bot, new goals.GoalBlock(stand.x, stand.y + 1, stand.z), signal)
     signal.throwIfAborted()
@@ -2327,7 +2330,14 @@ export const PRIMITIVES = {
     if (bot.blockAt(c.pos)?.boundingBox === 'block') throw new Error(`could not dig the hole at ${at}`)
     if (!solid(c.pos.offset(0, -1, 0))) throw new Error(`no solid floor under the hole at ${at}: the water would drain away`)
     await bot.equip(bucket, 'hand')
-    await bot.lookAt(c.pos.offset(0.5, 0.05, 0.5), true)
+    // どのマスからも視線がさえぎられるときは、さえぎる作物や草を刈る（畑の作物は、あとで畑の手が植え直す）
+    for (let tries = 0; tries < 3; tries++) {
+      const hit = firstBlockBetween(bot, eyeOf(bot), aim, c.pos)
+      const block = hit && bot.blockAt(new Vec3(hit.x, hit.y, hit.z))
+      if (!block || !(CLEARABLE.test(block.name) || cropByBlock(block.name))) break
+      await bot.dig(block)
+    }
+    await bot.lookAt(aim, true)
     const cursor = lookingAt(bot, 5)
     console.log(`[water] ${at} に水を置く: 立つ位置 ${bot.entity.position.x.toFixed(1)},${bot.entity.position.y.toFixed(1)},${bot.entity.position.z.toFixed(1)}、視線の先 ${cursor ? `${cursor.name} ${cursor.x},${cursor.y},${cursor.z}` : 'なし'}`)
     bot.activateItem()
