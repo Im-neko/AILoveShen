@@ -1,0 +1,15 @@
+diff --git a/node_modules/mineflayer-pathfinder/index.js b/node_modules/mineflayer-pathfinder/index.js
+index b38bd30..f0ba06f 100644
+--- a/node_modules/mineflayer-pathfinder/index.js
++++ b/node_modules/mineflayer-pathfinder/index.js
+@@ -541,7 +541,9 @@ function inject (bot) {
+       let canPlace = true
+       if (placingBlock.jump) {
+         bot.setControlState('jump', true)
+-        canPlace = placingBlock.y + 1 < bot.entity.position.y
++        // 足場積み（真上に置く）は、体が置くマスの上に出てから: 置くマスは足元（placingBlock の 2 つ上）で、足が
++        // その上端に届くまでは体が重なり、サーバーが断る（断られると経路ごとやり直しになり、跳びも途切れる）
++        canPlace = placingBlock.y + 2 <= bot.entity.position.y
+       }
+       if (canPlace) {
+         if (!lockEquipItem.tryAcquire()) return
