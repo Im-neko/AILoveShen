@@ -537,9 +537,9 @@ class ObjectivePlan(Entity):
             )
         return self._finish(objective_id, ObjectiveState.DROPPED, reason)
 
-    def complete(self, objective_id: str) -> Objective:
+    def complete(self, objective_id: str, because: str = "its conditions hold") -> Objective:
         """大目標を完了にする（条件が満たされている）。段階の大目標なら、街が進むことがある。"""
-        done = self._finish(objective_id, ObjectiveState.DONE, "its conditions hold")
+        done = self._finish(objective_id, ObjectiveState.DONE, because)
         if done.playbook is not None:
             self.mark_playbook(done.playbook)
         if done.stage is not None and done.stage == self._town_stage:

@@ -173,14 +173,14 @@ async def test_the_keeper_designs_a_new_facility_before_checking():
     new = GoalSpec(GoalPredicate.FACILITY, name="wheat_farm")
     old = GoalSpec(GoalPredicate.FACILITY, name="old_farm")
     proposal = ObjectiveProposal("畑を作る", (new, old), "食べ物")
-    await keeper.check_new([PlanChange(PlanOp.ADD, "r", proposal=proposal)])
+    await keeper.check_new(Mock(), [PlanChange(PlanOp.ADD, "r", proposal=proposal)])
     facilities.design.assert_awaited_once_with("wheat_farm", "畑を作る: 食べ物")
     bridge.check.assert_awaited_once()
 
     bridge.facilities.return_value = []
     keeper = ObjectiveKeeper(bridge=bridge, event_publisher=AsyncMock(), store=Mock())
     with pytest.raises(GoalRejectedError, match="no facility named wheat_farm"):
-        await keeper.check_new([PlanChange(PlanOp.ADD, "r", proposal=proposal)])
+        await keeper.check_new(Mock(), [PlanChange(PlanOp.ADD, "r", proposal=proposal)])
 
 
 def test_the_decision_without_the_facility_keeps_the_rest():

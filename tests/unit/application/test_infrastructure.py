@@ -70,6 +70,6 @@ async def test_the_keeper_rejects_a_fake_farm_but_not_a_job_of_a_bigger_objectiv
     plan = _plan()
     fake = ObjectiveProposal("食料の安定供給: 小麦畑を作る", (HAVE_SEEDS,), "畑")
     with pytest.raises(GoalRejectedError, match="facility"):
-        await keeper.check_new([PlanChange(PlanOp.ADD, "r", proposal=fake)])
+        await keeper.check_new(plan, [PlanChange(PlanOp.ADD, "r", proposal=fake)])
     with pytest.raises(GoalRejectedError, match="facility"):
         await keeper.accept(plan, fake, "viewer")

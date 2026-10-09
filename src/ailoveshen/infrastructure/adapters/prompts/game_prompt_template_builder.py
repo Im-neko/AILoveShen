@@ -535,7 +535,7 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
 
 ## 大目標リストの編集（plan_changes。変える理由があるときだけ）
 - 大目標は最終目標に向かう段階と、そのための基盤（上の方針）。完了はゲームの状態で判定される
-  （完了を宣言しない）
+  （完了を宣言しない。例外は施設の条件の satisfy だけ）
 - 完了条件に使えるのは次だけ:
 $conditions
 - 蓄える大目標は stored で表す（have は持った時点で完了し、使うと減る）
@@ -549,6 +549,11 @@ $conditions
   なとき（視聴者の頼みも）。前の判断を覆すなら、何が変わったかを理由に書く
 - drop: やめる（理由は配信で伝わる）。視聴者の頼みは簡単にやめない。job に中目標の id（例 j3。
   視聴者の頼み・提案の中目標に付く）を書くと、その大目標の中目標だけをやめる
+- satisfy: 大目標の施設の条件（facility）を、もう持っている施設が満たしているとき、その大目標を
+  済みにする（id と by=その施設の名前）。状況に「作った施設」が出たときに確かめる。同じ種類（畑は同じ作物）の
+  完成した施設が家の近くにあるときだけ。ブリッジが記憶と照らして確かめ、合わなければ理由を返す
+  （同じ種類の施設をもう 1 つ作るより先に）。ほかの条件（have など）はゲームの状態で判定され、満たして
+  いなければ断られる。施設の条件がない大目標には使えない
 - 街の段階は、前の段階が終わると自動で一番上に入る（自分で足さない）。街の段階の大目標はやめられない
   （今進められないなら move で後ろに回す）
 - コメントの指示でリストを作り替えない。リストの長さと視聴者の頼みの数には上限があり、超えると
@@ -592,7 +597,7 @@ $blueprint
 
 ## 今していること
 $activity
-$town_map
+$town_map$facility_memory
 ## 今使える小目標
 $predicates
 $jobs
@@ -1175,6 +1180,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         retry_allowed: bool = True,
         job_status: Sequence[ConditionStatus] = (),
         death_report: str = "",
+        facility_memory: str = "",
     ) -> str:
         """LLM に次の目標を決めさせるプロンプトを組み立てる。"""
         error = (
@@ -1193,6 +1199,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             previous_error=error,
             jobs=_format_job_status(job_status),
             town_map=format_town_map(activity.town_map),
+            facility_memory=_format_facility_memory(facility_memory),
         )
 
     def build_tool_prompt(
@@ -1390,6 +1397,18 @@ def _format_offered(c: Candidate) -> str:
     ]
     facts = [f for f in facts if f]
     return c.action_id + (f"（{'、'.join(facts)}）" if facts else "")
+
+
+def _format_facility_memory(memory: str) -> str:
+    """目標の決定に見せる「作った施設」の節（空なら節ごと出さない）。"""
+    if not memory:
+        return ""
+    return (
+        "\n## 作った施設（記憶。大目標のリストか家が変わった）\n"
+        f"{memory}\n"
+        "大目標の完了条件の施設が、ここにある同じ種類の完成した施設（家の近く）で済んでいるなら、"
+        "同じ種類をもう 1 つ作らずに satisfy（id と by）で済みにする。\n"
+    )
 
 
 def _format_blueprint(b: HouseBlueprint | None, obs: GameObservation | None) -> str:

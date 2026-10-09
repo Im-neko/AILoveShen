@@ -28,6 +28,7 @@ from ailoveshen.application.use_cases.action_label import action_label
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.death_report import death_situation, describe_death
 from ailoveshen.application.use_cases.goal_ends import goal_end_entry
+from ailoveshen.application.use_cases.facility_satisfy import describe_memory, home_signature
 from ailoveshen.application.use_cases.step_picker import PickedStep, StepPicker
 from ailoveshen.application.use_cases.repetition import Repetition
 from ailoveshen.application.use_cases.same_cause import same_cause_run
@@ -433,6 +434,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._clock = clock
         self._last_gemini_at: float | None = None
         self._last_plan: tuple[str, ...] = ()  # 前の Gemini の決定のときの大目標の並び
+        # 「作った施設」を見せた時の（大目標の並び、家の場所）。リストか家が変わったときだけ見せる（docs/design/142）
+        self._facilities_seen: tuple[tuple[str, ...], tuple[float, float] | None] | None = None
         # 今の小目標の行動の記録と、最後に出ていた候補（失敗の分析に見せる。docs/design/27）
         self._goal_steps: deque[str] = deque(maxlen=GOAL_STEPS_SHOWN)
         self._offered: tuple[Candidate, ...] = ()
@@ -1225,6 +1228,25 @@ class AdvancePlayUseCase(IAdvancePlay):
         except Exception as e:
             logger.warning(f"小目標の終わりの記録を作れなかった: {type(e).__name__}: {e}")
 
+    async def _facility_memory(
+        self, plan: ObjectivePlan
+    ) -> tuple[str, tuple[tuple[str, ...], tuple[float, float] | None] | None]:
+        """
+        目標の決定に見せる「作った施設」と、そのときの印（docs/design/142）。大目標に施設の条件があり、
+        リストか家が前に見せたときから変わったときだけ文を返す（毎回は見せない）。見せなければ空の文。
+        """
+        if not any(c.predicate == GoalPredicate.FACILITY for g in plan.pending for c in g.conditions):
+            return "", None
+        try:
+            facilities = await self._bridge.facilities()
+        except AILoveShenError as e:
+            logger.debug(f"施設の一覧を読めなかった: {e}")
+            return "", None
+        seen = (tuple(g.id for g in plan.pending), home_signature(facilities))
+        if seen == self._facilities_seen:
+            return "", seen
+        return describe_memory(facilities), seen
+
     async def _decide_goal(
         self,
         session: PlaySession,
@@ -1282,6 +1304,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             shot = await self._screen.after_failure()
             images = [shot] if shot else []
         job_status = await self._job_status(plan)
+        facility_memory, facilities_now = await self._facility_memory(plan)
         plan_owns_jobs = plan.current is not None and plan.current.planned
         error = ""
         learned = False
@@ -1298,6 +1321,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                 retry_allowed=retry_allowed,
                 job_status=job_status,
                 death_report=death_report,
+                facility_memory=facility_memory,
             )
             schema = goal_schema(
                 predicates,
@@ -1374,7 +1398,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     if decision.jobs:
                         check_plan(decision.jobs, plan.current, await self._built_names())
                 try:
-                    await self._objectives.check_new(decision.changes)
+                    await self._objectives.check_new(plan, decision.changes)
                 except BuildNotDesignedError as e:
                     # 建物を設計できなくても、決定の残り（空腹なら食べる、など）は通す: その建物の
                     # 大目標と中目標だけ落とす（2026-09-27: 餓死寸前に決定ごと差し戻していた）。施設も同じ
@@ -1385,7 +1409,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                         "left out: choose another objective for now)"
                     )
                     decision = _without_build(decision, e.name)
-                    await self._objectives.check_new(decision.changes)
+                    await self._objectives.check_new(plan, decision.changes)
                 _serving(decision, self._objectives.rehearse(plan, decision.changes))
                 rehearsed = self._objectives.rehearse(plan, decision.changes)
                 status = await self._bridge.set_goal(
@@ -1446,6 +1470,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     + (f"; 外出ごと: {decision.trips}" if decision.trips else "")
                 )
             await self._objectives.commit(plan, decision.changes)
+            self._facilities_seen = facilities_now
             if decision.jobs and plan.current is not None:
                 try:
                     await self._objectives.set_jobs(plan, plan.current.id, decision.jobs)

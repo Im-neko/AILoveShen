@@ -87,6 +87,7 @@ class PlanOp(str, Enum):
     ADD = "add"
     MOVE = "move"
     DROP = "drop"
+    SATISFY = "satisfy"  # もう持っている施設で済んでいる（根拠 `by` をブリッジの記憶と突き合わせて済みにする）
 
 
 class NoteOp(str, Enum):
@@ -159,8 +160,9 @@ class ObjectiveProposal:
 @dataclass(frozen=True)
 class PlanChange:
     """
-    大目標リストの 1 つの編集（add は `proposal`、move と drop は `objective_id`）。
-    drop に `job_id` があれば、その大目標の中目標だけをやめる。
+    大目標リストの 1 つの編集（add は `proposal`、move と drop と satisfy は `objective_id`）。
+    drop に `job_id` があれば、その大目標の中目標だけをやめる。satisfy の `by` は、その大目標の
+    施設の条件を代わりに満たす、もう持っている施設の名前。
     """
 
     op: PlanOp
@@ -169,6 +171,7 @@ class PlanChange:
     job_id: str = ""
     position: Optional[int] = None  # 0 始まり
     proposal: Optional[ObjectiveProposal] = None
+    by: str = ""
 
 
 @dataclass(frozen=True)
@@ -369,6 +372,12 @@ def goal_schema(
                 "to give up just that job (the id is shown next to the jobs viewers asked for or "
                 "suggested); omit to drop the whole objective",
             },
+            "by": {
+                "type": "string",
+                "description": "satisfy only: the name of the finished facility you already have "
+                "that does what the objective's facility condition asks (from the built "
+                "facilities shown); the bridge checks it and sends the edit back if it does not fit",
+            },
             "reason": {"type": "string", "description": "Why, in one short sentence"},
         },
         "required": ["op", "reason"],
@@ -377,7 +386,7 @@ def goal_schema(
         change["properties"]["id"] = {
             "type": "string",
             "enum": objective_ids,
-            "description": "move / drop: the objective",
+            "description": "move / drop / satisfy: the objective",
         }
     schema: dict[str, Any] = {
         "type": "object",
@@ -838,6 +847,13 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
         job_id = str(raw.get("job") or "")
         if job_id and op != PlanOp.DROP:
             raise ValueError(f"only drop can name a job, not {op.value}")
+        by = str(raw.get("by") or "").strip()
+        if op == PlanOp.SATISFY and not by:
+            raise ValueError(
+                f"satisfy {objective_id} needs by: the name of the finished facility that already does it"
+            )
+        if by and op != PlanOp.SATISFY:
+            raise ValueError(f"only satisfy can name a facility with by, not {op.value}")
         changes.append(
             PlanChange(
                 op=op,
@@ -845,6 +861,7 @@ def parse_decision(data: dict[str, Any]) -> GoalDecision:
                 objective_id=objective_id,
                 job_id=job_id,
                 position=int(position) - 1 if position is not None else None,
+                by=by,
             )
         )
     jobs = []

@@ -258,6 +258,7 @@ class IGamePromptBuilder(ABC):
         retry_allowed: bool = True,
         job_status: Sequence[ConditionStatus] = (),
         death_report: str = "",
+        facility_memory: str = "",
     ) -> str:
         """
         LLM に次の目標を決めさせるプロンプトを組み立てる。
@@ -276,6 +277,8 @@ class IGamePromptBuilder(ABC):
             retry_allowed: 同じ小目標のやり直しを選べるか（同じ失敗が続いたら選べない）
             job_status: 一番上の大目標の中目標を今判定したもの（見直しの材料。docs/design/31）
             death_report: 死んだときの様子（死んだ直後だけ。何で・どんな状況で死んだか。docs/design/105）
+            facility_memory: 作った施設の記憶（大目標のリストか家が変わったときだけ。空: 見せない。
+                大目標の施設の条件が、もう持っている施設で済んでいないかを確かめさせる。docs/design/142）
         """
         ...
 

@@ -17,6 +17,7 @@ from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
+from ailoveshen.application.use_cases.facility_satisfy import SATISFY_NEAR_HOME_M, check_satisfy
 from ailoveshen.application.use_cases.plan_lint import fake_infrastructure, unregistered_builds
 from ailoveshen.application.use_cases.goal_vocabulary import (
     ObjectiveProposal,
@@ -47,7 +48,7 @@ MAX_STAGE_DESIGN_TRIES = 2
 PLACED_PROBE = 8  # 置いた数を調べるとき、今の数に足して試す数（1 回の判定にまとめて送る）
 # 定石（docs/design/74）: 施設の段は、家のそばで設計する（区画が読み込まれている範囲 m）。待つ間に調べ直す間隔と、
 # 設計に失敗しても試す回数
-PLAYBOOK_NEAR_HOME_M = 64
+PLAYBOOK_NEAR_HOME_M = SATISFY_NEAR_HOME_M
 PLAYBOOK_RETRY_SECONDS = 60.0
 PLAYBOOK_TRIES = 3
 PLAYBOOK_PARALLEL = 2  # 育成を待つ間に、同時に進める定石の段の数
@@ -570,20 +571,40 @@ class ObjectiveKeeper:
         )
         return self._playbook_site
 
-    async def check_new(self, changes: Sequence[PlanChange]) -> None:
+    async def check_new(self, plan: ObjectivePlan, changes: Sequence[PlanChange]) -> None:
         """
-        変更が足す大目標の条件を、ブリッジに確かめさせる。
+        変更が足す大目標の条件と、済みにする根拠（satisfy の施設）を、ブリッジに確かめさせる。
 
         Raises:
             GoalRejectedError: 条件を判定できないとき（メッセージに理由がある）
         """
         for change in changes:
+            if change.op == PlanOp.SATISFY:
+                await self._check_satisfy(plan, change)
             if change.proposal is not None:
                 self._check_infrastructure(change.proposal)
                 await self._design_builds(change.proposal)
                 await self._design_facilities(change.proposal.conditions, _brief(change.proposal))
                 await self._write_checks(change.proposal.conditions, _brief(change.proposal))
                 await self._bridge.check(change.proposal.conditions)
+
+    async def _check_satisfy(self, plan: ObjectivePlan, change: PlanChange) -> None:
+        """
+        satisfy の根拠を、ブリッジの記憶（施設の一覧）と世界の判定に突き合わせる。モデルの言うことだけでは
+        済みにしない（畑が満杯と誤診して 3 つ目の畑を作らせた前例がある: 2026-10-09）。
+
+        Raises:
+            GoalRejectedError: 大目標がないか、施設の条件がないか、根拠が合わないとき
+        """
+        goal = plan.get(change.objective_id)
+        if goal is None:
+            raise GoalRejectedError(f"no pending objective {change.objective_id} to satisfy")
+        if not any(c.predicate == GoalPredicate.FACILITY for c in goal.conditions):
+            raise GoalRejectedError(
+                f"{goal.id} has no facility condition: satisfy is only for those (the world judges the rest)"
+            )
+        statuses = await self._bridge.check(goal.conditions)
+        check_satisfy(statuses, change.by, await self._bridge.facilities())
 
     def rehearse(self, plan: ObjectivePlan, changes: Sequence[PlanChange]) -> ObjectivePlan:
         """
@@ -996,6 +1017,15 @@ def _apply(plan: ObjectivePlan, changes: Sequence[PlanChange]) -> list[DomainEve
         elif change.op == PlanOp.MOVE:
             assert change.position is not None
             plan.move(change.objective_id, change.position)
+        elif change.op == PlanOp.SATISFY:
+            done = plan.complete(change.objective_id, f"already served by the facility {change.by}")
+            events.append(
+                ObjectiveCompletedEvent(
+                    title=done.title,
+                    requested_by=done.requested_by or "",
+                    suggested_by=done.suggested_by or "",
+                )
+            )
         elif change.job_id:
             job = plan.drop_job(change.objective_id, change.job_id, change.reason)
             events.append(_dropped_job(job, change.reason))

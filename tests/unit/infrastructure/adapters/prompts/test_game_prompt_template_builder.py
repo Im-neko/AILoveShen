@@ -621,8 +621,8 @@ class TestPromptLength:
     def test_goal_system_length(self):
         # 決まった文（システム指示、キャッシュに当たる部分）。27 の分析、家具の述語、31 の見直し、
         # 33 の植林と畑、ついでに取る・まとめて運ぶ決まり、41 の整地、42 の custom、44 の束、50 §13 の
-        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）、74 の定石で増えた
-        assert len(GamePromptTemplateBuilder().build_goal_system()) < 9000
+        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）、74 の定石、142 の satisfy で増えた
+        assert len(GamePromptTemplateBuilder().build_goal_system()) < 9500
 
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500
