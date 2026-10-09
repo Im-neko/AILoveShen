@@ -25,7 +25,7 @@ TOOL_DEFINITIONS_BUDGET = {
     "stuck_advisor": (dict(skills=True, experiment=True, advisor=True), 9980),
 }
 RULES_BUDGET = 1450  # TOOL_TEMPLATE の固定の文（差し込む欄を除く）
-STUCK_SECTION_BUDGET = 780
+STUCK_SECTION_BUDGET = 870  # 行き詰まりの節に ask_advisor を足した分（設計書 143 §6）
 SKILLS_SECTION_BUDGET = 190
 
 

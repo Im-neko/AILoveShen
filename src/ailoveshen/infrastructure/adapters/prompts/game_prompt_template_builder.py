@@ -628,7 +628,8 @@ TOOL_TEMPLATE = Template("""\
   はい/いいえで、英語で、状態（action / self / surroundings / mobs / needs）から答えられることを
   中立に書く（急ぎや優先の言葉は書かない）。on_yes は stop（止める）、wake（止めて考え直す）、
   maybe_done（止める。完了はワールドで確かめる）。完了の判定には使われない
-- 同じ失敗を繰り返さない。断られた・失敗した理由を読んで、別の手を選ぶ
+- 同じ失敗を繰り返さない。断られた・失敗した理由を読んで、別の手を選ぶ。2 回続けて通らなければ、
+  ask_advisor（出ているとき）で原因と別の手を聞く
 - 「目の前のブロック」「目の前に落ちている物」に要る物があれば、遠くへ探しに行く前にそれを使う
   （一番近いものの座標をそのまま dig などに使える）。原木は木の幹だけを集める: find_blocks の tree: false
   は村の畑の縁や家の柱など人が作った物（not_trees は目の前にあるその数）で、壊すと畑の水が流れ出る。
@@ -669,7 +670,8 @@ $recent
 # 配信者が判断に迷って聞くときの advisor への依頼（docs/design/143）。advisor は道具を呼ばず、助言だけを返す
 ADVICE_TEMPLATE = Template("""\
 You are the advisor of a Minecraft streamer (an AI) who is playing on her own. She was choosing her next tool,
-got unsure and asked you. Below is exactly what she saw when she asked, then her question.
+got stuck (a tool kept failing, or she did not know what to do next) and asked you. Below is exactly what she saw
+when she asked, then her question.
 
 ${situation}
 
@@ -694,6 +696,8 @@ $record- 「直近の道具」の失敗の理由を読み、なぜ失敗した�
   足場を置く・掘って進む / 材料や道具が足りない → 先にそれを集める・作る / 断られた → 断られた理由の
   ブロックや場所を避ける / 敵が近い → 倒すか離れるか、家に戻る
 - 何をすればよいか分からなければ、動く前に search_abilities / item_info / search_facility で調べる
+- 原因が分からない・別の手が思いつかないときは、実験や小目標の変更より先に、ask_advisor（出ているとき）で
+  聞く。試したことと失敗の理由を question に書く。答えは次の選択に出る
 - 原因が分からないまま同じことが通らないときは、実験する。変えるものは 1 回に 1 つだけ:
   0. 家や行き先に着けないときは、先に inspect（座標なし）で自分を見る。closed_space（歩いて出られない閉じた所）と
      home_door（ドアまで何ブロック離れ、何ブロック下か）が分かる。ドアから遠いなら、ドアは原因ではない
@@ -704,7 +708,8 @@ $record- 「直近の道具」の失敗の理由を読み、なぜ失敗した�
   3. もう一度 inspect で変わったかを確かめる。変わったらその押し方で続ける（うまくいった手は覚えられて、
      次の同じ場面から候補に出る）。変わらなければ仮説を捨て、別の 1 つを変える
   4. 3 つ試して通らなければ、続けずに別の手（家に戻る・小目標を変える）に切り替える
-- 小目標そのものが今は進められないと考えたなら、家に戻って安全に別のことをする（小目標は自分で決め直される）
+- 小目標そのものが今は進められないと考えたなら、ask_advisor で聞いてから、家に戻って安全に別のことをする
+  （小目標は自分で決め直される）
 """
 
 TOOL_REFUSED_SECTION = """
@@ -735,7 +740,7 @@ SAME_CAUSE_FAR = """- 「遠すぎる」と断られ続けているのは、座�
 - 座標を自分で書かずに、提案（do_suggestion）の id をそのまま使うか、find_blocks の x, y, z をそのまま使う
 """
 SAME_CAUSE_OTHER = """- 理由を読んで、原因を直す手を先にする。分からなければ、提案（do_suggestion）の id をそのまま使うか、
-  search_abilities / item_info で調べる
+  search_abilities / item_info で調べるか、ask_advisor（出ているとき）で聞く
 """
 SAME_CAUSE_WITHHELD = "- この手番では $tool は出していない。ほかの道具を選ぶ\n"
 
