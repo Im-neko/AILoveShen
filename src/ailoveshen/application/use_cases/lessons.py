@@ -21,6 +21,7 @@ from loguru import logger
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.lesson_store import ILessonStore
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
+from ailoveshen.application.use_cases.lesson_compaction import LessonCompactor, LessonMerge
 from ailoveshen.domain.exceptions import AILoveShenError
 from ailoveshen.domain.value_objects import (
     MAX_LESSON_CHARS,
@@ -40,6 +41,8 @@ MIN_SCORE = 2
 FALLBACK_SHOWN = 3  # Jev が答えないときに出す、コードの上位の数
 SAME_TEXT_RATIO = 0.85
 WEAK_AFTER_USES = 4  # これだけ思い出しても一度も効かなければ消す
+COMPACT_TO = 0.75  # いっぱい（max_lessons）を超えたら、この割合まで統合する（docs/design/144）
+COMPACT_SLACK = 0.25  # 統合が間に合わない間に増えてよい割合（これを超えたら、統合を待たず弱いほうから消す）
 HUNGRY_FOOD = 6
 HURT_HEALTH = 8
 OBJECTIVE_STALLED = "has made no progress"  # play.py の大目標が進まない印と同じ
@@ -176,6 +179,7 @@ class LessonBook:
         max_lessons: int = 200,
         recorder: Optional[IWatchRecorder] = None,
         clock: Callable[[], str] = _now_iso,
+        compactor: Optional[LessonCompactor] = None,
     ) -> None:
         """
         Args:
@@ -189,6 +193,7 @@ class LessonBook:
             max_lessons: 教訓帳の上限
             recorder: 思い出した記録
             clock: 実時間（ISO 8601）
+            compactor: 上限を超えたとき、似た教訓を統合する LLM（None: 弱いほうから消すだけ）
         """
         if mode not in ("jev", "rules"):
             raise ValueError(f"mode must be jev or rules, got {mode!r}")
@@ -202,6 +207,8 @@ class LessonBook:
         self._max = max(1, max_lessons)
         self._recorder = recorder
         self._clock = clock
+        self._compactor = compactor
+        self._compacting: Optional[asyncio.Task[None]] = None
         self._lessons: list[Lesson] = []
         self._next_id = 1
 
@@ -268,6 +275,7 @@ class LessonBook:
         self._lessons.append(lesson)
         self._prune()
         self._save()
+        self._compact_in_background()
         where = "、".join(f"{k}={v}" for k, v in situation) or "いつでも"
         logger.info(f"教訓を書いた: {lesson.id} {lesson.text}（{condition or where}; {source}）")
         return lesson
@@ -399,15 +407,123 @@ class LessonBook:
             and difflib.SequenceMatcher(None, a, b).ratio() >= SAME_TEXT_RATIO
         )
 
-    def _prune(self) -> None:
+    @property
+    def limit(self) -> int:
+        """これを超えたら、弱いほうから消す。統合する LLM があれば、統合が間に合わない間は少し余裕を持つ。"""
+        return self._max + int(self._max * COMPACT_SLACK) if self._compactor else self._max
+
+    def _compact_in_background(self) -> None:
+        """上限を超えていれば、裏で統合を始める（書く側は待たない）。動いているイベントループがなければ何もしない。"""
+        if self._compactor is None or len(self._lessons) <= self._max:
+            return
+        if self._compacting is not None and not self._compacting.done():
+            return
+        try:
+            self._compacting = asyncio.get_running_loop().create_task(self.compact())
+        except RuntimeError:
+            logger.debug("イベントループがないので、教訓帳の統合は次に回す")
+
+    async def compact(self) -> int:
+        """
+        いっぱい（max_lessons）を超えた教訓帳の、似た教訓を LLM に統合させる。統合は実績を合算し、教訓を消さない。
+        LLM が答えない・答えが足りないときは、これまでどおり弱いほうから消して上限に収める。
+        減らした件数を返す。
+        """
+        if self._compactor is None or len(self._lessons) <= self._max:
+            return 0
+        before = len(self._lessons)
+        target = int(self._max * COMPACT_TO)
+        try:
+            merges = await self._compactor.propose(tuple(self._lessons), target)
+        except Exception as e:  # noqa: BLE001 - 統合できなくてもプレイは続ける
+            logger.warning(f"教訓帳を統合できなかった（弱いほうから消す）: {type(e).__name__}: {e}")
+            merges = []
+        self._merge(merges)
+        self._prune(self._max)
+        self._save()
+        logger.info(f"教訓帳を整理した: {before} 件 → {len(self._lessons)} 件（目標 {target}）")
+        return before - len(self._lessons)
+
+    def _merge(self, merges: Sequence[LessonMerge]) -> None:
+        """統合の組を今の教訓帳に反映する（答えを待つ間に変わっているので、今の教訓で数え直す）。"""
+        used: set[str] = set()
+        for merge in merges:
+            by_id = {n.id: n for n in self._lessons}
+            members = [by_id.get(i) for i in merge.ids]
+            if any(m is None for m in members) or used & set(merge.ids):
+                logger.warning(f"統合を見送った（教訓がない・重なっている）: {merge.ids}")
+                continue
+            group = [m for m in members if m is not None]
+            goals = {m.keys.get("goal") for m in group}
+            if len(goals) > 1:
+                logger.warning(f"統合を見送った（目標が違う）: {merge.ids} {sorted(map(str, goals))}")
+                continue
+            merged = self._merged(group, merge)
+            if merged is None:
+                continue
+            first = min(self._lessons.index(m) for m in group)
+            self._lessons = [n for n in self._lessons if n not in group]
+            self._lessons.insert(min(first, len(self._lessons)), merged)
+            used.update(merge.ids)
+            self._record_merge(group, merged)
+
+    def _merged(self, group: Sequence[Lesson], merge: LessonMerge) -> Optional[Lesson]:
+        """統合した 1 件。実績は合算、状況は全員が同じキーだけ、出どころは視聴者を優先する。"""
+        common = set(group[0].situation)
+        for m in group[1:]:
+            common &= set(m.situation)
+        situation = tuple((k, v) for k, v in group[0].situation if (k, v) in common)
+        viewer = next((m.source for m in group if m.source.startswith("viewer:")), "")
+        learned = [m.learned_at for m in group if m.learned_at]
+        used_at = [m.last_used_at for m in group if m.last_used_at]
+        try:
+            lesson = Lesson(
+                id=f"L{self._next_id}",
+                text=merge.text,
+                condition=merge.condition or next((m.condition for m in group if m.condition), ""),
+                situation=situation,
+                explicit=all(m.explicit for m in group) and bool(situation),
+                source=viewer or "failure",
+                taught=sum(m.taught for m in group),
+                used=sum(m.used for m in group),
+                helped=sum(m.helped for m in group),
+                failed=sum(m.failed for m in group),
+                learned_at=min(learned) if learned else "",
+                last_used_at=max(used_at) if used_at else "",
+            )
+        except ValueError as e:
+            logger.warning(f"統合を見送った: {merge.ids}: {e}")
+            return None
+        self._next_id += 1
+        return lesson
+
+    def _record_merge(self, group: Sequence[Lesson], merged: Lesson) -> None:
+        logger.info(
+            f"教訓をまとめた: {' + '.join(m.id for m in group)} → {merged.id} {merged.text}"
+        )
+        if self._recorder is None:
+            return
+        try:
+            self._recorder.record(
+                {
+                    "moment": "compaction",
+                    "from": [{"id": m.id, "text": m.text} for m in group],
+                    "to": {"id": merged.id, "text": merged.text, "condition": merged.condition},
+                }
+            )
+        except Exception as e:  # noqa: BLE001 - 記録の失敗でプレイを止めない
+            logger.warning(f"教訓の統合の記録を残せなかった: {e}")
+
+    def _prune(self, limit: Optional[int] = None) -> None:
         """弱い教訓（何度も思い出して一度も効かない）と、上限を超えた分を消す。確かな教訓は残す。"""
+        limit = self.limit if limit is None else limit
         weak = [
             n for n in self._lessons if not n.proven and n.used >= WEAK_AFTER_USES and n.helped == 0
         ]
         for n in weak:
             logger.info(f"効かない教訓を消した: {n.id} {n.text}（{n.used} 回思い出して効かなかった）")
         self._lessons = [n for n in self._lessons if n not in weak]
-        while len(self._lessons) > self._max:
+        while len(self._lessons) > limit:
             candidates = [n for n in self._lessons if not n.proven] or self._lessons
             worst = min(
                 candidates,
