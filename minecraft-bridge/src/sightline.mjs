@@ -105,13 +105,31 @@ export function cellsBeside (bot, pos) {
     .sort((a, b) => a.offset(0.5, 1, 0.5).distanceTo(me) - b.offset(0.5, 1, 0.5).distanceTo(me))
 }
 
+// pos のマスの横に、足を置いて立てるマス（足元が固く、足と頭が通れる）。ボットに近い順。畑の水のマスは地面の高さの穴なので、
+// 横の地面の上（1 つ上）に立つ。作物の畑のように水のマスが作物の高さなら、同じ高さに立つ
+export function standSpotsBeside (bot, pos) {
+  const me = bot.entity.position
+  const open = (p) => bot.blockAt(p)?.boundingBox === 'empty'
+  const spots = []
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const dy of [1, 0]) {
+      const feet = pos.offset(dx, dy, dz)
+      if (bot.blockAt(feet.offset(0, -1, 0))?.boundingBox === 'block' && open(feet) && open(feet.offset(0, 1, 0))) {
+        spots.push(feet)
+        break
+      }
+    }
+  }
+  return spots.sort((a, b) => a.offset(0.5, 0, 0.5).distanceTo(me) - b.offset(0.5, 0, 0.5).distanceTo(me))
+}
+
 // pos のマスの中心を狙ったとき、間にあるブロックの文。何もなければ空。
-// 横に立てば線が通る所があれば、そこも言う（`aim` は狙う点。省けばマスの中心）
+// 横に立てば線が通る所があれば、そこへ歩いてもう一度使うように言う（`aim` は狙う点。省けばマスの中心）
 export function blockedNote (bot, pos, aim = pos.offset(0.5, 0.5, 0.5)) {
   const hit = firstBlockBetween(bot, eyeOf(bot), aim, pos)
   if (!hit) return ''
   const eyeAt = (p) => p.offset(0.5, EYE_HEIGHT, 0.5)
-  const clear = cellsBeside(bot, pos).find((p) => !firstBlockBetween(bot, eyeAt(p), aim, pos))
-  const stand = clear ? `; stand on ${clear.x},${clear.y},${clear.z} (beside it) and try again` : ''
+  const clear = standSpotsBeside(bot, pos).find((p) => !firstBlockBetween(bot, eyeAt(p), aim, pos))
+  const stand = clear ? `; goto ${clear.x},${clear.y},${clear.z} (a cell beside it where the line is clear), then use the bucket at ${pos.x},${pos.y},${pos.z} again` : ''
   return ` (the ${describeBlock(hit)} is in the line between your eyes and ${pos.x},${pos.y},${pos.z}: the server aims at its outline, so you hit it instead${stand})`
 }

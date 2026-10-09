@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
-import { firstBlockBetween, lookingAt, blockedNote, outlineOf } from '../src/sightline.mjs'
+import { firstBlockBetween, lookingAt, blockedNote, outlineOf, standSpotsBeside } from '../src/sightline.mjs'
 import { inspectCell, inspectSelf } from '../src/inspect.mjs'
 import { PRIMITIVES } from '../src/primitives.mjs'
 
@@ -39,7 +39,7 @@ test('熟した小麦が間にあれば、その小麦を名指しし、横に�
   assert.deepEqual(hit, { name: 'wheat', x: 45, y: 74, z: -477, age: 7 })
   const note = blockedNote(bot, WATER)
   assert.match(note, /the wheat \(age 7\) at 45,74,-477 is in the line between your eyes and 44,74,-478/)
-  assert.match(note, /stand on 45,74,-478 \(beside it\) and try again/)
+  assert.match(note, /goto 45,74,-478 \(a cell beside it where the line is clear\), then use the bucket at 44,74,-478 again/)
 })
 
 test('植えたばかりの低い小麦は、線の下を通るので邪魔にならない', () => {
@@ -124,7 +124,7 @@ test('use_item: バケツが効かなかったとき、間の小麦と、横に�
   const bot = bucketBot(wheat(7, [45, -477], [45, -478], [46, -476]))
   await assert.rejects(
     PRIMITIVES.use_item(bot, {}, { item: 'bucket', pos: WATER }, new AbortController().signal),
-    /nothing changed after using bucket at water 44,74,-478 \(the wheat \(age 7\) at 45,74,-477 is in the line between your eyes and 44,74,-478.*stand on 45,74,-478 \(beside it\) and try again\)/
+    /nothing changed after using bucket at water 44,74,-478 \(the wheat \(age 7\) at 45,74,-477 is in the line between your eyes and 44,74,-478.*goto 45,74,-478 .*then use the bucket at 44,74,-478 again\)/
   )
 })
 
@@ -140,4 +140,21 @@ test('inspect {}: looking_at は選択枠のあるブロックも言う', () => 
   const bot = { ...botAt(wheat(7, [46, -477]), v(46.5, 74, -475.5), 0, -0.4), controlState: {}, inventory: { items: () => [] } }
   const me = inspectSelf(bot).self
   assert.equal(me.looking_at?.block, 'wheat')
+})
+
+// 畑 2 の形: 水のマスは地面の高さの穴（y=77）、作物はその上（y=78）、ボットは地面の上（足が y=78）に立つ
+test('水のマスが地面の高さの穴なら、横の地面の上（1 つ上）に歩くよう言う', () => {
+  const hole = v(44, 77, -462)
+  const blocks = { '44,77,-462': { name: 'water' }, '44,78,-463': { name: 'wheat', age: 5 }, '45,78,-462': { name: 'wheat', age: 5 } }
+  const at = (p) => {
+    const spec = blocks[`${p.x},${p.y},${p.z}`] ?? (p.y <= 77 ? { name: 'dirt' } : { name: 'air' })
+    const solid = spec.name === 'dirt'
+    return { name: spec.name, position: p, boundingBox: solid ? 'block' : 'empty', shapes: solid ? [[0, 0, 0, 1, 1, 1]] : [], getProperties: () => (spec.age !== undefined ? { age: String(spec.age) } : {}) }
+  }
+  at.hole = true
+  const bot = { entity: { position: v(44.5, 78, -464.5), eyeHeight: 1.62 }, blockAt: at }
+  const note = blockedNote(bot, hole)
+  assert.match(note, /wheat \(age 5\) at 44,78,-463 is in the line/)
+  assert.match(note, /goto (45|43|44),78,-46[123] .*then use the bucket at 44,77,-462 again/)
+  assert.equal(standSpotsBeside(bot, hole).every((p) => p.y === 78), true)
 })

@@ -16,6 +16,7 @@
 ### 目から先への視線に小麦・草の選択枠を数える（設計書 136、2026-10-09、3c8efd6、未確認: 実機。user: 「小麦が邪魔して水救えないらしい。視線の先のブロックの情報とかって渡せないんでしたっけ？レイトレ的なことできない？」）
 - 原因: Mineflayer のレイ（`blockAtCursor`・`world.raycast`）は当たり判定にしか当たらず、小麦・草・苗木・松明を素通りする。サーバーのバケツは選択枠（`ClipContext.Block.OUTLINE`、Paper 1.21.4 を逆アセンブルして確認）に当たるので、ボットは水が見えると思い、バケツは小麦に当たって `nothing changed`。畑のバケツが 18 分以上同じ失敗を繰り返した（`logs/bridge.log` 04:21〜04:39）
 - `sightline.mjs`（新規）: 枠の表（Paper の `SHAPE_BY_AGE` から: 小麦・にんじん・じゃがいも・ビートルートは成長段階で高さが変わる、草・苗木・花・松明・サトウキビ。表にない通り抜けられるブロックは 1 マス）、`firstBlockBetween`、`lookingAt`、`blockedNote`、`cellsBeside`。`inspect {x,y,z}` の `in_the_way` と `inspect {}` の `looking_at` を差し替え。`use_item`（水や空気を狙った押し方）と `place_water` は、効かなかったときだけ「the wheat (age 7) at x,y,z is in the line … stand on x,y,z (beside it) and try again」を足す（押す前には断らない: 表は実機で未確認）。`place_water` の立つマスの選び方を `cellsBeside` に共有
+- 実機（15:13、再起動後）: 文は出て、小麦が原因と裏が取れた（畑 2 の水に `the wheat (age 5) at 44,78,-463`）。初版の「stand on x,y,z」は地面のブロックの座標で、LLM がそのマスにバケツを使い、`goto` も 3 回失敗した → `standSpotsBeside`（足を置くマス）に直し、「goto してから使い直す」と書く
 - 見送り: 横のマスへ歩いてもう一度押す（バケツはまだ満たされない）、小麦を壊す手。`door-report.mjs` と `canSee` は変えていない
 - 確かめ方: RCON `setblock 45 74 -477 air` で小麦を取り除いて同じ手を試し、通れば原因は小麦
 - テスト: ブリッジ 929 件通過（新規 12: `test/sightline.test.mjs`）。表を外す・`use_item` の一言を外すと落ちることを確認
