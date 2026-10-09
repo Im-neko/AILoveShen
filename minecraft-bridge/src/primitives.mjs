@@ -1565,7 +1565,10 @@ export const PRIMITIVES = {
   },
   async sleep (bot, state, c, signal) {
     await enterHome(bot, state.home, signal)
-    await sleepOn(bot, bot.blockAt(state.home.bed))
+    // ドアの内側からでは、奥に横向きに置いたベッドへ届かない（Mineflayer は頭側から南へ 2 マスまでしか眠らせない）: ベッドのすぐ隣まで歩く
+    const bed = bot.blockAt(state.home.bed)
+    await goto(bot, new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 1), signal)
+    await sleepOn(bot, bed)
     // 全プレイヤーが眠ると夜が飛ばされ、サーバーがボットを起こす
     while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
     if (bot.isSleeping) await bot.wake()

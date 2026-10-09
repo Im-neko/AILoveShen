@@ -4,7 +4,7 @@ import vec3Pkg from 'vec3'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { enterHome, doorstepHoles, isDoorstepFloor } from '../src/home.mjs'
 import { columnWork } from '../src/leveling.mjs'
-import { arrivalReport } from '../src/primitives.mjs'
+import { arrivalReport, PRIMITIVES } from '../src/primitives.mjs'
 import { shouldAutoJump } from '../src/move.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -210,4 +210,20 @@ test('ドアの近くでは、これまでどおりドアの状態と前の床�
   const { describeDoorstep } = await import('../src/home.mjs')
   const { bot } = world({ at: new Vec3(0.5, 65, 4.5) })
   assert.match(describeDoorstep(bot, home), /^door (closed|open); in front of the door: floor dirt/)
+})
+
+test('眠る前にベッドの隣まで歩く: ドアの内側からは届かない、奥に横向きのベッド（2026-10-09）', async () => {
+  const { bot } = world({ at: new Vec3(0.5, 65, 0.5) })
+  const bed = { name: 'white_bed', position: new Vec3(-1, 65, -2), boundingBox: 'block', getProperties: () => ({}) }
+  const blockAt = bot.blockAt
+  bot.blockAt = (p) => (p.equals(bed.position) ? bed : blockAt(p))
+  let at = null
+  bot.sleep = async () => { at = bot.entity.position.floored() }
+  bot.isSleeping = false
+  bot.time = { timeOfDay: 18000 }
+  bot.once = () => {}
+  const st = { ...state(), home: { ...home, bed: bed.position } }
+  await PRIMITIVES.sleep(bot, st, {}, signal).catch(() => {})
+  assert.ok(at, 'bot.sleep が呼ばれる')
+  assert.ok(at.distanceTo(bed.position) <= 1, `ベッドの隣から眠る: ${at}`)
 })
