@@ -4,12 +4,10 @@ import subprocess
 from pathlib import Path
 
 from ailoveshen.infrastructure.config import (
-    GeminiSettings,
     JevSettings,
     LiteLlmSettings,
     LlmSettings,
     LocalLlmSettings,
-    RemoteLlmSettings,
     MinecraftSettings,
     MissionSettings,
 )
@@ -70,7 +68,6 @@ class TestCollectRunInfo:
             mission=MissionSettings(playbook=[{"name": "shelter"}, {"name": "bed"}])
         )
         info = collect_run_info(
-            GeminiSettings(main_model="g-main"),
             JevSettings(model="jev-x"),
             minecraft,
             LlmSettings(local=LocalLlmSettings(enabled=True, model="qwen")),
@@ -80,21 +77,20 @@ class TestCollectRunInfo:
         assert info["event"] == "run"
         assert info["control"] == "tools"
         assert info["jev_model"] == "jev-x"
-        assert info["gemini_model"] == "g-main"
         assert info["local_llm"]["model"] == "qwen"
         assert info["playbook"] == ["shelter", "bed"]
 
     def test_the_remote_model_is_listed(self, tmp_path):
         args = (JevSettings(), MinecraftSettings())
-        default = collect_run_info(GeminiSettings(main_model="g-main"), *args, LlmSettings(), repo_dir=tmp_path)
-        assert default["remote_llm"] == {"provider": "gemini", "model": "g-main"}
-        llm = LlmSettings(remote=RemoteLlmSettings(provider="litellm", litellm=LiteLlmSettings(model="haiku-5.5")))
-        info = collect_run_info(GeminiSettings(main_model="g-main"), *args, llm, repo_dir=tmp_path)
-        assert info["remote_llm"] == {"provider": "litellm", "model": "haiku-5.5"}
+        llm = LlmSettings(
+            litellm=LiteLlmSettings(model="haiku-5.5", models={"skill_write": "claude-sonnet-5-5"})
+        )
+        info = collect_run_info(*args, llm, repo_dir=tmp_path)
+        assert info["remote_llm"] == {"model": "haiku-5.5", "models": {"skill_write": "claude-sonnet-5-5"}}
 
     def test_a_disabled_local_llm_is_not_listed(self, tmp_path):
         info = collect_run_info(
-            GeminiSettings(), JevSettings(), MinecraftSettings(), LlmSettings(), repo_dir=tmp_path
+            JevSettings(), MinecraftSettings(), LlmSettings(), repo_dir=tmp_path
         )
 
         assert info["local_llm"] is None

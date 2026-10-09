@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""本物の Gemini API で LLM パイプラインを確かめる結合テスト。
+"""本物の LLM（LiteLLM 経由）で LLM パイプラインを確かめる結合テスト。
 
 前提:
-1. 環境変数 GEMINI_API_KEY を設定してある
+1. 環境変数 LITELLM_API_KEY と LITELLM_MODEL を設定してある
 2. 依存をインストールしてある: pip install "ailoveshen[llm]"
 3. （--speak のときだけ）Style-Bert-VITS2 のサーバーが動いていて、
    "ailoveshen[tts]" をインストールしてある
@@ -37,13 +37,12 @@ async def run(speak: bool) -> bool:
 
     print("=" * 60)
     print(
-        f"モデル: {settings.gemini.main_model} "
-        f"(thinking_level={settings.gemini.main_thinking_level})"
+        f"モデル: {settings.llm.litellm.model} "
+        f"(thinking_level={settings.llm.default_thinking_level})"
     )
     print("=" * 60)
 
     llm = create_llm_service(
-        gemini=settings.gemini,
         character=settings.character,
         event_publisher=event_bus,
         conversation=Conversation(),

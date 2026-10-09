@@ -68,25 +68,20 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
     conversation = Conversation()
     gemini_calls = (
         JsonlGenerationLog(
-            str(base_dir / settings.gemini.generation_log_dir),
-            settings.gemini.debug_log_size,
-            settings.gemini.generation_log_keep_days,
+            str(base_dir / settings.llm.generation_log_dir),
+            settings.llm.debug_log_size,
+            settings.llm.generation_log_keep_days,
         )
-        if settings.gemini.generation_log_dir
-        else InMemoryGenerationLog(settings.gemini.debug_log_size)
+        if settings.llm.generation_log_dir
+        else InMemoryGenerationLog(settings.llm.debug_log_size)
     )
     # 視聴者の名前の読み（docs/design/30_name_readings.md）: 返答で覚え、読み上げで使う
     readings = NameReadings(JsonReadingStore(base_dir / settings.twitch.readings_path))
     # 自分について話したこと（docs/design/40_small_talk.md）: 返答で覚え、次の返答で守る
     self_facts = SelfFacts(JsonSelfFactStore(base_dir / settings.twitch.self_facts_path))
-    # ローカルの LLM を使うときは、ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）
-    shared_text = (
-        create_text_generator(settings.gemini, settings.llm, gemini_calls)
-        if settings.llm.local.enabled
-        else None
-    )
+    # ゲームと返事で 1 つの生成器を共有する（同時に送る数をまとめて数える）
+    shared_text = create_text_generator(settings.llm, gemini_calls)
     game = create_game_service(
-        gemini=settings.gemini,
         jev=settings.jev,
         minecraft=settings.minecraft,
         character=settings.character,
@@ -110,7 +105,6 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
         else None
     )
     llm = create_llm_service(
-        gemini=settings.gemini,
         character=settings.character,
         event_publisher=bus,
         conversation=conversation,

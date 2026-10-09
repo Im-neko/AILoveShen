@@ -26,7 +26,6 @@ from ailoveshen.infrastructure.adapters.prompts.prompt_template_builder import (
 from ailoveshen.factories.text import create_text_generator
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
-    GeminiSettings,
     JevSettings,
     LlmSettings,
     TwitchSettings,
@@ -47,7 +46,6 @@ def create_character_profile(settings: CharacterSettings) -> CharacterProfile:
 
 
 def create_llm_service(
-    gemini: GeminiSettings,
     character: CharacterSettings,
     event_publisher: IEventPublisher,
     conversation: Conversation,
@@ -71,15 +69,14 @@ def create_llm_service(
     （create_game_service）。
 
     Args:
-        gemini: Gemini の設定（settings.gemini）
         character: キャラクターの設定（settings.character）
         event_publisher: ドメインイベントの発行先
         conversation: 配信で話したこと。ゲームの目標の決定と共有する
         objectives: ゲームの大目標（GameService.objectives）。プレイ中の返答は、視聴者の
             頼みをここに受けることがある。None なら返答は話すだけ
         history_limit: モデルに渡す最近のメッセージの数
-        generation_log: Gemini の呼び出しの記録（デバッグ用。create_game_service と共有する）
-        llm: ローカルの LLM と Gemini の振り分け（docs/design/36。None か無効なら Gemini だけ）
+        generation_log: LLM の呼び出しの記録（デバッグ用。create_game_service と共有する）
+        llm: LLM の設定（settings.llm。ローカルの LLM とリモートの振り分け。docs/design/36、127）
         text_generator: 作ってある生成器を使う（ゲームと返事で 1 つを共有し、ローカルに同時に送る数を
             まとめて数える）
         readings: 視聴者の名前の読みの辞書（返答のプロンプトに出し、返答から覚える）
@@ -95,7 +92,7 @@ def create_llm_service(
         設定済みで、すぐ使える LLMService
 
     Raises:
-        ValueError: API キーがないか、thinking_level に対応していないとき
+        ValueError: リモートのモデル名（LITELLM_MODEL）がないとき
 
     Example:
         ```python
@@ -104,8 +101,8 @@ def create_llm_service(
 
         settings = load_settings()
         llm_service = create_llm_service(
-            gemini=settings.gemini,
             character=settings.character,
+            llm=settings.llm,
             event_publisher=AsyncEventBus(),
             conversation=Conversation(),
         )
@@ -115,7 +112,7 @@ def create_llm_service(
         ```
     """
     # インフラのアダプターを作る
-    text_generator = text_generator or create_text_generator(gemini, llm, generation_log)
+    text_generator = text_generator or create_text_generator(llm, generation_log)
     prompt_builder = PromptTemplateBuilder()
 
     # ドメインのオブジェクトを作る

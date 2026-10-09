@@ -53,7 +53,6 @@ from ailoveshen.infrastructure.adapters.storage.json_learned_candidate_store imp
 from ailoveshen.infrastructure.adapters.storage.jsonl_watch_recorder import JsonlWatchRecorder
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
-    GeminiSettings,
     JevSettings,
     LlmSettings,
     MinecraftSettings,
@@ -124,7 +123,6 @@ def create_supply_tiers(settings: list[dict]) -> tuple[SupplyTier, ...]:
 
 
 def create_game_service(
-    gemini: GeminiSettings,
     jev: JevSettings,
     minecraft: MinecraftSettings,
     character: CharacterSettings,
@@ -144,15 +142,14 @@ def create_game_service(
     引き継ぐ（store_path の JSON）。
 
     Args:
-        gemini: Gemini の設定（settings.gemini）
         jev: Jev の設定（settings.jev）
         minecraft: ブリッジとエージェントの設定（settings.minecraft）
         character: キャラクターの設定（settings.character）
         event_publisher: ドメインイベントの発行先
         conversation: 配信で話したこと（create_llm_service と共有する）。目標の決定が
             これを読み、話したことと食い違う目標を立てないようにする
-        generation_log: Gemini の呼び出しの記録（デバッグ用。create_llm_service と共有する）
-        llm: ローカルの LLM と Gemini の振り分け（docs/design/36。None か無効なら Gemini だけ）
+        generation_log: LLM の呼び出しの記録（デバッグ用。create_llm_service と共有する）
+        llm: LLM の設定（settings.llm。ローカルの LLM とリモートの振り分け。docs/design/36、127）
         text_generator: 作ってある生成器を使う（ゲームと返事で 1 つを共有し、ローカルに同時に送る数を
             まとめて数える）
         obs: OBS の設定（settings.obs）。minecraft.vision.enabled で obs.game_source があれば、
@@ -162,20 +159,20 @@ def create_game_service(
         設定済みの GameService
 
     Raises:
-        ValueError: API キーがないか、thinking_level に対応していないとき
+        ValueError: リモートのモデル名（LITELLM_MODEL）がないとき
 
     Example:
         ```python
         settings = load_settings()
         game = create_game_service(
-            settings.gemini, settings.jev, settings.minecraft, settings.character, AsyncEventBus(),
-            Conversation(),
+            settings.jev, settings.minecraft, settings.character, AsyncEventBus(), Conversation(),
+            llm=settings.llm,
         )
         outcome = await game.play()
         await game.close()
         ```
     """
-    text_generator = text_generator or create_text_generator(gemini, llm, generation_log)
+    text_generator = text_generator or create_text_generator(llm, generation_log)
     action_selector = JevActionSelector(
         api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
     )
@@ -467,5 +464,5 @@ def create_game_service(
         run_recorder=(
             JsonlWatchRecorder(minecraft.run_record_dir) if minecraft.run_record_dir else None
         ),
-        run_info=collect_run_info(gemini, jev, minecraft, llm),
+        run_info=collect_run_info(jev, minecraft, llm),
     )

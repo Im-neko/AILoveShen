@@ -59,9 +59,9 @@ async def main() -> None:
     s.minecraft.mission.store_path = str(Path(tempfile.mkdtemp()) / "mission.json")
     bus = AsyncEventBus()
     conversation = Conversation()
-    game = create_game_service(s.gemini, s.jev, s.minecraft, s.character, bus, conversation)
+    game = create_game_service(s.jev, s.minecraft, s.character, bus, conversation, llm=s.llm)
     llm = create_llm_service(
-        s.gemini, s.character, bus, conversation=conversation, objectives=game.objectives
+        s.character, bus, conversation=conversation, objectives=game.objectives, llm=s.llm
     )
     bridge = game._bridge  # プレイのループと同じクライアント
 

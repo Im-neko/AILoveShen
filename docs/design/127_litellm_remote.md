@@ -1,6 +1,6 @@
-# 127. リモートの LLM を Gemini か LiteLLM（Claude Haiku 5.5）から選ぶ
+# 127. リモートの LLM を LiteLLM 経由のモデル（Claude Haiku 5.5 など）にする
 
-作成: 2026-10-09。36（ローカル LLM と Gemini の振り分け）の続き。
+作成: 2026-10-09。36（ローカル LLM と Gemini の振り分け）の続き。同じ日に、Gemini の直接の呼び出しをやめて LiteLLM に一本化した（§7）。§2〜§6 の `llm.remote.provider` / `REMOTE_LLM` / `thinking_param` / `LITELLM_PROMPT_CACHE` / `gemini.*` は §7 で消えた。
 
 ## 1. きっかけ
 
@@ -61,3 +61,14 @@ Gemini が受け持つ呼び出しは、画像のある呼び出し、ローカ�
 - Claude の思考の指定（LiteLLM の `reasoning_effort` など）
 - ローカルを切って全部を Haiku にしたときの用途ごとの出力の上限（`output_max_tokens` はローカルだけに効く）
 - `gemini.filter_model`（コメントの振り分け。予定）の置き換え
+
+## 7. Gemini の直接の呼び出しをやめた（2026-10-09）
+
+ユーザー: 「gemini は litellm 経由で呼べるので gemini 専用の環境変数は消したい」。選んだ形は、LiteLLM の OpenAI 互換に一本化する（Gemini のアダプターを残して向き先だけ変える案はやめた）と、モデルごとの違いはモデル名で自動で決める。
+
+- **消したもの**: `GeminiTextGenerator`（`adapters/gemini/`）とそのテスト、`google-genai` の依存、`GEMINI_API_KEY`、`settings.gemini`（`GeminiSettings`、retry、rate_limit）、`llm.remote.provider` / `REMOTE_LLM`、`llm.remote.litellm.thinking_param`、`LITELLM_PROMPT_CACHE`。リリース前なので互換は残さない
+- **移したもの**: `llm.remote.litellm` → `llm.litellm`。思考の表 `thinking_levels` と `default_thinking_level`（旧 `gemini.main_thinking_level`）、呼び出しの記録（`generation_log_dir`、`generation_log_keep_days`）、`debug_log_size` は `llm` の直下。`create_text_generator(llm, generation_log)`、`create_llm_service` / `create_game_service` / `collect_run_info` から `gemini` の引数をなくした
+- **失ったもの**: 画像の解像度の指定（`media_resolution`。OpenAI 互換の `image_url` には `detail` しかなく、使っていない）、思考の要約（`include_thoughts`。`--debug` で `/debug/gemini` に出していた）、SDK の再試行とレート制限（1 秒に 1 回）。LiteLLM 側の再試行に任せる。ローカルと同じ `max_concurrent` で同時に送る数だけ抑える
+- **モデル名で決める**: 名前が `claude` で始まる（`anthropic/claude-…` も）呼び出しにだけ、思考の指定（`thinking: adaptive` + `reasoning_effort` か `disabled`）と `cache_control` を付ける。それ以外（`gemini-3.8-flash` など）には `cache_control` を付けず、思考の深さ（`thinking_levels` の low / medium / high）をそのまま `reasoning_effort` で送る。用途ごとのモデル（`models`）が Claude ならその呼び出しだけ Claude の指定になる。実機（2026-10-09）で `gemini-3.8-flash` は `reasoning_effort` の low / medium / high を受け（同じ問いの思考が 69 / 92 / 183 トークン）、`none` / `minimal` は 400、`thinking: disabled` は効かない（思考を切れない）。指定なしでも思考が走る（挨拶で 200 トークン前後）。使用量の行の「thinking off」は Claude の `disabled` だけを指し、Gemini では off と出ても思考は走る
+- **必須の設定**: `LITELLM_API_KEY` と `LITELLM_MODEL`（`stream.py` が両方を確かめる）。Gemini 3.8 にするなら `LITELLM_MODEL=gemini-3.8-flash`。`llm.ideta.net` に載っているモデル名で確かめる
+- **未確認**: `gemini-3.8-flash` を LiteLLM 経由で実際に動かした配信（この日の確認は Haiku 5.5 と Sonnet 5.5）。LiteLLM に載っている Gemini の名前

@@ -92,8 +92,9 @@ python initialize.py
 # AILoveShen 本体と追加依存（dev, tts, llm）
 pip install -e ".[all]"
 
-# Gemini APIキー（会話生成に必要）
-export GEMINI_API_KEY=your_api_key
+# LLM（LiteLLM 経由のクラウドのモデル。会話生成に必要）
+export LITELLM_API_KEY=your_api_key
+export LITELLM_MODEL=claude-haiku-5-5
 ```
 
 ### Jev + Minecraft Bridgeのセットアップ

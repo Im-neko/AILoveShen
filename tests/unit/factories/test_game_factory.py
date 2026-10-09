@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-pytest.importorskip("google.genai", reason="google-genai not installed")
 pytest.importorskip("typesafe_sdk", reason="typesafe-sdk not installed")
 
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper  # noqa: E402
@@ -13,22 +12,23 @@ from ailoveshen.domain.value_objects import GoalPredicate  # noqa: E402
 from ailoveshen.factories.game import create_game_service, create_objective_plan  # noqa: E402
 from ailoveshen.infrastructure.config import (  # noqa: E402
     CharacterSettings,
-    GeminiSettings,
     JevSettings,
+    LiteLlmSettings,
+    LlmSettings,
     MinecraftSettings,
     MissionSettings,
 )
 from ailoveshen.presentation.services.game_service import GameService  # noqa: E402
 
 
-def _create(gemini_key="g", jev_key="j"):
+def _create(model="haiku-5.5", jev_key="j"):
     return create_game_service(
-        gemini=GeminiSettings(api_key=gemini_key),
         jev=JevSettings(api_key=jev_key),
         minecraft=MinecraftSettings(),
         character=CharacterSettings(),
         event_publisher=AsyncMock(),
         conversation=Conversation(),
+        llm=LlmSettings(litellm=LiteLlmSettings(model=model)),
     )
 
 
@@ -44,10 +44,10 @@ class TestCreateGameService:
         assert isinstance(service.objectives, ObjectiveKeeper)
         await service.close()
 
-    def test_missing_gemini_key_raises(self):
-        """Gemini のキーがなければすぐ失敗する。"""
-        with pytest.raises(ValueError, match="Gemini API key"):
-            _create(gemini_key="")
+    def test_missing_model_raises(self):
+        """リモートのモデル名がなければすぐ失敗する。"""
+        with pytest.raises(ValueError, match="LITELLM_MODEL"):
+            _create(model="")
 
     @pytest.mark.asyncio
     async def test_tools_control_is_wired(self, tmp_path):
@@ -55,12 +55,12 @@ class TestCreateGameService:
         minecraft = MinecraftSettings(control="tools")
         minecraft.watch.record_dir = str(tmp_path)
         service = create_game_service(
-            gemini=GeminiSettings(api_key="g"),
             jev=JevSettings(api_key="j"),
             minecraft=minecraft,
             character=CharacterSettings(),
             event_publisher=AsyncMock(),
             conversation=Conversation(),
+            llm=LlmSettings(litellm=LiteLlmSettings(model="haiku-5.5")),
         )
         assert service._advance._control == "tools"
         assert service._advance._watcher is not None

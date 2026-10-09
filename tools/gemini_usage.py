@@ -7,7 +7,7 @@
 
 価格は 100 万トークンあたりのドル（Google の料金表の今の値を入れる。思考のトークンは出力として
 数える。キャッシュされた入力は安いが、ここでは入力として数える）。価格を渡さなければトークンだけ。
-ログの行は GeminiTextGenerator._log_usage の形。用途（purpose=）が入る前の古いログは、thinking の
+ログの行は GeminiTextGenerator._log_usage の形（2026-10-09 に Gemini の直接呼び出しをやめたので、新しいログには Local / LiteLLM の行だけが出る）。用途（purpose=）が入る前の古いログは、thinking の
 深さごとに数える。
 """
 

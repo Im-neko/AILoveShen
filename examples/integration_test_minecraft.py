@@ -25,7 +25,7 @@ docker/docker-compose.yml、モデルは tts.voice.model_name、.env の TTS_MOD
 1. Minecraft サーバーが動いている（docker/docker-compose.minecraft.yml）
 2. ブリッジが動いている: cd minecraft-bridge && npm install && npm start
    （ボットの視点を見るには、1.21.4 のクライアントで 127.0.0.1:25578 に接続する）
-3. 環境変数 GEMINI_API_KEY と TYPESAFE_API_KEY を設定してある
+3. 環境変数 LITELLM_API_KEY・LITELLM_MODEL と TYPESAFE_API_KEY を設定してある
 4. 依存をインストールしてある: pip install "ailoveshen[llm,game]"
 
 使い方:
@@ -187,15 +187,10 @@ async def run(
     event_bus.subscribe(ObjectiveCompletedEvent, on_objective_done)
     event_bus.subscribe(ObjectiveDroppedEvent, on_objective_dropped)
 
-    gemini_calls = InMemoryGenerationLog(settings.gemini.debug_log_size)
-    # ローカルの LLM を使うときは、ゲームと返事で 1 つを共有する（同時に送る数をまとめて数える）
-    shared_text = (
-        create_text_generator(settings.gemini, settings.llm, gemini_calls)
-        if settings.llm.local.enabled
-        else None
-    )
+    gemini_calls = InMemoryGenerationLog(settings.llm.debug_log_size)
+    # ゲームと返事で 1 つの生成器を共有する（同時に送る数をまとめて数える）
+    shared_text = create_text_generator(settings.llm, gemini_calls)
     game = create_game_service(
-        gemini=settings.gemini,
         jev=settings.jev,
         minecraft=settings.minecraft,
         character=settings.character,
@@ -213,7 +208,6 @@ async def run(
         else None
     )
     llm = create_llm_service(
-        gemini=settings.gemini,
         character=settings.character,
         event_publisher=event_bus,
         conversation=conversation,

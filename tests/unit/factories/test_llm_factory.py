@@ -4,14 +4,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-pytest.importorskip("google.genai", reason="google-genai not installed")
-
 from ailoveshen.domain.entities import Conversation  # noqa: E402
 from ailoveshen.factories.llm import (  # noqa: E402
     create_character_profile,
     create_llm_service,
 )
-from ailoveshen.infrastructure.config import CharacterSettings, GeminiSettings  # noqa: E402
+from ailoveshen.infrastructure.config import (  # noqa: E402
+    CharacterSettings,
+    LiteLlmSettings,
+    LlmSettings,
+)
 from ailoveshen.presentation.services.llm_service import LLMService  # noqa: E402
 
 
@@ -22,33 +24,23 @@ class TestCreateLLMService:
     async def test_creates_service(self):
         """正しい設定ならサービスが組み立てられる。"""
         service = create_llm_service(
-            gemini=GeminiSettings(api_key="test-key"),
             character=CharacterSettings(),
             event_publisher=AsyncMock(),
             conversation=Conversation(),
+            llm=LlmSettings(litellm=LiteLlmSettings(model="haiku-5.5")),
         )
 
         assert isinstance(service, LLMService)
         await service.close()
 
-    def test_missing_api_key_raises(self):
-        """API キーがなければすぐ失敗する。"""
-        with pytest.raises(ValueError, match="API key is required"):
+    def test_missing_model_raises(self):
+        """リモートのモデル名がなければすぐ失敗する。"""
+        with pytest.raises(ValueError, match="LITELLM_MODEL"):
             create_llm_service(
-                gemini=GeminiSettings(api_key=""),
                 character=CharacterSettings(),
                 event_publisher=AsyncMock(),
                 conversation=Conversation(),
-            )
-
-    def test_invalid_thinking_level_raises(self):
-        """対応していない thinking level ならすぐ失敗する。"""
-        with pytest.raises(ValueError, match="thinking_level"):
-            create_llm_service(
-                gemini=GeminiSettings(api_key="test-key", main_thinking_level="minimal"),
-                character=CharacterSettings(),
-                event_publisher=AsyncMock(),
-                conversation=Conversation(),
+                llm=LlmSettings(),
             )
 
 

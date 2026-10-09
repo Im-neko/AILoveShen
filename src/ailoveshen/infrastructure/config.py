@@ -81,23 +81,6 @@ class TwitchSupportSettings:
     dedupe_seconds: float = 3600.0
 
 
-@dataclass
-class GeminiRetrySettings:
-    """Gemini API の再試行の設定（指数バックオフ）。"""
-
-    max_attempts: int = 3  # 最初のリクエストを含む
-    base_delay_seconds: float = 1.0
-    max_delay_seconds: float = 10.0
-    exponential_base: float = 2.0
-
-
-@dataclass
-class GeminiRateLimitSettings:
-    """Gemini API のレート制限の設定。"""
-
-    min_interval_seconds: float = 1.0
-
-
 DEFAULT_THINKING_LEVELS = {
     "town": "high",
     "site": "high",
@@ -116,35 +99,6 @@ DEFAULT_THINKING_LEVELS = {
     "skill_write": "high",
     "check_write": "medium",
 }
-
-
-@dataclass
-class GeminiSettings:
-    """Gemini API の設定。"""
-
-    api_key: str = ""
-    main_model: str = "gemini-3.8-flash"
-    filter_model: str = "gemini-3.8-flash"
-    main_thinking_level: str = "low"
-    filter_thinking_level: str = "low"
-    # 思考のトークンを含む。小さすぎると出力が空になる
-    max_output_tokens: int = 16384
-    # 用途（呼び出しの purpose）ごとの thinking_level（docs/design/19 §7、21 §7）。
-    # ない用途は main_thinking_level
-    thinking_levels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_THINKING_LEVELS))
-    # デバッグ: 思考の要約も返させ、直近の呼び出しを目標ボードの /api/debug/gemini に出す
-    include_thoughts: bool = False
-    debug_log_size: int = 50
-    # 呼び出しの記録（プロンプト全文、出力、道具の呼び出し、トークン）を JSON Lines で残すディレクトリ
-    # （リポジトリの直下から。空ならメモリだけ）と、古い記録のファイルを消すまでの日数（docs/design/90）
-    generation_log_dir: str = "logs/generations"
-    generation_log_keep_days: int = 3
-    # 画像を添えるときの解像度（low / medium / high。低いほど画像のトークンが少ない）
-    media_resolution: str = "low"
-    # 用途ごとの解像度（建物の設計の地図は、細かい色を読むので medium）
-    media_resolutions: dict[str, str] = field(default_factory=lambda: {"build_design": "medium"})
-    retry: GeminiRetrySettings = field(default_factory=GeminiRetrySettings)
-    rate_limit: GeminiRateLimitSettings = field(default_factory=GeminiRateLimitSettings)
 
 
 @dataclass
@@ -181,11 +135,6 @@ class LiteLlmSettings:
     context_tokens: int = 200000
     max_output_tokens: int = 8192
     response_format: str = "auto"  # auto | off
-    # 思考の渡し方: anthropic（Claude。思考の要る用途は thinking: adaptive + reasoning_effort、ほかは disabled）| none
-    thinking_param: str = "anthropic"
-    # Claude のプロンプトキャッシュ: system と、プロンプトの CACHE_BREAK の手前に cache_control を付ける。
-    # Gemini など Claude 以外のモデルを LiteLLM 経由で使うときは false（付けると明示キャッシュに切り替わる）
-    prompt_cache: bool = True
     # 用途 → モデル（表にない用途は model）。コードを書く用途だけ上のモデルにする。LiteLLM に回った呼び出しにだけ効く
     # （どの用途が回るかは llm.routes と、ローカルを切っているかで決まる）
     models: dict[str, str] = field(default_factory=dict)
@@ -194,22 +143,27 @@ class LiteLlmSettings:
 
 
 @dataclass
-class RemoteLlmSettings:
-    """リモートの役（画像のある呼び出し、ローカルに入らない呼び出し、失敗したとき、ローカルを切ったとき）を担うモデル。"""
-
-    provider: str = "gemini"  # gemini | litellm
-    litellm: LiteLlmSettings = field(default_factory=LiteLlmSettings)
-
-
-@dataclass
 class LlmSettings:
-    """ローカルの LLM とリモート（Gemini か LiteLLM）の振り分け（docs/design/36、127）。画像のある呼び出しはいつもリモート。"""
+    """
+    LLM の設定: ローカルの LLM と、リモート（LiteLLM 経由のモデル。Claude も Gemini もここ）の振り分け
+    （docs/design/36、127）。画像のある呼び出しはいつもリモート。
+    """
 
     local: LocalLlmSettings = field(default_factory=LocalLlmSettings)
-    remote: RemoteLlmSettings = field(default_factory=RemoteLlmSettings)
+    litellm: LiteLlmSettings = field(default_factory=LiteLlmSettings)
     # 用途（purpose）→ local / remote。default は表にない用途
     routes: dict[str, str] = field(default_factory=lambda: {"default": "local"})
     fallback: str = "none"  # none | remote（ローカルが失敗したとき）
+    # 用途（呼び出しの purpose）ごとの思考の深さ（docs/design/19 §7、21 §7）。low / medium / high。
+    # medium と high の用途だけ思考させる。ない用途は default_thinking_level
+    thinking_levels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_THINKING_LEVELS))
+    default_thinking_level: str = "low"
+    # 呼び出しの記録（プロンプト全文、出力、道具の呼び出し、トークン）を JSON Lines で残すディレクトリ
+    # （リポジトリの直下から。空ならメモリだけ）と、古い記録のファイルを消すまでの日数（docs/design/90）
+    generation_log_dir: str = "logs/generations"
+    generation_log_keep_days: int = 3
+    # 目標ボードの /api/debug/gemini に出す直近の呼び出しの数（メモリだけのとき）
+    debug_log_size: int = 50
 
 
 @dataclass
@@ -495,7 +449,6 @@ class Settings:
     debug: bool = False
 
     twitch: TwitchSettings = field(default_factory=TwitchSettings)
-    gemini: GeminiSettings = field(default_factory=GeminiSettings)
     llm: LlmSettings = field(default_factory=LlmSettings)
     character: CharacterSettings = field(default_factory=CharacterSettings)
     jev: JevSettings = field(default_factory=JevSettings)
@@ -691,46 +644,10 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             presets_path=str(stream_data.get("presets_path", StreamSettings.presets_path)),
         )
 
-    if "gemini" in data:
-        gemini_data = data["gemini"]
-        retry_data = gemini_data.get("retry", {})
-        rate_limit_data = gemini_data.get("rate_limit", {})
-        settings.gemini = GeminiSettings(
-            api_key=gemini_data.get("api_key", ""),
-            main_model=gemini_data.get("main_model", "gemini-3.8-flash"),
-            filter_model=gemini_data.get("filter_model", "gemini-3.8-flash"),
-            main_thinking_level=gemini_data.get("main_thinking_level", "low"),
-            filter_thinking_level=gemini_data.get("filter_thinking_level", "low"),
-            max_output_tokens=gemini_data.get("max_output_tokens", 16384),
-            thinking_levels={
-                **DEFAULT_THINKING_LEVELS,
-                **dict(gemini_data.get("thinking_levels") or {}),
-            },
-            include_thoughts=gemini_data.get("include_thoughts", False),
-            debug_log_size=gemini_data.get("debug_log_size", 50),
-            generation_log_dir=gemini_data.get("generation_log_dir", "logs/generations"),
-            generation_log_keep_days=gemini_data.get("generation_log_keep_days", 3),
-            media_resolution=gemini_data.get("media_resolution", "low"),
-            media_resolutions={
-                "build_design": "medium",
-                **dict(gemini_data.get("media_resolutions") or {}),
-            },
-            retry=GeminiRetrySettings(
-                max_attempts=retry_data.get("max_attempts", 3),
-                base_delay_seconds=retry_data.get("base_delay_seconds", 1.0),
-                max_delay_seconds=retry_data.get("max_delay_seconds", 10.0),
-                exponential_base=retry_data.get("exponential_base", 2.0),
-            ),
-            rate_limit=GeminiRateLimitSettings(
-                min_interval_seconds=rate_limit_data.get("min_interval_seconds", 1.0),
-            ),
-        )
-
     if "llm" in data:
         llm_data = data["llm"] or {}
         local_data = llm_data.get("local") or {}
-        remote_data = llm_data.get("remote") or {}
-        litellm_data = remote_data.get("litellm") or {}
+        litellm_data = llm_data.get("litellm") or {}
         d = LocalLlmSettings()
         lite = LiteLlmSettings()
         settings.llm = LlmSettings(
@@ -757,28 +674,29 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 max_concurrent=int(local_data.get("max_concurrent", d.max_concurrent)),
                 timeout_seconds=float(local_data.get("timeout_seconds", d.timeout_seconds)),
             ),
-            remote=RemoteLlmSettings(
-                provider=str(remote_data.get("provider", "gemini")),
-                litellm=LiteLlmSettings(
-                    base_url=str(litellm_data.get("base_url", lite.base_url)),
-                    model=str(litellm_data.get("model", lite.model) or ""),
-                    api_key=str(litellm_data.get("api_key", lite.api_key) or ""),
-                    context_tokens=int(litellm_data.get("context_tokens", lite.context_tokens)),
-                    max_output_tokens=int(litellm_data.get("max_output_tokens", lite.max_output_tokens)),
-                    response_format=str(litellm_data.get("response_format", lite.response_format)),
-                    thinking_param=str(litellm_data.get("thinking_param", lite.thinking_param)),
-                    prompt_cache=_truthy(litellm_data.get("prompt_cache", lite.prompt_cache)),
-                    models={
-                        str(k): str(v)
-                        for k, v in (litellm_data.get("models", lite.models) or {}).items()
-                        if v
-                    },
-                    max_concurrent=int(litellm_data.get("max_concurrent", lite.max_concurrent)),
-                    timeout_seconds=float(litellm_data.get("timeout_seconds", lite.timeout_seconds)),
-                ),
+            litellm=LiteLlmSettings(
+                base_url=str(litellm_data.get("base_url", lite.base_url)),
+                model=str(litellm_data.get("model", lite.model) or ""),
+                api_key=str(litellm_data.get("api_key", lite.api_key) or ""),
+                context_tokens=int(litellm_data.get("context_tokens", lite.context_tokens)),
+                max_output_tokens=int(litellm_data.get("max_output_tokens", lite.max_output_tokens)),
+                response_format=str(litellm_data.get("response_format", lite.response_format)),
+                models={
+                    str(k): str(v) for k, v in (litellm_data.get("models", lite.models) or {}).items() if v
+                },
+                max_concurrent=int(litellm_data.get("max_concurrent", lite.max_concurrent)),
+                timeout_seconds=float(litellm_data.get("timeout_seconds", lite.timeout_seconds)),
             ),
             routes={"default": "local", **dict(llm_data.get("routes") or {})},
             fallback=str(llm_data.get("fallback", "none")),
+            thinking_levels={
+                **DEFAULT_THINKING_LEVELS,
+                **{str(k): str(v) for k, v in (llm_data.get("thinking_levels") or {}).items()},
+            },
+            default_thinking_level=str(llm_data.get("default_thinking_level", "low")),
+            generation_log_dir=str(llm_data.get("generation_log_dir", "logs/generations") or ""),
+            generation_log_keep_days=int(llm_data.get("generation_log_keep_days", 3)),
+            debug_log_size=int(llm_data.get("debug_log_size", 50)),
         )
 
     if "character" in data:

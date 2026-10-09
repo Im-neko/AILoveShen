@@ -36,7 +36,7 @@ Minecraft サーバー (Docker, :25565)
 - Python 3.11 以上、Node.js 20.12 以上（ブリッジが `.env` を読むのに使う機能が要る）、Docker
 - Minecraft Java Edition 1.21.4 のクライアント（ボットの視点を映す用）
 - OBS 28 以上（WebSocket が最初から入っている）
-- API キー: Gemini（`GEMINI_API_KEY`）、TypeSafe / Jev（`TYPESAFE_API_KEY`）
+- API キー: LiteLLM（`LITELLM_API_KEY`。モデル名は `LITELLM_MODEL`）、TypeSafe / Jev（`TYPESAFE_API_KEY`）
 
 ### 2. リポジトリと依存
 
@@ -61,7 +61,8 @@ cp .env.example .env
 
 | 変数 | 内容 |
 |---|---|
-| `GEMINI_API_KEY` | Gemini の API キー |
+| `LITELLM_API_KEY` | LiteLLM（llm.ideta.net）のキー。pass の `LITE_LLM_MASTER_KEY` を `LITELLM_API_KEY="$(pass show LITE_LLM_MASTER_KEY)"` で渡してもよい |
+| `LITELLM_MODEL` | LiteLLM のモデル名（`claude-haiku-5-5`、`gemini-3.8-flash` など） |
 | `TYPESAFE_API_KEY` | Jev の API キー |
 | `OBS_PASSWORD` | OBS の WebSocket のパスワード（下の 6） |
 | `OBS_GAME_SOURCE` | ゲームを映す OBS のソース名（既定 `Minecraft`） |
@@ -396,7 +397,7 @@ mise run bench -- compare 前.jsonl 後.jsonl      # 変更の前後を並べる
 | `[twitch] 更新トークンが使えない` | 続けて出る URL で許可し直す（30 日以上つないでいない、または別の場所で取り直した） |
 | `[eventsub] 許可されなかった` / `デバイスコードを取れない` | 許可の画面で拒否した、または `TWITCH_CLIENT_ID` が違う。ログの本文（Twitch の返事）を見る |
 | `[eventsub] フォローの購読を断られた（403 …）` | トークンの持ち主が、配信者本人でもそのチャンネルのモデレーターでもない |
-| `.env に GEMINI_API_KEY … を書く` | `.env` にキーを書く |
+| `.env に LITELLM_API_KEY … を書く` | `.env` にキーとモデル名を書く |
 | `目標ボードのポート 8765 が使われている` で起動しない | 前の配信や examples が動いたままになっている → 止める。別のポートにするなら `--board-port` と OBS の URL |
 | `…が止まった（…）。配信は続くが、直すには再起動する` | 目標ボードかチャットへの返事が止まった。プレイと実況は続く。区切りのよいところで配信を再起動する |
 | `config/default.yaml がない` | リポジトリの直下で動かす |

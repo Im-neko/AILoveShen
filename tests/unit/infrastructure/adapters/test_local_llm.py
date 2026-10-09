@@ -355,7 +355,7 @@ def _claude(server, **kwargs):
         "http://proxy/v1",
         model="claude-haiku-5-5",
         transport=httpx.MockTransport(server),
-        thinking_param="anthropic",
+        thinking_param="litellm",
         thinking_levels={"goal": "low", "goal_after_failure": "medium", "skill_write": "high"},
         label="LiteLLM",
         images=True,
@@ -453,6 +453,34 @@ async def test_without_prompt_cache_the_breaks_are_only_removed():
     system, user = server.requests[0]["messages"]
     assert system["content"] == "persona" and user["content"] == "rules\nstate"
     assert CACHE_BREAK not in json.dumps(server.requests[0], ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_a_model_that_is_not_claude_gets_its_depth_as_reasoning_effort_and_no_cache_control():
+    """Gemini など Claude 以外を LiteLLM 経由で使うとき: 思考は切れないので深さを送る（cache_control を付けると明示キャッシュに切り替わる）。"""
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+    server = _Server(_answer("a"), _answer("b"))
+    gemini = OpenAICompatTextGenerator(
+        "http://proxy/v1",
+        model="gemini-3.8-flash",
+        transport=httpx.MockTransport(server),
+        thinking_param="litellm",
+        thinking_levels={"goal": "low", "skill_write": "high"},
+        label="LiteLLM",
+        prompt_cache=True,
+        models={"skill_write": "claude-sonnet-5-5"},
+    )
+    await gemini.generate(f"rules\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
+    plain = server.requests[0]
+    assert "thinking" not in plain and plain["reasoning_effort"] == "low"
+    assert plain["messages"][0]["content"] == "persona" and plain["messages"][1]["content"] == "rules\nstate"
+    # 用途ごとのモデルが Claude ならその呼び出しだけ、Claude の思考とキャッシュの指定が付く
+    await gemini.generate(f"rules\n{CACHE_BREAK}state", system_instruction="persona", purpose="skill_write")
+    code = server.requests[1]
+    assert code["model"] == "claude-sonnet-5-5"
+    assert code["thinking"] == {"type": "adaptive"} and code["reasoning_effort"] == "high"
+    assert code["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
 @pytest.mark.asyncio

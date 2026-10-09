@@ -127,39 +127,12 @@ comment_filter:
   # Filter results logging
   log_results: true
 
-# Gemini API
-# Local LLM (docs/design/36_local_llm.md): an OpenAI-compatible server (FreeToken :1919, Ollama
-# :11434/v1, llama.cpp, vLLM) answers the text calls; calls with images always go to the remote LLM (the
-# local model runs without vision), and so does a call too long for context_tokens. Off by default: LOCAL_LLM=1
-# The remote LLM is Gemini (the gemini: section below) or a model served by LiteLLM (docs/design/127):
-# REMOTE_LLM=litellm. It does everything when the local LLM is off.
+# LLM (docs/design/36, 127). Local LLM: an OpenAI-compatible server (FreeToken :1919, Ollama :11434/v1,
+# llama.cpp, vLLM) answers the text calls; calls with images always go to the remote LLM (the local model
+# runs without vision), and so does a call too long for context_tokens. Off by default: LOCAL_LLM=1.
+# The remote LLM is whatever LiteLLM serves (llm.litellm below; Claude, Gemini, ...): there is no direct
+# call to a cloud API, so no API key besides LITELLM_API_KEY. It does everything when the local LLM is off.
 llm:
-  remote:
-    provider: "${REMOTE_LLM:-gemini}"    # gemini | litellm
-    litellm:                              # an OpenAI-compatible proxy; images are sent too; no thinking setting is sent
-      base_url: "${LITELLM_URL:-https://llm.ideta.net/v1}"
-      model: "${LITELLM_MODEL:-}"        # required when provider is litellm (e.g. the Haiku 5.5 alias LiteLLM serves)
-      api_key: "${LITELLM_API_KEY:-}"
-      context_tokens: 200000
-      max_output_tokens: 8192
-      response_format: "auto"
-      # Claude's thinking: purposes whose gemini.thinking_levels is medium / high think (thinking: adaptive +
-      # reasoning_effort), the others send thinking: disabled (Haiku 5.5 thinks by default: 160-300 tokens
-      # per call). Pinned per purpose: changing it between calls invalidates the prompt cache
-      thinking_param: "anthropic"        # anthropic | none (none: send nothing, e.g. a Gemini model behind LiteLLM)
-      # Prompt cache (docs/design/127 §5): cache_control on the system message and in front of every
-      # CACHE_BREAK the prompt builders put between the part that stays the same and the part that
-      # changes. Claude only: false for a Gemini model behind LiteLLM (cache_control switches it to explicit caching)
-      prompt_cache: "${LITELLM_PROMPT_CACHE:-true}"
-      # Per purpose model (empty: the default model above). The purposes that write code go to a stronger
-      # model, e.g. LITELLM_CODE_MODEL=claude-sonnet-5-5. Applies only to calls that reach LiteLLM: a purpose
-      # that llm.routes sends to local stays on the local model (route it to remote to use this model).
-      # These must think (their gemini.thinking_levels is medium / high)
-      models:
-        skill_write: "${LITELLM_CODE_MODEL:-}"
-        check_write: "${LITELLM_CODE_MODEL:-}"
-      max_concurrent: 4
-      timeout_seconds: 120
   local:
     enabled: "${LOCAL_LLM:-false}"
     base_url: "${LOCAL_LLM_URL:-http://127.0.0.1:1919/v1}"
@@ -192,6 +165,29 @@ llm:
     output_max_tokens: {tool: 800, tool_after_failure: 800, tool_stuck: 1200, goal: 1600, goal_after_failure: 1600, reply: 1200, commentary: 300, live: 200, plan: 3500, promise: 600}
     max_concurrent: 2
     timeout_seconds: 180
+  # The remote LLM: an OpenAI-compatible LiteLLM proxy. Images are sent as data URLs. What differs per
+  # model is decided by the model name: a name starting with "claude" gets Claude's thinking setting
+  # (the purposes whose thinking_levels below is medium / high send thinking: adaptive + reasoning_effort,
+  # the others thinking: disabled: Haiku 5.5 thinks by default, 160-300 tokens a call) and the prompt
+  # cache (cache_control on the system message and in front of every CACHE_BREAK the prompt builders put
+  # between the part that stays the same and the part that changes). Other models (gemini-3.8-flash) cannot
+  # switch thinking off: they get thinking_levels as reasoning_effort (low / medium / high) and no cache_control.
+  litellm:
+    base_url: "${LITELLM_URL:-https://llm.ideta.net/v1}"
+    model: "${LITELLM_MODEL:-}"          # required: the name LiteLLM serves (claude-haiku-5-5, gemini-3.8-flash, ...)
+    api_key: "${LITELLM_API_KEY:-}"      # the proxy's master key (pass: LITE_LLM_MASTER_KEY)
+    context_tokens: 200000
+    max_output_tokens: 8192
+    response_format: "auto"
+    # Per purpose model (empty: the model above). The purposes that write code go to a stronger model, e.g.
+    # LITELLM_CODE_MODEL=claude-sonnet-5-5. Applies only to calls that reach LiteLLM: a purpose that
+    # llm.routes sends to local stays on the local model (route it to remote to use this model).
+    # These must think (their thinking_levels below is medium / high)
+    models:
+      skill_write: "${LITELLM_CODE_MODEL:-}"
+      check_write: "${LITELLM_CODE_MODEL:-}"
+    max_concurrent: 4
+    timeout_seconds: 120
   # purpose -> local | remote (default: purposes not listed). Images always go to the remote LLM.
   # 2026-09-27: everything but images goes local (the local server has a 130k context); the remote LLM is
   # used only for calls with a screenshot (and a prompt too long even for the local context).
@@ -201,22 +197,18 @@ llm:
     default: "local"
   fallback: "none"                       # none | remote: when the local model fails
 
-gemini:
-  api_key: "${GEMINI_API_KEY:-}"
-  main_model: "gemini-3.8-flash"
-  filter_model: "gemini-3.8-flash"
-  # thinking_level: low / medium / high (3.8 Flash rejects "minimal").
-  # temperature/top_p/top_k were removed in 3.8 Flash.
-  # main=low: measured 2026-09-24, median ~1.6-1.9s vs ~2.9-3.1s for medium
-  # with no noticeable quality difference for 1-2 sentence utterances.
-  main_thinking_level: "low"
-  filter_thinking_level: "low"
-  # Includes thinking tokens. Too small a value yields truncated or empty output.
-  # Measured total usage peaks around 1.3k tokens (medium), but a long goal decision (review, plan
-  # edits, jobs) was cut at 8192 (2026-09-26). A cut JSON output is retried once at twice the limit.
-  max_output_tokens: 16384
-  # thinking_level per purpose (docs/design/19 §7, 21 §7). Purposes not listed use
-  # main_thinking_level. high is unmeasured (it may hit max_output_tokens): measure before relying on it.
+  default_thinking_level: "low"
+  # Every call (the whole prompt, the output, tool calls, tokens, which model answered) is also appended
+  # to <generation_log_dir>/gen-<start>.jsonl; files older than generation_log_keep_days are deleted at
+  # start. Viewer comments are in the prompts; logs/ is not committed. "" = memory only
+  generation_log_dir: "logs/generations"
+  generation_log_keep_days: 3
+  # How many recent calls GET /api/debug/gemini and /debug/gemini on the goal board (--board-port) keep
+  # when the log is memory only
+  debug_log_size: 50
+  # Thinking depth per purpose (docs/design/19 §7, 21 §7). Only medium / high purposes think (local:
+  # llm.local.thinking_purposes, LiteLLM Claude: thinking: adaptive + reasoning_effort). Purposes not
+  # listed use default_thinking_level. high is unmeasured (it may hit max_output_tokens): measure before relying on it.
   thinking_levels:
     town: "high"               # the town definition
     site: "high"               # choosing the town site
@@ -237,34 +229,7 @@ gemini:
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
     skill_write: "high"        # writing or fixing a skill (docs/design/22)
     check_write: "medium"      # writing the check of a custom(name) condition (docs/design/42)
-  # Debugging: ask for thought summaries and keep the last calls (purpose, level, thoughts,
-  # output, tokens) for GET /api/debug/gemini and /debug/gemini on the goal board (--board-port)
-  # Thought summaries cost output tokens on every call: off by default, on with --debug
-  include_thoughts: false
-  debug_log_size: 50
-  # Every call (the whole prompt, the output, tool calls, tokens, which model answered) is also appended
-  # to <generation_log_dir>/gen-<start>.jsonl; files older than generation_log_keep_days are deleted at
-  # start. Viewer comments are in the prompts; logs/ is not committed. "" = memory only
-  generation_log_dir: "logs/generations"
-  generation_log_keep_days: 3
-  # Resolution of attached screenshots (low / medium / high): lower costs fewer image tokens
-  media_resolution: "low"
-  media_resolutions:
-    build_design: "medium"     # the top-down map for placing a build (docs/design/25)
 
-  # Retry settings (max_attempts includes the original request;
-  # retried on 408/429/5xx only)
-  retry:
-    max_attempts: 3
-    base_delay_seconds: 1.0
-    max_delay_seconds: 10.0
-    exponential_base: 2.0
-
-  # Rate limit settings
-  rate_limit:
-    min_interval_seconds: 1.0
-
-# AI Streamer Character
 character:
   name: "AILoveShen"
   description: |

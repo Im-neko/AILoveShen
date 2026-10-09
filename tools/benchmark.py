@@ -422,14 +422,9 @@ async def play_one(
     bus.subscribe(HouseDesignedEvent, on_design)
     bus.subscribe(GoalSetEvent, on_goal)
     # LLM の呼び出しの全文も、実行ごとのディレクトリに残す（設計書 90。配信の logs/ には書かない）
-    log = JsonlGenerationLog(str(run_dir / "logs" / "generations"), settings.gemini.debug_log_size)
-    shared = (
-        create_text_generator(settings.gemini, settings.llm, log)
-        if settings.llm.local.enabled
-        else None
-    )
+    log = JsonlGenerationLog(str(run_dir / "logs" / "generations"), settings.llm.debug_log_size)
+    shared = create_text_generator(settings.llm, log)
     game = create_game_service(
-        gemini=settings.gemini,
         jev=settings.jev,
         minecraft=mc,
         character=settings.character,

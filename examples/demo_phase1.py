@@ -16,7 +16,7 @@ from ailoveshen.infrastructure.config import load_settings
 settings = load_settings()
 print(f"  アプリ名: {settings.app_name}")
 print(f"  デバッグ: {settings.debug}")
-print(f"  Gemini モデル: {settings.gemini.main_model}")
+print(f"  LLM モデル: {settings.llm.litellm.model or '（未設定: LITELLM_MODEL）'}")
 print(f"  TTS サーバー: {settings.tts.server.host}:{settings.tts.server.port}")
 print(f"  ログレベル: {settings.logging.level}")
 print()

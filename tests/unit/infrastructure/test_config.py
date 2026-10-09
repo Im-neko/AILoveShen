@@ -9,7 +9,7 @@ import pytest
 from ailoveshen.infrastructure.config import (
     CharacterSettings,
     ConfigurationError,
-    GeminiSettings,
+    LlmSettings,
     LoggingSettings,
     MissionSettings,
     Settings,
@@ -212,63 +212,49 @@ class TestLoadSettings:
             del os.environ["TEST_CHANNEL"]
 
 
-class TestLoadRemoteLlmSettings:
-    """リモートの LLM（Gemini か LiteLLM）の設定の読み込み（docs/design/127）。"""
+class TestLoadLlmSettings:
+    """LLM（LiteLLM 経由のモデル、思考の表、呼び出しの記録）の設定の読み込み（docs/design/127）。"""
 
-    def test_the_remote_is_gemini_unless_litellm_is_chosen(self):
+    def test_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "default.yaml").write_text("llm:\n  local:\n    enabled: false")
             settings = load_settings(config_dir=tmpdir)
-            assert settings.llm.remote.provider == "gemini"
-            assert settings.llm.remote.litellm.model == ""
+            assert settings.llm.litellm.model == ""
+            assert settings.llm.litellm.base_url == "https://llm.ideta.net/v1"
+            assert settings.llm.default_thinking_level == "low"
+            assert settings.llm.thinking_levels["town"] == "high"
+            assert settings.llm.generation_log_keep_days == 3
 
     def test_litellm_settings_are_read(self):
         os.environ["TEST_LITELLM_MODEL"] = "haiku-5.5"
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 (Path(tmpdir) / "default.yaml").write_text(
-                    "llm:\n  remote:\n    provider: litellm\n    litellm:\n"
-                    "      base_url: http://proxy:4000/v1\n      model: ${TEST_LITELLM_MODEL}\n"
-                    "      max_output_tokens: 4096\n  fallback: remote\n"
+                    "llm:\n  litellm:\n"
+                    "    base_url: http://proxy:4000/v1\n    model: ${TEST_LITELLM_MODEL}\n"
+                    "    max_output_tokens: 4096\n"
+                    "    models:\n      skill_write: claude-sonnet-5-5\n      check_write: ''\n"
+                    "  fallback: remote\n"
+                    "  default_thinking_level: medium\n"
+                    "  thinking_levels:\n    town: medium\n"
+                    "  debug_log_size: 7\n"
                 )
                 settings = load_settings(config_dir=tmpdir)
-                assert settings.llm.remote.provider == "litellm"
-                assert settings.llm.remote.litellm.base_url == "http://proxy:4000/v1"
-                assert settings.llm.remote.litellm.model == "haiku-5.5"
-                assert settings.llm.remote.litellm.max_output_tokens == 4096
+                assert settings.llm.litellm.base_url == "http://proxy:4000/v1"
+                assert settings.llm.litellm.model == "haiku-5.5"
+                assert settings.llm.litellm.max_output_tokens == 4096
+                assert settings.llm.litellm.models == {"skill_write": "claude-sonnet-5-5"}
                 assert settings.llm.fallback == "remote"
+                assert settings.llm.default_thinking_level == "medium"
+                assert settings.llm.thinking_levels["town"] == "medium"
+                assert settings.llm.thinking_levels["site"] == "high"  # 書かなかった用途は既定のまま
+                assert settings.llm.debug_log_size == 7
         finally:
             del os.environ["TEST_LITELLM_MODEL"]
 
 
-class TestLoadGeminiAndCharacterSettings:
-    """gemini と character の節の読み込みのテスト。"""
-
-    def test_load_gemini_section(self):
-        """gemini の節を、入れ子の retry・rate_limit も含めて読む。"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir)
-            (config_dir / "default.yaml").write_text(
-                "gemini:\n"
-                "  main_model: gemini-x\n"
-                "  main_thinking_level: high\n"
-                "  max_output_tokens: 1024\n"
-                "  retry:\n"
-                "    max_attempts: 5\n"
-                "    max_delay_seconds: 20.0\n"
-                "  rate_limit:\n"
-                "    min_interval_seconds: 0.5\n"
-            )
-
-            settings = load_settings(config_dir=config_dir)
-            assert settings.gemini.main_model == "gemini-x"
-            assert settings.gemini.main_thinking_level == "high"
-            assert settings.gemini.filter_thinking_level == "low"  # 既定値
-            assert settings.gemini.max_output_tokens == 1024
-            assert settings.gemini.retry.max_attempts == 5
-            assert settings.gemini.retry.max_delay_seconds == 20.0
-            assert settings.gemini.retry.base_delay_seconds == 1.0  # 既定値
-            assert settings.gemini.rate_limit.min_interval_seconds == 0.5
+class TestLoadCharacterSettings:
+    """character の節の読み込みのテスト。"""
 
     def test_load_character_section(self):
         """character の節を読み、ないキーは既定値にする。"""
@@ -287,9 +273,8 @@ class TestLoadGeminiAndCharacterSettings:
         """プロジェクトの config/default.yaml は Phase 3 の節を読める。"""
         config_dir = Path(__file__).resolve().parents[3] / "config"
         settings = load_settings(config_dir=config_dir, env="nonexistent")
-        assert settings.gemini.main_model == "gemini-3.8-flash"
-        assert settings.gemini.main_thinking_level in {"low", "medium", "high"}
-        assert settings.gemini.filter_thinking_level in {"low", "medium", "high"}
+        assert settings.llm.default_thinking_level in {"low", "medium", "high"}
+        assert set(settings.llm.thinking_levels.values()) <= {"low", "medium", "high"}
         assert settings.character.name
 
 
@@ -301,7 +286,7 @@ class TestSettingsDataclasses:
         settings = Settings()
         assert settings.app_name == "AILoveShen"
         assert isinstance(settings.twitch, TwitchSettings)
-        assert isinstance(settings.gemini, GeminiSettings)
+        assert isinstance(settings.llm, LlmSettings)
         assert isinstance(settings.tts, TTSSettings)
         assert isinstance(settings.logging, LoggingSettings)
 
@@ -310,19 +295,6 @@ class TestSettingsDataclasses:
         twitch = TwitchSettings()
         assert twitch.channel == ""
         assert twitch.client_id == ""
-
-    def test_gemini_settings_defaults(self):
-        """GeminiSettings の既定値。"""
-        gemini = GeminiSettings()
-        assert gemini.main_model == "gemini-3.8-flash"
-        assert gemini.filter_model == "gemini-3.8-flash"
-        assert gemini.main_thinking_level == "low"
-        assert gemini.filter_thinking_level == "low"
-        assert gemini.max_output_tokens == 16384
-        assert gemini.retry.max_attempts == 3
-        assert gemini.retry.base_delay_seconds == 1.0
-        assert gemini.retry.max_delay_seconds == 10.0
-        assert gemini.rate_limit.min_interval_seconds == 1.0
 
     def test_character_settings_defaults(self):
         """CharacterSettings の既定値。"""
@@ -419,18 +391,18 @@ class TestToolControlSettings:
 
     def test_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            (Path(tmpdir) / "default.yaml").write_text("gemini: {}\nminecraft: {}\n")
+            (Path(tmpdir) / "default.yaml").write_text("llm: {}\nminecraft: {}\n")
             settings = load_settings(config_dir=Path(tmpdir))
         assert settings.minecraft.control == "tools"
         assert settings.minecraft.watch.act_on_progress is False
         assert settings.minecraft.watch.act_on_questions is True
-        assert settings.gemini.thinking_levels["town"] == "high"
-        assert settings.gemini.thinking_levels["reply"] == "low"
+        assert settings.llm.thinking_levels["town"] == "high"
+        assert settings.llm.thinking_levels["reply"] == "low"
 
     def test_overrides_keep_the_unlisted_purposes(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "default.yaml").write_text(
-                "gemini:\n"
+                "llm:\n"
                 "  thinking_levels:\n"
                 "    town: medium\n"
                 "minecraft:\n"
@@ -441,8 +413,8 @@ class TestToolControlSettings:
                 "    record_dir: ''\n"
             )
             settings = load_settings(config_dir=Path(tmpdir))
-        assert settings.gemini.thinking_levels["town"] == "medium"
-        assert settings.gemini.thinking_levels["site"] == "high"
+        assert settings.llm.thinking_levels["town"] == "medium"
+        assert settings.llm.thinking_levels["site"] == "high"
         assert settings.minecraft.control == "tools"
         assert settings.minecraft.watch.threshold == 0.8
         assert settings.minecraft.watch.consecutive == 2
@@ -456,26 +428,26 @@ class TestEnvFile:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         (config_dir / "default.yaml").write_text(
-            'gemini:\n  api_key: "${GEMINI_API_KEY:-}"\n'
+            'llm:\n  litellm:\n    api_key: "${LITELLM_API_KEY:-}"\n'
             'jev:\n  api_key: "${TYPESAFE_API_KEY:-}"\n'
             'minecraft:\n  bridge:\n    port: "${BRIDGE_PORT:-3000}"\n'
         )
         (tmp_path / ".env").write_text(
             "# コメント\n"
-            "GEMINI_API_KEY=from-file\n"
+            "LITELLM_API_KEY=from-file\n"
             "export TYPESAFE_API_KEY='quoted # not a comment'\n"
             "BRIDGE_PORT=3100  # 行末のコメント\n"
             "not a line\n"
         )
         # .env で入れた変数を後のテストに残さない
         monkeypatch.setattr(os, "environ", dict(os.environ))
-        for name in ("GEMINI_API_KEY", "TYPESAFE_API_KEY", "BRIDGE_PORT"):
+        for name in ("LITELLM_API_KEY", "TYPESAFE_API_KEY", "BRIDGE_PORT"):
             os.environ.pop(name, None)
-        os.environ["GEMINI_API_KEY"] = "from-shell"
+        os.environ["LITELLM_API_KEY"] = "from-shell"
 
         settings = load_settings(config_dir=config_dir)
 
-        assert settings.gemini.api_key == "from-shell"
+        assert settings.llm.litellm.api_key == "from-shell"
         assert settings.jev.api_key == "quoted # not a comment"
         assert settings.minecraft.bridge_port == 3100
 

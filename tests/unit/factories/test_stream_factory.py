@@ -2,13 +2,13 @@
 
 import pytest
 
-pytest.importorskip("google.genai", reason="google-genai not installed")
 pytest.importorskip("typesafe_sdk", reason="typesafe-sdk not installed")
 
 from ailoveshen.factories.stream import StreamSetupError, create_stream  # noqa: E402
 from ailoveshen.infrastructure.config import (  # noqa: E402
-    GeminiSettings,
     JevSettings,
+    LiteLlmSettings,
+    LlmSettings,
     Settings,
     StreamSettings,
     TwitchSettings,
@@ -18,7 +18,7 @@ from ailoveshen.stream import main  # noqa: E402
 
 def _settings(**stream):
     return Settings(
-        gemini=GeminiSettings(api_key="g"),
+        llm=LlmSettings(litellm=LiteLlmSettings(model="haiku-5.5")),
         jev=JevSettings(api_key="j"),
         stream=StreamSettings(**stream),
         twitch=TwitchSettings(channel="Shen"),
@@ -83,7 +83,7 @@ def test_main_needs_the_config_and_the_keys(tmp_path, monkeypatch, capsys):
     (tmp_path / "default.yaml").write_text("logging:\n  file: ''\n")
     monkeypatch.chdir(tmp_path)
     assert main(["--config-dir", str(tmp_path)]) == 2
-    assert "GEMINI_API_KEY" in capsys.readouterr().err
+    assert "LITELLM_MODEL" in capsys.readouterr().err
 
 
 @pytest.mark.asyncio

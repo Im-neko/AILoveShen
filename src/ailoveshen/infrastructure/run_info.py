@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from ailoveshen.infrastructure.config import (
-    GeminiSettings,
     JevSettings,
     LlmSettings,
     MinecraftSettings,
@@ -57,7 +56,6 @@ def git_state(repo_dir: Path = REPO_DIR) -> dict[str, Any]:
 
 
 def collect_run_info(
-    gemini: GeminiSettings,
     jev: JevSettings,
     minecraft: MinecraftSettings,
     llm: LlmSettings | None = None,
@@ -73,12 +71,7 @@ def collect_run_info(
         "small_goals": minecraft.small_goals,
         "step_picker": minecraft.step_picker,
         "failure_routing": minecraft.failure_routing,
-        "gemini_model": gemini.main_model,
-        "remote_llm": (
-            {"provider": "litellm", "model": llm.remote.litellm.model}
-            if llm is not None and llm.remote.provider == "litellm"
-            else {"provider": "gemini", "model": gemini.main_model}
-        ),
+        "remote_llm": {"model": llm.litellm.model, "models": dict(llm.litellm.models)} if llm is not None else None,
         "jev_model": jev.model,
         "local_llm": (
             {

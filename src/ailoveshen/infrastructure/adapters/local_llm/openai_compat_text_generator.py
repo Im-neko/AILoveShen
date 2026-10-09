@@ -34,9 +34,10 @@ from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     strip_thinking,
 )
 
-THINKING_PARAMS = ("chat_template_kwargs", "anthropic", "none")
+THINKING_PARAMS = ("chat_template_kwargs", "litellm", "none")
 RESPONSE_FORMATS = ("auto", "off")
-THINKING_ON = ("medium", "high")  # Gemini の thinking_levels のうち、ローカルで思考させる深さ
+THINKING_ON = ("medium", "high")  # thinking_levels のうち、思考させる深さ（ローカルと Claude）
+REASONING_EFFORTS = ("low", "medium", "high")  # Claude 以外の LiteLLM のモデル（Gemini 3.8）が受ける reasoning_effort
 SCHEMA_ERRORS_SHOWN = 8
 IMAGE_TOKENS = 1600  # 画像 1 枚の見積もり（data: URL の長さではなく）
 EPHEMERAL = {"type": "ephemeral"}
@@ -53,11 +54,14 @@ class OpenAICompatTextGenerator(ITextGenerator):
     - 道具: `tools` と `tool_choice: required`（断られたら auto）。道具を呼ばなければ、道具の名前と
       引数の JSON で選ばせる
     - 考える深さ: 用途の thinking_level が medium / high なら思考あり。渡し方は thinking_param:
-      chat_template_kwargs（ローカルのサーバー）、anthropic（LiteLLM 経由の Claude: 思考ありは
-      `thinking: adaptive` と `reasoning_effort`、なしは `thinking: disabled`）、none
+      chat_template_kwargs（ローカルのサーバー）、litellm（LiteLLM 経由。Claude は思考ありなら
+      `thinking: adaptive` と `reasoning_effort`、なしなら `thinking: disabled`。それ以外のモデル
+      （Gemini 3.8）は思考を切れないので、深さをそのまま `reasoning_effort`（low / medium / high）で
+      送る。モデル名が claude で始まるかで分ける）、none
     - モデル: 用途ごとに変えられる（models。コードを書く用途だけ上のモデルにする）
-    - キャッシュ: prompt_cache のとき、system と、プロンプトの CACHE_BREAK の手前に `cache_control`
-      （Claude のプロンプトキャッシュ。docs/design/127 §5）。そうでなければ印を取り除くだけ
+    - キャッシュ: prompt_cache で、モデル名が claude で始まる呼び出しのとき、system と、プロンプトの
+      CACHE_BREAK の手前に `cache_control`（Claude のプロンプトキャッシュ。docs/design/127 §5）。
+      そうでなければ印を取り除くだけ（Gemini に付けると、暗黙のキャッシュが止まる）
     """
 
     def __init__(
@@ -92,8 +96,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 までに減らす
             context_tokens: サーバーの 1 回の最大の長さ
             response_format: "auto"（json_schema を送り、断られたらやめる）か "off"
-            thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）、"anthropic"（thinking と
-                reasoning_effort。LiteLLM 経由の Claude）か "none"
+            thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）、"litellm"（thinking と
+                reasoning_effort。LiteLLM 経由のモデル）か "none"
             thinking_levels: 用途ごとの深さ（Gemini の表をそのまま使う）
             default_thinking_level: 表にない用途の深さ
             thinking_purposes: 思考させる用途（与えれば thinking_levels より優先。ローカルは思考が
@@ -109,8 +113,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
             label: ログに出す名前（使用量の行の頭: "Local" か "LiteLLM"）
             images: 画像を受け付けるか（画像を読めるモデルだけ）
             models: 用途 → モデル（表にない用途は model）
-            prompt_cache: system と CACHE_BREAK の手前に cache_control を付ける（Claude だけ。
-                Gemini などに付けると、暗黙のキャッシュが止まる）
+            prompt_cache: system と CACHE_BREAK の手前に cache_control を付ける（モデル名が claude で
+                始まる呼び出しだけ）
         """
         if response_format not in RESPONSE_FORMATS:
             raise ValueError(f"response_format must be one of {RESPONSE_FORMATS}")
@@ -151,7 +155,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
     ) -> str:
-        message = await self._chat(_messages(prompt, system_instruction, cache=self._prompt_cache), purpose)
+        message = await self._chat(_messages(prompt, system_instruction, cache=self._cache_on(purpose)), purpose)
         return strip_thinking(message.get("content") or "")
 
     async def generate_json(
@@ -163,7 +167,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         images: Sequence[Screenshot] = (),
     ) -> dict[str, Any]:
         self._check_images(images)
-        messages = _messages(_with_schema(prompt, schema), system_instruction, images, self._prompt_cache)
+        messages = _messages(_with_schema(prompt, schema), system_instruction, images, self._cache_on(purpose))
         message = await self._chat(messages, purpose, schema=schema)
         text = message.get("content") or ""
         try:
@@ -204,7 +208,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         images: Sequence[Screenshot] = (),
     ) -> ToolChoice:
         self._check_images(images)
-        messages = _messages(prompt, system_instruction, images, self._prompt_cache)
+        messages = _messages(prompt, system_instruction, images, self._cache_on(purpose))
         message = await self._chat(messages, purpose, tools=tools)
         calls = message.get("tool_calls") or []
         if calls:
@@ -266,6 +270,10 @@ class OpenAICompatTextGenerator(ITextGenerator):
             return (purpose or "default") in self._think_purposes
         return self._levels.get(purpose or "default", self._levels["default"]) in THINKING_ON
 
+    def _cache_on(self, purpose: Optional[str]) -> bool:
+        """この用途の呼び出しに cache_control を付けるか（Claude のモデルだけ）。"""
+        return self._prompt_cache and _is_claude(self._models.get(purpose or "default") or self._model)
+
     def _effort(self, purpose: Optional[str]) -> Optional[str]:
         """思考させるときの深さ（Gemini の表の medium / high をそのまま使う）。"""
         level = self._levels.get(purpose or "default", self._levels["default"])
@@ -289,10 +297,13 @@ class OpenAICompatTextGenerator(ITextGenerator):
         }
         if self._thinking_param == "chat_template_kwargs":
             body["chat_template_kwargs"] = {"enable_thinking": think}
-        elif self._thinking_param == "anthropic":
-            body["thinking"] = {"type": "adaptive" if think else "disabled"}
-            if think and (effort := self._effort(purpose)):
-                body["reasoning_effort"] = effort
+        elif self._thinking_param == "litellm":
+            if _is_claude(model):
+                body["thinking"] = {"type": "adaptive" if think else "disabled"}
+                if think and (effort := self._effort(purpose)):
+                    body["reasoning_effort"] = effort
+            elif (level := self._levels.get(purpose or "default", self._levels["default"])) in REASONING_EFFORTS:
+                body["reasoning_effort"] = level
         if schema is not None and self._use_response_format:
             body["response_format"] = {
                 "type": "json_schema",
@@ -468,6 +479,11 @@ class OpenAICompatTextGenerator(ITextGenerator):
             self._log.record(entry)
         except Exception as e:  # noqa: BLE001 - 記録の失敗で生成を止めない
             logger.debug(f"{self._label} の呼び出しを記録できなかった: {e}")
+
+
+def _is_claude(model: str) -> bool:
+    """LiteLLM のモデル名が Claude か（claude-haiku-5-5、anthropic/claude-…）。"""
+    return model.rsplit("/", 1)[-1].lower().startswith("claude")
 
 
 def _cache_tokens(usage: Mapping[str, Any]) -> tuple[int, int]:

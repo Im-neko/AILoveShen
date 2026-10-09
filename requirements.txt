@@ -14,8 +14,7 @@ pydantic>=2.0
 pydantic-settings>=2.0
 loguru>=0.7
 
-# llm: Gemini
-google-genai>=2.25
+# llm: LiteLLM / ローカルの LLM（OpenAI 互換の HTTP。httpx は下の game と同じ）
 
 # game: Minecraft ブリッジへの HTTP、Jev（TypeSafe AI）、建物の場所を選ぶ地図の画像（Pillow）
 httpx>=0.25

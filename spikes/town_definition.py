@@ -1,17 +1,17 @@
-"""ミッションが求める街を Gemini に定義させる（docs/design/09 の M3/M4、次の設計書）。
+"""ミッションが求める街を LLM（LiteLLM 経由のモデル）に定義させる（docs/design/09 の M3/M4、次の設計書）。
 
 ミッションは「街にする」と言うが、街とは何か、いつ完成なのかはどこにも書いていない。Gemini に
 ミッション、配信者が今できること、目標の語彙を渡し、世界から判定できる部分からなる定義と、
 部分ごとにまだ要る能力を出させる。何回か実行して、定義がどれくらい揺れるかを見る。
 
-    GEMINI_API_KEY=... python spikes/town_definition.py [--runs 3]
+    LITELLM_API_KEY=... LITELLM_MODEL=... python spikes/town_definition.py [--runs 3]
 """
 
 import argparse
 import asyncio
 import json
 
-from ailoveshen.infrastructure.adapters.gemini.gemini_text_generator import GeminiTextGenerator
+from ailoveshen.factories.text import create_litellm_generator
 from ailoveshen.infrastructure.adapters.prompts.stream_context import ABILITIES, format_conditions
 from ailoveshen.infrastructure.config import load_settings
 
@@ -87,12 +87,7 @@ SCHEMA = {
 
 async def main(runs: int) -> None:
     s = load_settings()
-    generator = GeminiTextGenerator(
-        api_key=s.gemini.api_key,
-        model=s.gemini.main_model,
-        thinking_level="medium",
-        max_output_tokens=s.gemini.max_output_tokens,
-    )
+    generator = create_litellm_generator(s.llm)
     prompt = PROMPT.format(
         mission=s.minecraft.mission.text,
         abilities=ABILITIES,

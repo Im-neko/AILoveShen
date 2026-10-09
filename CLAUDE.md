@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AILoveShen is an AI Streamer project for **Twitch**. Components:
 - **[Jev](https://typesafe.ai/)** (TypeSafe AI's System One): picks the next primitive action among the candidates the Mineflayer bridge (`minecraft-bridge/`) grounds for the current goal (`docs/design/06_phase6_jev_integration.md`, `11_primitive_actions.md`)
-- **Gemini 3.8 Flash** (`main_model`): game commentary and thoughts, chat replies, and the high-level goal decisions handed to Jev; `filter_model` (comment filtering) is planned
+- **Cloud LLM via LiteLLM** (`llm.litellm`, `https://llm.ideta.net/v1`; `LITELLM_MODEL`, `LITELLM_API_KEY`): game commentary and thoughts, chat replies, and the high-level goal decisions handed to Jev. Gemini 3.8 Flash, Claude Haiku 5.5, ... are all just a model name; there is no direct Gemini call and no `GEMINI_API_KEY`. The docs below still say "Gemini" for the LLM that decides
 - **Local LLM** (optional, `llm.local.enabled`): OpenAI-compatible server for everything except calls with images (`docs/design/36_local_llm.md`)
-- **Remote LLM**: Gemini by default; `llm.remote.provider: litellm` (`REMOTE_LLM=litellm`, `LITELLM_MODEL`) swaps the whole Gemini role for a model served by LiteLLM, e.g. Claude Haiku 5.5 (`docs/design/127_litellm_remote.md`)
+- **Remote LLM**: the model LiteLLM serves (calls with images, calls too long for the local model, failures, and everything when the local LLM is off); a name starting with `claude` gets Claude's thinking setting and prompt cache (`docs/design/127_litellm_remote.md`)
 - **Style-Bert-VITS2** (JP/EN/ZH TTS with style control) or **Irodori-TTS** (`tts.engine: irodori`, voice cloned from reference audio; `docs/setup/irodori_tts.md`, design 32)
 - **MCP**: memory management, expression control, extensibility
 
@@ -44,7 +44,7 @@ Streaming runbook (setup, start order, OBS sources, stop, troubleshooting): `doc
 pip install -r requirements.txt  # AILoveShen core + all extras + the package itself (-e .); same as pip install -e ".[all]"
 # Keep requirements.txt and pyproject.toml in sync. On Linux, sounddevice needs PortAudio (apt install libportaudio2).
 # The Style-Bert-VITS2 TTS server runs in Docker (docker/Dockerfile.tts-server), not from this requirements.txt.
-cp .env.example .env  # then fill in GEMINI_API_KEY, TYPESAFE_API_KEY, ... (.env is git-ignored)
+cp .env.example .env  # then fill in LITELLM_MODEL, LITELLM_API_KEY, TYPESAFE_API_KEY, ... (.env is git-ignored)
 # .env at the repo root is read by load_settings (Python) and by the bridge (minecraft-bridge/src/env.mjs);
 # variables exported in the shell win. Docker: docker compose --env-file .env -f docker/<file>.yml up -d
 ```
@@ -82,15 +82,15 @@ pytest tests/                   # Run all unit tests
 python examples/demo_phase1.py  # Demo Phase 1 components
 python examples/demo_phase2.py  # Demo Phase 2 TTS pipeline
 python examples/demo_phase3.py  # Demo Phase 3 LLM conversation (fake generator, no API key)
-GEMINI_API_KEY=... python examples/integration_test_llm.py [--speak]  # Real Gemini API (+ TTS)
+LITELLM_API_KEY=... LITELLM_MODEL=... python examples/integration_test_llm.py [--speak]  # Real LLM via LiteLLM (+ TTS)
 # The stream (docs/streaming.md): Docker servers + bridge first, then
 python -m ailoveshen.stream [--control candidates] [--no-speak] [--no-chat] [--no-board] [--debug]
 # Irodori-TTS instead of Style-Bert-VITS2 (TTS_ENGINE=irodori): scripts/irodori/start_mac.sh; compare: python tools/tts_compare.py
-# Minecraft (Phase 6): Paper server + bridge, then Gemini + Jev build a house autonomously
+# Minecraft (Phase 6): Paper server + bridge, then the LLM + Jev build a house autonomously
 docker compose -f docker/docker-compose.minecraft.yml up -d
 cd minecraft-bridge && npm install && npm start   # bot + POV mirror (client: 127.0.0.1:25578) + HTTP API (:3000)
 # while developing: npm run dev (restarts on changes under src/; state saved, bot rejoins; the POV client must reconnect)
-GEMINI_API_KEY=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300] [--comments c.json] [--board-port 8765] [--control tools] [--speak]
+LITELLM_API_KEY=... LITELLM_MODEL=... TYPESAFE_API_KEY=... python examples/integration_test_minecraft.py [--max-steps 300] [--comments c.json] [--board-port 8765] [--control tools] [--speak]
 
 # Style-Bert-VITS2 tests (legacy)
 hatch run test:test          # PyTorch CPU tests
@@ -132,13 +132,13 @@ src/ailoveshen/
 │   │                          # AvatarDirector (Jev picks the avatar's expression and gesture)
 │   └── dto/                   # speech_dto, llm_dto, game_dto
 ├── infrastructure/
-│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), GeminiSettings, CharacterSettings, JevSettings, MinecraftSettings
+│   ├── config.py              # Settings (default.yaml → {env}.yaml → env vars), LlmSettings, CharacterSettings, JevSettings, MinecraftSettings
 │   ├── logging.py             # Loguru structured logging
 │   ├── events.py              # AsyncEventBus (Pub/Sub)
 │   └── adapters/
 │       ├── tts/               # StyleBertVits2Client, EmotionStyleService, VoiceConfig
 │       ├── audio/             # SounddevicePlayer
-│       ├── gemini/            # GeminiTextGenerator (google-genai; text + JSON structured output)
+│       ├── local_llm/         # OpenAICompatTextGenerator (local server and LiteLLM), RoutingTextGenerator
 │       ├── jev/               # JevActionSelector, JevFastJudge (typesafe-sdk)
 │       ├── minecraft_bridge/  # MineflayerBridgeClient (HTTP to minecraft-bridge/)
 │       ├── obs/               # ObsScreenCapture (obsws-python; screenshots of the game source)
@@ -165,7 +165,7 @@ minecraft-bridge/              # Node sidecar: goals, solver, candidates, primit
 - `StyleBertVits2Client`: Maps `EmotionState` → Style-Bert-VITS2 style via `EmotionStyleService`
 - `TTSService`: Priority queue-based speech service
 - `GenerateCommentaryUseCase` / `GenerateResponseUseCase`: Commentary and chat replies sharing one `Conversation`
-- `GeminiTextGenerator`: google-genai adapter; `thinking_level` per purpose (`purpose=` on every call, table in `gemini.thinking_levels`; no temperature on 3.8), `choose_tool` (function calling, mode ANY), SDK retry on 408/429/5xx, 1s rate limit, token usage logging
+- `OpenAICompatTextGenerator`: OpenAI-compatible adapter for the local server and LiteLLM (Claude, Gemini); thinking per purpose (`purpose=` on every call, table in `llm.thinking_levels`), `choose_tool` (`tool_choice: required`), JSON via `json_schema`, prompt cache for Claude, token usage logging
 - `LLMService`: Returns commentary/replies as strings (empty on failure), holds current emotion
 - `AsyncEventBus`: Thread-safe async event publisher/subscriber
 - `Settings`: Hierarchical configuration
