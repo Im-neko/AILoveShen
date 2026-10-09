@@ -18,7 +18,7 @@
 - 直し: 「建てる家」の行に原木の本数（71 枚 = 18 本）も書く。`together` の条件も「今使える小目標」から選ばせる。テスト 2 件追加、Python 1651 件通過
 - 判断待ち: 壁の高さ 2、土・丸石の壁、斧を先に（設計書 132 §3）
 - 要る操作: 配信（Python）の再起動
-### Gemini の直接の呼び出しをやめ、LiteLLM に一本化した（設計書 127 §7、2026-10-09、未確認: `gemini-3.8-flash` を LiteLLM 経由で動かした配信。user: 「gemini は litellm 経由で呼べるので gemini 専用の環境変数は消したい」→ LiteLLM の OpenAI 互換に一本化、モデルごとの違いはモデル名で自動）
+### Gemini の直接の呼び出しをやめ、LiteLLM に一本化した（設計書 127 §7、2026-10-09、d62e025、未確認: `gemini-3.8-flash` を LiteLLM 経由で動かした配信。user: 「gemini は litellm 経由で呼べるので gemini 専用の環境変数は消したい」→ LiteLLM の OpenAI 互換に一本化、モデルごとの違いはモデル名で自動）
 - 消した: `GeminiTextGenerator` とそのテスト、`google-genai`、`GEMINI_API_KEY`、`settings.gemini`、`llm.remote.provider` / `REMOTE_LLM`、`thinking_param`（LiteLLM 側）、`LITELLM_PROMPT_CACHE`。`llm.remote.litellm` → `llm.litellm`。思考の表・呼び出しの記録・`debug_log_size` は `llm` の直下。ファクトリの `gemini` 引数もなくした（`create_text_generator(llm, generation_log)`）
 - モデル名が `claude` で始まる呼び出しにだけ、思考の指定と `cache_control` を付ける（用途ごとのモデルでも判定）。`gemini-3.8-flash` には `cache_control` を付けず、思考の深さを `reasoning_effort`（low / medium / high）で送る（実機で受けるのを確認。思考は切れない）
 - 失ったもの: `media_resolution`、思考の要約（`include_thoughts`）、SDK の再試行とレート制限。`stream.py` は `LITELLM_API_KEY` と `LITELLM_MODEL` を要求する
