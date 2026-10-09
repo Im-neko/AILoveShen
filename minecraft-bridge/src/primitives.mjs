@@ -35,7 +35,8 @@ import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
 import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
 import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
-import { sealStock, openings, sealCell, plugCell } from './sealing.mjs'
+import { sealStock, openings, sealCell, plugCell, SEAL_FROM_DEPTH } from './sealing.mjs'
+import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder } from './reach.mjs'
 import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
@@ -1126,6 +1127,7 @@ export const PRIMITIVES = {
     for (let i = 0; i < 40 && !bot.entity.onGround; i++) await bot.waitForTicks(1)
     await equipToolFor(bot, state, block)
     const before = inventoryCounts(bot) // 掘る直前から数える: 歩く間に拾った物は、この物のドロップではない
+    const stood = bot.entity.position.floored()
     await bot.dig(bot.blockAt(c.pos), true)
     noteDig(state, c.pos, c.block, bot.entity.position) // 地形を掘った場所を採掘の場所にする（quarry.mjs）
     signal.throwIfAborted()
@@ -1134,7 +1136,8 @@ export const PRIMITIVES = {
     try {
       const result = await afterDig(bot, state, c, before, signal)
       watch?.finish(`ok: ${result}`)
-      return result
+      // 鉱石の穴は、拾ったあとにその場で埋める（通路がわかりにくくならないように。設計書 134）
+      return isOreBlock(c.block) ? `${result}${await backfillHole(bot, state, c.pos, stood, signal)}` : result
     } catch (e) {
       watch?.finish(`failed: ${e.message}`)
       throw e
@@ -1837,6 +1840,11 @@ export const PRIMITIVES = {
         console.log(`[quarry] 階段の底まで歩けなかった: ${e.message}`)
       }
     }
+    // 洞窟に面した段は、手元の丸石で床・壁・天井を作って塞ぐ（モブが階段に入ってこないように。設計書 134）。
+    // 掘ってきたセルは塞がない（通り道）。地上に近い浅い所は、空気に面しているだけなので塞がない
+    const shaftCells = new Set()
+    const cellKey = (p) => `${p.x},${p.y},${p.z}`
+    let walled = 0
     // 掘れる所が見えるか、下りられなくなるまで（dig_depth、溶岩・水・砂利・岩盤）下りる
     for (; ; steps++) {
       signal.throwIfAborted()
@@ -1849,6 +1857,15 @@ export const PRIMITIVES = {
         .map((t) => ({ ...t, danger: stairDanger(bot, state, t.step) }))
       const next = tried.find((t) => !t.danger)
       if (!next) { stop = `cannot go down here (${[...new Set(tried.map((t) => t.danger))].join('; ')})`; break }
+      const [feet] = next.step.cells.slice(-1)
+      const column = { x: feet.x, y: feet.y, z: feet.z, h: next.step.cells.length }
+      const skip = new Set([...shaftCells, cellKey(me), cellKey(me.offset(0, 1, 0))])
+      const gaps = surfaceY - me.y >= SEAL_FROM_DEPTH ? openings(bot, state, column, skip) : []
+      if (gaps.length && sealStock(bot) < gaps.length) {
+        const g = gaps[0].pos
+        stop = `a cave opens at ${g.x},${g.y},${g.z}: walling it off takes ${gaps.length} cobblestone and you carry ${sealStock(bot)} (dig some stone first: it drops cobblestone)`
+        break
+      }
       for (const p of next.step.cells) {
         const block = bot.blockAt(p)
         if (!block || block.boundingBox === 'empty') continue
@@ -1856,8 +1873,22 @@ export const PRIMITIVES = {
         await bot.dig(block, true)
         signal.throwIfAborted()
       }
-      const [feet] = next.step.cells.slice(-1)
-      await goto(bot, new goals.GoalBlock(feet.x, feet.y, feet.z), signal)
+      const enter = () => goto(bot, new goals.GoalBlock(feet.x, feet.y, feet.z), signal)
+      if (gaps.length) {
+        const sealed = await sealCell(bot, state, column, signal, enter, skip)
+        walled += sealed.placed
+        if (!sealed.ok) {
+          // 塞げなかった: 手前から丸石で階段をふさぎ（洞窟とつながったままにしない）、ここで止める
+          await goto(bot, new goals.GoalBlock(me.x, me.y, me.z), signal)
+          await plugCell(bot, column, signal)
+          const r = sealed.remaining[0].pos
+          stop = `could not wall off the cave at ${r.x},${r.y},${r.z} with cobblestone (the stairs were plugged)`
+          break
+        }
+      } else {
+        await enter()
+      }
+      for (const p of next.step.cells) shaftCells.add(cellKey(p))
     }
     if (!steps && !walkedDown) {
       markUnreachable(state, c.pos)
@@ -1866,7 +1897,7 @@ export const PRIMITIVES = {
     if (steps || walkedDown) noteShaft(state, top, bot.entity.position.floored())
     await collectNearbyDrops(bot, state, signal)
     const depth = surfaceY - Math.floor(bot.entity.position.y)
-    return `${walkedDown ? 'walked down the stairs dug before, then ' : ''}dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${stop ? `; stopped: ${stop}` : ''}`
+    return `${walkedDown ? 'walked down the stairs dug before, then ' : ''}dug ${steps} steps down toward ${c.target} (${depth} blocks below where the goal started)${sealNote(walled)}${stop ? `; stopped: ${stop}` : ''}`
   },
   // 採掘場を設計どおりに掘る（設計書 47 §16）: 並びの次のセルから順に、隣の空いたセル（前の段）に立って
   // 上から空ける。時間では止めない（設計書 38）。危ないもの（溶岩・水・落ちる砂利・洞窟）に当たったら、
@@ -1911,8 +1942,9 @@ export const PRIMITIVES = {
         updateStatus(bot, fac)
         return `dug ${dug} cells of the mine ${fac.name}; stopped at ${cell.x},${cell.y},${cell.z}: ${reason} (the mine now ends before it)${cutNote(cut)}${sealNote(walled)}`
       }
-      // 坑道と枝は、空洞（洞窟）に出たら、手元の丸石で床・壁・天井を作って塞ぐ（sealing.mjs）。床の穴は埋めて通る
-      const sealable = !!fac.layout.sealing && cell.part !== 'stairs'
+      // 坑道・枝・階段は、空洞（洞窟）に出たら、手元の丸石で床・壁・天井を作って塞ぐ（sealing.mjs）。床の穴は埋めて通る。
+      // 階段は入口に近い所（地上の空気に面した所）を塞がない（設計書 134）
+      const sealable = !!fac.layout.sealing && (cell.part !== 'stairs' || cells[0].y - cell.y >= SEAL_FROM_DEPTH)
       const why = mineDanger(bot, cell, plannedBlocks(cells), sealable)
       if (why) {
         const stopped = giveUp(why)

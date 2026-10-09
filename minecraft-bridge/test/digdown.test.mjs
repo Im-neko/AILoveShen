@@ -44,7 +44,7 @@ test('深さが足りなければ探し、何段下にあるかと、掘り下�
 
 // 階段掘りのボット: y 70 が地面（上は空気）。blocks で個別のブロックを上書き。掘ると空気になり、
 // 歩く先へすぐ移る
-function stairBot (blocks = {}) {
+function stairBot (blocks = {}, items = []) {
   const world = new Map(Object.entries(blocks))
   const key = (p) => `${p.x},${p.y},${p.z}`
   const bot = {
@@ -62,7 +62,13 @@ function stairBot (blocks = {}) {
     findBlocks: () => [],
     on: () => {},
     off: () => {},
-    inventory: { items: () => [], emptySlotCount: () => 30 },
+    inventory: { items: () => items.filter((i) => i.count > 0), emptySlotCount: () => 30 },
+    placeBlock: async (ref, face) => {
+      const stone = items.find((i) => i.name === 'cobblestone' && i.count > 0)
+      if (!stone) throw new Error('no cobblestone')
+      stone.count--
+      world.set(key(ref.position.plus(face)), 'cobblestone')
+    },
     pathfinder: {
       bestHarvestTool: () => null,
       goto: async (g) => { bot.entity.position = v(g.x + 0.5, g.y, g.z + 0.5) },
@@ -102,4 +108,35 @@ test('溶岩・水のそば、砂利の下は避け、どの向きも下りら�
 test('足元の下が空洞なら、そこで止まる（洞窟の壁で石が見える）', async () => {
   const bot = stairBot({ '1,68,0': 'air', '-1,68,0': 'air', '0,68,1': 'air', '0,68,-1': 'air' })
   await assert.rejects(PRIMITIVES.dig_down(bot, stateFor(8), toward, signal), /a cave or a drop below the next step/)
+})
+
+// 洞窟に面した段（設計書 134）: 東へ 4 段下りた 5 段目（深さ 4）の、東の壁が洞窟（cavern）。横の壁が洞窟（beside）
+const cavern = { '6,66,0': 'air' }
+const beside = { '5,66,-1': 'air' }
+
+test('階段が洞窟に出たら、丸石で壁を作って塞ぎ、掘ってきた階段は塞がない', async () => {
+  const items = [{ name: 'cobblestone', count: 6 }]
+  const bot = stairBot(beside, items)
+  const r = await PRIMITIVES.dig_down(bot, stateFor(6), toward, signal)
+  assert.match(r, /walled off 1 cave openings with cobblestone/)
+  assert.equal(bot.blockAt(v(5, 66, -1)).name, 'cobblestone')
+  assert.equal(items[0].count, 5)
+  // 通ってきた階段（前の段の頭と足）は空いたまま
+  assert.equal(bot.blockAt(v(4, 67, 0)).boundingBox, 'empty')
+  assert.equal(bot.blockAt(v(4, 66, 0)).boundingBox, 'empty')
+})
+
+test('洞窟に出て丸石が足りなければ、そこで止まって、どうすればよいかを言う', async () => {
+  const bot = stairBot(cavern, [])
+  const r = await PRIMITIVES.dig_down(bot, stateFor(6), toward, signal)
+  assert.match(r, /dug 4 steps down.*stopped: a cave opens at 6,66,0: walling it off takes 1 cobblestone and you carry 0 \(dig some stone first/)
+  assert.equal(bot.blockAt(v(6, 66, 0)).name, 'air')
+  assert.ok(!bot.dug.includes('5,66,0'), '洞窟に面した段は掘らない')
+})
+
+test('浅い所（入口から 4 段未満）の空気は洞窟ではないので、丸石がなくても止まらない', async () => {
+  const bot = stairBot({ '3,67,0': 'air' }, [])
+  const r = await PRIMITIVES.dig_down(bot, stateFor(3), toward, signal)
+  assert.match(r, /^dug 3 steps down/)
+  assert.doesNotMatch(r, /walled|stopped: a cave/)
 })

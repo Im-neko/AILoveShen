@@ -8,6 +8,7 @@ import { designMine, mineStatus, stopMine, minesAt, BRANCH } from '../src/facili
 import { mineSites, protectedRock, caveOre } from '../src/mining.mjs'
 import { configureMovements, PRIMITIVES } from '../src/primitives.mjs'
 import { diggable } from '../src/world.mjs'
+import { enclosure } from '../src/sealing.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -327,6 +328,49 @@ test('もう空いている（洞窟の）セルも順に点検して、塞い�
   assert.match(r, /walled off 4 cave openings/)
   assert.equal(cell.sealed, true)
   assert.equal(mineStatus(bot, fac).next, null)
+})
+
+// 階段のセルの、囲む面のひとつ（壁）を洞窟にする（設計書 134）
+function caveBesideStairs (fac, s, index, blocks) {
+  const cell = fac.layout.cells[index]
+  assert.equal(cell.part, 'stairs')
+  const wall = enclosure(s, cell).find((f) => f.role === 'wall').pos
+  blocks[`${wall.x},${wall.y},${wall.z}`] = 'air'
+  return { cell, wall }
+}
+const stairsItems = (cobble) => [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }, { name: 'cobblestone', count: cobble }]
+
+test('階段も、入口から 4 段より深くなったら洞窟に面した壁を丸石で塞ぐ（設計書 134）', async () => {
+  const { fac, s } = design()
+  const blocks = {}
+  const items = stairsItems(30)
+  const bot = sealer(items, blocks)
+  const { wall } = caveBesideStairs(fac, s, 5, blocks)
+  bot.entity.position = new Vec3(fac.layout.cells[0].x, 64, fac.layout.cells[0].z)
+  s.facilities = { mine_1: fac }
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.match(r, /walled off 1 cave openings/)
+  assert.equal(blocks[`${wall.x},${wall.y},${wall.z}`], 'cobblestone')
+})
+
+test('階段が洞窟に出て丸石が足りなければ、そこで止まる。浅い段（地上の空気に面した所）は塞がない', async () => {
+  const deep = design()
+  const blocksDeep = {}
+  const botDeep = sealer(stairsItems(0), blocksDeep)
+  const { cell } = caveBesideStairs(deep.fac, deep.s, 5, blocksDeep)
+  botDeep.entity.position = new Vec3(deep.fac.layout.cells[0].x, 64, deep.fac.layout.cells[0].z)
+  deep.s.facilities = { mine_1: deep.fac }
+  const r = await PRIMITIVES.dig_mine(botDeep, deep.s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.match(r, new RegExp(`stopped at ${cell.x},${cell.y},${cell.z}: a cave opens at .*walling it off takes 1 cobblestone and you carry 0`))
+
+  const shallow = design()
+  const blocksShallow = {}
+  const botShallow = sealer(stairsItems(0), blocksShallow)
+  caveBesideStairs(shallow.fac, shallow.s, 2, blocksShallow)
+  botShallow.entity.position = new Vec3(shallow.fac.layout.cells[0].x, 64, shallow.fac.layout.cells[0].z)
+  shallow.s.facilities = { mine_1: shallow.fac }
+  const r2 = await PRIMITIVES.dig_mine(botShallow, shallow.s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.doesNotMatch(r2, /a cave opens/)
 })
 
 test('枝のない採掘場（LLM 設計）と階段は塞ぎ・点検の対象外。床の穴は今までどおり危ないとして切る', async () => {

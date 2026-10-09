@@ -16,6 +16,8 @@ const FLUID = /water|lava/
 const SIX = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
 const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 const PASSES = 3 // 置いた面が次の面の「借りる隣」になるので、数回まわす
+// 階段は、入口からこの段数より深くなってから塞ぐ（浅い所は地上の空気に面していて、洞窟ではない。設計書 134）
+export const SEAL_FROM_DEPTH = 4
 
 // 手元の、塞ぐのに使える丸石の数
 export const sealStock = (bot) => {
@@ -24,28 +26,28 @@ export const sealStock = (bot) => {
 }
 
 // セルを囲む面: 床、天井、4 方の壁（高さの数だけ）。順は床 → 壁 → 天井（下から、置ける順）。
-// 採掘場のセル（空ける予定のマス）は囲まれる側ではない
-export function enclosure (state, cell) {
+// 採掘場のセル（空ける予定のマス）と skip（'x,y,z' の集合: 階段で掘ってきたセルなど）は囲まれる側ではない
+export function enclosure (state, cell, skip = new Set()) {
   const out = [{ pos: new Vec3(cell.x, cell.y - 1, cell.z), role: 'floor' }]
   for (let i = 0; i < cell.h; i++) {
     for (const [dx, dz] of SIDES) out.push({ pos: new Vec3(cell.x + dx, cell.y + i, cell.z + dz), role: 'wall' })
   }
   out.push({ pos: new Vec3(cell.x, cell.y + cell.h, cell.z), role: 'ceiling' })
-  return out.filter((f) => !onMineCell(state, f.pos))
+  return out.filter((f) => !onMineCell(state, f.pos) && !skip.has(`${f.pos.x},${f.pos.y},${f.pos.z}`))
 }
 
 // 塞ぐ面のうち、今空いているもの（読み込まれていない面、水や溶岩の面は数えない: 水・溶岩は mineDanger が断る）
-export function openings (bot, state, cell) {
-  return enclosure(state, cell).filter(({ pos }) => {
+export function openings (bot, state, cell, skip) {
+  return enclosure(state, cell, skip).filter(({ pos }) => {
     const b = bot.blockAt(pos)
     return !!b && b.boundingBox === 'empty' && !FLUID.test(b.name)
   })
 }
 
-// pos に丸石を 1 個置く。借りる隣は、固いブロック（どれでもよい）
-async function placeSeal (bot, pos, signal) {
+// pos に names のうち手元にあるものを 1 個置く（既定は丸石）。借りる隣は、固いブロック（どれでもよい）
+export async function placeSeal (bot, pos, signal, names = SEAL_ITEMS) {
   signal.throwIfAborted()
-  const name = SEAL_ITEMS.find((n) => (inventoryCounts(bot)[n] ?? 0) > 0)
+  const name = names.find((n) => (inventoryCounts(bot)[n] ?? 0) > 0)
   if (!name) return false
   for (const [dx, dy, dz] of SIX) {
     const ref = bot.blockAt(pos.offset(dx, dy, dz))
@@ -64,19 +66,19 @@ async function placeSeal (bot, pos, signal) {
 
 // セルの空いた面をすべて塞ぐ。床は今立っている前のセルから、壁と天井はセルの中へ入ってから（enter: 入る手）。
 // { ok, placed, remaining（塞げなかった面） }
-export async function sealCell (bot, state, cell, signal, enter) {
+export async function sealCell (bot, state, cell, signal, enter, skip) {
   let placed = 0
-  const floors = openings(bot, state, cell).filter((f) => f.role === 'floor')
+  const floors = openings(bot, state, cell, skip).filter((f) => f.role === 'floor')
   for (const f of floors) if (await placeSeal(bot, f.pos, signal)) placed++
   await enter()
   for (let pass = 0; pass < PASSES; pass++) {
-    const open = openings(bot, state, cell)
+    const open = openings(bot, state, cell, skip)
     if (!open.length) break
     let progress = 0
     for (const f of open) if (await placeSeal(bot, f.pos, signal)) { placed++; progress++ }
     if (!progress) break
   }
-  const remaining = openings(bot, state, cell)
+  const remaining = openings(bot, state, cell, skip)
   return { ok: !remaining.length, placed, remaining }
 }
 
