@@ -473,6 +473,17 @@ const treeInColumn = (bot, p) => {
   return false
 }
 
+// 床がなく、下が FENCE_DROP 段以上空いている輪のセルは、崖と同じに塞がっているとする（柵は床の上にしか立たない。
+// 整地が埋められない深い穴の縁: 2026-10-09 深さ 12 の穴の縁の 2 マスに柵を立てられず、畑が 2 時間済みにならなかった）
+const FENCE_DROP = 3
+function overDrop (bot, p) {
+  for (let dy = 1; dy <= FENCE_DROP; dy++) {
+    const b = bot.blockAt(p.offset(0, -dy, 0))
+    if (!b || b.boundingBox === 'block') return false
+  }
+  return true
+}
+
 export function layoutStatus (bot, fac) {
   ensureTreeCells(bot, fac)
   const water = fac.layout.water ?? []
@@ -482,7 +493,7 @@ export function layoutStatus (bot, fac) {
     const p = new Vec3(c.x, c.y, c.z)
     const b = bot.blockAt(p)
     if (!b) out.unseen++
-    else if (!FENCE_CLOSED.test(b.name) && b.boundingBox !== 'block') out.fence.push(p)
+    else if (!FENCE_CLOSED.test(b.name) && b.boundingBox !== 'block' && !overDrop(bot, p)) out.fence.push(p)
   }
   if (fac.layout.gate) {
     const g = fac.layout.gate

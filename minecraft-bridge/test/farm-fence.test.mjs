@@ -276,3 +276,34 @@ test('畑のまわりに段差があれば、耕す前に整地を手にする�
   const r = evaluate(bot, s, k, FULL({ inventory: { wooden_hoe: 1, wheat_seeds: 4 } }))
   assert.deepEqual(r.leaves.map((l) => l.kind), ['level'])
 })
+
+// 地面 63 の下の 1 列を、深さ depth の穴にする（穴の底は固い）
+const pit = (x, z, depth, ground = 63) => {
+  const b = {}
+  for (let y = ground; y > ground - depth; y--) b[`${x},${y},${z}`] = 'air'
+  return b
+}
+
+test('畑の柵の輪: 深い穴（8 段より深い）も埋める。輪の外の 2 マス目は 8 段までのまま', () => {
+  const s = state()
+  const fac = design(world(), s, 3, 3)
+  const { rect } = fac.layout
+  const ring = { x: rect.x0 - 1, z: rect.z0 - 1 }
+  const lv = farmLevel(world(pit(ring.x, ring.z, 12)), s, fac)
+  assert.equal(lv.off, 1)
+  assert.equal(lv.fills.length, 12)
+  assert.equal(farmLevel(world(pit(ring.x, ring.z, 17)), s, fac).skipped['too deep'], 1, '16 段より深い穴は触らない')
+  const outer = { x: rect.x0 - 2, z: rect.z0 - 1 }
+  assert.equal(farmLevel(world(pit(outer.x, outer.z, 12)), s, fac).skipped['too deep'], 1, '輪の外は深い穴を埋めない')
+})
+
+test('柵の今: 床がなく下が 3 段空いている輪のセルは崖と同じに済み。浅い穴は欠けのまま', () => {
+  const s = state()
+  const fac = design(world(), s, 3, 3)
+  const [a, b] = fac.layout.fence
+  const total = fac.layout.fence.length
+  const deep = layoutStatus(world(pit(a.x, a.z, 20)), fac)
+  assert.equal(deep.fence.length, total - 1)
+  const shallow = layoutStatus(world(pit(b.x, b.z, 2)), fac)
+  assert.equal(shallow.fence.length, total)
+})

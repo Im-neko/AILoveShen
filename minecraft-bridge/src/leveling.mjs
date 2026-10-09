@@ -19,6 +19,7 @@ const { Vec3 } = vec3Pkg
 export const MIN_LEVEL = 3
 export const MAX_LEVEL = 16
 const DY = 8 // 目標の高さからこれだけ上下まで見る（これより深い穴・高い崖は触らない）
+const RING_DEPTH = 16 // 畑の柵の輪の列は、これだけ深い穴まで埋める（柵は床の上にしか立たない）
 const PLANTING_GAP = 1 // 植えた木のまわりのこのマス数は触らない
 
 // 整地する（した）土地の下は、土や石を取るために掘らない（掘ると、そろえた地面の下が穴だらけ（スポンジ）に
@@ -60,7 +61,7 @@ const isPlant = (b) => b.boundingBox === 'empty' && !FLUID.test(b.name)
 
 // 1 列を見る → { off: bool, cuts: [Vec3], fills: [Vec3] } か、触らない理由の文字列か UNLOADED
 // stairs: false は、階段の入口のまわりも見る（設計した畑のマスは、階段の記録より先に直す）
-export function columnWork (bot, state, x, z, y, { stairs = true } = {}) {
+export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY } = {}) {
   const floor = y - 1
   // ドアの前の床は、同じ高さに整地するなら普通の列（穴を埋める。家のブロックは TERRAIN でないので削らない）
   const doorstep = isDoorstepFloor(state, new Vec3(x, floor, z)) && floor === state.home.outside.y - 1
@@ -72,7 +73,7 @@ export function columnWork (bot, state, x, z, y, { stairs = true } = {}) {
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
   if (stairs && onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
   let top = null
-  for (let h = floor + DY; h >= floor - DY; h--) {
+  for (let h = floor + DY; h >= floor - depth; h--) {
     const b = bot.blockAt(new Vec3(x, h, z))
     if (!b) return UNLOADED
     if (FLUID.test(b.name)) return 'water'
@@ -178,9 +179,10 @@ export function farmLevel (bot, state, fac, { margin = FARM_MARGIN } = {}) {
   const { rect, y } = fac.layout
   const out = { y: y + 1, total: 0, off: 0, cuts: [], fills: [], unloaded: 0, skipped: {} }
   const inRect = (x, z) => x >= rect.x0 && x < rect.x0 + rect.w && z >= rect.z0 && z < rect.z0 + rect.d
+  const ring = new Set((fac.layout.fence ?? []).map((c) => `${c.x},${c.z}`))
   for (const [x, z] of farmColumns(fac.layout, { margin })) {
     out.total++
-    const w = inRect(x, z) ? farmCellWork(bot, state, x, z, y, fac.layout) : columnWork(bot, state, x, z, y + 1)
+    const w = inRect(x, z) ? farmCellWork(bot, state, x, z, y, fac.layout) : columnWork(bot, state, x, z, y + 1, ring.has(`${x},${z}`) ? { depth: RING_DEPTH } : {})
     if (w === UNLOADED) { out.unloaded++; continue }
     if (typeof w === 'string') { out.skipped[w] = (out.skipped[w] ?? 0) + 1; continue }
     if (!w.off) continue
