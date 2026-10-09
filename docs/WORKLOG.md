@@ -7,7 +7,7 @@
 
 ## Completed Work
 
-### ローカルのまま、コードを書く用途だけ Sonnet に回す口（設計書 135、2026-10-09、未確認: 実機。user: 「ローカルモデルを使いつつコーディングだけsonnetにする口もおいておいてほしい」）
+### ローカルのまま、コードを書く用途だけ Sonnet に回す口（設計書 135、2026-10-09、7ff62a6、未確認: 実機。user: 「ローカルモデルを使いつつコーディングだけsonnetにする口もおいておいてほしい」）
 - `CODE_LLM=remote`（既定 `local`）で `llm.routes` の `skill_write` / `check_write` だけリモート（LiteLLM）に回る。`LITELLM_CODE_MODEL=claude-sonnet-5-5` と合わせて Sonnet。ほかはローカルのまま。`LITELLM_MODEL` がないときは起動のログに警告してローカルで書く
 - `docs/streaming.md` の古い「Gemini に戻す」の書き方を直した。テスト: `TestCodeLlmSwitch`（2）。pytest 1623 件通過（`tests/unit/factories` は配信が :8765 を使っていて 1 件落ちるため外している）
 - 要る操作: 配信の再起動、`.env` か起動のときに `CODE_LLM=remote LITELLM_CODE_MODEL=claude-sonnet-5-5`
