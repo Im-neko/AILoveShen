@@ -127,6 +127,12 @@ MAX_SAME_FAILURES = 2  # 同じ小目標がこの回数続けて失敗したら�
 UNDESIGNABLE_SECONDS = 600  # 設計できなかった建物を、大目標に足さない間（秒）
 MAX_FAILURES_BEFORE_GEMINI = 3  # 種類を問わず続けて失敗したら、Jev に任せず Gemini が考え直す（34 §7）
 SAME_CAUSE_EXPERIMENT = 3  # 同じ理由でこれだけ続けて失敗したら、実験の道具を出す（設計書 85）
+SKILL_FAILED_NEXT = (
+    " | Find the cause first: the call that failed or was refused in the record above, and its "
+    "message. If the code is the cause, fix it now with write_skill (name {name}; what = the cause "
+    "and the fix). If the situation is the cause (no tool, no seeds), put that right with the "
+    "tools. Do not run {name} again unchanged"
+)
 STUCK_TOOL_FAILURES = 2  # 続けてこれだけ失敗した小目標の道具の選択は、よく考えさせる（purpose tool_stuck）
 REFLEX_POLL_SECONDS = 0.5  # 反射が動いている間、終わったかを見る間隔（その間は道具が断られるので選ばせない）
 REFLEX_WAIT_LIMIT_SECONDS = 60  # 反射がこれ以上続くなら手放す（ブリッジの反射が離れられない相手と回り続けた: 2026-10-01）
@@ -972,6 +978,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                 self._skill_failures.pop(name, None)
             elif run.ended != "refused":  # 動かさなかった断りは、直すときに見せる失敗ではない
                 self._skill_failures[name] = run.describe()
+                if run.ended != "stopped":  # 見張りが止めたのは、技のコードの欠陥ではない
+                    note = SKILL_FAILED_NEXT.format(name=name)
+                    outcome = replace(outcome, result=f"{outcome.result}{note}")
             if run.learned:
                 await self._event_publisher.publish(
                     SkillLearnedEvent(name=name, description=description)

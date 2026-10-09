@@ -46,6 +46,12 @@ def skill_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
+            "diagnosis": {
+                "type": "string",
+                "description": "Only when fixing a skill that failed: the cause found in the failure "
+                "record (which call failed or was refused, its message, and why), then what the fix "
+                "changes. One or two sentences. Empty for a new skill",
+            },
             "description": {
                 "type": "string",
                 "description": "What the skill does, one short sentence in Japanese",
@@ -101,7 +107,7 @@ class WrittenSkill:
     version: int
     description: str
     trial_args: dict[str, Any]
-    revised_because: str = ""  # 直したとき、前の失敗
+    revised_because: str = ""  # 直したとき、見つけた原因（なければ前の失敗）
 
 
 @dataclass(frozen=True)
@@ -191,6 +197,8 @@ class SkillWriter:
                     purpose="skill_write",
                 )
                 draft, trial = _parse(data)
+                if previous is not None:
+                    _check_fix(data, draft, previous)
                 version = await self._bridge.save_skill(name, draft)
             except (ValueError, SkillRejectedError) as e:
                 error = str(e)
@@ -204,10 +212,35 @@ class SkillWriter:
                 version=version,
                 description=draft.description,
                 trial_args=trial,
-                revised_because=last_failure if previous is not None else "",
+                revised_because=(
+                    str(data.get("diagnosis") or "").strip() or last_failure
+                    if previous is not None
+                    else ""
+                ),
             )
         return NotWritten(
             f"the bridge did not accept the skill after {self._attempts} tries: {error}"
+        )
+
+
+MIN_DIAGNOSIS = 20  # 原因の文の最小の長さ（「直す」だけで通さない）
+
+
+def _check_fix(data: dict[str, Any], draft: SkillDraft, previous: SkillInfo) -> None:
+    """
+    失敗した技を直す書き込みが、原因を調べて直したものか。原因を書かない、前と同じコードは差し戻す
+    （2026-10-08: 同じ形の技を書き直しても、失敗の理由を読まないまま同じ失敗を繰り返した）。
+    """
+    if len(str(data.get("diagnosis") or "").strip()) < MIN_DIAGNOSIS:
+        raise ValueError(
+            "this fixes a skill that failed: write the cause in diagnosis first (which call failed "
+            "or was refused in the failure record, its message, and why), then change the code for "
+            "that cause"
+        )
+    if draft.code.strip() == previous.code.strip():
+        raise ValueError(
+            f"the code is the same as v{previous.version}: a fix must change the code for the cause "
+            "in diagnosis. If the cause is not in the code, do not rewrite the skill"
         )
 
 

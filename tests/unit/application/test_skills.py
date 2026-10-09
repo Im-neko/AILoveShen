@@ -50,6 +50,9 @@ HUNT = SkillInfo(
     last_failure="no animal in sight",
     code="export default async function (t) { return t.done() }",
 )
+FIX_DIAGNOSIS = (
+    "till was refused with 'will not till more: 1 seed for 1 tilled cell', so sow must come first"
+)
 DRAFT = {
     "description": "近くの動物を狩る",
     "params_json": '{"type": "object", "properties": {"animal": {"type": "string"}}}',
@@ -136,13 +139,40 @@ class TestSkillWriter:
     async def test_fixing_shows_the_previous_code_and_the_failure(self, parts):
         generator, prompts, bridge = parts
         bridge.skill.return_value = HUNT
+        generator.generate_json.return_value = {**DRAFT, "diagnosis": FIX_DIAGNOSIS}
         written = await SkillWriter(generator, prompts, bridge).write(
             "hunt", "豚がいないときは探す", Activity(), (), [HUNT], "skill hunt v2 failed: no pig"
         )
         kwargs = prompts.build_skill_prompt.call_args.kwargs
         assert kwargs["previous"] == HUNT
         assert kwargs["skills"] == []  # 直す技は「ほかの技」に入れない
-        assert written.revised_because == "skill hunt v2 failed: no pig"
+        assert written.revised_because == FIX_DIAGNOSIS  # 見つけた原因を、直した理由にする
+
+    @pytest.mark.asyncio
+    async def test_a_fix_without_a_cause_or_with_the_same_code_is_sent_back(self, parts):
+        generator, prompts, bridge = parts
+        bridge.skill.return_value = HUNT
+        generator.generate_json.side_effect = [
+            DRAFT,  # 原因がない
+            {**DRAFT, "diagnosis": FIX_DIAGNOSIS, "code": HUNT.code},  # 前と同じコード
+            {**DRAFT, "diagnosis": FIX_DIAGNOSIS},
+        ]
+        written = await SkillWriter(generator, prompts, bridge).write(
+            "hunt", "豚を探す", Activity(), (), [HUNT], "skill hunt v2 failed: no pig"
+        )
+        assert written.version == 1
+        errors = [c.kwargs["previous_error"] for c in prompts.build_skill_prompt.call_args_list]
+        assert errors[0] == "" and "write the cause in diagnosis" in errors[1]
+        assert "the code is the same as v2" in errors[2]
+        assert bridge.save_skill.await_count == 1  # 差し戻したものは保存しない
+
+    @pytest.mark.asyncio
+    async def test_a_new_skill_needs_no_cause(self, parts):
+        generator, prompts, bridge = parts  # bridge.skill は None（同じ名前がない）
+        written = await SkillWriter(generator, prompts, bridge).write(
+            "hunt", "狩る", Activity(), (), []
+        )
+        assert isinstance(written, WrittenSkill) and written.revised_because == ""
 
     @pytest.mark.asyncio
     async def test_at_most_n_writes_of_one_skill_per_hour(self, parts):
@@ -302,6 +332,28 @@ class TestSkillStep:
         assert bridge.run_skill.await_args.args == ("hunt", {}, 3)  # 直した版をすぐ試す
         assert second.result.result.startswith("wrote hunt v3; trial: skill hunt v3 succeeded")
         assert self._published(SkillRevisedEvent)[0].version == 3
+
+    @pytest.mark.asyncio
+    async def test_a_failed_run_says_to_find_the_cause_and_fix_it(self, bridge, watcher):
+        use_case = self._use_case(bridge, watcher, AsyncMock())
+        self.text_generator.choose_tool.return_value = ToolChoice(
+            "run_skill", {"name": "hunt", "intent": "狩る"}
+        )
+        ends = (("fail", True), ("error", True), ("stopped", False), ("refused", False))
+        for ended, expected in ends:
+            bridge.run_skill.return_value = SkillRun(
+                name="hunt", version=2, ok=False, ended=ended, reason="no pig"
+            )
+            report = await use_case.execute(_session(HAVE_PLANKS))
+            note = "Find the cause first" in report.result.result
+            assert note is expected, ended
+            if expected:
+                assert "write_skill (name hunt" in report.result.result
+        bridge.run_skill.return_value = SkillRun(
+            name="hunt", version=2, ok=True, ended="done", summary="hunted a pig"
+        )
+        report = await use_case.execute(_session(HAVE_PLANKS))
+        assert "Find the cause first" not in report.result.result
 
     @pytest.mark.asyncio
     async def test_a_refused_run_does_not_replace_the_failure_shown_for_the_fix(
