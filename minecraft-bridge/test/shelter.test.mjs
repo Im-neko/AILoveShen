@@ -71,6 +71,17 @@ test('出口は空いている各面に出し、敵対モブから遠い順に�
   assert.ok(spots.every((s) => !(s.wall.x === 2 && s.wall.z === 4)))
 })
 
+test('土の壁の小屋（仮の小屋。設計書 133）にも出口を出す。草に変わった壁も壁', () => {
+  const { home, blockAt } = world()
+  const dirtAt = (p) => {
+    const b = blockAt(p)
+    if (b.name !== 'oak_planks') return b
+    return { ...b, name: p.x === 0 ? 'grass_block' : 'dirt' } // 西の壁は草に変わった
+  }
+  const spots = exitSpots({ blockAt: dirtAt }, home, [skeletonAtDoor])
+  assert.deepEqual(spots.map((s) => s.side).sort(), ['east', 'north', 'south', 'west'])
+})
+
 test('外に立つ場所がない面には出口を出さない', () => {
   const blocked = [1, 2, 3].map((x) => `${x},70,-1`)
   const { home, blockAt } = world({ blocked })

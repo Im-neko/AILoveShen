@@ -225,6 +225,7 @@ class TestMineflayerBridgeClient:
             "door_side": "south",
             "door_offset": 2,
             "corner_pillars": True,
+            "wall_material": "planks",
         }
         assert body["site"] is None
 

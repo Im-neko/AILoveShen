@@ -10,7 +10,7 @@ from loguru import logger
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.exceptions import TextGenerationError
-from ailoveshen.domain.value_objects import CharacterProfile, HouseBlueprint, Side
+from ailoveshen.domain.value_objects import BlockKind, CharacterProfile, HouseBlueprint, Side
 
 _SIDES = [s.value for s in Side]
 
@@ -62,10 +62,17 @@ def _provisional_schema() -> dict[str, Any]:
     for key in ("width", "depth"):
         props[key].update(minimum=side, maximum=side)
     props["wall_height"].update(
-        minimum=HouseBlueprint.MIN_WALL_HEIGHT, maximum=HouseBlueprint.MIN_WALL_HEIGHT
+        minimum=HouseBlueprint.MIN_HUT_WALL_HEIGHT, maximum=HouseBlueprint.MIN_HUT_WALL_HEIGHT
     )
     props["door_offset"].update(maximum=side - 2)
     props["corner_pillars"]["description"] = "Always false for the provisional hut"
+    props["wall_material"] = {
+        "type": "string",
+        "enum": [m.value for m in HouseBlueprint.WALL_MATERIALS],
+        "description": "Walls and roof: dirt is dug by hand and is the fastest; planks need about "
+        "14 logs",
+    }
+    schema["required"].append("wall_material")
     return schema
 
 
@@ -74,15 +81,15 @@ PROVISIONAL_HOUSE_SCHEMA = _provisional_schema()
 
 def provisional_design(data: dict[str, Any]) -> dict[str, Any]:
     """
-    最初の家を、最小の大きさ（5x5、壁 3、柱なし）に決める。LLM が決めるのは名前・コンセプト・
-    ドアの向きと位置（ドアの位置は壁に収まるように寄せる）。
+    最初の家を、最小の大きさ（5x5、壁 2、柱なし）に決める。LLM が決めるのは名前・コンセプト・
+    ドアの向きと位置（ドアの位置は壁に収まるように寄せる）・壁の材料（土か板材）。
     """
     side = HouseBlueprint.MIN_SIDE
     return {
         **data,
         "width": side,
         "depth": side,
-        "wall_height": HouseBlueprint.MIN_WALL_HEIGHT,
+        "wall_height": HouseBlueprint.MIN_HUT_WALL_HEIGHT,
         "corner_pillars": False,
         "door_offset": min(max(int(data["door_offset"]), 1), side - 2),
     }
@@ -105,9 +112,21 @@ def parse_blueprint(data: dict[str, Any]) -> HouseBlueprint:
             door_side=Side(data["door_side"]),
             door_offset=int(data["door_offset"]),
             corner_pillars=bool(data.get("corner_pillars", False)),
+            wall_material=BlockKind(data.get("wall_material", BlockKind.PLANKS.value)),
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"malformed blueprint: {e}") from e
+
+
+def _check_house(blueprint: HouseBlueprint) -> None:
+    """LLM が決める家（引っ越し先）の範囲。仮の小屋の壁の高さ 2 と土の壁は、仮の小屋だけ。"""
+    if blueprint.wall_height < HouseBlueprint.MIN_WALL_HEIGHT:
+        raise ValueError(
+            f"wall_height must be {HouseBlueprint.MIN_WALL_HEIGHT}-{HouseBlueprint.MAX_WALL_HEIGHT}, "
+            f"got {blueprint.wall_height}"
+        )
+    if blueprint.wall_material != BlockKind.PLANKS:
+        raise ValueError("the walls of this house are planks (dirt is for the provisional hut)")
 
 
 class HouseDesigner:
@@ -143,8 +162,8 @@ class HouseDesigner:
 
         Args:
             site_note: 建てる場所についての説明（引っ越し先の家。最初の家では空）
-            provisional: 最初の家（仮の小屋）か。大きさは最小（5x5、壁 3、柱なし）に決まる。
-                材料が少なく、最初の夜までに建てられる（設計書 109）
+            provisional: 最初の家（仮の小屋）か。大きさは最小（5x5、壁 2、柱なし）に決まり、壁は土か
+                板材。材料が少なく、最初の夜までに建てられる（設計書 109・133）
 
         Raises:
             TextGenerationError: 使える設計が出なかったとき
@@ -164,6 +183,8 @@ class HouseDesigner:
             )
             try:
                 blueprint = parse_blueprint(provisional_design(data) if provisional else data)
+                if not provisional:
+                    _check_house(blueprint)
             except (ValueError, KeyError, TypeError) as e:
                 error = str(e)
                 logger.warning(f"家の設計の試行 {attempt} を差し戻した: {error}")
@@ -172,7 +193,8 @@ class HouseDesigner:
                 f"家を設計した: {blueprint.name} "
                 f"{blueprint.width}x{blueprint.depth}x{blueprint.wall_height} "
                 f"door={blueprint.door_side.value}:{blueprint.door_offset} "
-                f"pillars={blueprint.corner_pillars} - {blueprint.concept}"
+                f"pillars={blueprint.corner_pillars} material={blueprint.wall_material.value} "
+                f"- {blueprint.concept}"
             )
             return blueprint
         raise TextGenerationError(

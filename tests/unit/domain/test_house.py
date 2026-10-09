@@ -78,11 +78,16 @@ class TestHouseBlueprintValidation:
         with pytest.raises(ValueError, match=field):
             _blueprint(**{field: value})
 
-    @pytest.mark.parametrize("height", [2, 5])
+    @pytest.mark.parametrize("height", [1, 5])
     def test_wall_height_out_of_bounds_raises(self, height):
-        """壁の高さが 3〜4 の外なら通さない。"""
+        """壁の高さが 2〜4 の外なら通さない（2 は仮の小屋）。"""
         with pytest.raises(ValueError, match="wall_height"):
             _blueprint(wall_height=height)
+
+    def test_wall_material_is_planks_or_dirt(self):
+        """壁と屋根の材料は板材か土。それ以外（丸石など）は通さない。"""
+        with pytest.raises(ValueError, match="wall_material"):
+            _blueprint(wall_material=BlockKind.COBBLESTONE)
 
     @pytest.mark.parametrize("offset", [0, 4])
     def test_door_on_corner_raises(self, offset):
@@ -162,6 +167,15 @@ class TestHouseBlueprintBlocks:
 
         assert counts[BlockKind.LOG] == 4 * 3
         assert counts[BlockKind.PLANKS] == 71 - 12
+
+
+    def test_a_dirt_hut_has_dirt_walls_and_roof_and_a_wooden_door(self):
+        """土の小屋（壁の高さ 2）: 壁 30 + 屋根 25 が土、ドアだけ。柱は原木のまま選べる。"""
+        hut = _blueprint(width=5, depth=5, wall_height=2, wall_material=BlockKind.DIRT)
+
+        assert hut.material_counts() == {BlockKind.DIRT: 55, BlockKind.DOOR: 1}
+        pillared = _blueprint(wall_height=2, wall_material=BlockKind.DIRT, corner_pillars=True)
+        assert pillared.material_counts()[BlockKind.LOG] == 4 * 2
 
 
 class TestGoalSpec:

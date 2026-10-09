@@ -29,6 +29,7 @@ from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     ActionDecision,
     ActionResult,
+    BlockKind,
     Candidate,
     CharacterProfile,
     ConditionStatus,
@@ -230,6 +231,18 @@ class TestStartPlay:
         )
 
     @pytest.mark.asyncio
+    async def test_the_provisional_hut_can_be_a_dirt_hut(
+        self, text_generator, prompt_builder, bridge, events
+    ):
+        """仮の小屋は土の壁も選べる（設計書 133）: 壁と屋根が土、ドアだけ板材で作る。"""
+        text_generator.generate_json.return_value = {**VALID_DESIGN, "wall_material": "dirt"}
+
+        project = await self._use_case(text_generator, prompt_builder, bridge, events).execute()
+
+        assert project.blueprint.wall_material == BlockKind.DIRT
+        assert project.blueprint.material_counts() == {BlockKind.DIRT: 55, BlockKind.DOOR: 1}
+
+    @pytest.mark.asyncio
     async def test_design_is_sent_to_bridge(self, text_generator, prompt_builder, bridge, events):
         """正しい設計ならセッションが始まり、その設計がブリッジに送られる。"""
         # LLM が大きい家（7x7、壁 4、柱つき、ドアの位置は壁の外）を書いても、最初の家は仮の小屋に決まる（設計書 109）
@@ -246,8 +259,9 @@ class TestStartPlay:
 
         assert project.blueprint.name == "ひだまり"
         assert project.blueprint.door_side == Side.SOUTH
-        assert (project.blueprint.width, project.blueprint.depth, project.blueprint.wall_height) == (5, 5, 3)
+        assert (project.blueprint.width, project.blueprint.depth, project.blueprint.wall_height) == (5, 5, 2)
         assert project.blueprint.corner_pillars is False and project.blueprint.door_offset == 3
+        assert project.blueprint.wall_material == BlockKind.PLANKS  # 材料を書かなければ板材
         assert project.max_steps_per_goal == 7
         assert project.max_stalled_steps == 5
         assert text_generator.generate_json.call_args.args[1] is PROVISIONAL_HOUSE_SCHEMA

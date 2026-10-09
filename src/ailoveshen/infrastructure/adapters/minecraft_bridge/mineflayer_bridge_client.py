@@ -270,6 +270,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
                 "door_side": b.door_side.value,
                 "door_offset": b.door_offset,
                 "corner_pillars": b.corner_pillars,
+                "wall_material": b.wall_material.value,
             },
             "site": {"x": site.x, "z": site.z} if site else None,
         }

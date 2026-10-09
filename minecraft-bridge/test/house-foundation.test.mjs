@@ -118,3 +118,19 @@ test('built の判定: 足元が抜けていれば未達で土を埋める行を
   assert.equal(lost.met, false)
   assert.equal(p.origin, null)
 })
+
+test('土の壁の小屋（設計書 133）: 土のブロックは土か草のブロックで置いたことになり、材料は土として数える', () => {
+  const blocks = []
+  for (let x = 0; x < 3; x++) for (let z = 0; z < 3; z++) if (x !== 1 || z !== 1) blocks.push({ x, y: 0, z, block: 'dirt' })
+  const p = new BuildPlan({ blocks, width: 3, depth: 3, height: 2 })
+  p.origin = new Vec3(10, 70, 10)
+  const walls = (name) => {
+    const cells = {}
+    for (let x = 0; x < 3; x++) for (let z = 0; z < 3; z++) if (x !== 1 || z !== 1) cells[`${10 + x},70,${10 + z}`] = { name, boundingBox: 'block' }
+    return world(() => 0, cells)
+  }
+  assert.deepEqual(p.materialsNeeded(world(() => 0)), { dirt: 8 })
+  assert.equal(p.status(walls('dirt')).complete, true)
+  assert.equal(p.status(walls('grass_block')).complete, true, '草に変わっても置いたまま')
+  assert.equal(p.status(walls('oak_planks')).complete, false, '板材では土の壁にならない')
+})

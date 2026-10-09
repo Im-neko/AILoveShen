@@ -978,8 +978,10 @@ class HouseBlueprint:
 
     MIN_SIDE = 5
     MAX_SIDE = 7
-    MIN_WALL_HEIGHT = 3
+    MIN_WALL_HEIGHT = 3  # 家の設計の下限（LLM が決める家）
     MAX_WALL_HEIGHT = 4
+    MIN_HUT_WALL_HEIGHT = 2  # 仮の小屋の壁（設計書 133）。屋根の下はドアと同じ 2 マス
+    WALL_MATERIALS = (BlockKind.PLANKS, BlockKind.DIRT)  # 壁と屋根の材料
 
     name: str
     concept: str
@@ -989,16 +991,22 @@ class HouseBlueprint:
     door_side: Side
     door_offset: int
     corner_pillars: bool = False  # 四隅を板材ではなく原木にする
+    wall_material: BlockKind = BlockKind.PLANKS  # 壁と屋根の材料（土は仮の小屋だけ）
 
     def __post_init__(self) -> None:
         """寸法と扉を検証する。"""
         for label, value in (("width", self.width), ("depth", self.depth)):
             if not self.MIN_SIDE <= value <= self.MAX_SIDE:
                 raise ValueError(f"{label} must be {self.MIN_SIDE}-{self.MAX_SIDE}, got {value}")
-        if not self.MIN_WALL_HEIGHT <= self.wall_height <= self.MAX_WALL_HEIGHT:
+        if not self.MIN_HUT_WALL_HEIGHT <= self.wall_height <= self.MAX_WALL_HEIGHT:
             raise ValueError(
-                f"wall_height must be {self.MIN_WALL_HEIGHT}-{self.MAX_WALL_HEIGHT}, "
+                f"wall_height must be {self.MIN_HUT_WALL_HEIGHT}-{self.MAX_WALL_HEIGHT}, "
                 f"got {self.wall_height}"
+            )
+        if self.wall_material not in self.WALL_MATERIALS:
+            raise ValueError(
+                f"wall_material must be one of {[m.value for m in self.WALL_MATERIALS]}, "
+                f"got {self.wall_material.value}"
             )
         self._check_offset("door", self.door_side, self.door_offset)
 
@@ -1048,14 +1056,14 @@ class HouseBlueprint:
                     if (x, z) == (door_x, door_z) and y < 2:
                         continue
                     pillar = self.corner_pillars and (x, z) in corners
-                    kind = BlockKind.LOG if pillar else BlockKind.PLANKS
+                    kind = BlockKind.LOG if pillar else self.wall_material
                     out.append(PlannedBlock(x, y, z, kind))
 
         for ring in range((min(self.width, self.depth) + 1) // 2):
             for x in range(ring, self.width - ring):
                 for z in range(ring, self.depth - ring):
                     if x in (ring, self.width - 1 - ring) or z in (ring, self.depth - 1 - ring):
-                        out.append(PlannedBlock(x, self.wall_height, z, BlockKind.PLANKS))
+                        out.append(PlannedBlock(x, self.wall_height, z, self.wall_material))
 
         out.append(PlannedBlock(door_x, 0, door_z, BlockKind.DOOR))
         return tuple(out)

@@ -626,7 +626,9 @@ export function chestSpot (bot, home) {
     .sort((a, b) => b.distanceTo(home.door) - a.distanceTo(home.door))[0] ?? null
 }
 
-const isWallBlock = (block) => !!block && (isPlanks(block.name) || isLog(block.name))
+// 壁の材料: 板材・原木、仮の小屋の土（設計書 133。草のブロックに変わっていることもある）
+const isDirt = (name) => name === 'dirt' || name === 'grass_block'
+const isWallBlock = (block) => !!block && (isPlanks(block.name) || isLog(block.name) || isDirt(block.name))
 const standable = (bot, p) => bot.blockAt(p)?.boundingBox === 'empty' && bot.blockAt(p.offset(0, 1, 0))?.boundingBox === 'empty' &&
   bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block'
 
@@ -704,8 +706,9 @@ export async function repairWall (bot, home, signal) {
   for (const b of [...home.breach].sort((a, c) => a.y - c.y)) {
     const pos = new Vec3(b.x, b.y, b.z)
     if (!isWallBlock(bot.blockAt(pos))) {
-      const kind = isLog(b.block) ? 'log' : 'planks'
-      if (!bot.inventory.items().some((i) => (kind === 'log' ? isLog : isPlanks)(i.name))) throw new Error(`no ${kind} to close the wall at ${pos}`)
+      const kind = isLog(b.block) ? 'log' : isDirt(b.block) ? 'dirt' : 'planks'
+      const held = { log: isLog, dirt: isDirt, planks: isPlanks }[kind]
+      if (!bot.inventory.items().some((i) => held(i.name))) throw new Error(`no ${kind} to close the wall at ${pos}`)
       await placeOne(bot, { worldPos: () => pos }, { block: kind }, signal)
     }
     home.breach.splice(home.breach.indexOf(b), 1)
