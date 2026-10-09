@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -18,12 +19,14 @@ from ailoveshen.domain.value_objects import (
 PURPOSE = "lesson_compaction"
 
 SYSTEM = f"""\
-あなたは AI 配信者の教訓帳を整理します。教訓帳がいっぱいになったので、似た教訓を統合して件数を減らします。
+あなたは AI 配信者の教訓帳を整理します。教訓帳がいっぱいになったので、同じことを言っている教訓を統合して
+件数を減らします。ここに見せるのは、同じ目標（goal）の教訓です。
 
 ## 決まり
-- 統合するのは、同じことを言っている・重なっている教訓だけ（言い回しが違っても、同じ目標・同じ物・同じ場面で
-  同じ助言なら統合する）。目標（goal）が違う教訓、助言が食い違う教訓、場面が違って別々に思い出すべき教訓は
-  統合しない
+- 統合するのは、同じ場面の同じ問題について、同じ助言をしている教訓だけ。言い回しや細かい理由が違っても、
+  言っていることが同じなら統合する（同じ助言が何度も書かれていることが多い。まとめて減らす）
+- 別々の話は統合しない。統合した 1 文が「A。また B」と別の話をつなげた文になるなら、統合しない
+  （例: 水の流出の話と作業台の置き場の話、柵の置き方と耕地の話）。助言が食い違う教訓も統合しない
 - 統合した教訓は、元の教訓の大事な中身（物の名前、数、やってはいけないこと）を落とさない 1 文
   （{MAX_LESSON_CHARS} 字まで、日本語）にする。条件（condition）は、どんなときの教訓かの短い句
   （{MAX_LESSON_CONDITION_CHARS} 字まで）
@@ -109,15 +112,33 @@ class LessonCompactor:
 
     async def propose(self, lessons: Sequence[Lesson], target: int) -> list[LessonMerge]:
         """
-        `target` 件まで減らすための統合の組を答えさせる。
+        `target` 件まで減らすための統合の組を答えさせる。目標（goal）ごとに分けて聞く（全部を 1 回で見せると
+        重なりを見つけきれず、別の目標の教訓も混ぜてしまう: 2026-10-09 に 200 件で測った）。
 
         Raises:
             TextGenerationError: 生成に失敗したとき
         """
-        body = "\n".join(describe(lesson) for lesson in lessons)
+        groups: dict[str | None, list[Lesson]] = {}
+        for lesson in lessons:
+            groups.setdefault(lesson.keys.get("goal"), []).append(lesson)
+        merges: list[LessonMerge] = []
+        for group in groups.values():
+            if len(group) < 2:
+                continue
+            ids = {n.id for n in group}
+            wanted = math.ceil(len(group) * target / max(len(lessons), 1))
+            for merge in await self._ask(group, wanted):
+                if set(merge.ids) <= ids:
+                    merges.append(merge)
+                else:
+                    logger.warning(f"同じ目標でない教訓の統合を捨てた: {merge.ids}")
+        return merges
+
+    async def _ask(self, group: Sequence[Lesson], target: int) -> list[LessonMerge]:
+        body = "\n".join(describe(lesson) for lesson in group)
         prompt = (
-            f"## 教訓帳（{len(lessons)} 件）\n{body}\n\n"
-            f"## 頼み\n{target} 件まで減らしたい（{max(len(lessons) - target, 0)} 件以上減らす統合を探す）。"
+            f"## 教訓（{len(group)} 件）\n{body}\n\n"
+            f"## 頼み\nこの {len(group)} 件を {target} 件ほどまで減らしたい。同じ助言の教訓を探して、"
             "統合してよい組を merges に書いてください。"
         )
         data = await self._text_generator.generate_json(

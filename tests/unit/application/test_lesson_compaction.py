@@ -156,14 +156,23 @@ def test_the_proposal_is_parsed_and_malformed_groups_are_dropped():
 
 
 @pytest.mark.asyncio
-async def test_the_compactor_shows_every_lesson_with_its_record_and_asks_for_the_target():
+async def test_the_compactor_asks_once_per_goal_with_the_record_and_drops_foreign_ids():
     generator = AsyncMock()
-    generator.generate_json.return_value = {"merges": []}
-    book = LessonBook(_Store(), mode="rules")
+    book = LessonBook(_Store(), mode="rules", max_lessons=200)
     book.learn("畑の水を置く", "畑を作るとき", {"goal": "farmed"}, True, "failure")
-    result = await LessonCompactor(generator).propose(book.lessons, 150)
-    assert result == []
-    prompt = generator.generate_json.await_args.args[0]
+    book.learn("畑に種をまく前に収穫する", "", {"goal": "farmed"}, True, "failure")
+    book.learn("松明は壁に付ける", "", {"goal": "lit"}, True, "failure")
+    book.learn("原木は幹だけを切る", "", {"goal": "have"}, True, "failure")
+    book.learn("石炭は地下で取る", "", {"goal": "have"}, True, "failure")
+    # farmed の組には他の目標の教訓が混ざっている（捨てる）。have の組は正しい
+    generator.generate_json.side_effect = [
+        {"merges": [{"ids": ["L1", "L3"], "text": "混ぜた"}]},
+        {"merges": [{"ids": ["L4", "L5"], "text": "まとめた"}]},
+    ]
+    result = await LessonCompactor(generator).propose(book.lessons, 3)
+    assert result == [LessonMerge(("L4", "L5"), "まとめた")]
+    assert generator.generate_json.await_count == 2  # lit は 1 件なので聞かない
+    prompt = generator.generate_json.await_args_list[0].args[0]
     assert "[L1] (goal=farmed; 教わった 1、効いた 0、失敗 0) 畑の水を置く（畑を作るとき）" in prompt
-    assert "150 件まで減らしたい" in prompt
+    assert "[L3]" not in prompt
     assert generator.generate_json.await_args.kwargs["purpose"] == "lesson_compaction"
