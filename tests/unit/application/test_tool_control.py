@@ -396,6 +396,36 @@ class TestToolStep:
         assert watcher.run.await_args.args[0].name == "wait"
 
     @pytest.mark.asyncio
+    async def test_the_advisor_is_asked_with_what_she_saw_and_its_answer_comes_back_as_a_tool_record(
+        self, use_case, bridge, watcher
+    ):
+        """ask_advisor はブリッジの道具に送らず、迷った時のプロンプトと質問を advisor に渡す（docs/design/143）。"""
+        advisor = AsyncMock()
+        advisor.ask.return_value = (True, "先に原木を切る")
+        use_case._advisor = advisor
+        self.text_generator.choose_tool.side_effect = [
+            ToolChoice("ask_advisor", {"question": "木が見つからない。どうする？"}),
+            ToolChoice("wait", {"intent": "待つ"}),
+        ]
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        advisor.ask.assert_awaited_once_with("木が見つからない。どうする？", "tool prompt")
+        bridge.run_tool.assert_not_awaited()
+        recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
+        assert recent[0].call.name == "ask_advisor" and recent[0].ok
+        assert recent[0].result == "先に原木を切る"
+        offered = [t.name for t in self.text_generator.choose_tool.call_args_list[0].args[1]]
+        assert "ask_advisor" in offered
+
+    @pytest.mark.asyncio
+    async def test_without_an_advisor_the_tool_is_not_offered(self, use_case):
+        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+        await use_case.execute(_session(HAVE_PLANKS))
+
+        offered = [t.name for t in self.text_generator.choose_tool.call_args_list[0].args[1]]
+        assert "ask_advisor" not in offered
+
+    @pytest.mark.asyncio
     async def test_an_invalid_call_fails_the_step_and_the_next_call_thinks_harder(
         self, use_case, watcher
     ):

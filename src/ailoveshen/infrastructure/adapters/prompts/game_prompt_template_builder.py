@@ -11,6 +11,7 @@ from typing import Any, Optional
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
 from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
+from ailoveshen.application.use_cases.tool_catalog import ASK_ADVISOR
 from ailoveshen.domain.value_objects import (
     Activity,
     BuildDesign,
@@ -665,6 +666,24 @@ $suggestions
 $recent
 """)
 
+# 配信者が判断に迷って聞くときの advisor への依頼（docs/design/143）。advisor は道具を呼ばず、助言だけを返す
+ADVICE_TEMPLATE = Template("""\
+You are the advisor of a Minecraft streamer (an AI) who is playing on her own. She was choosing her next tool,
+got unsure and asked you. Below is exactly what she saw when she asked, then her question.
+
+${situation}
+
+## Her question
+$question
+
+## How to answer
+- Read the situation and the recent tool records, find what is really going on, and answer her question
+- Say what to do next: which tool with which arguments (use only the tools and the coordinates that appear above),
+  and why in one sentence. If the recent tools keep failing for one cause, say the cause and a different way
+- Do not call tools. She decides whether to follow you
+- Answer in Japanese, in at most 300 characters
+""")
+
 # 続けて失敗しているとき（STUCK_FAILURES 回以上）に足す節: 同じ手を繰り返さず、原因を考えて別の方法を選ばせる
 STUCK_FAILURES = 2
 TOOL_STUCK_SECTION = """
@@ -1202,6 +1221,10 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             facility_memory=_format_facility_memory(facility_memory),
         )
 
+    def build_advice_prompt(self, question: str, situation: str) -> str:
+        """配信者が判断に迷って advisor に聞くプロンプト（docs/design/143）。"""
+        return ADVICE_TEMPLATE.substitute(situation=situation, question=question.strip())
+
     def build_tool_prompt(
         self,
         activity: Activity,
@@ -1439,6 +1462,7 @@ def _retry(previous_error: str, ask: str) -> str:
 
 
 TOOL_RESULT_CHARS = 300
+ADVICE_RESULT_CHARS = 800  # advisor の答えは調べものの結果より長く、切ると読めなくなる
 
 
 def _format_tool(o: ToolOutcome) -> str:
@@ -1446,5 +1470,6 @@ def _format_tool(o: ToolOutcome) -> str:
     status = "断られた" if o.refused else "成功" if o.ok else "失敗"
     stopped = f"（見張り: {o.stopped_by}）" if o.stopped_by else ""
     intent = f"「{o.call.intent}」" if o.call.intent else ""
-    result = o.result if len(o.result) <= TOOL_RESULT_CHARS else o.result[:TOOL_RESULT_CHARS] + "…"
+    limit = ADVICE_RESULT_CHARS if o.call.name == ASK_ADVISOR else TOOL_RESULT_CHARS
+    result = o.result if len(o.result) <= limit else o.result[:limit] + "…"
     return f"- {o.call.describe()}{intent}: {status}{stopped} {result}"

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ailoveshen.application.use_cases.tool_catalog import (
     ACTION_TOOLS,
+    ASK_ADVISOR,
     LOOK_SCREEN,
     QUERY_TOOLS,
     SEARCH_TOOLS,
@@ -32,7 +33,7 @@ def test_action_tools_match_the_bridge():
 
 
 def test_query_tools_match_the_bridge():
-    """検索の道具と look_screen は Python が処理する（ブリッジには送らない）。残りはブリッジの調べもの。"""
+    """検索の道具と look_screen、ask_advisor は Python が処理する（ブリッジには送らない）。残りはブリッジの調べもの。"""
     bridge = _bridge_list("QUERY_TOOLS")
     assert len(bridge) == len(set(bridge)), "ブリッジの QUERY_TOOLS に重複がある"
-    assert set(QUERY_TOOLS) - set(SEARCH_TOOLS) - {LOOK_SCREEN} == set(bridge)
+    assert set(QUERY_TOOLS) - set(SEARCH_TOOLS) - {LOOK_SCREEN, ASK_ADVISOR} == set(bridge)

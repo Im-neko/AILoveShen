@@ -487,6 +487,23 @@ class TestToolPrompt:
         assert "失敗（見張り: woke up: q）" in prompt
         assert "- 今やろうとしていること: 外に出る" in prompt
 
+    def test_the_advisors_answer_is_not_cut_like_a_lookup_result(self):
+        """調べものの結果は 300 字で切る。advisor の答えは切ると読めないので、もっと長く見せる（設計書 143）。"""
+        advice = "木が足りない。" * 60
+        recent = (
+            ToolOutcome(ToolCall("ask_advisor", {"question": "q"}), True, advice, 4.0),
+            ToolOutcome(ToolCall("recipe_of", {"item": "stick"}), True, advice, 0.0),
+        )
+        prompt = self._prompt(recent=recent)
+        assert f"- ask_advisor(question=q): 成功 {advice}\n" in prompt
+        assert advice not in prompt.split("- recipe_of")[1]
+
+    def test_the_advice_prompt_carries_the_situation_and_the_question(self):
+        prompt = GamePromptTemplateBuilder().build_advice_prompt(" どこを掘る？ ", "SITUATION-TEXT")
+        assert "SITUATION-TEXT" in prompt
+        assert "どこを掘る？" in prompt
+        assert "Do not call tools" in prompt
+
     def test_a_screen_note_is_marked_unverified_with_its_age(self):
         from datetime import datetime, timedelta, timezone
 

@@ -315,6 +315,17 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_advice_prompt(self, question: str, situation: str) -> str:
+        """
+        配信者が判断に迷って advisor に聞くプロンプト（docs/design/143）。
+
+        Args:
+            question: 配信者の聞きたいこと
+            situation: 配信者が迷った時に見ていたプロンプト（状況と直近の道具の記録）
+        """
+        ...
+
+    @abstractmethod
     def build_tool_prompt(
         self,
         activity: Activity,

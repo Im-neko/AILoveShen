@@ -5,6 +5,7 @@ from __future__ import annotations
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.use_cases.advisor import Advisor
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
@@ -16,6 +17,7 @@ from ailoveshen.application.use_cases.job_planner import JobPlanner
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
+from ailoveshen.application.use_cases.lesson_compaction import LessonCompactor
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.learned_candidates import LearnedCandidates
 from ailoveshen.application.use_cases.notes import NoteKeeper
@@ -34,7 +36,7 @@ from ailoveshen.domain.value_objects import (
     SupplyTier,
 )
 from ailoveshen.factories.llm import create_character_profile
-from ailoveshen.factories.text import create_text_generator
+from ailoveshen.factories.text import create_text_generator, has_advisor
 from ailoveshen.infrastructure.adapters.jev.jev_action_selector import JevActionSelector
 from ailoveshen.infrastructure.adapters.jev.jev_fast_judge import JevFastJudge
 from ailoveshen.infrastructure.adapters.map import PilMapRenderer
@@ -311,6 +313,7 @@ def create_game_service(
             recorder=JsonlWatchRecorder(minecraft.lessons_record_dir)
             if minecraft.lessons_record_dir
             else None,
+            compactor=LessonCompactor(text_generator),
         )
         lessons.load()
     # 覚えた候補: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（設計書 52）
@@ -438,6 +441,11 @@ def create_game_service(
         ),
         search=search,
         abilities=load_abilities(),
+        advisor=(
+            Advisor(text_generator, prompt_builder)
+            if minecraft.control == "tools" and has_advisor(llm or LlmSettings())
+            else None
+        ),
         skills=(
             SkillWriter(
                 text_generator,

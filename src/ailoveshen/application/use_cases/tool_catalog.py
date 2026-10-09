@@ -31,6 +31,8 @@ SEARCH_MEMORY = "search_memory"
 ITEM_INFO = "item_info"
 SEARCH_ABILITIES = "search_abilities"
 SEARCH_TOOLS = (SEARCH_FACILITY, SEARCH_MEMORY, ITEM_INFO, SEARCH_ABILITIES)
+# より強いモデルの意見を聞く（LITELLM_ADVISOR_MODEL を決めたときだけ道具に出す。docs/design/143）
+ASK_ADVISOR = "ask_advisor"
 RUN_SKILL = "run_skill"
 WRITE_SKILL = "write_skill"
 SKILL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
@@ -334,6 +336,14 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"query": _str("したいこと（日本語か英語。例: 畑を作る、水を渡る、肉を焼く、夜を越す）")},
         ["query"],
     ),
+    # advisor を使えるときだけ出す（docs/design/143）
+    ASK_ADVISOR: (
+        "判断に迷ったとき、より強いモデルの意見を聞く（数秒かかる）。次に何をするか、どの道具をどの引数で"
+        "呼ぶか、なぜ失敗が続くのかを聞ける。調べもので分かることは先に調べ、それでも迷うときだけ使う。"
+        "答えは直近の道具に出る。従うかは自分で決める",
+        {"question": _str("聞きたいこと（日本語か英語。何に迷っていて、何を試したか）")},
+        ["question"],
+    ),
     # 行き詰まったときだけ出す実験の目（docs/design/85）
     "inspect": (
         "x,y,z のマスの今を細かく見る（ブロックの名前と状態 props: ドアの open・facing など、6 方向の隣、"
@@ -363,9 +373,12 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 }
 
 
-def tool_specs(can_look: bool = False, skills: bool = False, experiment: bool = False) -> list[ToolSpec]:
+def tool_specs(
+    can_look: bool = False, skills: bool = False, experiment: bool = False, advisor: bool = False
+) -> list[ToolSpec]:
     """
-    配信者に渡す道具の一覧。`can_look` が偽なら look_screen を、`skills` が偽なら技の道具を出さない。
+    配信者に渡す道具の一覧。`can_look` が偽なら look_screen を、`skills` が偽なら技の道具を、
+    `advisor` が偽なら ask_advisor を出さない。
     `experiment` が真（行き詰まっているとき）だけ、inspect / diagnostics と、use_item の素手・面・スニーク
     を加える（docs/design/85）。
     """
@@ -392,6 +405,8 @@ def tool_specs(can_look: bool = False, skills: bool = False, experiment: bool = 
         )
     for name, (description, props, required) in QUERY_TOOLS.items():
         if name == LOOK_SCREEN and not can_look:
+            continue
+        if name == ASK_ADVISOR and not advisor:
             continue
         if name in EXPERIMENT_QUERIES and not experiment:
             continue

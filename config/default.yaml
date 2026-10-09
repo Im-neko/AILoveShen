@@ -186,6 +186,9 @@ llm:
     models:
       skill_write: "${LITELLM_CODE_MODEL:-}"
       check_write: "${LITELLM_CODE_MODEL:-}"
+      # The advisor the playing LLM asks when unsure (the ask_advisor tool, docs/design/143), e.g.
+      # LITELLM_ADVISOR_MODEL=claude-sonnet-5-5. Empty: ask_advisor is not offered
+      advice: "${LITELLM_ADVISOR_MODEL:-}"
     max_concurrent: 4
     timeout_seconds: 120
   # purpose -> local | remote (default: purposes not listed). Images always go to the remote LLM.
@@ -200,6 +203,7 @@ llm:
     default: "local"
     skill_write: "${CODE_LLM:-local}"
     check_write: "${CODE_LLM:-local}"
+    advice: "remote"                     # always the LiteLLM model: the point is a stronger one than the local LLM
   fallback: "none"                       # none | remote: when the local model fails
 
   default_thinking_level: "low"
@@ -234,6 +238,8 @@ llm:
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)
     skill_write: "high"        # writing or fixing a skill (docs/design/22)
     check_write: "medium"      # writing the check of a custom(name) condition (docs/design/42)
+    advice: "medium"           # the advisor's answer to the playing LLM (docs/design/143)
+    lesson_compaction: "low"   # merging similar lessons when the lesson book is full (docs/design/144)
 
 character:
   name: "AILoveShen"

@@ -22,7 +22,7 @@ Gemini が受け持つ呼び出しは、画像のある呼び出し、ローカ�
 - **思考**: §5 のとおり、用途ごとに決める（初めは「指定を送らない」にしていたが、Haiku 5.5 は指定しないと思考が走るので改めた）
 - **名前**: 使用量の行は `LiteLLM <model>（thinking off）: …`、記録の `model` は `litellm:<model>`。`tools/gemini_usage.py` は `litellm:<用途>` として数え、Gemini の値段では費用を出さない
 - **設定**: `llm.remote.litellm`（`LITELLM_URL`、`LITELLM_MODEL`、`LITELLM_API_KEY`）。モデル名は必須（`/models` の最初のモデルが目当てとは限らない）。コンテキストは 20 万、出力は 8192 を既定にした（Haiku の実際の上限は確かめていない。400 が返ったら下げる）
-- `response_format: json_schema` や `tool_choice: required` をプロキシが断ったら、ローカルと同じく以後送らない（36 §3）
+- `response_format: json_schema` や `tool_choice: required` を断られたら、ローカルと同じく以後送らない（36 §3）。`response_format` は用途ごと、返事が来ないときも外す（設計書 141: Anthropic は optional 24 個超のスキーマを断り、入れ子の深い `plan` は返事が来ない）
 
 ## 4. 接続先と方針（2026-10-09）
 
@@ -37,12 +37,12 @@ Gemini が受け持つ呼び出しは、画像のある呼び出し、ローカ�
 **確かめたこと**（`https://llm.ideta.net/v1`、`claude-haiku-5-5` / `claude-sonnet-5-5`）
 - Haiku 5.5 は指定しないと思考が走る（数千トークンの前置きの質問で 160〜300 トークン。上限 300 の呼び出しは思考だけで使い切って答えが空）。`thinking: {"type": "disabled"}` で 0 になる。`reasoning_effort: "none"` と `low` では止まらない。`thinking: adaptive` + `reasoning_effort: high` で思考が走る
 - 思考の設定を呼び出しのあいだで変えると、プロンプトキャッシュが外れる（「思考あり」で書いたものは「思考なし」で読めず、書き直しになる）。用途ごとに固定する
-- `json_schema`、`tool_choice: required`、画像（`data:` URL）は Haiku 5.5 で通る
+- `json_schema`、`tool_choice: required`、画像（`data:` URL）は Haiku 5.5 で通る（`json_schema` はスキーマによる: 設計書 141）
 - `cache_control` は system のブロックにも、ユーザーメッセージの部品（変わらない部分）にも効く。`ttl: "1h"` もブロックごとに効く（5 分で足りるので使わない）。使用量は `prompt_tokens_details.cached_tokens` と `cache_creation_input_tokens`
 
 **思考**: `thinking_param: anthropic`（既定）。Gemini の `thinking_levels` が medium / high の用途だけ思考させる（`thinking: adaptive` + `reasoning_effort`）。ほかは `thinking: disabled`。つまり失敗の後（`tool_after_failure`、`tool_stuck`、`goal_after_failure`）、画面を見る呼び出し、計画の呼び出し（town、site、house、build_design）、コードを書く呼び出しで思考する。Claude 以外のモデルを LiteLLM 経由で使うときは `thinking_param: none`
 
-**モデル**: `llm.remote.litellm.models`（用途 → モデル）。`LITELLM_CODE_MODEL=claude-sonnet-5-5` を書くと、コードを書く用途（`skill_write`、`check_write`）が LiteLLM に回ったとき Sonnet になる。振り分けは変えない: `llm.routes` が local の用途はローカルのモデルで書く（ユーザー 2026-10-09: 「llm.routes がローカルの場合はコードもローカルのモデルで書いてほしい」。最初は models に書いた用途を LiteLLM に回していたが、やめた）。Sonnet で書かせたいときは、`llm.routes` でその用途を `remote` にする（ローカルを切っていれば全部 LiteLLM）。思考ありの用途だけを書く（Sonnet 5.5 は思考を切れない）。使用量の行と記録の `model` は、実際に答えたモデル
+**モデル**: `llm.remote.litellm.models`（用途 → モデル）。`LITELLM_CODE_MODEL=claude-sonnet-5-5` を書くと、コードを書く用途（`skill_write`、`check_write`）が LiteLLM に回ったとき Sonnet になる。振り分けは変えない: `llm.routes` が local の用途はローカルのモデルで書く（ユーザー 2026-10-09: 「llm.routes がローカルの場合はコードもローカルのモデルで書いてほしい」。最初は models に書いた用途を LiteLLM に回していたが、やめた）。Sonnet で書かせたいときは、`llm.routes` でその用途を `remote` にする（ローカルを切っていれば全部 LiteLLM）。思考ありの用途だけを書く（Sonnet 5.5 は思考を切れない）。同じしくみで `LITELLM_ADVISOR_MODEL` が用途 `advice` のモデルを決める（迷ったときに聞く advisor。設計書 143）。使用量の行と記録の `model` は、実際に答えたモデル
 
 **キャッシュ**: `prompt_cache`（`LITELLM_PROMPT_CACHE`、既定 true。Claude 用。Gemini を LiteLLM 経由で使うときは false: `cache_control` を付けると明示キャッシュに切り替わり、暗黙のキャッシュが止まって保管料がかかる）
 - プロンプトに境目の印 `CACHE_BREAK`（`text_generator.py`）を置く。アダプターは、印の手前のブロックと system に `cache_control` を付ける（最大 4 つ。印のないプロンプトには付けない: 末尾に付けると書き込みの割増だけを払う）。Gemini とローカルは印を取り除くだけ

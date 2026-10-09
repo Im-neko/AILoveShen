@@ -100,3 +100,19 @@ def create_text_generator(
         context_tokens=local.context_tokens,
         fallback=llm.fallback,
     )
+
+
+def has_advisor(llm: LlmSettings) -> bool:
+    """
+    迷ったときに意見を聞く advisor を使えるか（docs/design/143）。LITELLM_ADVISOR_MODEL を決めていて、
+    その呼び出しが届く LiteLLM（LITELLM_MODEL）があるとき。
+
+    advisor の用途（advice）は、いつもリモートの LiteLLM に向かう。リモートがなければローカルの LLM が
+    答えるだけで、同じモデルに聞いても意味がないので、道具に出さない。
+    """
+    if not llm.litellm.models.get("advice"):
+        return False
+    if not llm.litellm.model:
+        logger.warning("LITELLM_ADVISOR_MODEL はあるが LITELLM_MODEL がない: advisor は使わない")
+        return False
+    return True

@@ -231,7 +231,7 @@ LOCAL_LLM=1 LOCAL_LLM_URL=http://127.0.0.1:11434/v1 LOCAL_LLM_MODEL=<名前> pyt
 ```
 
 - 起動のログに「LLM: ローカル …、振り分け …、画像は Gemini」と出る。使用量の行は `Local <モデル>`（Gemini は `Gemini <モデル>`）。`python tools/gemini_usage.py <ログ>` は `local:<用途>` の行に分けて数える（費用 0）
-- 用途ごとにリモート（LiteLLM のモデル）へ回す: `config/development.yaml` などで `llm.routes: {default: local, skill_write: remote}`。コードを書く用途（スキル・条件のチェック）だけなら `CODE_LLM=remote`（`LITELLM_CODE_MODEL=claude-sonnet-5-5` で Sonnet。設計書 135）
+- 用途ごとにリモート（LiteLLM のモデル）へ回す: `config/development.yaml` などで `llm.routes: {default: local, skill_write: remote}`。コードを書く用途（スキル・条件のチェック）だけなら `CODE_LLM=remote`（`LITELLM_CODE_MODEL=claude-sonnet-5-5` で Sonnet。設計書 135）。迷ったときに強いモデルに聞く道具（`ask_advisor`）は `LITELLM_ADVISOR_MODEL=claude-sonnet-5-5` で出る（空なら出ない。設計書 143）
 - `llm.local.context_tokens` はサーバーの 1 回の最大の長さに合わせる（FreeToken は `--max-seq-len-override`、Ollama は `OLLAMA_CONTEXT_LENGTH`。Ollama の既定は小さく、超えた分は黙って切られる）。入らない呼び出しは Gemini に回る（ログに「too long for the local model」）
 - ローカルが落ちたらエラーのまま（`llm.fallback: none`）。Gemini で続けるなら `fallback: gemini`
 - FreeToken: `--enable-cache-report` を付けると使用量の行の `cached=` が出る

@@ -20,6 +20,9 @@ from ailoveshen.infrastructure.adapters.prompts import game_prompt_template_buil
 TOOL_DEFINITIONS_BUDGET = {
     "production": (dict(skills=True), 8800),  # 配信のふだん（技あり、画面なし）
     "stuck": (dict(skills=True, experiment=True), 9450),  # 行き詰まり（inspect / diagnostics が加わる）
+    # advisor を決めたとき（ask_advisor の定義が加わる: 約 200 トークン。設計書 143）
+    "production_advisor": (dict(skills=True, advisor=True), 9300),
+    "stuck_advisor": (dict(skills=True, experiment=True, advisor=True), 9980),
 }
 RULES_BUDGET = 1450  # TOOL_TEMPLATE の固定の文（差し込む欄を除く）
 STUCK_SECTION_BUDGET = 780

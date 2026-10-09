@@ -25,6 +25,7 @@ from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
 from ailoveshen.application.use_cases.action_label import action_label
+from ailoveshen.application.use_cases.advisor import Advisor
 from ailoveshen.application.use_cases.goal_chooser import ChosenGoal, GoalChooser
 from ailoveshen.application.use_cases.death_report import death_situation, describe_death
 from ailoveshen.application.use_cases.goal_ends import goal_end_entry
@@ -58,6 +59,7 @@ from ailoveshen.application.use_cases.search import KeySearch, WorldSearch
 from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
 from ailoveshen.application.use_cases.tool_catalog import (
     ACTION_TOOLS,
+    ASK_ADVISOR,
     LOOK_SCREEN,
     SEARCH_TOOLS,
     WRITE_SKILL,
@@ -363,6 +365,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         planner: Optional[JobPlanner] = None,
         goal_store: Optional[IGoalStore] = None,
         goal_end_recorder: Optional[IWatchRecorder] = None,
+        advisor: Optional[Advisor] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -401,6 +404,8 @@ class AdvancePlayUseCase(IAdvancePlay):
             objective_stall_steps: 一番上の大目標の進み具合（条件の数）が、そのための行動を
                 これだけ続けても変わらなければ、Gemini に考え直させる（小目標を変えても同じ所を
                 回るのを止める。0 なら見ない）
+            advisor: 迷ったときに意見を聞く、より強いモデル（道具モードのとき。None なら
+                ask_advisor を出さない。docs/design/143）
 
         Raises:
             ValueError: control が不明か、"tools" なのに tool_watcher がないとき
@@ -466,6 +471,8 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._goal_end_recorder = goal_end_recorder
         self._goal_end_recorded: Optional[Goal] = None  # 終わりを記録した小目標（決定に失敗して残った目標を二度数えない）
         self._planned_at: dict[str, float] = {}  # 大目標の id → 最後に計画を書いた（書こうとした）時刻
+        # 迷ったときに意見を聞く、より強いモデル（docs/design/143）。None なら ask_advisor を道具に出さない
+        self._advisor = advisor if control == "tools" else None
 
     async def execute(self, session: PlaySession) -> PlayStepReport:
         """セッションを 1 ステップ進める。"""
@@ -728,7 +735,12 @@ class AdvancePlayUseCase(IAdvancePlay):
             return picked
         # 行き詰まっているときだけ、実験の道具（inspect / diagnostics、素手・面・スニークの use_item）を加える（設計書 85）
         specs_by_experiment = {
-            on: tool_specs(can_look=self._screen is not None, skills=self._skills is not None, experiment=on)
+            on: tool_specs(
+                can_look=self._screen is not None,
+                skills=self._skills is not None,
+                experiment=on,
+                advisor=self._advisor is not None,
+            )
             for on in (False, True)
         }
         images: list[Screenshot] = []  # 次の選択にだけ添える画面（ステップをまたがない）
@@ -825,6 +837,14 @@ class AdvancePlayUseCase(IAdvancePlay):
                 result = "the screen is attached to this prompt" if shot else "could not capture"
                 self._recent_tools.append(
                     ToolOutcome(call=call, ok=shot is not None, result=result, seconds=0.0)
+                )
+                continue
+            if call.name == ASK_ADVISOR:
+                assert self._advisor is not None
+                started = self._clock()
+                ok, result = await self._advisor.ask(str(call.args.get("question") or ""), prompt)
+                self._recent_tools.append(
+                    ToolOutcome(call=call, ok=ok, result=result, seconds=self._clock() - started)
                 )
                 continue
             if call.name in SEARCH_TOOLS:
