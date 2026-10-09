@@ -49,8 +49,8 @@ class OpenAICompatTextGenerator(ITextGenerator):
     OpenAI 互換のサーバーのインフラ側アダプター。画像は `images=True`（LiteLLM 経由の Claude など
     画像を読めるモデル）のときだけ受け付ける。ローカルは画像なしで動かすので、振り分けでリモートに回す。
 
-    - JSON: スキーマをいつもプロンプトに書き、`response_format: json_schema` も送る（断られたら
-      以後送らない）。答えをスキーマの主な決まりで確かめ、違えば 1 回だけ書き直させる
+    - JSON: スキーマをいつもプロンプトに書き、`response_format: json_schema` も送る（断られた
+      用途では以後送らない。スキーマで通る・通らないが分かれる）。答えをスキーマの主な決まりで確かめ、違えば 1 回だけ書き直させる
     - 道具: `tools` と `tool_choice: required`（断られたら auto）。道具を呼ばなければ、道具の名前と
       引数の JSON で選ばせる
     - 考える深さ: 用途の thinking_level が medium / high なら思考あり。渡し方は thinking_param:
@@ -95,7 +95,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
             max_output_tokens: 出力の上限（思考を含む）。1 回ごとに、コンテキストの残り（見積もり）
                 までに減らす
             context_tokens: サーバーの 1 回の最大の長さ
-            response_format: "auto"（json_schema を送り、断られたらやめる）か "off"
+            response_format: "auto"（json_schema を送り、断られた用途ではやめる）か "off"
             thinking_param: "chat_template_kwargs"（{"enable_thinking": …}）、"litellm"（thinking と
                 reasoning_effort。LiteLLM 経由のモデル）か "none"
             thinking_levels: 用途ごとの深さ（Gemini の表をそのまま使う）
@@ -128,6 +128,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._max_output = max_output_tokens
         self._context = context_tokens
         self._use_response_format = response_format == "auto"
+        self._no_response_format: set[str] = set()  # response_format を受け付けなかった用途
         self._tool_choice = "required"
         self._thinking_param = thinking_param
         self._levels = {"default": default_thinking_level, **dict(thinking_levels or {})}
@@ -304,7 +305,11 @@ class OpenAICompatTextGenerator(ITextGenerator):
                     body["reasoning_effort"] = effort
             elif (level := self._levels.get(purpose or "default", self._levels["default"])) in REASONING_EFFORTS:
                 body["reasoning_effort"] = level
-        if schema is not None and self._use_response_format:
+        if (
+            schema is not None
+            and self._use_response_format
+            and (purpose or "default") not in self._no_response_format
+        ):
             body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {"name": "answer", "schema": schema},
@@ -351,21 +356,31 @@ class OpenAICompatTextGenerator(ITextGenerator):
 
     async def _post(self, body: dict[str, Any], purpose: Optional[str], think: bool) -> dict[str, Any]:
         started = time.monotonic()
-        response = await self._send(body, purpose, think, started)
-        if response.status_code in (400, 422):
-            # 断られたかもしれない指定を 1 つずつ外して試す。通った指定だけを以後送らない
-            for field in self._optional_fields(body):
+        timed_out: Optional[TextGenerationError] = None
+        try:
+            response = await self._send(body, purpose, think, started)
+        except TextGenerationError as e:
+            if "response_format" not in body or not isinstance(e.__cause__, httpx.ReadTimeout):
+                raise
+            # スキーマが重くて返事が来ない（LiteLLM 経由の Claude で、入れ子の深いスキーマが 2 分止まった）
+            timed_out, response = e, None
+        if response is None or self._may_be_refused(response, body):
+            # 断られたかもしれない指定を 1 つずつ外して試す。通った指定だけを、その用途で以後送らない
+            fields = ["response_format"] if response is None or response.status_code >= 500 else self._optional_fields(body)
+            for field in fields:
                 trial = self._without(body, field)
                 retry = await self._send(trial, purpose, think, started)
                 if retry.status_code in (400, 422):
                     continue
                 if retry.status_code < 400:
-                    self._drop(field)
-                    logger.warning(
-                        f"{self._label} は {field} を受け付けない（{response.status_code}）: 以後は送らない"
-                    )
+                    self._drop(field, purpose)
+                    why = "返事が来ない" if response is None else response.status_code
+                    where = f"（{purpose or 'default'}）" if field == "response_format" else ""
+                    logger.warning(f"{self._label} は{where} {field} を受け付けない（{why}）: 以後は送らない")
                 response = retry
                 break
+        if response is None:
+            raise timed_out  # type: ignore[misc]
         if response.status_code >= 400:
             error = f"{self._label} LLM error {response.status_code}: {response.text[:300]}"
             self._record(body, purpose, think, started, error=error)
@@ -374,6 +389,12 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._log_usage(data, body, started, purpose, think)
         self._record(body, purpose, think, started, data=data)
         return data
+
+    @staticmethod
+    def _may_be_refused(response: httpx.Response, body: dict[str, Any]) -> bool:
+        if response.status_code in (400, 422):
+            return True
+        return response.status_code >= 500 and "response_format" in body
 
     async def _send(
         self, body: dict[str, Any], purpose: Optional[str], think: bool, started: float
@@ -404,9 +425,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
             trial.pop(field)
         return trial
 
-    def _drop(self, field: str) -> None:
+    def _drop(self, field: str, purpose: Optional[str]) -> None:
         if field == "response_format":
-            self._use_response_format = False
+            self._no_response_format.add(purpose or "default")
         elif field == "tool_choice":
             self._tool_choice = "auto"
         elif field == "chat_template_kwargs":

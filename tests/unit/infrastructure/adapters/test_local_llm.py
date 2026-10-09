@@ -125,12 +125,64 @@ async def test_generate_json_sends_the_schema_and_asks_again_when_it_is_broken()
 
 
 @pytest.mark.asyncio
-async def test_a_refused_response_format_is_dropped_for_good():
-    server = _Server(httpx.Response(400, text="unknown field"), _answer('{"color": "red"}'), _answer('{"color": "blue"}'))
+async def test_a_refused_response_format_is_dropped_for_that_purpose_only():
+    seen = []
+
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        body = json.loads(request.content)
+        seen.append((body, body["messages"][-1]["content"]))
+        if "response_format" in body and "refuse" in body["messages"][-1]["content"]:
+            return httpx.Response(400, text="too many optional parameters")
+        return httpx.Response(200, json=_answer('{"color": "red"}'))
+
+    local = OpenAICompatTextGenerator("http://local/v1", transport=httpx.MockTransport(server))
+    await local.generate_json("refuse", SCHEMA, purpose="reply")  # 400、外して通る
+    await local.generate_json("refuse", SCHEMA, purpose="reply")  # この用途では送らない
+    await local.generate_json("fine", SCHEMA, purpose="town")  # 別の用途は送る
+    sent = [("response_format" in body, purpose_text.startswith("refuse")) for body, purpose_text in seen]
+    assert sent == [(True, True), (False, True), (False, True), (True, False)]
+
+
+@pytest.mark.asyncio
+async def test_a_schema_the_server_hangs_on_is_asked_again_without_response_format():
+    seen = []
+
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        body = json.loads(request.content)
+        seen.append(body)
+        if "response_format" in body:
+            raise httpx.ReadTimeout("hang", request=request)
+        return httpx.Response(200, json=_answer('{"color": "red"}'))
+
+    local = OpenAICompatTextGenerator("http://local/v1", transport=httpx.MockTransport(server))
+    assert await local.generate_json("plan", SCHEMA, purpose="plan") == {"color": "red"}
+    await local.generate_json("plan", SCHEMA, purpose="plan")
+    assert ["response_format" in b for b in seen] == [True, False, False]
+
+
+@pytest.mark.asyncio
+async def test_a_gateway_timeout_on_a_structured_call_is_asked_again_without_response_format():
+    server = _Server(httpx.Response(524, text="timeout"), _answer('{"color": "red"}'))
     local = _local(server)
-    await local.generate_json("pick", SCHEMA, purpose="goal")
-    await local.generate_json("pick", SCHEMA, purpose="goal")
-    assert "response_format" not in server.requests[1] and "response_format" not in server.requests[2]
+    assert await local.generate_json("plan", SCHEMA, purpose="plan") == {"color": "red"}
+    assert "response_format" in server.requests[0] and "response_format" not in server.requests[1]
+
+
+@pytest.mark.asyncio
+async def test_a_timeout_that_also_happens_without_response_format_is_the_error():
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        raise httpx.ReadTimeout("down", request=request)
+
+    local = OpenAICompatTextGenerator("http://local/v1", transport=httpx.MockTransport(server))
+    with pytest.raises(TextGenerationError):
+        await local.generate_json("plan", SCHEMA, purpose="plan")
+    assert local._no_response_format == set()
 
 
 @pytest.mark.asyncio
