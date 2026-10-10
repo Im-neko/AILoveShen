@@ -69,14 +69,18 @@ export function walkableRegion (bot, start, arrived = () => false, budget = REGI
 }
 
 // 岩の向こうか。歩いて出られる範囲が閉じていて、目標がそこから遠ければ { cells, gap }、そうでなければ null
-export function rockBetween (bot, target, riding = false) {
+// 縁が崖の高み（屋根・柱の頂上）は、岩に囲まれた所ではない。既定では null（呼び出し側の「閉じた所から出る」の案内が
+// 当てはまらない）。cliff: true を渡す呼び出し側には { cliff: true, ... } を返して、崖用の案内を出させる
+// （2026-10-10: 塔の屋根の上で「閉じた空間（26 マス）」と断られ、積んでも出られない所で積む手を案内された）
+export function rockBetween (bot, target, riding = false, { cliff = false } = {}) {
   if (riding || bot.entity.isInWater) return null
   const t = new Vec3(target.x, target.y, target.z)
   const region = walkableRegion(bot, standingCell(bot), (p) => p.distanceTo(t) <= MAX_DIG_GAP)
   if (region.open) return null
+  if (region.cliff && !cliff) return null
   let gap = Infinity
   for (const p of region.cells.values()) gap = Math.min(gap, p.distanceTo(t))
-  return gap > MAX_DIG_GAP ? { cells: region.cells.size, gap: Math.round(gap) } : null
+  return gap > MAX_DIG_GAP ? { cells: region.cells.size, gap: Math.round(gap), ...(region.cliff ? { cliff: true } : {}) } : null
 }
 
 // いまの足元から歩ける範囲を調べる: { cells, open, cliff }
@@ -107,6 +111,9 @@ export function regionCached (bot, now = Date.now()) {
   regionMemo.set(bot, { at: `${me.x},${me.y},${me.z}`, time: now, value })
   return value
 }
+// 行動のあと（掘る・置く・歩く）に捨てる: 位置が同じでも、まわりのブロックが変わっていれば読み直す
+// （2026-10-10: 動かずに足元を掘っても 3 秒は古い結果が返り、積んでは降りる往復に気づけなかった）
+export const forgetRegion = (bot) => regionMemo.delete(bot)
 export const closedSpaceCached = (bot, now = Date.now()) => closedFrom(bot, regionCached(bot, now))
 export const isolatedSpaceCached = (bot, now = Date.now()) => isolatedFrom(bot, regionCached(bot, now))
 
@@ -125,3 +132,82 @@ export function pillarUnder (bot) {
   }
   return below
 }
+
+// ---- 崖の上（屋根・柱の頂上）から出る ----
+
+// 足元が、climb_out で自分が積んだセルか（state.pillar）。そのブロックか null
+export function piledUnder (bot, state) {
+  const below = standingCell(bot).offset(0, -1, 0)
+  if (!(state.pillar ?? []).some((p) => p.x === below.x && p.y === below.y && p.z === below.z)) return null
+  const b = bot.blockAt(below)
+  return b?.boundingBox === 'block' ? b : null
+}
+
+export const MAX_FALL = 12 // 縁から降りる先を探す深さ
+const BAD_FLOOR = /lava|cactus|magma|fire|campfire|sweet_berry|powder_snow/
+const solidAt = (b) => b?.boundingBox === 'block'
+const clearAt = (b) => !!b && b.boundingBox === 'empty' && b.name !== 'lava'
+const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+// 歩ける範囲の縁から、飛び降りる先: [{ from, dir, landing, drop, damage }]（ダメージの少ない順、近い順）。
+// 落下ダメージは (落差 − 3)。水の上に降りるならなし。降りた先が、いまの高みより広い（別の穴に降りるだけではない）ものだけ
+export function dropOffs (bot, region = regionOf(bot), { limit = 6 } = {}) {
+  const me = standingCell(bot)
+  const found = []
+  for (const c of region.cells.values()) {
+    for (const [dx, dz] of AROUND) {
+      const n = c.offset(dx, 0, dz)
+      if (!clearAt(bot.blockAt(n)) || !clearAt(bot.blockAt(n.offset(0, 1, 0)))) continue
+      for (let k = 1; k <= MAX_FALL; k++) {
+        const f = n.offset(0, -k, 0)
+        const here = bot.blockAt(f)
+        if (!here || !(clearAt(here) || here.name === 'water') || !clearAt(bot.blockAt(f.offset(0, 1, 0)))) break
+        const below = bot.blockAt(f.offset(0, -1, 0))
+        if (!below) break
+        if (!solidAt(below) && below.name !== 'water') continue
+        if (BAD_FLOOR.test(below.name)) break
+        const drop = c.y - f.y
+        if (drop <= DROP) break // 歩いて降りられる（崖ではない）
+        found.push({ from: c, dir: [dx, dz], landing: f, drop, damage: below.name === 'water' ? 0 : drop - DROP, cost: (below.name === 'water' ? 0 : drop - DROP) + 0.05 * me.distanceTo(c) })
+        break
+      }
+    }
+  }
+  found.sort((a, b) => a.cost - b.cost)
+  const out = []
+  for (const o of found) {
+    if (out.length >= limit) break
+    const beyond = walkableRegion(bot, o.landing, () => false)
+    if (beyond.open || beyond.cells.size > region.cells.size) out.push(o)
+  }
+  return out
+}
+
+// 足元に積んで上がった先（積む列の上）が、歩いて出られる所か。cell から真上へ、頭の高さの岩を掘りながら 1 つずつ
+// 上がったとして、最初に「閉じていない」高さで: ok（開けている）か、plateau（縁が崖の屋根・柱の頂上）。
+// dug は途中で掘る固いブロックの数。isProtected(ブロック, 位置) は、保護されている（家・建物）かを返す関数で、protectedCount に数える
+export function climbExit (bot, cell, { max = 24, isProtected = () => false } = {}) {
+  for (let h = 1; h <= max; h++) {
+    const standing = cell.offset(0, h, 0)
+    const head = bot.blockAt(standing.offset(0, 1, 0))
+    const feet = bot.blockAt(standing)
+    if (!head || !feet) return { ok: false, why: 'the space above is not loaded', dug: 0, protectedCount: 0 }
+    const region = walkableRegion(bot, standing)
+    if (region.open) return { ok: true, height: h, dug: dugAbove(bot, cell, h), protectedCount: protectedAbove(bot, cell, h, isProtected) }
+    if (region.cliff) return { ok: false, plateau: true, height: h, at: standing, dug: dugAbove(bot, cell, h), protectedCount: protectedAbove(bot, cell, h, isProtected) }
+  }
+  return { ok: false, why: `no way out within ${max} blocks above`, dug: dugAbove(bot, cell, max), protectedCount: protectedAbove(bot, cell, max, isProtected) }
+}
+
+// cell の 2 つ上から h + 1 つ上までの、掘る固いブロック
+const columnAbove = (bot, cell, h) => {
+  const out = []
+  for (let k = 2; k <= h + 1; k++) {
+    const pos = cell.offset(0, k, 0)
+    const b = bot.blockAt(pos)
+    if (solidAt(b)) out.push({ b, pos })
+  }
+  return out
+}
+const dugAbove = (bot, cell, h) => columnAbove(bot, cell, h).length
+const protectedAbove = (bot, cell, h, isProtected) => columnAbove(bot, cell, h).filter(({ b, pos }) => isProtected(b, pos)).length

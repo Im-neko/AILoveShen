@@ -449,15 +449,18 @@
   see: [make_farm]
 
 - key: climb_down
-  title: 自分で積んだ柱の頂上から、足元を掘って降りる
-  words: climb down pillar tower top stuck high dig down drop cliff tall
-  when: 高い柱・塔の頂上にいて、まわりが崖で歩いて降りられない。climb_out を繰り返しても出られない（積むほど高くなる）
+  title: 崖の上（柱の頂上・建物の屋根）から降りる（積んだ列を掘り戻す・縁から飛び降りる）
+  words: climb down step off pillar tower roof top stuck high dig down drop cliff tall fall damage edge
+  when: 高い柱・塔・建物の屋根の上にいて、まわりが崖で歩いて降りられない。climb_out を繰り返しても出られない（積むほど高くなる）
   how: |
-    まわりが崖で（3 ブロックより下まで床がない）足元が 1 本の柱なら、候補 `climb down the pillar you stand on by digging it away`
+    まわりが崖で（3 ブロックより下まで床がない）足元が 1 本の柱か、自分が climb_out で積んだ列なら、候補 `climb down the pillar you stand on by digging it away`
     が出る（do_suggestion で実行する。昼は聞かずに実行される）。足元のブロックを 1 つずつ掘って落ち、歩いて降りられる高さになったら止まる。
-    掘ったブロックは拾えるので、降りるほど土や丸石が戻る。道具はいらない（素手でも壊せる）
-    - 柱でない所（自然の崖の縁、横に壁がある所）は掘らない。積んで出る climb_out は柱の頂上では出ない（閉じた所ではないため）
-    - inspect（座標なし）の over_a_drop で、柱の頂上かどうかが分かる
+    掘ったブロックは拾えるので、降りるほど土や丸石が戻る。道具はいらない（素手でも壊せる）。建物の屋根に開けた穴に積んだ列でも、来た道だけを戻る（建物は掘らない）
+    縁から飛び降りてよい高さなら、候補 `step off the edge and drop N blocks to x,y,z (D damage, health H)` も出る: 落下ダメージは落差から 3 を引いた分で、
+    降りたあとに体力が 6 以上残る縁だけ出る（水に降りるならダメージなし）。体力が足りないときは、食べるか休んでから、または掘り戻す
+    - 柱でも自分が積んだ列でもない所（自然の崖の縁、建物）は掘らない。積んで出る climb_out は崖の上では出ない（閉じた所ではないため）
+    - 積んで上がった先が、屋根・柱の頂上（四方が崖）に出るだけなら、climb_out は出ず、横の壁を掘る dig_out が出る
+    - inspect（座標なし）の over_a_drop で、崖の上かどうかが分かる
   tools: [do_suggestion, inspect]
   see: [climb_out]
 
@@ -468,7 +471,7 @@
   how: |
     歩いて出られない閉じた所にいて、土か丸石を持っていれば、候補 `climb out of the closed space by piling up dirt or cobblestone` が出る
     （do_suggestion で実行する。昼は聞かずに実行される）。足元に積んで、歩いて出られる高さまで上がる。頭の上が岩なら素手でも掘る（閉じ込められたときだけ）
-    - 積むものがなければ（素手の始まり）、候補 `dig out of the closed space through the wall` が出る: 掘る数がいちばん少ない壁を素手でも掘って、歩いて出る（水が入った小部屋では、夜も聞かずに実行される）。家・建物の壁、溶岩に接する壁、池や海を止める壁は掘らない
+    - 積むものがなければ（素手の始まり）、積んで上がった先が屋根・柱の頂上に出るだけのとき、上が保護された建物で横に出る道があるとき、候補 `dig out of the closed space through the wall` が出る: 掘る数がいちばん少ない壁を素手でも掘って、歩いて出る（水が入った小部屋では、夜も聞かずに実行される）。溶岩に接する壁、池や海を止める壁は掘らない。家・建物の壁は、ほかに出る道がないときだけ、`... through the wall of a home or build (takes part of it down)` の名前で出る（聞かずには実行されない）
     - 出たら go_home や surface で戻る。ツルハシが壊れていたら、家に戻って作る（候補 `go home to make a new pickaxe`）
     - ドアの前でなければ、ドアは原因ではない: inspect（座標なし）の closed_space と home_door で確かめる
     - 水が入った小部屋（空気が数マスの水たまり）でも出る。水の中では夜も聞かずに実行される。reflex_surface という skill はない（息の反射はブリッジが自分でやる）

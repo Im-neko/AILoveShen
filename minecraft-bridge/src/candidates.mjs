@@ -14,14 +14,14 @@ import vec3Pkg from 'vec3'
 import { workCell, mineStatus, waterAt, HOME_FARM } from './facilities.mjs'
 import { cropBySeed, CROPS } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
-import { round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inventoryCounts, fillItem, UNDERGROUND_BELOW, EXPLODES } from './observe.mjs'
+import { standingCell, round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inventoryCounts, fillItem, UNDERGROUND_BELOW, EXPLODES } from './observe.mjs'
 import { leakingHoles } from './ledger.mjs'
 import { sleepersInBeds } from './sleepers.mjs'
-import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked } from './home.mjs'
+import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked, protectedReason } from './home.mjs'
 import { inBurrow, inOpenShaft, burrowSpotCached } from './burrow.mjs'
 import { campSiteCached, campCount } from './camp.mjs'
 import { findLandCached } from './land.mjs'
-import { closedSpaceCached, isolatedSpaceCached, pillarUnder, regionCached } from './reach.mjs'
+import { closedSpaceCached, isolatedSpaceCached, pillarUnder, piledUnder, climbExit, dropOffs, regionCached } from './reach.mjs'
 import { digOutRoute } from './dig-out.mjs'
 import { storageUsage, contentsSignature, roomyChests } from './storage.mjs'
 import { memoryView } from './worldmap-places.mjs'
@@ -119,6 +119,8 @@ export function ground (bot, state, knowledge, world, status) {
 export { shelterOf }
 
 const LOW_HEALTH_WALK = 32 // 体力が危険なとき、これより遠い家へは歩かない
+const STEP_OFF_MIN_HEALTH = 6 // 縁から飛び降りたあとに残したい体力（primitives.mjs と同じ）
+const STEP_OFF_COMFORT = 12 // 聞かずに飛び降りてよい、降りたあとの体力
 const SHUT_IN_SMALL = 24 // 閉じた所がこの広さ以下なら、聞かずに積んで出る（広い洞窟は、積まなくても別の出方があるかもしれない）
 export const CREEPER_HOME_HOLD = 16 // クリーパーがこの距離以内にいる間は、家へ帰る手を出さない（追われる距離）
 export const CREEPER_HOME_REASON = `a creeper is within ${CREEPER_HOME_HOLD} m: it follows you and blows up the walls next to you, so do not lead it to the house`
@@ -527,21 +529,38 @@ export function forNeeds (bot, state, knowledge) {
   // 歩いて出られない閉じた所にいる（階段の床が抜けた、深い穴に落ちた。家の中と塞いだ穴は除く）: 足元に土か丸石を積んで
   // 出る。昼は聞かずに出る（urgent）。夜は安全な地下で朝を待てるので、選べる手にとどめる
   const shut = !isInside(bot, state.home) && !inBurrow(bot) ? closedSpaceCached(bot) : null
-  if (shut && fillItem(bot)) {
+  // 積んで上がった先が出口か（屋根・柱の頂上に出るだけなら積まない）、上が保護された建物で横に出る道があるなら横へ
+  // （2026-10-10: 閉じた部屋から塔の天井を貫いて屋根の上に出て、降りる手がないまま 10 分止まった）
+  const sideways = shut ? digOutRoute(bot, state, regionCached(bot)) : null
+  const climb = shut && fillItem(bot) ? climbExit(bot, standingCell(bot), { isProtected: (b, pos) => !!protectedReason(state, pos, 0, b) }) : null
+  const climbs = !!climb?.ok && !(climb.protectedCount && sideways && !sideways.why)
+  if (shut && fillItem(bot) && climbs) {
     out.push({ id: 'climb out of the closed space by piling up dirt or cobblestone', verb: 'climb_out', target: 'the closed space', inPlace: true, cells: shut.cells, ...((bot.entity.isInWater || (dayPhase(bot.time.timeOfDay) === 'day' && shut.cells <= SHUT_IN_SMALL)) && !(state.climbBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: `you cannot walk out of here (${shut.cells} cells you can reach): pile up what you carry under your feet until you can; no pickaxe is needed` })
   }
-  // 積む土も丸石もない（素手の始まり）か、積んで出るのに失敗したあと: 壁を掘って歩いて出る（docs/design/90 §5.1）。
-  // 水が入った小部屋の水の中では、夜も聞かずに実行する（climb_out と同じ）
-  if (shut && (!fillItem(bot) || state.climbBlockedUntil > Date.now())) {
-    const route = digOutRoute(bot, state, regionCached(bot))
+  // 積む土も丸石もない（素手の始まり）か、積んで出るのに失敗した・積んでも出られないあと: 壁を掘って歩いて出る
+  // （docs/design/90 §5.1）。水が入った小部屋の水の中では、夜も聞かずに実行する（climb_out と同じ）。保護された
+  // 建物の壁しかないときは、最後の手として壊してでも出る
+  if (shut && (!fillItem(bot) || state.climbBlockedUntil > Date.now() || !climbs)) {
+    let route = sideways
+    let breaksBuild = false
+    if (route.why) {
+      const forced = digOutRoute(bot, state, regionCached(bot), { breakProtected: true })
+      if (!forced.why) { route = forced; breaksBuild = forced.protectedCells > 0 }
+    }
     if (!route.why) {
-      out.push({ id: 'dig out of the closed space through the wall', verb: 'dig_out', target: 'the closed space', inPlace: true, cells: shut.cells, blocks: route.cells.length, ...((bot.entity.isInWater || (dayPhase(bot.time.timeOfDay) === 'day' && shut.cells <= SHUT_IN_SMALL)) && !(state.digOutBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: `you cannot walk out of here (${shut.cells} cells you can reach) and carry no dirt or cobblestone to pile up: dig through the wall (${route.cells.length} blocks, bare hands are enough) and walk out` })
+      out.push({ id: breaksBuild ? 'dig out of the closed space through the wall of a home or build (takes part of it down)' : 'dig out of the closed space through the wall', verb: 'dig_out', target: 'the closed space', inPlace: true, cells: shut.cells, blocks: route.cells.length, ...(breaksBuild ? { breakProtected: true } : {}), ...((bot.entity.isInWater || (dayPhase(bot.time.timeOfDay) === 'day' && shut.cells <= SHUT_IN_SMALL)) && !(state.digOutBlockedUntil > Date.now()) && !breaksBuild ? { urgent: true } : {}), purpose: `you cannot walk out of here (${shut.cells} cells you can reach)${fillItem(bot) ? ' and piling up would not get you out' : ' and carry no dirt or cobblestone to pile up'}: dig through the wall (${route.cells.length} blocks${breaksBuild ? `, ${route.protectedCells} of them a home or build, which this takes down` : ''}, bare hands are enough) and walk out` })
     }
   }
-  // 1 本の柱の頂上にいる（自分で積んだ塔。まわりは崖で、積んでも出られない）: 足元を掘って降りる。昼は聞かずに降りる
-  const pillar = !shut && !isInside(bot, state.home) && !inBurrow(bot) && isolatedSpaceCached(bot) ? pillarUnder(bot) : null
+  // 崖の上にいる（積んだ柱の頂上、建物の屋根。まわりは崖で、積んでも出られない）: 自分が積んだ列なら掘って降りる。昼は
+  // 聞かずに降りる。縁から飛び降りてよい高さ（落下ダメージのあと体力が残る）なら、飛び降りる手も出す
+  const high = !shut && !isInside(bot, state.home) && !inBurrow(bot) && isolatedSpaceCached(bot)
+  const pillar = high ? (pillarUnder(bot) ?? piledUnder(bot, state)) : null
   if (pillar) {
-    out.push({ id: 'climb down the pillar you stand on by digging it away', verb: 'climb_down', target: 'the pillar', inPlace: true, ...(dayPhase(bot.time.timeOfDay) === 'day' && !(state.descendBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: 'you stand on a free-standing pillar with a drop on every side: piling up more does not help; dig it away one block at a time and drop down (the blocks come back to you)' })
+    out.push({ id: 'climb down the pillar you stand on by digging it away', verb: 'climb_down', target: 'the pillar', inPlace: true, ...(dayPhase(bot.time.timeOfDay) === 'day' && !(state.descendBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: 'you stand on a free-standing pillar or a pile you made, with a drop on every side: piling up more does not help; dig it away one block at a time and drop down (the blocks come back to you)' })
+  }
+  const edge = high ? dropOffs(bot, regionCached(bot)).find((o) => bot.health - o.damage >= STEP_OFF_MIN_HEALTH) : null
+  if (edge) {
+    out.push({ id: `step off the edge and drop ${edge.drop} blocks to ${fmt(edge.landing)} (${edge.damage ? `${edge.damage} damage` : 'no damage'}, health ${round(bot.health)})`, verb: 'step_off', target: 'the edge', inPlace: true, drop: edge.drop, damage: edge.damage, ...(!pillar && dayPhase(bot.time.timeOfDay) === 'day' && bot.health - edge.damage >= STEP_OFF_COMFORT && !(state.stepOffBlockedUntil > Date.now()) ? { urgent: true } : {}), purpose: `you stand on a roof or a pillar top with a drop on every side: walk off the lowest edge (${edge.drop} blocks; fall damage is the drop minus 3) and land at ${fmt(edge.landing)}` })
   }
   // つるはしが壊れて（10 分以内）、どのつるはしも持っていない: 家に作りに戻る道を出す（作業台とチェストがある）。手元の
   // 材料で作れるときは、goals の「作る」手が先に出る。石は素手では何も落ちないので、持たずに掘り進めない

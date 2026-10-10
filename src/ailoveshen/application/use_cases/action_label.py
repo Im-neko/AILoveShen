@@ -57,6 +57,7 @@ _BY_VERB: dict[str, Callable[[dict[str, Any], str], str]] = {
     "bed_here": lambda d, cid: "ここにベッドを置いて寝る",
     "climb_down": lambda d, cid: "掘って柱から降りる",
     "climb_out": lambda d, cid: "土を積んで閉じた所から出る",
+    "step_off": lambda d, cid: "縁から飛び降りる",
     "craft": _with("{thing}をクラフトする"),
     "defrag": lambda d, cid: "チェストの中をまとめる",
     "deposit": _with("チェストに{thing}を入れる"),

@@ -35,6 +35,7 @@ LEAVE_BURROW_VERB = "leave_burrow"
 CLIMB_OUT_VERB = "climb_out"
 DIG_OUT_VERB = "dig_out"
 CLIMB_DOWN_VERB = "climb_down"
+STEP_OFF_VERB = "step_off"
 TORCH_VERB = "place_torch"
 TOSS_VERB = "toss"
 TIDY_VERB = "tidy"
@@ -245,7 +246,7 @@ class StepPicker:
             (
                 o
                 for o in options
-                if o.description.get("verb") in (CLIMB_OUT_VERB, DIG_OUT_VERB, CLIMB_DOWN_VERB, REACH_LAND_VERB)
+                if o.description.get("verb") in (CLIMB_OUT_VERB, DIG_OUT_VERB, CLIMB_DOWN_VERB, STEP_OFF_VERB, REACH_LAND_VERB)
                 and o.description.get("urgent")
             ),
             None,

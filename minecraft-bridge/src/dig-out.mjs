@@ -45,12 +45,12 @@ function waterBody (bot, pos, limit) {
 }
 
 // 掘ってはいけない理由か null（固いブロックだけを見る。空き・水は掘らない）
-function digProblem (bot, state, pos) {
+function digProblem (bot, state, pos, breakProtected = false) {
   const b = bot.blockAt(pos)
   if (!b) return 'it is not loaded'
   if (!solid(b)) return null
   if (b.diggable === false) return `${b.name} cannot be dug`
-  const why = protectedReason(state, pos, 0, b)
+  const why = breakProtected ? null : protectedReason(state, pos, 0, b)
   if (why) return why
   if (SIX.some(([x, y, z]) => bot.blockAt(pos.offset(x, y, z))?.name === 'lava')) return 'lava is next to it'
   if (FALLING.test(bot.blockAt(pos.offset(0, 1, 0))?.name ?? '')) return 'sand or gravel above it would fall in'
@@ -73,7 +73,9 @@ function standable (bot, feet) {
 
 // 掘って出る道: { from, dir, cells, outside } か { why }。cells は掘るブロック（手前の層から、足・頭の順）、
 // outside は出た先に立つセル。閉じていなければ { why: 'not shut in' }
-export function digOutRoute (bot, state, region = walkableRegion(bot, standingCell(bot))) {
+// breakProtected: 家・建物の壁も掘ってよい（ほかに出る道がないときの最後の手。2026-10-10: 塔の中の閉じた部屋から、
+// 保護された建物のセルしかなく出る道がなかった）。掘った保護のセルの数は、返す値の protectedCells
+export function digOutRoute (bot, state, region = walkableRegion(bot, standingCell(bot)), { breakProtected = false } = {}) {
   if (region.open || region.cliff) return { why: 'not shut in' }
   const me = standingCell(bot)
   let why = 'no wall within 4 blocks has open ground behind it'
@@ -93,7 +95,7 @@ export function digOutRoute (bot, state, region = walkableRegion(bot, standingCe
           if (k > 1) outside = standable(bot, feet)
           break
         }
-        const problem = [feet, head].map((p) => digProblem(bot, state, p)).find(Boolean)
+        const problem = [feet, head].map((p) => digProblem(bot, state, p, breakProtected)).find(Boolean)
         if (problem) { why = problem; break }
         for (const p of [feet, head]) if (solid(bot.blockAt(p))) cells.push(p)
       }
@@ -104,7 +106,10 @@ export function digOutRoute (bot, state, region = walkableRegion(bot, standingCe
   for (const r of found.slice(0, TRIES)) {
     const beyond = walkableRegion(bot, r.outside, () => false, REGION_BUDGET)
     // 外が開けているか、いまの小部屋より広い（別の小さな穴に出るだけではない）
-    if (beyond.open || beyond.cells.size > region.cells.size) return { from: r.from, dir: r.dir, cells: r.cells, outside: r.outside }
+    if (beyond.open || beyond.cells.size > region.cells.size) {
+      const protectedCells = breakProtected ? r.cells.filter((p) => protectedReason(state, p, 0, bot.blockAt(p))).length : 0
+      return { from: r.from, dir: r.dir, cells: r.cells, outside: r.outside, protectedCells }
+    }
   }
   return { why: found.length ? 'every way out leads into another small closed space' : why }
 }

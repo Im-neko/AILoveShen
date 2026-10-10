@@ -8,6 +8,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
 import { isLog, isPlanks } from './observe.mjs'
 import { walkTo } from './move.mjs'
+import { placeFaces } from './place-faces.mjs'
 
 // 設置先を塞ぐ物: 置き直すには壊すしかない（2026-10-10: 板で塞がれて、同じ座標への置き直しが続けて失敗した）
 export const siteBlocked = (name, pos) => `site blocked by ${name} at ${pos}; if the build needs this spot, take the block down (dig {x,y,z,demolish: true}) or level the whole site with level {where, radius, demolish: true}, then place again`
@@ -287,7 +288,7 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   if (occupied(found) && !isWater(found) && !removable(plan, found, pos, allowDig)) throw new Error(siteBlocked(found.name, pos))
   // サーバーが確かめるのは届く距離とカーソルで、視線は確かめない。なので、例えば屋根の最初の
   // ブロックを家の中から壁の上に置ける。
-  const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
+  const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false, faces: placeFaces(bot, pos) })
   if (!goal.isEnd(bot.entity.position.floored())) {
     const t = Date.now()
     await walkTo(bot, goal, signal)

@@ -9,6 +9,7 @@
 import { threats, round, dayPhase, isDark, isUnderground, inventoryCounts, pushHistory } from './observe.mjs'
 import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark, leaveHouse } from './primitives.mjs'
 import { riding } from './boat.mjs'
+import { forgetRegion } from './reach.mjs'
 import { isSwimming } from './swim.mjs'
 import { needsOutside } from './candidates.mjs'
 import { houseAround } from './home.mjs'
@@ -129,6 +130,7 @@ export function createRunner (bot, state, deps = {}) {
       stopTrail?.()
       bot.off('entityHurt', onHurt)
       progress.stop()
+      forgetRegion(bot) // 掘る・置く・歩くで、まわりの歩ける範囲が変わった
       state.busy = false
       state.current = null
       finished()

@@ -299,7 +299,10 @@ export function createTools (deps) {
       // 追ってくるクリーパーを家のそばへ連れて行かない
       if (door && Math.hypot(pos.x - door.x, pos.z - door.z) <= CREEPER_HOME_NEAR && creeperNear(bot, state)) refuse(`will not walk to ${fmt(pos)}, next to the home: ${CREEPER_HOME_REASON}`)
       // 岩に囲まれていて、目標が岩の向こうの遠い所なら、経路探索が掘る道を探して 5 秒で諦める。先に断る
-      const rock = rockBetween(bot, pos, riding(bot))
+      const rock = rockBetween(bot, pos, riding(bot), { cliff: true })
+      if (rock?.cliff) {
+        refuse(`will not walk to ${fmt(pos)}: you stand on a roof or a pillar top with a drop on every side (${rock.cells} cells you can walk on), ${rock.gap} blocks from the target. Get down first: the candidates "climb down the pillar" (a pile you made) or "step off the edge", or dig down through the roof you stand on`)
+      }
       if (rock) {
         refuse(`will not walk to ${fmt(pos)}: you are in a closed space (${rock.cells} cells you can walk in) and the target is about ${rock.gap} blocks of rock away. ` +
           'The path search gives up after 5 s on that much digging. Get out first: the candidate "climb out of the closed space" piles up the dirt or cobblestone you carry (a pickaxe is not needed), or dig a stair up, or go_home')

@@ -35,8 +35,8 @@ export function wallMountable (bot, item) {
   return [...placedNames(item)].some((n) => n !== item && n.includes('wall') && !!bot.registry?.blocksByName[n])
 }
 
-// 面を借りられないブロック（右クリックで開く・使う: 置く代わりに開いてしまう）
-export const INTERACTIVE = /(chest|barrel|crafting_table|furnace|smoker|_door|_trapdoor|_fence_gate|_bed|anvil|table|lectern|loom|stonecutter|grindstone|hopper|dispenser|dropper|button|lever|shulker_box|note_block|jukebox|bell|beacon|brewing_stand|enchanting_table|cauldron|composter)$/
+export { INTERACTIVE } from './place-faces.mjs'
+import { INTERACTIVE } from './place-faces.mjs'
 
 // 面を借りる隣（against）。on: floor（下）/ wall（横）/ ceiling（上）。省略: 壁に付けられる物は壁を先に
 const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]

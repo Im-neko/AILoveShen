@@ -19,7 +19,7 @@ const k = new Knowledge(md)
 
 // y 69 までの地面（石）の上に、土の殻（x, z は -2..2、y は 69..74）。中は x, z が -1..1、y 70..73。
 // water: 中の y 70, 71 を水にする。thick: 殻の壁の厚さ（1 より大きいと外側へ土を足す）。x, y, z が 24 を超える所は未読み込み
-function cage ({ water = false, thick = 1, overrides = {} } = {}) {
+function cage ({ water = false, thick = 1, overrides = {}, ground = 69 } = {}) {
   const set = new Map(Object.entries(overrides))
   const blockAt = (p) => {
     const q = new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z))
@@ -32,7 +32,7 @@ function cage ({ water = false, thick = 1, overrides = {} } = {}) {
       const shell = Math.abs(q.x) <= 1 + thick && Math.abs(q.z) <= 1 + thick && q.y >= 69 && q.y <= 74
       if (inside) name = water && q.y <= 71 ? 'water' : 'air'
       else if (shell) name = 'dirt'
-      else name = q.y <= 69 ? 'stone' : 'air'
+      else name = q.y <= ground ? 'stone' : 'air'
     }
     const b = Block.fromProperties(name, {}, 0)
     b.position = q
@@ -163,7 +163,8 @@ test('候補: 土も丸石もなければ dig_out（水の中なら urgent）、
   assert.equal(dig.blocks, 2)
   assert.equal(c.some((x) => x.verb === 'reach_land'), false, '壁の外の陸へ泳ぐ手は出さない')
   assert.equal(c.some((x) => x.verb === 'climb_out'), false)
-  const withDirt = botIn(cage({ water: true }), { at: new Vec3(0.5, 71.3, 0.5), inWater: true, items: { dirt: 4 } })
+  // 殻の天井が地面と同じ高さ（積んで上がると歩いて出られる）。天井が高い屋根になる殻は、積んでも出られないので別のテスト
+  const withDirt = botIn(cage({ water: true, ground: 74 }), { at: new Vec3(0.5, 71.3, 0.5), inWater: true, items: { dirt: 4 } })
   const d = forNeeds(withDirt, state(), k)
   assert.ok(d.some((x) => x.verb === 'climb_out'))
   assert.equal(d.some((x) => x.verb === 'dig_out'), false)

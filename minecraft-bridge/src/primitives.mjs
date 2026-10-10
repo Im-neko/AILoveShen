@@ -39,7 +39,8 @@ import { routeThroughMine, climbsDirect } from './mine-route.mjs'
 import { sealStock, openings, sealCell, plugCell, SEAL_FROM_DEPTH } from './sealing.mjs'
 import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
-import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder } from './reach.mjs'
+import { placeFaces } from './place-faces.mjs'
+import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder, piledUnder, climbExit, dropOffs, forgetRegion } from './reach.mjs'
 import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
 import { reachLand } from './land.mjs'
@@ -168,6 +169,8 @@ const hasPickaxe = (bot) => bot.inventory.items().some((i) => i.name.endsWith('_
 const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'dig_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
 const CLIMB_MAX = 24 // 閉じた所から出るために積む高さの上限
 const DESCEND_MAX = 200 // 柱を掘り下げる最大の数
+const STEP_OFF_MIN_HEALTH = 6 // 縁から飛び降りたあとに残したい体力
+const PILLAR_KEEP = 64 // 積んだ列として覚えるセルの数
 const CLIMB_BLOCK_MS = 5 * 60 * 1000 // 積んで出るのに失敗したあと、聞かずに実行しない間
 const DIG_OUT_ROUNDS = 3 // 壁を掘って出るのを、道を選び直して試す回数
 const HANDLESS_CACHE_MS = 2000 // 持ち物が変わる（道具を作る・壊れる）のを、この間隔で読み直す
@@ -1336,6 +1339,23 @@ export const PRIMITIVES = {
   // 上がれないとき、深い穴に落ちたとき）。頭の上が岩なら掘る（道具がなければ素手で: 閉じ込められたときだけ許す）
   async climb_out (bot, state, c, signal) {
     if (!closedSpace(bot)) return 'not shut in: you can walk out from here'
+    // 積む前に、上がった先が出口か（2026-10-10: 閉じた部屋から塔の天井を貫いて積み上がり、四方が崖の屋根の上に出て、
+    // 降りる手のないまま 10 分止まった）。屋根の上に出るだけなら積まない。上が保護された建物で、横に出る道があるなら、
+    // 建物を貫かずに横へ出る
+    const exit = climbExit(bot, standingCell(bot), { isProtected: (b, pos) => !!protectedReason(state, pos, 0, b) })
+    if (!exit.ok || exit.protectedCount) {
+      const side = digOutRoute(bot, state)
+      if (!exit.ok) {
+        state.climbBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+        throw new Error(exit.plateau
+          ? `going up from here only reaches ${exit.at.x},${exit.at.y},${exit.at.z}, a roof or pillar top with a drop on every side (${exit.dug} blocks to dig through): piling up does not get you out. ${side.why ? 'Dig out through a wall instead (the candidate "dig out of the closed space through the wall")' : `Dig out sideways instead (${side.cells.length} blocks): the candidate "dig out of the closed space through the wall"`}`
+          : `piling up does not get you out: ${exit.why}`)
+      }
+      if (!side.why) {
+        state.climbBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+        throw new Error(`the way up goes through ${exit.protectedCount} blocks of a home or build: dig out sideways instead (${side.cells.length} blocks), the candidate "dig out of the closed space through the wall"`)
+      }
+    }
     let raised = 0
     try {
       while (closedSpace(bot)) {
@@ -1360,6 +1380,7 @@ export const PRIMITIVES = {
           throw new Error(`${roof.name} above at ${roof.position.x},${roof.position.y},${roof.position.z}: not piling up into it`)
         }
         await jumpAndPlace(bot, cell, item)
+        state.pillar = [...(state.pillar ?? []), { x: cell.x, y: cell.y, z: cell.z }].slice(-PILLAR_KEEP) // 降りるとき、この列だけを戻る
         raised++
         await bot.waitForTicks(4)
       }
@@ -1370,7 +1391,7 @@ export const PRIMITIVES = {
     }
     if (isolatedSpace(bot)) {
       state.climbBlockedUntil = Date.now() + CLIMB_BLOCK_MS
-      throw new Error(`piled up ${raised} block${raised === 1 ? '' : 's'} and now stand over a drop on every side, not in a closed space: climb down the pillar instead`)
+      throw new Error(`piled up ${raised} block${raised === 1 ? '' : 's'} and now stand over a drop on every side, not in a closed space: climb down the pile you made ("climb down the pillar") or step off the edge`)
     }
     const at = standingCell(bot)
     return `piled up ${raised} block${raised === 1 ? '' : 's'} and can walk out now (at ${at.x},${at.y},${at.z})`
@@ -1383,7 +1404,7 @@ export const PRIMITIVES = {
     try {
       for (let round = 0; round < DIG_OUT_ROUNDS; round++) {
         signal.throwIfAborted()
-        const route = digOutRoute(bot, state)
+        const route = digOutRoute(bot, state, undefined, { breakProtected: c.breakProtected === true })
         if (route.why) throw new Error(`no way to dig out: ${route.why}`)
         // 掘る壁に届く所まで（小部屋の中で）寄る
         if (bot.entity.position.distanceTo(route.from.offset(0.5, 0, 0.5)) > 2.5) await stepTo(bot, route.from, signal)
@@ -1399,7 +1420,7 @@ export const PRIMITIVES = {
         if (!closedSpace(bot)) {
           await collectNearbyDrops(bot, state, signal)
           const at = standingCell(bot)
-          return `dug out through the wall (${dug} block${dug === 1 ? '' : 's'}) and can walk out now (at ${at.x},${at.y},${at.z})`
+          return `dug out through the wall (${dug} block${dug === 1 ? '' : 's'}${route.protectedCells ? `, ${route.protectedCells} of them a home or build` : ''}) and can walk out now (at ${at.x},${at.y},${at.z})`
         }
       }
       throw new Error(`dug ${dug} blocks and still cannot walk out`)
@@ -1409,20 +1430,24 @@ export const PRIMITIVES = {
       throw e
     }
   },
-  // 1 本の柱の頂上（自分で積んだ塔。まわりは崖）から降りる: 足元のブロックを掘って 1 つずつ落ちる。掘ったブロックは
-  // 拾えるので、降りるほど持ち物が戻る。柱でない所（自然の崖の縁）は掘らない。落ちる先が 3 ブロックを超えるなら止まる
+  // 柱の頂上（自分で積んだ列。まわりは崖）から降りる: 足元のブロックを掘って 1 つずつ落ちる。掘ったブロックは
+  // 拾えるので、降りるほど持ち物が戻る。掘ってよいのは、1 本だけ立っている柱か、climb_out で自分が積んだセル
+  // （建物の屋根の穴に積んだ列でも、来た道だけを戻る。建物は掘らない）。自然の崖の縁は掘らない
   async climb_down (bot, state, c, signal) {
     if (!isolatedSpace(bot)) return 'not on a pillar over a drop: you can walk from here'
     let dug = 0
     try {
       while (dug < DESCEND_MAX) {
         signal.throwIfAborted()
-        if (!isolatedSpace(bot)) break
-        const under = pillarUnder(bot)
-        if (!under) throw new Error('the block under your feet is not a free-standing pillar (natural ground or a wall beside it): it will not be dug away')
+        if (!isolatedSpace(bot) && !(dug && closedSpace(bot))) break
+        const under = pillarUnder(bot) ?? piledUnder(bot, state)
+        if (!under && dug && closedSpace(bot)) break // 積んだ穴の底まで戻った
+        if (!under) throw new Error('the block under your feet is not a free-standing pillar or a pile you made (natural ground or a wall beside it): it will not be dug away; step off the edge instead')
         const y0 = bot.entity.position.y
         await equipToolFor(bot, state, under, { drops: false })
         await bot.dig(under, true)
+        state.pillar = (state.pillar ?? []).filter((p) => !(p.x === under.position.x && p.y === under.position.y && p.z === under.position.z))
+        forgetRegion(bot)
         dug++
         const t0 = Date.now()
         while (bot.entity.position.y > y0 - 0.9 && Date.now() - t0 < 1500) await bot.waitForTicks(1)
@@ -1432,9 +1457,55 @@ export const PRIMITIVES = {
       throw e
     }
     await collectNearbyDrops(bot, state, signal)
+    forgetRegion(bot)
     const at = standingCell(bot)
     if (isolatedSpace(bot)) throw new Error(`dug down ${dug} blocks and still stand over a drop at ${at.x},${at.y},${at.z}`)
+    if (closedSpace(bot)) {
+      state.descendBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      throw new Error(`dug down ${dug} block${dug === 1 ? '' : 's'} back to where the pile began, and the room is still shut (${at.x},${at.y},${at.z}): dig out through a wall`)
+    }
     return `dug down ${dug} block${dug === 1 ? '' : 's'} of the pillar and can walk off now (at ${at.x},${at.y},${at.z})`
+  },
+  // 崖の上（屋根・柱の頂上）で、縁から飛び降りる: 落差から 3 を引いた分だけ落下ダメージ。降りたあとに体力が
+  // STEP_OFF_MIN_HEALTH 以上残る縁だけ使う。水に降りるならダメージなし。縁は、ダメージが少ない順に選ぶ
+  async step_off (bot, state, c, signal) {
+    if (!isolatedSpace(bot)) return 'not on a roof or pillar top with a drop on every side: you can walk from here'
+    const all = dropOffs(bot)
+    const options = all.filter((o) => bot.health - o.damage >= STEP_OFF_MIN_HEALTH)
+    try {
+      if (!options.length) {
+        throw new Error(all.length
+          ? `every edge drops too far for your health ${round(bot.health)}/20 (the gentlest: ${all[0].drop} blocks, ${all[0].damage} damage): eat or rest first, or dig down the pile you made`
+          : 'there is no edge with a safe place to land within 12 blocks below')
+      }
+      const o = options[0]
+      bot.actionPhase = `walking to the edge at ${o.from.x},${o.from.y},${o.from.z}`
+      if (!standingCell(bot).equals(o.from)) await stepTo(bot, o.from, signal)
+      const over = o.from.offset(o.dir[0], 0, o.dir[1])
+      bot.actionPhase = `stepping off toward ${over.x},${over.z} (a ${o.drop} block drop)`
+      await bot.lookAt(new Vec3(over.x + 0.5, bot.entity.position.y + 1.62, over.z + 0.5), true)
+      bot.setControlState('forward', true)
+      try {
+        const t0 = Date.now()
+        while (bot.entity.position.y > o.landing.y + 0.6 && Date.now() - t0 < 4000) {
+          signal.throwIfAborted()
+          await bot.waitForTicks(1)
+        }
+      } finally {
+        bot.setControlState('forward', false)
+      }
+      const t1 = Date.now()
+      while (!bot.entity.onGround && Date.now() - t1 < 2000) await bot.waitForTicks(1)
+      forgetRegion(bot)
+      const at = standingCell(bot)
+      if (isolatedSpace(bot) || closedSpace(bot)) throw new Error(`stepped off but still cannot walk out at ${at.x},${at.y},${at.z}`)
+      return `stepped off the edge and dropped ${o.drop} blocks (${o.damage} fall damage expected) to ${at.x},${at.y},${at.z}; health ${round(bot.health)}/20`
+    } catch (e) {
+      if (!signal.aborted) state.stepOffBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      throw e
+    } finally {
+      bot.actionPhase = ''
+    }
   },
   async flee (bot, state, c, signal) {
     const h = bot.entities[c.entityId]
@@ -2124,7 +2195,7 @@ export const PRIMITIVES = {
     if (!item) throw new Error(`no ${c.item}`)
     // 家の中のセルは、家に入ってから（閉じた家の外から経路を探すと、時間切れになる: 2026-10-08）
     if (state.home && isHomeCell(state.home, c.pos) && !isInside(bot, state.home)) await enterHome(bot, state.home, signal)
-    await goto(bot, new goals.GoalPlaceBlock(c.pos, bot.world, { range: REACH }), signal)
+    await goto(bot, new goals.GoalPlaceBlock(c.pos, bot.world, { range: REACH, faces: placeFaces(bot, c.pos) }), signal)
     signal.throwIfAborted()
     const against = bot.blockAt(c.against)
     if (against?.boundingBox !== 'block') throw new Error(`nothing to place against at ${c.against.x},${c.against.y},${c.against.z} any more (it is ${against?.name ?? 'unloaded'}; place the block next to a solid one)`)
@@ -2225,7 +2296,7 @@ export const PRIMITIVES = {
             // 浅い穴は、足元に積まなくても縁へ出られる: 外から埋める（下へ続く）
           }
           // 丸石しかなければ積めない（足場は土だけ）: 縁に出てから置く（置く所には立たない）
-          if (!withinReach(bot, p) || bot.entity.position.floored().equals(p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH }), signal)
+          if (!withinReach(bot, p) || bot.entity.position.floored().equals(p)) await goto(bot, new goals.GoalPlaceBlock(p, bot.world, { range: REACH, faces: placeFaces(bot, p) }), signal)
           if (bot.entity.position.floored().equals(p)) throw new Error('standing in the hole')
           // 出る途中で足元に積んで、土を使い切ることがある: 次の周で埋める物がなくなって終わる
           const fill = farm ? soilItem(bot) : fillItem(bot)
