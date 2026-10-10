@@ -1183,8 +1183,13 @@ export const PRIMITIVES = {
       // 草などは、もう手が届くならその場で刈る（段差の上の草へ回り込む経路探しが時間切れになった）
       if (block.boundingBox === 'block' || !withinReach(bot, c.pos)) await goto(bot, goal, signal)
     } catch (e) {
-      if (!signal.aborted) markUnreachable(state, c.pos)
-      throw e
+      // 見える面に立てる経路がなくても、手が届く距離なら、その場で掘る（2026-10-11: 家の中の丸石や家具に囲まれた小さな所で、
+      // 隣の丸石が覆われていて立つ場所が見つからず、掘れるのに「No path to the goal!」で失敗し続けた）
+      const byHand = !signal.aborted && isNoPath(e) && block.boundingBox === 'block' && bot.canDigBlock?.(block)
+      if (!byHand) {
+        if (!signal.aborted) markUnreachable(state, c.pos)
+        throw e
+      }
     }
     signal.throwIfAborted()
     // 空中で掘ると5倍遅い（例えば、立っていたブロックを切った直後）
