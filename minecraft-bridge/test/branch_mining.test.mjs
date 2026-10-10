@@ -4,8 +4,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { designMine, mineStatus, stopMine, minesAt, BRANCH } from '../src/facilities.mjs'
-import { mineSites, protectedRock, caveOre } from '../src/mining.mjs'
+import { designMine, mineStatus, stopMine, minesAt, plannedBlocks, BRANCH } from '../src/facilities.mjs'
+import { mineSites, protectedRock, caveOre, minePlan } from '../src/mining.mjs'
 import { configureMovements, PRIMITIVES } from '../src/primitives.mjs'
 import { diggable } from '../src/world.mjs'
 import { enclosure } from '../src/sealing.mjs'
@@ -279,19 +279,68 @@ test('枝が洞窟に出たら、丸石で床・壁・天井を作って塞ぎ�
   assert.equal(mineStatus(bot, fac).next, null)
 })
 
-test('洞窟に出て丸石が足りなければ、掘らずにその枝を打ち切る（通路を洞窟につなげない）', async () => {
+test('洞窟に出て丸石が足りなければ、設計は切らずに止まって待つ（paused）。通路を洞窟につなげない', async () => {
   const { fac } = design()
   const s = state({ facilities: { mine_1: fac } })
   const blocks = {}
   const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }, { name: 'cobblestone', count: 2 }]
   const bot = sealer(items, blocks)
   const cell = cave(fac, blocks)
+  const cells = fac.layout.cells.length
   bot.entity.position = new Vec3(fac.layout.cells[0].x, 64, fac.layout.cells[0].z)
   const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
-  assert.match(r, /branch_east_2_a at .*: a cave opens at .*walling it off takes 4 cobblestone and you carry 2/)
-  assert.equal(fac.layout.cells.filter((c) => c.part === 'branch_east_2_a').length, 1) // 洞窟に面するセルは掘らない
+  assert.match(r, /stopped: a cave opens at .*walling it off takes 4 cobblestone and you carry 2/)
+  assert.equal(fac.layout.cells.length, cells, '設計は切らない')
+  assert.equal(fac.layout.stopped, undefined)
+  assert.deepEqual({ x: fac.layout.paused.x, y: fac.layout.paused.y, z: fac.layout.paused.z, need: fac.layout.paused.need }, { x: cell.x, y: cell.y, z: cell.z, need: 4 })
+  assert.equal(fac.status, 'building')
   assert.notEqual(blocks[`${cell.x},${cell.y},${cell.z}`], 'air') // 洞窟側の石は残っている
-  assert.ok(fac.layout.cells.some((c) => c.part === 'branch_west_29_b' || c.part === 'branch_west_26_b'), 'ほかの枝は掘る')
+  // 丸石を持って戻れば、続きを塞いで掘り、待ちの印は消える
+  items.find((i) => i.name === 'cobblestone').count = 30
+  const again = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.match(again, /walled off 4 cave openings/)
+  assert.equal(fac.layout.paused, undefined)
+})
+
+test('洞窟に出て丸石が足りないとき、立っている所の横の石を掘って丸石にしてから塞ぐ', async () => {
+  const { fac } = design()
+  const s = state({ facilities: { mine_1: fac } })
+  const blocks = {}
+  const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }, { name: 'cobblestone', count: 1 }]
+  const bot = sealer(items, blocks)
+  const dig = bot.dig
+  const planned = plannedBlocks(fac.layout.cells)
+  const quarried = []
+  // 設計のマスの外の石だけが丸石になる（設計のマスを掘って落ちる分は、この試験では数えない）
+  bot.dig = async (b) => {
+    await dig(b)
+    if (b.name === 'stone' && !planned.has(key(b.position))) { quarried.push(key(b.position)); items.find((i) => i.name === 'cobblestone').count++ }
+  }
+  bot.pathfinder.goto = async (g) => { if (g.x !== undefined) bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5) }
+  cave(fac, blocks)
+  bot.entity.position = new Vec3(fac.layout.cells[0].x, 64, fac.layout.cells[0].z)
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.match(r, /walled off 4 cave openings/)
+  assert.equal(fac.layout.paused, undefined)
+  assert.equal(quarried.length, 3, `掘った石: ${quarried}`) // 4 面に要る 4 個 - 持っていた 1 個
+})
+
+test('丸石が足りなくて待っている採掘場は、丸石を持つまで後回しにして、ほかに掘れる採掘場があればそちらを掘る', () => {
+  const s = state()
+  const a = designMine(world(), s, 16, mineSites(s))
+  const b = designMine(world(), s, 16, mineSites(s))
+  const bot = world({}, [{ name: 'cobblestone', count: 0 }])
+  bot.entity.position = new Vec3(0, 64, 0)
+  a.layout.paused = { x: 0, y: 0, z: 0, need: 4, reason: 'x' }
+  assert.deepEqual(minePlan(bot, s, ['iron_ore']), { dig: b.name })
+  // ほかになければ、その採掘場の続き（石を掘って丸石にする）
+  b.status = 'done'
+  assert.deepEqual(minePlan(bot, s, ['iron_ore']), { dig: a.name })
+  // 丸石を持てば、先に待っていた採掘場に戻る
+  b.status = 'planned'
+  const stocked = world({}, [{ name: 'cobblestone', count: 4 }])
+  stocked.entity.position = new Vec3(0, 64, 0)
+  assert.deepEqual(minePlan(stocked, s, ['iron_ore']), { dig: a.name })
 })
 
 test('丸石を置けない（借りる隣がない）なら、そのセルを丸石でふさいで枝を打ち切る', async () => {
@@ -353,15 +402,18 @@ test('階段も、入口から 4 段より深くなったら洞窟に面した�
   assert.equal(blocks[`${wall.x},${wall.y},${wall.z}`], 'cobblestone')
 })
 
-test('階段が洞窟に出て丸石が足りなければ、そこで止まる。浅い段（地上の空気に面した所）は塞がない', async () => {
+test('階段が洞窟に出て丸石が足りなければ、設計を切らずに待つ。浅い段（地上の空気に面した所）は塞がない', async () => {
   const deep = design()
   const blocksDeep = {}
   const botDeep = sealer(stairsItems(0), blocksDeep)
   const { cell } = caveBesideStairs(deep.fac, deep.s, 5, blocksDeep)
   botDeep.entity.position = new Vec3(deep.fac.layout.cells[0].x, 64, deep.fac.layout.cells[0].z)
   deep.s.facilities = { mine_1: deep.fac }
+  const cells = deep.fac.layout.cells.length
   const r = await PRIMITIVES.dig_mine(botDeep, deep.s, { facility: 'mine_1' }, new AbortController().signal)
-  assert.match(r, new RegExp(`stopped at ${cell.x},${cell.y},${cell.z}: a cave opens at .*walling it off takes 1 cobblestone and you carry 0`))
+  assert.match(r, new RegExp(`stopped: a cave opens at .*walling it off takes 1 cobblestone and you carry 0`))
+  assert.equal(deep.fac.layout.cells.length, cells)
+  assert.deepEqual([deep.fac.layout.paused.x, deep.fac.layout.paused.y, deep.fac.layout.paused.z], [cell.x, cell.y, cell.z])
 
   const shallow = design()
   const blocksShallow = {}

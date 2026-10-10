@@ -6,6 +6,7 @@
 
 import vec3Pkg from 'vec3'
 import { isLog } from './observe.mjs'
+import { sealStock } from './sealing.mjs'
 import { minesAt, mineBottom, onMineCell, MINE_BOTTOM, MINE_MIN_STEPS } from './facilities.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -66,7 +67,9 @@ export function bottomFor (state, sources) {
 // make_mine がその印を付けて、次の採掘場は別の入口に作る）
 export function minePlan (bot, state, sources) {
   const at = minesAt(bot, state, oreY(sources), TOLERANCE)
-  const open = at.find((m) => m.fac.status !== 'done')
+  // 丸石が足りなくて続きを掘れない採掘場（paused）は、丸石を持つまで後回し（ほかに掘れる採掘場があればそちらを）
+  const waiting = (m) => !!m.fac.layout.paused && sealStock(bot) < m.fac.layout.paused.need
+  const open = at.find((m) => m.fac.status !== 'done' && !waiting(m)) ?? at.find((m) => m.fac.status !== 'done')
   if (open) return { dig: open.fac.name }
   const done = at[0]
   if (done) {

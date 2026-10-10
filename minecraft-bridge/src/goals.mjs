@@ -736,7 +736,8 @@ function evaluateOne (bot, state, knowledge, world) {
         out.remaining = m.total - m.done
         const bottom = fac.layout.cells.filter((c) => c.part === 'stairs').at(-1)?.y
         const tunnels = fac.layout.tunnels?.length ? `, tunnels ${fac.layout.tunnels.join('/')}` : ''
-        const stopped = fac.layout.stopped ? `; stopped at y ${fac.layout.stopped.y}: ${fac.layout.stopped.reason}` : ''
+        const stopped = (fac.layout.stopped ? `; stopped at y ${fac.layout.stopped.y}: ${fac.layout.stopped.reason}` : '') +
+          (fac.layout.paused ? `; waiting at y ${fac.layout.paused.y} for cobblestone: ${fac.layout.paused.reason}` : '')
         out.lines.push(`mine ${fac.name} (stairs down to y ${bottom}${tunnels}): ${m.done}/${m.total} cells dug${m.unseen ? `, out of view ${m.unseen}` : ''}${stopped}`)
         if (out.met) break
         if (!m.next) { out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance }); break }

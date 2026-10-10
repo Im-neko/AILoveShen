@@ -105,7 +105,8 @@ function contents (bot, state, fac, jaOf) {
       cells: s.total,
       done: s.done,
       ...(s.unseen ? { out_of_view: s.unseen } : {}),
-      ...(fac.layout.stopped ? { stopped: fac.layout.stopped } : {})
+      ...(fac.layout.stopped ? { stopped: fac.layout.stopped } : {}),
+      ...(fac.layout.paused ? { paused: fac.layout.paused } : {})
     }
   }
   if (fac.layout) {

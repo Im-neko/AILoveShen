@@ -36,7 +36,8 @@ import { refusalAt } from './refusals.mjs'
 import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
 import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
 import { routeThroughMine, climbsDirect } from './mine-route.mjs'
-import { sealStock, openings, sealCell, plugCell, SEAL_FROM_DEPTH } from './sealing.mjs'
+import { sealStock, openings, enclosure, sealCell, plugCell, SEAL_FROM_DEPTH } from './sealing.mjs'
+import { quarryTargets } from './seal-stone.mjs'
 import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
 import { placeFaces } from './place-faces.mjs'
@@ -922,6 +923,24 @@ async function equipToolFor (bot, state, block, { drops = true } = {}) {
   }
 }
 const TOOL_ITEM = /_(pickaxe|axe|shovel|hoe|sword)$|^shears$/
+
+// 坑道を塞ぐ丸石が足りないとき、掘ってきた坑道の横の石を need 個まで掘って丸石にする（seal-stone.mjs）。掘れた個数
+async function quarryForSeal (bot, state, need, columns, avoid, signal) {
+  let dug = 0
+  for (const p of quarryTargets(bot, state, columns, need, avoid)) {
+    signal.throwIfAborted()
+    const block = bot.blockAt(p)
+    try {
+      await equipToolFor(bot, state, block)
+      await bot.dig(block, true)
+      dug++
+    } catch (e) {
+      if (signal.aborted) throw e
+    }
+  }
+  if (dug) await collectNearbyDrops(bot, state, signal)
+  return dug
+}
 
 // 閉じた所の中、または壁の外のセルへ動く: 水の中は泳ぎ（経路探索器は水の中から動かない）、乾いていれば歩く
 async function stepTo (bot, cell, signal) {
@@ -2076,11 +2095,19 @@ export const PRIMITIVES = {
       }
       const gaps = sealable ? openings(bot, state, cell) : []
       if (gaps.length && sealStock(bot) < gaps.length) {
-        const g = gaps[0].pos
-        const stopped = giveUp(`a cave opens at ${g.x},${g.y},${g.z}: walling it off takes ${gaps.length} cobblestone and you carry ${sealStock(bot)}`)
-        if (stopped) return stopped
-        continue
+        // 丸石が足りないのは危なさではなく足りない物: 設計を切らず、掘ってきた坑道の横の石を丸石にする。それでも
+        // 足りなければ、設計はそのまま残して、丸石を持ってから続きを掘る（paused）
+        await quarryForSeal(bot, state, gaps.length - sealStock(bot), cells.slice(Math.max(0, m.index - 4), m.index).reverse(), new Set(enclosure(state, cell).map((f) => `${f.pos.x},${f.pos.y},${f.pos.z}`)), signal)
+        if (sealStock(bot) < gaps.length) {
+          const g = gaps[0].pos
+          const reason = `a cave opens at ${g.x},${g.y},${g.z}: walling it off takes ${gaps.length} cobblestone and you carry ${sealStock(bot)} (no stone beside the tunnel to dig for it: bring cobblestone, then dig on)`
+          fac.layout.paused = { x: cell.x, y: cell.y, z: cell.z, need: gaps.length, reason }
+          updateStatus(bot, fac)
+          if (!dug) throw new Error(`the mine ${fac.name} waits at ${cell.x},${cell.y},${cell.z}: ${reason}`)
+          return `dug ${dug} cells of the mine ${fac.name}; stopped: ${reason}${cutNote(cut)}${sealNote(walled)}`
+        }
       }
+      delete fac.layout.paused
       let dugAny = false
       for (const p of mineBlocks(cell).reverse()) {
         const block = bot.blockAt(p)
