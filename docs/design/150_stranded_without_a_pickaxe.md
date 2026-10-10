@@ -32,3 +32,8 @@
 - ブリッジ: `movements.test.mjs`（地下でツルハシなしなら `go_home` は岩を掘り、ほかの行動は掘らない）、`memory.test.mjs`（`reach` で歩く距離が止まる）、`wear.test.mjs`（`toolWear`）。全 965 件通過
 - Python: `test_game_prompt_template_builder.py`（耐久の行と「もうすぐ壊れる」）。全体 1700 件通過（`test_stream_factory` の 1 件は以前から失敗）
 - 実機: ブリッジの再起動（済）で、y=0 から y=31 まで上がった。Python の再起動が要る（プロンプトの耐久）
+
+## 6. 続き（実機で見つかった穴、2026-10-10 19:10〜）
+- **遠い出口への経路探索が時間切れ**: 素手で掘れるようにしても、出口（約 263 m 先）への `GoalNear` は `Took to long to decide path` になった。ツルハシがなく地下にいるとき（`go_home` / `surface`）は、先に高さだけを目標に（`goals.GoalY`、地下の境 + 6 = 地表の高さ）上がってから、残りを歩く（`legToward`）。実機で y=31 → 53 まで上がった
+- **素手で掘ったのが失敗と返る**: 道具が要る石を素手で掘ると何も落ちず、`dug stone but picked nothing up` の失敗になり、判断する側が「掘れていない」と読んで同じ所を掘り直した。道を空けるために素手で掘ったときは成功（`dug stone by hand; nothing drops without a pickaxe`）にする（`dropsNothingByHand`、`afterDig`）
+- テスト: `movements.test.mjs` に `dropsNothingByHand` を足した。ブリッジ 966 件通過（`check.test.mjs` / `bed-path.test.mjs` が負荷で時々落ちる。単体では通る）。`GoalY` の上り自体は実機のみ

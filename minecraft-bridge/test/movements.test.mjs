@@ -86,3 +86,14 @@ test('地下でツルハシを 1 本も持たないとき、家と地上へ帰�
     restore()
   }
 })
+
+test('道具が要る石は、その道具を持っていなければ素手で掘っても何も落ちない。土は落ちる', async () => {
+  const { dropsNothingByHand } = await import('../src/primitives.mjs')
+  const registry = minecraftData('1.21.4')
+  const held = []
+  const bot = { registry, inventory: { items: () => held } }
+  assert.equal(dropsNothingByHand(bot, 'stone'), true)
+  assert.equal(dropsNothingByHand(bot, 'dirt'), false)
+  held.push({ name: 'stone_pickaxe', type: registry.itemsByName.stone_pickaxe.id })
+  assert.equal(dropsNothingByHand(bot, 'stone'), false)
+})

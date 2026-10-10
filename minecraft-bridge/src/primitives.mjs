@@ -9,7 +9,7 @@ import { once } from 'node:events'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import vec3Pkg from 'vec3'
 import { torchesNeeded, TORCH_SPACING } from './trail.mjs'
-import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell, isLog, isUnderground } from './observe.mjs'
+import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHostile, fillItem, standingCell, isLog, isUnderground, UNDERGROUND_BELOW } from './observe.mjs'
 import { surfaceExits } from './surface.mjs'
 import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
@@ -163,6 +163,7 @@ export function planBlockToPlace (bot, plan, planBlock) {
 // 地下でツルハシを 1 本も持っていない間は、家と地上へ帰る行動に限り、素手で岩を掘ってよい（歩ける洞窟が地上につながらず、
 // 道具を作る家へ帰れなくなる。2026-10-10: 317 m 先の地下でツルハシが折れ、約 200 m 離れた地下で「経路がない」を繰り返した）
 const HAND_DIG_HOME = new Set(['go_home', 'surface'])
+const HAND_CLIMB_ABOVE = 6 // 素手で上がる高さ: 地下の境（海面の 2 下）より、これだけ上
 const hasPickaxe = (bot) => bot.inventory.items().some((i) => i.name.endsWith('_pickaxe'))
 const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'dig_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
 const CLIMB_MAX = 24 // 閉じた所から出るために積む高さの上限
@@ -388,6 +389,14 @@ async function legToward (bot, state, target, what, signal, { viaMine = true } =
     // 地下から地上へ: 区間の目標は横の位置だけ（GoalNearXZ）で高さを問わないので、地下のまま横へ進む洞窟が「着いた」ことになり、
     // 深みへ潜った（2026-10-10: 採掘場から家へ帰る途中、洞窟の水を落ちて y=-21 まで）。高さも含めて 1 つの目標で歩く
     if (climbsDirect(me, target)) {
+      // ツルハシがない地下から遠い出口へ: 横の距離まで含めた 1 つの目標は経路探索が時間切れになる（263 m 先で
+      // 「Took to long to decide path」）。まず高さだけを目標に、地表の高さまで上がる（洞窟か、素手で掘って）
+      if (HAND_DIG_HOME.has(state.current?.verb) && isUnderground(bot) && !hasPickaxe(bot)) {
+        bot.actionPhase = `climbing up to the surface by hand toward ${what}`
+        await goto(bot, new goals.GoalY(Math.min(Math.floor(target.y), UNDERGROUND_BELOW + HAND_CLIMB_ABOVE)), signal)
+        bot.actionPhase = ''
+        if (!isUnderground(bot)) continue
+      }
       bot.actionPhase = `climbing toward ${what} (${round(far)}m away, ${round(target.y - me.y)}m up)`
       await goto(bot, new goals.GoalNear(target.x, target.y, target.z, 3), signal)
       bot.actionPhase = ''
@@ -951,6 +960,12 @@ function stairDanger (bot, state, { cells, floor }) {
 const topOf = (cells, p) => cells.filter((q) => q.x === p.x && q.z === p.z).reduce((a, b) => (b.y > a.y ? b : a))
 const bottomOf = (cells, p) => cells.filter((q) => q.x === p.x && q.z === p.z).reduce((a, b) => (b.y < a.y ? b : a))
 
+// 採るのに道具が要るブロック（石にツルハシ）で、その道具を持っていない: 掘っても何も落ちない
+export function dropsNothingByHand (bot, blockName) {
+  const tools = bot.registry?.blocksByName[blockName]?.harvestTools
+  return !!tools && Object.keys(tools).length > 0 && !bot.inventory.items().some((i) => tools[i.type])
+}
+
 // 掘ったあとの拾い集めと結果の文（PRIMITIVES.dig から）
 async function afterDig (bot, state, c, before, signal) {
   // 確率でしか落ちない物（草から種 1/8、葉から苗木 1/20）: 1 回の行動でまわりの同じものを続けて
@@ -968,6 +983,8 @@ async function afterDig (bot, state, c, before, signal) {
   const gained = gainedSince(bot, before)
   // 葉や草は、苗木や種を確率でしか落とさない: 何も落ちなくても失敗ではない（設計書 33）
   if (gained <= 0 && CHANCE_DROP_BLOCKS.test(c.block)) return `dug ${c.block}; nothing dropped this time (it drops only sometimes)`
+  // 道具が要る石を素手で掘ると何も落ちない: 道を空けるために掘ったので、失敗ではない
+  if (gained <= 0 && dropsNothingByHand(bot, c.block)) return `dug ${c.block} by hand; nothing drops without a pickaxe`
   if (gained <= 0) {
     const full = bot.inventory.emptySlotCount() === 0 ? '; the inventory is full' : ''
     throw new Error(`dug ${c.block} but picked nothing up (${dropsAround(bot)}${why ? `; path: ${why}` : ''}${full})`)
