@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -41,6 +41,8 @@ from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GenerationContext,
+    GoalPredicate,
+    GoalSpec,
     MessageType,
     Objective,
 )
@@ -85,15 +87,6 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
                 "助言は off_mission で断らない: 後の作業が楽になる・安全になるなら accept（when=next "
                 "で後ろに）、当たっていなければ wrong。"
             )
-        if reason == DeclineReason.NOT_BETTER.value:
-            if kind != "advice":
-                return "not_better は助言だけの理由。頼みは cannot / wrong / unsafe / limit で断る。"
-            why = data.get("relevance_reason")
-            if not isinstance(why, str) or not why.strip():
-                return (
-                    "not_better には relevance_reason（今の小目標・中目標と比べて、なぜ今のやり方の"
-                    "ほうがよいかを、具体的に英語 1 文）が要る。今は別のことをしている、は理由にならない。"
-                )
         return ""
     if handling != RequestHandling.NONE.value:
         return ""
@@ -107,12 +100,28 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
         "あれば accept（今やるほうがよければ when=now、そうでなければ when=next で後ろに入れ、返答で"
         "いつやるか言う）、今の小目標や計画の問題の指摘に納得したら rethink、これからのやり方の助言なら"
         " lesson、できない・当たっていない・危ないなら decline（decline_reason つき）。"
-        + (
-            "考えたうえで今のやり方のほうがよいなら、採ったふりをせず decline の not_better にして、"
-            "返答で何がなぜ今のやり方のほうがよいかを具体的に言う（やるとは言わない）。"
-            if kind == "advice"
-            else ""
-        )
+    )
+
+
+# 夜明けを待つ・家にいるだけの小目標（待っている間は、中でできる頼みを今やれる）
+WAITING_PREDICATES = frozenset({GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME})
+
+
+def doable_inside(spec: GoalSpec) -> bool:
+    """家の中で、外に出ずにできる条件か（家に置く物。クラフトと置くだけ）。"""
+    return spec.predicate == GoalPredicate.PLACED and spec.where == "home"
+
+
+def deferred_while_waiting(waiting: bool, proposal: ObjectiveProposal) -> str:
+    """
+    待っているだけの間に、中でできる頼みを後回し（when=next）にしていないか（2026-10-10 21:36: 夜に「ベッド設置して」と
+    頼まれ、「朝になってから置くね」と答えて中目標を後ろに入れた。夜に寝るためのベッドを、朝まで置かない）。差し戻す理由か空文字列。
+    """
+    if not waiting or proposal.now or not proposal.conditions or not all(doable_inside(c) for c in proposal.conditions):
+        return ""
+    return (
+        "あなたは今、夜明けを待つか家にいるだけで、この頼みは家の中で今できる。後回し（when=next）にしない: "
+        "when=now にして、返答でも「今やるね」と言う（朝になってからとは言わない）。"
     )
 
 
@@ -441,6 +450,16 @@ class GenerateResponseUseCase(IGenerateResponse):
                         )
                         logger.warning(f"返答 {attempt} は失敗中に助言を後回しにした: {data!r}")
                         continue
+                    waiting = session.goal is not None and session.goal.spec.predicate in WAITING_PREDICATES
+                    postponed = deferred_while_waiting(waiting, proposal)
+                    if postponed and attempt < attempts:
+                        error = postponed
+                        logger.warning(f"返答 {attempt} は待っている間にできる頼みを後回しにした: {data!r}")
+                        continue
+                    if postponed:
+                        # 最後の試しでも直らない: 返答は直せないが、行動は今やる（頼みを後ろに置いたままにしない）
+                        logger.warning(f"待っている間にできる頼みを今やる中目標にした（{attempts} 回直らなかった）: {data!r}")
+                        proposal = replace(proposal, now=True)
                     objective = await self._accept(
                         session, request.user_name, proposal, suggestion
                     )

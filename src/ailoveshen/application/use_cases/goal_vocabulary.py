@@ -119,11 +119,6 @@ class DeclineReason(str, Enum):
     UNSAFE = "unsafe"  # 死ぬ・家や持ち物を失うおそれ
     OFF_MISSION = "off_mission"  # 頼みだけ: 最終目標に関係なく、後の作業も楽にならない
     LIMIT = "limit"  # 視聴者の頼みの上限、大目標のリストがいっぱい
-    # 助言だけ: 当たってはいるが、今の状態から比べて、今のやり方のほうがよい（具体的な理由が要る）。
-    # 採る以外の答えがないと、採らないつもりの返事が差し戻されて「採る」に書き換わった
-    # （2026-10-10: 「壊して作り直したら」に「今は板を掘って空けて置く」と答えたのが差し戻され、
-    # 「壊して作り直すね」と言い換えたが、行動は変わらなかった）
-    NOT_BETTER = "not_better"
 
 
 class AdviceRelevance(str, Enum):
@@ -572,10 +567,8 @@ def reply_schema() -> dict[str, Any]:
                 "custom(name)) can express it; wrong = the point does not hold in the state now; "
                 "unsafe = it risks death or losing the home or items; off_mission = a request "
                 "that has nothing to do with the mission and makes nothing easier later (never for "
-                "advice); limit = the viewers' limit or a full list; not_better = advice only: it "
-                "holds, but compared with the current small goal or job the way you are already "
-                "doing it is better, and relevance_reason says why in concrete terms. Being busy "
-                "with something else is never a reason: accept it with when=next instead",
+                "advice); limit = the viewers' limit or a full list. Being busy with something "
+                "else is never a reason: accept it with when=next instead",
             },
             "suggestion": {
                 "type": "boolean",

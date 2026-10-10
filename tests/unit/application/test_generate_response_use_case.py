@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
-from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unanswered, unjudged
+from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unjudged
 from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, reply_schema
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
@@ -1672,48 +1672,73 @@ class TestAdviceThatCannotBeAcceptedStillGetsAnswer:
         assert mock_text_generator.generate_json.await_count == 3
 
 
-class TestNotBetterDecline:
+class TestDoableWhileWaitingIsDoneNow:
     """
-    助言を考えたうえで採らないときの答え（2026-10-10 19:57）。採る以外の答えがなく、採らない返事が
-    差し戻されて「壊して作り直すね」に書き換わったが、行動は変わらなかった。
+    夜に家の中で待っているとき、中でできる頼みを後回しにしない（2026-10-10 21:36: 「ベッド設置して」に「朝になってから置くね」と
+    答えて、中目標を後ろに入れた）。
     """
 
-    DECLINE = {
-        "request": "decline",
-        "decline_reason": "not_better",
-        "relevance": "related",
-        "relevance_reason": "Digging out the blocking planks is faster than rebuilding the whole workshop",
-        "reply": "壊して作り直すより、塞いでる板だけ掘って空けるほうが早いから、そっちでやるね。",
-    }
+    BED = {"predicate": "placed", "item": "bed", "where": "home", "count": 1}
 
-    def test_not_better_is_a_reason_for_advice_with_its_concrete_reason(self):
-        assert unanswered("advice", self.DECLINE) == ""
+    def _reply(self, when: str) -> dict:
+        return {
+            "reply": "ベッド置くね！" if when == "now" else "朝になってから置くね",
+            "request": "accept",
+            "suggestion": False,
+            "level": "job",
+            "title": "家にベッドを置く",
+            "conditions": [self.BED],
+            "position": 2,
+            "reason": "夜を越すため",
+            "when": when,
+        }
 
-    def test_not_better_without_a_reason_is_sent_back(self):
-        data = {**self.DECLINE, "relevance_reason": " "}
-        assert "relevance_reason" in unanswered("advice", data)
+    def _night(self):
+        session = _playing("night")
+        session.set_goal(
+            Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜は危ない", objective_id=None), "night"
+        )
+        return session
 
-    def test_not_better_is_not_for_requests(self):
-        assert "助言だけ" in unanswered("request", self.DECLINE)
+    def test_the_check_names_the_postponed_request_that_can_be_done_inside(self):
+        from ailoveshen.application.use_cases.generate_response import deferred_while_waiting
+        from ailoveshen.application.use_cases.goal_vocabulary import parse_proposal
 
-    def test_none_for_advice_points_at_not_better(self):
-        data = {"request": "none", "reply": "続けるね"}
-        assert "not_better" in unanswered("advice", data)
-        assert "not_better" not in unanswered("request", data)
+        later = parse_proposal(self._reply("next"))
+        assert "when=now" in deferred_while_waiting(True, later)
+        assert deferred_while_waiting(False, later) == ""  # 待っていない
+        assert deferred_while_waiting(True, parse_proposal(self._reply("now"))) == ""
+        outside = parse_proposal(
+            {**self._reply("next"), "conditions": [{"predicate": "have", "item": "log", "count": 3}]}
+        )
+        assert deferred_while_waiting(True, outside) == ""  # 外に出る頼みは、夜に今やらない
 
     @pytest.mark.asyncio
-    async def test_the_declined_advice_is_spoken_without_being_added(self, use_case, mock_text_generator):
-        mock_text_generator.generate_json.return_value = self.DECLINE
-        session = _playing()
-        before = len(session.plan.pending)
+    async def test_a_postponed_answer_is_sent_back_and_the_second_answer_is_done_now(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        mock_text_generator.generate_json.side_effect = [self._reply("next"), self._reply("now")]
+        session = self._night()
 
         response = await use_case.execute(
-            GenerateResponseRequest(
-                user_name="neko", message="全部壊して作り直したら", session=session, kind="advice"
-            )
+            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=session, kind="request")
         )
 
-        assert response.text == self.DECLINE["reply"]
-        assert response.objective is None
-        assert len(session.plan.pending) == before
-        assert mock_text_generator.generate_json.await_count == 1
+        assert response.text == "ベッド置くね！"
+        error = mock_prompt_builder.build_chat_response_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "when=now" in error
+        assert session.plan.current.open_jobs[0].spec.item == "bed"  # 先頭: 今やる
+
+    @pytest.mark.asyncio
+    async def test_when_it_stays_postponed_the_last_attempt_still_does_it_now(
+        self, use_case, mock_text_generator
+    ):
+        mock_text_generator.generate_json.return_value = self._reply("next")
+        session = self._night()
+
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=session, kind="request")
+        )
+
+        assert mock_text_generator.generate_json.await_count == 3
+        assert session.plan.current.open_jobs[0].spec.item == "bed"

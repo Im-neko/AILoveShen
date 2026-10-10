@@ -7,6 +7,11 @@
 
 ## Completed Work
 
+### 視聴者の頼み・助言には基本的に従う（設計書 158、2026-10-10、未確認: 実機。Python の再起動が要る。user: 「指摘には基本的に従ってほしい。夜だからベッド置いてって言っても朝になったら置くの一点張りでおかしい」）
+- 事実: 夜に家の中で「ベッド設置して」と 4 回言われ、持っているのに「朝になってから置くね」と中目標を `when=next` で後ろに入れた。設計書 153 の `not_better` は実機で選ばれず、断る側の道を足しただけだった
+- 変更: 返答の規則に「基本は従う」（断る理由は危ない・書けない・事実が違う・上限だけ）。`through_night` / `at_home` の間に `placed(…, home)` の頼みを `when=next` にした答えを差し戻し、直らなければ行動を `when=now` にする（`deferred_while_waiting`）。`DeclineReason.NOT_BETTER` を外した（`prompt_template_builder.py`、`generate_response.py`、`goal_vocabulary.py`）
+- テスト: Python 1756 件通過（`test_stream_factory` の 1 件は以前から失敗）。実機のモデルで 21:36 のプロンプトを再試行: 差し戻し後の accept は 5/6 が when=now。直っていない: 返事の文だけ「朝になったら」のまま行動は今やる場合、家に置く物以外の頼み
+
 ### 壊して作り直すときは更地にする・建物の下を掘らない・閉じた空洞の設計を止める（設計書 157、2026-10-10、未確認: 実機。ブリッジと Python の再起動が要る。user: 「建物壊して直す時は一度更地にしてから作り直すようにして欲しい。今くちゃくちゃになっちゃってます」）
 - 事実: `base_house` は床下の穴・貫かれた床と天井・置き先の残り物で、壊した跡の上に作り直す形になった。内側へ着けない失敗のあと、経路が床下を掘り下げた。設計に、全面の丸石に挟まれた入れない塔の空洞があった
 - 変更: `build_next {name, reset: true}` が底面を壊して地面にそろえ（建物の外には触らない）、記録を捨てる。経路探索は建物の真下（6 段）を掘らない。建物の中へ着けない失敗に開け方と更地を添える。外からつながらない空洞が 3 マス以上ある設計を差し戻す（`primitives.mjs`、`tools.mjs`、`leveling.mjs`、`builds.mjs`、`build.mjs`）
@@ -23,7 +28,7 @@
 - 変更: `leveled(where, distance, demolish)` / `level {demolish: true}`。置いた物・保護された家や建物・木・畑も壊してそろえる（水・採掘場・壊せない所は残す）。既定は今までどおり。普通の整地は残した列の数と `demolish` の案内を出す。`site blocked by` に壊す手を添えた（`leveling.mjs`、`goals.mjs`、`candidates.mjs`、`primitives.mjs`、`tools.mjs`、`build.mjs`、`GoalSpec.demolish`）
 - テスト: ブリッジ 971 件通過（5 件追加）、Python 1756 件通過（`test_stream_factory` の 1 件は以前から失敗）。直していない: 壊した家・建物の記録は書き換えない、実機の動き
 
-### 助言を採らないときの答え: decline に not_better を足す（設計書 153 続き、2026-10-10、未確認: 実機で選ばれるか。Python の再起動が要る。user: 「進めて良いです」）
+### （158 で外した）助言を採らないときの答え: decline に not_better を足す（設計書 153 続き、2026-10-10、未確認: 実機で選ばれるか。Python の再起動が要る。user: 「進めて良いです」）
 - 事実: 助言に none は許されず、decline の理由に「当たってはいるが今のやり方のほうがよい」がなかった。採らないつもりの返事が差し戻され、採る側に書き換わっていた
 - 変更: `DeclineReason.NOT_BETTER`（助言だけ。relevance_reason に具体的な理由が要る。頼みには使えない）、none の差し戻し文・規則・スキーマに案内（`goal_vocabulary.py`、`generate_response.py`、`prompt_template_builder.py`）
 - 確認: 19:57 のプロンプトで実機のモデルを 4 回試したら 4 回とも rethink で採る側（行動と合う）。テスト 5 件追加、Python 1754 件通過（`test_stream_factory` の 1 件は以前から失敗）
