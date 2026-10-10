@@ -3,7 +3,7 @@
 // where のまわり半径 distance の地面を、決まった高さにそろえる。高さは足の高さ（そこに立つ高さ）:
 // home なら家の床の上（home.inside.y）、x,y,z ならその y（その場所に立ったときの足の高さ）。地面の
 // いちばん上の固いブロックが y-1 になっていればそろっている。
-//   - 高い列（出っ張り）: y 以上にあるブロックを、種類を問わず全部掘る（2026-10-11: 土しか壊さず、置いた物や木が残った）。
+//   - 高い列（出っ張り）: y 以上にあるブロックを、高さを問わず（続いている限り）、種類を問わず全部掘る（2026-10-11: 土しか壊さず、置いた物や木が残った）。
 //     畑の整地（farmLevel）だけは、今までどおり自然の地形（TERRAIN）だけ（畑の柵や作物を壊さない）
 //   - 低い列（穴）: 地面の上から y-1 まで土で埋める
 // demolish（壊して整地。2026-10-10）: 置いた物・保護されている家や建物・木・畑も壊して、そろえる。水・溶岩、採掘場、
@@ -22,6 +22,8 @@ const { Vec3 } = vec3Pkg
 export const MIN_LEVEL = 3
 export const MAX_LEVEL = 16
 const DY = 8 // 目標の高さからこれだけ上下まで見る（これより深い穴・高い崖は触らない）
+const UP_MAX = 96 // 床面からこれだけ上まで見る
+const UP_GAP = 12 // 空気や植物がこのマス数続いたら、その上は見ない
 const RING_DEPTH = 16 // 畑の柵の輪の列は、これだけ深い穴まで埋める（柵は床の上にしか立たない）
 const PLANTING_GAP = 1 // 植えた木のまわりのこのマス数は触らない
 
@@ -75,8 +77,19 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, de
   if (!demolish && (state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
   if (stairs && onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
+  // 床面から DY より上にも、続いているブロックは全部見る（高い木、塔）: 空気・植物が UP_GAP マス続いたら、そこで終わり
+  let start = floor + DY
+  if (loose || demolish) {
+    let gap = 0
+    for (let h = floor + DY + 1; h <= floor + UP_MAX && gap <= UP_GAP; h++) {
+      const b = bot.blockAt(new Vec3(x, h, z))
+      if (!b) break
+      if (isPlant(b) || b.name === 'air') gap++
+      else { start = h; gap = 0 }
+    }
+  }
   let top = null
-  for (let h = floor + DY; h >= floor - depth; h--) {
+  for (let h = start; h >= floor - depth; h--) {
     const b = bot.blockAt(new Vec3(x, h, z))
     if (!b) return UNLOADED
     if (FLUID.test(b.name)) return 'water'

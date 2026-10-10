@@ -367,3 +367,15 @@ test('level: 家のまわりを家の床と違う高さにそろえる整地は�
   assert.doesNotMatch((await tool('level', { where: '5,64,5', radius: 8 })).result, /includes the home/)
   assert.doesNotMatch((await tool('level', { where: '40,65,40', radius: 8 })).result, /includes the home/)
 })
+
+test('床面から 8 マスより高い所のブロックも、続いていれば全部掘る。何もない高みは見ない', () => {
+  const blocks = {}
+  for (let y = 64; y <= 90; y++) blocks[`2,${y},0`] = 'oak_planks' // 27 段の塔
+  blocks['-2,100,0'] = 'oak_planks' // 離れた浮島は、空気が続いたあとなので見ない
+  const w = world(blocks)
+  const s = levelStatus({ blockAt: w.blockAt }, state(), '0,64,0', 3)
+  const cuts = s.cuts.map((p) => `${p.x},${p.y},${p.z}`)
+  assert.equal(cuts.filter((c) => c.startsWith('2,')).length, 27)
+  assert.ok(cuts.includes('2,90,0') && cuts.includes('2,64,0'))
+  assert.ok(!cuts.some((c) => c.startsWith('-2,')))
+})
