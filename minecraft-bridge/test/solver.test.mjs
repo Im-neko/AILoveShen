@@ -171,12 +171,51 @@ test('松明を持っていれば、今までどおり松明を持って地下�
   assert.deepEqual(kinds(r), ['make_mine:cobblestone'])
 })
 
-test('地下へ下りる前に、予備の木のツルハシを 1 本持つ（道具が壊れても岩を掘って出られる。2026-10-07 閉じ込め）', () => {
-  // 石のツルハシ 1 本だけ: 予備の木のツルハシを作る手が先に出る（採掘場へはまだ下りない）
-  const none = solve(k, mineWorld({ wooden_pickaxe: 0, stone_pickaxe: 1, torch: 8, oak_planks: 3, stick: 2 }), [{ spec: 'raw_iron', count: 1 }])
-  assert.ok(none.leaves.some((l) => l.kind === 'craft' && l.item === 'wooden_pickaxe'), JSON.stringify(none.leaves.map((l) => `${l.kind}:${l.item}`)))
-  assert.ok(!none.leaves.some((l) => l.kind === 'make_mine'))
-  // 予備を持っていれば、そのまま下りる
-  const held = solve(k, mineWorld({ wooden_pickaxe: 1, stone_pickaxe: 1, torch: 8 }), [{ spec: 'raw_iron', count: 1 }])
-  assert.ok(held.leaves.some((l) => l.kind === 'make_mine'), JSON.stringify(held.leaves.map((l) => `${l.kind}:${l.item}`)))
+const spareLeaves = (r) => kinds(r).filter((x) => x.startsWith('craft:') && x.endsWith('_pickaxe'))
+
+test('予備のツルハシは、持ち物から作れる一番上の格（道具が壊れても岩を掘って出られる。2026-10-07 閉じ込め）。下りる手は止めない', () => {
+  const cobble = { wooden_pickaxe: 0, stone_pickaxe: 1, torch: 8, cobblestone: 20, oak_planks: 3, stick: 6 }
+  // 丸石があれば石。下りる手と並べて出る
+  const stone = solve(k, mineWorld(cobble), [{ spec: 'raw_iron', count: 1 }])
+  assert.deepEqual(spareLeaves(stone), ['craft:stone_pickaxe'], JSON.stringify(kinds(stone)))
+  assert.ok(stone.leaves.some((l) => l.kind === 'make_mine'), JSON.stringify(kinds(stone)))
+  // 鉄のインゴットが 3 つあれば鉄（ダイヤは作れないので選ばない）
+  const iron = solve(k, mineWorld({ ...cobble, iron_ingot: 3 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.deepEqual(spareLeaves(iron), ['craft:iron_pickaxe'], JSON.stringify(kinds(iron)))
+  // 丸石がなく板材があれば木
+  const wood = solve(k, mineWorld({ ...cobble, cobblestone: 0 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.deepEqual(spareLeaves(wood), ['craft:wooden_pickaxe'], JSON.stringify(kinds(wood)))
+  assert.ok(wood.leaves.some((l) => l.kind === 'make_mine'))
+})
+
+test('予備: 持ち物から作れる上の格がなければ、何も求めず下りる。持っている予備より下の格は作らない', () => {
+  // 何も作れない（丸石も板材もない）: 探しに行かず、そのまま下りる
+  const nothing = solve(k, mineWorld({ wooden_pickaxe: 0, stone_pickaxe: 1, torch: 8 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.deepEqual(spareLeaves(nothing), [])
+  assert.deepEqual(kinds(nothing), ['make_mine:raw_iron'])
+  // 石の予備をもう持っている: 石は作らない（上の鉄は材料がなく作れない）
+  const held = solve(k, mineWorld({ wooden_pickaxe: 0, stone_pickaxe: 2, torch: 8, cobblestone: 20 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.deepEqual(spareLeaves(held), [])
+  assert.deepEqual(kinds(held), ['make_mine:raw_iron'])
+  // 木の予備を持っていても、石が作れるなら石に上げる
+  const upgrade = solve(k, mineWorld({ wooden_pickaxe: 1, stone_pickaxe: 1, torch: 8, cobblestone: 20 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.deepEqual(spareLeaves(upgrade), ['craft:stone_pickaxe'])
+})
+
+test('松明: 半分以上あって足りないぶんが作れるなら、下りる手と並べて作る手を出す。それ未満は先に作る', () => {
+  const base = { stone_pickaxe: 1, wooden_pickaxe: 1, coal: 5, stick: 6 }
+  const some = solve(k, mineWorld({ ...base, torch: 6 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.ok(some.leaves.some((l) => l.kind === 'make_mine') && some.leaves.some((l) => l.kind === 'craft' && l.item === 'torch'), JSON.stringify(kinds(some)))
+  const few = solve(k, mineWorld({ ...base, torch: 3 }), [{ spec: 'raw_iron', count: 1 }])
+  assert.ok(few.leaves.some((l) => l.kind === 'craft' && l.item === 'torch'))
+  assert.ok(!few.leaves.some((l) => l.kind === 'make_mine'), JSON.stringify(kinds(few)))
+})
+
+test('松明 6/8、木のツルハシなし（2026-10-09 の持ち物）: 鉄の原石の目標で、採掘場の手が出る。予備の石のツルハシと松明は並べて出る', () => {
+  const inv = { stone_pickaxe: 1, wooden_pickaxe: 0, iron_sword: 1, iron_ingot: 1, torch: 6, coal: 25, stick: 22, cobblestone: 106, oak_log: 11 }
+  const r = solve(k, mineWorld(inv), [{ spec: 'raw_iron', count: 2 }])
+  assert.deepEqual(r.impossible, [])
+  assert.ok(r.leaves.some((l) => l.kind === 'make_mine'), JSON.stringify(kinds(r)))
+  assert.ok(r.leaves.some((l) => l.kind === 'craft' && l.item === 'torch'), JSON.stringify(kinds(r)))
+  assert.deepEqual(spareLeaves(r), ['craft:stone_pickaxe'])
 })

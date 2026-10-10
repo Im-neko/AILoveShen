@@ -16,6 +16,7 @@
 //   掘り下げの深さ。許す深さにあれば、探すより階段で掘り下げるほうが安い（17_dig_down.md）
 
 import { FUELS } from './knowledge.mjs'
+import { TIERS, tierOf } from './wear.mjs'
 import { CROPS, cropByBlock } from './farming.mjs'
 
 const MAX_DEPTH = 10 // 何もない状態から鉄の剣まで: インゴット、鉄の原石、石のツルハシ、丸石、木のツルハシ、板材、原木
@@ -28,6 +29,10 @@ const UNDERGROUND = /^(stone|deepslate|tuff|granite|diorite|andesite)$|_ore$/
 // 地下へ下りる手と、そのとき持つ松明の数（trail.mjs の torchesNeeded で 30 m 先まで: 8 本）
 export const UNDERGROUND_LEAVES = new Set(['go_mine', 'dig_mine', 'make_mine', 'dig_down'])
 const UNDERGROUND_TORCHES = 8
+// これだけ持っていれば、足りないぶんを作る手を並べたまま下りてよい（6 本で 36 セル: 坑道は 6 セルごとに 1 本。
+// 切れると掘る手が止まって「松明を作ってから」と返す）。これ未満で、持ち物から作れるなら、先に作る
+const UNDERGROUND_TORCHES_MIN = 4
+const SPARE_MARK = '#spare'
 // 斧も武器（goals.mjs の armed と同じ）。道具の入手は sword の木製が最も安い
 const armedInWorld = (world) => Object.entries(world.inventory ?? {}).some(([n, c]) => c > 0 && /_(sword|axe)$/.test(n))
 const IMPOSSIBLE = 1e6
@@ -236,6 +241,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   const inSight = sources.filter((s) => (nearby?.[s] ?? 0) > 0)
   const children = []
   let cost = n * unitCost
+  let digTool = null // 掘るのに手元の道具を使うとき、その名前（台帳からは引かれない）
   if (kind === 'dig') {
     // 一番安く掘れるブロック: 道具が要らないもの。なければ道具が手元にあるか作れるもの
     const handy = (inSight.length ? inSight : sources).map((b) => ({ b, tools: k.harvestTools(b) }))
@@ -243,6 +249,7 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     if (!bare.length && handy.length) {
       const tools = handy[0].tools
       const r = needAny(k, world, tools, ledger, path, depth)
+      digTool = r.held ?? null
       children.push(r.node)
       cost += r.cost
     }
@@ -347,6 +354,8 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   // 地下（採掘場、階段掘り）へは、松明を持ってから行く（暗い所の湧きを潰して進む。松明がないまま
   // 採掘場へ下りて、骷髏に撃たれ続けた: 2026-10-01）。松明は石炭か木炭と棒から作る手が先に出る
   // 武器も持ってから行く（武器なしで地下に出て、骷髏に撃たれ続けて死んだ: 2026-10-01 19:44。剣は木で作れる）
+  // 先に済ませないと下りない物（hard）と、下りる手と並べて出す物（soft）。soft は持ち物から作れる物だけ
+  const soft = new Set()
   if (UNDERGROUND_LEAVES.has(leaf.kind)) {
     // 松明が（輪で）どうしても手に入らないときは、松明なしで下りる: 松明の石炭も、丸石で作るかまどの木炭も地下の
     // 石からで、松明を要求し続けると何も手に入らなくなる（2026-10-07: 死んで松明を失い、石が「手立てなし」で 17 分止まった）
@@ -356,15 +365,19 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
       Object.assign(ledger, trial)
       children.push(torches.node)
       cost += torches.cost
+      // 足りなくても、半分以上あって、足りないぶんが持ち物から作れるなら、止めずに作る手を並べる
+      // （2026-10-09: 6/8 本のまま、作る手が選ばれず 3 時間、穴掘りの手が出なかった）
+      if (torches.node.have >= UNDERGROUND_TORCHES_MIN && craftOnly(torches.node)) soft.add(torches.node)
     }
-    // 予備の木のツルハシ（掘る道具のほかに 1 本）: 採掘場の底で道具が壊れると、作業台も置けず岩も掘れず、出られなくなった
-    // （2026-10-07: 石と木のツルハシが 72 マスで 2 本とも壊れ、約 40 分閉じ込められた）。木でも岩は掘れるので出られる
-    const spareTrial = cloneLedger(ledger)
-    const spare = need(k, world, 'wooden_pickaxe', 1, spareTrial, path, depth + 1)
-    if (spare.cost < IMPOSSIBLE) {
-      Object.assign(ledger, spareTrial)
+    // 予備のツルハシ（掘る道具のほかに 1 本）: 採掘場の底で道具が壊れると、作業台も置けず岩も掘れず、出られなくなった
+    // （2026-10-07: 石と木のツルハシが 72 マスで 2 本とも壊れ、約 40 分閉じ込められた）。今作れる一番上の格を持つ
+    // （持っている予備より上の格が持ち物から作れるときだけ。作れなければ求めない。下りる手は止めない）
+    const spare = spareUpgrade(k, world, ledger, path, depth, digTool)
+    if (spare) {
+      Object.assign(ledger, spare.ledger)
       children.push(spare.node)
       cost += spare.cost
+      soft.add(spare.node)
     }
     if (!armedInWorld(world)) {
       const sword = need(k, world, 'sword', 1, ledger, path, depth + 1)
@@ -373,7 +386,39 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
     }
   }
   const units = n + children.reduce((s, c) => s + c.units, 0)
-  return { cost, units, children, leaf: children.every((c) => c.have >= c.need) ? leaf : null, method: kind }
+  return { cost, units, children, leaf: children.every((c) => c.have >= c.need || soft.has(c)) ? leaf : null, method: kind }
+}
+
+// 持ち物だけでできるか: 足りないぶんの入手が、すべて作る・置く手（作業台やかまどを置くのも含む）で、掘る・探す・焼く・
+// チェストから取る手が要らない。末端の手（leaf）でなく入手の方法（method）の木で見る: 前の材料がそろうまで leaf は null
+// で、地下の石を掘る手が隠れ、その材料の松明を作る手だけが残って「作るだけ」に見えた（2026-10-09: ダイヤのつるはしが
+// 「持ち物から作れる」と出ていたのも、道がふさがった物の展開だけが作る手に見えたため）
+function craftOnly (node) {
+  if (node.have >= node.need) return true
+  if (node.method !== undefined && node.method !== 'craft') return false
+  if (node.leaf && node.leaf.kind !== 'craft' && node.leaf.kind !== 'place') return false
+  return node.children.every(craftOnly)
+}
+
+// 予備のツルハシ: 持っている予備（掘る道具の 1 本を除いたツルハシ）より上の格で、持ち物から作れる一番上。
+// なければ null。台帳は進めない（採るときは返した ledger を使う）。上の格の計画の中でも地下へ下りる手が出て、
+// また予備を調べに来るので、調べている途中（path に '#spare'）では調べない
+function spareUpgrade (k, world, ledger, path, depth, digTool) {
+  if (path.includes(SPARE_MARK)) return null
+  const held = Object.entries(ledger.items)
+    .map(([n, c]) => [n, n === digTool ? c - 1 : c])
+    .filter(([n, c]) => c > 0 && /_pickaxe$/.test(n))
+    .reduce((m, [n]) => Math.max(m, tierOf(n)), -1)
+  for (const tier of TIERS.slice(held + 1, TIERS.indexOf('diamond') + 1).reverse()) {
+    const trial = cloneLedger(ledger)
+    if (digTool) trial.items[digTool] -= 1 // 掘る道具は予備に数えない（掘る道具は台帳から引かれないので、ここで取り分ける）
+    const r = need(k, world, `${tier}_pickaxe`, 1, trial, [...path, SPARE_MARK], depth + 1)
+    if (r.cost < IMPOSSIBLE && craftOnly(r.node)) {
+      if (digTool) trial.items[digTool] += 1
+      return { node: r.node, cost: r.cost, ledger: trial }
+    }
+  }
+  return null
 }
 
 // 地下の鉱石が見えず、下りられる採掘場もないとき: 歩き回って探すより、採掘場を作ってそこから集める
@@ -413,7 +458,7 @@ export function nextStep (root, world, k) {
 // いくつかのアイテムのどれか1つ（例: 石を掘れるどれかのツルハシ）。道具は使っても減らない
 function needAny (k, world, items, ledger, path, depth) {
   const held = items.find((i) => (ledger.items[i] ?? 0) > 0)
-  if (held) return { node: { label: `have ${held}`, have: 1, need: 1, units: 0, children: [], leaf: null }, cost: 0 }
+  if (held) return { node: { label: `have ${held}`, have: 1, need: 1, units: 0, children: [], leaf: null }, cost: 0, held }
   let best = null
   for (const i of items) {
     const trial = cloneLedger(ledger)
