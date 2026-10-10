@@ -881,6 +881,21 @@ class TestAdvancePlay:
         bridge.act.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_through_night_underground_is_sent_back(
+        self, use_case, text_generator, bridge, prompt_builder
+    ):
+        """実測（2026-10-10 19:00）: 家に帰れない地下で through_night を選び、穴に閉じこもって約 8 分待った。"""
+        bridge.observe.return_value = _obs(goal=False, time_phase="night", underground=True)
+        text_generator.generate_json.side_effect = [
+            {**PLANKS, "predicate": "through_night", "reason": "夜を安全に越すのが先"},
+            PLANKS,
+        ]
+        await use_case.execute(_session())
+
+        error = prompt_builder.build_goal_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "deep underground" in error
+
+    @pytest.mark.asyncio
     async def test_a_reason_that_mistakes_the_time_is_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):

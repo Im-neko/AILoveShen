@@ -20,3 +20,8 @@
 
 ## 5. テスト
 `tests/unit/application/test_play_use_cases.py`: 昼に 3 回とも `through_night` を選ぶと、3 回差し戻されて行動しない。実機は未確認（Python の再起動が要る）
+
+## 6. 続き: 深い地下では through_night を選ばせない（2026-10-10 19:08、user: 「地下なら朝になるのまたなくていいですよね？」）
+- 事実: 19:00 に、家へ帰れない地下（y=31）で「夕方で暗くなり始め、地下にいて家へ戻れず…まず夜を安全に越すのが先」と `through_night` が選ばれ、穴に閉じこもって約 8 分、朝まで待った。深い地下は夜も昼も同じ暗さで、待つ意味がない（観測の `underground` の定義、`GameObservation.underground`）
+- 直し: `_check_survival_time` が、地下（`obs.underground`）の `through_night` も差し戻す。理由は「地下では夜と昼が同じ。朝を待たず、作業を続けるか地上へ出る小目標にする」。`_spend_the_night`（決まらないときの受け皿）も地下では夜を越す小目標にしない
+- テスト: `test_play_use_cases.py` に 1 件

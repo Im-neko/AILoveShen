@@ -1525,7 +1525,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         have(raw_iron, 3) を 3 回ずつ選び続けた）。through_night は家に帰り、眠れる時間になれば
         ベッドで寝る（家がなければ地下に潜る）。
         """
-        if obs.time_phase not in ("dusk", "night"):
+        if obs.time_phase not in ("dusk", "night") or obs.underground:
             return False
         spec = GoalSpec(GoalPredicate.THROUGH_NIGHT)
         try:
@@ -2100,7 +2100,14 @@ def _check_survival_time(decision: GoalDecision, obs: GameObservation) -> None:
     """
     through_night は夕方と夜の目標。昼や明け方に選んだ決定を差し戻す（2026-10-04 10:06: 昼なのに
     「家に入れない状態で夜が来るため」と through_night を選び、畑の中に穴を掘って潜った）。
+    深い地下は夜も昼も同じなので、地下で選んだ決定も差し戻す（2026-10-10 19:00: 家に帰れない地下で
+    「夜を安全に越すのが先」と through_night を選び、穴に閉じこもって約 8 分待った）。
     """
+    if decision.spec.predicate == GoalPredicate.THROUGH_NIGHT and obs.underground:
+        raise ValueError(
+            "you are deep underground, where night and day are the same: do not wait for morning. "
+            "Keep working, or get out to the surface (and home) as the small goal"
+        )
     if decision.spec.predicate == GoalPredicate.THROUGH_NIGHT and obs.time_phase in ("day", "dawn"):
         raise ValueError(
             f"it is {obs.time_phase} now, not night: through_night is for dusk and night. Read the "
