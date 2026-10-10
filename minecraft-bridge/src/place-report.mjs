@@ -14,7 +14,19 @@ const NEAR_ENTITY = 3
 const one = (n) => Math.round(n * 100) / 100
 const xyz = (p) => ({ x: p.x, y: p.y, z: p.z })
 
-export function snapshot (bot, dest, against, error) {
+// 呼び出し元の印: スタックから、経路探索の足場積みか、ブリッジの関数（jumpAndPlace など）かを読む
+export function callerOf (stack) {
+  const lines = String(stack ?? '').split('\n').slice(1)
+  if (lines.some((l) => l.includes('mineflayer-pathfinder'))) return 'pathfinder'
+  for (const l of lines) {
+    if (l.includes('place-report')) continue
+    const m = l.match(/at (?:async )?([\w$.]+) \(.*\/src\//)
+    if (m) return m[1]
+  }
+  return null
+}
+
+export function snapshot (bot, dest, against, error, caller = null, timing = null) {
   const me = bot.entity.position
   const eye = me.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
   const center = dest.offset(0.5, 0.5, 0.5)
@@ -35,6 +47,8 @@ export function snapshot (bot, dest, against, error) {
     bot: { x: one(me.x), y: one(me.y), z: one(me.z), on_ground: bot.entity.onGround, in_water: !!bot.entity.isInWater, standing_in_dest: me.floored().equals(dest) },
     eye_to_dest: one(eye.distanceTo(center)),
     held: bot.heldItem?.name ?? null,
+    caller,
+    timing,
     entities
   }
 }
@@ -53,15 +67,47 @@ export function record (snap, file = process.env.PLACE_REFUSALS_FILE ?? DEFAULT_
 // 記録する（記録は整地の 1 か所にしか付いておらず、家の戸口の穴埋めで断られた 2026-10-01 19:54 は残らなかった）。
 // 置く動きは何も変えない: 記録して同じエラーを投げ直す
 const REFUSED = /Server (refused|did not answer)/
+const TRAIL_TICKS = 14
+
+// 断られた瞬間の高さは、置こうとした時の高さではない（呼んでから packet を送るまで、向きを合わせる 1 tick 以上待つ）。
+// 「呼んだ時」「packet を送った時」の足の高さと、直近の物理 tick の高さ（断られた時刻からの ms）を残す
+export function timingOf (dest, call, sent, trail, now) {
+  const rel = (y) => one(y - dest.y)
+  return {
+    call_y: rel(call.y),
+    send_y: sent ? rel(sent.y) : null,
+    ms_call_to_send: sent ? sent.t - call.t : null,
+    ms_send_to_refusal: sent ? now - sent.t : null,
+    trail: trail.map((p) => [p.t - now, rel(p.y)])
+  }
+}
+
 export function installPlaceReport (bot, file) {
   const placeBlock = bot.placeBlock.bind(bot)
+  const trail = []
+  let lastSend = null
+  bot.on?.('physicsTick', () => {
+    trail.push({ t: Date.now(), y: bot.entity.position.y })
+    if (trail.length > TRAIL_TICKS) trail.shift()
+  })
+  if (bot._client?.write) {
+    const write = bot._client.write.bind(bot._client)
+    bot._client.write = (name, ...args) => {
+      if (name === 'block_place') lastSend = { t: Date.now(), y: bot.entity.position.y }
+      return write(name, ...args)
+    }
+  }
   bot.placeBlock = async (referenceBlock, faceVector, ...rest) => {
+    const caller = callerOf(new Error().stack)
+    const call = { t: Date.now(), y: bot.entity.position.y }
+    lastSend = null
     try {
       return await placeBlock(referenceBlock, faceVector, ...rest)
     } catch (e) {
       if (REFUSED.test(String(e?.message))) {
         try {
-          record(snapshot(bot, referenceBlock.position.plus(faceVector), referenceBlock, e), file)
+          const dest = referenceBlock.position.plus(faceVector)
+          record(snapshot(bot, dest, referenceBlock, e, caller, timingOf(dest, call, lastSend, trail, Date.now())), file)
         } catch (reportError) {
           console.log(`[place] 記録を作れなかった: ${reportError.message}`)
         }

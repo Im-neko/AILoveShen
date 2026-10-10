@@ -50,7 +50,7 @@ function botIn (w, { at = new Vec3(0.5, 50, 0.5), items = {} } = {}) {
     lookAt: async () => {},
     look: async () => {},
     setControlState: (k, on) => { if (k === 'jump') jumping = on },
-    waitForTicks: async () => { if (jumping) at.y += 1 },
+    waitForTicks: async () => { if (jumping) at.y = Math.floor(at.y) + 1.2 },
     dig: async (block) => { const p = block.position; w.set.set(`${p.x},${p.y},${p.z}`, 'air') },
     placeBlock: async (ref, face) => {
       const p = ref.position.plus(face)

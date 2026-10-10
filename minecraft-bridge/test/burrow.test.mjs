@@ -140,7 +140,7 @@ test('leave_burrow: 塞ぎを壊し、足元に土を置いて地面の高さま
   let jumping = false
   bot.look = async () => {}
   bot.setControlState = (k, on) => { if (k === 'jump') jumping = on }
-  bot.waitForTicks = async () => { if (jumping) bot.entity.position.y += 1 }
+  bot.waitForTicks = async () => { if (jumping) bot.entity.position.y = Math.floor(bot.entity.position.y) + 1.2 }
   assert.equal(inBurrow(bot), true)
   const text = await PRIMITIVES.leave_burrow(bot, state, {}, new AbortController().signal)
   assert.match(text, /climbed out of the hole to 0,64,0/)
@@ -155,7 +155,7 @@ test('leave_burrow: 塞ぎが開いたままの穴でも、足元に土を置い
   let jumping = false
   bot.look = async () => {}
   bot.setControlState = (k, on) => { if (k === 'jump') jumping = on }
-  bot.waitForTicks = async () => { if (jumping) bot.entity.position.y += 1 }
+  bot.waitForTicks = async () => { if (jumping) bot.entity.position.y = Math.floor(bot.entity.position.y) + 1.2 }
   assert.equal(inBurrow(bot), false)
   assert.equal(inOpenShaft(bot), true)
   assert.match(await PRIMITIVES.leave_burrow(bot, state, {}, new AbortController().signal), /climbed out of the hole/)

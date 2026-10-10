@@ -30,6 +30,10 @@ const WALK_THROUGH_TIMEOUT_MS = 3000
 const DOORSTEP_DEPTH = 3 // ドアの前の床の穴は、ここまでの深さなら下から埋める
 const PLACE_REACH = 4
 const JUMP_OUT_MS = 1500
+// 跳んで足元に置くとき、足が置くマスの上端からこれだけ上に出てから置く。サーバーが知っている位置は 1 tick 遅れ
+// （足が上端に届いた最初の tick の 1 つ前）なので、届いた直後に置くと体が重なっていると断られる（設計書 131 の続き）
+export const PLACE_CLEARANCE = 0.1
+const JUMP_PLACE_TRIES = 3 // 断られたら、跳びを続けたまま置き直す回数
 // ドアにここまで近い敵対モブがいたらボットは中にとどまる: クリーパーが家までついて来てドアの前で
 // 待ち、朝ボットが外に出たところで入口（と家の角）を吹き飛ばした。
 const DOOR_DANGER_RADIUS = 8
@@ -405,13 +409,21 @@ export async function jumpAndPlace (bot, cell, item) {
   await bot.look(bot.entity.yaw, -Math.PI / 2, true)
   bot.setControlState('jump', true)
   try {
-    const start = Date.now()
-    while (bot.entity.position.y < cell.y + 1) {
-      if (Date.now() - start > JUMP_OUT_MS) throw new Error(`could not jump up from the hole at ${cell}`)
-      await bot.waitForTicks(1)
+    for (let tries = 1; ; tries++) {
+      const start = Date.now()
+      while (bot.entity.position.y < cell.y + 1 + PLACE_CLEARANCE) {
+        if (Date.now() - start > JUMP_OUT_MS) throw new Error(`could not jump up from the hole at ${cell}`)
+        await bot.waitForTicks(1)
+      }
+      const { block, face } = placeAgainst(bot, cell)
+      try {
+        await bot.placeBlock(block, face)
+        return
+      } catch (e) {
+        // 断られても跳びは続いている: 着地してまた跳び上がるのを待って置き直す
+        if (!/Server refused/.test(String(e?.message)) || tries >= JUMP_PLACE_TRIES) throw e
+      }
     }
-    const { block, face } = placeAgainst(bot, cell)
-    await bot.placeBlock(block, face)
   } finally {
     bot.setControlState('jump', false)
   }

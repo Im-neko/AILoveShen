@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
+import { PLACE_CLEARANCE } from '../src/home.mjs'
 
 const require = createRequire(import.meta.url)
 const { Physics, PlayerState } = require('prismarine-physics')
@@ -53,4 +54,30 @@ test('その条件は、立った状態からの 1 回の跳びで満たせる�
   }
   assert.ok(early >= 3, `浮いてから届くまでに ${early} tick`)
   assert.ok(ok >= 2, `置ける tick が ${ok}`)
+})
+
+test('自前の跳び置き（jumpAndPlace）: 上端から PLACE_CLEARANCE 上に出る tick が、跳びに 3 回以上あり、届いた最初の tick より後', () => {
+  const physics = Physics(md, world)
+  const bot = {
+    version: '1.21.4',
+    entity: { position: new Vec3(3.5, GROUND, -292.5), velocity: new Vec3(0, 0, 0), onGround: true, isInWater: false, isInLava: false, isInWeb: false, isCollidedHorizontally: false, isCollidedVertically: false, elytraFlying: false, yaw: 0, pitch: 0, effects: [] },
+    jumpTicks: 0,
+    jumpQueued: false,
+    fireworkRocketDuration: 0,
+    inventory: { slots: [] },
+    game: { gameMode: 'survival' }
+  }
+  let ok = 0
+  let first = null
+  let reached = null
+  for (let i = 0; i < 20; i++) {
+    const s = new PlayerState(bot, { forward: false, back: false, left: false, right: false, jump: true, sprint: false, sneak: false })
+    physics.simulatePlayer(s, world)
+    s.apply(bot)
+    const y = bot.entity.position.y
+    if (y >= GROUND + 1) reached ??= i
+    if (y >= GROUND + 1 + PLACE_CLEARANCE) { ok++; first ??= i }
+  }
+  assert.ok(ok >= 3, `置ける tick が ${ok}`)
+  assert.ok(first > reached, `届いた tick ${reached}、置く最初の tick ${first}`)
 })
