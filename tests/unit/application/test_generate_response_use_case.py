@@ -1836,3 +1836,36 @@ class TestTheReplyFollowsWhatWasDecided:
             GenerateResponseRequest(user_name="neko", message="チェスト置いて", session=_night(), kind="request")
         )
         assert fallback.text.startswith("nekoさん、「家にチェストを置く」は夜の間は")
+
+
+class TestARequestThatIsAlreadyTrue:
+    """
+    頼まれた条件がもう満たされているときは、大目標にも考え直しにもしない（2026-10-10 22:11: ベッドは家に
+    あるのに「ベッドで寝て」を大目標にして「今やるね」と言い、46 秒後に達成した）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_is_told_as_already_so_and_nothing_is_added_or_cut(
+        self, use_case, mock_text_generator, mock_prompt_builder, bridge
+    ):
+        async def met(specs):
+            return [ConditionStatus(s, True) for s in specs]
+
+        bridge.check.side_effect = met
+        mock_text_generator.generate_json.return_value = {"reply": "今やるね", **BED_NOW}
+        mock_text_generator.generate.side_effect = [
+            "今すぐ置くね！",  # もうあるのに「今すぐ」: 直させる
+            "ベッドはもう家にあるよ！夜になったら寝るね。",
+        ]
+        session = _playing()
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="ベッドで寝て", session=session, kind="advice")
+        )
+
+        assert response.text == "ベッドはもう家にあるよ！夜になったら寝るね。"
+        assert response.objective is None and len(session.plan.pending) == 2
+        assert not session.rethink_reason and not session.promised_now
+        first, second = [c.kwargs for c in mock_prompt_builder.build_final_reply_prompt.call_args_list]
+        assert "もう満たしている" in first["facts"] and "昼は寝られない" in first["facts"]
+        assert "already the case" in second["previous_error"]

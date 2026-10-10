@@ -32,7 +32,7 @@ from ailoveshen.application.use_cases.lessons import LessonBook, clean_keys, sit
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.foreign_speech import is_foreign_comment, mostly_japanese
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
-from ailoveshen.application.use_cases.reply_outcome import ALREADY, LATER, NOW, ReplyOutcome
+from ailoveshen.application.use_cases.reply_outcome import ALREADY, LATER, MET, NOW, ReplyOutcome
 from ailoveshen.application.use_cases.reply_facts import ReplyFactCheck
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
 from ailoveshen.application.use_cases.self_facts import SelfFacts
@@ -444,9 +444,15 @@ class GenerateResponseUseCase(IGenerateResponse):
                         logger.warning(f"返答 {attempt} は失敗中に助言を後回しにした: {data!r}")
                         continue
                     timing, when_note = self._timing(session, proposal)
-                    objective = await self._accept(
-                        session, request.user_name, proposal, suggestion
-                    )
+                    objective = None
+                    if await self._objectives.all_met(proposal.conditions):
+                        # 頼まれたことはもうできている: 大目標にも考え直しにもしない（2026-10-10 22:11:
+                        # ベッドは家にあるのに「ベッドで寝て」を大目標にして「今やるね」と言い、46 秒後に達成した）
+                        timing, when_note = MET, self._met_note(proposal)
+                    else:
+                        objective = await self._accept(
+                            session, request.user_name, proposal, suggestion
+                        )
                 except (ValueError, GoalRejectedError) as e:
                     # 返答が、プランに入らないものを受けている: それは決して言わせない
                     error = (
@@ -539,6 +545,13 @@ class GenerateResponseUseCase(IGenerateResponse):
         if current is not None:
             return LATER, f"今の大目標「{current.title}」のあとにやる（リストの順番どおり）。"
         return LATER, "リストの順番どおり、今のことのあとにやる。"
+
+    @staticmethod
+    def _met_note(proposal: ObjectiveProposal) -> str:
+        """もうできている頼みに添える、本当のこと。ベッドなら、寝るのは夜になってから。"""
+        if any(str(c.item).endswith("bed") or c.item == "bed" for c in proposal.conditions):
+            return "ベッドは家にある。寝られるのは夜になってからで（昼は寝られない）、夜になれば家のベッドで寝る。"
+        return ""
 
     @staticmethod
     def _accepted(proposal: ObjectiveProposal, timing: str, when_note: str) -> ReplyOutcome:

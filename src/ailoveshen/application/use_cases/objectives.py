@@ -714,6 +714,14 @@ class ObjectiveKeeper:
         blocks = await self._design_builds(proposal, max_blocks)
         return await self._add_objective(plan, proposal, requested_by, advice, blocks)
 
+    async def all_met(self, specs: Sequence[GoalSpec]) -> bool:
+        """条件がどれも、もう満たされているか（判定できなければ偽）。"""
+        try:
+            return bool(specs) and all(s.met for s in await self._bridge.check(specs))
+        except AILoveShenError as e:
+            logger.debug(f"条件を判定できなかった: {e}")
+            return False
+
     async def _designs_later(self, proposal: ObjectiveProposal) -> bool:
         """まだない建物があり、設計できる（家がある）なら真。家がなければ、ここで断る（設計しても必ず断られる）。"""
         if self._builder is None:

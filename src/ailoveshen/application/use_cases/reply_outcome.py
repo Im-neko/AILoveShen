@@ -16,6 +16,7 @@ from dataclasses import dataclass
 NOW = "now"  # 今の小目標を区切って今やる
 LATER = "later"  # 後でやる（夜が明けてから、今の作業のあと）
 ALREADY = "already"  # もう今していること
+MET = "met"  # 頼まれた条件が、もう満たされている（新しくやることがない）
 
 # 後でやると言う言い回し / 今すぐやると言う言い回し
 LATER_WORDS = re.compile(
@@ -65,6 +66,8 @@ class ReplyOutcome:
                 lines.append("いつ: 今すぐやる（今の小目標を区切って、これを先にやる）")
             elif self.timing == ALREADY:
                 lines.append("いつ: もう今していること（そのまま続ける）")
+            elif self.timing == MET:
+                lines.append(f"いつ: 新しくやることはない。この条件は、今もう満たしている。{self.when_note}")
             else:
                 lines.append(f"いつ: 今すぐではない。{self.when_note}")
         elif self.handling == "declined":
@@ -88,6 +91,14 @@ class ReplyOutcome:
     def mismatch(self, text: str) -> str:
         """文が結果と合わないとき、書き直させる理由（英語。合っていれば空文字列）。"""
         if self.handling == "accepted":
+            if self.timing == MET:
+                found = NOW_WORDS.search(text)
+                if found:
+                    return (
+                        f"The reply says {found.group(0)!r} (do it now), but it is already the case "
+                        "and there is nothing to do: say that it is already so."
+                    )
+                return ""
             if self.timing in (NOW, ALREADY):
                 found = LATER_WORDS.search(text)
                 if found:
@@ -119,6 +130,8 @@ class ReplyOutcome:
                 return f"{who}「{self.title}」、今やるね！"
             if self.timing == ALREADY:
                 return f"{who}「{self.title}」、ちょうど今やってるところだよ！"
+            if self.timing == MET:
+                return f"{who}「{self.title}」は、もうできてるよ！"
             return f"{who}「{self.title}」は{self.when_note.rstrip('。')}。"
         if self.handling == "declined":
             reason = DECLINE_PHRASES.get(self.decline_reason, "今はできない")
