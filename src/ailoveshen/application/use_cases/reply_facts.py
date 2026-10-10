@@ -16,6 +16,7 @@ from loguru import logger
 
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
+from ailoveshen.application.use_cases.speech_check import SpeechCheck
 from ailoveshen.domain.exceptions import AILoveShenError
 from ailoveshen.domain.value_objects import Activity, FastQuestion, FastQuestionKind
 
@@ -66,6 +67,7 @@ class ReplyFactCheck:
         min_confidence: float = 0.75,
         timeout_seconds: float = 2.0,
         recorder: IWatchRecorder | None = None,
+        place: SpeechCheck | None = None,
     ) -> None:
         """
         Args:
@@ -73,16 +75,42 @@ class ReplyFactCheck:
             min_confidence: 食い違うと言うのは、はいの確信度がこれ以上のときだけ
             timeout_seconds: Jev の答えを待つ上限（過ぎたらそのまま話す）
             recorder: 確かめた記録（返事の文ごと）
+            place: 返事が言う「今いる場所」（家の中か外か、地下か地上か）を今の状態と照らす。
+                None なら照らさない
         """
         self._judge = judge
         self._min = min_confidence
         self._timeout = timeout_seconds
         self._recorder = recorder
+        self._place = place
 
     async def problem(self, reply: str, activity: Optional[Activity]) -> str:
         """食い違いがあれば、書き直させる理由（なければ空）。"""
+        if not reply:
+            return ""
+        return await self._held_problem(reply, activity) or await self._place_problem(
+            reply, activity
+        )
+
+    async def _place_problem(self, reply: str, activity: Optional[Activity]) -> str:
+        """
+        返事が言う今いる場所が、実際と食い違うか。地上に出たあとも「地上へ出る道を…」と答えた
+        （2026-10-10 19:32: 家の中にいた。過去の会話と自分のメモの、地下で困っていた話に引きずられた）。
+        """
+        if self._place is None:
+            return ""
+        finding = await self._place.check(reply, activity, place_only=True)
+        if finding.ok:
+            return ""
+        return (
+            f"返事「{reply}」は今の状態と食い違っている: {'；'.join(finding.problems)}。"
+            "「今していること」の今いる場所・今の小目標・持ち物が事実で、過去の会話や自分のメモの"
+            "話は古いことがある。事実に合わせて言い直す。"
+        )
+
+    async def _held_problem(self, reply: str, activity: Optional[Activity]) -> str:
         held = holdings(activity)
-        if not held or not reply:
+        if not held:
             return ""
         state: dict[str, Any] = {"reply": reply, "holdings": held}
         try:

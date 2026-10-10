@@ -115,6 +115,10 @@ class TestPrompt:
             CharacterProfile(), "reply_requests"
         )
 
+    def test_the_reply_rules_say_the_state_now_beats_old_plans(self):
+        system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply")
+        assert "過去の会話や自分の\n  メモにある予定は古いことがある" in system
+
     def test_commentary_does_not_pick_up_a_comment_that_was_already_answered(self):
         system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "commentary")
         assert "返事済み" in system

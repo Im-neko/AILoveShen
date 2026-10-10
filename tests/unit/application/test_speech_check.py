@@ -1,6 +1,7 @@
 """SpeechCheck（発言を今の状態と照らす、設計書 65 §4）のテスト。"""
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -143,12 +144,47 @@ class TestCheck:
     async def test_only_questions_that_can_be_compared_are_asked(self):
         judge = _judge()
 
-        await SpeechCheck(judge).check("こんにちは", _activity(has_home=False, goal=False))
+        await SpeechCheck(judge).check("こんにちは", None)
         judge.ask.assert_not_called()
+
+        await SpeechCheck(judge).check("こんにちは", _activity(has_home=False, goal=False))
+        names = [q.name for q in judge.ask.call_args.args[1]]
+        assert names == ["claims_underground", "claims_on_surface"]
 
         await SpeechCheck(judge).check("こんにちは", _activity(has_home=False))
         names = [q.name for q in judge.ask.call_args.args[1]]
-        assert names == ["claims_goal_done", "contradicts_plan"]
+        assert names == ["claims_underground", "claims_on_surface", "claims_goal_done", "contradicts_plan"]
+
+    @pytest.mark.asyncio
+    async def test_a_reply_is_checked_only_for_where_she_is(self):
+        """返事は次の予定を答えてよい: 小目標とは照らさず、今いる場所だけ照らす。"""
+        judge = _judge()
+
+        await SpeechCheck(judge).check("次は石を掘るよ", _activity(), place_only=True)
+
+        names = [q.name for q in judge.ask.call_args.args[1]]
+        assert names == [
+            "claims_inside_home",
+            "claims_outside_home",
+            "claims_underground",
+            "claims_on_surface",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_saying_she_is_underground_on_the_surface_is_a_problem(self):
+        """実測（2026-10-10 19:32）: 家の中にいるのに「地上へ出る道をつなげていくね」と答えた。"""
+        judge = _judge(claims_underground=(True, 0.9))
+        finding = await SpeechCheck(judge).check(
+            "地上へ出る道をつなげていくね", _activity(inside_home=True), place_only=True
+        )
+        assert finding.problems == ("地下にいる・まだ地上に出ていないと言っているが、実際はもう地上にいる",)
+
+    @pytest.mark.asyncio
+    async def test_saying_she_is_out_of_the_ground_underground_is_a_problem(self):
+        judge = _judge(claims_on_surface=(True, 0.9))
+        activity = replace(_activity(), observation=replace(_activity().observation, underground=True))
+        finding = await SpeechCheck(judge).check("地上に出たよ", activity, place_only=True)
+        assert finding.problems == ("地上に出たと言っているが、実際はまだ地下にいる",)
 
     @pytest.mark.asyncio
     async def test_a_judge_that_fails_or_is_late_means_not_checked(self):

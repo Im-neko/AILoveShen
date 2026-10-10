@@ -45,6 +45,32 @@ CLAIMS_OUTSIDE_HOME = FastQuestion(
         "no": "The line does not say that.",
     },
 )
+CLAIMS_UNDERGROUND = FastQuestion(
+    name="claims_underground",
+    kind=FastQuestionKind.YES_NO,
+    instructions=(
+        "A game streamer says one short line aloud. Does the line say that the streamer is right now "
+        "underground (in a cave, a hole or a mine), has not got out to the surface yet, or is still "
+        "trying to get out of the ground? Plans and events that are over do not count."
+    ),
+    criteria={
+        "yes": "The line says she is underground now, or is still trying to reach the surface.",
+        "no": "The line does not say that, or says she is already out.",
+    },
+)
+CLAIMS_ON_SURFACE = FastQuestion(
+    name="claims_on_surface",
+    kind=FastQuestionKind.YES_NO,
+    instructions=(
+        "A game streamer says one short line aloud. Does the line say that the streamer is right now "
+        "on the surface, out of the cave or the hole, or has just come up out of the ground? Plans and "
+        "events that are over do not count."
+    ),
+    criteria={
+        "yes": "The line says she is on the surface now, or has just got out of the ground.",
+        "no": "The line does not say that.",
+    },
+)
 CLAIMS_GOAL_DONE = FastQuestion(
     name="claims_goal_done",
     kind=FastQuestionKind.YES_NO,
@@ -115,6 +141,7 @@ def speech_state(activity: Optional[Activity]) -> dict[str, Any]:
         if obs.has_home:
             state["inside_home"] = obs.inside_home
             state["home_distance_m"] = obs.home_distance_m
+        state["underground"] = obs.underground
         state["time_phase"] = obs.time_phase
         state["health"] = obs.health
     return state
@@ -139,13 +166,21 @@ class SpeechCheck:
         self._min_confidence = min_confidence
         self._timeout = timeout_seconds
 
-    async def check(self, text: str, activity: Optional[Activity]) -> SpeechFinding:
-        """文が、今の状態と食い違うことを言っていないか。"""
+    async def check(
+        self, text: str, activity: Optional[Activity], place_only: bool = False
+    ) -> SpeechFinding:
+        """
+        文が、今の状態と食い違うことを言っていないか。`place_only`: 今いる場所（家の中か外か、地下か地上か）
+        だけを照らす（チャットの返事: 次の予定を答える文は、今の小目標と違ってよい）。
+        """
         state = speech_state(activity)
         has_home = "inside_home" in state
-        has_goal = "current_goal" in state
+        has_goal = "current_goal" in state and not place_only
         questions = self.questions(
-            has_home=has_home, has_goal=has_goal, goal_met=bool(state.get("goal_met"))
+            has_home=has_home,
+            has_goal=has_goal,
+            goal_met=bool(state.get("goal_met")),
+            has_place="underground" in state,
         )
         if not questions:
             return SpeechFinding()
@@ -166,7 +201,7 @@ class SpeechCheck:
 
     @staticmethod
     def questions(
-        *, has_home: bool, has_goal: bool, goal_met: bool = False
+        *, has_home: bool, has_goal: bool, goal_met: bool = False, has_place: bool = False
     ) -> tuple[FastQuestion, ...]:
         """
         状態に照らして意味のある質問（家がなければ場所は、小目標がなければ小目標は聞かない。小目標が
@@ -175,6 +210,8 @@ class SpeechCheck:
         out: list[FastQuestion] = []
         if has_home:
             out += [CLAIMS_INSIDE_HOME, CLAIMS_OUTSIDE_HOME]
+        if has_place:
+            out += [CLAIMS_UNDERGROUND, CLAIMS_ON_SURFACE]
         if has_goal:
             out += [CONTRADICTS_PLAN] if goal_met else [CLAIMS_GOAL_DONE, CONTRADICTS_PLAN]
         return tuple(out)
@@ -202,6 +239,11 @@ def problems_of(
             problems.append(f"家の中にいる・入ったと言っているが、実際は家の外（{where}）")
         if says("claims_outside_home") and state["inside_home"]:
             problems.append("家の外にいる・出たと言っているが、実際は家の中")
+    if "underground" in state:
+        if says("claims_underground") and not state["underground"]:
+            problems.append("地下にいる・まだ地上に出ていないと言っているが、実際はもう地上にいる")
+        if says("claims_on_surface") and state["underground"]:
+            problems.append("地上に出たと言っているが、実際はまだ地下にいる")
     goal = state.get("current_goal")
     if goal is not None:
         if says("claims_goal_done") and not state.get("goal_met"):

@@ -17,6 +17,7 @@ from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.application.use_cases.reply_facts import ReplyFactCheck
+from ailoveshen.application.use_cases.speech_check import SpeechCheck
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.value_objects import Activity, CharacterProfile
@@ -189,13 +190,15 @@ def create_fact_check(
         JsonlWatchRecorder,
     )
 
+    judge = JevFastJudge(
+        api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
+    )
     return ReplyFactCheck(
-        judge=JevFastJudge(
-            api_key=jev.api_key, model=jev.model, timeout_seconds=jev.timeout_seconds
-        ),
+        judge=judge,
         recorder=JsonlWatchRecorder(str(base_dir / twitch.fact_record_dir))
         if twitch.fact_record_dir
         else None,
+        place=SpeechCheck(judge),
     )
 
 

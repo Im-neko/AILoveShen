@@ -84,3 +84,41 @@ async def test_a_failing_or_slow_jev_is_spoken_as_is():
     check, judge, _ = _check(True)
     judge.ask.side_effect = slow
     assert await check.problem("鉄はない", _activity()) == ""
+
+
+@pytest.mark.asyncio
+async def test_a_reply_that_puts_her_underground_when_she_is_home_comes_back_with_the_place():
+    """実測（2026-10-10 19:32）: 家の中にいるのに「地上へ出る道をつなげていくね」と答えた。"""
+    from ailoveshen.application.use_cases.speech_check import SpeechCheck
+
+    judge = AsyncMock()
+    judge.ask.return_value = FastVerdict(
+        answers={"claims_underground": FastAnswer("claims_underground", True, 0.9)}, elapsed_ms=30
+    )
+    obs = GameObservation(
+        state={}, candidates=(), health=20.0, food=20, has_home=True, inside_home=True
+    )
+    check = ReplyFactCheck(AsyncMock(), place=SpeechCheck(judge))
+
+    problem = await check.problem(
+        "地上へ出る道をつなげていくね", Activity(observation=obs)
+    )
+
+    assert "地下にいる・まだ地上に出ていないと言っているが、実際はもう地上にいる" in problem
+    assert "事実に合わせて言い直す" in problem
+    names = [q.name for q in judge.ask.call_args.args[1]]
+    assert "contradicts_plan" not in names  # 返事は次の予定を答えてよい
+
+
+@pytest.mark.asyncio
+async def test_a_reply_that_fits_the_place_is_spoken_as_is():
+    from ailoveshen.application.use_cases.speech_check import SpeechCheck
+
+    judge = AsyncMock()
+    judge.ask.return_value = FastVerdict(
+        answers={"claims_underground": FastAnswer("claims_underground", False, 0.9)}, elapsed_ms=30
+    )
+    obs = GameObservation(state={}, candidates=(), health=20.0, food=20, has_home=True)
+    check = ReplyFactCheck(AsyncMock(), place=SpeechCheck(judge))
+
+    assert await check.problem("朝になったら石を掘るよ", Activity(observation=obs)) == ""
