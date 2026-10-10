@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
-import { createRunner, abortCurrent } from '../src/runner.mjs'
+import { createRunner, abortCurrent, ESCAPE_VERBS } from '../src/runner.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -239,4 +239,23 @@ test('深い地下では、夕方・夜になっても止めない。浅い所�
   const cave = shallow.run({ verb: 'dig_mine' }, 'dig the mine')
   setTimeout(() => { shallow.bot.time.timeOfDay = 12500 }, 100)
   assert.match((await cave).result, /^failed: stopped: it is dusk now and going on is too dangerous/)
+})
+
+test('穴から出る行動は、考え直しでは止めない（出たあとに効く）。見張りなどほかの理由では止める', async () => {
+  for (const verb of ['climb_out', 'leave_burrow', 'surface']) {
+    assert.ok(ESCAPE_VERBS.has(verb), verb)
+    const { state, run } = setup({ [verb]: waitsForAbort })
+    const running = run({ verb, target: 'the hole' }, verb)
+    const skipped = await abortCurrent(state, 'rethink: you told a viewer you would do something now')
+    assert.equal(skipped.aborted, false, verb)
+    assert.match(skipped.why, /waits until you are out/)
+    assert.equal(state.busy, true, '行動は続いている')
+    assert.deepEqual(await abortCurrent(state, 'woke up: 敵が近い'), { aborted: true, action: verb })
+    await running
+  }
+  // 出る行動でなければ、考え直しで止まる
+  const { state, run } = setup({ dig: waitsForAbort })
+  const running = run({ verb: 'dig', pos: new Vec3(3, 70, 4), target: 'oak_log' }, 'dig oak_log')
+  assert.equal((await abortCurrent(state, 'rethink: x')).aborted, true)
+  await running
 })

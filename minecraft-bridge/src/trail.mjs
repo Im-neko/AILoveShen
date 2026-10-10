@@ -17,8 +17,13 @@ const RETRY_MS = 10000 // 置けなかったあと、また試すまで
 const RETRY_SWAPPED_MS = 1000 // 行動に持ち替えられて置かなかったとき（松明は置けるので早く試す）
 
 // 途中で松明を置いてよい行動（歩く・掘る）。dig_mine は自分で置く。戦う・逃げる・食べる・寝るなどは置かない
+// 縦穴を掘り上がる行動（leave_burrow / climb_out / dig_out / surface）も含める: 暗い竪穴を数分登っても松明を置かず、真っ暗のままだった
+// （2026-10-10 14:33、岩の中を素手で掘り上がった）
 export const TRAIL_VERBS = new Set(['goto_pos', 'goto_memory', 'go_home', 'explore', 'survey', 'recover_items', 'sleep_at',
-  'dig', 'dig_down', 'pickup', 'level'])
+  'dig', 'dig_down', 'pickup', 'level', 'leave_burrow', 'climb_out', 'dig_out', 'surface'])
+// 置いたあと、この距離（m）以内では置き直さない。竪穴を登ると、足元の松明は足場を置くときに壊される（home.mjs jumpAndPlace）ので、
+// 暗いまま 1 段ごとに置き直して松明を使い切らないように
+export const TORCH_MIN_GAP = 5
 
 // 暗い所へ入る前に持っているべき松明の数: 行き先までの距離から（ブリッジの goto と dig_down が断る）
 export function torchesNeeded (meters) {
@@ -56,14 +61,16 @@ export async function placeTrailTorch (bot, state, dark = isDark) {
 }
 
 // 行動の間、定期的に見て置く。返すのは止める関数
-export function startTrail (bot, state, log = console.log) {
+export function startTrail (bot, state, log = console.log, dark = isDark) {
   let busy = false
   let retryAt = 0
+  let last = null
   const timer = setInterval(() => {
     if (busy || Date.now() < retryAt) return
+    if (last && bot.entity.position.distanceTo(last) < TORCH_MIN_GAP) return
     busy = true
-    placeTrailTorch(bot, state)
-      .then((spot) => { if (spot) log(`[trail] 暗い所に松明を置いた: ${spot.x},${spot.y},${spot.z}`) })
+    placeTrailTorch(bot, state, dark)
+      .then((spot) => { if (spot) { last = spot.offset(0.5, 0, 0.5); log(`[trail] 暗い所に松明を置いた: ${spot.x},${spot.y},${spot.z}`) } })
       .catch((e) => {
         retryAt = Date.now() + (e.swapped ? RETRY_SWAPPED_MS : RETRY_MS)
         log(`[trail] 松明を置けなかった: ${e.message}`)

@@ -154,10 +154,16 @@ export function createRunner (bot, state, deps = {}) {
   }
 }
 
-// 実行中の行動を理由をつけて止める（POST /abort）。行動がないか、もう止まっていれば何もしない
+// 閉じた所・縦穴から出る行動。途中で考え直しに止められると、岩の中の縦穴に残る（2026-10-10 14:31、climb_out が 71 秒登ったところで
+// 「区画間の道を整備して」の考え直しに止められ、そのあと穴の中で作業台へ戻ろうとして No path を繰り返した）
+export const ESCAPE_VERBS = new Set(['leave_burrow', 'climb_out', 'dig_out', 'surface', 'reach_land'])
+
+// 実行中の行動を理由をつけて止める（POST /abort）。行動がないか、もう止まっていれば何もしない。
+// 考え直し（rethink:）は、出る行動の間は待たせる（依頼は消えず、出たあとの切れ目で効く）
 export async function abortCurrent (state, reason) {
   const current = state.current
   if (!current) return { aborted: false, why: 'no action is running' }
+  if (/^rethink:/.test(reason) && ESCAPE_VERBS.has(current.verb)) return { aborted: false, why: `getting out of the hole (${current.verb}): the rethink waits until you are out` }
   if (!current.abort(reason)) return { aborted: false, why: 'the action is already stopping' }
   await current.done
   return { aborted: true, action: current.id }

@@ -1455,9 +1455,12 @@ export const PRIMITIVES = {
       try {
         await goNear(bot, table.position, 3, signal)
       } catch (e) {
-        // 壁の向こうの作業台へ歩こうとして届かない（閉じた縦穴の中で、持っている作業台を置かずに No path）
-        if (!carried || /abort/i.test(e.message)) throw e
-        throw new Error(`${e.message} (the crafting table at ${table.position.x},${table.position.y},${table.position.z} cannot be reached; you carry a crafting_table: place it next to you (place) and craft again)`)
+        // 壁の向こうの作業台へ歩こうとして届かない（閉じた縦穴の中で、持っている作業台を置かずに No path）。
+        // 持っていなくても、板 4 枚で作れる（2026-10-10: 縦穴を登った 18 m 上から、下に置いた作業台へ No path を 4 回繰り返した）
+        const planks = bot.inventory.items().filter((i) => i.name.endsWith('_planks')).reduce((n, i) => n + i.count, 0)
+        if ((!carried && planks < 4) || /abort/i.test(e.message)) throw e
+        const where = `the crafting table at ${table.position.x},${table.position.y},${table.position.z} cannot be reached`
+        throw new Error(`${e.message} (${where}; ${carried ? 'you carry a crafting_table' : 'craft a crafting_table from 4 planks'}: place it next to you (place) and craft again)`)
       }
     }
     const before = itemCount(bot, c.item)
