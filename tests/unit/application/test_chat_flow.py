@@ -115,6 +115,10 @@ class TestPrompt:
             CharacterProfile(), "reply_requests"
         )
 
+    def test_commentary_does_not_pick_up_a_comment_that_was_already_answered(self):
+        system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "commentary")
+        assert "返事済み" in system
+
 
 @pytest.mark.asyncio
 async def test_the_reply_is_recorded_as_an_answer_to_the_viewer_and_the_comment_keeps_its_arrival_time():
