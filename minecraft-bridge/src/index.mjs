@@ -18,6 +18,7 @@
 //                             （docs/design/25_builds.md。原点はアンカーから決める。守るものに掛かれば 400 と理由）
 //   GET  /builds           -> [{ name, purpose, title?, anchor, placed, total, complete, origin }]
 //   PUT  /titles           -> { titles: { <建物・施設の名前>: <呼び名> } } 呼び名をつける（視聴者に見せ、話す名前。識別子は変えない。設計書 160）。{ set, refused }
+//   PUT  /roads            -> { strips: [{min_x, min_z, max_x, max_z}] } 敷く道の細い列を受け取る（roads.mjs、設計書 167）。{ strips }
 //   GET  /facilities       -> 施設（設計書 47 §5）: [{ name, kind, status, box, entrance?, center, distance_m, direction, contents }]
 //                             （今ある家・建物・畑・植えた苗木を先に取り込む）
 //   PUT  /facilities/<name> {kind, zones, boxes, purpose, design} -> 施設を設計どおりに登録する（畑: crop, width, depth、植林場: sapling, count, spacing、採掘場: bottom_y, tunnels, tunnel_length。設計書 47 §16）。
@@ -76,6 +77,7 @@ import { startMirror } from './mirror.mjs'
 import { watchVehicle } from './boat.mjs'
 import { registerBuild, buildsStatus, BuildError } from './builds.mjs'
 import { titlesOf, setTitles } from './titles.mjs'
+import { setRoads } from './roads.mjs'
 import { adoptExisting, facilitiesStatus, registerFacility, updateStatus, FacilityError, cropFarms, farmSummary, mineSummaries, mineBodyReason } from './facilities.mjs'
 import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
@@ -154,6 +156,7 @@ const state = {
   unreachableDrops: new Set(),
   unreachableBlocks: new Set(),
   formerHomes: [], // 引っ越す前の家（壊さない）
+  roads: null, // 敷く道の細い列（roads.mjs。設計書 167）
   builds: {}, // 名前付きの建物（builds.mjs）
   conditions: {}, // Gemini が書いた判定 custom(name)（conditions.mjs）
   survey: null, // 街の候補地の調査の計画（survey.mjs）
@@ -558,6 +561,16 @@ async function handle (req, res) {
   }
   if (req.method === 'GET' && req.url === '/builds') {
     return send(res, 200, buildsStatus(bot, state))
+  }
+  if (req.method === 'PUT' && req.url === '/roads') {
+    // 敷く道の細い列（設計書 167）。前のものは置き換える
+    try {
+      const n = setRoads(state, (await readJson(req)).strips)
+      persist()
+      return send(res, 200, { strips: n })
+    } catch (e) {
+      return send(res, 400, { error: e.message })
+    }
   }
   if (req.method === 'PUT' && req.url === '/titles') {
     const result = setTitles(state, (await readJson(req)).titles)

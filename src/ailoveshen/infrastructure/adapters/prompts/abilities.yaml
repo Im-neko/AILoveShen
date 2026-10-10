@@ -338,6 +338,17 @@
   tools: [craft, place]
   see: [place_things]
 
+- key: town_roads
+  title: 街の道を敷く
+  words: road path street town lay dirt_path shovel avenue
+  when: 街の理想図に道（=）があって、まだ敷いていないとき。建物を増やす前に道を通したいとき
+  how: |
+    道は理想図でコードが先に決めてある（家から東西南北の大通りと、施設への枝）。施設は道に面した区画に作る
+    敷くのは、石以上のシャベル（have(stone_shovel)）を持ったときに出る候補「lay the dirt path of the town's roads」
+    （do_suggestion）。近い順に、草や土をシャベルで土の道にする。水・木・家・畑の上は敷かない
+  tools: [do_suggestion]
+  see: [level_ground]
+
 - key: level_ground
   title: 整地する
   words: level flatten ground terrain dig fill

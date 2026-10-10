@@ -153,6 +153,8 @@ async def test_the_map_is_drawn_once_after_the_town_retrying_a_bad_answer():
 
     assert plan.town_map.zone("A2").use == "road" and plan.town_map.zone("A2").fixed
     assert plan.town_map.zone("B2").use == "farm"
+    planner._bridge.set_roads.assert_awaited_once()  # 敷く道の列をブリッジに送る（設計書 167）
+    assert planner._bridge.set_roads.await_args.args[0]
     assert plan.town_map.concept == "家のそばに畑"
     assert text_generator.generate_json.call_args.kwargs["purpose"] == "town_plan"
     assert "A1 is fixed" in text_generator.generate_json.call_args.args[0]

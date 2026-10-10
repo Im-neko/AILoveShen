@@ -116,6 +116,7 @@ _BY_VERB: dict[str, Callable[[dict[str, Any], str], str]] = {
     "toss": lambda d, cid: "いらない物を捨てる",
     "use_item": lambda d, cid: f"{item_name(d.get('item'))}を使う" if d.get("item") else "アイテムを使う",
     "clear_room": lambda d, cid: "家の中のいらない石や板材を片付ける",
+    "pave": lambda d, cid: "街の道を敷く",
     "wait": lambda d, cid: _wait_label(cid),
     "wake_sleeper": _with("寝ている{thing}を起こす"),
     "wall_in": lambda d, cid: "土で囲って朝を待つ",

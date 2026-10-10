@@ -44,6 +44,7 @@ import { placeFaces } from './place-faces.mjs'
 import { leaveRoute } from './exit-route.mjs'
 import { bedBlockers } from './bed-access.mjs'
 import { strayBlocks } from './room-clear.mjs'
+import { roadStatus, SHOVELABLE } from './roads.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder, piledUnder, climbExit, dropOffs, forgetRegion } from './reach.mjs'
 import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
@@ -308,6 +309,7 @@ class GoalAwayFrom extends goals.Goal {
   }
 }
 
+const PAVE_MAX = 60 // pave が 1 回で敷くマスの上限
 const goNear = (bot, pos, range, signal) => goto(bot, new goals.GoalNear(pos.x, pos.y, pos.z, range), signal)
 
 // 作業台やかまどを置ける場所: [{ pos, where: 'inside' | 'nearby' }]。どちらに置くかは選ぶ側
@@ -1894,6 +1896,43 @@ export const PRIMITIVES = {
     }
     if (left.length) state.clearRoomBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
     return `cleared ${cleared} blocks out of the room (${[...summary].map(([n, k]) => `${n} x${k}`).join(', ')})${left.length ? `; ${left.length} left that could not be dug` : ''}`
+  },
+  // 計画した道を、シャベルで土の道にする（roads.mjs）。近い順に、1 回で最大 PAVE_MAX マス
+  async pave (bot, state, c, signal) {
+    let laid = 0
+    let unreachable = 0
+    const tries = new Map()
+    let ended = ''
+    for (; laid + unreachable < PAVE_MAX;) {
+      signal.throwIfAborted()
+      const s = roadStatus(bot, state, { fresh: true })
+      const me = bot.entity.position
+      const next = s?.todo.filter((p) => (tries.get(`${p.x},${p.z}`) ?? 0) < 2).sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0]
+      if (!next) break
+      const shovel = bot.inventory.items().find((i) => /_shovel$/.test(i.name))
+      if (!shovel) { ended = '; the shovel is gone (broke): carry another to go on'; break }
+      const k = `${next.x},${next.z}`
+      tries.set(k, (tries.get(k) ?? 0) + 1)
+      try {
+        if (!withinReach(bot, next)) await goto(bot, new goals.GoalLookAtBlock(next, bot.world, { reach: REACH }), signal)
+        const above = bot.blockAt(next.offset(0, 1, 0))
+        if (above && above.name !== 'air' && above.boundingBox === 'empty') await bot.dig(above, true)
+        const ground = bot.blockAt(next)
+        if (!ground || !SHOVELABLE.test(ground.name)) continue
+        await bot.equip(shovel, 'hand')
+        await bot.lookAt(next.offset(0.5, 1, 0.5), true)
+        await bot.activateBlock(ground, new Vec3(0, 1, 0), new Vec3(0.5, 1, 0.5))
+        await bot.waitForTicks(4)
+        if (bot.blockAt(next)?.name === 'dirt_path') laid++
+      } catch (e) {
+        if (signal.aborted) throw e
+        if (!isNoPath(e)) throw e
+        unreachable++
+      }
+    }
+    if (!laid) throw new Error(`could not lay any path${unreachable ? ` (${unreachable} cells out of reach)` : ''}${ended}`)
+    const left = roadStatus(bot, state, { fresh: true })
+    return `laid ${laid} cells of dirt path${left?.todo.length ? `; ${left.todo.length} cells of the roads are still bare` : '; the planned roads are all laid'}${ended}`
   },
   async defrag (bot, state, c, signal) {
     await enterHome(bot, state.home, signal)

@@ -183,6 +183,14 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def set_roads(self, strips: list[dict[str, int]]) -> None:
+        """
+        敷く道の細い列（ワールドの座標、両端を含む四角 {min_x, min_z, max_x, max_z}。設計書 167）を送る。
+        前に送ったものは置き換わる。ブリッジが、まだ敷いていない所へ敷く手を出す。
+        """
+        ...
+
+    @abstractmethod
     async def zones(self, x: int, z: int) -> list[dict[str, Any]]:
         """
         街の理想図の区画の地形（docs/design/47 §6。中心 x, z から 12 x 12、1 区画 8 ブロック）:

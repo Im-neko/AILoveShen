@@ -70,6 +70,7 @@ export function saveState (state) {
     // 植えた場所（設計書 33）。前は保存しておらず、再起動で planted が 0 から数え直しになった
     plantings: state.plantings ?? [],
     facilities: state.facilities ?? {}, // 施設（facilities.mjs。設計書 47）
+    roads: state.roads ?? null, // 敷く道の細い列（roads.mjs。設計書 167）
     // 自分で置いた物と、最近掘った跡（ledger.mjs。docs/design/55）
     placed: state.placed ?? {},
     dug: state.dug ?? [],
@@ -97,6 +98,7 @@ export function loadState (state) {
   if (data.conditions) state.conditions = data.conditions
   if (data.plantings) state.plantings = data.plantings
   if (data.facilities) state.facilities = data.facilities
+  if (data.roads) state.roads = data.roads
   if (data.placed) state.placed = data.placed
   if (data.dug) state.dug = data.dug
   if (data.quarry) state.quarry = data.quarry

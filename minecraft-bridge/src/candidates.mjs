@@ -19,6 +19,7 @@ import { leakingHoles } from './ledger.mjs'
 import { sleepersInBeds } from './sleepers.mjs'
 import { leaveRoute } from './exit-route.mjs'
 import { strayBlocks, describeStrays } from './room-clear.mjs'
+import { paveCandidate } from './roads.mjs'
 import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked, protectedReason } from './home.mjs'
 import { inBurrow, inOpenShaft, burrowSpotCached } from './burrow.mjs'
 import { campSiteCached, campCount } from './camp.mjs'
@@ -75,6 +76,7 @@ export function ground (bot, state, knowledge, world, status) {
   out.push(...tidyUp(bot, state, knowledge, world, status))
   out.push(...defragUp(bot, state))
   out.push(...clearRoomUp(bot, state))
+  out.push(...paveCandidate(bot, state, dist))
   const home = state.home
   const { inside, day, danger, sheltering, why } = shelterOf(bot, home)
   // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている

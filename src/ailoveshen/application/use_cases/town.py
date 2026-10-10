@@ -23,6 +23,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.town_map import apply_areas, draw_base, town_map_schema
+from ailoveshen.application.use_cases.town_roads import road_strips
 from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     HouseDesignedEvent,
@@ -220,6 +221,10 @@ class TownPlanner:
                 continue
             plan.set_town_map(town_map)
             self._store.save(plan)
+            try:
+                await self._bridge.set_roads(road_strips(list(town_map.zones)))
+            except GameBridgeError as e:
+                logger.warning(f"道の列をブリッジに送れなかった（次に描くときに送る）: {e}")
             used = {u: len(zs) for u, zs in town_map.by_use().items()}
             logger.info(f"街の理想図を描いた（{reason}）: {town_map.concept} / {used}")
             await self._event_publisher.publish(

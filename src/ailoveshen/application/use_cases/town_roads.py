@@ -122,3 +122,50 @@ def with_roads(base: list[Zone], roads: list[str]) -> list[Zone]:
 def touches_road(zone_id: str, zones: dict[str, Zone]) -> bool:
     """区画が、道の区画と辺で隣り合うか。"""
     return any(zones[n].use == "road" for n in neighbours(zone_id) if n in zones)
+
+
+ROAD_WIDTH = 3  # 敷く道の幅（ブロック）
+
+
+def road_strips(zones: list[Zone]) -> list[dict[str, int]]:
+    """
+    敷く道の細い列（ワールドの座標、両端を含む四角）。道の区画の真ん中に幅 ROAD_WIDTH の四角を置き、
+    隣り合う道の区画の真ん中どうしを、同じ幅の四角でつなぐ。区画（8 ブロック）の中を通る細い道になる。
+    道の区画に面した施設（固定の区画）には、その区画の縁まで延ばす。
+    """
+    by_id = {z.id: z for z in zones}
+    roads = [z for z in zones if z.use == "road"]
+    half = ROAD_WIDTH // 2
+
+    def middle(z: Zone) -> tuple[int, int]:
+        return (z.min_x + z.max_x) // 2, (z.min_z + z.max_z) // 2
+
+    def rect(x0: int, z0: int, x1: int, z1: int) -> dict[str, int]:
+        return {"min_x": min(x0, x1) - half, "min_z": min(z0, z1) - half, "max_x": max(x0, x1) + half, "max_z": max(z0, z1) + half}
+
+    out: list[dict[str, int]] = []
+    for z in roads:
+        cx, cz = middle(z)
+        out.append(rect(cx, cz, cx, cz))
+        for n_id in neighbours(z.id):
+            n = by_id.get(n_id)
+            if n is None:
+                continue  # 地図の外
+            if n.use == "road":
+                if n_id > z.id:  # 道どうしは片方の側だけ数える
+                    out.append(rect(cx, cz, *middle(n)))
+            elif n.fixed and n.use != "unusable":
+                out.append(rect(cx, cz, *_edge_toward(z, n)))
+    return out
+
+
+def _edge_toward(z: Zone, target: Zone) -> tuple[int, int]:
+    """z の真ん中から target の方向へ、z の縁（target との境）までの点。"""
+    cx, cz = (z.min_x + z.max_x) // 2, (z.min_z + z.max_z) // 2
+    if target.min_x > z.max_x:
+        return z.max_x, cz
+    if target.max_x < z.min_x:
+        return z.min_x, cz
+    if target.min_z > z.max_z:
+        return cx, z.max_z
+    return cx, z.min_z

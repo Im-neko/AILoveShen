@@ -82,3 +82,20 @@ def test_no_home_starts_from_the_middle_and_no_free_zone_means_no_road():
     assert roads and roads[0] in {"F6", "G6", "F7", "G7"}
     solid = _grid({zone_name(c, r): ("unusable", "") for r in range(3) for c in range(3)}, size=3)
     assert plan_roads(solid) == []
+
+
+def test_strips_are_three_wide_through_the_middle_of_each_road_zone_and_join_neighbours():
+    from ailoveshen.application.use_cases.town_roads import road_strips
+
+    base = _grid({"F6": ("home", "home")})
+    zones = with_roads(base, ["G6", "H6", "G7"])
+    strips = road_strips(zones)
+    g6 = next(z for z in zones if z.id == "G6")
+    cx, cz = (g6.min_x + g6.max_x) // 2, (g6.min_z + g6.max_z) // 2
+    assert {"min_x": cx - 1, "min_z": cz - 1, "max_x": cx + 1, "max_z": cz + 1} in strips
+    # G6-H6（東西）は、真ん中どうしを結ぶ 3 幅の四角: 幅 3、長さ 8 + 2
+    link = next(s for s in strips if s["max_x"] - s["min_x"] == 8 + 2 and s["max_z"] - s["min_z"] == 2)
+    assert link["min_x"] == cx - 1
+    # 家に面した G6 は、家の区画の縁（西側）まで延びる
+    assert any(s["min_x"] <= g6.min_x for s in strips)
+    assert len(strips) == 3 + 2 + 1  # 区画 3 + 道どうし 2（G6-H6、G6-G7）+ 家へ 1
