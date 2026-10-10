@@ -18,6 +18,7 @@ import { standingCell, round, bearing, dayPhase, burningInDaylight, isDark, isUn
 import { leakingHoles } from './ledger.mjs'
 import { sleepersInBeds } from './sleepers.mjs'
 import { leaveRoute } from './exit-route.mjs'
+import { strayBlocks, describeStrays } from './room-clear.mjs'
 import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked, protectedReason } from './home.mjs'
 import { inBurrow, inOpenShaft, burrowSpotCached } from './burrow.mjs'
 import { campSiteCached, campCount } from './camp.mjs'
@@ -73,6 +74,7 @@ export function ground (bot, state, knowledge, world, status) {
   out.push(...windfallNow(bot, state, knowledge), ...windfallTrips(bot, state, knowledge))
   out.push(...tidyUp(bot, state, knowledge, world, status))
   out.push(...defragUp(bot, state))
+  out.push(...clearRoomUp(bot, state))
   const home = state.home
   const { inside, day, danger, sheltering, why } = shelterOf(bot, home)
   // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている
@@ -771,6 +773,23 @@ function tidyUp (bot, state, knowledge, world, status) {
     else return []
   }
   return [{ id: "put the things you do not need now in the home's chest", verb: 'tidy', target: 'chest', pos, stow, kinds: stow.length, distance: dist(bot, pos), purpose: why || 'dying drops everything you carry, and it is gone in 5 minutes: keep only what the goal, your defence and your food need' }]
+}
+
+// 家の部屋に、いらないブロック（置いた丸石・土・計画にない板材）が残っていれば、片付ける（room-clear.mjs）
+function clearRoomUp (bot, state) {
+  if (!state.home || !isInside(bot, state.home)) return []
+  if (state.clearRoomBlockedUntil && Number(bot.time.age) < state.clearRoomBlockedUntil) return []
+  const strays = strayBlocks(bot, state)
+  if (!strays.length) return []
+  return [{
+    id: `clear the stray blocks out of the home (${strays.length}: ${describeStrays(bot, strays)})`,
+    verb: 'clear_room',
+    target: 'home',
+    inPlace: true,
+    pos: strays[0],
+    distance: dist(bot, strays[0]),
+    purpose: 'blocks you piled or left inside the room (not the walls, furniture or planned blocks) crowd it and can shut in the bed: dig them out'
+  }]
 }
 
 // 家のチェストが複数あって、散らばっているか半端なスタックがあれば、まとめる（storage.mjs）。家の中で、

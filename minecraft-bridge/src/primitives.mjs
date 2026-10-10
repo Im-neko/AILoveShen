@@ -43,6 +43,7 @@ import { isSwimming, swimToward } from './swim.mjs'
 import { placeFaces } from './place-faces.mjs'
 import { leaveRoute } from './exit-route.mjs'
 import { bedBlockers } from './bed-access.mjs'
+import { strayBlocks } from './room-clear.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder, piledUnder, climbExit, dropOffs, forgetRegion } from './reach.mjs'
 import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
@@ -1861,6 +1862,39 @@ export const PRIMITIVES = {
   },
   // 家のチェストの中身をまとめる（同じ物を 1 つのチェストに、半端なスタックを 1 つに: storage.mjs）。
   // 終わったら、中身の署名を覚えて、中身が変わるまで出さない
+  // 家の部屋のいらないブロックを掘って片付ける（room-clear.mjs）。手が届けば、経路がなくてもその場で掘る
+  async clear_room (bot, state, c, signal) {
+    let cleared = 0
+    const tries = new Map()
+    const summary = new Map()
+    for (;;) {
+      signal.throwIfAborted()
+      const next = strayBlocks(bot, state).find((p) => (tries.get(`${p.x},${p.y},${p.z}`) ?? 0) < 2)
+      if (!next) break
+      const k = `${next.x},${next.y},${next.z}`
+      tries.set(k, (tries.get(k) ?? 0) + 1)
+      const block = bot.blockAt(next)
+      if (!bot.canDigBlock?.(block)) {
+        try {
+          await goto(bot, new goals.GoalNear(next.x, next.y, next.z, 3), signal)
+        } catch (e) {
+          if (signal.aborted || !isNoPath(e)) throw e
+        }
+      }
+      await equipToolFor(bot, state, block)
+      summary.set(block.name, (summary.get(block.name) ?? 0) + 1)
+      await bot.dig(bot.blockAt(next), true)
+      cleared++
+    }
+    await collectNearbyDrops(bot, state, signal)
+    const left = strayBlocks(bot, state)
+    if (!cleared) {
+      state.clearRoomBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
+      throw new Error('nothing to clear in the room')
+    }
+    if (left.length) state.clearRoomBlockedUntil = Number(bot.time.age) + 5 * 60 * 20
+    return `cleared ${cleared} blocks out of the room (${[...summary].map(([n, k]) => `${n} x${k}`).join(', ')})${left.length ? `; ${left.length} left that could not be dug` : ''}`
+  },
   async defrag (bot, state, c, signal) {
     await enterHome(bot, state.home, signal)
     const positions = homeChests(state.memory, state.home).map((r) => new Vec3(r.x, r.y, r.z))
