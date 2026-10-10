@@ -4,7 +4,7 @@ import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
 import { ground } from '../src/candidates.mjs'
-import { spareStacks, canHold, isTossable, isTossed } from '../src/spare.mjs'
+import { spareStacks, canHold, isTossable, isTossed, reserveFor, mineInProgress } from '../src/spare.mjs'
 import { nearbyDrops, PRIMITIVES, fight } from '../src/primitives.mjs'
 import { createTools } from '../src/tools.mjs'
 
@@ -176,4 +176,43 @@ test('家の中でチェストがあれば、捨てずに預ける（storeSpare�
   assert.ok(!verbs(stateOf({ home, memory: { chests: [chest] } })).includes('toss'))
   assert.ok(verbs(stateOf({ home, memory: { chests: [chest] } })).includes('deposit'))
   assert.ok(verbs(stateOf({ home, memory: { chests: [] } })).includes('toss'))
+})
+
+// 枝掘りの間は、空洞（洞窟）に当たったときに塞ぐ丸石を残す（2026-10-10: 丸石 102 と深層岩の丸石 38 を捨てた）
+const mineOf = (status, extra = {}) => ({ facilities: { mine_1: { kind: 'mine', status, layout: { cells: [{ x: 0, y: 0, z: 0, h: 2, part: 'stairs' }], ...extra } } } })
+
+test('枝掘りの採掘場がある間は、丸石と深層岩の丸石を 256 個まで残す。掘り終えたか、なければ今までどおり 64', () => {
+  assert.equal(mineInProgress(mineOf('building')), true)
+  assert.equal(mineInProgress(mineOf('done')), false)
+  assert.equal(mineInProgress(mineOf('building', { exhausted: true })), false) // 掘り尽くして鉱石が出なかった
+  assert.equal(mineInProgress({ facilities: {} }), false)
+  const held = { cobblestone: 300, cobbled_deepslate: 100, granite: 24, dirt: 100 }
+  const spare = (state) => Object.fromEntries(spareStacks(botWith(held), new Set(), reserveFor(state)).map((s) => [s.item, s.count]))
+  assert.deepEqual(spare(mineOf('building')), { cobblestone: 44, granite: 24, dirt: 36 }) // 深層岩の丸石 100 は全部残す
+  assert.deepEqual(spare(mineOf('done')), { cobblestone: 236, cobbled_deepslate: 100, granite: 24, dirt: 36 })
+})
+
+test('捨てる道具: 枝掘りの間は、丸石を残す数を割って捨てない。余りの全部を捨てるときも残す', async () => {
+  const { callTool, runs } = toolsOf(botWith({ cobblestone: 200, cobbled_deepslate: 38, granite: 24 }, { slots: 0 }), stateOf(mineOf('building')))
+  assert.equal((await callTool('toss', { intent: 'x' })).ok, true)
+  assert.deepEqual(runs[0].c.items, [{ item: 'granite', count: 24 }]) // 丸石は 256 未満なので、花崗岩だけ
+  assert.match((await callTool('toss', { item: 'cobblestone', count: 100, intent: 'x' })).result, /256 are kept to wall off caves/)
+  assert.match((await callTool('toss', { item: 'cobbled_deepslate', intent: 'x' })).result, /kept/)
+  assert.equal(runs.length, 1)
+  // 採掘場がなければ、今までどおり 64 個を残して捨てられる
+  const plain = toolsOf(botWith({ cobblestone: 200 }, { slots: 0 }))
+  await plain.callTool('toss', { item: 'cobblestone', intent: 'x' })
+  assert.deepEqual(plain.runs[0].c.items, [{ item: 'cobblestone', count: 136 }])
+})
+
+test('家の中のチェストへ預けるときも、枝掘りの間は丸石を預けない（超えた分だけ）', () => {
+  const home = { inside: new Vec3(0, 69, 0), min: new Vec3(-2, 69, -2), max: new Vec3(2, 72, 2), door: new Vec3(0, 69, 3), breach: [] }
+  const held = { cobblestone: 200, dirt: 70, granite: 30, stone_sword: 1 }
+  const inside = botWith(held, { slots: 0 })
+  inside.entity.position = new Vec3(0.5, 69, 0.5)
+  const chest = { x: 1, y: 69, z: 1, contents: {}, seen: 0 }
+  const stored = (extra) => candidatesOf(inside, stateOf({ home, memory: { chests: [chest] }, ...extra })).filter((c) => c.verb === 'deposit').map((c) => c.target)
+  assert.ok(stored({}).includes('cobblestone'))
+  assert.ok(!stored(mineOf('building')).includes('cobblestone'))
+  assert.ok(stored(mineOf('building')).includes('dirt'))
 })

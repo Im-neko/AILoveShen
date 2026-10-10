@@ -40,7 +40,7 @@ import { KEEP_WHEN_FIGHTING, toReplace } from './wear.mjs'
 import { REGEN_FOOD, cannotHeal, needsFoodToHeal } from './healing.mjs'
 import { windfallNow, windfallTrips } from './windfall.mjs'
 import { torchesNeeded } from './trail.mjs'
-import { goalKeep, spareStacks, emptySlots, TOSS_BELOW } from './spare.mjs'
+import { goalKeep, spareStacks, emptySlots, TOSS_BELOW, reserveFor, mineInProgress, MINING_RESERVE } from './spare.mjs'
 import { seedsToToss, seedsToTake, seedToss } from './seeds.mjs'
 import { knownFurnace, FURNACE_ITEM, reachableThreats, SLEEP_FROM, SLEEP_UNTIL, bestWeapon, nearbyDrops, findTable, torchSpot, stationSpot, stationSpots, HEALTH_CRITICAL, HUNGER_URGENT, EAT_WASTE_OK, EXPLORE_DISTANCE } from './primitives.mjs'
 
@@ -709,10 +709,11 @@ function tidyUp (bot, state, knowledge, world, status) {
   const [chest] = roomyChests(bot, state)
   if (!chest) return []
   const food = new Set(knowledge.resolve('food').members)
+  const tidyReserve = mineInProgress(state) ? { ...TIDY_RESERVE, ...MINING_RESERVE } : TIDY_RESERVE // 枝掘りの間は、塞ぐ丸石を預けない
   const surplus = new Map(seedsToToss(bot, state, goalKeep(knowledge, state.goal?.spec)).map((s) => [s.item, s.count])) // 余った種は預けず捨てる
   const stowable = Object.entries(inventoryCounts(bot))
     .filter(([name, n]) => n > 0 && !KEEP_WHEN_FIGHTING.test(name) && !TIDY_KEEP.test(name) && !food.has(name) && !recentlyTaken(state, bot, name))
-    .map(([item, n]) => ({ item, count: n - (TIDY_RESERVE[item] ?? 0) - (surplus.get(item) ?? 0) }))
+    .map(([item, n]) => ({ item, count: n - (tidyReserve[item] ?? 0) - (surplus.get(item) ?? 0) }))
     .filter((s) => s.count > 0)
   if (stowable.reduce((sum, s) => sum + s.count, 0) < TIDY_MIN_ITEMS) return []
   const keep = goalNeeds(knowledge, state, world)
@@ -772,8 +773,10 @@ function storeSpare (bot, state, knowledge) {
   const keep = goalKeep(knowledge, state.goal?.spec)
   const counts = {}
   for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] ?? 0) + i.count
+  const sealing = mineInProgress(state) ? MINING_RESERVE : {} // 枝掘りの間は、塞ぐ丸石を預けない（超えた分だけ）
   return Object.entries(counts)
-    .filter(([name]) => !keep.has(name) && !TOOL.test(name) && !['chest', 'crafting_table'].includes(name))
+    .map(([name, n]) => [name, n - (sealing[name] ?? 0)])
+    .filter(([name, n]) => n > 0 && !keep.has(name) && !TOOL.test(name) && !['chest', 'crafting_table'].includes(name))
     .sort((a, b) => b[1] - a[1])
     .slice(0, STORE_OFFERED)
     .flatMap(([name, n]) => toChest(bot, state, name, n))
@@ -809,7 +812,7 @@ function tossSpare (bot, state, knowledge) {
   if (!knowledge || emptySlots(bot) >= TOSS_BELOW) return []
   // 家の中で、家にチェストがあれば預ける（storeSpare）。捨てるのは、預けられないとき
   if (state.memory && homeChests(state.memory, state.home).length && isInside(bot, state.home)) return []
-  const items = spareStacks(bot, goalKeep(knowledge, state.goal?.spec))
+  const items = spareStacks(bot, goalKeep(knowledge, state.goal?.spec), reserveFor(state))
   if (!items.length) return []
   return [{ id: 'throw away the spare items to free inventory slots', verb: 'toss', target: 'items', inPlace: true, items, purpose: 'the inventory is full: dropped items and drops cannot be picked up' }]
 }

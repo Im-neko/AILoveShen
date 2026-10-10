@@ -10,6 +10,17 @@ import { TERRAIN } from './leveling.mjs'
 export const TOSS_BELOW = 2
 // 残しておく数（整地の穴埋めや足場に使う）。これを超えた分が余り
 export const RESERVE = { dirt: 64, cobblestone: 64 }
+// 枝掘りの採掘場を掘っている間（掘り終えていない採掘場がある）は、丸石と深層岩の丸石を多めに残す: 掘り進めて空洞（洞窟）に
+// 当たったとき、手元の丸石で床・壁・天井を作って塞ぐ（sealing.mjs）。足りないと塞げず、そこから先を打ち切る。
+// 無限に溜めると持ち物が埋まるので、これを超えた分だけが余り（2026-10-10、user: 「丸石は空洞にあたった時に壁や床作るのに必要だから
+// ブランチマイニングしてる間は捨てなくて良いです」: 丸石 102 と深層岩の丸石 38 を捨てた）
+export const MINING_RESERVE = { cobblestone: 256, cobbled_deepslate: 256 }
+// 掘り終えていない採掘場（掘り尽くして鉱石が出なかったものは数えない）があるか
+export const mineInProgress = (state) => Object.values(state?.facilities ?? {})
+  .some((f) => f.kind === 'mine' && f.layout?.cells?.length && f.status !== 'done' && !f.layout.exhausted)
+// 残しておく数: 枝掘りの間は、丸石を多めに
+export const reserveFor = (state) => (mineInProgress(state) ? { ...RESERVE, ...MINING_RESERVE } : RESERVE)
+
 // 捨てた物を拾い直さない時間（ゲームの tick: 5 分）と範囲
 export const TOSS_IGNORE_TICKS = 5 * 60 * 20
 export const TOSS_IGNORE_RADIUS = 16
@@ -28,12 +39,12 @@ export function goalKeep (knowledge, spec) {
 }
 
 // 捨ててよい余り: [{ item, count }]（多い順）。keep は残す名前
-export function spareStacks (bot, keep = new Set()) {
+export function spareStacks (bot, keep = new Set(), reserve = RESERVE) {
   const counts = {}
   for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] ?? 0) + i.count
   return Object.entries(counts)
     .filter(([name]) => isTossable(name) && !keep.has(name))
-    .map(([item, n]) => ({ item, count: n - (RESERVE[item] ?? 0) }))
+    .map(([item, n]) => ({ item, count: n - (reserve[item] ?? 0) }))
     .filter((s) => s.count > 0)
     .sort((a, b) => b.count - a.count)
 }
