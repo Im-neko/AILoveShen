@@ -42,6 +42,7 @@ import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
 import { placeFaces } from './place-faces.mjs'
 import { leaveRoute } from './exit-route.mjs'
+import { bedBlockers } from './bed-access.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder, piledUnder, climbExit, dropOffs, forgetRegion } from './reach.mjs'
 import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
@@ -1700,7 +1701,14 @@ export const PRIMITIVES = {
     await enterHome(bot, state.home, signal)
     // ドアの内側からでは、奥に横向きに置いたベッドへ届かない（Mineflayer は頭側から南へ 2 マスまでしか眠らせない）: ベッドのすぐ隣まで歩く
     const bed = bot.blockAt(state.home.bed)
-    await goto(bot, new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 1), signal)
+    try {
+      await goto(bot, new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 1), signal)
+    } catch (e) {
+      // ベッドの隣に立てる所がなければ、何がふさいでいるかを言う（家の中に置いた丸石や家具）
+      const blockers = isNoPath(e) ? bedBlockers(bot, bed.position) : null
+      if (blockers) throw new Error(`${e.message} Nowhere to stand next to the bed: ${blockers}. Dig what you placed there (dig with demolish: true, it is within reach) or move the furniture`)
+      throw e
+    }
     await sleepOn(bot, bed)
     // 全プレイヤーが眠ると夜が飛ばされ、サーバーがボットを起こす
     while (bot.isSleeping && !signal.aborted) await bot.waitForTicks(10)
