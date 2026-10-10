@@ -1364,6 +1364,39 @@ class BuildDesign:
                 f"the design expands to {len(blocks)} blocks, over {self.max_blocks}: make it "
                 "smaller or hollow (walls and roof only)"
             )
+        self._check_entrances(blocks)
+
+    def _check_entrances(self, blocks: tuple[PlannedBlock, ...]) -> None:
+        """
+        ドアの奥に立てるか。ドアの内側の 2 マス（足と頭）が固いブロックで埋まっていると、外から入れない。
+        hollow_box の底の面は固いので、床を y=0 に作ったうえで y=1 から箱を置くと、y=1 の板が床として
+        残り、ドアの奥がふさがる（2026-10-10 storehouse: 内側の 25 マスが板のままで入れなかった）。
+        """
+        grid = {(b.x, b.y, b.z): b.kind for b in blocks}
+        width = max(c[0] for c in grid) + 1
+        depth = max(c[2] for c in grid) + 1
+
+        def wall(x: int, y: int, z: int) -> bool:
+            return grid.get((x, y, z), BlockKind.AIR) not in (BlockKind.AIR, BlockKind.DOOR)
+
+        for (x, y, z), kind in grid.items():
+            if kind != BlockKind.DOOR:
+                continue
+            # BuildPlan.doorOutward（ブリッジ）と同じ向き: 左右が壁なら南北、そうでなければ東西
+            if wall(x - 1, y, z) or wall(x + 1, y, z):
+                inside = (x, z + 1) if z < depth / 2 else (x, z - 1)
+            else:
+                inside = (x + 1, z) if x < width / 2 else (x - 1, z)
+            for dy in (0, 1):
+                cell = (inside[0], y + dy, inside[1])
+                if wall(*cell):
+                    raise ValueError(
+                        f"the door at ({x},{y},{z}) opens onto solid {grid[cell].value} at {cell}: "
+                        f"nobody can walk in (you stand at y={y}). Keep the two cells behind the "
+                        f"door free: clear the inside of the room from y={y}. A hollow_box also has "
+                        "a solid bottom face, so a box that starts at the floor level leaves a "
+                        "second floor there"
+                    )
 
     def blocks(self) -> tuple[PlannedBlock, ...]:
         """

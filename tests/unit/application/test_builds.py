@@ -377,3 +377,41 @@ def test_the_decision_without_the_build_keeps_the_rest():
     kept = _without_build(decision, "storehouse")
     assert kept.changes == () and [s.spec.predicate.value for s in kept.jobs] == ["have"]
     assert kept.spec == decision.spec  # 食べる小目標はそのまま
+
+
+def _storehouse(clear_from_y: int) -> dict:
+    """2026-10-10 に AI が書いた倉庫の設計。床を y=0 に作り、y=1 から hollow_box を置いた。"""
+    return {
+        "purpose": "倉庫",
+        "anchor": "near_home",
+        "shapes": [
+            {"shape": "fill", "block": "cobblestone", "from": {"x": 0, "y": 0, "z": 0}, "to": {"x": 6, "y": 0, "z": 6}},
+            {"shape": "hollow_box", "block": "planks", "from": {"x": 0, "y": 1, "z": 0}, "to": {"x": 6, "y": 4, "z": 6}},
+            {"shape": "clear", "from": {"x": 1, "y": clear_from_y, "z": 1}, "to": {"x": 5, "y": 3, "z": 5}},
+            {"shape": "door", "from": {"x": 3, "y": 1, "z": 0}},
+        ],
+    }
+
+
+def test_a_door_that_opens_onto_a_second_floor_is_sent_back():
+    # hollow_box の底の面が y=1 に残り、ドアの奥が板でふさがる
+    with pytest.raises(ValueError, match=r"door at \(3,1,0\) opens onto solid planks at \(3, 1, 1\)"):
+        parse_build(_storehouse(clear_from_y=2), "storehouse")
+
+
+def test_a_door_with_the_room_cleared_from_the_floor_is_accepted():
+    design = parse_build(_storehouse(clear_from_y=1), "storehouse")
+    assert any(b.kind == BlockKind.DOOR for b in design.blocks())
+
+
+def test_a_door_on_the_east_wall_with_the_room_cleared_is_accepted():
+    data = {
+        "purpose": "小屋",
+        "anchor": "near_home",
+        "shapes": [
+            {"shape": "hollow_box", "block": "planks", "from": {"x": 0, "y": 0, "z": 0}, "to": {"x": 6, "y": 4, "z": 6}},
+            {"shape": "clear", "from": {"x": 1, "y": 1, "z": 1}, "to": {"x": 5, "y": 3, "z": 5}},
+            {"shape": "door", "from": {"x": 6, "y": 1, "z": 3}},
+        ],
+    }
+    parse_build(data, "hut")
