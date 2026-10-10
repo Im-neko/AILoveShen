@@ -85,6 +85,15 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
                 "助言は off_mission で断らない: 後の作業が楽になる・安全になるなら accept（when=next "
                 "で後ろに）、当たっていなければ wrong。"
             )
+        if reason == DeclineReason.NOT_BETTER.value:
+            if kind != "advice":
+                return "not_better は助言だけの理由。頼みは cannot / wrong / unsafe / limit で断る。"
+            why = data.get("relevance_reason")
+            if not isinstance(why, str) or not why.strip():
+                return (
+                    "not_better には relevance_reason（今の小目標・中目標と比べて、なぜ今のやり方の"
+                    "ほうがよいかを、具体的に英語 1 文）が要る。今は別のことをしている、は理由にならない。"
+                )
         return ""
     if handling != RequestHandling.NONE.value:
         return ""
@@ -98,6 +107,12 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
         "あれば accept（今やるほうがよければ when=now、そうでなければ when=next で後ろに入れ、返答で"
         "いつやるか言う）、今の小目標や計画の問題の指摘に納得したら rethink、これからのやり方の助言なら"
         " lesson、できない・当たっていない・危ないなら decline（decline_reason つき）。"
+        + (
+            "考えたうえで今のやり方のほうがよいなら、採ったふりをせず decline の not_better にして、"
+            "返答で何がなぜ今のやり方のほうがよいかを具体的に言う（やるとは言わない）。"
+            if kind == "advice"
+            else ""
+        )
     )
 
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
-from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unjudged
+from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unanswered, unjudged
 from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, reply_schema
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
@@ -1670,3 +1670,50 @@ class TestAdviceThatCannotBeAcceptedStillGetsAnswer:
         assert response.text == "気をつけるね、教えてくれてありがとう！"
         assert response.objective is None
         assert mock_text_generator.generate_json.await_count == 3
+
+
+class TestNotBetterDecline:
+    """
+    助言を考えたうえで採らないときの答え（2026-10-10 19:57）。採る以外の答えがなく、採らない返事が
+    差し戻されて「壊して作り直すね」に書き換わったが、行動は変わらなかった。
+    """
+
+    DECLINE = {
+        "request": "decline",
+        "decline_reason": "not_better",
+        "relevance": "related",
+        "relevance_reason": "Digging out the blocking planks is faster than rebuilding the whole workshop",
+        "reply": "壊して作り直すより、塞いでる板だけ掘って空けるほうが早いから、そっちでやるね。",
+    }
+
+    def test_not_better_is_a_reason_for_advice_with_its_concrete_reason(self):
+        assert unanswered("advice", self.DECLINE) == ""
+
+    def test_not_better_without_a_reason_is_sent_back(self):
+        data = {**self.DECLINE, "relevance_reason": " "}
+        assert "relevance_reason" in unanswered("advice", data)
+
+    def test_not_better_is_not_for_requests(self):
+        assert "助言だけ" in unanswered("request", self.DECLINE)
+
+    def test_none_for_advice_points_at_not_better(self):
+        data = {"request": "none", "reply": "続けるね"}
+        assert "not_better" in unanswered("advice", data)
+        assert "not_better" not in unanswered("request", data)
+
+    @pytest.mark.asyncio
+    async def test_the_declined_advice_is_spoken_without_being_added(self, use_case, mock_text_generator):
+        mock_text_generator.generate_json.return_value = self.DECLINE
+        session = _playing()
+        before = len(session.plan.pending)
+
+        response = await use_case.execute(
+            GenerateResponseRequest(
+                user_name="neko", message="全部壊して作り直したら", session=session, kind="advice"
+            )
+        )
+
+        assert response.text == self.DECLINE["reply"]
+        assert response.objective is None
+        assert len(session.plan.pending) == before
+        assert mock_text_generator.generate_json.await_count == 1
