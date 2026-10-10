@@ -206,8 +206,8 @@ test('ドアの道が使えなければ、壁を掘って出る。外の足元�
 test('外が EXIT_DROP 段より低ければ、壁を掘っても出られない（出口なし）', () => {
   const { home, bot } = blasted({ lower: EXIT_DROP + 3 })
   const plan = planLeave(bot, home)
-  assert.equal(plan.route, 'wall')
-  assert.equal(plan.spot, null)
+  assert.equal(plan.route, 'stuck')
+  assert.equal(plan.spot, undefined)
 })
 
 test('ドアの道が使えるなら、壁は掘らない', () => {

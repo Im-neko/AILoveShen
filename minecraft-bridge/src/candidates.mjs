@@ -17,6 +17,7 @@ import { describeWhere } from './placing.mjs'
 import { standingCell, round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inventoryCounts, fillItem, UNDERGROUND_BELOW, EXPLODES } from './observe.mjs'
 import { leakingHoles } from './ledger.mjs'
 import { sleepersInBeds } from './sleepers.mjs'
+import { leaveRoute } from './exit-route.mjs'
 import { isInside, exitSpots, shelterOf, hasBed, homeEntryBlocked, protectedReason } from './home.mjs'
 import { inBurrow, inOpenShaft, burrowSpotCached } from './burrow.mjs'
 import { campSiteCached, campCount } from './camp.mjs'
@@ -174,8 +175,14 @@ export function newTableHere (bot, state, table) {
   return [{ id: `craft a crafting_table to use here (${TABLE_PLANKS} planks)`, verb: 'craft', target: 'crafting_table', item: 'crafting_table', times: 1, needsTable: false, inPlace: true, why }]
 }
 
-export function needsOutside (c, home) {
+// ブロックを掘る・置く手は、中から手が届くなら外へ出なくてよい（2026-10-11: 家の壁を壊して出る手が、先に家から出ることを
+// 求められて、出られないまま失敗し続けた）。bot を渡したときだけ見る
+const REACH_FROM_INSIDE = 4.5
+const BLOCK_WORK = new Set(['dig', 'place_at'])
+export function needsOutside (c, home, bot) {
   if (c.inPlace) return false
+  if (bot && c.pos && BLOCK_WORK.has(c.verb) && isInside(bot, home) &&
+    bot.entity.position.offset(0, bot.entity.height ?? 1.62, 0).distanceTo(new Vec3(c.pos.x + 0.5, c.pos.y + 0.5, c.pos.z + 0.5)) <= REACH_FROM_INSIDE) return false
   return !c.pos || !isInside({ entity: { position: c.pos } }, home)
 }
 
@@ -533,7 +540,9 @@ export function forNeeds (bot, state, knowledge) {
   }
   // 歩いて出られない閉じた所にいる（階段の床が抜けた、深い穴に落ちた。家の中と塞いだ穴は除く）: 足元に土か丸石を積んで
   // 出る。昼は聞かずに出る（urgent）。夜は安全な地下で朝を待てるので、選べる手にとどめる
-  const shut = !isInside(bot, state.home) && !inBurrow(bot) ? closedSpaceCached(bot) : null
+  // 家の中は閉じていてもふつうだが、玄関も壁の出口もなければ（leaveRoute）、閉じ込められている
+  const shutInHome = isInside(bot, state.home) && !!state.home.door && !!state.home.outside && leaveRoute(bot, state.home).route === 'stuck'
+  const shut = (!isInside(bot, state.home) || shutInHome) && !inBurrow(bot) ? closedSpaceCached(bot) : null
   // 積んで上がった先が出口か（屋根・柱の頂上に出るだけなら積まない）、上が保護された建物で横に出る道があるなら横へ
   // （2026-10-10: 閉じた部屋から塔の天井を貫いて屋根の上に出て、降りる手がないまま 10 分止まった）
   const sideways = shut ? digOutRoute(bot, state, regionCached(bot)) : null

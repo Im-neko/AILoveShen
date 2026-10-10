@@ -112,7 +112,7 @@ export function createRunner (bot, state, deps = {}) {
         bot.actionPhase = ''
       }
       const house = houseAround(bot, state)
-      if (house && needsOutside(c, house)) {
+      if (house && needsOutside(c, house, bot)) {
         bot.actionPhase = 'leaving the house'
         await leaveHouse(bot, state, house, controller.signal, { confront: !!c.confront })
         bot.actionPhase = ''

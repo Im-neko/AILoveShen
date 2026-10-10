@@ -348,3 +348,18 @@ test('level の道具: demolish なら、板で塞がれた所も受ける。断
   assert.match((await mk()('level', { where: '0,64,0', radius: 3 })).result, /already level except 1 columns.*demolish: true/)
   assert.match((await mk()('level', { where: '0,64,0', radius: 3, demolish: true })).result, /"demolish":true/)
 })
+
+test('level: 家のまわりを家の床と違う高さにそろえる整地は断る（玄関の前が盛り上がって埋まる。2026-10-11）', async () => {
+  const home = { inside: new Vec3(5, 64, 5), door: new Vec3(5, 64, 8), outside: new Vec3(5, 64, 9), min: new Vec3(3, 64, 3), max: new Vec3(7, 64, 7), bed: null }
+  const mk = (extra) => createTools({
+    bot: { ...fakeBot(world(), []), time: { timeOfDay: 1000 } },
+    state: { ...state({ home }), memory: {}, busy: false, reflex: false },
+    knowledge: new Knowledge(md), run: async () => ({}), candidates: () => [], check: () => [], ...extra
+  })
+  const tool = mk()
+  const high = (await tool('level', { where: '5,65,5', radius: 8 })).result
+  assert.match(high, /includes the home, whose floor you stand on at y=64.*bury the doorstep/)
+  // 家の床の高さなら断らない。家から離れた所の整地も断らない
+  assert.doesNotMatch((await tool('level', { where: '5,64,5', radius: 8 })).result, /includes the home/)
+  assert.doesNotMatch((await tool('level', { where: '40,65,40', radius: 8 })).result, /includes the home/)
+})

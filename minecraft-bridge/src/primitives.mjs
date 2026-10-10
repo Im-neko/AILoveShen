@@ -15,7 +15,7 @@ import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome, inHomeRoom, isHomeCell, underBuild } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, doorRouteOk, exitSpots, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding, protectedReason } from './home.mjs'
+import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding, protectedReason } from './home.mjs'
 import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -41,6 +41,7 @@ import { quarryTargets } from './seal-stone.mjs'
 import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
 import { placeFaces } from './place-faces.mjs'
+import { leaveRoute } from './exit-route.mjs'
 import { closedSpace, closedSpaceCached, isolatedSpace, pillarUnder, piledUnder, climbExit, dropOffs, forgetRegion } from './reach.mjs'
 import { tooDarkAt, skyLightAt, MIN_LIGHT } from './light.mjs'
 import { holdsWater } from './breath.mjs'
@@ -566,11 +567,7 @@ export async function disembark (bot, state, signal, why = '') {
 
 // 家から出る。ドアの道が使えれば leaveHome。使えなければ（爆発で床とドアの前がなくなった、など）、壁を掘って出る。
 // 出口の外は EXIT_DROP 段まで低くてよい。出たら壁を閉じる（閉じられなければ、壁の穴を直す手が残る）
-export function planLeave (bot, home) {
-  if (doorRouteOk(bot, home)) return { route: 'door' }
-  const spot = exitSpots(bot, home, [], { drop: EXIT_DROP })[0] ?? null
-  return { route: 'wall', spot }
-}
+export const planLeave = leaveRoute
 
 export async function leaveHouse (bot, state, home, signal, opts = {}) {
   if (!isInside(bot, home)) return
@@ -578,7 +575,12 @@ export async function leaveHouse (bot, state, home, signal, opts = {}) {
   if (plan.route === 'door') return await leaveHome(bot, home, signal, opts)
   const { sheltering, why } = shelterOf(bot, home)
   if (sheltering && !opts.confront) throw new Error(`staying inside: ${why}`)
-  if (!plan.spot) throw new Error(`the way out through the door is gone (no floor in front of it, or no ground within ${EXIT_DROP} blocks outside) and no wall can be dug through to a place that is at most ${EXIT_DROP} blocks down`)
+  // 歩いて出られる（玄関の道は使えないが、行動の経路探しが出られる）: ここでは何もしない
+  if (plan.route === 'walk') return
+  if (plan.route === 'stuck') {
+    throw new Error(`the way out of the house is shut${plan.blocked ? `: the ${plan.blocked}` : ' (no floor in front of the door, or no ground within ' + EXIT_DROP + ' blocks outside)'} and no wall can be dug through to a place that is at most ${EXIT_DROP} blocks down. ` +
+      'You are inside and can reach the block: dig it from here (dig with demolish: true, no need to leave first), or use the candidate "dig out of the closed space through the wall of a home or build"')
+  }
   console.log(`[home] ドアの外に出る道がない: ${plan.spot.side} の壁を掘って出る（外は ${plan.spot.step.y} の高さ）`)
   await digExit(bot, home, plan.spot, signal)
   // 掘ったブロックは壁を閉じるのに使う: 出る前に拾う（出てから拾うと、取りに中へ戻って閉じ込められる）

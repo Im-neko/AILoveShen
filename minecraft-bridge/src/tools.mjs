@@ -637,6 +637,15 @@ export function createTools (deps) {
       }
       const radius = Number(args.radius ?? 8)
       if (!Number.isInteger(radius) || radius < MIN_LEVEL || radius > MAX_LEVEL) refuse(`radius must be ${MIN_LEVEL}-${MAX_LEVEL}`)
+      // 家のまわりを家の床と違う高さにそろえると、玄関の外の地面が盛り上がって玄関が埋まる（2026-10-11: 立つ高さ 80 に
+      // 整地して、家の床の高さ 79 の玄関の前が埋まり、中から出られなくなった）
+      const h = state.home
+      if (h && target.y !== h.inside.y) {
+        const near = 3
+        const overlaps = target.center.x - radius <= h.max.x + near && target.center.x + radius >= h.min.x - near &&
+          target.center.z - radius <= h.max.z + near && target.center.z + radius >= h.min.z - near
+        if (overlaps) refuse(`the area around ${fmt(target.center)} (radius ${radius}) includes the home, whose floor you stand on at y=${h.inside.y}: leveling it to y=${target.y} would bury the doorstep or dig under the walls. Use where: home (or y=${h.inside.y}), or a smaller radius that stays away from the home`)
+      }
       const s = levelStatus(bot, state, where, radius, { demolish })
       if (!s.off) {
         const kept = demolish ? 0 : keptByNotDemolishing(s.skipped)
