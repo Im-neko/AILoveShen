@@ -33,7 +33,7 @@ import { foodNow } from './foodnow.mjs'
 import { workCell, layoutAt, layoutStatus, waterAt, mineBodyReason } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { holdsWater } from './breath.mjs'
-import { levelTarget, levelStatus, keptGround, findCount, fillNeeded, KEPT_REMEDY, MIN_LEVEL, MAX_LEVEL, FARM_MARGIN } from './leveling.mjs'
+import { levelTarget, levelStatus, keptByNotDemolishing, keptGround, findCount, fillNeeded, KEPT_REMEDY, MIN_LEVEL, MAX_LEVEL, FARM_MARGIN } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
 import { inspectCell, inspectSelf, readDiagnostics } from './inspect.mjs'
 
@@ -620,17 +620,21 @@ export function createTools (deps) {
         const r = f.kind === 'farm' && f.layout?.rect
         return r && target.center.x >= r.x0 - FARM_MARGIN && target.center.x < r.x0 + r.w + FARM_MARGIN && target.center.z >= r.z0 - FARM_MARGIN && target.center.z < r.z0 + r.d + FARM_MARGIN
       })
-      if (farm && target.y - 1 !== farm.layout.y) {
+      const demolish = args.demolish === true
+      if (farm && !demolish && target.y - 1 !== farm.layout.y) {
         refuse(`${target.center.x},${target.center.z} is on the farm ${farm.name}, whose ground is y=${farm.layout.y}: where's y is the height you STAND on (the ground is one lower), so use ${target.center.x},${farm.layout.y + 1},${target.center.z}. The farm levels itself with the candidate "level the ground of the farm ${farm.name}"`)
       }
       const radius = Number(args.radius ?? 8)
       if (!Number.isInteger(radius) || radius < MIN_LEVEL || radius > MAX_LEVEL) refuse(`radius must be ${MIN_LEVEL}-${MAX_LEVEL}`)
-      const s = levelStatus(bot, state, where, radius)
-      if (!s.off) refuse(s.unloaded ? 'part of the ground is out of view: go closer first' : 'the ground there is already level')
+      const s = levelStatus(bot, state, where, radius, { demolish })
+      if (!s.off) {
+        const kept = demolish ? 0 : keptByNotDemolishing(s.skipped)
+        refuse(s.unloaded ? 'part of the ground is out of view: go closer first' : `the ground there is already level${kept ? ` except ${kept} columns left as they are (something placed, a home or build, a tree or a farm stands there): level with demolish: true to take them down too` : ''}`)
+      }
       const carried = fillCount(bot)
       if (!s.cuts.length && carried < fillNeeded(s)) refuse(`only holes are left (${s.fills.length} blocks to fill) and you carry ${carried} dirt: gather ${fillNeeded(s)} first, from outside the area being leveled (dig grass or dirt elsewhere, the ground inside is kept)`)
       within(bot, s.center, MAX_TOOL_DISTANCE, fmt(s.center))
-      return { c: { verb: 'level', target: 'ground', where, radius, pos: s.cuts[0] ?? s.fills[0] } }
+      return { c: { verb: 'level', target: 'ground', where, radius, ...(demolish ? { demolish: true } : {}), pos: s.cuts[0] ?? s.fills[0] } }
     },
     // 手に持って使う（右クリック。設計書 37）: entity のモブに、x,y,z のブロックに、どちらもなければ向いている方へ。
     // item を省くと素手で x,y,z のブロックを右クリックする（ドア・レバー・ボタンを押す。行き詰まったときの実験: 設計書 85）。

@@ -5,6 +5,8 @@
 // いちばん上の固いブロックが y-1 になっていればそろっている。
 //   - 高い列（出っ張り）: y 以上にある自然の地形（TERRAIN）を掘る
 //   - 低い列（穴）: 地面の上から y-1 まで土で埋める
+// demolish（壊して整地。2026-10-10）: 置いた物・保護されている家や建物・木・畑も壊して、そろえる。水・溶岩、採掘場、
+// 壊せないブロックの列だけは触らない。普段は壊さない物を壊すので、明示したときだけ使う。
 // 触らない列: 家・前の家・建物とそのまわり 1 マス（inHouse）。ただし家の床と同じ高さに整地するなら、壁のすぐ外は整地する、植えた木のまわり、畑（耕地と作物）、
 // 木（原木・葉）、水・溶岩、自然でないブロック（家具、置いたもの）が y 以上にある列、DY より深い穴。
 // 見えていない列はそろっていないと数える（lit と同じ: 見えない所をそろったとはみなさない）。
@@ -61,15 +63,15 @@ const isPlant = (b) => b.boundingBox === 'empty' && !FLUID.test(b.name)
 
 // 1 列を見る → { off: bool, cuts: [Vec3], fills: [Vec3] } か、触らない理由の文字列か UNLOADED
 // stairs: false は、階段の入口のまわりも見る（設計した畑のマスは、階段の記録より先に直す）
-export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY } = {}) {
+export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, demolish = false } = {}) {
   const floor = y - 1
   // ドアの前の床は、同じ高さに整地するなら普通の列（穴を埋める。家のブロックは TERRAIN でないので削らない）
   const doorstep = isDoorstepFloor(state, new Vec3(x, floor, z)) && floor === state.home.outside.y - 1
   // 家の床と同じ高さに整地するなら、壁のすぐ外も整地する（壁の下は足元の土として家の計画が直す）。
   // 別の高さなら、壁のまわり 1 マスは触らない
   const margin = state.home && floor === state.home.inside.y - 1 ? 0 : 1
-  if (!doorstep) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), margin)) return 'house or build'
-  if ((state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
+  if (!doorstep && !demolish) for (const dy of [0, 1]) if (inHouse(state, new Vec3(x, floor + dy, z), margin)) return 'house or build'
+  if (!demolish && (state.plantings ?? []).some((p) => Math.abs(p.x - x) <= PLANTING_GAP && Math.abs(p.z - z) <= PLANTING_GAP)) return 'planted tree'
   for (let dy = -DY; dy <= DY; dy++) if (onMineCell(state, new Vec3(x, floor + dy, z))) return 'mine'
   if (stairs && onShaftTop(state, x, z)) return 'quarry stairs' // 階段の入口（埋めると、続きから下りられない）
   let top = null
@@ -77,8 +79,8 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY } =
     const b = bot.blockAt(new Vec3(x, h, z))
     if (!b) return UNLOADED
     if (FLUID.test(b.name)) return 'water'
-    if (TREE.test(b.name)) return 'tree'
-    if (FARM.test(b.name)) return 'farmland'
+    if (!demolish && TREE.test(b.name)) return 'tree'
+    if (!demolish && FARM.test(b.name)) return 'farmland'
     if (isPlant(b)) continue
     top = b
     break
@@ -91,7 +93,9 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY } =
     for (let h = t; h > floor; h--) {
       const b = bot.blockAt(new Vec3(x, h, z))
       if (isPlant(b) || b.name === 'air') continue
-      if (!TERRAIN.test(b.name)) return `${b.name} (not natural ground)`
+      if (demolish) {
+        if (b.hardness < 0) return `${b.name} (cannot be broken)`
+      } else if (!TERRAIN.test(b.name)) return `${b.name} (not natural ground)`
       cuts.push(b.position)
     }
     return { off: true, cuts, fills: [] }
@@ -103,11 +107,11 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY } =
 
 // 列の並び [[x, z]] を、立つ高さ y にそろえる → { y, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
 // cuts は列ごとに上から、fills は列ごとに下から
-export function levelColumns (bot, state, columns, y) {
+export function levelColumns (bot, state, columns, y, { demolish = false } = {}) {
   const out = { y, total: 0, off: 0, cuts: [], fills: [], unloaded: 0, skipped: {} }
   for (const [x, z] of columns) {
     out.total++
-    const w = columnWork(bot, state, x, z, y)
+    const w = columnWork(bot, state, x, z, y, { demolish })
     if (w === UNLOADED) { out.unloaded++; continue }
     if (typeof w === 'string') { out.skipped[w] = (out.skipped[w] ?? 0) + 1; continue }
     if (!w.off) continue
@@ -118,8 +122,12 @@ export function levelColumns (bot, state, columns, y) {
   return out
 }
 
+// 壊さずに残す列のうち、置いた物・家・木・畑のために残した数（demolish にすれば壊してそろえられる）
+const BREAKABLE_SKIPS = /^(house or build|planted tree|tree|farmland)$|\(not natural ground\)$/
+export const keptByNotDemolishing = (skipped) => Object.entries(skipped ?? {}).filter(([why]) => BREAKABLE_SKIPS.test(why)).reduce((n, [, k]) => n + k, 0)
+
 // 範囲全体 → { y, center, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
-export function levelStatus (bot, state, where, radius) {
+export function levelStatus (bot, state, where, radius, { demolish = false } = {}) {
   const { center, y } = levelTarget(state, where)
   const columns = []
   for (let dx = -radius; dx <= radius; dx++) {
@@ -127,7 +135,7 @@ export function levelStatus (bot, state, where, radius) {
       if (dx * dx + dz * dz <= radius * radius) columns.push([center.x + dx, center.z + dz])
     }
   }
-  return { center, ...levelColumns(bot, state, columns, y) }
+  return { center, ...levelColumns(bot, state, columns, y, { demolish }) }
 }
 
 // 畑の整地（設計書 75）: 畑の四角と、そのまわり FARM_MARGIN マスの列を、畑の地面の高さにそろえる。そろえてから

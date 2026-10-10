@@ -250,7 +250,7 @@ function fromLeaf (bot, state, world, leaf) {
       // 畑の整地（設計書 75）。id に場所は入れない
       if (leaf.facility) return [{ id: `level the ground of the farm ${leaf.facility}`, verb: 'level', target: 'ground', columns_off: leaf.off, facility: leaf.facility, pos: new Vec3(leaf.pos.x, leaf.pos.y, leaf.pos.z), distance: dist(bot, leaf.pos) }]
       // 整地（leveling.mjs）: 1 回で届く範囲を次々にそろえる。pos は最初に手を付ける所（外の作業）
-      return [{ id: `level the ground within ${leaf.distance} of ${leaf.where}`, verb: 'level', target: 'ground', columns_off: leaf.off, where: leaf.where, radius: leaf.distance, pos: leaf.pos, distance: dist(bot, leaf.pos) }]
+      return [{ id: `level the ground within ${leaf.distance} of ${leaf.where}${leaf.demolish ? ', taking down what stands there' : ''}`, verb: 'level', target: 'ground', columns_off: leaf.off, where: leaf.where, radius: leaf.distance, ...(leaf.demolish ? { demolish: true } : {}), pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'light':
       return [{ id: `place a torch at ${fmt(leaf.pos)} (dark ground)`, verb: 'place_torch_at', target: 'torch', pos: leaf.pos, distance: dist(bot, leaf.pos) }]
     case 'smelt': {

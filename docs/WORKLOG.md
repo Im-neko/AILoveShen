@@ -7,6 +7,11 @@
 
 ## Completed Work
 
+### 壊して整地する: leveled の demolish（設計書 154、2026-10-10、未確認: 実機。ブリッジと Python の再起動が要る。user: 「既存の物を壊して整地することも手として用意しておきたいです」「保護してるのも必要があれば壊すことを選択肢に入れてほしいです」）
+- 事実: 建物の置き先が板・原木などで塞がれても、壊して置き直す手がなかった（整地は自然の地形だけ）
+- 変更: `leveled(where, distance, demolish)` / `level {demolish: true}`。置いた物・保護された家や建物・木・畑も壊してそろえる（水・採掘場・壊せない所は残す）。既定は今までどおり。普通の整地は残した列の数と `demolish` の案内を出す。`site blocked by` に壊す手を添えた（`leveling.mjs`、`goals.mjs`、`candidates.mjs`、`primitives.mjs`、`tools.mjs`、`build.mjs`、`GoalSpec.demolish`）
+- テスト: ブリッジ 971 件通過（5 件追加）、Python 1756 件通過（`test_stream_factory` の 1 件は以前から失敗）。直していない: 壊した家・建物の記録は書き換えない、実機の動き
+
 ### 助言を採らないときの答え: decline に not_better を足す（設計書 153 続き、2026-10-10、未確認: 実機で選ばれるか。Python の再起動が要る。user: 「進めて良いです」）
 - 事実: 助言に none は許されず、decline の理由に「当たってはいるが今のやり方のほうがよい」がなかった。採らないつもりの返事が差し戻され、採る側に書き換わっていた
 - 変更: `DeclineReason.NOT_BETTER`（助言だけ。relevance_reason に具体的な理由が要る。頼みには使えない）、none の差し戻し文・規則・スキーマに案内（`goal_vocabulary.py`、`generate_response.py`、`prompt_template_builder.py`）

@@ -26,7 +26,7 @@ import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked 
 import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
-import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, soilCount, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
+import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, soilCount, keptByNotDemolishing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking, isRawMeat, FAR_COOK_MIN } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
 import { placedToTake, takeableItem, HOME_FURNITURE, ownFurnitureInHome, isHomeFurnitureItem } from './furniture.mjs'
@@ -125,6 +125,7 @@ function together (spec, lead, bot, state, knowledge) {
 export function describeSpec (spec) {
   const args = [spec.name, spec.item, spec.count, spec.where, spec.distance].filter((v) => v != null)
   if (spec.started) args.push('started')
+  if (spec.demolish) args.push('demolish')
   return `${spec.predicate}(${args.join(', ')})`
 }
 
@@ -225,7 +226,7 @@ function validGoal (spec, bot, state, knowledge) {
       levelTarget(state, where)
       const distance = Number(spec.distance)
       if (!Number.isInteger(distance) || distance < MIN_LEVEL || distance > MAX_LEVEL) throw new Error(`distance (the radius) must be ${MIN_LEVEL}-${MAX_LEVEL}`)
-      return { spec: { predicate, where, distance } }
+      return { spec: { predicate, where, distance, ...(spec.demolish ? { demolish: true } : {}) } }
     }
     case 'custom': {
       // 判定は Python が先に登録する（PUT /conditions/<name>）。まだない名前は「まだ」
@@ -669,10 +670,16 @@ function evaluateOne (bot, state, knowledge, world) {
       // 整地（設計書 41）: そろっていない列の数が残り。出っ張りを掘る（土が出る）、穴を埋める。
       // 1 回の行動（level）で届く範囲を次々にそろえる（1 マスずつでは歩数の予算に収まらない）
       const { where, distance } = goal.spec
-      const s = levelStatus(bot, state, where, distance)
+      const demolish = goal.spec.demolish === true
+      const s = levelStatus(bot, state, where, distance, { demolish })
       out.met = s.off === 0 && s.unloaded === 0
       out.remaining = s.off + s.unloaded
       out.lines.push(describeLevel(s, distance))
+      if (demolish) out.lines.push('demolish: placed things, the home / builds (even protected), trees and farms in the area are broken to level it; water, mines and unbreakable blocks are left')
+      else {
+        const kept = keptByNotDemolishing(s.skipped)
+        if (kept) out.lines.push(`${kept} columns are left as they are because they hold something placed, a home or build, a tree or a farm: leveled(${where}, ${distance}, demolish) breaks them too (a deliberate choice: it takes down what stands there)`)
+      }
       if (s.unloaded) {
         out.blocked.push('part of the ground is out of view; go closer to it')
         if (where === 'home') out.leaves.push({ kind: 'go_home' })
@@ -688,7 +695,7 @@ function evaluateOne (bot, state, knowledge, world) {
       // 埋めるだけなら、穴の数だけ土を持ってから（少しずつ掘っては埋める往復をしない）。土は整地の外から取る
       const need = fillNeeded(s)
       const enough = fillCount(bot) >= need
-      if (diggable || (s.fills.length && enough)) out.leaves.push({ kind: 'level', where, distance, pos: (s.cuts[0] ?? s.fills[0]), off: s.off })
+      if (diggable || (s.fills.length && enough)) out.leaves.push({ kind: 'level', where, distance, demolish, pos: (s.cuts[0] ?? s.fills[0]), off: s.off })
       if (!diggable && s.fills.length && !enough) {
         out.lines.push(`${need} blocks to fill need ${need} dirt (carrying ${fillCount(bot)}): gather it outside the leveled area first`)
         addSolved([{ spec: 'dirt', count: need }])

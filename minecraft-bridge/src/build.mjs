@@ -9,6 +9,9 @@ import vec3Pkg from 'vec3'
 import { isLog, isPlanks } from './observe.mjs'
 import { walkTo } from './move.mjs'
 
+// 設置先を塞ぐ物: 置き直すには壊すしかない（2026-10-10: 板で塞がれて、同じ座標への置き直しが続けて失敗した）
+export const siteBlocked = (name, pos) => `site blocked by ${name} at ${pos}; if the build needs this spot, take the block down (dig {x,y,z,demolish: true}) or level the whole site with level {where, radius, demolish: true}, then place again`
+
 const { goals } = pathfinderPkg
 const { Vec3 } = vec3Pkg
 
@@ -281,7 +284,7 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   if (b.block === 'air') return clearCell(bot, plan, b, signal, allowDig)
   const pos = plan.worldPos(b)
   const found = bot.blockAt(pos)
-  if (occupied(found) && !isWater(found) && !removable(plan, found, pos, allowDig)) throw new Error(`site blocked by ${found.name} at ${pos}`)
+  if (occupied(found) && !isWater(found) && !removable(plan, found, pos, allowDig)) throw new Error(siteBlocked(found.name, pos))
   // サーバーが確かめるのは届く距離とカーソルで、視線は確かめない。なので、例えば屋根の最初の
   // ブロックを家の中から壁の上に置ける。
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false })
@@ -293,7 +296,7 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   // 草などは届く所に来てから刈る（遠くから掘るとサーバーは断り、手元の世界だけが空気になる）
   const current = bot.blockAt(pos)
   if (occupied(current) && !isWater(current)) {
-    if (!removable(plan, current, pos, allowDig)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    if (!removable(plan, current, pos, allowDig)) throw new Error(siteBlocked(current.name, pos))
     await bot.dig(current, true)
   }
   await backOffFrom(bot, pos)
@@ -371,7 +374,7 @@ async function placeDoor (bot, plan, b, signal) {
   const lower = plan.blocks.find((d) => d.block === 'door' && d.x === b.x && d.z === b.z && d.y === b.y - 1) ?? b
   const pos = plan.worldPos(lower)
   const found = bot.blockAt(pos)
-  if (occupied(found) && !isClearable(found) && !TEMPORARY_STATION.test(found.name) && !KINDS.door(found.name)) throw new Error(`site blocked by ${found.name} at ${pos}`)
+  if (occupied(found) && !isClearable(found) && !TEMPORARY_STATION.test(found.name) && !KINDS.door(found.name)) throw new Error(siteBlocked(found.name, pos))
   const out = plan.doorOutward(lower)
   let error = null
   // ボットに近い側から（前は必ず外から: 中にいても外へ回ろうとした）
@@ -393,7 +396,7 @@ async function placeDoor (bot, plan, b, signal) {
   // 向きの違うドアや草は、ドアの前に立ってから壊す（遠くから掘るとサーバーは断る）
   const current = bot.blockAt(pos)
   if (occupied(current)) {
-    if (!isClearable(current) && !TEMPORARY_STATION.test(current.name) && !KINDS.door(current.name)) throw new Error(`site blocked by ${current.name} at ${pos}`)
+    if (!isClearable(current) && !TEMPORARY_STATION.test(current.name) && !KINDS.door(current.name)) throw new Error(siteBlocked(current.name, pos))
     phase(`breaking the old ${current.name}`)
     await within(bot.dig(current, true), DOOR_DIG_MS, `the ${current.name} did not break in ${DOOR_DIG_MS / 1000}s`, () => bot.stopDigging())
   }

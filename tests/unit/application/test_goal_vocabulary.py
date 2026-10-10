@@ -187,3 +187,20 @@ def test_a_chest_is_kept_in_the_home_even_when_near_home_is_written():
     assert chest(where="build:shed") == "placed(chest, build:shed)"
     assert chest(where="3,70,4") == "placed(chest, 3,70,4)"
     assert parse_spec({"predicate": "placed", "item": "torch", "where": "near_home"}).describe() == "placed(torch, near_home)"
+
+
+def test_leveled_can_demolish():
+    """壊して整地する条件（2026-10-10）: 置いた物・保護された家や建物も壊してそろえる。"""
+    spec = parse_spec({"predicate": "leveled", "where": "home", "distance": 8, "demolish": True})
+    assert spec.demolish is True
+    assert spec.describe() == "leveled(home, 8, demolish)"
+    assert spec.to_dict() == {"predicate": "leveled", "where": "home", "distance": 8, "demolish": True}
+    plain = parse_spec({"predicate": "leveled", "where": "home", "distance": 8})
+    assert plain.demolish is False and plain != spec
+    assert "demolish" not in plain.to_dict()
+
+
+def test_demolish_is_only_for_leveled():
+    assert parse_spec({"predicate": "have", "item": "log", "count": 3, "demolish": True}).demolish is False
+    with pytest.raises(ValueError, match="only for leveled"):
+        GoalSpec(GoalPredicate.HAVE, item="log", count=3, demolish=True)

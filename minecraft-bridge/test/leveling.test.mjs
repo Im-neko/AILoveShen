@@ -268,3 +268,83 @@ test('level: 設計した畑の上で、畑の地面と違う高さを渡した�
   // 畑がなければ今までどおり
   assert.doesNotMatch((await make({})('level', { where: '4,63,4', radius: 8 })).result, /whose ground is/)
 })
+
+// 壊して整地（demolish。2026-10-10）: 置いた物・保護された家や建物・木・畑も壊してそろえる
+const homeAt0 = () => ({ door: new Vec3(0, 64, 3), inside: new Vec3(0, 64, 0), min: new Vec3(-1, 64, -1), max: new Vec3(1, 64, 1), breach: [] })
+
+test('demolish: 置いた物・木・畑・家は列ごと壊してそろえる。水と壊せないブロックは残す', () => {
+  const w = world({
+    '2,64,0': 'oak_planks', '2,65,0': 'oak_planks', // 板（置いた物）
+    '0,64,-2': 'oak_log', // 木
+    '-1,63,1': 'farmland', // 床の高さの畑は、もうそろっている
+    '1,64,1': 'chest',
+    '1,63,-2': 'water',
+    '-3,64,0': 'bedrock'
+  })
+  const bot = { blockAt: w.blockAt }
+  const plain = levelStatus(bot, state(), '0,64,0', 4)
+  assert.equal(plain.skipped['oak_planks (not natural ground)'], 1)
+  const s = levelStatus(bot, state(), '0,64,0', 4, { demolish: true })
+  const cuts = s.cuts.map((p) => `${p.x},${p.y},${p.z}`)
+  assert.ok(['2,65,0', '2,64,0', '0,64,-2', '1,64,1'].every((c) => cuts.includes(c)), cuts.join(' '))
+  assert.equal(s.skipped.water, 1)
+  assert.equal(s.skipped['bedrock (cannot be broken)'], 1)
+  assert.equal(s.skipped.tree, undefined)
+})
+
+test('demolish: 保護された家の列も壊す。普通の整地は触らない', () => {
+  const w = world({ '0,64,0': 'oak_planks', '0,65,0': 'oak_planks', '0,66,0': 'oak_planks' })
+  const home = homeAt0()
+  const bot = { blockAt: w.blockAt }
+  assert.equal(columnWork(bot, state({ home }), 0, 0, 65), 'house or build') // 別の高さ
+  const r = columnWork(bot, state({ home }), 0, 0, 64, { demolish: true })
+  assert.deepEqual(r.cuts.map((p) => p.y), [66, 65, 64])
+})
+
+test('level + demolish: 板で塞がれた所を壊して、そろえる。壊した保護の部分を返す', async () => {
+  const home = homeAt0()
+  const w = world({ '2,64,0': 'oak_planks', '0,64,0': 'oak_planks' })
+  const bot = fakeBot(w, [])
+  const plain = await PRIMITIVES.level(bot, state({ home }), { where: '0,64,0', radius: 3 }, new AbortController().signal).catch((e) => e.message)
+  assert.match(String(plain), /could not level any/) // 板は自然の地形ではない（家の列は触らない）
+  const r = await PRIMITIVES.level(bot, state({ home }), { where: '0,64,0', radius: 3, demolish: true }, new AbortController().signal)
+  assert.match(r, /dug 2 blocks/)
+  assert.match(r, /took down protected parts \(it is part of the current home\)/)
+  assert.equal(levelStatus(bot, state({ home }), '0,64,0', 3, { demolish: true }).off, 0)
+})
+
+test('leveled(…, demolish): 目標の検証・候補・普通の整地で残す列を教える行', async () => {
+  const { makeGoal, evaluate, describeSpec } = await import('../src/goals.mjs')
+  const { ground } = await import('../src/candidates.mjs')
+  const k = new Knowledge(md)
+  const worldInfo = { inventory: {}, stored: {}, smelting: {}, blocks: {}, mobs: {}, table: 'near', furnace: null, unlocked: () => true, remembered: new Set(), dig: () => [], hunt: () => [] }
+  const w = world({ '2,64,0': 'oak_planks' })
+  const botOf = () => ({ ...fakeBot(w, []), time: { timeOfDay: 1000 } })
+  const st = state()
+  const plain = makeGoal({ predicate: 'leveled', where: '0,64,0', distance: 4 }, botOf(), st, k)
+  const e0 = evaluate(botOf(), { ...st, goal: plain }, k, worldInfo)
+  assert.equal(e0.met, true) // 板の列は残される
+  assert.ok(e0.lines.some((l) => /columns are left as they are.*leveled\(0,64,0, 4, demolish\)/.test(l)), e0.lines.join('\n'))
+  const goal = makeGoal({ predicate: 'leveled', where: '0,64,0', distance: 4, demolish: true }, botOf(), st, k)
+  assert.equal(goal.spec.demolish, true)
+  assert.equal(describeSpec(goal.spec), 'leveled(0,64,0, 4, demolish)')
+  const e = evaluate(botOf(), { ...st, goal }, k, worldInfo)
+  assert.equal(e.met, false)
+  const cand = ground(botOf(), { ...st, goal, home: null }, k, worldInfo, e).candidates.find((c) => c.verb === 'level')
+  assert.equal(cand?.demolish, true)
+  assert.match(cand.id, /taking down what stands there/)
+})
+
+test('level の道具: demolish なら、板で塞がれた所も受ける。断るときは demolish を案内する', async () => {
+  const w = world({ '2,64,0': 'oak_planks' })
+  const mk = () => createTools({
+    bot: { ...fakeBot(w, []), time: { timeOfDay: 1000 } },
+    state: { ...state(), memory: {}, busy: false, reflex: false },
+    knowledge: new Knowledge(md),
+    run: async (c) => ({ ok: true, result: JSON.stringify(c), seconds: 0 }),
+    candidates: () => [],
+    check: () => []
+  })
+  assert.match((await mk()('level', { where: '0,64,0', radius: 3 })).result, /already level except 1 columns.*demolish: true/)
+  assert.match((await mk()('level', { where: '0,64,0', radius: 3, demolish: true })).result, /"demolish":true/)
+})

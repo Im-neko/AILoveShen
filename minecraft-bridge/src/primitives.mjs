@@ -15,7 +15,7 @@ import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
 import { buildAllowsDig, growHome, inHomeRoom, isHomeCell } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
-import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, doorRouteOk, exitSpots, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding } from './home.mjs'
+import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, doorRouteOk, exitSpots, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding, protectedReason } from './home.mjs'
 import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
 import { smeltingProduct, CHANCE_DROP_BLOCKS } from './knowledge.mjs'
 import { surveySite, SURVEY_REACH } from './survey.mjs'
@@ -2164,7 +2164,9 @@ export const PRIMITIVES = {
     } else {
       noteLevelZone(state, c.where, c.radius) // ここは土を取るために掘らない（leveling.mjs）
     }
-    const statusNow = () => farm ? farmLevel(bot, state, farm) : levelStatus(bot, state, c.where, c.radius)
+    const demolish = c.demolish === true
+    const broke = new Set() // 壊した保護の理由（家・建物）
+    const statusNow = () => farm ? farmLevel(bot, state, farm) : levelStatus(bot, state, c.where, c.radius, { demolish })
     const skipped = new Map()
     const tries = new Map() // 同じセルを何度も（掘ったのに残る、置いたのに空く）: 3 回で飛ばす
     let cut = 0
@@ -2185,7 +2187,8 @@ export const PRIMITIVES = {
         if (since) await collectNearbyDrops(bot, state, signal)
         const left = s.off ? `; ${s.off} columns still off${skipped.size ? ` (could not reach or work ${skipped.size}: ${[...new Set(skipped.values())].slice(0, 2).join('; ')})` : ''}${!filler && s.fills.length ? ` (no dirt to fill ${s.fills.length} blocks)` : ''}` : ''
         if (!cut && !filled) throw new Error(`could not level any of the ground${left}`)
-        return `leveled the ground: dug ${cut} blocks, filled ${filled}${left}`
+        const tookDown = broke.size ? `; took down protected parts (${[...broke].join(', ')}): the home or build record is unchanged, so the plan will have to put them back (built(...)) if you still want them` : ''
+        return `leveled the ground: dug ${cut} blocks, filled ${filled}${left}${tookDown}`
       }
       const { p } = next
       const k = `${p.x},${p.y},${p.z}`
@@ -2196,7 +2199,9 @@ export const PRIMITIVES = {
         if (next.cut) {
           const block = bot.blockAt(p)
           // 畑の整地は、低い耕地の作物（上に生えているもの）も掘る
-          if (!TERRAIN.test(block?.name ?? '') && !(farm && (block?.boundingBox === 'empty' || farmRebuildable(block?.name)))) throw new Error(`${block?.name} is not natural ground`)
+          if (!demolish && !TERRAIN.test(block?.name ?? '') && !(farm && (block?.boundingBox === 'empty' || farmRebuildable(block?.name)))) throw new Error(`${block?.name} is not natural ground`)
+          const guard = demolish && block ? protectedReason(state, p, 0, block) : null
+          if (guard) broke.add(guard.replace(/ \(.*\)$/, ''))
           const wet = liquidReason(bot, p, block)
           if (wet) throw new Error(wet)
           if (!withinReach(bot, p)) await goto(bot, new goals.GoalLookAtBlock(p, bot.world, { reach: REACH }), signal)

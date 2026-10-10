@@ -388,7 +388,7 @@ class GoalPredicate(str, Enum):
     - PLANTED: 自分が植えた苗木（item: sapling か種類）が `count` 本ある（育った木も数える）
     - FARMED: 家のまわりの耕地に作物（item: wheat など）が `count` マス植わっている
     - LEVELED: `where`（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている
-      （整地）
+      （整地）。`demolish` なら、置いた物・保護された家や建物・木・畑も壊してそろえる
     - CUSTOM: `name` の判定（Gemini が書いた JS。ブリッジが世界を読んで動かす）が成り立っている
       （組み込みの述語で書けない頼み。docs/design/42_custom_conditions.md）
     - FACILITY: `name` の施設（設計した畑・植林場、docs/design/47 §7）のマスがすべて済んでいる
@@ -436,6 +436,8 @@ class GoalSpec:
     name: Optional[str] = None
     # facility だけ: 全マスでなく、全マスの 1/4 が済んでいれば成り立つ（定石の `ready` に使う）
     started: bool = False
+    # leveled だけ: 置いた物・保護された家や建物・木・畑も壊してそろえる（水・採掘場・壊せない所は残す）
+    demolish: bool = False
 
     def __post_init__(self) -> None:
         """述語に要る引数を確かめる。"""
@@ -464,6 +466,8 @@ class GoalSpec:
             raise ValueError("facility needs the name of the facility")
         if self.started and self.predicate != GoalPredicate.FACILITY:
             raise ValueError("started is only for facility")
+        if self.demolish and self.predicate != GoalPredicate.LEVELED:
+            raise ValueError("demolish is only for leveled")
         radius = (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
         if self.predicate in radius and (self.distance is None or self.distance < 1):
             raise ValueError(
@@ -479,6 +483,8 @@ class GoalSpec:
                 out[key] = value
         if self.started:
             out["started"] = True
+        if self.demolish:
+            out["demolish"] = True
         return out
 
     def same_kind(self, other: GoalSpec) -> bool:
@@ -501,6 +507,8 @@ class GoalSpec:
             args.append(f"dig_depth={self.dig_depth}")
         if self.started:
             args.append("started")
+        if self.demolish:
+            args.append("demolish")
         return f"{self.predicate.value}({', '.join(args)})"
 
 

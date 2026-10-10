@@ -275,6 +275,13 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
             "type": "string",
             "description": BUILD_NAME_DESCRIPTION,
         },
+        "demolish": {
+            "type": "boolean",
+            "description": "leveled only: true to take down what stands there too (placed blocks, "
+            "the home or builds even though they are protected, trees, farms) while leveling; "
+            "water, mines and unbreakable blocks are left. A deliberate choice: use it when "
+            "something placed blocks a build or the ground cannot be leveled without removing it",
+        },
         "where": {
             "type": "string",
             "description": "placed: where to place the item: home (inside the home's room), "
@@ -765,6 +772,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             and data.get("name")
             else None,
             started=bool(data.get("started", False)),
+            demolish=bool(data.get("demolish", False)) and predicate == GoalPredicate.LEVELED,
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"missing or malformed argument: {e}") from e
