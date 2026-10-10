@@ -2412,6 +2412,24 @@ export const PRIMITIVES = {
     plan.seen = new Set()
     return `cleared the site of the build ${c.build} down to bare ground (${summary}); build_next now places it again from the first block`
   },
+  // 前の家（引っ越しで残した家、半壊・廃屋）を更地にして、前の家の記録から外す（2026-10-11, 設計書 166）。
+  // 壁の外側 1 周までの底面の四角を、床の層の高さにそろえる: 家のブロックも保護も壊し、穴は土で埋める
+  async clear_former_home (bot, state, c, signal) {
+    const home = (state.formerHomes ?? []).find((h) => h.door.equals(c.door))
+    if (!home) throw new Error('that old house is not in the record of former homes (already cleared?)')
+    const box = { x0: home.min.x - 1, z0: home.min.z - 1, x1: home.max.x + 1, z1: home.max.z + 1 }
+    const w = box.x1 - box.x0 + 1
+    const d = box.z1 - box.z0 + 1
+    const radius = Math.ceil(Math.hypot(w, d) / 2) + 1
+    if (radius > MAX_LEVEL) throw new Error(`the old house is too big to clear in one go (${w}x${d})`)
+    const where = `${box.x0 + Math.floor(w / 2)},${home.min.y},${box.z0 + Math.floor(d / 2)}`
+    let summary = 'the site was already bare'
+    if (levelStatus(bot, state, where, radius, { demolish: true, box }).off) summary = await PRIMITIVES.level(bot, state, { where, radius, demolish: true, box }, signal)
+    if (levelStatus(bot, state, where, radius, { demolish: true, box }).off) throw new Error(`could not clear the whole old house (${summary}): stand near it and try again`)
+    state.formerHomes = state.formerHomes.filter((h) => h !== home)
+    for (const ch of homeChests(state.memory ?? { chests: {} }, home)) forgetChest(state.memory, ch)
+    return `cleared the old house at ${home.door.x},${home.door.y},${home.door.z} down to bare ground (${summary}); it is no longer a former home`
+  },
   // 畑のまわりの柵（設計書 75）: 輪の足りない所に、近い順に柵を立てる。持っている柵がなくなるか、立てられる所が
   // なくなるまで。1 つも立てられなければ失敗
   async fence (bot, state, c, signal) {

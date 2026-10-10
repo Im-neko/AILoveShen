@@ -148,6 +148,7 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         ["item"],
     ),
     "go_home": ("家に帰って中に入り、ドアを閉める", {}, []),
+    "clear_old_home": ("一番近い前の家（半壊・廃屋）を壊して更地にする", {}, []),
     "sleep": ("家のベッドで寝る（夜だけ）", {}, []),
     "move_furniture": (
         "置いてある家具（ベッド、作業台、かまど、チェスト）を拾って置き直す。今の家の家具も動かせるが、"
