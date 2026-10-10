@@ -2316,7 +2316,7 @@ export const PRIMITIVES = {
         if (next.cut) {
           const block = bot.blockAt(p)
           // 畑の整地は、低い耕地の作物（上に生えているもの）も掘る
-          if (!demolish && !TERRAIN.test(block?.name ?? '') && !(farm && (block?.boundingBox === 'empty' || farmRebuildable(block?.name)))) throw new Error(`${block?.name} is not natural ground`)
+          if (farm && !demolish && !TERRAIN.test(block?.name ?? '') && !(block?.boundingBox === 'empty' || farmRebuildable(block?.name))) throw new Error(`${block?.name} is not natural ground`)
           const guard = demolish && block ? protectedReason(state, p, 0, block) : null
           if (guard) broke.add(guard.replace(/ \(.*\)$/, ''))
           const wet = liquidReason(bot, p, block)

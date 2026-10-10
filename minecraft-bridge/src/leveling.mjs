@@ -3,7 +3,8 @@
 // where のまわり半径 distance の地面を、決まった高さにそろえる。高さは足の高さ（そこに立つ高さ）:
 // home なら家の床の上（home.inside.y）、x,y,z ならその y（その場所に立ったときの足の高さ）。地面の
 // いちばん上の固いブロックが y-1 になっていればそろっている。
-//   - 高い列（出っ張り）: y 以上にある自然の地形（TERRAIN）を掘る
+//   - 高い列（出っ張り）: y 以上にあるブロックを、種類を問わず全部掘る（2026-10-11: 土しか壊さず、置いた物や木が残った）。
+//     畑の整地（farmLevel）だけは、今までどおり自然の地形（TERRAIN）だけ（畑の柵や作物を壊さない）
 //   - 低い列（穴）: 地面の上から y-1 まで土で埋める
 // demolish（壊して整地。2026-10-10）: 置いた物・保護されている家や建物・木・畑も壊して、そろえる。水・溶岩、採掘場、
 // 壊せないブロックの列だけは触らない。普段は壊さない物を壊すので、明示したときだけ使う。
@@ -63,7 +64,7 @@ const isPlant = (b) => b.boundingBox === 'empty' && !FLUID.test(b.name)
 
 // 1 列を見る → { off: bool, cuts: [Vec3], fills: [Vec3] } か、触らない理由の文字列か UNLOADED
 // stairs: false は、階段の入口のまわりも見る（設計した畑のマスは、階段の記録より先に直す）
-export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, demolish = false } = {}) {
+export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, demolish = false, loose = true } = {}) {
   const floor = y - 1
   // ドアの前の床は、同じ高さに整地するなら普通の列（穴を埋める。家のブロックは TERRAIN でないので削らない）
   const doorstep = isDoorstepFloor(state, new Vec3(x, floor, z)) && floor === state.home.outside.y - 1
@@ -79,7 +80,7 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, de
     const b = bot.blockAt(new Vec3(x, h, z))
     if (!b) return UNLOADED
     if (FLUID.test(b.name)) return 'water'
-    if (!demolish && TREE.test(b.name)) return 'tree'
+    if (!loose && !demolish && TREE.test(b.name)) return 'tree'
     if (!demolish && FARM.test(b.name)) return 'farmland'
     if (isPlant(b)) continue
     top = b
@@ -93,9 +94,9 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, de
     for (let h = t; h > floor; h--) {
       const b = bot.blockAt(new Vec3(x, h, z))
       if (isPlant(b) || b.name === 'air') continue
-      if (demolish) {
+      if (demolish || loose) {
         if (b.hardness < 0) return `${b.name} (cannot be broken)`
-      } else if (!TERRAIN.test(b.name)) return `${b.name} (not natural ground)`
+      } else if (!loose && !TERRAIN.test(b.name)) return `${b.name} (not natural ground)`
       cuts.push(b.position)
     }
     return { off: true, cuts, fills: [] }
@@ -155,7 +156,7 @@ export function farmColumns (layout, { margin = FARM_MARGIN } = {}) {
 
 // 畑の四角の中の 1 列。耕地が地面の高さ y より低いなら、作物を掘って土で埋め上げる。それ以外は columnWork と同じ
 function farmCellWork (bot, state, x, z, y, layout) {
-  const base = columnWork(bot, state, x, z, y + 1, { stairs: false })
+  const base = columnWork(bot, state, x, z, y + 1, { stairs: false, loose: false })
   if (base !== 'farmland') {
     // 作物のマスの地面が耕せない固いブロック（丸石など）なら、掘って土で埋め直す（高さは合っていても直す）
     if (base?.off === false && layout.cells.some((c) => c.x === x && c.z === z)) {
@@ -192,7 +193,7 @@ export function farmLevel (bot, state, fac, { margin = FARM_MARGIN } = {}) {
   const ring = new Set((fac.layout.fence ?? []).map((c) => `${c.x},${c.z}`))
   for (const [x, z] of farmColumns(fac.layout, { margin })) {
     out.total++
-    const w = inRect(x, z) ? farmCellWork(bot, state, x, z, y, fac.layout) : columnWork(bot, state, x, z, y + 1, ring.has(`${x},${z}`) ? { depth: RING_DEPTH } : {})
+    const w = inRect(x, z) ? farmCellWork(bot, state, x, z, y, fac.layout) : columnWork(bot, state, x, z, y + 1, ring.has(`${x},${z}`) ? { depth: RING_DEPTH, loose: false } : { loose: false })
     if (w === UNLOADED) { out.unloaded++; continue }
     if (typeof w === 'string') { out.skipped[w] = (out.skipped[w] ?? 0) + 1; continue }
     if (!w.off) continue

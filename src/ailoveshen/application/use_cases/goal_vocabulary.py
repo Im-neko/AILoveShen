@@ -272,10 +272,10 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
         },
         "demolish": {
             "type": "boolean",
-            "description": "leveled only: true to take down what stands there too (placed blocks, "
-            "the home or builds even though they are protected, trees, farms) while leveling; "
-            "water, mines and unbreakable blocks are left. A deliberate choice: use it when "
-            "something placed blocks a build or the ground cannot be leveled without removing it",
+            "description": "leveled only: leveling already removes every block above the floor (dirt, stone, "
+            "trees, placed blocks); true also takes down the home or builds, planted trees and farms "
+            "even though they are protected; water, mines and unbreakable blocks are left. A deliberate "
+            "choice: use it only when a protected build blocks the ground",
         },
         "where": {
             "type": "string",
