@@ -62,7 +62,8 @@ $site_note
 $provisional_note
 ## ヒント
 - 配信で完成まで見せられる大きさが良い
-- あなたらしさが伝わる名前とコンセプトにする
+- あなたらしさが伝わる名前とコンセプトにする。名前はシェン（LoL）の世界観で付けて、視聴者に笑ってもらう
+  （均衡の結社キンコウ、アイオニア、黄昏、気、影など。何の家か分かる言葉は残す）
 $previous_error
 ## 出力
 指定された JSON だけを出力してください。
@@ -167,6 +168,30 @@ MAP_ANCHOR_NOTE = """\
   - 家からの見え方（街並み、道、眺め）を考えて選ぶ。水・溶岩・木・黒い所は避ける
 """
 
+# 配信の名前の約束（街・家・建物・施設の名前。設計書 160）
+NAMING_THEME = """
+## 名前の付け方（配信の約束）
+この配信は LoL（League of Legends）のシェン（均衡の結社キンコウの「黄昏の目」）にちなんでいる。
+名前は、シェンの世界観で付けて、視聴者に笑ってもらう:
+- 使う言葉: 均衡の結社キンコウ、アイオニア、黄昏、気（Ki）、影、精神の刃、結束、均衡、忍者、守り手、など
+- 何の建物か分かる言葉は残す（工房・畑・倉庫・塔・拠点など）。例: 「キンコウの修練場」「黄昏の畑」「均衡の工房」
+- 日本語で 2〜12 文字ぐらい（長くても 24 文字まで）。ほかの名前とかぶらせない
+"""
+
+NAMING_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者です。次の建物・施設に、配信で呼ぶ名前を付けてください。
+元の名前（name）は判定に使う識別子なので変わりません。付けるのは呼び名（title）だけです。
+$theme
+## 名前を付けるもの
+$things
+
+## もう使っている名前（かぶらせない）
+$taken
+
+## 出力
+指定された JSON だけを出力してください。上の全部に 1 つずつ title を付けること。
+""")
+
 SITE_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者「$name」（性格: $personality_traits）です。
 配信の最終目標は「$mission」です。街を作る場所を決めるため、最初の家のまわりの候補地を
@@ -190,6 +215,9 @@ $sites
 ## 選び方
 - 数字で選ぶ。見た目の想像（「きれいそう」など）で選ばない
 - 理由は配信でそのまま話す。どの数字が決め手かを 1〜2 文で言う
+$theme
+## 街の名前
+街の名前（town_name）も付けること。
 $previous_error
 ## 出力
 指定の JSON で出力してください。
@@ -1006,6 +1034,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             personality_traits="、".join(character.personality_traits) or "特になし",
             mission=mission.text,
             sites="\n".join(f"- {s['id']}: {format_site_facts(s)}" for s in sites),
+            theme=NAMING_THEME,
             previous_error=_retry(previous_error, "選び直してください。"),
         )
 
@@ -1094,6 +1123,14 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             current=now,
             reason=reason,
             previous_error=_retry(previous_error, "描き直してください。"),
+        )
+
+    def build_naming_prompt(self, things: list[dict[str, str]], taken: list[str]) -> str:
+        """建物・施設に呼び名をつけさせるプロンプト（設計書 160）。"""
+        return NAMING_TEMPLATE.substitute(
+            theme=NAMING_THEME,
+            things="\n".join(f"- {t['name']}: {t['what']}" for t in things),
+            taken="、".join(taken) or "なし",
         )
 
     def build_facility_prompt(

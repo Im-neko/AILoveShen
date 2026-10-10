@@ -781,11 +781,20 @@ def _format_risk(risk: dict) -> list[str]:
     return [line]
 
 
+def _format_titles(obs: GameObservation) -> list[str]:
+    """建物・施設の呼び名。配信で話すときはこの呼び名で言う（目標や判定に書くのは元の名前）。"""
+    if not obs.titles:
+        return []
+    named = "、".join(f"{name}={title}" for name, title in obs.titles)
+    return [f"- 建物・施設の呼び名（人に話すときはこの呼び名で言う。目標・判定・道具には元の名前を使う）: {named}"]
+
+
 def _format_situation(obs: GameObservation) -> str:
     s = obs.state
     lines = [
         f"- 時間帯: {format_time(s.get('time', {}))}",
         f"- 家: {_format_home(obs)}",
+        *_format_titles(obs),
         *([f"- 今いる場所: {format_place(obs)}"] if obs.has_home else []),
         f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
         *_format_around(s.get("around") or {}),

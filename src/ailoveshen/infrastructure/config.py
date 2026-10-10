@@ -96,6 +96,7 @@ DEFAULT_THINKING_LEVELS = {
     "reply_final": "low",
     "live": "low",
     "promise": "low",
+    "naming": "low",
     "screen_review": "medium",
     "skill_write": "high",
     "check_write": "medium",

@@ -1122,7 +1122,11 @@ def site_schema(site_ids: list[str]) -> dict[str, Any]:
                 "type": "string",
                 "description": "Why this site, from its numbers, in 1-2 sentences (said on stream)",
             },
-            "town_name": {"type": "string", "description": "A short name for the town"},
+            "town_name": {
+                "type": "string",
+                "description": "A short name for the town, in the world of Shen from League of "
+                "Legends (the Kinkou order, Ionia, twilight, ki, shadow, balance...), in Japanese",
+            },
         },
         "required": ["site_id", "reason", "town_name"],
     }

@@ -198,6 +198,10 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data: Any = await self._request("GET", "/memory")
         return dict(data) if isinstance(data, dict) else {}
 
+    async def set_titles(self, titles: dict[str, str]) -> dict[str, Any]:
+        """建物と施設に呼び名をつける（PUT /titles）。{set: [名前], refused: {名前: 理由}}。"""
+        return await self._request("PUT", "/titles", json={"titles": titles})
+
     async def set_facility(self, name: str, body: dict[str, Any]) -> dict[str, Any]:
         """施設の設計を登録する（400: 設計を直せる理由、409: 区画が読み込まれていない）。"""
         try:
@@ -459,6 +463,7 @@ def _to_observation(data: dict[str, Any]) -> GameObservation:
         unfinished_builds=tuple(
             str(b["name"]) for b in obs.get("builds") or [] if not b.get("complete")
         ),
+        titles=tuple((str(k), str(v)) for k, v in (obs.get("titles") or {}).items()),
         busy=bool(data.get("busy", False)),
         day=int(obs["time"]["day"]) if obs["time"]["day"] is not None else None,
         underground=bool(obs.get("underground", False)),

@@ -1511,6 +1511,8 @@ class GameObservation:
     chest_spot: Optional[bool] = None
     # まだできていない建物（Gemini が設計したもの）の名前
     unfinished_builds: tuple[str, ...] = ()
+    # 建物と施設の呼び名（識別子, 呼び名）。視聴者に見せ、話す名前。判定には識別子を使う（設計書 160）
+    titles: tuple[tuple[str, str], ...] = ()
     busy: bool = False  # ブリッジが行動か反射を実行している
     # ワールドの何日目か（寝て飛ばした夜も数える。まだ時刻がなければ None）
     day: Optional[int] = None

@@ -9,6 +9,7 @@ from ailoveshen.application.use_cases.advisor import Advisor
 from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
+from ailoveshen.application.use_cases.naming import NameGiver
 from ailoveshen.application.use_cases.danger import DangerWatcher, ReflexPolicy
 from ailoveshen.application.use_cases.step_picker import StepPicker
 from ailoveshen.application.use_cases.stuck_check import StuckCheck
@@ -441,6 +442,7 @@ def create_game_service(
         ),
         search=search,
         abilities=load_abilities(),
+        namer=NameGiver(bridge, text_generator, prompt_builder),
         advisor=(
             Advisor(text_generator, prompt_builder)
             if minecraft.control == "tools" and has_advisor(llm or LlmSettings())

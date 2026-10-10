@@ -153,6 +153,11 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
+    async def set_titles(self, titles: dict[str, str]) -> dict[str, Any]:
+        """建物と施設に呼び名をつける（PUT /titles）。識別子は変えない: {set: [名前], refused: {名前: 理由}}。"""
+        ...
+
+    @abstractmethod
     async def facilities(self) -> list[dict[str, Any]]:
         """
         施設の一覧（docs/design/47 §5。近い順）: [{name, kind, status, box, entrance?, center,

@@ -167,6 +167,7 @@ export function facilitiesStatus (bot, state, jaOf = () => '') {
         kind: fac.kind,
         status,
         ...(fac.purpose ? { purpose: fac.purpose } : {}),
+        ...(fac.title ? { title: fac.title } : {}),
         ...(fac.zone ? { zone: fac.zone } : {}),
         box: fac.box,
         ...(fac.entrance ? { entrance: fac.entrance } : {}),

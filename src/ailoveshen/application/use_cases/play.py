@@ -54,6 +54,7 @@ from ailoveshen.application.use_cases.lessons import (
     situation_of,
 )
 from ailoveshen.application.use_cases.learned_candidates import LearnedCandidates, offers_of
+from ailoveshen.application.use_cases.naming import NameGiver
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.search import KeySearch, WorldSearch
 from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
@@ -366,6 +367,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         goal_store: Optional[IGoalStore] = None,
         goal_end_recorder: Optional[IWatchRecorder] = None,
         advisor: Optional[Advisor] = None,
+        namer: Optional[NameGiver] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -467,6 +469,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         # 大目標の計画（中目標と小目標の並び）を書くもの（docs/design/50 §18）。None なら Gemini の目標の決定が
         # 中目標を書き、小目標は解決器の次の一歩から選ぶ（今までどおり）
         self._planner = planner
+        # 建物・施設の呼び名（シェン風。設計書 160）。目標を決めるときに、呼び名のないものに裏で付ける
+        self._namer = namer
+        self._naming: Optional[asyncio.Task[list[str]]] = None
         self._goal_store = goal_store
         self._goal_end_recorder = goal_end_recorder
         self._goal_end_recorded: Optional[Goal] = None  # 終わりを記録した小目標（決定に失敗して残った目標を二度数えない）
@@ -1267,6 +1272,12 @@ class AdvancePlayUseCase(IAdvancePlay):
             return "", seen
         return describe_memory(facilities), seen
 
+    def _start_naming(self) -> None:
+        """呼び名のない建物・施設に、裏で呼び名を付ける（前のが終わっていなければ待つ。決定は待たせない）。"""
+        if self._namer is None or (self._naming is not None and not self._naming.done()):
+            return
+        self._naming = asyncio.ensure_future(self._namer.name_missing())
+
     async def _decide_goal(
         self,
         session: PlaySession,
@@ -1277,6 +1288,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         rethinks_seen: Optional[int] = None,
     ) -> None:
         plan = session.plan
+        self._start_naming()
         predicates = predicates_now(obs, plan, tools=self._control == "tools")
         messages = _for_goal(self._conversation.recent_messages(self._history_limit))
         goals = _shown_goals(activity, reason)

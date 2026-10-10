@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import json
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import asdict
@@ -87,8 +88,26 @@ EVENTS: tuple[type[DomainEvent], ...] = (
 )
 
 
+# 建物・施設の呼び名（識別子 → 呼び名）。ラベルを作る深い所まで引数で運ばず、スナップショットを作る間だけ持つ
+_TITLES: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar("board_titles", default={})
+
+
 def goals_snapshot(activity: Activity | None) -> dict[str, Any]:
-    """ボードに出す形の目標（/api/goals の JSON）。"""
+    """ボードに出す形の目標（/api/goals の JSON）。建物・施設は呼び名で出す（設計書 160）。"""
+    obs = activity.observation if activity is not None else None
+    token = _TITLES.set(dict(obs.titles) if obs is not None else {})
+    try:
+        return _goals_snapshot(activity)
+    finally:
+        _TITLES.reset(token)
+
+
+def _named(name: str | None) -> str:
+    """識別子の呼び名（なければ識別子のまま）。"""
+    return _TITLES.get().get(name or "", name or "")
+
+
+def _goals_snapshot(activity: Activity | None) -> dict[str, Any]:
     if activity is None:
         return {
             "playing": False,
@@ -151,11 +170,11 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.STORED:
         return f"チェストに{item}を {n} 個ためる"
     if p == GoalPredicate.BUILT:
-        return f"「{spec.name}」を建てる" if spec.name else "家を建てる"
+        return f"「{_named(spec.name)}」を建てる" if spec.name else "家を建てる"
     if p == GoalPredicate.PLACED:
         where = {"home": "家に", "near_home": "家のまわりに"}.get(spec.where or "home")
         if where is None:
-            where = f"「{spec.where[6:]}」に" if (spec.where or "").startswith("build:") else "そこに"
+            where = f"「{_named(spec.where[6:])}」に" if (spec.where or "").startswith("build:") else "そこに"
         return f"{where}{item}を{f' {n} 個' if n and n > 1 else ''}置く"
     if p == GoalPredicate.AT_HOME:
         return "家に帰る"
@@ -179,7 +198,7 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.FARMED:
         return f"畑に{item}を {n} マス植える"
     if p == GoalPredicate.FACILITY:
-        return f"{spec.name} を作る"
+        return f"{_named(spec.name)} を作る"
     return spec.describe()
 
 

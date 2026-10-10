@@ -206,6 +206,17 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_naming_prompt(self, things: list[dict[str, str]], taken: list[str]) -> str:
+        """
+        建物・施設に呼び名をつけさせるプロンプト（設計書 160）。
+
+        Args:
+            things: 呼び名のないもの: [{name（識別子）, what（何か・何のためか）}]
+            taken: もう使っている呼び名（かぶらせない）
+        """
+        ...
+
+    @abstractmethod
     def build_facility_prompt(
         self,
         name: str,

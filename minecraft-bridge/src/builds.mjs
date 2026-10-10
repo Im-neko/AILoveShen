@@ -265,7 +265,7 @@ export function inBuilds (state, p, margin = 0) {
 export function buildsStatus (bot, state) {
   return Object.entries(state.builds ?? {}).map(([name, plan]) => {
     const s = plan.status(bot)
-    return { name, purpose: plan.design?.purpose ?? '', anchor: plan.design?.anchor ?? null, placed: s.placed, total: s.total, complete: s.complete, origin: s.origin }
+    return { name, purpose: plan.design?.purpose ?? '', ...(plan.design?.title ? { title: plan.design.title } : {}), anchor: plan.design?.anchor ?? null, placed: s.placed, total: s.total, complete: s.complete, origin: s.origin }
   })
 }
 
