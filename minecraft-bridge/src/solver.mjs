@@ -359,15 +359,21 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   if (UNDERGROUND_LEAVES.has(leaf.kind)) {
     // 松明が（輪で）どうしても手に入らないときは、松明なしで下りる: 松明の石炭も、丸石で作るかまどの木炭も地下の
     // 石からで、松明を要求し続けると何も手に入らなくなる（2026-10-07: 死んで松明を失い、石が「手立てなし」で 17 分止まった）
-    const trial = cloneLedger(ledger)
-    const torches = need(k, world, 'torch', UNDERGROUND_TORCHES, trial, path, depth + 1)
-    if (torches.cost < IMPOSSIBLE) {
+    // 採掘場へは、残りを掘るぶんの松明を手に持って行く（チェストにあれば出す。world.mineTorches）。その数が手に入らない
+    // ときは、半分、さらに少ない数へ下げる（どうしても無理なら下の「松明なしで下りる」）
+    const wanted = world.mineTorches?.(leaf) ?? UNDERGROUND_TORCHES
+    const ladder = [...new Set([wanted, Math.ceil(wanted / 2), UNDERGROUND_TORCHES])].filter((n) => n <= wanted && n >= UNDERGROUND_TORCHES)
+    for (const count of ladder) {
+      const trial = cloneLedger(ledger)
+      const torches = need(k, world, 'torch', count, trial, path, depth + 1)
+      if (torches.cost >= IMPOSSIBLE) continue
       Object.assign(ledger, trial)
       children.push(torches.node)
       cost += torches.cost
       // 足りなくても、半分以上あって、足りないぶんが持ち物から作れるなら、止めずに作る手を並べる
       // （2026-10-09: 6/8 本のまま、作る手が選ばれず 3 時間、穴掘りの手が出なかった）
-      if (torches.node.have >= UNDERGROUND_TORCHES_MIN && craftOnly(torches.node)) soft.add(torches.node)
+      if (torches.node.have >= Math.max(UNDERGROUND_TORCHES_MIN, Math.ceil(count / 2)) && craftOnly(torches.node)) soft.add(torches.node)
+      break
     }
     // 予備のツルハシ（掘る道具のほかに 1 本）: 採掘場の底で道具が壊れると、作業台も置けず岩も掘れず、出られなくなった
     // （2026-10-07: 石と木のツルハシが 72 マスで 2 本とも壊れ、約 40 分閉じ込められた）。今作れる一番上の格を持つ

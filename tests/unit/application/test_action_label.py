@@ -103,3 +103,13 @@ def test_labels_are_japanese_and_nonempty_with_minimal_candidate(verb):
     call, cands = suggest(f"{verb} x", verb=verb, target="oak_log", item="oak_log")
     label = action_label(call, cands)
     assert label and re.search(r"[ぁ-んァ-ン一-龥]", label)
+
+
+def test_waiting_at_dusk_is_not_shown_as_waiting_until_morning():
+    """寝られる時刻まで待つ間、朝まで立っているように見えた（2026-10-10）。"""
+    call, cands = suggest("wait inside until bedtime", verb="wait", target="inside the house")
+    assert action_label(call, cands) == "ベッドで寝られる時刻まで待つ"
+    call, cands = suggest("wait inside until morning", verb="wait", target="inside the house")
+    assert action_label(call, cands) == "朝まで家で待つ"
+    call, cands = suggest("wait inside to heal", verb="wait", target="inside the house")
+    assert action_label(call, cands) == "待つ"

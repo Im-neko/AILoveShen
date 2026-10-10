@@ -86,11 +86,16 @@ test('facility(mine): 全部のセルが空いたら済み。次に掘るのは�
   const s = state()
   const fac = registerFacility(world(), s, 'mine_1', MINE)
   const solverWorld = { inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, remembered: new Set() }
-  let bot = world({}, [{ name: 'stone_pickaxe', count: 1 }])
+  let bot = world({}, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 64 }])
   s.goal = makeGoal({ predicate: 'facility', name: 'mine_1' }, bot, s, k)
   let r = evaluate(bot, s, k, solverWorld)
   assert.equal(r.met, false)
   assert.deepEqual(r.leaves.map((l) => [l.kind, l.facility]), [['dig_mine', 'mine_1']])
+  // 松明を（残りのセルに足りるぶんの半分も）持っていなければ、掘らずに先に揃える
+  const bare = world({}, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 3 }])
+  const few = evaluate(bare, s, k, solverWorld)
+  assert.ok(!few.leaves.some((l) => l.kind === 'dig_mine'))
+  assert.match(few.lines.join('\n'), /torches for the mine: carry \d+ before going down \(you carry 3\)/)
   assert.match(r.lines.join('\n'), /mine mine_1 \(stairs down to y 40, tunnels east\/south\)/)
 
   const blocks = dug(fac)
@@ -98,7 +103,7 @@ test('facility(mine): 全部のセルが空いたら済み。次に掘るのは�
   blocks[`${third.x},${third.y + 1},${third.z}`] = 'stone'
   assert.equal(mineStatus(world(blocks), fac).index, 3)
 
-  bot = world(dug(fac), [{ name: 'stone_pickaxe', count: 1 }])
+  bot = world(dug(fac), [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 64 }])
   r = evaluate(bot, s, k, solverWorld)
   assert.equal(r.met, true)
   assert.equal(updateStatus(bot, fac) || fac.status, 'done')

@@ -139,6 +139,11 @@ function waitsInside (bot, state, danger) {
     const tod = bot.time.timeOfDay
     if (!danger.length && hasBed(bot, state.home) && tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping) {
       out.push({ id: 'sleep in the bed', verb: 'sleep', target: 'bed', inPlace: true, effect: 'skips the night' })
+    } else if (!danger.length && hasBed(bot, state.home) && tod < SLEEP_FROM) {
+      // 夕方で、ベッドが使えるのはまだ先（時刻 SLEEP_FROM から）。朝まで待つのではなく、寝られる時刻まで待つ
+      // （2026-10-10: 「朝まで待つ」と見えて、ベッドの横で立って夜を過ごしているように見えた）。時刻ちょうどまで待つ
+      const secs = Math.ceil((SLEEP_FROM - tod) / 20)
+      out.push({ ...wait('wait inside until bedtime', `the bed works from time ${SLEEP_FROM} (about ${secs} s from now): then sleep in it`), until: SLEEP_FROM + 1 })
     } else {
       out.push(wait('wait inside until morning', 'the night passes'))
     }

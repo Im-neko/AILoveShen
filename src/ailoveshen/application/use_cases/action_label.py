@@ -46,6 +46,15 @@ def _smelt(d: dict[str, Any], cid: str) -> str:
     return f"{_thing(d)}を精錬する"
 
 
+def _wait_label(cid: str) -> str:
+    """待つ手の動作。寝られる時刻まで待つのと、朝まで待つのを分ける（ベッドの横で朝まで立っていると見えた）。"""
+    if "until bedtime" in cid:
+        return "ベッドで寝られる時刻まで待つ"
+    if "until morning" in cid:
+        return "朝まで家で待つ"
+    return "待つ"
+
+
 def _with(template: str) -> Callable[[dict[str, Any], str], str]:
     return lambda d, cid: template.format(thing=_thing(d))
 
@@ -105,7 +114,7 @@ _BY_VERB: dict[str, Callable[[dict[str, Any], str], str]] = {
     "tidy": lambda d, cid: "いらない物をチェストに片づける",
     "toss": lambda d, cid: "いらない物を捨てる",
     "use_item": lambda d, cid: f"{item_name(d.get('item'))}を使う" if d.get("item") else "アイテムを使う",
-    "wait": lambda d, cid: "待つ",
+    "wait": lambda d, cid: _wait_label(cid),
     "wake_sleeper": _with("寝ている{thing}を起こす"),
     "wall_in": lambda d, cid: "土で囲って朝を待つ",
     "withdraw": _with("チェストから{thing}を取り出す"),

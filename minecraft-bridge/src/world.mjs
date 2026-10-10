@@ -8,13 +8,14 @@ import { gatherableLog, isNaturalLogName } from './trees.mjs'
 import { findTable, findFurnace, knownFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms, finishedMine, mineSummaries, inMineBody, inTown, onFarmGround, waterAt } from './facilities.mjs'
+import { cropFarms, finishedMine, mineSummaries, inMineBody, inTown, onFarmGround, waterAt, mineStatus } from './facilities.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
 import { rememberedKinds } from './worldmap-places.mjs'
 import { isQuarryKind, quarrySpot, usableShaft, QUARRY_RADIUS } from './quarry.mjs'
 import { keptGround, findCount } from './leveling.mjs'
 import { mineFromHome, minePlan, shallowStone, caveOre } from './mining.mjs'
+import { mineTorchesWanted } from './mine-torches.mjs'
 
 const DIG_RADIUS = 32
 const SOIL_KINDS = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol'])
@@ -227,6 +228,14 @@ export function snapshot (bot, state) {
     // 家のそばの採掘場から掘るか（設計書 68）と、その次の一手（minePlan）
     home: mineFromHome(state),
     minePlan: (sources) => minePlan(bot, state, sources),
+    // 採掘場の手（dig_mine / go_mine / make_mine）の前に手に持つ松明の数。ほかの地下の手は null（ソルバーの既定）
+    mineTorches: (leaf) => {
+      if (leaf.kind === 'make_mine') return mineTorchesWanted(Infinity)
+      const fac = state.facilities?.[leaf.facility ?? leaf.mine?.name]
+      if (!fac?.layout?.cells) return leaf.kind === 'go_mine' ? mineTorchesWanted(Infinity) : null
+      const m = mineStatus(bot, fac)
+      return mineTorchesWanted(m.total - m.done)
+    },
     // 深さの上限は付けない（安全の決まりは掘るときに見る）。dig_depth があればそこまで
     digDepth: state.goal?.spec?.dig_depth ?? Infinity
   }

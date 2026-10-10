@@ -1751,7 +1751,9 @@ export const PRIMITIVES = {
       await bot.lookAt(state.home.door.offset(0.5, 1.2, 0.5))
     }
     const facing = bot.entity.yaw
-    for (let i = 0; i < WAIT_TICKS / GLANCE_TICKS && !signal.aborted; i++) {
+    // `until`: この時刻（ベッドが使える時刻）になったら待つのをやめる。10 秒より早ければ、そこまで
+    const ticks = c.until === undefined ? WAIT_TICKS : Math.max(GLANCE_TICKS, Math.min(WAIT_TICKS, c.until - bot.time.timeOfDay))
+    for (let i = 0; i < Math.ceil(ticks / GLANCE_TICKS) && !signal.aborted; i++) {
       await bot.waitForTicks(GLANCE_TICKS)
       await bot.look(facing + (i % 2 ? 0 : (Math.random() - 0.5) * GLANCE_ANGLE), 0)
     }

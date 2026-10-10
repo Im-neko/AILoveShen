@@ -21,6 +21,7 @@
 
 import vec3Pkg from 'vec3'
 import { solve, nextStep, isGather } from './solver.mjs'
+import { mineTorchesWanted, enoughToGo } from './mine-torches.mjs'
 import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillCount } from './observe.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked } from './home.mjs'
 import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
@@ -741,6 +742,13 @@ function evaluateOne (bot, state, knowledge, world) {
         if (!m.next) { out.leaves.push({ kind: 'go_facility', name: fac.name, pos: fac.entrance }); break }
         const inv = inventoryCounts(bot)
         if (!Object.keys(inv).some((n) => n.endsWith('_pickaxe') && inv[n] > 0)) { addSolved([{ spec: 'wooden_pickaxe', count: 1 }]); break }
+        // 残りを掘るぶんの松明を手に持ってから掘る（チェストにあれば出す。足りない数が半分未満なら先に揃える）
+        const wanted = mineTorchesWanted(m.total - m.done)
+        if ((inv.torch ?? 0) < enoughToGo(wanted)) {
+          addSolved([{ spec: 'torch', count: wanted }])
+          out.lines.push(`torches for the mine: carry ${wanted} before going down (you carry ${inv.torch ?? 0})`)
+          break
+        }
         out.leaves.push({ kind: 'dig_mine', facility: fac.name })
         break
       }

@@ -150,7 +150,12 @@ test('夜の家の中にベッドがあれば、待たずに寝る候補を出�
   // ベッドがなければ待つ、敵がそばにいれば眠れないので待つ、眠れる時刻の前（夕方）も待つ
   assert.deepEqual(sleeping({ bed: false }), ['wait inside until morning'])
   assert.deepEqual(sleeping({ bed: true, mobs: [skeletonAtDoor] }), ['wait inside until morning'])
-  assert.deepEqual(sleeping({ bed: true, time: 12000 }), ['wait inside until morning'])
+  // 眠れる時刻（12541）の前の夕方は、朝まで待つのではなく、寝られる時刻まで待つ（その時刻ちょうどまで）
+  const bedtime = run({ time: 12000, mobs: [], ...danger, bed: true }).candidates.filter((c) => c.id !== 'wait inside to heal')
+  assert.deepEqual(bedtime.map((c) => c.id), ['wait inside until bedtime'])
+  assert.equal(bedtime[0].until, 12542)
+  assert.match(bedtime[0].purpose, /works from time 12541 \(about 28 s from now\)/)
+  assert.deepEqual(sleeping({ bed: true, time: 12000, mobs: [skeletonAtDoor] }), ['wait inside until morning'])
   // 危なさが低ければ、寝る候補が外での作業と並ぶ
   assert.ok(ids({ bed: true }).includes('sleep in the bed'))
 })
