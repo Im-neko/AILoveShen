@@ -53,6 +53,8 @@ ANSWER = {
     "concept": "家のそばに畑",
     "areas": [{"use": "farm", "zones": ["A2"], "facility": "wheat_farm", "note": "小麦"}],
 }
+# 道の骨格のある図（planner が描く）では、家の南の A2 が道になる。畑はその東の B2（道に面する）
+ANSWER_ON_ROAD = {**ANSWER, "areas": [{**ANSWER["areas"][0], "zones": ["B2"]}]}
 
 
 def test_the_code_fixes_zones_with_facilities_and_water():
@@ -143,12 +145,14 @@ def _defined(town_stage=0, town_map=None) -> ObjectivePlan:
 @pytest.mark.asyncio
 async def test_the_map_is_drawn_once_after_the_town_retrying_a_bad_answer():
     planner, text_generator, events, store = _planner(
-        [{"concept": "c", "areas": [{"use": "farm", "zones": ["A1"], "note": ""}]}, ANSWER]
+        [{"concept": "c", "areas": [{"use": "farm", "zones": ["A1"], "note": ""}]}, ANSWER_ON_ROAD]
     )
     plan = _defined()
 
     await planner.prepare(plan)
 
+    assert plan.town_map.zone("A2").use == "road" and plan.town_map.zone("A2").fixed
+    assert plan.town_map.zone("B2").use == "farm"
     assert plan.town_map.concept == "家のそばに畑"
     assert text_generator.generate_json.call_args.kwargs["purpose"] == "town_plan"
     assert "A1 is fixed" in text_generator.generate_json.call_args.args[0]
@@ -163,7 +167,7 @@ async def test_the_map_is_drawn_once_after_the_town_retrying_a_bad_answer():
 @pytest.mark.asyncio
 async def test_the_map_is_redrawn_when_the_stage_advances():
     old = TownMap(0, 0, tuple(base_zones(_rows())), concept="前", stage=0, history=("街を定めた",))
-    planner, text_generator, events, _ = _planner([ANSWER])
+    planner, text_generator, events, _ = _planner([ANSWER_ON_ROAD])
     plan = _defined(town_stage=1, town_map=old)
 
     await planner.prepare(plan)
@@ -185,3 +189,38 @@ async def test_no_map_while_moving_and_an_error_after_the_last_try():
     planner, _, _, _ = _planner([{"concept": ""}] * 3)
     with pytest.raises(TextGenerationError, match="no valid town map"):
         await planner.prepare(_defined())
+
+
+def test_an_area_that_touches_no_road_is_sent_back_and_a_mine_may_be_off_the_road():
+    from ailoveshen.application.use_cases.town_map import draw_base
+
+    base = draw_base(_rows(), None)
+    assert {z.id: z.use for z in base} == {"A1": "home", "B1": "unusable", "A2": "road", "B2": "free"}
+    far = [{"use": "workshop", "zones": ["B2"], "facility": "shop", "note": "作業場"}]
+    assert apply_areas(base, {"concept": "c", "areas": far}, (0, 0), 0, (), "r").zone("B2").use == "workshop"
+    big = []
+    for r in range(12):
+        for c in range(12):
+            zid = f"{chr(65 + c)}{r + 1}"
+            big.append({"id": zid, "min_x": c * 8, "min_z": r * 8, "max_x": c * 8 + 7, "max_z": r * 8 + 7, "seen": 1,
+                        "water": 0, "lava": 0, "trees": 0, "built": 0, "stone": 0, "flat": 0.9, "height": 0,
+                        "facilities": [{"name": "home", "kind": "home"}] if zid == "F6" else []})  # fmt: skip
+    base = draw_base(big, None)
+    with pytest.raises(ValueError, match="touches no road"):
+        apply_areas(base, {"concept": "c", "areas": [{"use": "farm", "zones": ["A12"], "facility": "f", "note": ""}]}, (0, 0), 0, (), "r")
+    ok = {"concept": "c", "areas": [{"use": "mine", "zones": ["A12"], "facility": "m", "note": ""}]}
+    assert apply_areas(base, ok, (0, 0), 0, (), "r").zone("A12").use == "mine"
+    with pytest.raises(ValueError, match="use 'road'"):
+        apply_areas(base, {"concept": "c", "areas": [{"use": "road", "zones": ["A12"], "note": ""}]}, (0, 0), 0, (), "r")
+
+
+def test_the_prompt_shows_the_fixed_roads_on_the_map_and_tells_the_rule():
+    from ailoveshen.application.use_cases.town_map import draw_base
+
+    rows = _rows()
+    base = draw_base(rows, None)
+    prompt = GamePromptTemplateBuilder().build_town_map_prompt(TOWN, 0, rows, base, None, "r")
+    assert "= 道（固定）" in prompt
+    assert "- 道（1 区画）: A2" in prompt
+    assert "道に面した" in prompt
+    assert "- A2: 平ら" not in prompt  # 道は空き区画の地形に入れない

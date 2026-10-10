@@ -269,7 +269,7 @@ $stages
 街の中心から 12 x 12 区画、1 区画は 8 ブロック四方（全体 96 x 96）。列 A〜L が西→東、行 1〜12 が北→南。
 地図（1 文字 = 1 区画）:
 $grid
-凡例: H 家、B 建物、F 畑、W 植林場、M 採掘場、P 囲い、X トラップ（今あるもの。固定）、~ 水、
+凡例: H 家、B 建物、F 畑、W 植林場、M 採掘場、P 囲い、X トラップ（今あるもの。固定）、= 道（固定）、~ 水、
 ! 溶岩（使えない。固定）、. 平らな空き、^ でこぼこ、T 木が多い、? まだ見ていない
 
 ## 固定の区画（変えない。areas に入れない）
@@ -287,7 +287,8 @@ $reason
 - 効率を先に: 毎日使う施設（畑、倉庫、作業場）は家の近く。畑は平らな所、植林場は平らか木の多い所、
   採掘場は石の多い所。行き来が短くなるように並べる
 - 1 つの施設は隣り合う区画にまとめる（畑・植林場は 1〜4 区画）。施設ごとに名前（facility）を付ける
-- 道は要るなら施設をつなぐ細い列。全部は埋めない（空きを残す）
+- 道は先にコードが決めてある（固定。家から東西南北に延びる大通りと、施設への枝）。新しい施設は道に面した
+  区画に置く（採掘場だけは道から離れてよい）。道に面さない用途は差し戻される。道そのものは書かない
 - 固定の区画は変えない。まだ見ていない区画にも割り当ててよい
 $previous_error
 ## 出力
@@ -392,6 +393,7 @@ _GRID_FIXED = {
     "mine": "M",
     "pen": "P",
     "trap": "X",
+    "road": "=",
 }
 
 
@@ -1093,8 +1095,13 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         rows = {str(r["id"]): r for r in zones}
         letters = {z.id: _zone_letter(z, rows.get(z.id, {})) for z in base}
         fixed = [
-            f"- {z.id}: {z.use}（{z.facility or z.note}）" for z in base if z.fixed
+            f"- {z.id}: {z.use}（{z.facility or z.note}）"
+            for z in base
+            if z.fixed and z.use != "road"
         ]
+        roads = [z.id for z in base if z.use == "road"]
+        if roads:
+            fixed.append(f"- 道（{len(roads)} 区画）: {', '.join(roads)}")
         terrain = [f"- {z.id}: {_terrain(rows.get(z.id, {}))}" for z in base if not z.fixed]
         stages = "\n".join(
             f"{i + 1}. [{'済' if i < town_stage else '今' if i == town_stage else '先'}] "

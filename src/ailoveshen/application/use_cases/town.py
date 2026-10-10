@@ -22,7 +22,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 )
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
-from ailoveshen.application.use_cases.town_map import apply_areas, base_zones, town_map_schema
+from ailoveshen.application.use_cases.town_map import apply_areas, draw_base, town_map_schema
 from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     HouseDesignedEvent,
@@ -196,8 +196,8 @@ class TownPlanner:
         except GameBridgeError as e:
             logger.warning(f"街の理想図を次の切れ目に持ち越す（区画の地形を読めない）: {e}")
             return
-        base = base_zones(rows)
         current = plan.town_map
+        base = draw_base(rows, current)
         schema = town_map_schema([z.id for z in base if not z.fixed])
         error = ""
         for attempt in range(1, self._max_attempts + 1):

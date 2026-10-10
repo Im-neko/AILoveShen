@@ -11,12 +11,15 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from ailoveshen.application.use_cases.town_roads import plan_roads, touches_road, with_roads
 from ailoveshen.domain.value_objects import FACILITY_USE, ZONE_USES, TownMap, Zone
 
 UNUSABLE_WATER = 0.5  # 水がこれ以上の区画は使えない
 MAX_HISTORY = 10
-# LLM が割り当てられる用途（home は今ある家、unusable は地形でコードが決める）
-ASSIGNABLE = tuple(u for u in ZONE_USES if u not in ("home", "unusable"))
+# LLM が割り当てられる用途（home は今ある家、unusable は地形で、road は道の骨格でコードが決める。設計書 167）
+ASSIGNABLE = tuple(u for u in ZONE_USES if u not in ("home", "unusable", "road"))
+# 道に面していなくてもよい用途（採掘場は石のある所に作る）
+OFF_ROAD_USES = ("mine", "free")
 MAX_AREAS = 24
 MAX_NOTE = 60
 
@@ -43,6 +46,13 @@ def base_zones(rows: list[dict[str, Any]]) -> list[Zone]:
     return out
 
 
+def draw_base(rows: list[dict[str, Any]], current: TownMap | None) -> list[Zone]:
+    """描く前の区画: 施設・地形の固定に、道の骨格を足したもの。前の理想図の道は、空いていれば残す。"""
+    base = base_zones(rows)
+    kept = tuple(z.id for z in current.zones if z.use == "road") if current else ()
+    return with_roads(base, plan_roads(base, kept))
+
+
 def town_map_schema(free_ids: list[str]) -> dict[str, Any]:
     """理想図の出力の形: 全体の考えと、用途ごとの区画のまとまり。"""
     return {
@@ -55,7 +65,8 @@ def town_map_schema(free_ids: list[str]) -> dict[str, Any]:
             "areas": {
                 "type": "array",
                 "maxItems": MAX_AREAS,
-                "description": "Groups of zones with one use each. Zones not listed stay free",
+                "description": "Groups of zones with one use each. Zones not listed stay free. "
+                "Roads are already fixed: every area except a mine has a zone next to a road",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -69,7 +80,7 @@ def town_map_schema(free_ids: list[str]) -> dict[str, Any]:
                         "facility": {
                             "type": "string",
                             "description": "A name for what will be made there (English lowercase "
-                            "and _, e.g. wheat_farm_2); empty for roads, plazas and free land",
+                            "and _, e.g. wheat_farm_2); empty for plazas and free land",
                         },
                         "note": {
                             "type": "string",
@@ -104,6 +115,7 @@ def apply_areas(
     if not concept:
         errors.append("concept is empty")
     zones = {z.id: z for z in base}
+    roads = any(z.use == "road" for z in base)
     used: set[str] = set()
     names: set[str] = {z.facility for z in base if z.facility}
     for i, area in enumerate(data.get("areas") or []):
@@ -117,6 +129,15 @@ def apply_areas(
         if facility:
             names.add(facility)
         note = str(area.get("note") or "").strip()[:MAX_NOTE]
+        if (
+            roads
+            and use not in OFF_ROAD_USES
+            and not any(touches_road(str(zid), zones) for zid in area.get("zones") or [])
+        ):
+            errors.append(
+                f"area {i + 1}: {use} {list(area.get('zones') or [])} touches no road; put a zone "
+                "of it next to a road zone (roads are fixed, see the map)"
+            )
         for zid in area.get("zones") or []:
             zid = str(zid)
             zone = zones.get(zid)
