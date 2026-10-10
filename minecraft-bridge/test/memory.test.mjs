@@ -82,6 +82,27 @@ test('探すときは覚えている場所を先に出し、次にまだ行っ�
   assert.equal(candidates.at(-1), east)
 })
 
+test('距離を決めた探索（explored）は、まだ見ていない土地まで歩かず、目標の残りだけ歩く（explored(16) が 317 m 先まで歩いた）', () => {
+  const memory = newMemory()
+  remember(memory, [], at(0, 0), 0)
+  remember(memory, [], at(24, 0), 0) // 東は見た所が続く
+  const bot = {
+    entity: { position: new Vec3(0, 70, 0) },
+    entities: {},
+    time: { timeOfDay: 1000, age: 1200 },
+    health: 20,
+    food: 20,
+    heldItem: null,
+    blockAt: () => null,
+    inventory: { items: () => [] }
+  }
+  const state = { home: null, plan: null, unreachableDrops: new Set(), memory }
+  const goEast = (leaf) => ground(bot, state, null, { dig: () => [], hunt: () => [] }, { leaves: [leaf] }).candidates.find((c) => c.id === 'explore east').go
+  assert.equal(goEast({ kind: 'explore', item: 'x', sources: [] }), 48)
+  assert.equal(goEast({ kind: 'explore', item: 'new places', sources: [], reach: 16 }), 24)
+  assert.equal(goEast({ kind: 'explore', item: 'new places', sources: [], reach: 40 }), 40)
+})
+
 test('地下で見た水へは行かない（桶の水を洞窟の水に汲みに行って死んだ）。地下の別の物は、行きの松明があるときだけ', () => {
   const memory = newMemory()
   const spot = (kind, x, y, z) => ({ kind, pos: { x, y, z } })

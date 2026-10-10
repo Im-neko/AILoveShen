@@ -5,6 +5,7 @@ import { round, bearing, dayPhase, nearbyEntities, isHostile, inventoryCounts } 
 import { isInside } from './home.mjs'
 import { underwater } from './breath.mjs'
 import { isSwimming } from './swim.mjs'
+import { toolWear } from './wear.mjs'
 import vec3Pkg from 'vec3'
 
 const { Vec3 } = vec3Pkg
@@ -100,6 +101,7 @@ export function sharedState (bot, state, needsOf) {
     mobs: mobs(bot),
     needs: needsOf(bot, state),
     inventory: inventoryCounts(bot),
+    tool_wear: toolWear(bot),
     time: dayPhase(bot.time.timeOfDay)
   }
 }

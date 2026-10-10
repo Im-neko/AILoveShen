@@ -208,6 +208,18 @@ class TestGamePromptTemplateBuilder:
 
         assert "壊れた道具: stone_pickaxe（1分前、もう持っていない）" in prompt
 
+    def test_goal_prompt_shows_the_wear_of_tools(self):
+        """道具の残りの耐久が出て、少ないものには「もうすぐ壊れる」が付く（折れる前に予備を作る材料）。"""
+        obs = _obs()
+        obs.state["tool_wear"] = [
+            {"item": "stone_pickaxe", "left": 12, "max": 131},
+            {"item": "iron_sword", "left": 250, "max": 250},
+        ]
+
+        prompt = _goal_prompt(obs)
+
+        assert "道具の耐久: stone_pickaxe 残り 12/131（もうすぐ壊れる）、iron_sword 残り 250/250\n" in prompt
+
     def test_goal_prompt_at_night_counts_to_morning(self):
         """夜は朝までの時間と拠点を示す。"""
         obs = replace(_obs(), has_home=True, inside_home=True, bed_in_home=True)

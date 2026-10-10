@@ -212,7 +212,10 @@ function fromLeaf (bot, state, world, leaf) {
       const directions = Object.entries(EXPLORE_DIRECTIONS)
         .filter(([, [dx, dz]]) => !leaf.away || awayFrom(bot, leaf.away, dx, dz))
         .map(([dir, [dx, dz]]) => {
-          const go = state.memory ? Math.max(EXPLORE_DISTANCE, frontierDistance(state.memory, me, dx, dz)) : EXPLORE_DISTANCE
+          // 歩く距離が目標の残りだけなら（explored）、まだ見ていない土地まで歩かない: explored(16) の 1 手で 317 m 先まで
+          // 歩き、水中洞窟で迷って帰れなくなった（2026-10-10）
+          const limit = leaf.reach ? Math.max(EXPLORE_DISTANCE, leaf.reach) : Infinity
+          const go = Math.min(limit, state.memory ? Math.max(EXPLORE_DISTANCE, frontierDistance(state.memory, me, dx, dz)) : EXPLORE_DISTANCE)
           const far = go > EXPLORE_DISTANCE + FRONTIER_SLACK
           // id は変えない（/act は候補を作り直して id で探す。距離を入れると、観測と実行の間に
           // 見た区域が増えて id が変わり、選んだ探索が「今はできない」になって何も動かなかった）

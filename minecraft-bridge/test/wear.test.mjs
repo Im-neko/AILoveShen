@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { isBreak, watchWear, recentBreaks, toReplace, brokeSince } from '../src/wear.mjs'
+import { isBreak, watchWear, recentBreaks, toReplace, brokeSince, toolWear } from '../src/wear.mjs'
 
 const pick = (used) => ({ name: 'stone_pickaxe', maxDurability: 131, durabilityUsed: used })
 
@@ -27,4 +27,17 @@ test('壊れたらすぐ記録し、同じ種類を持つまで作り直す対�
   items = [{ name: 'wooden_pickaxe', count: 1 }]
   assert.deepEqual(toReplace(bot, state), [])
   assert.equal(recentBreaks(bot, state)[0].replaced, true)
+})
+
+test('持っている道具の残りの耐久を、道具だけ返す', () => {
+  const bot = { inventory: { items: () => [
+    { name: 'stone_pickaxe', maxDurability: 131, durabilityUsed: 119 },
+    { name: 'iron_sword', maxDurability: 250, durabilityUsed: 0 },
+    { name: 'cobblestone', count: 64 },
+    { name: 'oak_boat', count: 1 }
+  ] } }
+  assert.deepEqual(toolWear(bot), [
+    { item: 'stone_pickaxe', left: 12, max: 131 },
+    { item: 'iron_sword', left: 250, max: 250 }
+  ])
 })

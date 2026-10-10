@@ -57,7 +57,7 @@ import { setLevelWanted } from './leveling.mjs'
 import { quarrySpot, liveShafts } from './quarry.mjs'
 import { listRefusals } from './refusals.mjs'
 import { freeGuards } from './guards.mjs'
-import { watchWear, recentBreaks } from './wear.mjs'
+import { watchWear, recentBreaks, toolWear } from './wear.mjs'
 import { guardDigLoops, installAutoJump } from './move.mjs'
 import { installLedger } from './ledger.mjs'
 import { installPlaceReport } from './place-report.mjs'
@@ -241,6 +241,8 @@ function observation () {
   // 最近壊れた道具（壊れた直後から持ち物の見方を直す。replaced: 同じ種類をもう持っている）
   const broken = recentBreaks(bot, state)
   if (broken.length) extra.broken_tools = broken
+  const wear = toolWear(bot)
+  if (wear.length) extra.tool_wear = wear
   const xyz = (v) => v && { x: v.x, y: v.y, z: v.z }
   extra.home = state.home ? { name: state.home.name, design: state.home.design, door: xyz(state.home.door), min: xyz(state.home.min), max: xyz(state.home.max), inside: isInside(bot, state.home), door_open: isDoorOpen(bot, state.home), bed: hasBed(bot, state.home), chest: homeChests(state.memory ?? {}, state.home).length > 0, ...chestFacts(bot, state), found: !!state.home.found, sleeping: bot.isSleeping } : null
   return summarize(bot, state.history, extra)

@@ -586,7 +586,7 @@ function evaluateOne (bot, state, knowledge, world) {
       out.lines.push(`explored ${Math.floor(d)}/${goal.spec.distance}m`)
       if (!out.met) {
         out.remaining = Math.ceil((goal.spec.distance - d) / EXPLORE_STEP)
-        out.leaves.push({ kind: 'explore', item: 'new places', sources: [], away: start })
+        out.leaves.push({ kind: 'explore', item: 'new places', sources: [], away: start, reach: Math.ceil(goal.spec.distance - d) })
       }
       break
     }

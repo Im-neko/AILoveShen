@@ -836,7 +836,8 @@ export default async function (t, args) {
 - 調べもの: t.find_blocks({block, radius?}) → { ok, result: [{x, y, z, distance_m, direction, exposed,
   props?, source?: 'map'（前に見た記録）, seen_minutes_ago?}] か文 },
   t.recipe_of({item}), t.find_recipes({query, limit?}), t.find_foods({query?, have?, limit?}), t.how_to_get({item, count?}),
-  t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数}, mobs: [{id, name,
+  t.state() → { self: {position, health, food, in_home, ...}, inventory: {名前: 数},
+  tool_wear: [{item, left, max}]（道具の残りの耐久。少ないものは折れる前に予備を作る・家へ帰る）, mobs: [{id, name,
   hostile, distance_m, direction}], surroundings, needs, time, action },
   t.block_at({x, y, z}) → { name, props? }（props はブロックの状態で値は文字列: 耕地の moisture
   "0"〜"7"（"7" が湿っている）、作物の age、ドアの open など）

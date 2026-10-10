@@ -717,6 +717,25 @@ def _format_broken(broken: list) -> list[str]:
     return [f"- 壊れた道具: {'、'.join(parts)}"]
 
 
+TOOL_WEAR_LOW = 0.2  # 残りの耐久がこの割合以下の道具には「もうすぐ壊れる」を付ける
+
+
+def tool_is_worn(wear: dict) -> bool:
+    """残りの耐久が少ない道具か（`tool_wear` の 1 件）。"""
+    return wear["left"] <= wear["max"] * TOOL_WEAR_LOW
+
+
+def _format_tool_wear(wear: list) -> list[str]:
+    """道具の残りの耐久。折れる前に予備を作る・家へ帰る判断に使う（2026-10-10: 遠い地下で唯一のツルハシが折れた）。"""
+    if not wear:
+        return []
+    parts = [
+        f"{w['item']} 残り {w['left']}/{w['max']}" + ("（もうすぐ壊れる）" if tool_is_worn(w) else "")
+        for w in wear
+    ]
+    return [f"- 道具の耐久: {'、'.join(parts)}"]
+
+
 def _format_farm(farm: dict) -> list[str]:
     """
     畑（設計した畑と家の畑の合計）: 作物ごとの植わっている数、熟した数、育ち具合、空いたマス、
@@ -775,6 +794,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
         *_format_broken(s.get("broken_tools") or []),
+        *_format_tool_wear(s.get("tool_wear") or []),
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
         *_format_risk(s.get("risk") or {}),
         *_format_farm(s.get("farm") or {}),

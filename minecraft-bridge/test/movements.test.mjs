@@ -65,3 +65,24 @@ test('水の中は高い（pathfinder の既定は 1 で、海を歩いて渡っ
   configureMovements(bot, { home: null, formerHomes: [], plan: null })
   assert.ok(m.liquidCost >= 5)
 })
+
+test('地下でツルハシを 1 本も持たないとき、家と地上へ帰る行動だけは素手で岩を掘る。ほかの行動は掘らない（317 m 先の地下で折れて帰れなくなった）', () => {
+  let m
+  const registry = minecraftData('1.21.4')
+  const pickaxe = registry.itemsByName.stone_pickaxe.id
+  const held = []
+  const bot = { registry, entities: {}, entity: { position: new Vec3(0, 0, 0) }, blockAt: (p) => ({ name: 'stone', boundingBox: 'block', position: p }), findBlock: () => null, inventory: { items: () => held }, pathfinder: { setMovements: (set) => { m = set } } }
+  const state = { home: null, formerHomes: [], plan: null, current: { verb: 'go_home' } }
+  configureMovements(bot, state)
+  const stone = { name: 'stone', type: 1, position: new Vec3(0, 0, 1), harvestTools: { [pickaxe]: true }, digTime: (tool) => tool === pickaxe ? 400 : 7500 }
+  const later = () => { const realNow = Date.now; Date.now = () => realNow() + 5000; return () => { Date.now = realNow } }
+  let restore = later()
+  try {
+    assert.equal(m.exclusionBreak(stone), 0, '帰る行動は掘る')
+    state.current = { verb: 'explore' }
+    restore(); restore = later(); Date.now = ((n) => () => n() + 10000)(Date.now)
+    assert.ok(m.exclusionBreak(stone) >= 100, 'ほかの行動は掘らない')
+  } finally {
+    restore()
+  }
+})

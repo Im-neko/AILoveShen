@@ -160,6 +160,10 @@ export function planBlockToPlace (bot, plan, planBlock) {
   return wanted && !(floorBelow && floorBelow.boundingBox === 'empty') ? wanted : plan.pending(bot)[0]
 }
 
+// 地下でツルハシを 1 本も持っていない間は、家と地上へ帰る行動に限り、素手で岩を掘ってよい（歩ける洞窟が地上につながらず、
+// 道具を作る家へ帰れなくなる。2026-10-10: 317 m 先の地下でツルハシが折れ、約 200 m 離れた地下で「経路がない」を繰り返した）
+const HAND_DIG_HOME = new Set(['go_home', 'surface'])
+const hasPickaxe = (bot) => bot.inventory.items().some((i) => i.name.endsWith('_pickaxe'))
 const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'dig_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
 const CLIMB_MAX = 24 // 閉じた所から出るために積む高さの上限
 const DESCEND_MAX = 200 // 柱を掘り下げる最大の数
@@ -227,7 +231,8 @@ export function configureMovements (bot, state) {
     if (Date.now() - handlessAt > HANDLESS_CACHE_MS) {
       handless.clear()
       handlessAt = Date.now()
-      shutIn = ROCK_ESCAPE.has(state.current?.verb) && isUnderground(bot) && !!closedSpaceCached(bot)
+      const verb = state.current?.verb
+      shutIn = (ROCK_ESCAPE.has(verb) && isUnderground(bot) && !!closedSpaceCached(bot)) || (HAND_DIG_HOME.has(verb) && isUnderground(bot) && !hasPickaxe(bot))
     }
     if (!handless.has(block.type)) handless.set(block.type, !chooseTool(bot, block))
     return handless.get(block.type) && !shutIn ? 100 : 0

@@ -33,6 +33,14 @@ export function recentBreaks (bot, state, now = Date.now()) {
     .map((b) => ({ item: b.item, seconds_ago: Math.round((now - b.at) / 1000), replaced: hasKind(bot, toolKind(b.item)) }))
 }
 
+// 持っている道具の残りの耐久（left/max）。判断する側が、折れる前に予備を作る・家へ帰る材料にする
+// （2026-10-10: 317 m 先の地下で唯一のつるはしが折れ、予備がなく帰れなくなった）。持ち物の並び順
+export function toolWear (bot) {
+  return (bot.inventory?.items?.() ?? [])
+    .filter((i) => TOOL.test(i.name) && i.maxDurability)
+    .map((i) => ({ item: i.name, left: i.maxDurability - (i.durabilityUsed ?? 0), max: i.maxDurability }))
+}
+
 // 作り直す道具（壊れて、同じ種類をまだ持っていないもの。種類ごとに一番新しいもの）
 export function toReplace (bot, state, now = Date.now()) {
   const seen = new Set()
