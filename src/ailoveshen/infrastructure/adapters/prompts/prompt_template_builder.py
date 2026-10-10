@@ -160,6 +160,28 @@ $previous_error
 コメント$arrived: $message
 $notice""")
 
+FINAL_REPLY_TEMPLATE = Template("""\
+## 今していること
+$activity
+
+## 最近の会話
+$recent_messages
+
+## 視聴者からのコメント
+ユーザー名: $user_name
+コメント: $message
+$notice
+## 決まったこと（これが事実。返答はこれと合わせる）
+$facts
+
+## 下書き
+$draft
+
+下書きは、口調と、コメントの質問への答えだけ使う。やるか・やらないか・いつやるかは、上の「決まったこと」
+だけに従う（下書きがそれと違えば、下書きを直す）。「決まったこと」にない理由や予定を作らない。
+視聴者の名前（$user_name）を、一字も欠かさずそのまま呼んで、短く（1-2文）、キャラクターらしく返答を書く。
+$previous_error""")
+
 PROMISE_TEMPLATE = Template("""\
 ## 今していること
 $activity
@@ -418,6 +440,29 @@ class PromptTemplateBuilder(IPromptBuilder):
             self_facts="\n".join(f"- {f.topic}: {f.fact}" for f in self_facts) or NO_INFORMATION,
             source=PRODUCER_SOURCE if producer else "視聴者からのコメント",
             notice=(PRODUCER_NOTICE if producer else "") + (FOREIGN_NOTICE if is_foreign_comment(message) else ""),
+        )
+
+    def build_final_reply_prompt(
+        self,
+        user_name: str,
+        message: str,
+        context: GenerationContext,
+        facts: str,
+        draft: str,
+        previous_error: str = "",
+    ) -> str:
+        """決まった行動（`facts`）に合わせて返答を書き直させる本文（docs/design/159）。"""
+        return FINAL_REPLY_TEMPLATE.substitute(
+            activity=format_activity(context.activity),
+            recent_messages=format_messages(context.recent_messages, context.now),
+            user_name=user_name,
+            message=message,
+            notice=FOREIGN_NOTICE if is_foreign_comment(message) else "",
+            facts=facts,
+            draft=draft,
+            previous_error=(
+                f"\n## 前回の書き直し\n{previous_error}\n" if previous_error else ""
+            ),
         )
 
     def build_promise_prompt(

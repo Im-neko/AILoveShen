@@ -12,7 +12,7 @@
 | 件 | 内容 | 場所 |
 |---|---|---|
 | 基本は従う | 返答の規則に「基本は従う」を足した。断ってよい理由は危ない・書けない・事実が違う・上限だけで、「今の作業が先」「今のやり方でよい」「あとで」は理由にならない。今できるなら `when=now`、そうでなければ `when=next` にして、いつやるかを言う | `prompt_template_builder.py` |
-| 待っている間にできる頼み | 小目標が `through_night` / `at_home`（待っているだけ）のとき、家に置く物（`placed(…, home)`）の頼みを `when=next` にした答えは差し戻す（`deferred_while_waiting`）。3 回直らなければ、返答は直せないが、行動は `when=now` にする。外に出る頼み（木を切る、探検）は夜に今やらない | `generate_response.py` |
+| 待っている間にできる頼み | 小目標が `through_night` / `at_home`（待っているだけ）のとき、家に置く物（`placed(…, home)`）の頼みを `when=next` にした答えは差し戻す（`deferred_while_waiting`）。3 回直らなければ、返答は直せないが、行動は `when=now` にする（設計書 159 で外した: 文はあとで結果に合わせて書き直す）。外に出る頼み（木を切る、探検）は夜に今やらない | `generate_response.py` |
 | `not_better` を外す | 設計書 153 §6 の `DeclineReason.NOT_BETTER` と、その差し戻し文・規則を外した。断る理由は元の 5 つ（cannot / wrong / unsafe / off_mission / limit）だけ | `goal_vocabulary.py`、`generate_response.py`、`prompt_template_builder.py` |
 
 ## 3. 確かめたこと

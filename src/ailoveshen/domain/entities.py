@@ -942,6 +942,21 @@ class Notebook(Entity):
         raise ValueError(f"no note {note_id} (notes: {ids})")
 
 
+@dataclass
+class PromisedNow:
+    """
+    視聴者に「今やる」と約束して、考え直しを頼んだもの。次の小目標の決定が、これを進める小目標を
+    選ぶまで残す（決定のたびに `checks` を減らし、0 で諦める。約束が嘘になったままにしない）。
+    `job`: 大目標の中目標か（偽: 大目標そのもの）。
+    """
+
+    user_name: str
+    title: str
+    specs: tuple[GoalSpec, ...]
+    job: bool
+    checks: int = 3
+
+
 @dataclass(eq=False)
 class PlaySession(Entity):
     """
@@ -994,6 +1009,10 @@ class PlaySession(Entity):
     # 番号つきで溜める: 後から来た理由で前の理由を消さない、決めている間に来た理由を残す
     _rethinks: list[tuple[int, str]] = field(default_factory=list, init=False, repr=False)
     _rethink_seq: int = field(default=0, init=False, repr=False)
+    # 夜の待ちでも待たせない考え直し（夜の家の中で今できる頼み）の番号
+    _urgent_rethinks: set[int] = field(default_factory=set, init=False, repr=False)
+    # 「今やる」と視聴者に約束して、次の小目標の決定で守らせるもの（古い順）
+    _promises: list["PromisedNow"] = field(default_factory=list, init=False, repr=False)
     # 今の状況で思い出した教訓（小目標の始まりか目標の決定の前。docs/design/35）
     lessons: tuple[Lesson, ...] = field(default=(), init=False)
     # 小目標を決めたときのブリッジの死んだ回数（増えたら、死んでリスポーンした: 小目標を選び直す）
@@ -1210,6 +1229,7 @@ class PlaySession(Entity):
             and self.goal.spec.predicate == GoalPredicate.THROUGH_NIGHT
             and obs is not None
             and obs.time_phase in ("dusk", "night")
+            and not any(seq in self._urgent_rethinks for seq, _ in self._rethinks)
         )
 
     @property
@@ -1217,17 +1237,39 @@ class PlaySession(Entity):
         """今までに頼まれた考え直しの番号（切れ目で読み、set_goal に渡す）。"""
         return self._rethink_seq
 
-    def request_rethink(self, reason: str) -> None:
+    def request_rethink(self, reason: str, urgent: bool = False) -> None:
         """
         次の切れ目で今の小目標を終わらせ、この理由で次の小目標を決めさせる。まだ使われていない
         理由があれば、置き換えずに足す（コメントの指摘を画面の見直しで消さない）。
+
+        Args:
+            urgent: 夜の待ち（`defers_rethink`）でも待たせない（夜の家の中で今できる頼み: ベッドを置く）
         """
         text = reason.strip()
-        if not text or any(text == t for _, t in self._rethinks):
+        if not text:
+            return
+        same = next((seq for seq, t in self._rethinks if t == text), None)
+        if same is not None:
+            if urgent:
+                self._urgent_rethinks.add(same)
             return
         self._rethink_seq += 1
         self._rethinks.append((self._rethink_seq, text))
+        if urgent:
+            self._urgent_rethinks.add(self._rethink_seq)
         self.updated_at = _utc_now()
+
+    def promise_now(self, promise: "PromisedNow") -> None:
+        """「今やる」と約束したことを覚える（次の小目標の決定が、それを選ぶか確かめる）。"""
+        self._promises = [p for p in self._promises if p.title != promise.title]
+        self._promises.append(promise)
+
+    @property
+    def promised_now(self) -> tuple["PromisedNow", ...]:
+        return tuple(self._promises)
+
+    def forget_promise(self, promise: "PromisedNow") -> None:
+        self._promises = [p for p in self._promises if p is not promise]
 
     def note_screen(self, note: ScreenNote) -> None:
         """画面の見直しで書いたことを持つ（1 件だけ。新しいもので置き換える）。"""

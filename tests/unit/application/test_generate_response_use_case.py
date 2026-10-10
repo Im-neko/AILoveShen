@@ -69,7 +69,12 @@ def _playing(time_phase: str = "day") -> PlaySession:
 def mock_text_generator():
     """テキスト生成のモック。"""
     generator = AsyncMock()
-    generator.generate.return_value = "nekoさん、ありがとう！"
+
+    async def generate(prompt="", system_instruction="", purpose=""):
+        # 結果に合わせた書き直し（reply_final）は下書きをそのまま返す（書き直しの中身は別のテストで見る）
+        return prompt if purpose == "reply_final" else "nekoさん、ありがとう！"
+
+    generator.generate.side_effect = generate
     return generator
 
 
@@ -79,6 +84,7 @@ def mock_prompt_builder():
     builder = Mock()
     builder.build_system_prompt.return_value = "System prompt"
     builder.build_chat_response_prompt.return_value = "Response prompt"
+    builder.build_final_reply_prompt.side_effect = lambda **kwargs: kwargs["draft"]
     return builder
 
 
@@ -225,6 +231,7 @@ class TestGenerateResponseUseCase:
         self, use_case, mock_text_generator, mock_event_publisher, conversation
     ):
         """生成が空なら、コメントは残し、返答は記録しない。"""
+        mock_text_generator.generate.side_effect = None
         mock_text_generator.generate.return_value = ""
 
         response = await use_case.execute(_request())
@@ -930,7 +937,7 @@ class TestEmptyPromise:
             conversation,
             bridge,
             store,
-            [True, False],
+            [True, False, False],
         )
         mock_text_generator.generate_json.side_effect = [
             {"reply": "ダンスしてみるね！", "request": "none", "lesson": "踊る"},
@@ -1672,73 +1679,160 @@ class TestAdviceThatCannotBeAcceptedStillGetsAnswer:
         assert mock_text_generator.generate_json.await_count == 3
 
 
-class TestDoableWhileWaitingIsDoneNow:
+BED_NOW = {
+    "request": "accept",
+    "suggestion": False,
+    "level": "job",
+    "title": "家にベッドを置く",
+    "conditions": [{"predicate": "placed", "item": "bed", "where": "home", "count": 1}],
+    "position": 2,
+    "reason": "夜を越すため",
+    "when": "now",
+}
+CHEST_NOW = {
+    **BED_NOW,
+    "title": "家にチェストを置く",
+    "conditions": [{"predicate": "placed", "item": "chest", "where": "home", "count": 1}],
+}
+
+
+def _night() -> PlaySession:
+    """夜を越している間（through_night）。"""
+    session = _playing("night")
+    session.set_goal(Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜は危ない"), "night")
+    return session
+
+
+class TestTheReplyFollowsWhatWasDecided:
     """
-    夜に家の中で待っているとき、中でできる頼みを後回しにしない（2026-10-10 21:36: 「ベッド設置して」に「朝になってから置くね」と
-    答えて、中目標を後ろに入れた）。
+    返答の文は、行動が決まってから、その結果（いつやるか・断った理由）を事実として書き直す
+    （docs/design/159。2026-10-10 21:36: 「朝になってから置くね」と言って、夜に寝るためのベッドを置かなかった）。
     """
 
-    BED = {"predicate": "placed", "item": "bed", "where": "home", "count": 1}
-
-    def _reply(self, when: str) -> dict:
-        return {
-            "reply": "ベッド置くね！" if when == "now" else "朝になってから置くね",
-            "request": "accept",
-            "suggestion": False,
-            "level": "job",
-            "title": "家にベッドを置く",
-            "conditions": [self.BED],
-            "position": 2,
-            "reason": "夜を越すため",
-            "when": when,
-        }
-
-    def _night(self):
-        session = _playing("night")
-        session.set_goal(
-            Goal(GoalSpec(GoalPredicate.THROUGH_NIGHT), "夜は危ない", objective_id=None), "night"
-        )
-        return session
-
-    def test_the_check_names_the_postponed_request_that_can_be_done_inside(self):
-        from ailoveshen.application.use_cases.generate_response import deferred_while_waiting
-        from ailoveshen.application.use_cases.goal_vocabulary import parse_proposal
-
-        later = parse_proposal(self._reply("next"))
-        assert "when=now" in deferred_while_waiting(True, later)
-        assert deferred_while_waiting(False, later) == ""  # 待っていない
-        assert deferred_while_waiting(True, parse_proposal(self._reply("now"))) == ""
-        outside = parse_proposal(
-            {**self._reply("next"), "conditions": [{"predicate": "have", "item": "log", "count": 3}]}
-        )
-        assert deferred_while_waiting(True, outside) == ""  # 外に出る頼みは、夜に今やらない
+    def _final_prompts(self, mock_prompt_builder):
+        return [c.kwargs for c in mock_prompt_builder.build_final_reply_prompt.call_args_list]
 
     @pytest.mark.asyncio
-    async def test_a_postponed_answer_is_sent_back_and_the_second_answer_is_done_now(
+    async def test_the_reply_is_written_again_from_the_outcome_and_that_is_spoken(
         self, use_case, mock_text_generator, mock_prompt_builder
     ):
-        mock_text_generator.generate_json.side_effect = [self._reply("next"), self._reply("now")]
-        session = self._night()
+        mock_text_generator.generate_json.return_value = {
+            "reply": "朝になってから置くね", "relevance": "related", "relevance_reason": "x", **BED_NOW
+        }
+        mock_text_generator.generate.side_effect = None
+        mock_text_generator.generate.return_value = "ねこかもさん、ベッド、今すぐ置くね！"
 
         response = await use_case.execute(
-            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=session, kind="request")
+            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=_night(), kind="request")
         )
 
-        assert response.text == "ベッド置くね！"
-        error = mock_prompt_builder.build_chat_response_prompt.call_args_list[1].kwargs["previous_error"]
-        assert "when=now" in error
-        assert session.plan.current.open_jobs[0].spec.item == "bed"  # 先頭: 今やる
+        assert response.text == "ねこかもさん、ベッド、今すぐ置くね！"
+        (final,) = self._final_prompts(mock_prompt_builder)
+        assert "今すぐやる" in final["facts"] and "家にベッドを置く" in final["facts"]
+        assert final["draft"] == "朝になってから置くね"  # 下書きは材料。話すのは書き直したほう
+        assert mock_text_generator.generate.call_args.kwargs["purpose"] == "reply_final"
 
     @pytest.mark.asyncio
-    async def test_when_it_stays_postponed_the_last_attempt_still_does_it_now(
+    async def test_at_night_a_bed_in_the_home_is_not_held_until_morning_but_other_things_are(
         self, use_case, mock_text_generator
     ):
-        mock_text_generator.generate_json.return_value = self._reply("next")
-        session = self._night()
-
+        """夜の待ちは小目標を切り替えない決まり。ベッドを家に置く頼みだけは例外（ブリッジが置く手を出す）。"""
+        mock_text_generator.generate_json.return_value = {"reply": "うん", **BED_NOW}
+        bed_session = _night()
         await use_case.execute(
-            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=session, kind="request")
+            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=bed_session, kind="request")
+        )
+        assert bed_session.rethink_reason and not bed_session.defers_rethink()
+
+        mock_text_generator.generate_json.return_value = {"reply": "うん", **CHEST_NOW}
+        chest_session = _night()
+        await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="チェスト置いて", session=chest_session, kind="request")
+        )
+        assert chest_session.rethink_reason and chest_session.defers_rethink()
+
+    @pytest.mark.asyncio
+    async def test_a_request_held_until_morning_is_told_as_such_and_now_is_not_claimed(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        mock_text_generator.generate_json.return_value = {"reply": "今すぐ置くね", **CHEST_NOW}
+        mock_text_generator.generate.side_effect = [
+            "今すぐ置くね！",  # 夜の間は動かないのに「今すぐ」: 直させる
+            "夜が明けてから、チェストを置くね！",
+        ]
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="チェスト置いて", session=_night(), kind="request")
         )
 
-        assert mock_text_generator.generate_json.await_count == 3
-        assert session.plan.current.open_jobs[0].spec.item == "bed"
+        assert response.text == "夜が明けてから、チェストを置くね！"
+        first, second = self._final_prompts(mock_prompt_builder)
+        assert "夜が明けてからやる" in first["facts"] and "夜が明けてからやる" in second["facts"]
+        assert "(right now)" in second["previous_error"]
+
+    @pytest.mark.asyncio
+    async def test_a_reply_that_still_disagrees_is_replaced_by_a_line_built_from_the_outcome(
+        self, use_case, mock_text_generator
+    ):
+        mock_text_generator.generate_json.return_value = {"reply": "朝になってから置くね", **BED_NOW}
+        mock_text_generator.generate.side_effect = None
+        mock_text_generator.generate.return_value = "朝になってから置くね！"  # 今やるのに、2 回とも「朝になってから」
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="ベッド設置して", session=_night(), kind="request")
+        )
+
+        assert "朝になって" not in response.text
+        assert response.text == "nekoさん、「家にベッドを置く」、今やるね！"
+        assert mock_text_generator.generate.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_decline_is_told_with_the_reason_and_without_a_promise(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        mock_text_generator.generate_json.return_value = {
+            "reply": "あとでやるね", "request": "decline", "decline_reason": "unsafe", "reason": "溶岩の上だから"
+        }
+        mock_text_generator.generate.side_effect = [
+            "あとで置くね！",  # 断ったのにやると言う
+            "ごめんね、溶岩の上は危ないからやらないよ。",
+        ]
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="溶岩の上に家建てて", session=_playing(), kind="request")
+        )
+
+        assert response.text == "ごめんね、溶岩の上は危ないからやらないよ。"
+        first, second = self._final_prompts(mock_prompt_builder)
+        assert "断った。理由: 危ない" in first["facts"] and "溶岩の上だから" in first["facts"]
+        assert "nothing was registered" in second["previous_error"]
+
+    @pytest.mark.asyncio
+    async def test_plain_small_talk_is_not_written_again(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        mock_text_generator.generate_json.return_value = {"reply": "元気だよ！", "request": "none"}
+
+        response = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="元気？", session=_playing(), kind="chat")
+        )
+
+        assert response.text == "元気だよ！"
+        mock_prompt_builder.build_final_reply_prompt.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_when_the_rewrite_fails_the_draft_is_spoken_unless_it_disagrees(
+        self, use_case, mock_text_generator
+    ):
+        mock_text_generator.generate.side_effect = TextGenerationError("down")
+        mock_text_generator.generate_json.return_value = {"reply": "夜が明けてからやるね", **CHEST_NOW}
+        said = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="チェスト置いて", session=_night(), kind="request")
+        )
+        assert said.text == "夜が明けてからやるね"
+
+        mock_text_generator.generate_json.return_value = {"reply": "今すぐ置くね", **CHEST_NOW}
+        fallback = await use_case.execute(
+            GenerateResponseRequest(user_name="neko", message="チェスト置いて", session=_night(), kind="request")
+        )
+        assert fallback.text.startswith("nekoさん、「家にチェストを置く」は夜の間は")

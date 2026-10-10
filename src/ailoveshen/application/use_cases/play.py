@@ -72,7 +72,7 @@ from ailoveshen.application.use_cases.tool_catalog import (
 from ailoveshen.application.use_cases.town import TownPlanner
 from ailoveshen.application.use_cases.vision import ScreenReviewer
 from ailoveshen.application.use_cases.watcher import ToolWatcher
-from ailoveshen.domain.entities import Conversation, ObjectivePlan, Notebook, PlaySession
+from ailoveshen.domain.entities import Conversation, ObjectivePlan, Notebook, PlaySession, PromisedNow
 from ailoveshen.domain.events import (
     GameActionExecutedEvent,
     GoalDecidedEvent,
@@ -1326,6 +1326,7 @@ class AdvancePlayUseCase(IAdvancePlay):
         job_status = await self._job_status(plan)
         facility_memory, facilities_now = await self._facility_memory(plan)
         plan_owns_jobs = plan.current is not None and plan.current.planned
+        promised = session.promised_now
         error = ""
         learned = False
         for attempt in range(1, self._max_goal_attempts + 1):
@@ -1410,6 +1411,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                 # 最後の試行でも通さない: 昼の through_night は夕方まで残り、約 2 分 wait を繰り返した
                 # （2026-10-10 16:33）。決まらなければ、進められる中目標に落とす
                 _check_survival_time(decision, obs)
+                if promised and attempt < self._max_goal_attempts:
+                    _check_promised(decision, promised, job_status)
                 await self._check_job_order(decision.jobs, plan.current)
                 if died_goal is not None and attempt < self._max_goal_attempts:
                     _check_after_death(decision, died_goal)
@@ -1491,6 +1494,7 @@ class AdvancePlayUseCase(IAdvancePlay):
                     + (f"; 外出ごと: {decision.trips}" if decision.trips else "")
                 )
             await self._objectives.commit(plan, decision.changes)
+            _settle_promises(session, decision, job_status)
             self._facilities_seen = facilities_now
             if decision.jobs and plan.current is not None:
                 try:
@@ -2094,6 +2098,71 @@ def _check_time(decision: GoalDecision, obs: GameObservation) -> None:
                 f"the {name} says {found.group(0)!r}, but it is {phase} now: read the time in the "
                 "state again and decide for that time"
             )
+
+
+def _promise_targets(promise: PromisedNow, job_status: tuple[ConditionStatus, ...]) -> set[str]:
+    """
+    「今やる」と約束した中目標を進める小目標（ブリッジが判定した、今進められるもの。集めに出る材料が
+    あればその次の一歩）。済んでいるか、今は手立てがなければ空。
+    """
+    mine = [st for st in job_status if st.spec in promise.specs]
+    return {(st.next_step or st.spec).describe() for st in mine if not st.met and not st.impossible}
+
+
+def _serves_promise(
+    decision: GoalDecision, promise: PromisedNow, targets: set[str]
+) -> bool:
+    specs = (decision.spec, *decision.together)
+    if promise.job:
+        return any(s.describe() in targets for s in specs)
+    return decision.serves == Serves.CURRENT
+
+
+def _check_promised(
+    decision: GoalDecision,
+    promised: tuple[PromisedNow, ...],
+    job_status: tuple[ConditionStatus, ...],
+) -> None:
+    """
+    視聴者に「今やる」と約束したことを進める小目標を選んでいるか（docs/design/159）。約束した返答は
+    もう話されている: 別の小目標（夜を越す、など）を選ぶと、言ったことと違うことをする。
+    食料や戦いなどの身を守る小目標は先でよい（夜を越す・家にいるは、待つだけなので先にしない）。
+    今は進められない約束（済んだ、手立てがない）は見ない。
+    """
+    if is_survival(decision.spec) and decision.spec.predicate not in (
+        GoalPredicate.THROUGH_NIGHT,
+        GoalPredicate.AT_HOME,
+    ):
+        return
+    for promise in promised:
+        targets = _promise_targets(promise, job_status) if promise.job else set()
+        if promise.job and not targets:
+            continue
+        if _serves_promise(decision, promise, targets):
+            return
+        what = ", ".join(sorted(targets)) if promise.job else "the objective at the top of the list"
+        raise ValueError(
+            f'you told {promise.user_name} you would do "{promise.title}" now, so choose a small '
+            f"goal that does it ({what}); waiting or doing something else makes your words false"
+        )
+
+
+def _settle_promises(
+    session: PlaySession, decision: GoalDecision, job_status: tuple[ConditionStatus, ...]
+) -> None:
+    """決めた小目標で、約束を守れたものを外す。守れないまま決定が通ったものは、数えて諦める（記録に残す）。"""
+    for promise in session.promised_now:
+        targets = _promise_targets(promise, job_status) if promise.job else set()
+        if _serves_promise(decision, promise, targets) or (promise.job and not targets):
+            session.forget_promise(promise)
+            continue
+        promise.checks -= 1
+        if promise.checks <= 0:
+            logger.warning(
+                f"「今やる」と約束した「{promise.title}」（{promise.user_name}）を進める小目標が"
+                f"選ばれないまま諦めた: 今の小目標 {decision.spec.describe()}"
+            )
+            session.forget_promise(promise)
 
 
 def _check_survival_time(decision: GoalDecision, obs: GameObservation) -> None:

@@ -93,6 +93,7 @@ DEFAULT_THINKING_LEVELS = {
     "tool_stuck": "medium",
     "commentary": "low",
     "reply": "low",
+    "reply_final": "low",
     "live": "low",
     "promise": "low",
     "screen_review": "medium",

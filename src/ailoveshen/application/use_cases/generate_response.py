@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -32,17 +32,17 @@ from ailoveshen.application.use_cases.lessons import LessonBook, clean_keys, sit
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.foreign_speech import is_foreign_comment, mostly_japanese
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
+from ailoveshen.application.use_cases.reply_outcome import ALREADY, LATER, NOW, ReplyOutcome
 from ailoveshen.application.use_cases.reply_facts import ReplyFactCheck
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
 from ailoveshen.application.use_cases.self_facts import SelfFacts
-from ailoveshen.domain.entities import Conversation, PlaySession
+from ailoveshen.domain.entities import Conversation, PlaySession, PromisedNow
 from ailoveshen.domain.events import ChatResponseGeneratedEvent
 from ailoveshen.domain.exceptions import GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     GenerationContext,
     GoalPredicate,
-    GoalSpec,
     MessageType,
     Objective,
 )
@@ -55,6 +55,7 @@ ACTIONABLE_ATTEMPTS = 3  # これらは差し戻しが増えるので、試す�
 # 1 度だけ聞き直す（2026-09-28: 家に入れない理由の「家の前の穴を埋めて」を 3 番目の大目標にし、
 # 家に入る失敗を続けた）
 FAILING_ACTIONS = 2
+FINAL_ATTEMPTS = 2  # 結果に合わせた返答の書き直し（合わなければ 1 回だけ直させる）
 
 
 def unanswered(kind: str | None, data: dict[str, object]) -> str:
@@ -103,25 +104,16 @@ def unanswered(kind: str | None, data: dict[str, object]) -> str:
     )
 
 
-# 夜明けを待つ・家にいるだけの小目標（待っている間は、中でできる頼みを今やれる）
-WAITING_PREDICATES = frozenset({GoalPredicate.THROUGH_NIGHT, GoalPredicate.AT_HOME})
-
-
-def doable_inside(spec: GoalSpec) -> bool:
-    """家の中で、外に出ずにできる条件か（家に置く物。クラフトと置くだけ）。"""
-    return spec.predicate == GoalPredicate.PLACED and spec.where == "home"
-
-
-def deferred_while_waiting(waiting: bool, proposal: ObjectiveProposal) -> str:
+def night_doable(proposal: ObjectiveProposal) -> bool:
     """
-    待っているだけの間に、中でできる頼みを後回し（when=next）にしていないか（2026-10-10 21:36: 夜に「ベッド設置して」と
-    頼まれ、「朝になってから置くね」と答えて中目標を後ろに入れた。夜に寝るためのベッドを、朝まで置かない）。差し戻す理由か空文字列。
+    夜の家の中で、待たずに今できる頼みか（持っているベッドを家に置く: ブリッジが through_night の手に
+    place_bed を出す）。これだけは、夜の間は小目標を切り替えない決まり（`defers_rethink`）の例外にする。
     """
-    if not waiting or proposal.now or not proposal.conditions or not all(doable_inside(c) for c in proposal.conditions):
-        return ""
-    return (
-        "あなたは今、夜明けを待つか家にいるだけで、この頼みは家の中で今できる。後回し（when=next）にしない: "
-        "when=now にして、返答でも「今やるね」と言う（朝になってからとは言わない）。"
+    return bool(proposal.conditions) and all(
+        c.predicate == GoalPredicate.PLACED
+        and c.where == "home"
+        and (c.item == "bed" or str(c.item).endswith("_bed"))
+        for c in proposal.conditions
     )
 
 
@@ -176,6 +168,7 @@ class KeptPromise:
 
     objective: Objective | None  # None: 建物の設計を裏でしていて、まだ足されていない
     now: bool
+    outcome: ReplyOutcome
 
 
 @dataclass(frozen=True)
@@ -450,16 +443,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                         )
                         logger.warning(f"返答 {attempt} は失敗中に助言を後回しにした: {data!r}")
                         continue
-                    waiting = session.goal is not None and session.goal.spec.predicate in WAITING_PREDICATES
-                    postponed = deferred_while_waiting(waiting, proposal)
-                    if postponed and attempt < attempts:
-                        error = postponed
-                        logger.warning(f"返答 {attempt} は待っている間にできる頼みを後回しにした: {data!r}")
-                        continue
-                    if postponed:
-                        # 最後の試しでも直らない: 返答は直せないが、行動は今やる（頼みを後ろに置いたままにしない）
-                        logger.warning(f"待っている間にできる頼みを今やる中目標にした（{attempts} 回直らなかった）: {data!r}")
-                        proposal = replace(proposal, now=True)
+                    timing, when_note = self._timing(session, proposal)
                     objective = await self._accept(
                         session, request.user_name, proposal, suggestion
                     )
@@ -480,11 +464,12 @@ class GenerateResponseUseCase(IGenerateResponse):
                 self._learn(session, request, data)
                 if not proposal.now:
                     self._rethink(session, request.user_name, data.get("rethink"))
-                return text, objective
+                outcome = self._accepted(proposal, timing, when_note)
+                return await self._final(request, context, outcome, text), objective
             if handling == RequestHandling.WITHDRAW.value:
                 self._learn(session, request, data)
                 await self._withdraw(session, request.user_name)
-                return text, None
+                return await self._final(request, context, ReplyOutcome("withdrawn"), text), None
             if await self._empty_promise(request.message, text, str(handling), data.get("rethink")):
                 # 返答が行動を約束しているのに、大目標にも考え直しにもならない: 約束を大目標に
                 # する（今やるか後でやるかは Gemini が決める）。できなければ言わせない
@@ -511,7 +496,9 @@ class GenerateResponseUseCase(IGenerateResponse):
                 self._learn(session, request, data)
                 if kept is None or not kept.now:
                     self._rethink(session, request.user_name, data.get("rethink"))
-                return text, kept.objective if kept is not None else None
+                if kept is None:
+                    return text, None  # もう大目標にある: 時期は言えないので、返答はそのまま
+                return await self._final(request, context, kept.outcome, text), kept.objective
             # 持っている物を「ない・見つからない」と言っている: 事実を添えて 1 回だけ書き直させる
             # （最後の試しでも直らなければ話す）
             if self._fact_check is not None and attempt < attempts:
@@ -522,8 +509,130 @@ class GenerateResponseUseCase(IGenerateResponse):
                     continue
             self._learn(session, request, data)
             self._rethink(session, request.user_name, data.get("rethink"))
-            return text, None
+            outcome = self._plain_outcome(kind, data)
+            if outcome is None:
+                return text, None
+            return await self._final(request, context, outcome, text), None
         raise TextGenerationError(f"no usable reply after {attempts} attempts: {error}")
+
+    @staticmethod
+    def _timing(session: PlaySession, proposal: ObjectiveProposal) -> tuple[str, str]:
+        """
+        受ける頼みが実際にいつやられるか（コードが決める。返答の文ではなく、これが事実）。
+        今やる（when=now）でも、夜の待ちは小目標を切り替えない決まり（`defers_rethink`）で夜明けまで
+        動かない。例外は、夜の家の中で今できる頼み（`night_doable`）。
+        """
+        current = session.plan.current
+        first = current.open_jobs[0] if current is not None and current.open_jobs else None
+        if (
+            proposal.job
+            and first is not None
+            and {c.describe() for c in first.specs} == {c.describe() for c in proposal.conditions}
+        ):
+            return ALREADY, ""
+        if proposal.now:
+            if session.defers_rethink() and not night_doable(proposal):
+                return LATER, "夜の間は今の小目標（夜を越す）を切り替えない決まりなので、夜が明けてからやる。"
+            return NOW, ""
+        if proposal.job and first is not None:
+            return LATER, f"今の中目標「{first.title or first.spec.describe()}」のあとにやる。"
+        if current is not None:
+            return LATER, f"今の大目標「{current.title}」のあとにやる（リストの順番どおり）。"
+        return LATER, "リストの順番どおり、今のことのあとにやる。"
+
+    @staticmethod
+    def _accepted(proposal: ObjectiveProposal, timing: str, when_note: str) -> ReplyOutcome:
+        return ReplyOutcome(
+            "accepted",
+            title=proposal.title or proposal.conditions[0].describe(),
+            what=", ".join(c.describe() for c in proposal.conditions),
+            level="job" if proposal.job else "objective",
+            timing=timing,
+            when_note=when_note,
+        )
+
+    @staticmethod
+    def _plain_outcome(kind: str | None, data: dict[str, object]) -> ReplyOutcome | None:
+        """大目標にしなかった返答（断った・教訓や考え直し・何もしない）の結果。話すだけの雑談は None。"""
+        handling = data.get("request")
+        lesson = str(data.get("lesson") or "").strip()
+        rethink = str(data.get("rethink") or "").strip()
+        if handling == RequestHandling.DECLINE.value:
+            detail = str(data.get("reason") or data.get("relevance_reason") or "").strip()
+            return ReplyOutcome(
+                "declined", decline_reason=str(data.get("decline_reason") or ""), detail=detail
+            )
+        if lesson or rethink:
+            return ReplyOutcome("noted", lesson=lesson, rethink=rethink)
+        if kind in ACTIONABLE:
+            return ReplyOutcome("none")
+        return None
+
+    async def _final(
+        self,
+        request: GenerateResponseRequest,
+        context: GenerationContext,
+        outcome: ReplyOutcome,
+        draft: str,
+    ) -> str:
+        """
+        決まった行動に合わせて返答を書き直す（docs/design/159）。下書きは行動と同じ生成で書かれていて、
+        行動を後から直されると食い違う。書き直した文が結果と合わなければ 1 回だけ直させ、それでも
+        合わなければ、結果だけから作った一言を話す（食い違った文は話さない）。
+        """
+        system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply")
+        error = ""
+        for attempt in range(1, FINAL_ATTEMPTS + 1):
+            prompt = self._prompt_builder.build_final_reply_prompt(
+                user_name=request.user_name,
+                message=request.message,
+                context=context,
+                facts=outcome.facts(),
+                draft=draft,
+                previous_error=error,
+            )
+            try:
+                text = (
+                    await self._text_generator.generate(
+                        prompt=prompt, system_instruction=system_prompt, purpose="reply_final"
+                    )
+                ).strip()
+            except TextGenerationError as e:
+                logger.warning(f"返答の書き直しに失敗した: {e}")
+                return draft if not outcome.mismatch(draft) else outcome.fallback(request.user_name)
+            problem = await self._final_problem(request, context, outcome, text)
+            if not problem:
+                return text
+            error = problem
+            logger.warning(f"書き直した返答 {attempt} が結果と合わない: {text!r}: {problem}")
+        logger.warning(f"返答が結果と合わないので、結果だけから作った一言を話す: {outcome}")
+        return outcome.fallback(request.user_name)
+
+    async def _final_problem(
+        self,
+        request: GenerateResponseRequest,
+        context: GenerationContext,
+        outcome: ReplyOutcome,
+        text: str,
+    ) -> str:
+        """書き直した返答が、結果・言語・持ち物の事実と合わない理由（合っていれば空文字列）。"""
+        if not text:
+            return "The reply is empty."
+        problem = outcome.mismatch(text)
+        if problem:
+            return problem
+        if is_foreign_comment(request.message) and mostly_japanese(text):
+            return (
+                "The viewer's comment is not in Japanese, but the reply is. Write it in the same "
+                "language as the comment."
+            )
+        if outcome.handling in ("declined", "none") and await self._empty_promise(
+            request.message, text, "decline" if outcome.handling == "declined" else "none", None
+        ):
+            return "The reply promises an action, but nothing was registered to do (see the facts)."
+        if self._fact_check is not None:
+            return await self._fact_check.problem(text, context.activity) or ""
+        return ""
 
     async def _accept(
         self,
@@ -552,14 +661,20 @@ class GenerateResponseUseCase(IGenerateResponse):
             and {c.describe() for c in first.specs} == {c.describe() for c in proposal.conditions}
         )
 
+        urgent = night_doable(proposal)
+
         def rethink(objective: Objective) -> None:
             if not proposal.now:
                 return
             was = session.goal.describe() if session.goal else "nothing"
             if not proposal.job:
+                session.promise_now(
+                    PromisedNow(user_name, objective.title, proposal.conditions, job=False)
+                )
                 session.request_rethink(
                     f'you told {user_name} you would do "{objective.title}" now '
-                    f"(it is at the top of the objectives; you were on {was}, go back to it after)"
+                    f"(it is at the top of the objectives; you were on {was}, go back to it after)",
+                    urgent=urgent,
                 )
                 return
             # 中目標として採ったとき、約束したのはその中目標で、大目標の名前ではない。もう今の中目標なら、
@@ -568,9 +683,11 @@ class GenerateResponseUseCase(IGenerateResponse):
             if already_current:
                 return
             what = proposal.title or proposal.conditions[0].describe()
+            session.promise_now(PromisedNow(user_name, what, proposal.conditions, job=True))
             session.request_rethink(
                 f'you told {user_name} you would do "{what}" now (a job of the objective '
-                f'"{objective.title}"; you were on {was}, go back to it after)'
+                f'"{objective.title}"; you were on {was}, go back to it after)',
+                urgent=urgent,
             )
 
         # 建物の設計（Gemini で 1 回 40〜200 秒）は返事のあとに裏でする: 返事が待つと、あとのコメントごと遅れる
@@ -643,6 +760,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             pending = bool(session.rethink_reason)
             try:
                 proposal = parse_proposal({**data, "when": "now" if now and not wait else "next"})
+                timing, when_note = self._timing(session, proposal)
                 objective = await self._accept(session, request.user_name, proposal, advice)
             except (ValueError, GoalRejectedError) as e:
                 error = f"大目標にできなかった: {e}\n直せるなら直し、無理なら cannot にする。"
@@ -650,7 +768,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 continue
             if proposal.now and not pending:
                 self._last_rethink_at = self._clock()
-            return KeptPromise(objective, proposal.now)
+            return KeptPromise(objective, proposal.now, self._accepted(proposal, timing, when_note))
         return UnkeptPromise(error or "it could not become an objective")
 
     def _learn(

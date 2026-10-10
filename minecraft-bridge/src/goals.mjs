@@ -523,6 +523,11 @@ function evaluateOne (bot, state, knowledge, world) {
       const sleepy = tod >= SLEEP_FROM && tod <= SLEEP_UNTIL && !bot.isSleeping
       if (inside) {
         if (hasBed(bot, state.home) && sleepy) out.leaves.push({ kind: 'sleep' })
+        // 持っているベッドが家にまだ置かれていないなら、置く（2026-10-10 21:36: ベッドを持って家の中にいたのに、
+        // 朝まで待つ手しか出ず、「ベッドを置いて」と頼まれても置けなかった）。置けば、次の手で寝られる
+        else if (!hasBed(bot, state.home) && Object.keys(inventoryCounts(bot)).some((n) => n.endsWith('_bed')) && bedSpot(bot, state.home)) {
+          out.leaves.push({ kind: 'place_bed' })
+        }
         // 敵がそばにいると眠れない: 武器があれば、出て倒す（cleared。持ち物は先にチェストへ）のも選べる
         const near = dangerOutside(bot, state.home)
         if (sleepy && near.length) {

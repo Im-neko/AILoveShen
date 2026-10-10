@@ -63,6 +63,30 @@ class IPromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_final_reply_prompt(
+        self,
+        user_name: str,
+        message: str,
+        context: GenerationContext,
+        facts: str,
+        draft: str,
+        previous_error: str = "",
+    ) -> str:
+        """
+        決まった行動（受けた・断った・いつやるか）に合わせて、返答を書き直させるプロンプト
+        （docs/design/159）。
+
+        Args:
+            user_name: 視聴者
+            message: 視聴者のコメント
+            context: 配信者が今していることと、最近の会話
+            facts: 決まったこと（`ReplyOutcome.facts`。返答はこれと合わせる）
+            draft: 行動を決めた生成が書いた下書き（口調と質問への答えだけ使う）
+            previous_error: 前回の書き直しを差し戻した理由
+        """
+        ...
+
+    @abstractmethod
     def build_promise_prompt(
         self,
         user_name: str,

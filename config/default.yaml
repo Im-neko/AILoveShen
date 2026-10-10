@@ -162,7 +162,7 @@ llm:
     # 22 replies wrote 2,125-4,462 tokens, 248 s in all, and 12 of 552 tool choices wrote 600-2,498;
     # the usual answer is 90 for a tool, 217 for a reply, 250-350 for a goal, 1,000 for a plan; the caps
     # are above the 99th percentile of 2026-09-29/30)
-    output_max_tokens: {tool: 800, tool_after_failure: 800, tool_stuck: 1200, goal: 1600, goal_after_failure: 1600, reply: 1200, commentary: 300, live: 200, plan: 3500, promise: 600}
+    output_max_tokens: {tool: 800, tool_after_failure: 800, tool_stuck: 1200, goal: 1600, goal_after_failure: 1600, reply: 1200, reply_final: 600, commentary: 300, live: 200, plan: 3500, promise: 600}
     max_concurrent: 2
     timeout_seconds: 180
   # The remote LLM: an OpenAI-compatible LiteLLM proxy. Images are sent as data URLs. What differs per
@@ -234,6 +234,7 @@ llm:
     tool_stuck: "medium"       # the tool choice while the small goal keeps failing: think, then try another way
     commentary: "low"
     reply: "low"               # a viewer is waiting
+    reply_final: "low"         # the reply written again from what was decided (docs/design/159)
     live: "low"                # a line in the middle of an action (docs/design/43)
     promise: "low"             # how to keep a promise a reply made (docs/design/34 §10)
     screen_review: "medium"    # comparing the stream screen with the goal (docs/design/23)

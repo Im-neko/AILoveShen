@@ -311,6 +311,8 @@ class TestReplyAsJob:
         builder = Mock()
         builder.build_system_prompt.return_value = "system"
         builder.build_chat_response_prompt.return_value = "prompt"
+        builder.build_final_reply_prompt.return_value = "final"
+        generator.generate.return_value = "丸太のあとに石も集めるね"
         use_case = GenerateResponseUseCase(
             text_generator=generator,
             prompt_builder=builder,

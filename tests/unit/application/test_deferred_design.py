@@ -129,6 +129,8 @@ async def test_a_now_request_rethinks_only_after_the_objective_is_added():
     prompts = Mock()
     prompts.build_system_prompt.return_value = "system"
     prompts.build_chat_response_prompt.return_value = "prompt"
+    prompts.build_final_reply_prompt.return_value = "final"
+    generator.generate.return_value = "広くするよ！"
     use_case = GenerateResponseUseCase(
         text_generator=generator,
         prompt_builder=prompts,

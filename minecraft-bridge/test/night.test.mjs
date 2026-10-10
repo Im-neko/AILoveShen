@@ -171,3 +171,20 @@ test('ドアも床もない家へは帰る手を出さない（落ちる）。�
   const g2 = makeGoal({ predicate: 'through_night' }, floor, { home, plan: null }, k)
   assert.ok(evaluate(floor, { home, plan: null, goal: g2 }, k, world).leaves.some((l) => l.kind === 'go_home'))
 })
+
+test('家の中にいて、ベッドを持っているのに家に置いていない夜は、ベッドを置く手を出す（置けば寝られる。置けない家・持っていないなら出さない）', () => {
+  // 3x3 の室内（x 39..41、z 38..39 の床の上 y 64）、ドアは (40,64,40)
+  const home = { door: new Vec3(40, 64, 40), inside: new Vec3(40, 64, 39), outside: new Vec3(40, 64, 41), min: new Vec3(38, 64, 37), max: new Vec3(41, 64, 39), bed: null, breach: [] }
+  const make = (items) => {
+    const bot = night({ items, y: 64 })
+    bot.entity.position = new Vec3(40.5, 64, 39.5)
+    bot.entities = {}
+    return bot
+  }
+  const inside = (bot) => {
+    const goal = makeGoal({ predicate: 'through_night' }, bot, { home, plan: null }, k)
+    return evaluate(bot, { home, plan: null, goal }, k, world)
+  }
+  assert.ok(inside(make({ white_bed: 1 })).leaves.some((l) => l.kind === 'place_bed'))
+  assert.ok(!inside(make({})).leaves.some((l) => l.kind === 'place_bed'), 'ベッドを持っていない')
+})
