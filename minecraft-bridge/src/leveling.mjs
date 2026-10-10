@@ -63,6 +63,9 @@ export function levelTarget (state, where) {
 }
 
 const isPlant = (b) => b.boundingBox === 'empty' && !FLUID.test(b.name)
+// 植えた物（作物・苗木）。壊して整地（demolish）のときは、床の上のこれも掘る（草花は地面の飾りなので掘らない）
+const PLANTED = /^(wheat|carrots|potatoes|beetroots|melon_stem|pumpkin_stem|attached_melon_stem|attached_pumpkin_stem|sweet_berry_bush|torchflower_crop|pitcher_crop|.*_sapling|.*_propagule)$/
+const PLANTED_HEIGHT = 3 // 床の上、これだけの高さまで見る
 
 // 1 列を見る → { off: bool, cuts: [Vec3], fills: [Vec3] } か、触らない理由の文字列か UNLOADED
 // stairs: false は、階段の入口のまわりも見る（設計した畑のマスは、階段の記録より先に直す）
@@ -101,7 +104,10 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, de
   }
   if (!top) return 'too deep'
   const t = top.position.y
-  if (t === floor) return { off: false, cuts: [], fills: [] }
+  if (t === floor) {
+    const planted = demolish ? plantedAbove(bot, x, z, floor) : []
+    return planted.length ? { off: true, cuts: planted, fills: [] } : { off: false, cuts: [], fills: [] }
+  }
   if (t > floor) {
     const cuts = []
     for (let h = t; h > floor; h--) {
@@ -117,6 +123,16 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, de
   const fills = []
   for (let h = t + 1; h <= floor; h++) fills.push(new Vec3(x, h, z))
   return { off: true, cuts: [], fills }
+}
+
+// 床の上の植えた物（上から）
+function plantedAbove (bot, x, z, floor) {
+  const out = []
+  for (let h = floor + PLANTED_HEIGHT; h > floor; h--) {
+    const b = bot.blockAt(new Vec3(x, h, z))
+    if (b && PLANTED.test(b.name)) out.push(b.position)
+  }
+  return out
 }
 
 // 列の並び [[x, z]] を、立つ高さ y にそろえる → { y, total, off, cuts, fills, unloaded, skipped: {理由: 数} }

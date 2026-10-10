@@ -183,10 +183,11 @@ class IMinecraftBridge(ABC):
         ...
 
     @abstractmethod
-    async def set_roads(self, strips: list[dict[str, int]]) -> None:
+    async def set_town_layout(self, strips: list[dict[str, int]], clear: list[str]) -> None:
         """
-        敷く道の細い列（ワールドの座標、両端を含む四角 {min_x, min_z, max_x, max_z}。設計書 167）を送る。
-        前に送ったものは置き換わる。ブリッジが、まだ敷いていない所へ敷く手を出す。
+        街の設計をブリッジに送る（設計書 167）: 敷く道の細い列（ワールドの座標、両端を含む四角
+        {min_x, min_z, max_x, max_z}）と、計画に合わないので壊してよい既存の施設の名前。前に送ったものは
+        置き換わる。ブリッジが、まだ敷いていない所へ敷く手と、壊してよい施設を更地にする手を出す。
         """
         ...
 

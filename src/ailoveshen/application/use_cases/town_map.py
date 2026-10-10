@@ -20,6 +20,19 @@ MAX_HISTORY = 10
 ASSIGNABLE = tuple(u for u in ZONE_USES if u not in ("home", "unusable", "road"))
 # 道に面していなくてもよい用途（採掘場は石のある所に作る）
 OFF_ROAD_USES = ("mine", "free")
+# 再設計のとき、計画に合わなければ壊してよい既存の建築（家は住んでいる所、採掘場は地下なので壊さない）
+REMOVABLE_USES = ("building", "farm", "tree_farm")
+MAX_CLEAR_WHY = 60
+
+
+def removable_facilities(base: list[Zone]) -> dict[str, list[str]]:
+    """壊してよい既存の施設の名前 → その区画の id。"""
+    out: dict[str, list[str]] = {}
+    for z in base:
+        if z.fixed and z.use in REMOVABLE_USES:
+            for name in (n.strip() for n in z.facility.split(",") if n.strip()):
+                out.setdefault(name, []).append(z.id)
+    return out
 MAX_AREAS = 24
 MAX_NOTE = 60
 
@@ -53,8 +66,39 @@ def draw_base(rows: list[dict[str, Any]], current: TownMap | None) -> list[Zone]
     return with_roads(base, plan_roads(base, kept))
 
 
-def town_map_schema(free_ids: list[str]) -> dict[str, Any]:
-    """理想図の出力の形: 全体の考えと、用途ごとの区画のまとまり。"""
+def town_map_schema(
+    free_ids: list[str], removable: dict[str, list[str]] | None = None
+) -> dict[str, Any]:
+    """
+    理想図の出力の形: 全体の考えと、用途ごとの区画のまとまり。`removable` があれば、計画に合わない
+    既存の建築を壊す指定（clear）もできる。壊すと書いた施設の区画も、areas に使える。
+    """
+    removable = removable or {}
+    zone_ids = sorted({*free_ids, *(z for ids in removable.values() for z in ids)})
+    schema = _town_map_schema(zone_ids)
+    if removable:
+        props = schema["properties"]
+        props["clear"] = {
+            "type": "array",
+            "description": "Existing buildings or facilities that do not fit this layout and are taken "
+            "down (the site is levelled). Only what really is in the way; what is in use stays. "
+            "Their zones may be used in areas",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "facility": {"type": "string", "enum": sorted(removable)},
+                    "why": {
+                        "type": "string",
+                        "description": f"Why it does not fit, Japanese, {MAX_CLEAR_WHY} characters at most",
+                    },
+                },
+                "required": ["facility", "why"],
+            },
+        }
+    return schema
+
+
+def _town_map_schema(free_ids: list[str]) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
@@ -116,8 +160,23 @@ def apply_areas(
         errors.append("concept is empty")
     zones = {z.id: z for z in base}
     roads = any(z.use == "road" for z in base)
+    removable = removable_facilities(base)
+    clear: list[tuple[str, str]] = []
+    for i, c in enumerate(data.get("clear") or []):
+        name = str(c.get("facility") or "")
+        if name not in removable:
+            errors.append(f"clear {i + 1}: {name!r} cannot be taken down (one of {sorted(removable) or 'none'})")
+        elif name not in [n for n, _ in clear]:
+            clear.append((name, str(c.get("why") or "").strip()[:MAX_CLEAR_WHY]))
+    gone = {n for n, _ in clear}
+    for zid in {z for n in gone for z in removable[n]}:
+        zone = zones[zid]
+        left = [n.strip() for n in zone.facility.split(",") if n.strip() and n.strip() not in gone]
+        if not left:  # この区画の施設は全部壊す: 空き区画になる
+            zones[zid] = replace(zone, use="free", facility="", note="", fixed=False)
+    names: set[str] = {n.strip() for z in base for n in z.facility.split(",") if n.strip()}  # 壊すまで名前は使えない
+    base = [zones[z.id] for z in base]
     used: set[str] = set()
-    names: set[str] = {z.facility for z in base if z.facility}
     for i, area in enumerate(data.get("areas") or []):
         use = str(area.get("use") or "")
         if use not in ASSIGNABLE:
@@ -160,5 +219,6 @@ def apply_areas(
         concept=concept,
         stage=stage,
         history=(*history, reason)[-MAX_HISTORY:],
+        clear=tuple(clear),
     )
 

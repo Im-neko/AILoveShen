@@ -7,6 +7,7 @@ import prismarineBlock from 'prismarine-block'
 import { PRIMITIVES } from '../src/primitives.mjs'
 import { createTools } from '../src/tools.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
+import { BuildPlan } from '../src/build.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -91,7 +92,7 @@ test('clear_former_home: 記録にない家は断る。もう更地なら、掘�
   assert.deepEqual(state.formerHomes, [])
 })
 
-test('clear_old_home 道具: 前の家がなければ断る。一番近い前の家の手になる', async () => {
+test('clear_site 道具（名前なし）: 前の家がなければ断る。一番近い前の家の手になる', async () => {
   const { home } = ruin()
   const far = { door: new Vec3(100, 64, 100), inside: new Vec3(100, 64, 101), outside: new Vec3(100, 64, 99), min: new Vec3(99, 64, 101), max: new Vec3(101, 64, 103), bed: null, breach: [] }
   const tools = (formerHomes) => createTools({
@@ -102,6 +103,78 @@ test('clear_old_home 道具: 前の家がなければ断る。一番近い前の
     candidates: () => [],
     check: () => []
   })
-  assert.match((await tools([])('clear_old_home', {})).result, /no former home on record/)
-  assert.match((await tools([far, home])('clear_old_home', {})).result, /"verb":"clear_former_home","door":\{"x":0,"y":64,"z":-2\}/)
+  assert.match((await tools([])('clear_site', {})).result, /no former home on record/)
+  assert.match((await tools([far, home])('clear_site', {})).result, /"verb":"clear_former_home","door":\{"x":0,"y":64,"z":-2\}/)
+})
+
+// ---- 街の再設計で印のついた建物・畑・植林場（設計書 167） ----
+
+function village () {
+  // 建物 hut（底面 x,z -2..2、床の層 y 64）と畑 field（x,z 10..13、耕地 y 63）、植林場 grove
+  const blocks = {}
+  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) {
+    blocks[`${x},64,${z}`] = 'oak_planks'
+    if (Math.abs(x) === 2 || Math.abs(z) === 2) blocks[`${x},65,${z}`] = 'oak_planks'
+  }
+  blocks['0,65,0'] = 'chest'
+  for (let x = 10; x <= 13; x++) for (let z = 10; z <= 13; z++) { blocks[`${x},63,${z}`] = 'farmland'; blocks[`${x},64,${z}`] = 'wheat' }
+  for (const [x, z] of [[30, 30], [33, 30], [30, 33]]) blocks[`${x},64,${z}`] = 'oak_sapling'
+  const cells = []
+  for (let x = 0; x < 5; x++) for (let z = 0; z < 5; z++) cells.push({ x, y: 0, z, block: 'planks' })
+  const plan = new BuildPlan({ blocks: cells, width: 5, depth: 5, height: 3, kind: 'build', design: { name: 'hut' } })
+  plan.origin = new Vec3(-2, 64, -2)
+  plan.seen.add('0,64,0')
+  const facilities = {
+    hut: { name: 'hut', kind: 'build', box: { min: { x: -2, y: 64, z: -2 }, max: { x: 2, y: 66, z: 2 } } },
+    field: { name: 'field', kind: 'farm', box: { min: { x: 10, y: 63, z: 10 }, max: { x: 13, y: 63, z: 13 } }, layout: { y: 63, crop: 'wheat', cells: [] } },
+    grove: { name: 'grove', kind: 'tree_farm', box: { min: { x: 30, y: 64, z: 30 }, max: { x: 33, y: 64, z: 33 } }, layout: { cells: [{ x: 30, y: 64, z: 30 }] } }
+  }
+  return { blocks, plan, facilities }
+}
+
+test('clear_facility: 建物を更地にして、施設・建物・チェストの記憶・印を外す。底面の外は残す', async () => {
+  const { blocks, plan, facilities } = village()
+  const w = world({ ...blocks, '3,64,0': 'cobblestone' })
+  const state = { home: null, formerHomes: [], builds: { hut: plan }, facilities, clearMarks: ['hut', 'field'], plantings: [], unreachableDrops: new Set(), memory: { chests: { '0,65,0': { x: 0, y: 65, z: 0, contents: {} } } } }
+  const r = await PRIMITIVES.clear_facility(fakeBot(w), state, { name: 'hut' }, signal)
+  assert.match(r, /cleared the build hut down to bare ground/)
+  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) for (const y of [64, 65]) assert.equal(w.blockAt(new Vec3(x, y, z)).name, 'air', `${x},${y},${z}`)
+  assert.equal(w.blockAt(new Vec3(3, 64, 0)).name, 'cobblestone')
+  assert.equal(state.facilities.hut, undefined)
+  assert.equal(state.builds.hut, undefined)
+  assert.deepEqual(state.clearMarks, ['field'])
+  assert.deepEqual(state.memory.chests, {})
+})
+
+test('clear_facility: 畑は作物を、植林場は苗木と植えた記録を外す。ない・対象外の施設は断る', async () => {
+  const { blocks, facilities } = village()
+  const w = world(blocks)
+  const state = { home: null, formerHomes: [], builds: {}, facilities, clearMarks: ['field', 'grove'], plantings: [{ x: 30, y: 64, z: 30 }, { x: 90, y: 64, z: 90 }], unreachableDrops: new Set() }
+  const bot = fakeBot(w)
+  bot.entity.position = new Vec3(11.5, 64, 11.5) // 手が届く所に立つ（経路探索の模擬はない）
+  assert.match(await PRIMITIVES.clear_facility(bot, state, { name: 'field' }, signal), /cleared the farm field/)
+  assert.equal(w.blockAt(new Vec3(11, 64, 11)).name, 'air')
+  assert.equal(w.blockAt(new Vec3(11, 63, 11)).name, 'farmland', '耕地そのものは地面の高さなので残る（水がなければ土に戻る）')
+  bot.entity.position = new Vec3(31.5, 64, 31.5)
+  assert.match(await PRIMITIVES.clear_facility(bot, state, { name: 'grove' }, signal), /cleared the tree_farm grove/)
+  assert.deepEqual(state.plantings, [{ x: 90, y: 64, z: 90 }], '外の植えた記録は残す')
+  await assert.rejects(PRIMITIVES.clear_facility(bot, state, { name: 'field' }, signal), /there is no facility named field/)
+  state.facilities.shaft = { name: 'shaft', kind: 'mine', box: { min: { x: 0, y: 60, z: 0 }, max: { x: 1, y: 60, z: 1 } } }
+  await assert.rejects(PRIMITIVES.clear_facility(bot, state, { name: 'shaft' }, signal), /a mine is not taken down this way/)
+})
+
+test('clear_site 道具（名前つき）: 印のついた施設だけ。印がなければ断る', async () => {
+  const { plan, facilities } = village()
+  const tools = (clearMarks) => createTools({
+    bot: { ...fakeBot(world()), time: { timeOfDay: 1000 } },
+    state: { home: null, formerHomes: [], builds: { hut: plan }, facilities, clearMarks, memory: {}, busy: false, reflex: false },
+    knowledge: new Knowledge(md),
+    run: async (c) => ({ ok: true, result: JSON.stringify({ verb: c.verb, name: c.name }), seconds: 0 }),
+    candidates: () => [],
+    check: () => []
+  })
+  assert.match((await tools(['hut'])('clear_site', { name: 'hut' })).result, /"verb":"clear_facility","name":"hut"/)
+  assert.match((await tools(['field'])('clear_site', { name: 'hut' })).result, /hut is not marked for taking down.*marked: field/)
+  assert.match((await tools([])('clear_site', { name: 'hut' })).result, /nothing is marked/)
+  assert.match((await tools(['ghost'])('clear_site', { name: 'ghost' })).result, /there is no facility named ghost/)
 })

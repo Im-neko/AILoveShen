@@ -12,6 +12,7 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
 from ailoveshen.application.use_cases.tool_catalog import ASK_ADVISOR
+from ailoveshen.application.use_cases.town_map import removable_facilities
 from ailoveshen.domain.value_objects import (
     Activity,
     BuildDesign,
@@ -274,7 +275,7 @@ $grid
 
 ## 固定の区画（変えない。areas に入れない）
 $fixed
-
+$removable
 ## 空き区画の地形（平ら = 高さがそろった列の割合、木・石・水 = 割合、高さ = 家の床からの差）
 $terrain
 $current
@@ -290,7 +291,7 @@ $reason
 - 道は先にコードが決めてある（固定。家から東西南北に延びる大通りと、施設への枝）。新しい施設は道に面した
   区画に置く（採掘場だけは道から離れてよい）。道に面さない用途は差し戻される。道そのものは書かない
 - 固定の区画は変えない。まだ見ていない区画にも割り当ててよい
-$previous_error
+$clear_rule$previous_error
 ## 出力
 指定の JSON で出力してください（concept、areas）。
 """)
@@ -397,6 +398,25 @@ _GRID_FIXED = {
 }
 
 
+CLEAR_RULE = """\
+- 計画に合わない既存の建築（道や大通りをふさぐ、置き場所が悪い）は、clear に書く。壊して更地にし、その区画は
+  areas に使える。使っている畑・建物は壊さない。本当に邪魔なものだけ（1 回に 3 つまで）
+"""
+
+
+def _removable_section(base: list[Zone]) -> str:
+    """壊してよい既存の建築の節（なければ空）。"""
+    removable = removable_facilities(base)
+    if not removable:
+        return ""
+    lines = [f"- {name}: {', '.join(ids)}" for name, ids in removable.items()]
+    return (
+        "\n## 壊してよい既存の建築（家と採掘場は壊せない。計画に合わなければ clear に書く）\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
 def _zone_letter(zone: Zone, row: dict[str, Any]) -> str:
     """地図の 1 文字（固定の区画は用途、空きは地形）。"""
     if zone.fixed:
@@ -459,6 +479,9 @@ def format_town_map(town_map: Optional[TownMap]) -> str:
         lines.append(f"- {use}: " + " / ".join(parts))
     if counts:
         lines.append("- " + "、".join(counts))
+    if town_map.clear:
+        lines.append("## 計画に合わない既存の建築（壊して更地にしてよい。道具 clear_site {name}）")
+        lines.extend(f"- {name}: {why}" for name, why in town_map.clear)
     return "\n".join(lines) + "\n"
 
 
@@ -1126,6 +1149,8 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             stages=stages,
             grid=_zone_grid(letters, [z.id for z in base]),
             fixed="\n".join(fixed) or "- なし",
+            removable=_removable_section(base),
+            clear_rule=CLEAR_RULE if removable_facilities(base) else "",
             terrain="\n".join(terrain) or "- なし",
             current=now,
             reason=reason,

@@ -87,6 +87,7 @@ _BY_VERB: dict[str, Callable[[dict[str, Any], str], str]] = {
     "level": lambda d, cid: "畑の地面を整地する" if d.get("facility") else "整地する",
     "reset_build": lambda d, cid: "建物の敷地を更地にする",
     "clear_former_home": lambda d, cid: "前の家を更地にする",
+    "clear_facility": lambda d, cid: "計画に合わない建物を更地にする",
     "make_mine": lambda d, cid: "採掘場をつくる",
     "move_placed": lambda d, cid: "家具を置き直す",
     "pickup": _with("{thing}を拾う"),
@@ -152,7 +153,7 @@ _BY_TOOL: dict[str, Callable[[dict[str, Any]], str]] = {
     "use_item": lambda a: f"{item_name(a.get('item'))}を使う" if a.get("item") else "アイテムを使う",
     "ride_boat": lambda a: "ボートで進む",
     "level": lambda a: "整地する",
-    "clear_old_home": lambda a: "前の家を更地にする",
+    "clear_site": lambda a: "計画に合わない建物を更地にする" if a.get("name") else "前の家を更地にする",
 }
 DIRECT_TOOLS = frozenset(_BY_TOOL)
 

@@ -219,9 +219,9 @@ class MineflayerBridgeClient(IMinecraftBridge):
         data: dict[str, Any] = response.json()
         return data
 
-    async def set_roads(self, strips: list[dict[str, int]]) -> None:
-        """敷く道の細い列を送る（minecraft-bridge/src/roads.mjs）。"""
-        await self._request("PUT", "/roads", json={"strips": strips})
+    async def set_town_layout(self, strips: list[dict[str, int]], clear: list[str]) -> None:
+        """敷く道の細い列と壊してよい施設の名前を送る（minecraft-bridge/src/roads.mjs）。"""
+        await self._request("PUT", "/town-layout", json={"strips": strips, "clear": clear})
 
     async def zones(self, x: int, z: int) -> list[dict[str, Any]]:
         """街の理想図の区画の地形（minecraft-bridge/src/zones.mjs）。"""

@@ -63,7 +63,7 @@ const MAX_HOLD_S = 3
 
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
   'smelt', 'deposit', 'toss', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'water', 'wait',
-  'use_item', 'ride_boat', 'level', 'clear_old_home']
+  'use_item', 'ride_boat', 'level', 'clear_site']
 export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of', 'find_foods', 'inspect', 'diagnostics']
 
 class Refused extends Error {}
@@ -499,10 +499,21 @@ export function createTools (deps) {
       const count = Math.max(1, Math.floor(Number(args.count ?? 1)))
       return { c: { verb: 'withdraw', target: args.item, item: args.item, count, pos: new Vec3(chest.x, chest.y, chest.z) } }
     },
-    // いちばん近い前の家（半壊・廃屋）を更地にする（設計書 166）
-    clear_old_home () {
+    // 名前なし: いちばん近い前の家（半壊・廃屋）を更地にする（設計書 166）。名前あり: 街の再設計で計画に合わないと
+    // 印のついた建物・畑・植林場を更地にする（設計書 167）
+    clear_site (args) {
+      const name = args?.name
+      if (name != null) {
+        if (!(state.clearMarks ?? []).includes(name)) refuse(`${name} is not marked for taking down in the town plan${state.clearMarks?.length ? ` (marked: ${state.clearMarks.join(', ')})` : ' (nothing is marked)'}: a redraw of the town map marks what does not fit`)
+        const fac = state.facilities?.[name]
+        if (!fac) refuse(`there is no facility named ${name} (already cleared?)`)
+        const at = fac.kind === 'build' ? state.builds?.[name]?.origin : new Vec3(fac.box.min.x, fac.box.min.y, fac.box.min.z)
+        if (!at) refuse(`the build ${name} has no site yet: nothing to clear`)
+        within(bot, at, MAX_TOOL_DISTANCE, `${name}`)
+        return { c: { verb: 'clear_facility', target: `the ${fac.kind} ${name}`, name, inPlace: true } }
+      }
       const former = state.formerHomes ?? []
-      if (!former.length) refuse('there is no former home on record (the current home is not cleared this way: it is the one you live in)')
+      if (!former.length) refuse('there is no former home on record (the current home is not cleared this way: it is the one you live in); give name to take down a marked building or farm')
       const mine = bot.entity.position
       const home = [...former].sort((a, b) => a.door.distanceTo(mine) - b.door.distanceTo(mine))[0]
       within(bot, home.door, MAX_TOOL_DISTANCE, `the old house (door ${fmt(home.door)})`)

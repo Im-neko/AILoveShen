@@ -255,4 +255,5 @@ def _town_map(data: dict[str, Any]) -> TownMap:
         concept=data.get("concept", ""),
         stage=int(data.get("stage", 0)),
         history=tuple(data.get("history", [])),
+        clear=tuple((str(c[0]), str(c[1])) for c in data.get("clear", [])),
     )

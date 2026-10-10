@@ -29,6 +29,13 @@ export function setRoads (state, strips) {
   return clean.length
 }
 
+// 計画に合わないので壊してよい既存の施設の名前（街の理想図の clear。置き換わる）
+export function setClearMarks (state, names) {
+  if (!Array.isArray(names) || names.some((n) => typeof n !== 'string')) throw new Error('clear must be a list of names')
+  state.clearMarks = [...new Set(names)]
+  return state.clearMarks.length
+}
+
 // 敷く列の一覧（x, z）。列の四角に、戸口への 1 マス幅のつなぎを足す
 export function roadColumns (state) {
   const strips = state.roads?.strips ?? []

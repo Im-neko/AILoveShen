@@ -22,7 +22,12 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 )
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
-from ailoveshen.application.use_cases.town_map import apply_areas, draw_base, town_map_schema
+from ailoveshen.application.use_cases.town_map import (
+    apply_areas,
+    draw_base,
+    removable_facilities,
+    town_map_schema,
+)
 from ailoveshen.application.use_cases.town_roads import road_strips
 from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
@@ -199,7 +204,7 @@ class TownPlanner:
             return
         current = plan.town_map
         base = draw_base(rows, current)
-        schema = town_map_schema([z.id for z in base if not z.fixed])
+        schema = town_map_schema([z.id for z in base if not z.fixed], removable_facilities(base))
         error = ""
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_town_map_prompt(
@@ -222,9 +227,11 @@ class TownPlanner:
             plan.set_town_map(town_map)
             self._store.save(plan)
             try:
-                await self._bridge.set_roads(road_strips(list(town_map.zones)))
+                await self._bridge.set_town_layout(
+                    road_strips(list(town_map.zones)), [name for name, _ in town_map.clear]
+                )
             except GameBridgeError as e:
-                logger.warning(f"道の列をブリッジに送れなかった（次に描くときに送る）: {e}")
+                logger.warning(f"街の道・壊す建築をブリッジに送れなかった（次に描くときに送る）: {e}")
             used = {u: len(zs) for u, zs in town_map.by_use().items()}
             logger.info(f"街の理想図を描いた（{reason}）: {town_map.concept} / {used}")
             await self._event_publisher.publish(

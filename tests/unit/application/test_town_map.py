@@ -153,8 +153,9 @@ async def test_the_map_is_drawn_once_after_the_town_retrying_a_bad_answer():
 
     assert plan.town_map.zone("A2").use == "road" and plan.town_map.zone("A2").fixed
     assert plan.town_map.zone("B2").use == "farm"
-    planner._bridge.set_roads.assert_awaited_once()  # 敷く道の列をブリッジに送る（設計書 167）
-    assert planner._bridge.set_roads.await_args.args[0]
+    planner._bridge.set_town_layout.assert_awaited_once()  # 敷く道の列と壊す施設をブリッジに送る（設計書 167）
+    strips, clear = planner._bridge.set_town_layout.await_args.args
+    assert strips and clear == []
     assert plan.town_map.concept == "家のそばに畑"
     assert text_generator.generate_json.call_args.kwargs["purpose"] == "town_plan"
     assert "A1 is fixed" in text_generator.generate_json.call_args.args[0]
@@ -226,3 +227,58 @@ def test_the_prompt_shows_the_fixed_roads_on_the_map_and_tells_the_rule():
     assert "- 道（1 区画）: A2" in prompt
     assert "道に面した" in prompt
     assert "- A2: 平ら" not in prompt  # 道は空き区画の地形に入れない
+
+
+def _rows_with_old_farm() -> list[dict]:
+    """A1 に家、B1 に古い畑 old_farm、A2 は空き（家の南の道になる）、B2 は空き。"""
+    rows = _rows()
+    rows[1] = {**rows[1], "water": 0, "facilities": [{"name": "old_farm", "kind": "farm"}]}
+    rows[3] = {**rows[3], "seen": 1}
+    return rows
+
+
+def test_a_redraw_may_take_down_an_existing_building_and_reuse_its_zones():
+    from ailoveshen.application.use_cases.town_map import draw_base, removable_facilities
+
+    base = draw_base(_rows_with_old_farm(), None)
+    assert removable_facilities(base) == {"old_farm": ["B1"]}
+    schema = town_map_schema([z.id for z in base if not z.fixed], removable_facilities(base))
+    props = schema["properties"]
+    assert props["clear"]["items"]["properties"]["facility"]["enum"] == ["old_farm"]
+    assert "B1" in props["areas"]["items"]["properties"]["zones"]["items"]["enum"]
+    answer = {
+        "concept": "畑を南へ",
+        "clear": [{"facility": "old_farm", "why": "道の正面をふさぐ"}],
+        "areas": [{"use": "workshop", "zones": ["B1"], "facility": "shop", "note": "作業場"}],
+    }
+    m = apply_areas(base, answer, (0, 0), 1, (), "r")
+    assert m.clear == (("old_farm", "道の正面をふさぐ"),)
+    assert m.zone("B1").use == "workshop" and not m.zone("B1").fixed
+    # 壊すと書かなければ、固定のまま使えない。家と、ない名前は壊せない
+    with pytest.raises(ValueError, match="B1 is fixed"):
+        apply_areas(base, {**answer, "clear": []}, (0, 0), 1, (), "r")
+    with pytest.raises(ValueError, match="cannot be taken down"):
+        apply_areas(base, {**answer, "clear": [{"facility": "home", "why": "x"}]}, (0, 0), 1, (), "r")
+    # 壊す施設の名前は、壊すまで新しい施設に使えない
+    reuse = {**answer, "areas": [{"use": "farm", "zones": ["B1"], "facility": "old_farm", "note": ""}]}
+    with pytest.raises(ValueError, match="already used"):
+        apply_areas(base, reuse, (0, 0), 1, (), "r")
+
+
+def test_the_prompt_lists_what_may_be_taken_down_and_the_map_shows_the_marks(tmp_path):
+    from ailoveshen.application.use_cases.town_map import draw_base
+
+    rows = _rows_with_old_farm()
+    base = draw_base(rows, None)
+    prompt = GamePromptTemplateBuilder().build_town_map_prompt(TOWN, 0, rows, base, None, "r")
+    assert "## 壊してよい既存の建築" in prompt and "- old_farm: B1" in prompt and "clear に書く" in prompt
+    plain = GamePromptTemplateBuilder().build_town_map_prompt(TOWN, 0, _rows(), draw_base(_rows(), None), None, "r")
+    assert "壊してよい既存の建築" not in plain
+    m = apply_areas(base, {"concept": "c", "clear": [{"facility": "old_farm", "why": "道をふさぐ"}], "areas": []}, (0, 0), 1, (), "r")
+    text = format_town_map(m)
+    assert "## 計画に合わない既存の建築" in text and "- old_farm: 道をふさぐ" in text
+    store = JsonMissionStore(tmp_path / "m.json")
+    plan = ObjectivePlan(mission=MISSION)
+    plan.restore([], [], 1, town=TOWN, town_stage=0, site=HERE, town_map=m)
+    store.save(plan)
+    assert store.load().town_map.clear == (("old_farm", "道をふさぐ"),)

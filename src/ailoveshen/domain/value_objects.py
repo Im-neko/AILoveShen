@@ -1676,7 +1676,8 @@ class TownMap:
     """
     街の理想図（マスターデータ。docs/design/47 §6）: 街の中心から TOWN_CELLS x TOWN_CELLS の区画。
     `concept` は全体の考え（1 文）、`stage` は描いたときの街の段階（段階が進んだら見直す）、
-    `history` は描き直しの理由（新しいものが後ろ）。
+    `history` は描き直しの理由（新しいものが後ろ）。`clear` は、描き直したとき計画に合わないと決めた既存の
+    建築（壊して更地にしてよい。設計書 167）。
     """
 
     center_x: int
@@ -1685,6 +1686,7 @@ class TownMap:
     concept: str = ""
     stage: int = 0
     history: tuple[str, ...] = ()
+    clear: tuple[tuple[str, str], ...] = ()  # 計画に合わない既存の建築（施設の名前, 理由）。壊して更地にしてよい
 
     def zone(self, zone_id: str) -> Optional[Zone]:
         """id の区画（なければ None）。"""

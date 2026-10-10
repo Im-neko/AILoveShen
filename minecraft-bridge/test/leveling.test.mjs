@@ -379,3 +379,11 @@ test('床面から 8 マスより高い所のブロックも、続いていれ�
   assert.ok(cuts.includes('2,90,0') && cuts.includes('2,64,0'))
   assert.ok(!cuts.some((c) => c.startsWith('-2,')))
 })
+
+test('壊して整地（demolish）は、床の上の作物・苗木も掘る。草花と、普通の整地では掘らない', () => {
+  const w = world({ '1,63,0': 'farmland', '1,64,0': 'wheat', '2,64,0': 'oak_sapling', '3,64,0': 'dandelion' })
+  const s = (opts) => levelStatus({ blockAt: w.blockAt }, state(), '0,64,0', 3, opts)
+  const cuts = s({ demolish: true }).cuts.map((p) => `${p.x},${p.y},${p.z}`).sort()
+  assert.deepEqual(cuts, ['1,64,0', '2,64,0'])
+  assert.deepEqual(s({}).cuts.map((p) => `${p.x},${p.y},${p.z}`).filter((c) => c === '1,64,0'), [])
+})
