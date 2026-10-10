@@ -12,6 +12,7 @@ from typing import Any
 from loguru import logger
 
 from ailoveshen.application.use_cases.presets import SpeechPresets
+from ailoveshen.application.use_cases.foreign_speech import ForeignSpeech
 from ailoveshen.application.use_cases.readings import NameReadings
 from ailoveshen.application.use_cases.self_facts import SelfFacts
 from ailoveshen.domain.entities import Conversation
@@ -142,6 +143,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
                 event_publisher=bus,
                 get_current_emotion=llm.get_current_emotion,
                 pronounce=readings.apply,
+                transliterate=ForeignSpeech(shared_text).pronounce,
             )
         except Exception as e:  # noqa: BLE001 - どの失敗でも理由を言って始めない
             await game.close()

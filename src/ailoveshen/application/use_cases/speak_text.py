@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from loguru import logger
 
@@ -37,6 +37,7 @@ class SpeakTextUseCase(ISpeakText):
         event_publisher: IEventPublisher,
         get_current_emotion: Callable[[], EmotionState],
         pronounce: Optional[Callable[[str], str]] = None,
+        transliterate: Optional[Callable[[str], Awaitable[str]]] = None,
     ) -> None:
         """
         依存を受け取ってユースケースを初期化する（依存性の注入）。
@@ -48,12 +49,15 @@ class SpeakTextUseCase(ISpeakText):
             get_current_emotion: 今の感情の状態を返す関数
             pronounce: 合成に渡す前にテキストを読みやすくする（視聴者の名前を読みに置き換える。
                 docs/design/30_name_readings.md）。イベントのテキストは元のまま
+            transliterate: 名前を置き換えたあと、日本語の声が読めない外国語の部分をカタカナ読みにする
+                （docs/design/152）。イベントのテキスト（字幕）は元のまま
         """
         self._synthesizer = synthesizer
         self._audio_player = audio_player
         self._event_publisher = event_publisher
         self._get_current_emotion = get_current_emotion
         self._pronounce = pronounce
+        self._transliterate = transliterate
 
         # 割り込みの扱い
         self._interrupt_event = asyncio.Event()
@@ -103,6 +107,8 @@ class SpeakTextUseCase(ISpeakText):
             # 音声を合成する
             logger.debug(f"合成する: {text[:50]}... [emotion={emotion.primary.value}]")
             spoken = self._pronounce(text) if self._pronounce else text
+            if self._transliterate:
+                spoken = await self._transliterate(spoken)
             audio_data = await self._synthesizer.synthesize(
                 text=spoken,
                 emotion=emotion,

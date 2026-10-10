@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.speech_synthesizer import ISpeechSynthesizer
@@ -131,6 +131,7 @@ def create_tts_service(
     event_publisher: IEventPublisher,
     get_current_emotion: Optional[Callable[[], EmotionState]] = None,
     pronounce: Optional[Callable[[str], str]] = None,
+    transliterate: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> TTSService:
     """
     依存をすべてつないだ TTS サービスを作る。
@@ -144,6 +145,7 @@ def create_tts_service(
         get_current_emotion: 今の感情状態を返す呼び出し可能オブジェクト。
                             None なら既定の中立の感情を使う。
         pronounce: 合成の前にテキストを置き換える（視聴者の名前の読み）。None なら何もしない
+        transliterate: 名前の置き換えのあと、外国語をカタカナ読みにする（設計書 152）。None なら何もしない
 
     Returns:
         設定済みで、すぐ使える TTSService
@@ -192,6 +194,7 @@ def create_tts_service(
         event_publisher=event_publisher,
         get_current_emotion=emotion_provider,
         pronounce=pronounce,
+        transliterate=transliterate,
     )
 
     # プレゼンテーション層のサービスを作る
@@ -209,6 +212,7 @@ async def create_and_connect_tts_service(
     event_publisher: IEventPublisher,
     get_current_emotion: Optional[Callable[[], EmotionState]] = None,
     pronounce: Optional[Callable[[str], str]] = None,
+    transliterate: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> TTSService:
     """
     TTS サービスを作り、TTS サーバーにつなぐ。
@@ -220,6 +224,7 @@ async def create_and_connect_tts_service(
         event_publisher: ドメインイベントの発行先
         get_current_emotion: 今の感情状態を返す呼び出し可能オブジェクト
         pronounce: 合成の前にテキストを置き換える（視聴者の名前の読み）
+        transliterate: 名前の置き換えのあと、外国語をカタカナ読みにする（設計書 152）
 
     Returns:
         接続して開始した TTSService
@@ -233,6 +238,7 @@ async def create_and_connect_tts_service(
         event_publisher=event_publisher,
         get_current_emotion=get_current_emotion,
         pronounce=pronounce,
+        transliterate=transliterate,
     )
 
     # 接続のため、内部の合成器に触る

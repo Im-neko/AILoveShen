@@ -221,3 +221,32 @@ class TestSpeakTextUseCase:
         """request_interrupt は再生を止める。"""
         use_case.request_interrupt()
         mock_audio_player.stop.assert_called()
+
+
+class TestForeignSpeech:
+    """外国語の文は、名前の置き換えのあとカタカナ読みにして合成し、字幕（イベント）は元の文のまま。"""
+
+    @pytest.mark.asyncio
+    async def test_the_voice_gets_the_katakana_and_the_event_keeps_the_original(
+        self, mock_synthesizer, mock_audio_player, mock_event_publisher, neutral_emotion_provider
+    ):
+        transliterate = AsyncMock(return_value="ハロー、ねこかもさん！")
+        use_case = SpeakTextUseCase(
+            synthesizer=mock_synthesizer,
+            audio_player=mock_audio_player,
+            event_publisher=mock_event_publisher,
+            get_current_emotion=neutral_emotion_provider,
+            pronounce=lambda text: text.replace("neko", "ねこかも"),
+            transliterate=transliterate,
+        )
+
+        await use_case.execute(SpeakTextRequest(text="Hello, neko-san!"))
+
+        transliterate.assert_awaited_once_with("Hello, ねこかも-san!")
+        assert mock_synthesizer.synthesize.call_args.kwargs["text"] == "ハロー、ねこかもさん！"
+        started = [
+            c.args[0]
+            for c in mock_event_publisher.publish.call_args_list
+            if isinstance(c.args[0], SpeechStartedEvent)
+        ]
+        assert started[0].text == "Hello, neko-san!"

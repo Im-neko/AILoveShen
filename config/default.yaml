@@ -204,6 +204,7 @@ llm:
     skill_write: "${CODE_LLM:-local}"
     check_write: "${CODE_LLM:-local}"
     advice: "remote"                     # always the LiteLLM model: the point is a stronger one than the local LLM
+    reading: "remote"                    # foreign words to katakana for the voice (docs/design/152): a small local model is poor at Chinese / Korean
   fallback: "none"                       # none | remote: when the local model fails
 
   default_thinking_level: "low"
