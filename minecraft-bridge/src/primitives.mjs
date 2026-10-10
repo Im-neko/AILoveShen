@@ -35,6 +35,7 @@ import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
 import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
 import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
+import { routeThroughMine, climbsDirect } from './mine-route.mjs'
 import { sealStock, openings, sealCell, plugCell, SEAL_FROM_DEPTH } from './sealing.mjs'
 import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
@@ -362,7 +363,12 @@ export function torchSpot (bot) {
 // 見直す（チャンクは進むにつれて届く）。時間では止めない: 止まるのは必要が出たとき（runner）、動けない・
 // 経路がないとき（move.mjs）。区間を歩き終えたら null を返し、呼び出し側が最後の数 m を歩く
 export const LEG = 48
-async function legToward (bot, state, target, what, signal) {
+async function legToward (bot, state, target, what, signal, { viaMine = true } = {}) {
+  // 採掘場を出入りするなら、階段を通る（mine-route.mjs）。洞窟や谷の近道は通らない
+  if (viaMine) {
+    const through = await routeThroughMine(bot, state, target, (p) => legToward(bot, state, p, 'the entrance of the mine', signal, { viaMine: false }), (g) => goto(bot, g, signal), signal)
+    if (through) bot.actionPhase = ''
+  }
   for (;;) {
     signal.throwIfAborted()
     const crossed = await crossWater(bot, state, target, what, signal)
@@ -374,6 +380,14 @@ async function legToward (bot, state, target, what, signal) {
     const me = bot.entity.position
     const far = Math.hypot(target.x - me.x, target.z - me.z)
     if (far <= LEG) return null
+    // 地下から地上へ: 区間の目標は横の位置だけ（GoalNearXZ）で高さを問わないので、地下のまま横へ進む洞窟が「着いた」ことになり、
+    // 深みへ潜った（2026-10-10: 採掘場から家へ帰る途中、洞窟の水を落ちて y=-21 まで）。高さも含めて 1 つの目標で歩く
+    if (climbsDirect(me, target)) {
+      bot.actionPhase = `climbing toward ${what} (${round(far)}m away, ${round(target.y - me.y)}m up)`
+      await goto(bot, new goals.GoalNear(target.x, target.y, target.z, 3), signal)
+      bot.actionPhase = ''
+      return null
+    }
     const k = LEG / far
     bot.actionPhase = `walking toward ${what} (${round(far)}m away)`
     await goto(bot, new goals.GoalNearXZ(me.x + (target.x - me.x) * k, me.z + (target.z - me.z) * k, 3), signal)
@@ -1916,6 +1930,11 @@ export const PRIMITIVES = {
     // すでに掘ったセルに暗い所があれば、先に明るくする（松明が壊された、枝の先に届いていなかった、など）
     if (await relightMine(bot, fac.layout.cells, signal) === 'missing') {
       throw new Error(`the mine ${fac.name} has dark cells (light below ${MIN_LIGHT}: monsters spawn there) and you carry no torch: make torches first (a torch is 1 coal or charcoal + 1 stick)`)
+    }
+    // 外から掘りに来たなら、入口から階段を下りる（洞窟や谷の近道を通らない: mine-route.mjs）
+    const first = mineStatus(bot, fac).next
+    if (first) {
+      await routeThroughMine(bot, state, { x: first.x + 0.5, y: first.y, z: first.z + 0.5 }, (p) => legToward(bot, state, p, 'the entrance of the mine', signal, { viaMine: false }), (g) => goto(bot, g, signal), signal)
     }
     let dug = 0
     let last = -1
