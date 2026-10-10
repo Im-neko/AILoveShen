@@ -144,3 +144,16 @@ class TestGenerateCommentaryUseCase:
         assert response.text == ""
         assert "API down" in response.error
         assert len(conversation) == 0
+
+
+def test_a_planning_note_line_is_dropped_from_the_commentary():
+    """実測（2026-10-10 19:58）: 「実況の状況: …述べる。」の行まで読み上げられ、視聴者に指摘された。"""
+    from ailoveshen.application.use_cases.generate_commentary import without_preamble
+
+    leaked = (
+        "実況の状況: 家の残り4ブロックを仕上げるため。直前の発言を繰り返さず、理由を述べる。\n\n"
+        "よし、工房はいったんストップして、家の仕上げに戻るね！"
+    )
+    assert without_preamble(leaked) == "よし、工房はいったんストップして、家の仕上げに戻るね！"
+    assert without_preamble("今は丸石を掘ってるよ！") == "今は丸石を掘ってるよ！"
+    assert without_preamble("") == ""

@@ -6,7 +6,7 @@ import pytest
 
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unjudged
-from ailoveshen.application.use_cases.goal_vocabulary import reply_schema
+from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, reply_schema
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.domain.entities import Conversation, ObjectivePlan, PlaySession
 from ailoveshen.domain.events import ChatResponseGeneratedEvent, ObjectiveAddedEvent
@@ -1591,3 +1591,82 @@ class TestReplyFacts:
         )
         assert response.text == "やっぱりない"
         assert check.problem.await_count == 1  # 最後の試しは確かめずに話す
+
+
+class TestJobAdviceRethink:
+    """
+    助言を中目標として採って今やると言うとき、約束したのはその中目標（2026-10-10 19:57）。大目標の名前を
+    約束したことにして、今の中目標を止めて別のことを始めた。もう今の中目標なら、小目標は区切らない。
+    """
+
+    def _proposal(self, item="wooden_pickaxe"):
+        return ObjectiveProposal(
+            title="木のツルハシ",
+            conditions=(GoalSpec(GoalPredicate.HAVE, item=item, count=1),),
+            reason="r",
+            now=True,
+            job=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_new_job_is_named_by_the_job_not_by_the_objective(self, use_case):
+        session = _playing()
+
+        await use_case._accept(session, "neko", self._proposal(), True)
+
+        assert 'you would do "木のツルハシ" now (a job of the objective "剣を持つ"' in session.rethink_reason
+
+    @pytest.mark.asyncio
+    async def test_the_job_that_is_already_the_current_one_does_not_cut_the_small_goal(self, use_case):
+        session = _playing()
+        await use_case._accept(session, "neko", self._proposal(), True)
+        session.set_goal(
+            Goal(GoalSpec(GoalPredicate.HAVE, item="wooden_pickaxe", count=1), "r", objective_id="m1"),
+            "day",
+        )
+        assert session.rethink_reason == ""
+
+        await use_case._accept(session, "neko", self._proposal(), True)
+
+        assert session.rethink_reason == ""
+
+
+class TestAdviceThatCannotBeAcceptedStillGetsAnswer:
+    """実測（2026-10-10 19:39）: 「苗木の上に土を置かないで」に、条件の形が 3 回合わず、返事が出なかった。"""
+
+    BROKEN = {
+        "reply": "気をつけるね、教えてくれてありがとう！",
+        "request": "accept",
+        "suggestion": False,
+        "relevance": "related",
+        "relevance_reason": "the sapling job",
+        "level": "job",
+        "title": "苗木を植えるときは上に土を置かない",
+        "conditions": [{"predicate": "planted", "count": 16}],  # item がない
+        "position": 2,
+        "reason": "r",
+        "when": "now",
+        "lesson": "苗木の上には土ブロックを置かない。",
+        "lesson_when": {"text": "苗木を植えるとき"},
+    }
+
+    @pytest.mark.asyncio
+    async def test_the_last_attempt_speaks_and_keeps_the_lesson(
+        self, use_case, mock_text_generator
+    ):
+        mock_text_generator.generate_json.return_value = self.BROKEN
+        session = _playing()
+
+        response = await use_case.execute(
+            GenerateResponseRequest(
+                user_name="neko",
+                message="苗木の上に土ブロックを置かないでください",
+                session=session,
+                kind="advice",
+            )
+        )
+
+        assert response.success is True
+        assert response.text == "気をつけるね、教えてくれてありがとう！"
+        assert response.objective is None
+        assert mock_text_generator.generate_json.await_count == 3

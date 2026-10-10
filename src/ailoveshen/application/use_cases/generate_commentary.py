@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from loguru import logger
 
 from ailoveshen.application.dto.llm_dto import (
@@ -15,6 +17,19 @@ from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.events import CommentaryGeneratedEvent
 from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext, MessageType
+
+
+# 実況の前に書いた、自分への段取りのメモの行（「実況の状況: …述べる。」）。読み上げられた
+# （2026-10-10 19:58: 視聴者に「心の声が出ちゃってるよ」と言われた）
+PREAMBLE = re.compile(r"^\s*(実況の状況|状況|方針|方向性|メモ|思考|考え|ポイント)\s*[:：]")
+
+
+def without_preamble(text: str) -> str:
+    """実況の本文だけにする（段取りのメモの行を落とす）。本文がなければ空。"""
+    if not text:
+        return text
+    lines = [line for line in text.splitlines() if not PREAMBLE.match(line)]
+    return "\n".join(lines).strip() if len(lines) != len(text.splitlines()) else text
 
 
 class GenerateCommentaryUseCase(IGenerateCommentary):
@@ -86,6 +101,7 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
                 purpose=request.purpose,
             )
 
+            text = without_preamble(text)
             if text and request.record:
                 self._conversation.add_streamer_message(text, MessageType.COMMENTARY)
             if text:

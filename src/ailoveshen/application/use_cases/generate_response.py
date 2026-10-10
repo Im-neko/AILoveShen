@@ -436,6 +436,12 @@ class GenerateResponseUseCase(IGenerateResponse):
                         "返答で理由を言う。"
                     )
                     logger.warning(f"返答 {attempt} の頼みが使えない: {data!r}: {e}")
+                    if attempt >= attempts and kind == "advice":
+                        # 最後の試しでも助言の形が直らない: 黙って返事を落とさない。教訓は覚え、大目標にはせず、
+                        # 覚えておくと言う返事を話す（2026-10-10 19:39: 「苗木の上に土を置かないで」に、条件の
+                        # 形が 3 回合わず、返事が出なかった）
+                        self._learn(session, request, data)
+                        return text, None
                     continue
                 self._learn(session, request, data)
                 if not proposal.now:
@@ -504,14 +510,34 @@ class GenerateResponseUseCase(IGenerateResponse):
             GoalRejectedError: プランに入らないとき
         """
         assert self._objectives is not None
+        current = session.plan.current
+        first = current.open_jobs[0] if current is not None and current.open_jobs else None
+        already_current = (
+            proposal.job
+            and first is not None
+            and {c.describe() for c in first.specs} == {c.describe() for c in proposal.conditions}
+        )
 
         def rethink(objective: Objective) -> None:
-            if proposal.now:
-                was = session.goal.describe() if session.goal else "nothing"
+            if not proposal.now:
+                return
+            was = session.goal.describe() if session.goal else "nothing"
+            if not proposal.job:
                 session.request_rethink(
                     f'you told {user_name} you would do "{objective.title}" now '
                     f"(it is at the top of the objectives; you were on {was}, go back to it after)"
                 )
+                return
+            # 中目標として採ったとき、約束したのはその中目標で、大目標の名前ではない。もう今の中目標なら、
+            # 小目標を区切らない（2026-10-10: 今の工房の中目標を採ったのに、大目標の「自分の家を作る」を
+            # 約束したことにして、家の仕上げに切り替え、工房を止めた）
+            if already_current:
+                return
+            what = proposal.title or proposal.conditions[0].describe()
+            session.request_rethink(
+                f'you told {user_name} you would do "{what}" now (a job of the objective '
+                f'"{objective.title}"; you were on {was}, go back to it after)'
+            )
 
         # 建物の設計（Gemini で 1 回 40〜200 秒）は返事のあとに裏でする: 返事が待つと、あとのコメントごと遅れる
         # （2026-10-07: 8 分）。そのときは大目標がまだ足されていないので、今やるなら考え直しは足せてから
