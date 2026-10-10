@@ -23,6 +23,41 @@ const MAP_SEARCH = 6 // 地図のマスの中心から、平らな場所を探�
 
 export class BuildError extends Error {}
 
+// 設計の中で、外からつながらない閉じた空洞（2026-10-10: 塔の 3x3x1 の空洞が、上下を全面の丸石の床と天井で挟まれて、
+// 入る道も出る道もなかった）。ドアのマスは通れる。外は箱の外の全面（上も）。これ以上の空洞を数える
+export const MIN_SEALED_POCKET = 3
+export function sealedPockets (plan) {
+  const { width, depth, height } = plan.size
+  const key = (x, y, z) => (y * depth + z) * width + x
+  const solid = new Set()
+  for (const b of plan.blocks) if (b.block !== 'air' && b.block !== 'door') solid.add(key(b.x, b.y, b.z))
+  const seen = new Set()
+  const stack = []
+  const reach = (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= width || y >= height || z >= depth) return
+    const k = key(x, y, z)
+    if (solid.has(k) || seen.has(k)) return
+    seen.add(k)
+    stack.push([x, y, z])
+  }
+  for (let x = 0; x < width; x++) for (let y = 0; y < height; y++) for (let z = 0; z < depth; z++) {
+    if (x === 0 || y === 0 || z === 0 || x === width - 1 || y === height - 1 || z === depth - 1) reach(x, y, z)
+  }
+  while (stack.length) {
+    const [x, y, z] = stack.pop()
+    reach(x + 1, y, z); reach(x - 1, y, z); reach(x, y + 1, z); reach(x, y - 1, z); reach(x, y, z + 1); reach(x, y, z - 1)
+  }
+  let count = 0
+  let first = null
+  for (let x = 0; x < width; x++) for (let y = 0; y < height; y++) for (let z = 0; z < depth; z++) {
+    const k = key(x, y, z)
+    if (solid.has(k) || seen.has(k)) continue
+    count++
+    first ??= { x, y, z }
+  }
+  return { count, first }
+}
+
 // 名前付きの建物を登録する。原点を決めて確かめ、state.builds[name] に入れる。理由つきの BuildError
 export function registerBuild (bot, state, { name, blocks, size, anchor, purpose = '', site = null }) {
   if (!/^[a-z0-9_]{1,32}$/.test(name ?? '')) throw new BuildError(`bad build name ${JSON.stringify(name)}`)
@@ -31,6 +66,10 @@ export function registerBuild (bot, state, { name, blocks, size, anchor, purpose
   state.builds ??= {}
   if (state.builds[name]) throw new BuildError(`a build named ${name} already exists`)
   const plan = new BuildPlan({ blocks, width: size.width, depth: size.depth, height: size.height, design: { name, purpose, anchor }, kind: 'build' })
+  const sealed = sealedPockets(plan)
+  if (sealed.count >= MIN_SEALED_POCKET) {
+    throw new BuildError(`the design closes in ${sealed.count} empty cells that nothing can reach (for example at x=${sealed.first.x} y=${sealed.first.y} z=${sealed.first.z}, in the design's own coordinates): a hollow room sealed by solid blocks on every side cannot be entered, dug out of or used. Give every room an opening to the outside (a door, a window gap, a stair or a hole in the floor above), or fill the hollow in`)
+  }
   if (anchor === 'map' && !site) throw new BuildError('anchor map needs the chosen cell')
   plan.origin = anchor === 'near_home'
     ? nearHomeOrigin(bot, state, plan)
@@ -194,6 +233,22 @@ export function onBuildCell (state, p, margin = 0) {
       }
     }
     return false
+  })
+}
+
+// p が、建物（名前付きの建物と建てている家）の真下の地面か: 床の層（origin.y）より下、UNDER_BUILD_DEPTH 段まで、底面とそのまわり
+// UNDER_BUILD_MARGIN マス。歩きながら掘る経路探索は、ここを掘らない（2026-10-10: 内側へ向かう経路が床下の土を掘り下げて、
+// 建物の下の閉じた穴に入った）
+export const UNDER_BUILD_DEPTH = 6
+export const UNDER_BUILD_MARGIN = 1
+export function underBuild (state, p) {
+  const plans = [...Object.values(state.builds ?? {}), state.plan]
+  return plans.some((plan) => {
+    const o = plan?.origin
+    if (!o) return false
+    const { width, depth } = plan.size
+    return p.x >= o.x - UNDER_BUILD_MARGIN && p.x < o.x + width + UNDER_BUILD_MARGIN && p.z >= o.z - UNDER_BUILD_MARGIN && p.z < o.z + depth + UNDER_BUILD_MARGIN &&
+      p.y < o.y && p.y >= o.y - UNDER_BUILD_DEPTH
   })
 }
 

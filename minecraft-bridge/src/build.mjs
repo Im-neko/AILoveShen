@@ -11,7 +11,7 @@ import { walkTo } from './move.mjs'
 import { placeFaces } from './place-faces.mjs'
 
 // 設置先を塞ぐ物: 置き直すには壊すしかない（2026-10-10: 板で塞がれて、同じ座標への置き直しが続けて失敗した）
-export const siteBlocked = (name, pos) => `site blocked by ${name} at ${pos}; if the build needs this spot, take the block down (dig {x,y,z,demolish: true}) or level the whole site with level {where, radius, demolish: true}, then place again`
+export const siteBlocked = (name, pos) => `site blocked by ${name} at ${pos}; if the build needs this spot, take the block down (dig {x,y,z,demolish: true}) or level the whole site with level {where, radius, demolish: true}, then place again; to scrap the whole build and start it over, use build_next {name, reset: true} (it clears the site down to bare ground first)`
 
 const { goals } = pathfinderPkg
 const { Vec3 } = vec3Pkg
@@ -291,7 +291,7 @@ export async function placeOne (bot, plan, b, signal, allowDig = null) {
   const goal = new goals.GoalPlaceBlock(pos, bot.world, { range: PLACE_RANGE, LOS: false, faces: placeFaces(bot, pos) })
   if (!goal.isEnd(bot.entity.position.floored())) {
     const t = Date.now()
-    await walkTo(bot, goal, signal)
+    await walkToSpot(bot, goal, signal, plan, pos)
     if (Date.now() - t > 3000) console.log(`[build] ${pos} に置くための移動が遅い: ${Date.now() - t}ms、出発点 ${bot.entity.position}`)
   }
   // 草などは届く所に来てから刈る（遠くから掘るとサーバーは断り、手元の世界だけが空気になる）
@@ -338,8 +338,19 @@ async function clearCell (bot, plan, b, signal, allowDig) {
   if (!found || !occupied(found)) return
   if (!removable(plan, found, pos, allowDig)) throw new Error(`cannot clear ${found.name} at ${pos}`)
   const goal = new goals.GoalNear(pos.x, pos.y, pos.z, PLACE_RANGE - 1)
-  if (!goal.isEnd(bot.entity.position.floored())) await walkTo(bot, goal, signal)
+  if (!goal.isEnd(bot.entity.position.floored())) await walkToSpot(bot, goal, signal, plan, pos)
   await bot.dig(bot.blockAt(pos), true)
+}
+
+// 建物の中のセルへ歩く。着けないなら、中が閉じているかもしれないと添える（2026-10-10: 6 回「到達できない」と出ても、
+// 理由が分からないまま掘り進んだ）。建物は、ドアか壁の1マスから入る
+async function walkToSpot (bot, goal, signal, plan, pos) {
+  try {
+    await walkTo(bot, goal, signal)
+  } catch (e) {
+    if (signal.aborted || plan.kind !== 'build') throw e
+    throw new Error(`${e.message}. The spot ${pos} is inside the build ${plan.design?.name ?? ''}: if the walls close it in, open a way in (place its door, or dig one wall cell with demolish: true), or clear the site and start over (build_next {name, reset: true})`)
+  }
 }
 
 const DOOR_WALK_MS = 6000

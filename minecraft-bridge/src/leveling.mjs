@@ -107,9 +107,11 @@ export function columnWork (bot, state, x, z, y, { stairs = true, depth = DY, de
 
 // 列の並び [[x, z]] を、立つ高さ y にそろえる → { y, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
 // cuts は列ごとに上から、fills は列ごとに下から
-export function levelColumns (bot, state, columns, y, { demolish = false } = {}) {
+export function levelColumns (bot, state, columns, y, { demolish = false, box = null } = {}) {
   const out = { y, total: 0, off: 0, cuts: [], fills: [], unloaded: 0, skipped: {} }
   for (const [x, z] of columns) {
+    // box: この四角の中の列だけ整地する（建物の底面。となりの家や建物の列に触らない）
+    if (box && (x < box.x0 || x > box.x1 || z < box.z0 || z > box.z1)) continue
     out.total++
     const w = columnWork(bot, state, x, z, y, { demolish })
     if (w === UNLOADED) { out.unloaded++; continue }
@@ -127,7 +129,7 @@ const BREAKABLE_SKIPS = /^(house or build|planted tree|tree|farmland)$|\(not nat
 export const keptByNotDemolishing = (skipped) => Object.entries(skipped ?? {}).filter(([why]) => BREAKABLE_SKIPS.test(why)).reduce((n, [, k]) => n + k, 0)
 
 // 範囲全体 → { y, center, total, off, cuts, fills, unloaded, skipped: {理由: 数} }
-export function levelStatus (bot, state, where, radius, { demolish = false } = {}) {
+export function levelStatus (bot, state, where, radius, { demolish = false, box = null } = {}) {
   const { center, y } = levelTarget(state, where)
   const columns = []
   for (let dx = -radius; dx <= radius; dx++) {
@@ -135,7 +137,7 @@ export function levelStatus (bot, state, where, radius, { demolish = false } = {
       if (dx * dx + dz * dz <= radius * radius) columns.push([center.x + dx, center.z + dz])
     }
   }
-  return { center, ...levelColumns(bot, state, columns, y, { demolish }) }
+  return { center, ...levelColumns(bot, state, columns, y, { demolish, box }) }
 }
 
 // 畑の整地（設計書 75）: 畑の四角と、そのまわり FARM_MARGIN マスの列を、畑の地面の高さにそろえる。そろえてから

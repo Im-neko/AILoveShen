@@ -13,7 +13,7 @@ import { THREAT_RADIUS, round, inventoryCounts, nearbyEntities, threats, isHosti
 import { surfaceExits } from './surface.mjs'
 import { watchDrop } from './dropwatch.mjs'
 import { findSite, placeOne } from './build.mjs'
-import { buildAllowsDig, growHome, inHomeRoom, isHomeCell } from './builds.mjs'
+import { buildAllowsDig, growHome, inHomeRoom, isHomeCell, underBuild } from './builds.mjs'
 import { craftWithRecipeBook } from './craft.mjs'
 import { jumpAndPlace, shelteredFrom, enterHome, leaveHome, doorRouteOk, exitSpots, EXIT_DROP, isDoorstepFloor, doorstepColumn, isDoorOpen, bedSpot, chestSpot, inHouse, isInside, digExit, stepOut, repairWall, shelterOf, hasBed, inStandingBuilding, protectedReason } from './home.mjs'
 import { homeChests, rememberChest, forgetChest, rememberFurnace, forgetFurnace, rememberSite } from './memory.mjs'
@@ -23,7 +23,7 @@ import { walkTo as goto, isLoopCell, markNoPath, isNoPath, STUCK_MS } from './mo
 import { teachDoors } from './doors.mjs'
 import { digTargets, logHeightAbove, dirtForLogHeight, SCAFFOLD_SOURCES } from './world.mjs'
 import { isSaplingItem, recordPlanting, cropByBlock, isRipe, CROPS, CLEARABLE } from './farming.mjs'
-import { levelStatus, noteLevelZone, noteLevelArea, farmLevel, FARM_MARGIN, TERRAIN, farmRebuildable, soilItem } from './leveling.mjs'
+import { levelStatus, noteLevelZone, noteLevelArea, farmLevel, MAX_LEVEL, FARM_MARGIN, TERRAIN, farmRebuildable, soilItem } from './leveling.mjs'
 import { noteDig, noteShaft, usableShaft } from './quarry.mjs'
 import { canHold, isTossed, noteTossed, emptySlots } from './spare.mjs'
 import { liquidReason } from './liquid.mjs'
@@ -258,6 +258,8 @@ export function configureMovements (bot, state) {
   // 畑の作物のマスの地面は、掘るのに費用をかける（禁止はしない: 直す手を妨げない。facilities.mjs の FARM_DIG_COST）。
   // 閉じた所から出る行動は除く
   m.exclusionAreasBreak.push((block) => block.position && !ROCK_ESCAPE.has(state.current?.verb) && onFarmGround(state, block.position) ? FARM_DIG_COST : 0)
+  // 建物の真下の地面は掘らない（床下に潜る経路を作らない。出る・帰る行動は除く）
+  m.exclusionAreasBreak.push((block) => block.position && !ROCK_ESCAPE.has(state.current?.verb) && underBuild(state, block.position) ? 100 : 0)
   // 掘っては置く繰り返しになったセルは、しばらく掘らず置かない（move.mjs の guardDigLoops）
   m.exclusionAreasBreak.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
   m.exclusionAreasPlace.push((block) => block.position && isLoopCell(state, block.position) ? 100 : 0)
@@ -2237,7 +2239,7 @@ export const PRIMITIVES = {
     }
     const demolish = c.demolish === true
     const broke = new Set() // 壊した保護の理由（家・建物）
-    const statusNow = () => farm ? farmLevel(bot, state, farm) : levelStatus(bot, state, c.where, c.radius, { demolish })
+    const statusNow = () => farm ? farmLevel(bot, state, farm) : levelStatus(bot, state, c.where, c.radius, { demolish, box: c.box })
     const skipped = new Map()
     const tries = new Map() // 同じセルを何度も（掘ったのに残る、置いたのに空く）: 3 回で飛ばす
     let cut = 0
@@ -2315,6 +2317,22 @@ export const PRIMITIVES = {
         bot.actionPhase = ''
       }
     }
+  },
+  // 名前付きの建物を壊して作り直すとき、まず更地にする（2026-10-10: 壊した跡の上に作り直して、跡と新しい壁が混ざった）。
+  // 底面の四角（建物の外には触らない）を、建物の床の下の地面の高さにそろえる: 建物のブロックも保護も壊し、穴は土で埋める。
+  // そのあと置いた記録を捨てるので、build_next は最初のブロックから置く
+  async reset_build (bot, state, c, signal) {
+    const plan = state.builds?.[c.build]
+    if (!plan?.origin) throw new Error(`there is no placed build named ${c.build} to clear`)
+    const { origin, size } = plan
+    const box = { x0: origin.x, z0: origin.z, x1: origin.x + size.width - 1, z1: origin.z + size.depth - 1 }
+    const radius = Math.ceil(Math.hypot(size.width, size.depth) / 2) + 1
+    if (radius > MAX_LEVEL) throw new Error(`the build ${c.build} is too big to clear in one go (${size.width}x${size.depth})`)
+    const where = `${origin.x + Math.floor(size.width / 2)},${origin.y},${origin.z + Math.floor(size.depth / 2)}` // 立つ高さ = 床の層（地面の上）
+    let summary = 'the site was already bare'
+    if (levelStatus(bot, state, where, radius, { demolish: true, box }).off) summary = await PRIMITIVES.level(bot, state, { where, radius, demolish: true, box }, signal)
+    plan.seen = new Set()
+    return `cleared the site of the build ${c.build} down to bare ground (${summary}); build_next now places it again from the first block`
   },
   // 畑のまわりの柵（設計書 75）: 輪の足りない所に、近い順に柵を立てる。持っている柵がなくなるか、立てられる所が
   // なくなるまで。1 つも立てられなければ失敗

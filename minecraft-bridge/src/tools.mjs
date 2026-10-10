@@ -513,6 +513,14 @@ export function createTools (deps) {
       const name = args?.name ?? (state.goal?.spec?.predicate === 'built' ? state.goal.spec.name : null)
       // 続けて置く個数。省くと、材料と体力の続く限り（夕方・空腹・襲われたらランナーが止める）
       const count = Math.max(1, Math.min(MAX_BUILD_RUN, Math.floor(Number(args?.count ?? MAX_BUILD_RUN))))
+      if (args?.reset === true) {
+        const plan = name ? state.builds?.[name] : null
+        if (!name) refuse('reset needs the build name (build_next {name, reset: true})')
+        if (!plan) refuse(`there is no build named ${name}`)
+        if (!plan.origin) refuse(`the build ${name} has no site yet: nothing to clear`)
+        within(bot, plan.origin, MAX_TOOL_DISTANCE, `the site of ${name}`)
+        return { c: { verb: 'reset_build', build: name, target: `the site of the build ${name}`, inPlace: true } }
+      }
       if (name) {
         const plan = state.builds?.[name]
         if (!plan) refuse(`there is no build named ${name}`)

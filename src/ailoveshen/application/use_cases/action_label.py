@@ -76,6 +76,7 @@ _BY_VERB: dict[str, Callable[[dict[str, Any], str], str]] = {
     "goto_pos": lambda d, cid: "採掘場へ向かう",
     "leave_burrow": lambda d, cid: "穴から出る",
     "level": lambda d, cid: "畑の地面を整地する" if d.get("facility") else "整地する",
+    "reset_build": lambda d, cid: "建物の敷地を更地にする",
     "make_mine": lambda d, cid: "採掘場をつくる",
     "move_placed": lambda d, cid: "家具を置き直す",
     "pickup": _with("{thing}を拾う"),

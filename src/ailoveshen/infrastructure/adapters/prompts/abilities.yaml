@@ -293,7 +293,9 @@
     近くに置いてある作業台・かまど・チェスト・ベッドは、have(その物) で作らず拾う手が出る（家の家具は家の中でだけ move_furniture）
     中身のあるチェストは先に withdraw で出す
     place・use_item・move_furniture も、保護された所へ承知で置く・使う・動かすときは override: true（普段は断られる）
-  tools: [dig, move_furniture, withdraw]
+    名前付きの建物を壊して作り直すときは、先に build_next {name, reset: true}: 底面（建物の外には触らない）の建物のブロックを保護も含めてすべて壊して地面にそろえ、置いた記録を捨てる。そのあと build_next が最初のブロックから置く。壊した跡の上に作り直さない（跡と新しい壁が混ざる）
+    建物の中のセルへ着けないとき（壁が閉じている）は、ドアを置く・壁の1マスを dig {demolish: true} で開ける、または reset で更地にして最初から
+  tools: [dig, move_furniture, withdraw, build_next]
   see: [place_things]
 
 - key: after_death
