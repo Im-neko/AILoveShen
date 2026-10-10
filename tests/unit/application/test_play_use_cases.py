@@ -863,6 +863,24 @@ class TestAdvancePlay:
         assert "it is day now, not night" in error
 
     @pytest.mark.asyncio
+    async def test_through_night_by_day_is_sent_back_on_the_last_attempt_too(
+        self, use_case, text_generator, bridge
+    ):
+        """実測（2026-10-10 16:33）: 最後の試行で通った昼の through_night が、夕方まで残った。"""
+        bridge.observe.return_value = _obs(goal=False, time_phase="day")
+        text_generator.generate_json.return_value = {
+            **PLANKS,
+            "predicate": "through_night",
+            "reason": "夜が近いので家で過ごす",
+        }
+
+        with pytest.raises(TextGenerationError, match="not night"):
+            await use_case.execute(_session())
+
+        assert text_generator.generate_json.await_count == 3
+        bridge.act.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_a_reason_that_mistakes_the_time_is_sent_back(
         self, use_case, text_generator, bridge, prompt_builder
     ):

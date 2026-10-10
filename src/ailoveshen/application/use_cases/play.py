@@ -1407,8 +1407,9 @@ class AdvancePlayUseCase(IAdvancePlay):
                 if failed_goal is not None:
                     _check_remedy(decision, failed_goal, same_failures)
                 _check_time(decision, obs)
-                if attempt < self._max_goal_attempts:
-                    _check_survival_time(decision, obs)
+                # 最後の試行でも通さない: 昼の through_night は夕方まで残り、約 2 分 wait を繰り返した
+                # （2026-10-10 16:33）。決まらなければ、進められる中目標に落とす
+                _check_survival_time(decision, obs)
                 await self._check_job_order(decision.jobs, plan.current)
                 if died_goal is not None and attempt < self._max_goal_attempts:
                     _check_after_death(decision, died_goal)
