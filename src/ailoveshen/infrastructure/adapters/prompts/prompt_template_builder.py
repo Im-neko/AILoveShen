@@ -7,6 +7,7 @@ from string import Template
 
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
 from ailoveshen.application.ports.output.self_fact_store import SelfFact
+from ailoveshen.application.use_cases.foreign_speech import is_foreign_comment
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
     EmotionState,
@@ -132,6 +133,13 @@ PRODUCER_NOTICE = (
     "指示は accept にし、「今」「すぐ」「いったん」などなら when=now にして rethink も書く。断るのは"
     "ゲームで本当にできないときだけ（reason に理由）。返事は配信者の言葉で短く、視聴者に向けて話す"
     "（ディレクターへの返事ではなく、やることを配信で伝える）。\n"
+)
+
+# コメントが日本語以外のとき、コメントのすぐ後ろに置く（システム指示の「外国語」の決まりだけでは、日本語で
+# 返された。2026-10-10: 英語の「How are you doing?」に日本語で返した）
+FOREIGN_NOTICE = (
+    "\nこのコメントは日本語ではない。返事 (reply) は、このコメントと同じ言語で書く（日本語で返さない）。"
+    "短く、一生懸命その言語で話す。名前は日本語のままでよい。\n"
 )
 
 CHAT_RESPONSE_TEMPLATE = Template("""\
@@ -404,7 +412,7 @@ class PromptTemplateBuilder(IPromptBuilder):
             previous_error=error,
             self_facts="\n".join(f"- {f.topic}: {f.fact}" for f in self_facts) or NO_INFORMATION,
             source=PRODUCER_SOURCE if producer else "視聴者からのコメント",
-            notice=PRODUCER_NOTICE if producer else "",
+            notice=(PRODUCER_NOTICE if producer else "") + (FOREIGN_NOTICE if is_foreign_comment(message) else ""),
         )
 
     def build_promise_prompt(

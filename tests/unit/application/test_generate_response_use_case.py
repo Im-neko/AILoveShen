@@ -273,6 +273,38 @@ class TestReplyWhilePlaying:
         assert len(session.plan.pending) == 2
 
     @pytest.mark.asyncio
+    async def test_a_japanese_reply_to_a_foreign_comment_is_sent_back_once(
+        self, use_case, mock_text_generator, mock_prompt_builder
+    ):
+        """実測（2026-10-10 19:45）: 英語の「How are you doing?」に日本語で返した。その言語で書き直させる。"""
+        mock_text_generator.generate_json.side_effect = [
+            {"reply": "ねこかもさん、こんにちは！元気だよ！", "request": "none"},
+            {"reply": "I'm great, neko-san! I'm digging stone right now!", "request": "none"},
+        ]
+
+        response = await use_case.execute(
+            self._request(_playing(), message="How are you doing?")
+        )
+
+        assert response.text == "I'm great, neko-san! I'm digging stone right now!"
+        error = mock_prompt_builder.build_chat_response_prompt.call_args_list[1].kwargs["previous_error"]
+        assert "not in Japanese" in error
+
+    @pytest.mark.asyncio
+    async def test_a_japanese_comment_is_answered_in_japanese(
+        self, use_case, mock_text_generator
+    ):
+        mock_text_generator.generate_json.return_value = {
+            "reply": "ありがとう！がんばるね！",
+            "request": "none",
+        }
+
+        response = await use_case.execute(self._request(_playing(), message="gg lol"))
+
+        assert response.text == "ありがとう！がんばるね！"
+        assert mock_text_generator.generate_json.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_accepted_request_joins_the_objectives_behind_the_current(
         self, use_case, mock_text_generator, mock_event_publisher, store
     ):

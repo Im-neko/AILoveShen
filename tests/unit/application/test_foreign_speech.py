@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ailoveshen.application.use_cases.foreign_speech import ForeignSpeech, needs_katakana
+from ailoveshen.application.use_cases.foreign_speech import (
+    ForeignSpeech,
+    is_foreign_comment,
+    mostly_japanese,
+    needs_katakana,
+)
 from ailoveshen.domain.exceptions import TextGenerationError
 
 
@@ -97,3 +102,26 @@ async def test_an_answer_that_is_still_foreign_is_not_remembered():
 
     assert await speech.pronounce("Hello!") == "Hello!"
     assert await speech.pronounce("Hello!") == "ハロー！"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["How are you doing?", "hello", "你好，在做什么？", "안녕하세요", "Привет!", "Bonjour tout le monde"],
+)
+def test_a_comment_in_another_language_is_found(text):
+    assert is_foreign_comment(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["gg", "lol", "ok", "www", "元気？", "これ good?", "がんばれ！", "Minecraft楽しい", ""]
+)
+def test_a_japanese_or_short_comment_is_not_foreign(text):
+    assert not is_foreign_comment(text)
+
+
+def test_a_reply_is_japanese_when_kana_make_up_the_letters():
+    assert mostly_japanese("ねこかもさん、ありがとう！")
+    assert mostly_japanese("OK、ねこかもさん、今から掘るよ！")
+    assert not mostly_japanese("I'm great, ねこかも-san! Digging stone now!")
+    assert not mostly_japanese("我很好，谢谢！")
+    assert not mostly_japanese("!!!")

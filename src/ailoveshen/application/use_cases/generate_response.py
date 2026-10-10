@@ -30,6 +30,7 @@ from ailoveshen.application.use_cases.goal_vocabulary import (
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.lessons import LessonBook, clean_keys, situation_of
 from ailoveshen.application.use_cases.notes import NoteKeeper
+from ailoveshen.application.use_cases.foreign_speech import is_foreign_comment, mostly_japanese
 from ailoveshen.application.use_cases.promise_check import PromiseCheck
 from ailoveshen.application.use_cases.reply_facts import ReplyFactCheck
 from ailoveshen.application.use_cases.readings import GUESS, VIEWER, NameReadings, tells_reading
@@ -366,6 +367,14 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
             text = str(data.get("reply", "")).strip()
             handling = data.get("request")
+            if is_foreign_comment(request.message) and mostly_japanese(text) and attempt < attempts:
+                # 日本語以外のコメントに日本語で返した（2026-10-10: 英語に日本語で返した）: その言語で書き直させる
+                error = (
+                    f"The viewer's comment is not in Japanese, but the reply \"{text}\" is. Write the reply in the "
+                    "same language as the comment (keep it short; the viewer's name may stay in Japanese)."
+                )
+                logger.warning(f"返答 {attempt} は日本語以外のコメントに日本語で返している: {data!r}")
+                continue
             # 運営の指示は、視聴者の指摘のように間引かない
             wait = 0.0 if request.producer else self._rethink_wait(session, data.get("rethink"))
             if handling != RequestHandling.WITHDRAW.value and wait:

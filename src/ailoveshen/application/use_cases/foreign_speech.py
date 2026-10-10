@@ -58,6 +58,37 @@ def needs_katakana(text: str) -> bool:
     return any(HANZI_RUN.search(clause) and not KANA.search(clause) for clause in CLAUSE.split(text))
 
 
+LATIN_LETTER = re.compile(r"[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]")
+# 日本語の配信でも書かれる短い書き込み（外国語のコメントに数えない）
+CHAT_SLANG = frozenset(
+    "gg ggwp wp gj gl hf lol lmao lmfao www omg wtf ok okay wow nice pog poggers kekw lul xd kusa".split()
+)
+FOREIGN_LETTERS_MIN = 5  # 仮名のないコメントのラテン文字がこれ未満なら、外国語と数えない（lol、gg、ok など）
+MOSTLY_JAPANESE = 0.3  # 文字（仮名・ラテン文字・日本語以外の文字）のうち、仮名がこの割合以上なら日本語の文
+
+
+def is_foreign_comment(text: str) -> bool:
+    """
+    視聴者のコメントが日本語以外で書かれているか。仮名がなく、ラテン文字が 5 つ以上、日本語以外の文字種、
+    漢字の並びのどれかがあるとき（`lol` `gg` のような短い書き込みは日本語のコメント扱い）。
+    """
+    if KANA.search(text):
+        return False
+    words = [w for w in re.findall(r"[^\W\d_]+", text) if w.lower() not in CHAT_SLANG]
+    return (
+        sum(len(LATIN_LETTER.findall(w)) for w in words) >= FOREIGN_LETTERS_MIN
+        or bool(OTHER_SCRIPT.search(text))
+        or bool(HANZI_RUN.search(text))
+    )
+
+
+def mostly_japanese(text: str) -> bool:
+    """返事が日本語の文か（仮名が文字の 3 割以上）。文字がなければ偽。"""
+    kana = len(KANA.findall(text))
+    letters = kana + len(LATIN_LETTER.findall(text)) + len(OTHER_SCRIPT.findall(text))
+    return letters > 0 and kana >= letters * MOSTLY_JAPANESE
+
+
 class ForeignSpeech:
     """外国語の部分をカタカナ読みにして、日本語の声に渡す。"""
 

@@ -93,6 +93,11 @@ class TestFormat:
 
 
 class TestPrompt:
+    def _prompt_for(self, message: str) -> str:
+        return PromptTemplateBuilder().build_chat_response_prompt(
+            "neko", message, GenerationContext(now=NOW)
+        )
+
     def _prompt(self, **context) -> str:
         return PromptTemplateBuilder().build_chat_response_prompt(
             "neko", "それやって", GenerationContext(now=NOW, **context)
@@ -114,6 +119,12 @@ class TestPrompt:
         assert "## 会話の流れと時系列" in PromptTemplateBuilder().build_system_prompt(
             CharacterProfile(), "reply_requests"
         )
+
+    def test_a_foreign_comment_gets_the_language_note_right_after_it(self):
+        """システム指示の決まりだけでは日本語で返された（2026-10-10）: コメントのすぐ後ろにも書く。"""
+        foreign = self._prompt_for("How are you doing?")
+        assert foreign.index("コメント: How are you doing?") < foreign.index("日本語ではない")
+        assert "日本語ではない" not in self._prompt_for("元気？")
 
     def test_the_reply_rules_say_the_state_now_beats_old_plans(self):
         system = PromptTemplateBuilder().build_system_prompt(CharacterProfile(), "reply")
