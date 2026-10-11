@@ -2086,6 +2086,7 @@ class SkillInfo:
     failing: bool = False  # 同じ理由の失敗が続いて、ブリッジが続きを動かさない
     last_failure: Optional[str] = None
     last_good_version: Optional[int] = None  # 一番新しい版が未成功のとき、前に成功した版
+    raw: bool = False  # 生の mineflayer の bot を触る技（docs/design/168。メインプロセスで動く）
     code: str = ""  # 直すときだけ読む（一覧には入らない）
 
     @property
@@ -2109,6 +2110,7 @@ class SkillInfo:
         failure += f"（同じ理由で {self.streak} 回続けて失敗）" if self.streak >= 2 and not self.failing else ""
         return (
             f"{self.name} v{self.version}{mark}: {self.description}"
+            f"{'（生の bot）' if self.raw else ''}"
             f"（引数 {list((self.params.get('properties') or {}).keys())}、"
             f"成功 {self.successes}/{self.uses}{failure}）"
         )
@@ -2122,6 +2124,7 @@ class SkillDraft:
     params: dict[str, Any]
     expects: dict[str, Any]
     code: str
+    raw: bool = False  # 生の bot を触る技（docs/design/168）
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2129,6 +2132,7 @@ class SkillDraft:
             "params": self.params,
             "expects": self.expects,
             "code": self.code,
+            **({"raw": True} if self.raw else {}),
         }
 
 
@@ -2147,10 +2151,13 @@ class SkillRun:
     log: tuple[str, ...] = ()
     seconds: float = 0.0
     learned: bool = False  # この実行で初めて成功した
+    fell_back_from: Optional[int] = None  # 新しい版の試しが失敗していたので、前に成功した版を動かした（docs/design/168）
 
     def describe(self) -> str:
         """次の道具の選択に見せる結果（失敗なら理由、記録、最後の道具）。"""
         head = f"skill {self.name} v{self.version}"
+        if self.fell_back_from is not None:
+            head += f" (v{self.fell_back_from} failed its trial, so the version that worked was run)"
         if self.ok:
             return f"{head} succeeded: {self.summary}"
         parts = [f"{head} failed ({self.ended}): {self.reason}"]

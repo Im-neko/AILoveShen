@@ -41,9 +41,9 @@ SKILLS_SHOWN = 12  # 道具の選択と技を書く呼び出しに見せる技�
 HOUR = 3600.0
 
 
-def skill_schema() -> dict[str, Any]:
+def skill_schema(raw_bot: bool = False) -> dict[str, Any]:
     """技を書かせる JSON スキーマ（引数のスキーマと試しの引数は JSON の文字列で受ける）。"""
-    return {
+    schema = {
         "type": "object",
         "properties": {
             "diagnosis": {
@@ -97,6 +97,13 @@ def skill_schema() -> dict[str, Any]:
         },
         "required": ["description", "params_json", "expects", "code", "trial_args_json"],
     }
+    if raw_bot:
+        schema["properties"]["raw"] = {
+            "type": "boolean",
+            "description": "true when the code uses t.bot (the real mineflayer bot), t.Vec3, t.goals "
+            "or t.sleep; false for a skill over the t.* tools only",
+        }
+    return schema
 
 
 @dataclass(frozen=True)
@@ -138,6 +145,7 @@ class SkillWriter:
         rewrites_per_hour: int = 3,
         max_attempts: int = 3,
         clock: Callable[[], float] = time.monotonic,
+        raw_bot: bool = False,
     ) -> None:
         """
         Args:
@@ -147,6 +155,7 @@ class SkillWriter:
             rewrites_per_hour: 1 つの技を書ける回数（1 時間あたり。新しく書くのも 1 回）
             max_attempts: ブリッジが受け取らなかったときに書き直させる回数
             clock: 時計（テストで差し替える）
+            raw_bot: 生の bot を触る技（raw: true）を書かせる（docs/design/168。ブリッジも BRIDGE_RAW_BOT=1）
         """
         self._generator = text_generator
         self._prompts = prompt_builder
@@ -154,6 +163,7 @@ class SkillWriter:
         self._per_hour = rewrites_per_hour
         self._attempts = max_attempts
         self._clock = clock
+        self._raw_bot = raw_bot
         self._written: dict[str, deque[float]] = defaultdict(deque)
 
     async def write(
@@ -192,7 +202,7 @@ class SkillWriter:
             try:
                 data = await self._generator.generate_json(
                     prompt,
-                    skill_schema(),
+                    skill_schema(self._raw_bot),
                     system_instruction=self._prompts.build_skill_system(),
                     purpose="skill_write",
                 )
@@ -262,5 +272,6 @@ def _parse(data: dict[str, Any]) -> tuple[SkillDraft, dict[str, Any]]:
         params=params or {"type": "object", "properties": {}},
         expects=expects,
         code=str(data.get("code", "")),
+        raw=data.get("raw") is True,
     )
     return draft, trial

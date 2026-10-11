@@ -314,6 +314,8 @@ class MinecraftSettings:
     # 技（docs/design/22）: 道具モードで、Gemini が JS の技を書いて覚え、直して使い回す
     skills_enabled: bool = True
     skill_rewrites_per_hour: int = 3  # 1 つの技を書き直せる回数（費用の上限）
+    # 技が生の mineflayer の bot を触れる（docs/design/168）。ブリッジも BRIDGE_RAW_BOT=1 で起動する
+    skill_raw_bot: bool = False
     watch: WatchSettings = field(default_factory=lambda: WatchSettings())
     vision: VisionSettings = field(default_factory=lambda: VisionSettings())
     reflex: ReflexSettings = field(default_factory=lambda: ReflexSettings())
@@ -826,6 +828,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             skill_rewrites_per_hour=int(
                 agent_data.get("skill_rewrites_per_hour", defaults.skill_rewrites_per_hour)
             ),
+            skill_raw_bot=_truthy(agent_data.get("skill_raw_bot", defaults.skill_raw_bot)),
             watch=WatchSettings(
                 interval_seconds=watch_data.get(
                     "interval_seconds", watch_defaults.interval_seconds

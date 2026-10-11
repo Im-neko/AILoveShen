@@ -151,7 +151,8 @@ test('store: versions, counts, the list and the cleaning outside the stream', ()
   const [broken, hunt] = store.list()
   assert.equal(broken.verified, false)
   assert.deepEqual([hunt.uses, hunt.successes, hunt.failures, hunt.last_failure], [3, 2, 1, 'no pig'])
-  assert.deepEqual([hunt.verified, hunt.last_good_version], [false, 1])
+  // 新しい版 v2 の試しが失敗したので、版を指定しないで動かすのは前に成功した v1（設計書 168 §4）
+  assert.deepEqual([hunt.verified, hunt.runs_version, hunt.last_good_version], [true, 1, 1])
 
   assert.deepEqual(store.clean({ dryRun: true }), { removed: ['broken'], pruned: [{ name: 'hunt', versions: [2] }] })
   assert.equal(store.names().length, 2)

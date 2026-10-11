@@ -184,7 +184,7 @@ def create_game_service(
         port=minecraft.bridge_port,
         timeout_seconds=minecraft.request_timeout_seconds,
     )
-    prompt_builder = GamePromptTemplateBuilder()
+    prompt_builder = GamePromptTemplateBuilder(raw_bot=minecraft.skill_raw_bot)
     # 配信の画面を撮る（docs/design/23）。OBS が動いていなくても、画像なしで続く
     screen = None
     capture = None
@@ -454,6 +454,7 @@ def create_game_service(
                 prompt_builder,
                 bridge,
                 rewrites_per_hour=minecraft.skill_rewrites_per_hour,
+                raw_bot=minecraft.skill_raw_bot,
             )
             if minecraft.control == "tools" and minecraft.skills_enabled
             else None

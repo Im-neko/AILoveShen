@@ -811,6 +811,7 @@ def run_one(
         "seed": seed,
         "freeze_day": freeze_day,
         "guards": os.environ.get("BRIDGE_GUARDS") or "free",
+        "raw_bot": os.environ.get("BRIDGE_RAW_BOT") == "1",
         "at": datetime.now(timezone.utc).isoformat(),
         **row,
         **tool_counts(run_dir),

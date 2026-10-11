@@ -14,6 +14,7 @@ from ailoveshen.application.use_cases.skills import (
     SkillWriter,
     WrittenSkill,
     order_skills,
+    skill_schema,
 )
 from ailoveshen.application.use_cases.tool_catalog import (
     ToolCallError,
@@ -186,6 +187,64 @@ class TestSkillWriter:
         assert isinstance(await writer.write("other", "x", Activity(), (), []), WrittenSkill)
         now[0] = 3601.0
         assert isinstance(await writer.write("hunt", "x", Activity(), (), []), WrittenSkill)
+
+
+class TestRawBotSkills:
+    """生の mineflayer の bot を触る技（docs/design/168）。"""
+
+    RAW_DRAFT = {**DRAFT, "raw": True}
+
+    def test_the_schema_offers_raw_only_when_it_is_on(self):
+        assert "raw" not in skill_schema()["properties"]
+        assert skill_schema(raw_bot=True)["properties"]["raw"]["type"] == "boolean"
+        assert "raw" not in skill_schema(raw_bot=True)["required"]
+
+    @pytest.mark.asyncio
+    async def test_a_raw_skill_is_saved_with_the_flag(self):
+        generator = AsyncMock()
+        generator.generate_json.return_value = self.RAW_DRAFT
+        prompts = Mock()
+        bridge = AsyncMock()
+        bridge.skill.return_value = None
+        bridge.save_skill.return_value = 1
+        await SkillWriter(generator, prompts, bridge, raw_bot=True).write(
+            "jump_tower", "跳んで積む", Activity(), (), []
+        )
+        _, draft = bridge.save_skill.await_args.args
+        assert draft.raw is True and draft.to_dict()["raw"] is True
+        assert generator.generate_json.await_args.args[1]["properties"]["raw"]
+
+    @pytest.mark.asyncio
+    async def test_a_skill_without_the_flag_is_not_raw(self):
+        generator = AsyncMock()
+        generator.generate_json.return_value = DRAFT
+        bridge = AsyncMock()
+        bridge.skill.return_value = None
+        bridge.save_skill.return_value = 1
+        await SkillWriter(generator, Mock(), bridge, raw_bot=True).write("hunt", "狩る", Activity(), (), [])
+        _, draft = bridge.save_skill.await_args.args
+        assert draft.raw is False and "raw" not in draft.to_dict()
+
+    def test_the_writer_is_taught_the_real_bot_only_when_it_is_on(self):
+        off = GamePromptTemplateBuilder().build_skill_system()
+        on = GamePromptTemplateBuilder(raw_bot=True).build_skill_system()
+        assert "t.bot" not in off and "生の bot" not in off
+        assert "t.bot" in on and "t.Vec3" in on and "t.goals" in on and "t.sleep" in on
+        assert on.startswith(off)
+
+    def test_a_run_that_fell_back_says_which_version_failed_its_trial(self):
+        run = SkillRun(name="hunt", version=1, ok=True, ended="done", summary="ok", fell_back_from=2)
+        assert run.describe() == (
+            "skill hunt v1 (v2 failed its trial, so the version that worked was run) succeeded: ok"
+        )
+        assert SkillRun(name="hunt", version=1, ok=True, ended="done", summary="ok").describe() == (
+            "skill hunt v1 succeeded: ok"
+        )
+
+    def test_a_raw_skill_says_so_in_the_list(self):
+        raw = SkillInfo(name="jump_tower", description="跳んで積む", version=1, raw=True)
+        assert "（生の bot）" in raw.describe()
+        assert "（生の bot）" not in HUNT.describe()
 
 
 class JudgingBridge:

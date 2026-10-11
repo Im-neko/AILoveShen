@@ -922,6 +922,36 @@ export default async function (t, args) {
 - コードは 4000 字まで。説明は日本語 1 文
 """
 
+
+# 生の bot の技（docs/design/168）。raw_bot が有効なときだけ、技を書くシステム指示に足す
+SKILL_RAW_BOT = """\
+
+## 生の bot（raw: true の技）
+t.* の道具では足りない手（ブリッジにない動き、tick ごとの操作）は、本物の mineflayer の bot を
+触る技にして書けます。コードが次のどれかを使うなら raw を true にします。
+
+- t.bot: 本物の mineflayer の bot（bot.entity.position / onGround / velocity、bot.blockAt(vec3)、
+  bot.dig(block)、bot.placeBlock(refBlock, faceVector)、bot.equip(item, 'hand')、
+  bot.inventory.items()、bot.setControlState('jump' | 'forward' | 'sprint' | 'sneak', bool)、
+  bot.clearControlStates()、bot.lookAt(vec3, force?)、bot.waitForTicks(n)、
+  bot.on('physicsTick' | 'blockUpdate' | ..., fn)、bot.pathfinder.setGoal(goal)、
+  bot.registry、bot._client.write(パケット名, 中身) など）
+- t.Vec3: new t.Vec3(x, y, z)
+- t.goals: mineflayer-pathfinder の goals（new t.goals.GoalNear(x, y, z, range) など）
+- t.sleep(ms): setTimeout の代わり（止められると待ちが終わる）。ほかのタイマーは使えない
+- t.goto / t.dig などの道具とも組み合わせられる（同じ上限: 行動 40 回）
+
+## 生の bot の決まり
+- 安全の制約は何も掛からない: 家や建物の壁を掘る、溶岩や水に入る、夜に外へ出る手も通る。
+  自分で確かめる。反射（敵、溺れ）が働いたときは技が止められ、失敗として返る
+- 技が終わる（失敗・止められるときも）と、技が付けたリスナー・タイマー・操作キー・経路の目標・
+  掘りは外される。残したいものは行動の結果として世界に残す
+- 1 回の上限は 10 分。await せずに回るループは 1 秒で止められる。1 tick は 50 ms
+- 生の bot の呼び出しは、失敗の記録の「最後の道具」には載らない。何が起きたか（座標、高さ、
+  例外の文）を t.log に書く。直すときは、その log と例外の文を読む
+- expects は必須（成功は世界で判定する）。t.done() だけでは成功にならない
+"""
+
 SKILL_TEMPLATE = Template("""\
 ## 書く技
 名前: $name
@@ -972,6 +1002,10 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     IGamePromptBuilder を文字列のテンプレートで実装する。LLM へのプロンプトは
     他のプロンプトと同じく日本語。行動の選択器には英語を渡す（評価したときの言語）。
     """
+
+    def __init__(self, raw_bot: bool = False) -> None:
+        """raw_bot: 技の書き手に、生の mineflayer の bot を触る書き方を教える（docs/design/168）。"""
+        self._raw_bot = raw_bot
 
     def build_build_design_prompt(
         self,
@@ -1351,7 +1385,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""
-        return SKILL_SYSTEM
+        return SKILL_SYSTEM + SKILL_RAW_BOT if self._raw_bot else SKILL_SYSTEM
 
     def build_skill_prompt(
         self,

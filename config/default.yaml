@@ -588,6 +588,9 @@ minecraft:
     # (minecraft-bridge/data/skills, set aside by world:reset; clean with npm run skills:clean)
     skills: true
     skill_rewrites_per_hour: 3   # rewrites of one skill (a cost cap)
+    # Skills may drive the real mineflayer bot (docs/design/168: runs in the bridge's own process, no
+    # sandbox, no guards but the reflex). Start the bridge with the same BRIDGE_RAW_BOT=1. Throwaway worlds only
+    skill_raw_bot: "${BRIDGE_RAW_BOT:-false}"
 
   # Reflex when attacked (docs/design/28_jev_reflex.md). The bridge starts at once with its rule
   # (fight or flee) on a close mob, damage (even from afar or unseen) or a mob walking toward the bot;

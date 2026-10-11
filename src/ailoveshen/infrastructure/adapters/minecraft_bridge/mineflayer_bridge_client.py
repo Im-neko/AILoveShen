@@ -367,6 +367,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
             log=tuple(str(x) for x in d.get("log") or ()),
             seconds=float(d.get("seconds", 0.0)),
             learned=bool(d.get("learned")),
+            fell_back_from=d.get("fell_back_from"),
         )
 
     async def danger(self) -> dict[str, Any] | None:
@@ -499,6 +500,7 @@ def _to_skill(d: dict[str, Any]) -> SkillInfo:
         failing=bool(d.get("failing", False)),
         last_failure=d.get("last_failure"),
         last_good_version=d.get("last_good_version"),
+        raw=bool(d.get("raw", False)),
         code=str(d.get("code", "")),
     )
 

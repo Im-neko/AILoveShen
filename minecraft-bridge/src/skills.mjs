@@ -8,7 +8,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import vm from 'node:vm'
 import ivm from 'isolated-vm'
+import { Vec3 } from 'vec3'
+import pathfinderPkg from 'mineflayer-pathfinder'
 import { ACTION_TOOLS, QUERY_TOOLS } from './tools.mjs'
 
 export const LIMITS = {
@@ -17,8 +20,12 @@ export const LIMITS = {
   judges: 10, // Jev への質問
   cpuMs: 1000, // isolate の中で使った CPU 時間（await せずに回るループを止める）
   memoryMb: 32,
-  judgeWaitMs: 5000 // judge の答えを待つ時間
+  judgeWaitMs: 5000, // judge の答えを待つ時間
+  rawMs: 10 * 60 * 1000 // 生の bot を触る技の上限（await で止まらない暴走の見張りは効かないので、時間で切る）
 }
+// 生の mineflayer の bot を技に見せるモード（設計書 168）。BRIDGE_RAW_BOT=1 のときだけ、技を raw: true で保存でき、
+// その技はメインプロセスの vm で動く（isolate ではない: ファイル・ネットワークに届く。使い捨ての世界でだけ使う）
+export const rawBotEnabled = () => process.env.BRIDGE_RAW_BOT === '1'
 export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
@@ -42,13 +49,15 @@ function wrap (code) {
 
 // 形と構文を確かめて、保存する形にする。だめなら SkillError（理由は Gemini に返す）
 export function validateSkill (def) {
-  const { description, params, expects, code } = def ?? {}
+  const { description, params, expects, code, raw } = def ?? {}
   if (typeof description !== 'string' || !description.trim()) bad('description is required')
   if (description.length > MAX_DESCRIPTION_CHARS) bad(`description is longer than ${MAX_DESCRIPTION_CHARS} characters`)
   if (params != null && (typeof params !== 'object' || Array.isArray(params))) bad('params must be a JSON Schema object')
   if (typeof code !== 'string' || !code.trim()) bad('code is required')
   if (code.length > MAX_CODE_CHARS) bad(`the code is longer than ${MAX_CODE_CHARS} characters`)
   validateExpects(expects)
+  if (raw != null && typeof raw !== 'boolean') bad('raw must be true or false')
+  if (raw && !rawBotEnabled()) bad('raw skills are off here (the bridge was not started with BRIDGE_RAW_BOT=1): write the skill over the t.* tools only')
   const isolate = new ivm.Isolate({ memoryLimit: 8 })
   try {
     isolate.compileScriptSync(wrap(code))
@@ -57,7 +66,7 @@ export function validateSkill (def) {
   } finally {
     isolate.dispose()
   }
-  return { description: description.trim(), params: params ?? { type: 'object', properties: {} }, expects, code }
+  return { description: description.trim(), params: params ?? { type: 'object', properties: {} }, expects, code, ...(raw ? { raw: true } : {}) }
 }
 
 function validateExpects (e) {
@@ -129,6 +138,36 @@ t.fail = (reason = '') => ({ __end: 'fail', reason: String(reason) })
 Object.freeze(t)
 `
 
+// 生の bot を渡す技のために、技が付けたリスナーを覚えておいて終わりに外す（残すと、次の技や反射と二重に動く）。
+// 関数は元のオブジェクトに束ねて返す（Proxy のまま呼ぶと内部の this がずれる）
+function tracked (target, owned) {
+  const ADD = new Set(['on', 'once', 'addListener', 'prependListener'])
+  return new Proxy(target, {
+    get (obj, prop) {
+      const value = Reflect.get(obj, prop)
+      if (typeof prop === 'string' && ADD.has(prop) && typeof value === 'function') {
+        return (event, fn) => {
+          owned.listeners.push([obj, event, fn])
+          return value.call(obj, event, fn)
+        }
+      }
+      if (prop === '_client' && value && typeof value === 'object') return tracked(value, owned)
+      return typeof value === 'function' ? (...a) => value.apply(obj, a) : value
+    }
+  })
+}
+
+// 生の bot を触った技が残すもの（操作キー、経路、掘り、リスナー、タイマー）を止める
+function releaseBot (bot, owned) {
+  for (const [obj, event, fn] of owned.listeners) { try { obj.removeListener(event, fn) } catch {} }
+  for (const id of owned.timers) { clearTimeout(id); clearInterval(id) }
+  owned.listeners.length = 0
+  owned.timers.clear()
+  try { bot.clearControlStates?.() } catch {}
+  try { bot.pathfinder?.setGoal?.(null) } catch {}
+  try { bot.stopDigging?.() } catch {}
+}
+
 const clip = (s, n = 160) => { const text = typeof s === 'string' ? s : JSON.stringify(s); return text.length > n ? `${text.slice(0, n)}…` : text }
 
 // 技を 1 回実行する。deps: { callTool(name, args), state(), blockAt(args), judge(q, signal), abortTool(reason) }
@@ -141,7 +180,10 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
   const used = { action: 0, query: 0, judge: 0 }
   let stopped = null
   let current = null
-  const isolate = new ivm.Isolate({ memoryLimit: limits.memoryMb })
+  const raw = !!skill.raw
+  const isolate = raw ? null : new ivm.Isolate({ memoryLimit: limits.memoryMb })
+  const owned = { listeners: [], timers: new Set() }
+  let rawStop = null
   const judgeAbort = new AbortController()
 
   const stop = (reason) => {
@@ -149,9 +191,14 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     stopped = reason
     judgeAbort.abort()
     if (current) deps.abortTool?.(reason)
-    try { isolate.dispose() } catch {}
+    try { isolate?.dispose() } catch {}
+    if (raw) {
+      releaseBot(deps.bot, owned)
+      rawStop?.()
+    }
   }
   control.stop = stop
+  control.raw = raw
   control.view = () => ({ calls: used.action + used.query, current })
 
   const over = (kind) => {
@@ -192,12 +239,13 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     }
   }
 
-  const cpu = setInterval(() => {
+  const cpu = isolate && setInterval(() => {
     try {
       if (Number(isolate.cpuTime) / 1e6 > limits.cpuMs) stop(ENDLESS)
     } catch {}
   }, 100)
   try {
+    if (raw) return finish(await runRaw())
     const context = await isolate.createContext()
     // 止めた後に終わった道具の結果は、破棄した isolate に返さない
     await context.global.set('__call', new ivm.Reference((kind, name, argsJson) =>
@@ -216,7 +264,50 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     return finish({ ended: 'error', reason: clip(e.message, 300) })
   } finally {
     clearInterval(cpu)
-    try { isolate.dispose() } catch {}
+    try { isolate?.dispose() } catch {}
+    if (raw) releaseBot(deps.bot, owned)
+  }
+
+  // 生の bot の技: メインプロセスの vm。t は isolate の中と同じ API を、ホストの関数として渡す
+  async function runRaw () {
+    if (!deps.bot) return { ended: 'error', reason: 'raw skills need the bot (deps.bot)' }
+    const call = (kind, name) => async (a) => JSON.parse(JSON.stringify((await dispatch(kind, name, JSON.stringify(a ?? {}))) ?? null))
+    const t = {}
+    for (const n of SKILL_ACTIONS) t[n] = call('action', n)
+    for (const n of QUERY_TOOLS) t[n] = call('query', n)
+    t.state = call('query', 'state')
+    t.block_at = call('query', 'block_at')
+    t.judge = (question, options) => call('judge', 'judge')({ question: String(question), ...(options ?? {}) })
+    t.log = (message) => call('log', 'log')({ message: String(message) })
+    t.done = (summary = '') => ({ __end: 'done', summary: String(summary) })
+    t.fail = (reason = '') => ({ __end: 'fail', reason: String(reason) })
+    t.bot = tracked(deps.bot, owned)
+    t.Vec3 = Vec3
+    t.goals = pathfinderPkg.goals
+    // 止められたら待ちをやめる sleep と、終わりに消えるタイマー
+    t.sleep = (ms) => new Promise((resolve, reject) => {
+      if (stopped) return reject(new Error(stopped))
+      const id = setTimeout(() => { owned.timers.delete(id); resolve() }, Number(ms))
+      owned.timers.add(id)
+    })
+    const limit = setTimeout(() => stop(`ran longer than ${Math.round(limits.rawMs / 60000)} minutes`), limits.rawMs)
+    const sandbox = vm.createContext({ __args: JSON.parse(JSON.stringify(args ?? {})), t })
+    try {
+      // 呼び出しも vm の中で行う: 最初の await までの同期の部分に cpuMs の時間切れが効く
+      const fn = new vm.Script(`${wrap(skill.code)};\n__skill`).runInContext(sandbox, { timeout: limits.cpuMs })
+      sandbox.__fn = fn
+      const body = Promise.resolve(new vm.Script('__fn(t, __args)').runInContext(sandbox, { timeout: limits.cpuMs }))
+      const out = await Promise.race([body, new Promise((resolve) => { rawStop = () => resolve({ __stopped: true }); if (stopped) rawStop() })])
+      if (stopped) return { ended: 'stopped', reason: stopped }
+      if (out?.__end === 'fail') return { ended: 'fail', reason: out.reason || 'the skill gave up' }
+      return { ended: 'done', summary: out?.__end === 'done' ? out.summary : clip(out ?? '') }
+    } catch (e) {
+      if (stopped) return { ended: 'stopped', reason: stopped }
+      if (/Script execution timed out/.test(e.message)) return { ended: 'stopped', reason: ENDLESS }
+      return { ended: 'error', reason: clip(`${e.message}${e.stack ? ` @ ${String(e.stack).split('\n')[1]?.trim() ?? ''}` : ''}`, 300) }
+    } finally {
+      clearTimeout(limit)
+    }
   }
 
   function finish (r) {
@@ -297,13 +388,28 @@ export class SkillStore {
     return v ? { name, ...v } : null
   }
 
+  // 版を指定しないで動かすとき、動かす版（設計書 168 §4）。一番新しい版は、書いたばかり・直したばかりで
+  // 1 回試す。その 1 回が失敗して一度も成功していないなら、前に成功した版の中で一番成功率が高いものに戻す
+  // （新しい版が悪くなっても、動いていた版を使えなくしない）。戻すものがなければ null（一番新しい版）
+  defaultVersion (name) {
+    const skill = this.read(name)
+    const latest = skill?.versions.at(-1)
+    if (!latest || latest.uses === 0 || latest.successes > 0) return null
+    const rate = (v) => v.successes / v.uses
+    const best = skill.versions
+      .filter((v) => v !== latest && v.successes > 0)
+      .sort((a, b) => rate(b) - rate(a) || b.version - a.version)[0]
+    return best ? { version: best.version, from: latest.version } : null
+  }
+
   // 実行の結果を数える → 今回で初めて確かめ済みになったか
-  record (name, version, ok, reason = null) {
+  record (name, version, ok, reason = null, seconds = 0) {
     const skill = this.read(name)
     const v = skill?.versions.find((x) => x.version === version)
     if (!v) return false
     const firstSuccess = ok && v.successes === 0
     v.uses += 1
+    v.seconds_total = Math.round(((v.seconds_total ?? 0) + (Number(seconds) || 0)) * 10) / 10
     if (ok) {
       v.successes += 1
       v.streak = 0
@@ -322,13 +428,25 @@ export class SkillStore {
     return this.names().map((name) => this.read(name)).filter(Boolean).map((s) => {
       const latest = s.versions.at(-1)
       const sum = (k) => s.versions.reduce((n, v) => n + v[k], 0)
+      const runs = this.defaultVersion(s.name)
+      const active = runs ? s.versions.find((v) => v.version === runs.version) : latest
       return {
         name: s.name,
         description: latest.description,
         params: latest.params,
         expects: latest.expects,
+        raw: latest.raw === true,
         version: latest.version,
-        verified: latest.successes > 0 && !failingStreak(latest),
+        // 版を指定しないで動かす版（戻したときは前に成功した版）が、成功していて、同じ理由で失敗し続けていない
+        verified: active.successes > 0 && !failingStreak(active),
+        runs_version: active.version,
+        versions: s.versions.map((v) => ({
+          version: v.version,
+          uses: v.uses,
+          successes: v.successes,
+          failures: v.failures,
+          avg_seconds: v.uses ? Math.round(((v.seconds_total ?? 0) / v.uses) * 10) / 10 : null
+        })),
         streak: latest.streak ?? 0,
         failing: failingStreak(latest) > 0,
         uses: sum('uses'),

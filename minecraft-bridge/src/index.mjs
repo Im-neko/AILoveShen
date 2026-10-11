@@ -305,6 +305,7 @@ const callTool = createTools({
 const skills = new SkillStore(process.env.SKILLS_DIR ?? DEFAULT_DIR)
 let judgeIds = 0
 const skillDeps = {
+  bot,
   callTool,
   state: () => sharedState(bot, state, needs),
   blockAt: (args) => blockInfo(bot, args),
@@ -351,7 +352,9 @@ function reflexState () {
 }
 
 async function runSkillOnce (name, args, version) {
-  const skill = skills.get(name, version)
+  // 版を指定しないとき: 新しい版の試しが失敗していれば、前に成功した版を動かす（設計書 168 §4）
+  const back = version == null ? skills.defaultVersion(name) : null
+  const skill = skills.get(name, back?.version ?? version)
   if (!skill) return null
   // 同じ理由の失敗が続いている版は動かさない（前の失敗から SKILL_PROBE_MS たてば、1 回試せる）
   const blocked = blockedReason(skill, skills.list().find((s) => s.name === name)?.last_good_version)
@@ -379,9 +382,9 @@ async function runSkillOnce (name, args, version) {
   }
   const ok = r.ended === 'done' && expects.met
   const reason = ok ? null : r.reason ?? `expects not met: ${expects.lines.join('; ')}`
-  const learned = skills.record(name, skill.version, ok, reason)
+  const learned = skills.record(name, skill.version, ok, reason, r.seconds)
   persist()
-  return { ok, version: skill.version, ...r, reason, expects, learned }
+  return { ok, version: skill.version, ...r, reason, expects, learned, ...(back ? { fell_back_from: back.from } : {}) }
 }
 
 async function act (id) {
@@ -631,6 +634,8 @@ http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { e
 
 startReflex(bot, state, {
   async preempt (reason, force = false) {
+    // 生の bot の技は操作キーや経路を直接握っているので、反射と取り合わないよう先に止める（設計書 168）
+    if (state.skill?.control.raw) state.skill.control.stop?.(reason)
     const current = state.current
     if (!current) return true
     if (!force && DAMAGE_TOLERANT.has(current.verb)) return false // すでに脅威に対処している（溺れそうなときは止める）
