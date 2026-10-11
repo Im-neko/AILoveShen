@@ -17,7 +17,10 @@ user の答え: 渡し方 = **今のスキルに `bot` を足す**／ガード =
 - 後始末（`releaseBot`）: 技が付けたリスナー（`bot.on` と `bot._client.on` は Proxy で覚えておく）、`t.sleep` のタイマー、操作キー（`clearControlStates`）、経路の目標（`pathfinder.setGoal(null)`）、掘り（`stopDigging`）を、終わり・止められたときに外す。残すと次の技や反射と二重に動く
 - 反射: `preempt`（`index.mjs`）が、実行中の技が raw なら先にその技を止める（行動の道具がない間、`state.current` が空で、反射が操作キーを握った後に技が書き換え続けるのを防ぐ）
 - 上限: `t.*` の行動 40 回・調べもの 200 回は同じ。生の `bot` の呼び出しは数えない。代わりに時間で切る（`rawMs` 10 分）。最初の `await` までの同期の部分は `vm` の時間切れ（`cpuMs` 1 秒）で止める。**`await` の後に回り続ける同期ループは止められない**（メインプロセスが固まる。isolate なら止められた所）。実験の限界として残す
+- 停止後: `tracked` の Proxy は、止められた後の `bot` へのアクセスで例外を投げる。`await bot.dig()` の途中で止められた技が、戻った後に反射の握った操作キーや経路を書き換えないため（`t.*` は元から `dispatch` が断る）
+- スイッチの解釈: ブリッジも Python と同じく、空・0・false・no・off 以外を有効とする（片方だけ `true` と読んで、書き手が `raw` を書いてブリッジが保存を断り、書き直しを使い切るのを防ぐ）
 - 失敗の記録: 生の `bot` の呼び出しは「最後の道具」に載らない。例外は理由に（先頭のフレームつき）、途中の様子は `t.log` に書かせる（書き手のプロンプトに書いた）
+- 道具を選ぶ LLM への案内: 技の節に 1 文（`TOOL_RAW_SKILLS_LINE`: 道具にない手が要る・同じ断りが続くときは `write_skill` で本物の bot を触る技を書ける）を、有効なときだけ足す。書き手にだけ教えても、道具を選ぶ側が `write_skill` を呼ばなければ使われないため。`abilities.yaml` の `skills` の項は静的で、有効かどうかで変えられないので、そのまま（raw の説明は足していない）
 - 書き手のプロンプト（`SKILL_RAW_BOT`）に mineflayer の要点（`bot.entity` `blockAt` `dig` `placeBlock` `setControlState` `lookAt` `waitForTicks` `on` `_client.write` `registry` …）と決まりを足した。道具の定義は増やしていない（技を書くのは別の呼び出しなので、定義の上限 8920 に響かない）
 - 値の渡し: `vm` の中で作ったオブジェクトは別の realm のもの（`instanceof Array` が偽になる等）。`bot` に渡す値は `Vec3` などホストのものを使わせる
 
@@ -30,6 +33,8 @@ raw の `bot` 経由の操作には、ブリッジの安全の断り（保護ブ
 - 一覧（`GET /skills`）: `verified` は「版を指定せずに動かす版」が成功していて、同じ理由の失敗が続いていないこと（切り戻す版を含む）、`runs_version`、版ごとの `versions: [{version, uses, successes, failures, avg_seconds}]`。`record` が実行の秒数を足す（`seconds_total`）。既存の `last_good_version` と `version`（一番新しい版）は変えていない（直すときの前の版は新しい方）
 - 限界: 試しが 1 回の環境のせいで失敗しただけの新しい版も、以後は動かない（直すなら書き直し＝新しい版）。書き直しは 1 時間に 3 回まで（`skill_rewrites_per_hour`）
 
+- 保存前の検証（user が選んだ 1 つ目）: 新しい技・直した版は、書いてすぐ 1 回試し、成功の判定は `expects` を世界から見る（`done()` だけでは成功にしない）。成功するまで `verified` は偽で、Jev は出さない。これは設計書 22 からあった。今回足したのは、試しが失敗した版が前の動く版を隠さないこと（上）。「世界を作り直して再現してから保存する」ような検証は作っていない
+
 ## 5. まだ作っていないもの
 - **失敗の定期的な振り返り**（user が選んだ 3 つ目）: 拒否・失敗の記録をまとめて LLM に見せ、足りない手を自分で見つけて技にする。LLM の呼び出しの目的（purpose）と周期が新しく要る一番大きい部品で、raw の技が実際に出す失敗の記録（`t.log`・例外・`fell_back_from`）を見てから形を決めたほうが当たる。ベンチの記録を見てから作る
 - ベンチは実行ごとに `SKILLS_DIR` を分けるので、技は実行をまたいで育たない（実行の中で書いて直す所までを測る）。育つかを測るには別の設計が要る
@@ -39,4 +44,4 @@ raw の `bot` 経由の操作には、ブリッジの安全の断り（保護ブ
 `BRIDGE_RAW_BOT=1 mise run bench -- --tasks food,pickaxe,build` を、オフと比べる。予想: 道具の作成連鎖と単純な移動は raw でもできる。足場積み・夜越し・長い作業は失敗する。遅延と費用は増える。外れたら、そのこと自体が収穫。成否は課題の条件をブリッジが世界から判定する（技の `done()` では成功にならない）
 
 ## 7. テスト
-ブリッジ `test/raw-skills.test.mjs`（15 件）: 保存の可否（フラグ）、`bot` が見える/見えない、`bot` と `t.*` の併用（`this` が正しい）、終わりの後始末（リスナー・操作キー・経路・掘り）、止められると `t.sleep` が即終わる、例外の理由、行動の上限、`rawMs`、同期の暴走、`require`/`process`/`fetch` が見えない、一覧の `raw`、切り戻し 4 通り、秒数の平均。`test/skills.test.mjs`（`verified` が切り戻す版で決まる）。Python `test_skills.py::TestRawBotSkills`（6 件）: スキーマ、保存、プロンプトの有無、一覧の表示、`fell_back_from` の表示
+ブリッジ `test/raw-skills.test.mjs`（18 件）: 保存の可否（フラグ）・フラグの解釈（true/yes/off）・停止後に bot へ触れない、`bot` が見える/見えない、`bot` と `t.*` の併用（`this` が正しい）、終わりの後始末（リスナー・操作キー・経路・掘り）、止められると `t.sleep` が即終わる、例外の理由、行動の上限、`rawMs`、同期の暴走、`require`/`process`/`fetch` が見えない、一覧の `raw`、切り戻し 4 通り、秒数の平均。`test/skills.test.mjs`（`verified` が切り戻す版で決まる）。Python `test_skills.py::TestRawBotSkills`（8 件）: スキーマ、保存、書き手のプロンプトの有無、道具を選ぶプロンプトの案内の有無、一覧の表示、`fell_back_from` と `runs_version` の表示

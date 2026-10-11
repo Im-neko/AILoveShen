@@ -2087,6 +2087,7 @@ class SkillInfo:
     last_failure: Optional[str] = None
     last_good_version: Optional[int] = None  # 一番新しい版が未成功のとき、前に成功した版
     raw: bool = False  # 生の mineflayer の bot を触る技（docs/design/168。メインプロセスで動く）
+    runs_version: Optional[int] = None  # 版を指定せずに動かす版（一番新しい版の試しが失敗していれば、前に成功した版）
     code: str = ""  # 直すときだけ読む（一覧には入らない）
 
     @property
@@ -2111,6 +2112,7 @@ class SkillInfo:
         return (
             f"{self.name} v{self.version}{mark}: {self.description}"
             f"{'（生の bot）' if self.raw else ''}"
+            f"{f'（呼ぶと v{self.runs_version} が動く）' if self.runs_version not in (None, self.version) else ''}"
             f"（引数 {list((self.params.get('properties') or {}).keys())}、"
             f"成功 {self.successes}/{self.uses}{failure}）"
         )

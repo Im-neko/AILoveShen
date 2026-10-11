@@ -867,6 +867,12 @@ $skills
   場面のせいなら道具で整える。直さず呼び直さない
 """
 
+# 生の bot の技を勧める 1 文（docs/design/168）。skill_raw_bot が有効なときだけ、技の節に足す
+TOOL_RAW_SKILLS_LINE = """\
+- ブリッジの道具にない手が要るとき、同じ断りや失敗が続くときは、write_skill で本物の bot を触る技
+  （raw）を書ける。道具の断りは掛からない。成功は expects で世界から確かめられる
+"""
+
 # 技を書く（docs/design/22 §3・§4）。決まった文なのでシステム指示に置く（26 §4）
 SKILL_SYSTEM = """\
 あなたは Minecraft のサバイバルで暮らす AI 配信者の「技」を JavaScript で書きます。技は道具を
@@ -1379,6 +1385,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             Template(TOOL_SKILLS_SECTION).substitute(
                 skills="\n".join(f"- {s.describe()}" for s in skills) or "- まだない"
             )
+            + (TOOL_RAW_SKILLS_LINE if self._raw_bot else "")
             if skills is not None
             else ""
         ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions) + _same_cause_section(same_cause) + _repeat_section(repeated, repeated_times, repeated_skill)

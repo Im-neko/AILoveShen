@@ -241,6 +241,23 @@ class TestRawBotSkills:
             "skill hunt v1 succeeded: ok"
         )
 
+    def test_the_tool_prompt_suggests_a_raw_skill_only_when_it_is_on(self):
+        state = {"goal": "have 8 food", "self": {}}
+        off = GamePromptTemplateBuilder().build_tool_prompt(Activity(), state, (), (), skills=[HUNT])
+        on = GamePromptTemplateBuilder(raw_bot=True).build_tool_prompt(
+            Activity(), state, (), (), skills=[HUNT]
+        )
+        assert "本物の bot" not in off and "本物の bot を触る技" in on
+        assert "本物の bot" not in GamePromptTemplateBuilder(raw_bot=True).build_tool_prompt(
+            Activity(), state, (), ()
+        )
+
+    def test_a_skill_that_runs_an_earlier_version_says_so(self):
+        info = SkillInfo(name="hunt", description="狩る", version=3, runs_version=2, verified=True)
+        assert "（呼ぶと v2 が動く）" in info.describe()
+        assert "呼ぶと" not in SkillInfo(name="h", description="d", version=3, runs_version=3).describe()
+        assert "呼ぶと" not in HUNT.describe()
+
     def test_a_raw_skill_says_so_in_the_list(self):
         raw = SkillInfo(name="jump_tower", description="跳んで積む", version=1, raw=True)
         assert "（生の bot）" in raw.describe()

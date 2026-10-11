@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { runSkill, validateSkill, SkillStore, LIMITS } from '../src/skills.mjs'
+import { runSkill, validateSkill, SkillStore, LIMITS, rawBotEnabled } from '../src/skills.mjs'
 
 const EXPECTS = { predicate: 'have', item: 'food', count: '+1' }
 const rawSkill = (body) => ({ raw: true, code: `export default async function (t, args) {\n${body}\n}`, expects: EXPECTS })
@@ -104,6 +104,34 @@ test('stopping a raw skill ends a sleep at once and lets go of the bot', async (
   assert.match(r.reason, /zombie/)
   assert.equal(bot.controlState.jump, false)
   assert.ok(bot.goals.includes(null))
+})
+
+test('after a stop, a body that comes back from a pending dig cannot touch the bot again', async () => {
+  const bot = fakeBot()
+  let finishDig
+  bot.dig = () => new Promise((resolve) => { finishDig = resolve })
+  const control = {}
+  const run = runSkill(rawSkill(`
+    await t.bot.dig({})
+    t.bot.setControlState('jump', true)
+    t.bot.pathfinder.setGoal('late')
+    return t.done('ran on')`), {}, deps(bot), LIMITS, control)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  control.stop('reflex: skeleton 5m away')
+  const r = await run
+  finishDig()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(r.ended, 'stopped')
+  assert.equal(bot.controlState.jump, false)
+  assert.ok(bot.goals.length > 0 && bot.goals.every((g) => g === null)) // 後から setGoal('late') が届いていない
+})
+
+test('the switch reads on/off words the way the Python setting does', () => {
+  for (const [v, on] of [['1', true], ['true', true], ['yes', true], ['', false], ['0', false], ['false', false], ['off', false], [undefined, false]]) {
+    if (v === undefined) delete process.env.BRIDGE_RAW_BOT
+    else process.env.BRIDGE_RAW_BOT = v
+    assert.equal(rawBotEnabled(), on, String(v))
+  }
 })
 
 test('a thrown error comes back as the reason with where it happened', async () => {

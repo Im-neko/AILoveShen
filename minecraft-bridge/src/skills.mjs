@@ -25,7 +25,8 @@ export const LIMITS = {
 }
 // 生の mineflayer の bot を技に見せるモード（設計書 168）。BRIDGE_RAW_BOT=1 のときだけ、技を raw: true で保存でき、
 // その技はメインプロセスの vm で動く（isolate ではない: ファイル・ネットワークに届く。使い捨ての世界でだけ使う）
-export const rawBotEnabled = () => process.env.BRIDGE_RAW_BOT === '1'
+// Python の設定（minecraft.agent.skill_raw_bot）と同じ解釈: 空・0・false・no・off 以外は有効
+export const rawBotEnabled = () => !['', '0', 'false', 'no', 'off'].includes((process.env.BRIDGE_RAW_BOT ?? '').trim().toLowerCase())
 export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
@@ -144,6 +145,8 @@ function tracked (target, owned) {
   const ADD = new Set(['on', 'once', 'addListener', 'prependListener'])
   return new Proxy(target, {
     get (obj, prop) {
+      // 止められた後に、進行中の待ち（dig など）から戻った技が、反射の握った操作キーや経路を書き換えない
+      if (owned.stopped?.()) throw new Error(owned.stopped())
       const value = Reflect.get(obj, prop)
       if (typeof prop === 'string' && ADD.has(prop) && typeof value === 'function') {
         return (event, fn) => {
@@ -182,7 +185,7 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
   let current = null
   const raw = !!skill.raw
   const isolate = raw ? null : new ivm.Isolate({ memoryLimit: limits.memoryMb })
-  const owned = { listeners: [], timers: new Set() }
+  const owned = { listeners: [], timers: new Set(), stopped: () => stopped }
   let rawStop = null
   const judgeAbort = new AbortController()
 

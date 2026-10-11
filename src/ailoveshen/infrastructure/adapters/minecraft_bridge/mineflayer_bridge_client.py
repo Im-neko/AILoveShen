@@ -501,6 +501,7 @@ def _to_skill(d: dict[str, Any]) -> SkillInfo:
         last_failure=d.get("last_failure"),
         last_good_version=d.get("last_good_version"),
         raw=bool(d.get("raw", False)),
+        runs_version=d.get("runs_version"),
         code=str(d.get("code", "")),
     )
 
