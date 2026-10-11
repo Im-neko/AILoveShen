@@ -716,3 +716,16 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     saved.then(() => setTimeout(() => process.exit(0), 500))
   })
 }
+
+// サーバーとの接続が切れたとき（サーバーの異常終了・再起動、ネットワーク）: ボットは凍ったまま、API だけが応答し続ける
+// （2026-10-11: サーバーが落ちて約 1 時間、位置が動かず全部の手が「Timeout waiting for 20 ticks」で失敗した）。
+// 止める手順（上）と同じく状態と世界の地図を保存して、終わる。Python 側は「ブリッジにつながらない」と気づく。自分で止めたときの
+// 切断（stopping）は数えない
+bot.on('end', (reason) => {
+  if (stopping) return
+  console.log(`[bridge] サーバーとの接続が切れた（${reason}）: 状態を保存して終わる`)
+  try { if (bot.entity) saveState(state) } catch (e) { console.log('[bridge] 状態を保存できなかった', e.message) }
+  sampler.stop()
+  setTimeout(() => process.exit(1), 3000).unref()
+  worldMap.save(WORLDMAP_DIR, VERSION, { final: true }).catch((e) => console.log('[worldmap] 保存できなかった', e.message)).finally(() => process.exit(1))
+})

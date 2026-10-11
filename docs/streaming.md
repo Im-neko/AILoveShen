@@ -409,6 +409,8 @@ mise run bench -- compare 前.jsonl 後.jsonl      # 変更の前後を並べる
 | 音が OBS に入らない | `tts.audio.device` と OBS の音声入力キャプチャのデバイスを確かめる |
 | Ctrl-C で止まらない | 最新のコードにする（`git pull`） |
 | `[skill] … 失敗 too many actions` | 技が上限（行動 40 回、調べもの 200 回）に当たった。Gemini が理由を読んで直すか、道具で進める。続くなら配信の後に掃除する |
+| ブリッジのログに `[bridge] サーバーとの接続が切れた（…）: 状態を保存して終わる` が出て、ブリッジが終わる | Minecraft サーバーが落ちた・再起動した。ブリッジを起動し直す（Python の配信は、ブリッジが戻るまで待つ）。サーバーが落ちた理由は `docker logs ailoveshen-minecraft` の `A fatal error has been detected`（`/data/hs_err_pid*.log`） |
+| サーバーが `SIGSEGV … libasyncProfiler.so`（spark）で落ちる（Apple Silicon の Docker、2026-10-11） | Paper に同梱の spark のバックグラウンドプロファイラが原因。`docker exec ailoveshen-minecraft sh -c "sed -i 's/\"backgroundProfiler\": true/\"backgroundProfiler\": false/' /data/plugins/spark/config.json"` のあと `docker restart ailoveshen-minecraft`。ボリュームを作り直すと戻るので、そのつど同じにする |
 | ブリッジの起動で `isolated-vm` のエラー | `cd minecraft-bridge && npm install`（ビルドツールが要ることがある。準備の 2） |
 | ブラウザソースが空 | 配信が動いているか、`--no-board` にしていないか。動いていれば OBS でソースを再読み込み |
 
