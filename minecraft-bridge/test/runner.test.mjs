@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { createRunner, abortCurrent, ESCAPE_VERBS } from '../src/runner.mjs'
+import { listRefusals } from '../src/refusals.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -258,4 +259,18 @@ test('穴から出る行動は、考え直しでは止めない（出たあと�
   const running = run({ verb: 'dig', pos: new Vec3(3, 70, 4), target: 'oak_log' }, 'dig oak_log')
   assert.equal((await abortCurrent(state, 'rethink: x')).aborted, true)
   await running
+})
+
+test('閉じた所から出る手が同じ理由で失敗したら、自分の立つセルを台帳に載せる（成功と中断は載せない）', async () => {
+  const { state, run } = setup({
+    climb_out: async () => { throw new Error('could not jump up from the hole at (0, 70, 0)') },
+    dig_out: async () => 'dug out'
+  })
+  const failed = await run({ verb: 'climb_out', inPlace: true }, 'climb out of the closed space')
+  assert.equal(failed.ok, false)
+  const [row] = listRefusals(state)
+  assert.deepEqual([row.tool, row.x, row.y, row.z], ['climb_out', 0, 70, 0])
+  assert.match(row.reason, /could not jump up/)
+  await run({ verb: 'dig_out', inPlace: true }, 'dig out')
+  assert.equal(listRefusals(state).length, 1)
 })

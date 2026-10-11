@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
-import { noteRefusal, refusalAt, listRefusals, isFutile, groupOf } from '../src/refusals.mjs'
+import { noteRefusal, refusalAt, listRefusals, isFutile, groupOf, spotOf } from '../src/refusals.mjs'
 import { ground } from '../src/candidates.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -51,4 +51,18 @@ test('候補は、断られた場所への同じ手を外し、理由を withhel
   assert.ok(digs.every((c) => !(c.pos.x === 60)), JSON.stringify(digs.map((c) => c.id)))
   assert.match(withheld ?? '', /left out \(refused or unreachable a moment ago\).*No path/)
   void home
+})
+
+test('その場でする出る手（climb_out）は、立つセルを場所として台帳に載り、同じ場所では出ない。成功する別の手は載らない', () => {
+  const here = v(50, 70, 50)
+  const climb = { verb: 'climb_out', inPlace: true }
+  assert.deepEqual(spotOf(climb, here), here)
+  assert.equal(spotOf({ verb: 'wait', inPlace: true }, here), null)
+  assert.equal(spotOf({ verb: 'dig', pos: v(1, 2, 3) }, here).x, 1)
+  const state = {}
+  noteRefusal(state, 'climb_out', spotOf(climb, here), 'failed: could not jump up from the hole at (50, 70, 50)')
+  assert.match(refusalAt(state, 'climb_out', spotOf(climb, here)).reason, /could not jump up/)
+  assert.equal(refusalAt(state, 'climb_out', v(52, 70, 50)), null)
+  assert.ok(isFutile('failed: going up from here only reaches 1,2,3, a roof or pillar top: piling up does not get you out.'))
+  assert.ok(!isFutile('failed: piled up 3 blocks and ran out of dirt and cobblestone'))
 })

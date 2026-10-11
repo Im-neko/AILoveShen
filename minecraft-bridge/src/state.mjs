@@ -3,6 +3,8 @@
 // 状態は作らない: 作ると、場面ごとのコードに戻る（設計書 19 §11.2、21 §4）。
 import { round, bearing, dayPhase, nearbyEntities, isHostile, inventoryCounts } from './observe.mjs'
 import { isInside } from './home.mjs'
+import { closedSpaceCached } from './reach.mjs'
+import { inBurrow } from './burrow.mjs'
 import { underwater } from './breath.mjs'
 import { isSwimming } from './swim.mjs'
 import { toolWear } from './wear.mjs'
@@ -83,6 +85,15 @@ function mobs (bot) {
     .map(({ e, dist }) => ({ id: e.id, name: e.name, hostile: isHostile(bot, e), distance_m: round(dist), direction: bearing(me, e.position), height_diff_m: round(e.position.y - me.y) }))
 }
 
+// 歩いて出られない閉じた所にいるか: まわりの形の格子は 7x7 の近く（穴の底の小さな盛り上がりが高台に見える）だけで、歩ける範囲の
+// 全体は見えない。家の中と塞いだ穴は閉じていてふつうなので除く（候補 climb_out と同じ見方。2026-10-11: 149 マスの閉じた洞窟の中で、
+// 格子から「谷底の高い所」と読み、出る手を考え違えた）
+function closedAround (bot, state) {
+  if (isInside(bot, state.home) || inBurrow(bot)) return {}
+  const shut = closedSpaceCached(bot)
+  return shut ? { closed_space: { cells: shut.cells } } : {}
+}
+
 // needsOf(bot, state): 欲求（goals.mjs の needs）。テストでは差し替える
 export function sharedState (bot, state, needsOf) {
   const p = bot.entity.position
@@ -97,7 +108,7 @@ export function sharedState (bot, state, needsOf) {
       ...(underwater(bot) ? { head_in_water: true, air: underwater(bot).air } : {}),
       in_home: isInside(bot, state.home)
     },
-    surroundings: lookAround(bot),
+    surroundings: { ...lookAround(bot), ...closedAround(bot, state) },
     mobs: mobs(bot),
     needs: needsOf(bot, state),
     inventory: inventoryCounts(bot),

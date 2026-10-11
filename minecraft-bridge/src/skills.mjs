@@ -31,7 +31,7 @@ export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
 const MAX_CALLS_SHOWN = 30
-const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'custom', 'facility', 'progress']
+const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'custom', 'facility', 'progress', 'at', 'out_of_closed_space']
 const NAME = /^[a-z][a-z0-9_]{1,39}$/
 // 技から呼べる行動（ソルバーの提案は技からは使わない: 技はソルバーに依存しない手順にする）
 export const SKILL_ACTIONS = ACTION_TOOLS.filter((n) => n !== 'do_suggestion')
@@ -79,6 +79,15 @@ function validateExpects (e) {
   }
   if (e.predicate === 'custom' && !e.name) bad('expects custom needs the name of a check (a custom objective condition)')
   if (e.predicate === 'facility' && !e.name) bad('expects facility needs the name of a designed facility (search_facility)')
+  if (e.predicate === 'at' && (typeof e.where !== 'string' || !(e.where.startsWith('$') || parseSpot(e.where)))) {
+    bad('expects at needs where: "x,y,z" (or "$param") — you stand within distance (default 2) blocks of it')
+  }
+}
+
+// "x,y,z" → { x, y, z } か null
+function parseSpot (text) {
+  const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(text))
+  return m ? { x: Number(m[1]), y: Number(m[2]), z: Number(m[3]) } : null
 }
 
 // "$param" を引数の値に置き換える
@@ -108,6 +117,20 @@ export function judgeExpects (expects, args, before, deps) {
     const now = deps.remaining()
     if (before.remaining == null || now == null) return { met: false, lines: ['there is no small goal to measure progress on'] }
     return { met: now < before.remaining, lines: [`the small goal's remaining work ${before.remaining} -> ${now}`] }
+  }
+  // 居場所: 技が世界のどこに立って終わったか。持ち物や施設の述語では言えない移動・脱出の成功をここで判定する
+  if (expects.predicate === 'out_of_closed_space') {
+    const here = deps.where()
+    return { met: !here.shut, lines: [here.shut ? 'still in a closed space (no walking out of here)' : 'you can walk out of where you stand'] }
+  }
+  if (expects.predicate === 'at') {
+    const goal = parseSpot(substitute(expects.where, args))
+    if (!goal) return { met: false, lines: [`expects at cannot be judged: where is not "x,y,z" (${substitute(expects.where, args)})`] }
+    const here = deps.where()
+    const radius = Number(substitute(expects.distance, args) ?? 2)
+    const flat = Math.hypot(here.x - (goal.x + 0.5), here.z - (goal.z + 0.5))
+    const high = Math.abs(here.y - goal.y)
+    return { met: flat <= radius && high <= 2, lines: [`you stand ${flat.toFixed(1)} blocks (${high.toFixed(1)} in height) from ${goal.x},${goal.y},${goal.z}; within ${radius} blocks and 2 in height is the goal`] }
   }
   const spec = {}
   for (const [k, v] of Object.entries(expects)) spec[k] = substitute(v, args)

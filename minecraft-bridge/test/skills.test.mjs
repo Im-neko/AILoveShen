@@ -160,3 +160,29 @@ test('store: versions, counts, the list and the cleaning outside the stream', ()
   assert.deepEqual(store.names(), ['hunt'])
   assert.deepEqual(store.read('hunt').versions.map((v) => v.version), [1])
 })
+
+test('expects: 居場所（at: x,y,z の近く、out_of_closed_space: 歩いて出られる）を世界から判定する', () => {
+  let here = { x: 10.5, y: 64, z: 20.5, shut: true }
+  const d = { where: () => here }
+  const out = { predicate: 'out_of_closed_space' }
+  assert.equal(judgeExpects(out, {}, {}, d).met, false)
+  here = { ...here, shut: false }
+  assert.equal(judgeExpects(out, {}, {}, d).met, true)
+
+  const at = { predicate: 'at', where: '10,64,20', distance: 3 }
+  assert.equal(judgeExpects(at, {}, {}, d).met, true)
+  here = { x: 20.5, y: 64, z: 20.5, shut: false }
+  assert.equal(judgeExpects(at, {}, {}, d).met, false)
+  here = { x: 10.5, y: 70, z: 20.5, shut: false }
+  assert.equal(judgeExpects(at, {}, {}, d).met, false) // 高さが違う
+  const param = { predicate: 'at', where: '$target' }
+  here = { x: 5.5, y: 60, z: 5.5, shut: false }
+  assert.equal(judgeExpects(param, { target: '5,60,5' }, {}, d).met, true)
+  assert.equal(judgeExpects(param, { target: 'home' }, {}, d).met, false)
+
+  const def = { description: '出る', code: skill('').code }
+  assert.equal(validateSkill({ ...def, expects: out }).expects.predicate, 'out_of_closed_space')
+  assert.equal(validateSkill({ ...def, expects: at }).expects.where, '10,64,20')
+  assert.throws(() => validateSkill({ ...def, expects: { predicate: 'at' } }), /where/)
+  assert.throws(() => validateSkill({ ...def, expects: { predicate: 'at', where: 'home' } }), /where/)
+})

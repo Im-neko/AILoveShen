@@ -711,7 +711,7 @@ $activity
 - 位置: $position
 - まわりの形（$legend）:
 $grid
-- 隣のうち歩いて上がれない（2 段以上の）ところ: $walls / 8、頭の上: $head、足元: $standing_on
+- 隣のうち歩いて上がれない（2 段以上の）ところ: $walls / 8、頭の上: $head、足元: $standing_on$closed
 - 近くのモブ（attack / flee の entity にはこの id を使う）: $mobs
 
 ## ソルバーの提案（参考。従わなくてよい。do_suggestion の id）
@@ -736,9 +736,17 @@ $question
 - Read the situation and the recent tool records, find what is really going on, and answer her question
 - Say what to do next: which tool with which arguments (use only the tools and the coordinates that appear above),
   and why in one sentence. If the recent tools keep failing for one cause, say the cause and a different way
-- Do not call tools. She decides whether to follow you
+- Do not call tools. She decides whether to follow you$skill_hint
 - Answer in Japanese, in at most 300 characters
 """)
+
+# 生の bot の技が有効なとき、助言の依頼に足す一文: 助言者が「道具の言い直し」でしか答えないと、足りない手を書く道に出ない
+ADVICE_SKILL_HINT = (
+    "\n- If a hand of the bridge itself (a suggestion or a tool) keeps failing for the same cause and no "
+    "combination of the other tools gets around it, say so: the hand is missing. Recommend write_skill "
+    "(a skill that drives the real bot) when it is among the tools above, naming the hand to write and "
+    "what has to differ from the failing one"
+)
 
 # 続けて失敗しているとき（STUCK_FAILURES 回以上）に足す節: 同じ手を繰り返さず、原因を考えて別の方法を選ばせる
 STUCK_FAILURES = 2
@@ -770,6 +778,16 @@ TOOL_REFUSED_SECTION = """
 ## しばらく使えない手（同じ場所へ同じ手は、また断られる・着けない。選ばない）
 $refused
 """
+
+
+def _closed_line(closed: dict[str, Any] | None) -> str:
+    """歩いて出られない閉じた所にいるときの 1 行（まわりの形は近くの 7x7 だけで、歩ける範囲の全体は見えないため）。"""
+    if not closed:
+        return ""
+    return (
+        f"\n- 歩いて出られない閉じた所にいる（歩ける範囲は全部で {closed.get('cells', '?')} マス）。"
+        "上の形はその中の近くだけで、周りが低く見えても、高い所に出られるとは限らない"
+    )
 
 
 def _refused_section(refusals: Sequence[dict[str, Any]] | None) -> str:
@@ -813,7 +831,19 @@ def _same_cause_section(cause: SameCause | None) -> str:
     )
 
 
-def _stuck_section(failing: int, stagnant_seconds: float, actions: Sequence[str]) -> str:
+# 生の bot の技が有効なときだけ、行き詰まりの節の終わりに足す（設計書 168。技の話が常時の 1 行だけだと、行き詰まりの導線
+# （調べる、助言を聞く、実験する）に従って、手を書く道に出なかった: 2026-10-11 穴の底で 3 分に 25 手、write_skill は 0）
+STUCK_SKILL_LINE = """\
+- 提案（do_suggestion）や道具が、場所や引数を変えても同じ理由で通らず、ask_advisor に聞いても答えが通らなかった手の言い直しに
+  なるときは、手そのものが足りない。write_skill で本物の bot を触る技（raw）を書く。what に、通らない手と理由、直したい動き
+  （例: 跳び上がって足元に置く時機）を書く。置けなかったときの高さと送った時機は diagnostics の kind: place、歩けなかった
+  ときは kind: stuck にある。成功は expects で世界から確かめる（at: その座標の近くに立つ、out_of_closed_space: 閉じた所から出る）
+"""
+
+
+def _stuck_section(
+    failing: int, stagnant_seconds: float, actions: Sequence[str], raw_bot: bool = False
+) -> str:
     """行き詰まりの節: 続けて失敗しているか、状況が動かない（その間の手と結果を見せる）とき。"""
     why = []
     if failing >= STUCK_FAILURES:
@@ -827,7 +857,8 @@ def _stuck_section(failing: int, stagnant_seconds: float, actions: Sequence[str]
         if stagnant_seconds > 0 and actions
         else ""
     )
-    return Template(TOOL_STUCK_SECTION).substitute(why="、".join(why), record=record)
+    section = Template(TOOL_STUCK_SECTION).substitute(why="、".join(why), record=record)
+    return section + STUCK_SKILL_LINE if raw_bot else section
 
 
 # 同じ手の並びを続けて成功させているとき（技にする機会。docs/design/22 §13）
@@ -921,7 +952,8 @@ export default async function (t, args) {
 - expects: 技が成功したときに世界で成り立つこと。have / stored（item と count。count は数、
   "+N"（始めより N 多い）、"$引数名"）、planted / farmed（item と count。"+N" も）、built（name）、
   placed（where: home）、lit（distance）、
-  progress（今の小目標の残りの作業が減る）。done() だけでは成功にならない
+  progress（今の小目標の残りの作業が減る）、at（where: "x,y,z" か "$引数名"、distance: 半径で省略は 2。その近くに立って
+  終わる）、out_of_closed_space（歩いて出られない閉じた所から出る。家の中も閉じた所に数える）。done() だけでは成功にならない
 - 直すとき: 前のコードと失敗の記録（理由、log、最後の道具）を読み、先に diagnosis に原因（どの
   呼び出しが、どんな文で失敗・断られたか、なぜか）を書き、その原因を直すコードにする。原因を
   書かない、前と同じコードは受け取られない
@@ -1339,7 +1371,11 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
 
     def build_advice_prompt(self, question: str, situation: str) -> str:
         """配信者が判断に迷って advisor に聞くプロンプト（docs/design/143）。"""
-        return ADVICE_TEMPLATE.substitute(situation=situation, question=question.strip())
+        return ADVICE_TEMPLATE.substitute(
+            situation=situation,
+            question=question.strip(),
+            skill_hint=ADVICE_SKILL_HINT if self._raw_bot else "",
+        )
 
     def build_tool_prompt(
         self,
@@ -1373,6 +1409,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             walls=around.get("walls_around", "?"),
             head="ふさがっている" if around.get("head_blocked") else "空いている",
             standing_on=around.get("standing_on") or "不明",
+            closed=_closed_line(around.get("closed_space")),
             mobs="、".join(mobs) or "なし",
             suggestions="\n".join(
                 f"- {c.action_id}"
@@ -1388,7 +1425,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             + (TOOL_RAW_SKILLS_LINE if self._raw_bot else "")
             if skills is not None
             else ""
-        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions) + _same_cause_section(same_cause) + _repeat_section(repeated, repeated_times, repeated_skill)
+        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions, self._raw_bot) + _same_cause_section(same_cause) + _repeat_section(repeated, repeated_times, repeated_skill)
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""

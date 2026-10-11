@@ -4,7 +4,10 @@ import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import prismarineBlock from 'prismarine-block'
 import { closedSpace, isolatedSpace, pillarUnder } from '../src/reach.mjs'
-import { forNeeds } from '../src/candidates.mjs'
+import { forNeeds, ground } from '../src/candidates.mjs'
+import { sharedState } from '../src/state.mjs'
+import { noteRefusal } from '../src/refusals.mjs'
+import { standingCell } from '../src/observe.mjs'
 import { PRIMITIVES } from '../src/primitives.mjs'
 import { diggable } from '../src/world.mjs'
 import { registerFacility } from '../src/facilities.mjs'
@@ -277,4 +280,22 @@ test('柱の頂上では climb_down の候補が出る（昼は urgent、失敗�
   assert.ok(down && down.urgent)
   const again = forNeeds(bot, { ...state(), descendBlockedUntil: Date.now() + 60000 }, k).find((x) => x.verb === 'climb_down')
   assert.ok(again && !again.urgent)
+})
+
+test('閉じた所にいるとき、まわりの状態（surroundings）が歩ける範囲の広さを言う。出られる所と家の中では言わない', () => {
+  const shut = sharedState(botIn(world()), state(), () => [])
+  assert.deepEqual(shut.surroundings.closed_space, { cells: 1 })
+  const free = sharedState(botIn(world({ '0,50,0': 'dirt' }), { at: new Vec3(0.5, 51, 0.5) }), state(), () => [])
+  assert.equal('closed_space' in free.surroundings, false)
+})
+
+test('積んで出るのに失敗した場所では、その手を提案に出さず、理由を withheld に言う', () => {
+  const bot = botIn(world(), { items: { dirt: 20 } })
+  const st = state()
+  const before = ground(bot, st, k, { dig: () => [], hunt: () => [] }, { leaves: [] })
+  assert.ok(before.candidates.some((c) => c.verb === 'climb_out'), before.candidates.map((c) => c.id).join('; '))
+  noteRefusal(st, 'climb_out', standingCell(bot), 'failed: could not jump up from the hole at (0, 50, 0)')
+  const after = ground(bot, st, k, { dig: () => [], hunt: () => [] }, { leaves: [] })
+  assert.ok(!after.candidates.some((c) => c.verb === 'climb_out'))
+  assert.match(after.withheld ?? '', /climb out.*could not jump up/)
 })

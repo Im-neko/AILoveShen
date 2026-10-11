@@ -510,6 +510,14 @@ class TestToolPrompt:
         assert f"- ask_advisor(question=q): 成功 {advice}\n" in prompt
         assert advice not in prompt.split("- recipe_of")[1]
 
+    def test_a_closed_space_is_told_in_the_surroundings_only_when_there_is_one(self):
+        state = {**self.STATE, "surroundings": {**self.STATE["surroundings"], "closed_space": {"cells": 149}}}
+        shut = GamePromptTemplateBuilder().build_tool_prompt(
+            Activity(mission=MISSION, goal=PLANKS, observation=_obs()), state, (), ()
+        )
+        assert "歩いて出られない閉じた所にいる（歩ける範囲は全部で 149 マス）" in shut
+        assert "歩いて出られない閉じた所" not in self._prompt()
+
     def test_the_advice_prompt_carries_the_situation_and_the_question(self):
         prompt = GamePromptTemplateBuilder().build_advice_prompt(" どこを掘る？ ", "SITUATION-TEXT")
         assert "SITUATION-TEXT" in prompt

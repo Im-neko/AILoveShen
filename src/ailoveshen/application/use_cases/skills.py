@@ -36,6 +36,8 @@ EXPECT_PREDICATES = [
     "custom",
     "facility",
     "progress",
+    "at",
+    "out_of_closed_space",
 ]
 SKILLS_SHOWN = 12  # 道具の選択と技を書く呼び出しに見せる技の数
 HOUR = 3600.0
@@ -79,9 +81,9 @@ def skill_schema(raw_bot: bool = False) -> dict[str, Any]:
                     },
                     "where": {
                         "type": "string",
-                        "description": "placed: home; leveled: home or x,y,z",
+                        "description": "placed: home; leveled: home or x,y,z; at: x,y,z or \"$param\" (you stand near it)",
                     },
-                    "distance": {"type": "integer", "description": "lit / leveled: radius"},
+                    "distance": {"type": "integer", "description": "lit / leveled / at: radius (at: 2 if omitted)"},
                 },
                 "required": ["predicate"],
             },

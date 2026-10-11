@@ -45,3 +45,25 @@ raw の `bot` 経由の操作には、ブリッジの安全の断り（保護ブ
 
 ## 7. テスト
 ブリッジ `test/raw-skills.test.mjs`（18 件）: 保存の可否（フラグ）・フラグの解釈（true/yes/off）・停止後に bot へ触れない、`bot` が見える/見えない、`bot` と `t.*` の併用（`this` が正しい）、終わりの後始末（リスナー・操作キー・経路・掘り）、止められると `t.sleep` が即終わる、例外の理由、行動の上限、`rawMs`、同期の暴走、`require`/`process`/`fetch` が見えない、一覧の `raw`、切り戻し 4 通り、秒数の平均。`test/skills.test.mjs`（`verified` が切り戻す版で決まる）。Python `test_skills.py::TestRawBotSkills`（8 件）: スキーマ、保存、書き手のプロンプトの有無、道具を選ぶプロンプトの案内の有無、一覧の表示、`fell_back_from` と `runs_version` の表示
+
+## 8. 実機（world15、raw 有効）で分かったことと、直したこと（2026-10-11）
+user: 「こういう時に LLM が自分で状況判断してスキル追加して解決出来るのが理想です。それが出来るだけの情報が LLM に渡っていない？」→「直してください」
+
+事実（`logs/generations/gen-20261011T083724Z.jsonl`、`logs/bridge.log`）: 採掘坑の穴の底（116,54,-264）で、12:17〜12:20Z の約 3 分に道具の呼び出しが約 25 回。`do_suggestion` 11（`climb out of the closed space…` はログ上 8 回以上失敗）、`ask_advisor` 5、`write_skill` 0。助言者（`advice`）は原因を言い当てていた（「ブリッジの石積みが判定で毎回止まっている」）のに、答えは dig / place / craft の言い直しだった。raw の技は 2 時間半で 1 つも書かれていない。情報は多くが渡っていた。足りなかったのは、技を書く道筋と材料。
+
+| 欠け | 直し |
+|---|---|
+| 行き詰まりの節（続けて 2 回失敗）が、調べる・助言を聞く・実験する、へ導くだけで、`write_skill` に触れない。技の話は常時の 1 行だけ | 節の終わりに 1 項（raw が有効なときだけ）: 提案や道具が同じ理由で通らず、助言も言い直しなら、手が足りない。`write_skill` で raw の技を書き、`what` に通らない手・理由・直したい動きを書く。`diagnostics` の kind（place は高さと送った時機 `timing`、stuck）も案内 |
+| 助言者の依頼は「上の道具だけを使え」で、足りない手を書く道が答えに出ない | raw が有効なとき、依頼に 1 文: ブリッジの手が同じ原因で通らず他の組み合わせで越えられないなら、手が足りないと言い、`write_skill` を勧める（`ADVICE_SKILL_HINT`） |
+| 失敗した `do_suggestion`（その場でする手）は「しばらく使えない手」に載らず、提案に出続けた。台帳は場所のある手だけを覚える | その場でする出る手（`climb_out` `dig_out` `leave_burrow`）が futile な理由（`could not jump up from the hole`、`piling up does not get you out`）で失敗したら、立っていたセルを場所として台帳に載せる（`spotOf`）。同じセルでは提案から外し、`withheld` に理由を言う。5 分で期限切れ。セルが変われば別（積んで動いたときは別の場所） |
+| 成功条件の語彙に位置がなく、移動・脱出の技は成功を世界から判定できない | `expects` に `at`（`where: "x,y,z"` か `"$引数名"`、`distance` 半径・既定 2、高さは ±2）と `out_of_closed_space`（歩いて出られる。家の中は閉じた所に数える）を足した。`deps.where()`（index.mjs）が位置と `closedSpace(bot)` を渡す |
+| まわりの状態は近くの 7x7 の格子だけで、歩ける範囲の全体（閉じているか）は `inspect` を呼ばないと見えない。助言者は格子から「谷底の高い所」と読んだ | `surroundings.closed_space.cells` を状態に足し（家の中・塞いだ穴は言わない。候補 `climb_out` と同じ見方）、道具の選択のまわりの節に 1 行（「歩いて出られない閉じた所にいる（歩ける範囲は全部で N マス）。…」） |
+
+調べて直さなかったもの:
+- **閉所判定（reach.mjs）はバグではなさそう**: 判定は歩ける範囲（149 マス）が閉じているかを見ていて、格子の盛り上がりはその穴の中の地形と矛盾しない。LLM が格子と領域の事実を結べなかっただけで、上の 1 行で補った。再現はしていない（その場所は脱出済み）
+- `dig_out`（壁を掘って出る）の候補が出なかった理由は、コードから: 壁の厚さ 4 以内に外の開けた地面がない（家の 12 ブロック下の閉じた洞窟）。再現はしていない
+- **跳び置きの失敗（設計書 131）の手がかりが初めて取れた**: `logs/place-refusals.jsonl` の `jumpAndPlace` の 2 行（`timing.send_y` 0.5 と 0.42、`call_y` 1.17）。跳びの頂点（1.25）を過ぎて落ち始めてから置く命令が送られている。2 件なので断定しない。mineflayer の `placeBlock` 自身の待ち（`ms_call_to_send` 701 ms）の確認が次。**直していない**: 設計書 §1 のとおり `jumpAndPlace` は LLM が最初に書く raw の技の候補で、ブリッジ側で直すと実験の題材がなくなる。直すかは user が決める
+
+テスト: ブリッジ `climb-out.test.mjs`（`closed_space` が閉じた所だけに出る、台帳で提案から外れて `withheld` に出る）、`runner.test.mjs`（失敗した出る手が台帳に載り、成功は載らない）、`refusals.test.mjs`（`spotOf`・futile な理由）、`skills.test.mjs`（`at` / `out_of_closed_space` の判定と検証）。Python `test_skills.py`（行き詰まりの節・助言の依頼が raw のときだけ技を勧める、スキーマの述語）、`test_game_prompt_template_builder.py`（閉じた所の 1 行）。
+
+検証が要るもの（実機）: 行き詰まりの節の 1 項で LLM が実際に `write_skill` を選ぶか（効かなければ、節の位置か、選ぶ条件を数で示す）。書かれた技が `at` / `out_of_closed_space` で成功と判定されるか。再起動後でないと効かない。

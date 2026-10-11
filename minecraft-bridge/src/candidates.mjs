@@ -38,7 +38,7 @@ import { UNDERGROUND_LEAVES } from './solver.mjs'
 import { riding } from './boat.mjs'
 import { isSwimming } from './swim.mjs'
 import { caveOre } from './mining.mjs'
-import { refusalAt } from './refusals.mjs'
+import { refusalAt, spotOf } from './refusals.mjs'
 import { KEEP_WHEN_FIGHTING, toReplace } from './wear.mjs'
 import { REGEN_FOOD, cannotHeal, needsFoodToHeal } from './healing.mjs'
 import { windfallNow, windfallTrips } from './windfall.mjs'
@@ -82,7 +82,8 @@ export function ground (bot, state, knowledge, world, status) {
   // 同じ id なら先のものを残す: 目標の候補は目標が許すこと（confront）を持っている
   const distinct = [...out.reduce((m, c) => m.has(c.id) ? m : m.set(c.id, c), new Map()).values()]
   // 断られた・着けなかった場所への同じ手は出さない（refusals.mjs）。何を外したかは withheld に
-  const refused = distinct.filter((c) => c.pos && refusalAt(state, c.verb, c.pos))
+  const here = standingCell(bot)
+  const refused = distinct.filter((c) => refusalAt(state, c.verb, spotOf(c, here)))
   // 追ってくるクリーパーを家へ連れて帰ると、壁と床を吹き飛ばされる（docs/design/88）
   const leadsHome = creeperNear(bot, state) ? distinct.filter((c) => c.verb === 'go_home') : []
   const unique = distinct.filter((c) => !refused.includes(c) && !leadsHome.includes(c))
@@ -90,7 +91,7 @@ export function ground (bot, state, knowledge, world, status) {
   const held = unique.length - safe.length
   let withheld = null
   if (refused.length) {
-    withheld = `left out (refused or unreachable a moment ago): ${refused.map((c) => `${c.id} (${refusalAt(state, c.verb, c.pos).reason})`).join('; ')}`
+    withheld = `left out (refused or unreachable a moment ago): ${refused.map((c) => `${c.id} (${refusalAt(state, c.verb, spotOf(c, here)).reason})`).join('; ')}`
   }
   const also = (text) => { withheld = withheld ? `${withheld}; ${text}` : text }
   if (leadsHome.length) also(`${CREEPER_HOME_REASON}; left out: ${leadsHome.map((c) => c.id).join(', ')}`)

@@ -32,8 +32,15 @@ const FUTILE = [
   /no furnace at/i,
   /nothing to till/i,
   /no free (farmland|ground)/i,
-  /did not turn into farmland/i
+  /did not turn into farmland/i,
+  // 閉じた所から出る手: 同じ場所では同じ失敗になる（2026-10-11: 穴の底で「跳べない」を 8 回以上、同じ手で繰り返した）
+  /could not jump up from the hole/i,
+  /piling up does not get you out/i
 ]
+
+// 場所を持たない手（その場でする）のうち、同じ場所で失敗したら台帳に載せる手と、その場所（自分の立つセル）
+const IN_PLACE_RECORDED = new Set(['climb_out', 'dig_out', 'leave_burrow'])
+export const spotOf = (c, here) => c.pos ?? (c.inPlace && IN_PLACE_RECORDED.has(c.verb) ? here : null)
 
 export function isFutile (reason) {
   return FUTILE.some((re) => re.test(String(reason ?? '')))

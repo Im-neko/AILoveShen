@@ -252,6 +252,26 @@ class TestRawBotSkills:
             Activity(), state, (), ()
         )
 
+    def test_the_stuck_section_points_to_a_skill_only_when_raw_is_on(self):
+        state = {"goal": "have 8 food", "self": {}}
+        off = GamePromptTemplateBuilder().build_tool_prompt(Activity(), state, (), (), failing=3)
+        on = GamePromptTemplateBuilder(raw_bot=True).build_tool_prompt(
+            Activity(), state, (), (), failing=3
+        )
+        assert "## 行き詰まっている" in off and "手そのものが足りない" not in off
+        assert "手そのものが足りない" in on and "write_skill" in on.split("## 行き詰まっている")[1]
+        calm = GamePromptTemplateBuilder(raw_bot=True).build_tool_prompt(Activity(), state, (), ())
+        assert "手そのものが足りない" not in calm
+
+    def test_the_advice_prompt_allows_recommending_a_skill_only_when_raw_is_on(self):
+        off = GamePromptTemplateBuilder().build_advice_prompt("q", "S")
+        on = GamePromptTemplateBuilder(raw_bot=True).build_advice_prompt("q", "S")
+        assert "write_skill" not in off and "write_skill" in on and "the hand is missing" in on
+
+    def test_the_schema_offers_the_position_expectations(self):
+        predicates = skill_schema()["properties"]["expects"]["properties"]["predicate"]["enum"]
+        assert "at" in predicates and "out_of_closed_space" in predicates
+
     def test_a_skill_that_runs_an_earlier_version_says_so(self):
         info = SkillInfo(name="hunt", description="狩る", version=3, runs_version=2, verified=True)
         assert "（呼ぶと v2 が動く）" in info.describe()

@@ -6,7 +6,7 @@
 // 動けない・経路がないのは移動が失敗にする（move.mjs）。中断すると経路移動と採掘を取り消し、実行関数が本当に止まるまで
 // 待つので、行動が重なることはない。実行中は state.current を持ち（反射の割り込みと POST /abort が
 // 使う）、進み具合（state.mjs の共通の状態）を記録する。
-import { threats, round, dayPhase, isDark, isUnderground, inventoryCounts, pushHistory } from './observe.mjs'
+import { threats, round, dayPhase, isDark, isUnderground, inventoryCounts, pushHistory, standingCell } from './observe.mjs'
 import { PRIMITIVES, DAMAGE_TOLERANT, HEALTH_CRITICAL, HUNGER_URGENT, TRAVELS, disembark, leaveHouse } from './primitives.mjs'
 import { riding } from './boat.mjs'
 import { forgetRegion } from './reach.mjs'
@@ -17,7 +17,7 @@ import { startTracking } from './progress.mjs'
 import { brokeSince } from './wear.mjs'
 import { carriesFood } from './healing.mjs'
 import { TRAIL_VERBS, startTrail } from './trail.mjs'
-import { noteRefusal } from './refusals.mjs'
+import { noteRefusal, spotOf } from './refusals.mjs'
 import { assessRisk, atLeast } from './risk.mjs'
 
 const NEED_CHECK_MS = 500
@@ -150,8 +150,10 @@ export function createRunner (bot, state, deps = {}) {
 
   // 同じ場所への同じ手が、断られた・着けなかったなら台帳に載せる（refusals.mjs。1 回で、期限まで）
   return async function run (c, label) {
+    const from = standingCell(bot)
     const r = await runOnce(c, label)
-    if (!r.ok && !r.interrupted && c.pos) noteRefusal(state, c.verb, c.pos, r.result)
+    // その場でする手（閉じた所から出る）は、自分の立つセルを場所とする: 実行したあとに動いていても、始めた所を載せる
+    if (!r.ok && !r.interrupted) noteRefusal(state, c.verb, spotOf(c, from), r.result)
     return r
   }
 }
