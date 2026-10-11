@@ -65,10 +65,12 @@ DRAFT = {
 
 class TestSkillTools:
     def test_skill_tools_are_offered_only_with_skills(self):
-        assert "run_skill" not in {t.name for t in tool_specs()}
-        specs = {t.name: t for t in tool_specs(skills=True)}
+        assert {"run_skill", "write_skill"}.isdisjoint({t.name for t in tool_specs()})
+        specs = {t.name: t for t in tool_specs(skills=True, write_skill=True)}
         assert specs["run_skill"].parameters["required"] == ["intent", "name"]
         assert specs["write_skill"].parameters["required"] == ["intent", "name", "what"]
+        # 技を書く道具は、行き詰まり・同じ手の繰り返しのときだけ。技があっても、ふだんは出さない
+        assert "write_skill" not in {t.name for t in tool_specs(skills=True)}
 
     def test_run_skill_args_are_parsed_from_json(self):
         call = parse_tool_call(
@@ -398,7 +400,7 @@ class TestSkillStep:
         assert self._published(SkillLearnedEvent)[0].description == "近くの動物を狩る"
         assert self.prompt_builder.build_tool_prompt.call_args.kwargs["skills"] == [HUNT]
         offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
-        assert {"run_skill", "write_skill"} <= offered
+        assert "run_skill" in offered and "write_skill" not in offered
 
     @pytest.mark.asyncio
     async def test_a_failure_is_kept_for_the_fix_and_write_skill_tries_the_new_version(

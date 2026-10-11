@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from loguru import logger
 
 from ailoveshen.application.ports.output.text_generator import ToolChoice, ToolSpec
 from ailoveshen.domain.value_objects import (
+    GoalPredicate,
+    GoalSpec,
     MAX_WATCH_QUESTION_CHARS,
     MAX_WATCH_QUESTIONS,
     ToolCall,
@@ -380,21 +383,100 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 }
 
 
+# 毎回渡す道具（使われた呼び出しの 8 割強。2026-10-11 の記録 8,106 回のうち上位 10 個が 83%）。ほかは、小目標や今の状態で
+# コードが足す道具の組（下の TOOL_GROUPS）か、search_abilities が引いた項目の道具。全部を渡すと道具の定義だけで
+# 約 13,700 トークンあり、小さいモデルでは選び間違いと遅さのもとになる（docs/design/169）
+CORE_ACTIONS = ("do_suggestion", "goto", "dig", "place", "craft", "equip", "wait", "go_home")
+CORE_QUERIES = ("find_blocks", *SEARCH_TOOLS)
+CORE_TOOLS = frozenset((*CORE_ACTIONS, *CORE_QUERIES))
+
+# 小目標・状態で足す道具の組
+TOOL_GROUPS: dict[str, tuple[str, ...]] = {
+    "farm": ("till", "sow", "plant", "water", "use_item"),
+    "build": ("build_next", "move_furniture", "clear_site", "level"),
+    "store": ("deposit", "withdraw", "toss", "pickup"),
+    "cook": ("smelt", "eat", "find_foods"),
+    "fight": ("attack", "flee"),
+    "night": ("sleep",),
+    "water": ("ride_boat",),
+}
+_COOKED = re.compile(r"ingot|cooked|charcoal|bread|glass|brick|baked|steak|porkchop|mutton|beef|chicken|cod|salmon|potato")
+_GOAL_GROUPS = {
+    GoalPredicate.FARMED: ("farm",),
+    GoalPredicate.PLANTED: ("farm",),
+    GoalPredicate.FACILITY: ("farm", "build"),
+    GoalPredicate.BUILT: ("build",),
+    GoalPredicate.PLACED: ("build",),
+    GoalPredicate.LEVELED: ("build",),
+    GoalPredicate.STORED: ("store",),
+    GoalPredicate.CLEARED: ("fight",),
+    GoalPredicate.THROUGH_NIGHT: ("night",),
+    GoalPredicate.AT_HOME: ("night",),
+}
+
+
+def groups_for(goal: GoalSpec | None, state: dict[str, Any] | None = None) -> frozenset[str]:
+    """
+    今の小目標と状態から、道具の組を決める（コードが決める。LLM に道具を探させる往復を増やさない）。
+    足りない道具は、LLM が search_abilities で引いた項目の道具で足される。
+    """
+    state = state or {}
+    groups: set[str] = set()
+    if goal is not None:
+        groups.update(_GOAL_GROUPS.get(goal.predicate, ()))
+        if goal.predicate == GoalPredicate.HAVE and _COOKED.search(str(goal.item or "")):
+            groups.add("cook")
+    if any(m.get("hostile") for m in state.get("mobs") or []):
+        groups.add("fight")
+    if (state.get("self") or {}).get("in_water"):
+        groups.add("water")
+    if state.get("time") in ("dusk", "night"):
+        groups.add("night")
+    if state.get("pickup_ready"):
+        groups.add("store")
+    if any(str(n).startswith(("hungry", "starving")) for n in state.get("needs") or []):
+        groups.add("cook")
+    return frozenset(groups)
+
+
 def tool_specs(
-    can_look: bool = False, skills: bool = False, experiment: bool = False, advisor: bool = False
+    can_look: bool = False,
+    skills: bool = False,
+    experiment: bool = False,
+    advisor: bool = False,
+    groups: Iterable[str] = (),
+    extra: Iterable[str] = (),
+    write_skill: bool = False,
 ) -> list[ToolSpec]:
     """
-    配信者に渡す道具の一覧。`can_look` が偽なら look_screen を、`skills` が偽なら技の道具を、
-    `advisor` が偽なら ask_advisor を出さない。
-    `experiment` が真（行き詰まっているとき）だけ、inspect / diagnostics と、use_item の素手・面・スニーク
+    配信者に渡す道具の一覧。ふだんは CORE_TOOLS だけ（定義が小さいほど選び間違いと遅さが減る）。
+    `groups` の組（TOOL_GROUPS）と `extra`（search_abilities が引いた項目の道具）を足す。
+    `can_look` が真なら look_screen を、`skills` が真なら run_skill を、`write_skill` が真なら write_skill を、
+    `advisor` が真なら ask_advisor を加える。
+    `experiment` が真（行き詰まっているとき）は、inspect / diagnostics と、use_item の素手・面・スニーク
     を加える（docs/design/85）。
     """
+    wanted = set(CORE_TOOLS) | set(extra)
+    for g in groups:
+        wanted.update(TOOL_GROUPS.get(g, ()))
+    if can_look:
+        wanted.add(LOOK_SCREEN)
+    if advisor:
+        wanted.add(ASK_ADVISOR)
+    if skills:
+        wanted.add(RUN_SKILL)
+    if write_skill:
+        wanted.add(WRITE_SKILL)
+    if experiment:
+        wanted.update((*EXPERIMENT_QUERIES, "use_item"))
     specs = []
-    actions = {**ACTION_TOOLS, **(SKILL_TOOLS if skills else {})}
+    actions = {**ACTION_TOOLS, **SKILL_TOOLS}
     if experiment:
         description, props, _ = actions["use_item"]
         actions["use_item"] = (description, {**props, **EXPERIMENT_USE_ITEM_PROPS}, [])
     for name, (description, props, required) in actions.items():
+        if name not in wanted:
+            continue
         specs.append(
             ToolSpec(
                 name=name,
@@ -411,11 +493,7 @@ def tool_specs(
             )
         )
     for name, (description, props, required) in QUERY_TOOLS.items():
-        if name == LOOK_SCREEN and not can_look:
-            continue
-        if name == ASK_ADVISOR and not advisor:
-            continue
-        if name in EXPERIMENT_QUERIES and not experiment:
+        if name not in wanted:
             continue
         specs.append(
             ToolSpec(
@@ -425,6 +503,9 @@ def tool_specs(
             )
         )
     return specs
+
+
+ALL_TOOLS = frozenset((*ACTION_TOOLS, *SKILL_TOOLS, *QUERY_TOOLS))
 
 
 def is_query(name: str) -> bool:

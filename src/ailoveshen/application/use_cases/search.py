@@ -349,6 +349,7 @@ def ability_entries(abilities: Sequence[dict[str, Any]]) -> list[SearchEntry]:
             "title": a.get("title"),
             "when": a.get("when"),
             "how": a.get("how"),
+            **({"tools": a["tools"]} if a.get("tools") else {}),
             **({"see": a["see"]} if a.get("see") else {}),
         }
         out.append(SearchEntry(str(a.get("key")), summary, _json(detail)))
@@ -378,10 +379,13 @@ class WorldSearch:
         self._search = search
         self._abilities = ability_entries(abilities)
         self._items: list[SearchEntry] = []  # アイテムの一覧は変わらない: 1 回だけ読む
+        self._tools = {str(a.get("key")): tuple(a.get("tools") or ()) for a in abilities}
+        self.revealed: tuple[str, ...] = ()  # 直前の search_abilities が引いた項目の道具（道具に足す）
 
     async def run(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
         """(ok, 結果の文)。一覧を読めないときは ok が偽（空の一覧は偽ではない: まだないと返す）。"""
         query = str(args.get("query") or "").strip()
+        self.revealed = ()
         if not query:
             return False, "invalid call: query is empty"
         describe = None
@@ -401,6 +405,8 @@ class WorldSearch:
             result = await self._search.find(tool, query, entries, what, describe)
         except GameBridgeError as e:
             return False, f"could not read the list: {e}"
+        if tool == SEARCH_ABILITIES:
+            self.revealed = tuple(dict.fromkeys(t for k in result.keys for t in self._tools.get(k, ())))
         return True, result.text
 
     async def _item_info(self, entry: SearchEntry) -> str:

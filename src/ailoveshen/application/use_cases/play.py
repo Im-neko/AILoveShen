@@ -60,11 +60,15 @@ from ailoveshen.application.use_cases.search import KeySearch, WorldSearch
 from ailoveshen.application.use_cases.skills import NotWritten, SkillWriter, order_skills
 from ailoveshen.application.use_cases.tool_catalog import (
     ACTION_TOOLS,
+    ALL_TOOLS,
     ASK_ADVISOR,
+    CORE_TOOLS,
     LOOK_SCREEN,
+    SEARCH_ABILITIES,
     SEARCH_TOOLS,
     WRITE_SKILL,
     ToolCallError,
+    groups_for,
     is_query,
     is_skill_tool,
     parse_tool_call,
@@ -431,6 +435,9 @@ class AdvancePlayUseCase(IAdvancePlay):
         self._watcher = tool_watcher
         self._screen = screen
         self._recent_tools: deque[ToolOutcome] = deque(maxlen=RECENT_TOOLS)
+        # search_abilities が引いた項目の道具（その小目標のあいだ道具に足す。小目標が変われば空）
+        self._revealed_goal = ""
+        self._revealed: set[str] = set()
         self._chooser = chooser
         self._replan_seconds = replan_minutes * 60
         # 一番上の大目標の進み具合の見張り（docs/design/50 §4）: その id、済んだ中目標の数、条件の進み具合の
@@ -738,16 +745,12 @@ class AdvancePlayUseCase(IAdvancePlay):
         )
         if picked is not None:
             return picked
-        # 行き詰まっているときだけ、実験の道具（inspect / diagnostics、素手・面・スニークの use_item）を加える（設計書 85）
-        specs_by_experiment = {
-            on: tool_specs(
-                can_look=self._screen is not None,
-                skills=self._skills is not None,
-                experiment=on,
-                advisor=self._advisor is not None,
-            )
-            for on in (False, True)
-        }
+        # 道具は、毎回渡すもの（CORE_TOOLS）に、小目標と状態で足す組（groups_for）と、この小目標のあいだに
+        # search_abilities が引いた項目の道具を足す（docs/design/169）。行き詰まっているときは、実験の道具
+        # （inspect / diagnostics、素手・面・スニークの use_item）と write_skill も足す（設計書 85）
+        goal_key = session.goal.describe() if session.goal is not None else ""
+        if goal_key != self._revealed_goal:
+            self._revealed_goal, self._revealed = goal_key, set()
         images: list[Screenshot] = []  # 次の選択にだけ添える画面（ステップをまたがない）
         last = self._recent_tools[-1] if self._recent_tools else None
         if self._screen is not None and last is not None and not last.ok:
@@ -783,7 +786,15 @@ class AdvancePlayUseCase(IAdvancePlay):
                 or bool(stagnant)
                 or (cause is not None and cause.times >= SAME_CAUSE_EXPERIMENT)
             )
-            specs = specs_by_experiment[experiment]
+            specs = tool_specs(
+                can_look=self._screen is not None,
+                skills=bool(skills),
+                experiment=experiment,
+                advisor=self._advisor is not None,
+                groups=groups_for(session.goal.spec if session.goal is not None else None, state),
+                extra=self._revealed,
+                write_skill=self._skills is not None and (experiment or repeat is not None),
+            )
             offered = (
                 specs
                 if attempt < MAX_QUERIES_PER_STEP and not queries_closed
@@ -855,6 +866,15 @@ class AdvancePlayUseCase(IAdvancePlay):
             if call.name in SEARCH_TOOLS:
                 started = self._clock()
                 ok, result = await self._search.run(call.name, call.args)
+                if ok and call.name == SEARCH_ABILITIES:
+                    new = [
+                        t
+                        for t in self._search.revealed
+                        if t in ALL_TOOLS and t not in CORE_TOOLS and t not in self._revealed
+                    ]
+                    self._revealed.update(self._search.revealed)
+                    if new:
+                        result += f"\n(tools you can call now: {', '.join(new)})"
                 self._recent_tools.append(
                     ToolOutcome(call=call, ok=ok, result=result, seconds=self._clock() - started)
                 )

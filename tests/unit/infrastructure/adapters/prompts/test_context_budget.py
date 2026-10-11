@@ -12,17 +12,29 @@
 import json
 import re
 
-from ailoveshen.application.use_cases.tool_catalog import tool_specs
+from ailoveshen.application.use_cases.tool_catalog import TOOL_GROUPS, tool_specs
 from ailoveshen.infrastructure.adapters.local_llm.schema_check import estimate_tokens
 from ailoveshen.infrastructure.adapters.prompts import game_prompt_template_builder as prompts
 
-# 2026-10-06 の値に約 5% の余裕（推定のトークン）
+# 2026-10-11 の値に約 5% の余裕（推定のトークン）。毎回渡す道具（CORE_TOOLS）と、小目標で足す組を分けて持つ
+# （全部を渡すと推定 9,900 で、小さいモデルは選び間違いと遅さが増える。docs/design/169）
 TOOL_DEFINITIONS_BUDGET = {
-    "production": (dict(skills=True), 8920),  # 配信のふだん（技あり、画面なし）
-    "stuck": (dict(skills=True, experiment=True), 9570),  # 行き詰まり（inspect / diagnostics が加わる）
-    # advisor を決めたとき（ask_advisor の定義が加わる: 約 200 トークン。設計書 143）
-    "production_advisor": (dict(skills=True, advisor=True), 9420),
-    "stuck_advisor": (dict(skills=True, experiment=True, advisor=True), 10100),
+    "production": (dict(skills=True), 3294),  # 配信のふだん（技あり、画面なし）
+    # advisor を決めたとき（ask_advisor の定義が加わる。設計書 143）
+    "production_advisor": (dict(skills=True, advisor=True), 3578),
+    # 行き詰まり（inspect / diagnostics / write_skill が加わる）
+    "stuck": (dict(skills=True, experiment=True, write_skill=True), 4784),
+    "stuck_advisor": (dict(skills=True, experiment=True, write_skill=True, advisor=True), 5068),
+    # 畑の小目標（farm の組が加わる）
+    "farm_advisor": (dict(skills=True, advisor=True, groups=["farm"]), 5210),
+    # 全部（組を全部足した上限）
+    "everything": (
+        dict(
+            skills=True, advisor=True, experiment=True, write_skill=True, can_look=True,
+            groups=list(TOOL_GROUPS), extra=["recipe_of", "find_recipes", "uses_of", "how_to_get"],
+        ),
+        10419,
+    ),
 }
 RULES_BUDGET = 1450  # TOOL_TEMPLATE の固定の文（差し込む欄を除く）
 STUCK_SECTION_BUDGET = 870  # 行き詰まりの節に ask_advisor を足した分（設計書 143 §6）

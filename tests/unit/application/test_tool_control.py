@@ -10,6 +10,8 @@ from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import MAX_QUERIES_PER_STEP, AdvancePlayUseCase
 from ailoveshen.application.use_cases.tool_catalog import (
+    CORE_TOOLS,
+    groups_for,
     ToolCallError,
     is_query,
     parse_tool_call,
@@ -21,6 +23,8 @@ from ailoveshen.domain.events import GameActionExecutedEvent
 from ailoveshen.domain.value_objects import (
     FastAnswer,
     FastVerdict,
+    GoalPredicate,
+    GoalSpec,
     GoalStatus,
     ToolCall,
     ToolOutcome,
@@ -331,7 +335,7 @@ class TestToolStep:
     @pytest.mark.asyncio
     async def test_after_too_many_lookups_only_actions_are_offered(self, use_case, watcher):
         self.text_generator.choose_tool.side_effect = [
-            *[ToolChoice("recipe_of", {"item": f"item{i}"}) for i in range(MAX_QUERIES_PER_STEP)],
+            *[ToolChoice("find_blocks", {"block": f"block{i}"}) for i in range(MAX_QUERIES_PER_STEP)],
             ToolChoice("wait", {"intent": "待つ"}),
         ]
         await use_case.execute(_session(HAVE_PLANKS))
@@ -339,7 +343,7 @@ class TestToolStep:
         offered = [
             {t.name for t in c.args[1]} for c in self.text_generator.choose_tool.call_args_list
         ]
-        assert "recipe_of" in offered[0] and "recipe_of" not in offered[MAX_QUERIES_PER_STEP]
+        assert "find_blocks" in offered[0] and "find_blocks" not in offered[MAX_QUERIES_PER_STEP]
         assert watcher.run.await_args.args[0].name == "wait"
 
     @pytest.mark.asyncio
@@ -348,8 +352,8 @@ class TestToolStep:
     ):
         """食べ物がなくて find_foods を 5 回続け、動かなかった（2026-10-07 01:25Z）。答えは変わらない。"""
         self.text_generator.choose_tool.side_effect = [
-            ToolChoice("recipe_of", {"item": "stick"}),
-            ToolChoice("recipe_of", {"item": "stick"}),
+            ToolChoice("find_blocks", {"block": "stone"}),
+            ToolChoice("find_blocks", {"block": "stone"}),
             ToolChoice("wait", {"intent": "待つ"}),
         ]
         await use_case.execute(_session(HAVE_PLANKS))
@@ -358,7 +362,7 @@ class TestToolStep:
         offered = [
             {t.name for t in c.args[1]} for c in self.text_generator.choose_tool.call_args_list
         ]
-        assert "recipe_of" in offered[1] and "recipe_of" not in offered[2]
+        assert "find_blocks" in offered[1] and "find_blocks" not in offered[2]
         recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
         assert recent[1].refused and "answer has not changed" in recent[1].result
         assert watcher.run.await_args.args[0].name == "wait"
@@ -394,6 +398,33 @@ class TestToolStep:
         assert recent[0].call.name == "search_facility" and recent[0].ok
         assert "home_farm" in recent[0].result
         assert watcher.run.await_args.args[0].name == "wait"
+
+    @pytest.mark.asyncio
+    async def test_a_tool_outside_the_core_comes_after_search_abilities_and_stays_for_the_small_goal(
+        self, use_case, bridge, watcher
+    ):
+        """道具は毎回渡すものだけ。search_abilities が引いた項目の道具が、その小目標のあいだ足される（設計書 169）。"""
+        from ailoveshen.application.use_cases.search import WorldSearch, KeySearch
+
+        use_case._search = WorldSearch(
+            bridge,
+            KeySearch(None),
+            [{"key": "make_farm", "title": "畑を作る", "words": "farm 畑", "when": "畑", "how": "till", "tools": ["till", "sow", "craft"]}],
+        )
+        self.text_generator.choose_tool.side_effect = [
+            ToolChoice("search_abilities", {"query": "make_farm"}),
+            *[ToolChoice("wait", {"intent": "待つ"}) for _ in range(3)],
+        ]
+        await use_case.execute(_session(HAVE_PLANKS))
+        offered = [{t.name for t in c.args[1]} for c in self.text_generator.choose_tool.call_args_list]
+        assert {"till", "sow"}.isdisjoint(offered[0]) and {"till", "sow"} <= offered[1]
+        recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
+        assert "tools you can call now: till, sow" in recent[0].result  # 道具に足したことを返す（craft は元からある）
+
+        await use_case.execute(_session(HAVE_PLANKS))  # 同じ小目標の次の手にも残る
+        assert {"till", "sow"} <= {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
+        await use_case.execute(_session(GoalSpec(GoalPredicate.THROUGH_NIGHT)))  # 小目標が変われば空
+        assert {"till", "sow"}.isdisjoint({t.name for t in self.text_generator.choose_tool.call_args.args[1]})
 
     @pytest.mark.asyncio
     async def test_the_advisor_is_asked_with_what_she_saw_and_its_answer_comes_back_as_a_tool_record(
@@ -694,7 +725,7 @@ class TestToolStep:
 
 
 def test_move_furniture_is_an_action_tool_with_an_optional_target():
-    specs = {t.name: t for t in tool_specs()}
+    specs = {t.name: t for t in tool_specs(groups=["build"])}
     move = specs["move_furniture"].parameters
     assert move["required"] == ["intent", "x", "y", "z"]
     assert {"to_x", "to_y", "to_z"} <= set(move["properties"])
@@ -747,7 +778,9 @@ class TestExperimentTools:
 
     def test_use_item_takes_a_bare_hand_a_face_and_sneak_only_when_stuck(self):
         def use_item(experiment):
-            return next(t for t in tool_specs(experiment=experiment) if t.name == "use_item")
+            return next(
+                t for t in tool_specs(experiment=experiment, groups=["farm"]) if t.name == "use_item"
+            )
 
         plain, stuck = use_item(False), use_item(True)
         assert {"face", "sneak", "target"}.isdisjoint(plain.parameters["properties"])
@@ -764,3 +797,37 @@ class TestExperimentTools:
         assert learnable(alias)
         assert not learnable(coords)
 
+
+
+class TestToolGroups:
+    """毎回渡す道具と、小目標・状態で足す道具の組（設計書 169）。"""
+
+    def test_only_the_core_tools_are_offered_by_default(self):
+        names = {t.name for t in tool_specs()}
+        assert names == CORE_TOOLS - {"ask_advisor", "look_screen"}
+        assert {"till", "build_next", "smelt", "deposit", "recipe_of", "write_skill", "inspect"}.isdisjoint(names)
+
+    def test_a_goal_adds_its_group(self):
+        farm = groups_for(GoalSpec(GoalPredicate.FARMED, item="wheat", count=9))
+        assert farm == {"farm"}
+        assert {t.name for t in tool_specs(groups=farm)} >= {"till", "sow", "plant", "water", "use_item"}
+        assert groups_for(GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_1")) == {"farm", "build"}
+        assert groups_for(GoalSpec(GoalPredicate.STORED, item="cobblestone", count=64)) == {"store"}
+        assert groups_for(GoalSpec(GoalPredicate.HAVE, item="iron_ingot", count=2)) == {"cook"}
+        assert groups_for(GoalSpec(GoalPredicate.HAVE, item="oak_log", count=4)) == frozenset()
+        assert groups_for(None) == frozenset()
+
+    def test_the_state_adds_its_group(self):
+        spec = GoalSpec(GoalPredicate.HAVE, item="oak_log", count=4)
+        assert groups_for(spec, {"mobs": [{"hostile": True}]}) == {"fight"}
+        assert groups_for(spec, {"mobs": [{"hostile": False}]}) == frozenset()
+        assert groups_for(spec, {"self": {"in_water": True}}) == {"water"}
+        assert groups_for(spec, {"time": "night"}) == {"night"}
+        assert groups_for(spec, {"pickup_ready": True}) == {"store"}
+        assert groups_for(spec, {"needs": ["hungry: food 6/20"]}) == {"cook"}
+
+    def test_skill_tools_follow_what_the_skills_are_for(self):
+        assert "run_skill" not in {t.name for t in tool_specs()}
+        assert "run_skill" in {t.name for t in tool_specs(skills=True)}
+        assert "write_skill" not in {t.name for t in tool_specs(skills=True)}  # 書くのは行き詰まり・繰り返しのとき
+        assert "write_skill" in {t.name for t in tool_specs(skills=True, write_skill=True)}
