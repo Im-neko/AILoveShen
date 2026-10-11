@@ -953,7 +953,7 @@ export default async function (t, args) {
   "+N"（始めより N 多い）、"$引数名"）、planted / farmed（item と count。"+N" も）、built（name）、
   placed（where: home）、lit（distance）、
   progress（今の小目標の残りの作業が減る）、at（where: "x,y,z" か "$引数名"、distance: 半径で省略は 2。その近くに立って
-  終わる）、out_of_closed_space（歩いて出られない閉じた所から出る。家の中も閉じた所に数える）。done() だけでは成功にならない
+  終わる）、out_of_closed_space（歩いて出られない閉じた所から、歩いて降りられる所に出る。家の中も閉じた所に数え、積み上がっただけの柱の頂上・屋根は出たことにならない）。done() だけでは成功にならない
 - 直すとき: 前のコードと失敗の記録（理由、log、最後の道具）を読み、先に diagnosis に原因（どの
   呼び出しが、どんな文で失敗・断られたか、なぜか）を書き、その原因を直すコードにする。原因を
   書かない、前と同じコードは受け取られない

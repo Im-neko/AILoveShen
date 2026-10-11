@@ -120,8 +120,10 @@ export function judgeExpects (expects, args, before, deps) {
   }
   // 居場所: 技が世界のどこに立って終わったか。持ち物や施設の述語では言えない移動・脱出の成功をここで判定する
   if (expects.predicate === 'out_of_closed_space') {
+    // 積み上がって、まわりが崖の柱の頂上・屋根に出ただけなら出られていない（閉じた所ではないが、降りる手がない）
     const here = deps.where()
-    return { met: !here.shut, lines: [here.shut ? 'still in a closed space (no walking out of here)' : 'you can walk out of where you stand'] }
+    const why = here.shut ? 'still in a closed space (no walking out of here)' : here.isolated ? 'you stand on a pillar top or roof with a drop on every side: not out' : null
+    return { met: !why, lines: [why ?? 'you can walk out of where you stand'] }
   }
   if (expects.predicate === 'at') {
     const goal = parseSpot(substitute(expects.where, args))

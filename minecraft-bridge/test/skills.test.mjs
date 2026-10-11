@@ -166,7 +166,9 @@ test('expects: 居場所（at: x,y,z の近く、out_of_closed_space: 歩いて�
   const d = { where: () => here }
   const out = { predicate: 'out_of_closed_space' }
   assert.equal(judgeExpects(out, {}, {}, d).met, false)
-  here = { ...here, shut: false }
+  here = { ...here, shut: false, isolated: true }
+  assert.equal(judgeExpects(out, {}, {}, d).met, false) // 柱の頂上・屋根に出ただけ
+  here = { ...here, isolated: false }
   assert.equal(judgeExpects(out, {}, {}, d).met, true)
 
   const at = { predicate: 'at', where: '10,64,20', distance: 3 }

@@ -92,7 +92,7 @@ import { configureMovements, DAMAGE_TOLERANT, knownFurnace, nearbyDrops } from '
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools, DROP_RADIUS as PICKUP_RADIUS } from './tools.mjs'
 import { sharedState } from './state.mjs'
-import { closedSpace } from './reach.mjs'
+import { closedSpace, isolatedSpace } from './reach.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
 import { Knowledge, useRecipes } from './knowledge.mjs'
@@ -338,7 +338,7 @@ const skillDeps = {
   },
   check: (specs) => checkConditions(specs, bot, state, knowledge, snapshot(bot, state)),
   remaining: () => state.goal ? evaluate(bot, state, knowledge, snapshot(bot, state)).remaining : null,
-  where: () => ({ x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z, shut: !!closedSpace(bot) })
+  where: () => ({ x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z, shut: !!closedSpace(bot), isolated: !!isolatedSpace(bot) })
 }
 
 // 反射の判断に渡す状態（設計書 28 §3）: 共通の状態に、危険、まわりの目印、家までの距離、最近のダメージ
