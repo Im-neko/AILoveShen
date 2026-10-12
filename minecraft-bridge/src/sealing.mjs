@@ -44,11 +44,21 @@ export function openings (bot, state, cell, skip) {
   })
 }
 
-// pos に names のうち手元にあるものを 1 個置く（既定は丸石）。借りる隣は、固いブロック（どれでもよい）
+// pos に names のうち手元にあるものを 1 個置く（既定は丸石）。借りる隣は、固いブロック（どれでもよい）。
+// pos に松明などの当たり判定のないブロックがあれば、先に壊す（置けない: 床の穴に置いた松明など）
 export async function placeSeal (bot, pos, signal, names = SEAL_ITEMS) {
   signal.throwIfAborted()
   const name = names.find((n) => (inventoryCounts(bot)[n] ?? 0) > 0)
   if (!name) return false
+  const here = bot.blockAt(pos)
+  if (here && here.boundingBox === 'empty' && !/air$/.test(here.name) && !FLUID.test(here.name)) {
+    try {
+      await bot.dig(here, true)
+    } catch (e) {
+      if (signal.aborted) throw e
+      return false
+    }
+  }
   for (const [dx, dy, dz] of SIX) {
     const ref = bot.blockAt(pos.offset(dx, dy, dz))
     if (ref?.boundingBox !== 'block') continue
@@ -62,6 +72,31 @@ export async function placeSeal (bot, pos, signal, names = SEAL_ITEMS) {
     if (bot.blockAt(pos)?.boundingBox === 'block') return true
   }
   return false
+}
+
+// セルの床が固いか。床が抜けている（鉱石を掘った穴、松明を置いた穴）セルは、立つと落ちるので立てる場所ではなく、
+// そのセルを目標にした経路探しは決まらない（2026-10-12: mine_1 の坑道で床に 1 マスの穴のあるセルを立つ場所にして、
+// 「Took to long to decide path」が 22 回続いた）
+export const floorSolid = (bot, cell) => bot.blockAt(new Vec3(cell.x, cell.y - 1, cell.z))?.boundingBox === 'block'
+
+const MEND_CHAIN = 6 // 床が抜けたセルが続くとき、さかのぼる数
+
+// stand の床が抜けていたら、床が固いセルから順に丸石で埋めて、立てるようにする。before は stand より前に掘ったセル
+// （新しい順）、free(cell) はそのセルの体の高さが空いているか、walk(cell) はそのセルへ歩く手。立てるなら true
+export async function mendStand (bot, stand, before, free, walk, signal) {
+  const chain = [stand]
+  while (!floorSolid(bot, chain[chain.length - 1])) {
+    if (chain.length > MEND_CHAIN) return false
+    const last = chain[chain.length - 1]
+    const next = before.find((a) => !chain.includes(a) && Math.abs(a.x - last.x) + Math.abs(a.z - last.z) === 1 && Math.abs(a.y - last.y) <= 1 && free(a))
+    if (!next) return false
+    chain.push(next)
+  }
+  for (let i = chain.length - 2; i >= 0; i--) {
+    await walk(chain[i + 1])
+    if (!await placeSeal(bot, new Vec3(chain[i].x, chain[i].y - 1, chain[i].z), signal)) return false
+  }
+  return true
 }
 
 // セルの空いた面をすべて塞ぐ。床は今立っている前のセルから、壁と天井はセルの中へ入ってから（enter: 入る手）。

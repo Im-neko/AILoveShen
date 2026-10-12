@@ -6,7 +6,7 @@ import { PRIMITIVES } from '../src/primitives.mjs'
 
 const { Vec3 } = vec3Pkg
 
-function bot ({ reach }) {
+function bot ({ reach, error = 'No path to the goal!' }) {
   const dug = []
   const b = {
     entity: { position: new Vec3(0, 70, 0), onGround: true },
@@ -19,7 +19,7 @@ function bot ({ reach }) {
     on: () => {},
     off: () => {},
     inventory: { items: () => [], emptySlotCount: () => 30 },
-    pathfinder: { bestHarvestTool: () => null, goto: async () => { throw new Error('No path to the goal!') }, setGoal: () => {} }
+    pathfinder: { bestHarvestTool: () => null, goto: async () => { throw new Error(error) }, setGoal: () => {} }
   }
   return { b, dug }
 }
@@ -32,5 +32,15 @@ test('立つ場所への経路がなくても、手が届けば掘る。届か�
   assert.deepEqual(near.dug, ['1,69,0'])
   const far = bot({ reach: false })
   await assert.rejects(PRIMITIVES.dig(far.b, state, c, new AbortController().signal), /No path to the goal/)
+  assert.deepEqual(far.dug, [])
+})
+
+test('経路探しの時間切れ（Took to long to decide path）でも、手が届けば掘る。届かなければ失敗する', async () => {
+  const timeout = 'Took to long to decide path to goal!'
+  const near = bot({ reach: true, error: timeout })
+  await PRIMITIVES.dig(near.b, state, c, new AbortController().signal).catch(() => {})
+  assert.deepEqual(near.dug, ['1,69,0'])
+  const far = bot({ reach: false, error: timeout })
+  await assert.rejects(PRIMITIVES.dig(far.b, state, c, new AbortController().signal), /Took to long/)
   assert.deepEqual(far.dug, [])
 })

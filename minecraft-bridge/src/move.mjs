@@ -62,6 +62,8 @@ export function isNoPathTo (state, pos, now = Date.now()) {
 }
 
 export const isNoPath = (e) => /no path/i.test(String(e?.message ?? e))
+// 経路探しが時間切れになった（立てる場所が見つからず、探索が空回りした）。着けないことは No path と同じ
+export const isPathTimeout = (e) => /took to long to decide path/i.test(String(e?.message ?? e))
 
 export function isLoopCell (state, pos, now = Date.now()) {
   const until = state.loopCells?.get(cellKey(pos))
