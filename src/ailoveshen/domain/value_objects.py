@@ -383,6 +383,8 @@ class GoalPredicate(str, Enum):
     - AT_HOME: 家の中にいて、扉が閉まっている
     - THROUGH_NIGHT: 夜が明けた（家の中にいたか、寝ていた）
     - EXPLORED: 目標を設定した場所から `distance` ブロック離れた
+    - FOUND: `item`（モブか群系の名前。sheep、plains）が見つかった。始めた場所から `distance` ブロック探しても
+      見つからなければ行き止まり（docs/design/176）
     - CLEARED: 扉の近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
     - SURVEYED: 街の候補地を `count` か所調べた（家を中心に、ブリッジが地形を数字にする）
     - PLANTED: 自分が植えた苗木（item: sapling か種類）が `count` 本ある（育った木も数える）
@@ -402,6 +404,7 @@ class GoalPredicate(str, Enum):
     AT_HOME = "at_home"
     THROUGH_NIGHT = "through_night"
     EXPLORED = "explored"
+    FOUND = "found"
     CLEARED = "cleared"
     STORED = "stored"
     LIT = "lit"
@@ -448,11 +451,12 @@ class GoalSpec:
             GoalPredicate.STORED,
             GoalPredicate.PLANTED,
             GoalPredicate.FARMED,
+            GoalPredicate.FOUND,
         ):
             name = self.predicate.value
             if not self.item:
                 raise ValueError(f"{name} needs an item")
-            if self.count is None or self.count < 1:
+            if self.predicate != GoalPredicate.FOUND and (self.count is None or self.count < 1):
                 raise ValueError(f"{name} needs a positive count, got {self.count}")
         if self.predicate == GoalPredicate.SURVEYED and (self.count is None or self.count < 1):
             raise ValueError(f"surveyed needs a positive count, got {self.count}")
@@ -468,7 +472,7 @@ class GoalSpec:
             raise ValueError("started is only for facility")
         if self.demolish and self.predicate != GoalPredicate.LEVELED:
             raise ValueError("demolish is only for leveled")
-        radius = (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
+        radius = (GoalPredicate.EXPLORED, GoalPredicate.FOUND, GoalPredicate.LIT, GoalPredicate.LEVELED)
         if self.predicate in radius and (self.distance is None or self.distance < 1):
             raise ValueError(
                 f"{self.predicate.value} needs a positive distance, got {self.distance}"

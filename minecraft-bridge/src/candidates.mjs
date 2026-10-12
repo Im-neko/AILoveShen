@@ -29,6 +29,7 @@ import { digOutRoute } from './dig-out.mjs'
 import { storageUsage, contentsSignature, roomyChests } from './storage.mjs'
 import { memoryView } from './worldmap-places.mjs'
 import { inHomeRoom } from './builds.mjs'
+import { aheadOrder } from './found.mjs'
 import { recoverableDeath, recall, visited, homeChests, chestWith, furnaceWith, frontierDistance, frontierBiome } from './memory.mjs'
 const FRONTIER_SLACK = 8
 import { cooking, isRawMeat } from './cooking.mjs'
@@ -246,7 +247,9 @@ function fromLeaf (bot, state, world, leaf) {
             been_there: !!state.memory && visited(state.memory, me.offset(dx * EXPLORE_DISTANCE, 0, dz * EXPLORE_DISTANCE))
           }
         })
-        .sort((a, b) => a.go - b.go)
+        // 水（海・川・浜）の手前になる向きは後ろへ、探しているものが群系なら、その群系の手前になる向きを前へ。それ以外は
+        // 近い順。近い順だけだと、北へ進んだあとは北がいつも一番近い未踏の土地になり、海へ向かって歩き続けた（2026-10-12）
+        .sort((a, b) => aheadOrder(leaf.item, a, b) || a.go - b.go)
       return [...recalled, ...directions]
     }
     case 'craft': {

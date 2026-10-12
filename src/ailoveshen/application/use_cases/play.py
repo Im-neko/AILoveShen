@@ -1650,7 +1650,7 @@ class AdvancePlayUseCase(IAdvancePlay):
             "change the approach: another source or method; grow what cannot be found (no trees "
             "nearby: a tree farm with facility(<name>) and planted, and do other work while they "
             "grow; no food: a farm with facility(<name>) and farmed); explore far in a new "
-            "direction with explored; or "
+            "direction with explored, or look for the thing itself with found; or "
             "move this objective down or drop it with the reason"
         )
 

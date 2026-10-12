@@ -9,6 +9,7 @@
 //   at_home()                ドアを閉めて家の中にいる
 //   through_night()          夜が明けた（家の中にいたか、寝ていた）
 //   explored(distance)       目標を立てた場所から（水平に）この距離だけ離れた
+//   found(item, distance)    探しているもの（モブか群系の名前）が見つかった。始めた所から distance ブロック探して見つからなければ行き止まり（found.mjs、設計書 176）
 //   cleared()                ドアの近くで待つ敵対モブがいない（昼だけ: 外に出て戦う）
 //   stored(item, count)      家のチェストにアイテムかグループが `count` 個ある（最後に開けたときの中身で）
 //   lit(distance)            家のまわり半径 `distance` の地面に暗い所がない
@@ -23,6 +24,7 @@ import vec3Pkg from 'vec3'
 import { solve, nextStep, isGather } from './solver.mjs'
 import { mineTorchesWanted, enoughToGo } from './mine-torches.mjs'
 import { dayPhase, inventoryCounts, EXPLODES, isDark, isUnderground, fillCount } from './observe.mjs'
+import { foundKind, foundNow } from './found.mjs'
 import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked } from './home.mjs'
 import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
@@ -53,6 +55,7 @@ const MIN_EXPLORE = 8
 const MIN_LIT = 8
 const MAX_LIT = 32
 const MAX_EXPLORE = 256
+const MAX_FOUND = 128 // 探す範囲の上限（1 手で遠くまで歩いて迷った 2026-10-10 の教訓: 一度に決める範囲を絞る）
 const EXPLORE_STEP = 20 // 探索の1ステップで進むおよその距離
 const DAY_TICKS = 24000
 export const TORCH_LOW = 4 // これより少ない松明は「足りない」（Python の goal_chooser.TORCH_LOW と同じ）
@@ -60,7 +63,7 @@ const isDusk = (phase) => phase === 'dusk' || phase === 'night' // 夕方と夜�
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'found', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
 // ワールドの状態だけから判定するので、大目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
 export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
@@ -207,6 +210,16 @@ function validGoal (spec, bot, state, knowledge) {
       }
       const p = bot.entity.position
       return { spec: { predicate, distance }, start: { x: p.x, y: p.y, z: p.z } }
+    }
+    case 'found': {
+      const item = String(spec.item ?? '').trim().toLowerCase()
+      const distance = Number(spec.distance)
+      if (!Number.isInteger(distance) || distance < MIN_EXPLORE || distance > MAX_FOUND) {
+        throw new Error(`distance must be ${MIN_EXPLORE}-${MAX_FOUND}`)
+      }
+      if (!foundKind(bot, item)) throw new Error(`found: ${item || 'no item'} is neither a mob nor a biome name (e.g. sheep, plains)`)
+      const p = bot.entity.position
+      return { spec: { predicate, item, distance }, start: { x: p.x, y: p.y, z: p.z } }
     }
     case 'surveyed': {
       needHome() // 候補地は家（最初の夜を越す小屋）を中心に決める
@@ -595,6 +608,26 @@ function evaluateOne (bot, state, knowledge, world) {
         out.remaining = Math.ceil((goal.spec.distance - d) / EXPLORE_STEP)
         out.leaves.push({ kind: 'explore', item: 'new places', sources: [], away: start, reach: Math.ceil(goal.spec.distance - d) })
       }
+      break
+    }
+    case 'found': {
+      const target = goal.spec.item
+      const hit = foundNow(bot, target)
+      if (hit) {
+        out.met = true
+        out.lines.push(`found: ${hit.where}`)
+        break
+      }
+      const start = new Vec3(goal.start.x, goal.start.y, goal.start.z)
+      const d = bot.entity.position.xzDistanceTo(start)
+      out.lines.push(`${target} not found yet (${Math.floor(d)}/${goal.spec.distance}m searched from where it began)`)
+      if (d >= goal.spec.distance) {
+        const seen = [...new Set(Object.values(state.memory?.biomes ?? {}))]
+        out.impossible.push(`searched ${Math.floor(d)}m from where it began and found no ${target}${seen.length ? ` (biomes walked through: ${seen.join(', ')})` : ''}`)
+        break
+      }
+      out.remaining = Math.ceil((goal.spec.distance - d) / EXPLORE_STEP)
+      out.leaves.push({ kind: 'explore', item: target, sources: [target], away: start, reach: Math.ceil(goal.spec.distance - d) })
       break
     }
     case 'surveyed': {

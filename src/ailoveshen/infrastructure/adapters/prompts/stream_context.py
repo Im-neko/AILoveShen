@@ -114,6 +114,11 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     GoalPredicate.EXPLORED: (
         "explored(distance): 今いる場所から distance ブロック離れるまで探索する"
     ),
+    GoalPredicate.FOUND: (
+        "found(item, distance): item（sheep などのモブ、plains などの群系）が見つかるまで最大 distance "
+        "ブロック探して歩く。見つからなければ行き止まりで差し戻す。羊は草原（plains、meadow）に多い。"
+        "探すものがあるときは explored でなく found"
+    ),
     GoalPredicate.SURVEYED: (
         "surveyed(count): 街の候補地を count か所見て回る（1 か所ずつ歩いて行き、地形を数える）"
     ),

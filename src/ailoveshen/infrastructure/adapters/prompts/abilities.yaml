@@ -210,6 +210,7 @@
     羊毛だけ欲しいときはハサミ（鉄のインゴット 2 つ）で use_item {item: shears, entity} すると羊が残る
     増やす: 同じ種類の 2 匹に use_item で餌をやる（牛・羊は wheat、豚は carrot、鶏は wheat_seeds）
     前に見た動物の場所は search_memory（例: sheep、羊）
+    動物を探して歩くときの小目標は found(sheep, 64)（見つかるまで最大 64 ブロック。見つからなければ行き止まり）。羊は草原（plains、meadow）に多いが、森やタイガにもいる。水の向こう（海・川）へは歩かない
   tools: [attack, use_item, search_memory]
   see: [cook_food]
 

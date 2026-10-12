@@ -59,6 +59,7 @@ BUILD_NAME_DESCRIPTION = (
 # 条件を示す順番（frozenset には順番がない）
 _CONDITION_ORDER = [p for p in GoalPredicate if p in PLANNABLE_CONDITIONS]
 _ITEM_PREDICATES = (
+    GoalPredicate.FOUND,
     GoalPredicate.HAVE,
     GoalPredicate.STORED,
     GoalPredicate.PLACED,
@@ -232,7 +233,7 @@ def _bundle_properties() -> dict[str, Any]:
             "description": "Optional: other conditions to chase at the same time as this one "
             "(a bundle, 4 in all at most): things got on the same trip, at the same place or with "
             "the same tools, also for other objectives. The goal ends when all hold. Only "
-            "conditions judged from the world; night, home and fighting goals and explored are "
+            "conditions judged from the world; night, home and fighting goals, explored and found are "
             "chased alone",
             "items": {
                 "type": "object",
@@ -263,8 +264,9 @@ def _spec_properties(predicates: list[GoalPredicate]) -> dict[str, Any]:
             "type": "integer",
             "minimum": MIN_DISTANCE,
             "maximum": MAX_EXPLORE_DISTANCE,
-            "description": "explored: blocks to go (8-128); lit: the radius around the home "
-            "(8-32); leveled: the radius to level (3-16)",
+            "description": "explored: blocks to go (8-128); found: how far from here to search "
+            "at most (8-128); lit: the radius around the home (8-32); leveled: the radius to level "
+            "(3-16)",
         },
         "name": {
             "type": "string",
@@ -297,7 +299,7 @@ def _conditions_schema() -> dict[str, Any]:
         "description": "All must hold for the objective to be done (judged from the world). An "
         "objective that builds (built) or lays out a facility (facility) holds only that one "
         "kind of condition: put its materials, leveling and furnishing in the jobs. Never "
-        "through_night, at_home, cleared or explored: those are small goals (the predicate of "
+        "through_night, at_home, cleared, explored or found: those are small goals (the predicate of "
         "this decision), not conditions of an objective. Getting through the night, going home "
         "or getting away from a place is a small goal now, never an objective of its own",
         "minItems": 1,
@@ -757,7 +759,7 @@ def parse_spec(data: dict[str, Any]) -> GoalSpec:
             if predicate in (GoalPredicate.PLACED, GoalPredicate.LEVELED)
             else None,
             distance=int(data["distance"])
-            if predicate in (GoalPredicate.EXPLORED, GoalPredicate.LIT, GoalPredicate.LEVELED)
+            if predicate in (GoalPredicate.EXPLORED, GoalPredicate.FOUND, GoalPredicate.LIT, GoalPredicate.LEVELED)
             else None,
             dig_depth=int(data["dig_depth"]) if data.get("dig_depth") is not None else None,
             name=str(data["name"]).strip().lower() or None
@@ -1025,6 +1027,7 @@ def predicates_now(
     ):
         out.append(GoalPredicate.FACILITY)
     out.append(GoalPredicate.EXPLORED)
+    out.append(GoalPredicate.FOUND)
     return out
 
 

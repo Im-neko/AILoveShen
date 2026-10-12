@@ -169,7 +169,7 @@ def test_objective_conditions_exclude_survival_predicates_and_the_schema_says_wh
 
     schema = _conditions_schema()
     allowed = schema["items"]["properties"]["predicate"]["enum"]
-    for name in ("through_night", "at_home", "cleared", "explored"):
+    for name in ("through_night", "at_home", "cleared", "explored", "found"):
         assert name not in allowed
         assert name in schema["description"]
 
@@ -204,3 +204,18 @@ def test_demolish_is_only_for_leveled():
     assert parse_spec({"predicate": "have", "item": "log", "count": 3, "demolish": True}).demolish is False
     with pytest.raises(ValueError, match="only for leveled"):
         GoalSpec(GoalPredicate.HAVE, item="log", count=3, demolish=True)
+
+
+def test_found_is_a_small_goal_that_looks_for_a_mob_or_a_biome_within_a_distance():
+    """羊探しが explored(32) を繰り返して北の海へ歩いた（2026-10-12）。探すものを名指しする小目標 found（設計書 176）。"""
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
+
+    spec = parse_spec({"predicate": "found", "item": "sheep", "distance": 64})
+    assert spec == GoalSpec(GoalPredicate.FOUND, item="sheep", distance=64)
+    assert spec.describe() == "found(sheep, 64)"
+    assert spec.to_dict() == {"predicate": "found", "item": "sheep", "distance": 64}
+    assert GoalPredicate.FOUND in predicates_now(_obs(), ObjectivePlan(mission=Mission("m")))
+    with pytest.raises(ValueError):
+        GoalSpec(GoalPredicate.FOUND, distance=64)
+    with pytest.raises(ValueError):
+        GoalSpec(GoalPredicate.FOUND, item="sheep")

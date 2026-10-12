@@ -621,7 +621,7 @@ class TestAdvancePlay:
 
         await use_case.execute(_session())
         schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["predicate"]["enum"] == ["have", "through_night", "explored"]
+        assert schema["properties"]["predicate"]["enum"] == ["have", "through_night", "explored", "found"]
 
         bridge.observe.return_value = _obs(goal=False, has_plan=True)
         await use_case.execute(_session())
@@ -631,6 +631,7 @@ class TestAdvancePlay:
             "have",
             "through_night",
             "explored",
+            "found",
         ]
 
         bridge.observe.return_value = _obs(
@@ -650,6 +651,7 @@ class TestAdvancePlay:
             "farmed",
             "leveled",
             "explored",
+            "found",
         ]
 
         # 夜も入口の掃除を選べる（武器と体力はブリッジが確かめ、持ち物は先にチェストへ。2026-09-27）
