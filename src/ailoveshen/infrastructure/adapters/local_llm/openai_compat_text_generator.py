@@ -25,6 +25,7 @@ from ailoveshen.application.ports.output.text_generator import (
     strip_cache_breaks,
 )
 from ailoveshen.domain.exceptions import TextGenerationError
+from ailoveshen.infrastructure.adapters.prompts.common_system import with_common_system
 from ailoveshen.domain.value_objects import Screenshot
 from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     check,
@@ -156,7 +157,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
         system_instruction: Optional[str] = None,
         purpose: Optional[str] = None,
     ) -> str:
-        message = await self._chat(_messages(prompt, system_instruction, cache=self._cache_on(purpose)), purpose)
+        message = await self._chat(
+            _messages(prompt, with_common_system(system_instruction, purpose), cache=self._cache_on(purpose)), purpose
+        )
         return strip_thinking(message.get("content") or "")
 
     async def generate_json(
@@ -168,7 +171,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
         images: Sequence[Screenshot] = (),
     ) -> dict[str, Any]:
         self._check_images(images)
-        messages = _messages(_with_schema(prompt, schema), system_instruction, images, self._cache_on(purpose))
+        messages = _messages(
+            _with_schema(prompt, schema), with_common_system(system_instruction, purpose), images, self._cache_on(purpose)
+        )
         message = await self._chat(messages, purpose, schema=schema)
         text = message.get("content") or ""
         try:
@@ -209,7 +214,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         images: Sequence[Screenshot] = (),
     ) -> ToolChoice:
         self._check_images(images)
-        messages = _messages(prompt, system_instruction, images, self._cache_on(purpose))
+        messages = _messages(prompt, with_common_system(system_instruction, purpose), images, self._cache_on(purpose))
         message = await self._chat(messages, purpose, tools=tools)
         calls = message.get("tool_calls") or []
         if calls:

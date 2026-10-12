@@ -22,7 +22,7 @@ from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptB
 from ailoveshen.application.ports.output.goal_store import IGoalStore, SavedGoal
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.mission_store import IMissionStore
-from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.ports.output.text_generator import ITextGenerator, with_rules
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
 from ailoveshen.application.use_cases.action_label import action_label
 from ailoveshen.application.use_cases.advisor import Advisor
@@ -1388,9 +1388,8 @@ class AdvancePlayUseCase(IAdvancePlay):
                 died=died_goal is not None,
             )
             data = await self._text_generator.generate_json(
-                prompt,
+                with_rules(self._prompt_builder.build_goal_system(), prompt),
                 schema,
-                system_instruction=self._prompt_builder.build_goal_system(),
                 purpose=purpose,
                 images=images,
             )

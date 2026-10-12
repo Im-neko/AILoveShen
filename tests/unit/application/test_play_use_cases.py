@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.application.ports.output.mission_store import SavedPlan
 from ailoveshen.application.use_cases.house import (
     PROVISIONAL_HOUSE_SCHEMA,
@@ -1169,8 +1170,8 @@ class TestAdvancePlay:
 
         messages = prompt_builder.build_goal_prompt.call_args.kwargs["recent_messages"]
         assert [m.content for m in messages] == ["家まだ？", "実況2", "実況3", "実況4"]
-        kwargs = text_generator.generate_json.call_args.kwargs
-        assert kwargs["system_instruction"] == "goal system"
+        args = text_generator.generate_json.call_args.args
+        assert args[0].startswith(f"goal system{CACHE_BREAK}")  # 決め方の規則は本文の先頭に置く（設計書 175）
 
     @pytest.mark.asyncio
     async def test_small_goal_serves_the_top_objective(self, use_case, text_generator, events):

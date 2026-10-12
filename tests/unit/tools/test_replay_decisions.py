@@ -132,7 +132,7 @@ async def test_a_real_local_call_is_written_whole_and_replayed(tmp_path):
     await local.choose_tool("PROMPT-BODY", tools, purpose="tool_after_failure")
 
     rows = list(tool.read_entries([log.path]))
-    assert rows[0]["system"] == "SYSTEM-TEXT"
+    assert rows[0]["system"].endswith("\nSYSTEM-TEXT")  # 共通のシステム指示に続けて、呼び出し自身の指示
     assert rows[0]["prompt"] == "PROMPT-BODY"
     assert rows[0]["model"] == "local:m"
     assert rows[0]["tokens"] == {"prompt": 7, "output": 3, "cached": 0, "cache_write": 0}

@@ -16,7 +16,7 @@ from ailoveshen.application.dto.llm_dto import (
 from ailoveshen.application.ports.input.generate_response import IGenerateResponse
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
-from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.ports.output.text_generator import ITextGenerator, with_rules
 from ailoveshen.application.use_cases.goal_vocabulary import (
     AdviceRelevance,
     DeclineReason,
@@ -353,9 +353,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 name_reading=name_reading,
                 self_facts=self_facts,
             )
-            text = await self._text_generator.generate(
-                prompt=prompt, system_instruction=system_prompt, purpose="reply"
-            )
+            text = await self._text_generator.generate(prompt=with_rules(system_prompt, prompt), purpose="reply")
             return text, None
 
         system_prompt = self._prompt_builder.build_system_prompt(self._character, "reply_requests")
@@ -380,7 +378,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                 producer=request.producer,
             )
             data = await self._text_generator.generate_json(
-                prompt, reply_schema(), system_instruction=system_prompt, purpose="reply"
+                with_rules(system_prompt, prompt), reply_schema(), purpose="reply"
             )
             text = str(data.get("reply", "")).strip()
             handling = data.get("request")
@@ -607,7 +605,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             try:
                 text = (
                     await self._text_generator.generate(
-                        prompt=prompt, system_instruction=system_prompt, purpose="reply_final"
+                        prompt=with_rules(system_prompt, prompt), purpose="reply_final"
                     )
                 ).strip()
             except TextGenerationError as e:
@@ -742,7 +740,7 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
             try:
                 data = await self._text_generator.generate_json(
-                    prompt, schema, system_instruction=system_prompt, purpose="promise"
+                    with_rules(system_prompt, prompt), schema, purpose="promise"
                 )
             except TextGenerationError as e:
                 return UnkeptPromise(f"the decision failed: {e}")

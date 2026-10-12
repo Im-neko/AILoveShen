@@ -13,7 +13,7 @@ from ailoveshen.application.dto.llm_dto import (
 from ailoveshen.application.ports.input.generate_commentary import IGenerateCommentary
 from ailoveshen.application.ports.output.event_publisher import IEventPublisher
 from ailoveshen.application.ports.output.prompt_builder import IPromptBuilder
-from ailoveshen.application.ports.output.text_generator import ITextGenerator
+from ailoveshen.application.ports.output.text_generator import ITextGenerator, with_rules
 from ailoveshen.domain.entities import Conversation
 from ailoveshen.domain.events import CommentaryGeneratedEvent
 from ailoveshen.domain.value_objects import CharacterProfile, GenerationContext, MessageType
@@ -96,8 +96,7 @@ class GenerateCommentaryUseCase(IGenerateCommentary):
 
             logger.debug("実況を生成する")
             text = await self._text_generator.generate(
-                prompt=prompt,
-                system_instruction=system_prompt,
+                prompt=with_rules(system_prompt, prompt),
                 purpose=request.purpose,
             )
 

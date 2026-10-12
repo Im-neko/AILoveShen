@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.application.dto.llm_dto import GenerateCommentaryRequest
 from ailoveshen.application.use_cases.generate_commentary import GenerateCommentaryUseCase
 from ailoveshen.domain.entities import Conversation
@@ -75,8 +76,7 @@ class TestGenerateCommentaryUseCase:
         assert response.success is True
         assert response.text == "わー、洞窟を見つけたよ！"
         mock_text_generator.generate.assert_called_once_with(
-            prompt="Commentary prompt",
-            system_instruction="System prompt",
+            prompt=f"System prompt{CACHE_BREAK}Commentary prompt",  # 性格と話し方は本文の先頭に置く（設計書 175）
             purpose="commentary",
         )
         assert mock_prompt_builder.build_system_prompt.call_args.args[1] == "commentary"

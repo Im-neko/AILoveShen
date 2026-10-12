@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 from ailoveshen.application.dto.llm_dto import GenerateResponseRequest
 from ailoveshen.application.use_cases.generate_response import GenerateResponseUseCase, unjudged
 from ailoveshen.application.use_cases.goal_vocabulary import ObjectiveProposal, reply_schema
@@ -72,7 +73,7 @@ def mock_text_generator():
 
     async def generate(prompt="", system_instruction="", purpose=""):
         # 結果に合わせた書き直し（reply_final）は下書きをそのまま返す（書き直しの中身は別のテストで見る）
-        return prompt if purpose == "reply_final" else "nekoさん、ありがとう！"
+        return prompt.split(CACHE_BREAK)[-1] if purpose == "reply_final" else "nekoさん、ありがとう！"
 
     generator.generate.side_effect = generate
     return generator
@@ -156,8 +157,7 @@ class TestGenerateResponseUseCase:
         assert response.original_message == "がんばれ"
         assert response.user_name == "neko"
         mock_text_generator.generate.assert_called_once_with(
-            prompt="Response prompt",
-            system_instruction="System prompt",
+            prompt=f"System prompt{CACHE_BREAK}Response prompt",  # 決まりは本文の先頭に置く（設計書 175）
             purpose="reply",
         )
         assert mock_prompt_builder.build_system_prompt.call_args.args[1] == "reply"

@@ -20,6 +20,14 @@ def split_cache_breaks(prompt: str) -> list[str]:
     return [part for part in prompt.split(CACHE_BREAK) if part.strip()] or [prompt.replace(CACHE_BREAK, "")]
 
 
+def with_rules(rules: Optional[str], prompt: str) -> str:
+    """
+    用途ごとの決まり（性格・話し方を含む）を本文の先頭に置き、キャッシュの境目で区切る。
+    システム指示には共通の文だけを入れるので（設計書 175）、用途ごとの決まりはここに置く。
+    """
+    return f"{rules}{CACHE_BREAK}{prompt}" if rules else prompt
+
+
 def strip_cache_breaks(prompt: str) -> str:
     """印を取り除いたプロンプト。"""
     return prompt.replace(CACHE_BREAK, "")

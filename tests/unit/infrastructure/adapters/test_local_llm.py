@@ -13,6 +13,7 @@ from ailoveshen.domain.value_objects import Screenshot
 from ailoveshen.infrastructure.adapters.local_llm.openai_compat_text_generator import (
     OpenAICompatTextGenerator,
 )
+from ailoveshen.infrastructure.adapters.prompts.common_system import COMMON_SYSTEM, NO_COMMON_SYSTEM, with_common_system
 from ailoveshen.infrastructure.adapters.local_llm.routing_text_generator import (
     RoutingTextGenerator,
 )
@@ -119,7 +120,7 @@ async def test_generate_json_sends_the_schema_and_asks_again_when_it_is_broken()
     assert first["model"] == "qwen3.6"
     assert first["response_format"]["json_schema"]["schema"] == SCHEMA
     assert '"enum": ["red", "blue"]' in first["messages"][-1]["content"]  # プロンプトにもスキーマ
-    assert first["messages"][0] == {"role": "system", "content": "rules"}
+    assert first["messages"][0] == {"role": "system", "content": with_common_system("rules", "goal")}
     assert "must be one of" in second["messages"][-1]["content"]
     await local.close()
 
@@ -381,7 +382,8 @@ async def test_the_output_budget_shrinks_to_what_the_context_leaves():
     server = _Server(_answer("ok"))
     local = _local(server, max_output_tokens=16000, context_tokens=8000)
     await local.generate("あ" * 5000, purpose="reply")
-    assert server.requests[0]["max_tokens"] == 8000 - 5000
+    # 共通のシステム指示の分も、文脈に入る（日本語 5000 字は 5000 トークンと数える）
+    assert 8000 - 5000 - 300 < server.requests[0]["max_tokens"] < 8000 - 5000
 
 
 @pytest.mark.asyncio
@@ -473,7 +475,7 @@ async def test_cache_control_goes_on_the_system_and_in_front_of_each_cache_break
     claude = _claude(server, prompt_cache=True)
     await claude.generate(f"rules\n{CACHE_BREAK}goal\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
     system, user = server.requests[0]["messages"]
-    assert system["content"] == [{"type": "text", "text": "persona", "cache_control": {"type": "ephemeral"}}]
+    assert system["content"] == [{"type": "text", "text": with_common_system("persona", "goal"), "cache_control": {"type": "ephemeral"}}]
     assert user["content"] == [
         {"type": "text", "text": "rules\n", "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": "goal\n", "cache_control": {"type": "ephemeral"}},
@@ -503,7 +505,7 @@ async def test_without_prompt_cache_the_breaks_are_only_removed():
     server = _Server(_answer("a"))
     await _claude(server).generate(f"rules\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
     system, user = server.requests[0]["messages"]
-    assert system["content"] == "persona" and user["content"] == "rules\nstate"
+    assert system["content"] == with_common_system("persona", "goal") and user["content"] == "rules\nstate"
     assert CACHE_BREAK not in json.dumps(server.requests[0], ensure_ascii=False)
 
 
@@ -526,7 +528,7 @@ async def test_a_model_that_is_not_claude_gets_its_depth_as_reasoning_effort_and
     await gemini.generate(f"rules\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
     plain = server.requests[0]
     assert "thinking" not in plain and plain["reasoning_effort"] == "low"
-    assert plain["messages"][0]["content"] == "persona" and plain["messages"][1]["content"] == "rules\nstate"
+    assert plain["messages"][0]["content"] == with_common_system("persona", "goal") and plain["messages"][1]["content"] == "rules\nstate"
     # 用途ごとのモデルが Claude ならその呼び出しだけ、Claude の思考とキャッシュの指定が付く
     await gemini.generate(f"rules\n{CACHE_BREAK}state", system_instruction="persona", purpose="skill_write")
     code = server.requests[1]
@@ -541,3 +543,20 @@ async def test_the_output_budget_counts_an_image_by_a_fixed_size_not_by_its_base
     claude = _claude(server, context_tokens=20000, max_output_tokens=16384)
     await claude.generate_json("x", SCHEMA, purpose="goal", images=[Screenshot(b"\x00" * 400000, "image/png")])
     assert server.requests[0]["max_tokens"] > 10000
+
+
+@pytest.mark.asyncio
+async def test_every_call_carries_the_same_common_system_except_the_mechanical_ones():
+    """どの呼び出しにも同じ共通のシステム指示が入る。用途ごとの指示はそれに続く。読み上げ用の変換と教訓の統合には入れない。"""
+    server = _Server(_answer("a"), _answer("b"), _answer("c"), _answer("d"))
+    local = _local(server)
+    await local.generate("x", purpose="tool")
+    await local.generate("x", system_instruction="persona", purpose="commentary")
+    await local.generate("x", system_instruction="katakana only", purpose="reading")
+    await local.generate("x", purpose="lesson_compaction")
+    systems = [next((m["content"] for m in r["messages"] if m["role"] == "system"), None) for r in server.requests]
+    assert systems[0] == COMMON_SYSTEM.rstrip("\n")
+    assert systems[1] == COMMON_SYSTEM + "\npersona" and systems[1].startswith(systems[0])
+    assert systems[2] == "katakana only"
+    assert systems[3] is None
+    assert NO_COMMON_SYSTEM == {"reading", "lesson_compaction"}
