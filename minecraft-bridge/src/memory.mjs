@@ -4,6 +4,7 @@
 // 最後に見た時刻（ワールドの経過ティック）とともに持つ:
 // - places: 種類（ブロック名か動物名）ごとに、16x16 の区域1つにつき数つきの項目1つ
 // - explored: 各区域を最後に訪れた時刻
+// - biomes: 各区域で最後に立った所のバイオーム名（地上だけ）。羊は草原、など探す方向の手がかり
 // - deaths: ボットが死んだ場所
 // - chests: 各チェストを最後に開けたときの中身（使うのはボットだけなので、次に開けて上書き
 //   するまでこの記録が正しい）
@@ -29,14 +30,14 @@ export const REMEMBERED_STONE = /^(stone|deepslate)$/
 export const REMEMBERED_ANIMALS = new Set(['cow', 'pig', 'sheep', 'chicken'])
 
 export function newMemory () {
-  return { places: {}, explored: {}, deaths: [], chests: {}, furnaces: {}, sites: {} }
+  return { places: {}, explored: {}, biomes: {}, deaths: [], chests: {}, furnaces: {}, sites: {} }
 }
 
 export const regionOf = (p) => `${Math.floor(p.x / REGION)},${Math.floor(p.z / REGION)}`
 const flatDistance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z)
 
-// `me` のまわりでいま見たもの: sightings は [{ kind, pos }]
-export function remember (memory, sightings, me, now) {
+// `me` のまわりでいま見たもの: sightings は [{ kind, pos }]。biome は今立っている所のバイオーム名（地下や読めないときは null）
+export function remember (memory, sightings, me, now, biome = null) {
   const seen = {}
   for (const { kind, pos } of sightings) {
     const regions = (seen[kind] ??= {})
@@ -59,6 +60,7 @@ export function remember (memory, sightings, me, now) {
     places.splice(MAX_PLACES_PER_KIND)
   }
   memory.explored[regionOf(me)] = now
+  if (biome) (memory.biomes ??= {})[regionOf(me)] = biome
 }
 
 export function rememberDeath (memory, pos, now) {
@@ -187,6 +189,35 @@ export function frontierDistance (memory, from, dx, dz, max = FRONTIER_MAX) {
   return max
 }
 
+// (dx, dz) の向きに進んだとき、まだ見ていない土地の手前（frontier の区域）のバイオーム。手前から現在地に向かって、
+// 記録のある最初の区域のもの。記録がなければ null（バイオームは立った所だけを覚える。立っていない区域は分からない）
+export function frontierBiome (memory, from, dx, dz, go) {
+  for (let d = go; d >= REGION; d -= REGION) {
+    const b = memory.biomes?.[regionOf({ x: from.x + dx * d, z: from.z + dz * d })]
+    if (b) return b
+  }
+  return null
+}
+
+// 見たバイオームごとの、一番近い区域: [{ biome, regions（その数）, direction, distance_m }]。近い順。
+// 今いる区域のバイオームは今いる場所の行に出るので、ここは近い順に BIOMES_SHOWN 種類まで
+export const BIOMES_SHOWN = 8
+export function biomesSeen (memory, me, bearing) {
+  const nearest = {}
+  for (const [region, biome] of Object.entries(memory.biomes ?? {})) {
+    const [rx, rz] = region.split(',').map(Number)
+    const at = { x: (rx + 0.5) * REGION, z: (rz + 0.5) * REGION }
+    const d = flatDistance(at, me)
+    const e = (nearest[biome] ??= { biome, regions: 0, at, d })
+    e.regions++
+    if (d < e.d) { e.at = at; e.d = d }
+  }
+  return Object.values(nearest)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, BIOMES_SHOWN)
+    .map((e) => ({ biome: e.biome, regions: e.regions, direction: bearing(me, e.at), distance_m: Math.round(e.d) }))
+}
+
 // 判断する側が見るもの: 種類ごとの一番近い場所と、ボットが死んだ場所
 // GET /memory（設計書 47 §4 search_memory）: 覚えている場所を座標つきで。場所は種類ごとに 1 件（近い順
 // MEMORY_PER_KIND か所。検索の一覧を種類の数に抑える）、チェスト（中身）、焼いている途中のかまど、
@@ -225,6 +256,7 @@ export function summarizeMemory (memory, me, now, bearing) {
     places,
     chests: chests(memory).map((c) => ({ direction: bearing(me, c), distance_m: Math.round(flatDistance(c, me)), contents: c.contents, minutes_ago: Math.round((now - c.seen) / TICKS_PER_MINUTE) })),
     explored_regions: Object.keys(memory.explored).length,
+    biomes: biomesSeen(memory, me, bearing),
     deaths: memory.deaths.map((d) => ({ direction: bearing(me, d), distance_m: Math.round(flatDistance(d, me)), minutes_ago: Math.round((now - d.seen) / TICKS_PER_MINUTE) }))
   }
 }

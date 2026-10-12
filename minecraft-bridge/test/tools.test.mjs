@@ -610,3 +610,12 @@ test('マイナスの落ちを直すのは、届く座標がちょうど 1 つ�
   assert.equal(fixed.refused, undefined, fixed.result)
   assert.equal(one.runs[0].c.pos.x, 30)
 })
+
+test('find_blocks に動物の名前を渡したら、ブロックではないと教える（羊を find_blocks で探して断られ続けた）', async () => {
+  const { callTool } = setup()
+  const animal = await callTool('find_blocks', { block: 'sheep' })
+  assert.equal(animal.refused, true)
+  assert.match(animal.result, /unknown block sheep: it is an animal or a mob, not a block.*search_memory/)
+  const nonsense = await callTool('find_blocks', { block: 'no_such_thing' })
+  assert.equal(nonsense.result, 'refused: unknown block no_such_thing')
+})

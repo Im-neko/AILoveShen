@@ -38,6 +38,7 @@ from ailoveshen.domain.value_objects import (
 from ailoveshen.infrastructure.adapters.prompts.stream_context import (
     ABILITIES,
     format_activity,
+    format_biome,
     format_conditions,
     format_messages,
     format_predicates,
@@ -887,6 +888,33 @@ def _repeat_section(steps: Sequence[str], times: int, skill: str) -> str:
     )
 
 
+def _suggestion_note(c: Candidate) -> str:
+    """提案の後ろに添える（距離。探索なら、まだ見ていない土地までの距離と、その手前のバイオーム）。"""
+    d = c.description
+    notes = []
+    if d.get("distance"):
+        notes.append(f"{d['distance']}m")
+    if d.get("unexplored_land_m"):
+        notes.append(f"まだ見ていない土地まで {d['unexplored_land_m']}m")
+    if d.get("biome_ahead"):
+        notes.append(f"その手前は{format_biome(d['biome_ahead'])}")
+    return f"（{'、'.join(notes)}）" if notes else ""
+
+
+# 道具を選ぶ手に、説明つきで出す技の数（並びは今の小目標に合うものが先）。残りは名前だけ
+SKILLS_DESCRIBED = 3
+
+
+def _format_skill_list(skills: Sequence[SkillInfo]) -> str:
+    """覚えた技の一覧: 先の SKILLS_DESCRIBED 個は説明つき、残りは名前だけ（説明は 1 つ 250 字ほどで、毎手は重い。設計書 174）。"""
+    if not skills:
+        return "- まだない"
+    lines = [f"- {s.describe()}" for s in skills[:SKILLS_DESCRIBED]]
+    if len(skills) > SKILLS_DESCRIBED:
+        lines.append(f"- ほかの技（名前だけ。run_skill で呼べる）: {'、'.join(s.name for s in skills[SKILLS_DESCRIBED:])}")
+    return "\n".join(lines)
+
+
 # 技（docs/design/22）: 道具の選択に足す節（技を使うときだけ）
 TOOL_SKILLS_SECTION = """
 ## 覚えた技（run_skill で呼ぶ。今の小目標に合うものが先）
@@ -1402,7 +1430,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         ]
         return TOOL_TEMPLATE.substitute(
             cache_break=CACHE_BREAK,
-            activity=format_activity(activity, cache_break=True),
+            activity=format_activity(activity, cache_break=True, step=True),
             position=f"{me.get('x')}, {me.get('y')}, {me.get('z')}" if me else "不明",
             legend=around.get("legend", ""),
             grid="\n".join(f"    {row}" for row in around.get("grid", [])) or "    （なし）",
@@ -1411,16 +1439,11 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             standing_on=around.get("standing_on") or "不明",
             closed=_closed_line(around.get("closed_space")),
             mobs="、".join(mobs) or "なし",
-            suggestions="\n".join(
-                f"- {c.action_id}"
-                + (f"（{c.description.get('distance')}m）" if c.description.get("distance") else "")
-                for c in suggestions
-            )
-            or "- なし",
+            suggestions="\n".join(f"- {c.action_id}{_suggestion_note(c)}" for c in suggestions) or "- なし",
             recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
         ) + (
             Template(TOOL_SKILLS_SECTION).substitute(
-                skills="\n".join(f"- {s.describe()}" for s in skills) or "- まだない"
+                skills=_format_skill_list(skills)
             )
             + (TOOL_RAW_SKILLS_LINE if self._raw_bot else "")
             if skills is not None

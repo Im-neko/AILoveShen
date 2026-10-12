@@ -29,7 +29,7 @@ import { digOutRoute } from './dig-out.mjs'
 import { storageUsage, contentsSignature, roomyChests } from './storage.mjs'
 import { memoryView } from './worldmap-places.mjs'
 import { inHomeRoom } from './builds.mjs'
-import { recoverableDeath, recall, visited, homeChests, chestWith, furnaceWith, frontierDistance } from './memory.mjs'
+import { recoverableDeath, recall, visited, homeChests, chestWith, furnaceWith, frontierDistance, frontierBiome } from './memory.mjs'
 const FRONTIER_SLACK = 8
 import { cooking, isRawMeat } from './cooking.mjs'
 import { TORCH_LOW, materialsOf } from './goals.mjs'
@@ -242,6 +242,7 @@ function fromLeaf (bot, state, world, leaf) {
             id: `explore ${dir}`,
             verb: 'explore', target: dir, looking_for: lookingFor, dx, dz, go,
             ...(far ? { unexplored_land_m: go } : {}),
+            ...(state.memory && frontierBiome(state.memory, me, dx, dz, go) ? { biome_ahead: frontierBiome(state.memory, me, dx, dz, go) } : {}),
             been_there: !!state.memory && visited(state.memory, me.offset(dx * EXPLORE_DISTANCE, 0, dz * EXPLORE_DISTANCE))
           }
         })

@@ -195,12 +195,21 @@ def format_site_choice(site: TownSite, stand_y: int | None = None) -> str:
     return f"「{site.name}」を{site_name(site.site_id)}（{at}）に作る: {site.reason}"
 
 
-def format_activity(activity: Activity | None, with_ids: bool = False, cache_break: bool = False) -> str:
+# 道具を選ぶ 1 手（step）に出す、直近の小目標の数
+STEP_RECENT_GOALS = 3
+
+
+def format_activity(
+    activity: Activity | None, with_ids: bool = False, cache_break: bool = False, step: bool = False
+) -> str:
     """
     配信者が何をしていて、なぜか（最終目標から下へ）、ゲームの状況、最近の小目標。
     `with_ids` なら大目標とメモの ID、小目標の番号（メモの根拠）を出す（目標の決定での
     編集用。配信で読み上げられうる所では出さない）。
     `cache_break` なら、目標の階層（変わりにくい）と今の小目標以下（変わる）の間にキャッシュの境目の印を置く。
+    `step` なら、道具を 1 つ選ぶ手のための短い形: 調べた候補地の一覧・街の定義・終わった大目標・済んだ定石・
+    すり減っていない道具の耐久・直近の行動（「直近の道具」の節と重なる）を出さず、直近の小目標は同じものを 1 つにして新しい 3 つだけ
+    （街づくりの見直しの材料で、1 手の選択には要らない。設計書 174）。
     """
     if activity is None:
         return "ゲームはしていない"
@@ -208,9 +217,9 @@ def format_activity(activity: Activity | None, with_ids: bool = False, cache_bre
     lines = []
     if activity.mission is not None:
         lines.append(f"- 最終目標: {activity.mission.text}")
-    lines += _format_site(activity)
-    lines += _format_playbook(activity)
-    if activity.town is not None:
+    lines += _format_site(activity, with_survey=not step)
+    lines += _format_playbook(activity, remaining_only=step)
+    if activity.town is not None and not step:
         lines += _format_town(activity)
     pending = [g for g in activity.objectives if g.state == ObjectiveState.PENDING]
     finished = [g for g in activity.objectives if g.state != ObjectiveState.PENDING]
@@ -218,7 +227,7 @@ def format_activity(activity: Activity | None, with_ids: bool = False, cache_bre
     lines += [
         f"  {i}. {_format_objective(g, with_ids, current=i == 1)}" for i, g in enumerate(pending, 1)
     ] or ["  - なし"]
-    if finished:
+    if finished and not step:
         lines.append("- 最近終わった大目標:")
         lines += [f"  - {_format_finished(g)}" for g in finished]
     if cache_break:
@@ -231,14 +240,14 @@ def format_activity(activity: Activity | None, with_ids: bool = False, cache_bre
     if activity.screen_note is not None:
         lines.append(_format_screen_note(activity.screen_note))
     if activity.observation is not None:
-        lines.append(_format_situation(activity.observation))
+        lines.append(_format_situation(activity.observation, brief=step))
     lines.append("- これまでの小目標（古い順）:")
+    outcomes = [(i, _format_outcome(o, titles)) for i, o in enumerate(recent, 1)]
+    if step:
+        # 同じ小目標が続けて同じ結果で終わっているものは 1 つに、新しいものから数個
+        outcomes = [(i, t) for k, (i, t) in enumerate(outcomes) if k == 0 or t != outcomes[k - 1][1]][-STEP_RECENT_GOALS:]
     lines.append(
-        "\n".join(
-            f"  - {f'[{i}] ' if with_ids else ''}{_format_outcome(o, titles)}"
-            for i, o in enumerate(recent, 1)
-        )
-        or "  - なし"
+        "\n".join(f"  - {f'[{i}] ' if with_ids else ''}{t}" for i, t in outcomes) or "  - なし"
     )
     lines += _format_notes(activity, with_ids)
     lines += _format_lessons(activity)
@@ -372,8 +381,8 @@ def _format_equipment(me: dict) -> str:
     return "、".join(held + worn) or "なし"
 
 
-def _format_site(activity: Activity) -> list[str]:
-    """街の場所: 決めたこと（配信者）と、調べた事実（ブリッジが測った数字）を分けて出す。"""
+def _format_site(activity: Activity, with_survey: bool = True) -> list[str]:
+    """街の場所: 決めたこと（配信者）と、調べた事実（ブリッジが測った数字）を分けて出す。`with_survey` でなければ事実の一覧は出さない。"""
     obs = activity.observation
     survey = (obs.state.get("survey") if obs else None) or {}
     rows = survey.get("sites") or []
@@ -386,7 +395,7 @@ def _format_site(activity: Activity) -> list[str]:
     else:
         done = f"{len(rows)}/{survey.get('planned', 0)}"
         lines = [f"- 街の場所: まだ決めていない（候補地を調べた数 {done}）"]
-    if rows:
+    if rows and with_survey:
         lines.append("- 調べた候補地（ブリッジが測った数字。候補地のまわり半径 32 ブロック）:")
         lines += [f"  - {format_site_facts(r)}" for r in rows]
     return lines
@@ -415,16 +424,19 @@ def _format_town(activity: Activity) -> list[str]:
     return lines
 
 
-def _format_playbook(activity: Activity) -> list[str]:
-    """定石（この順にやる。コードが守る。docs/design/74）: 済・今・先。"""
+def _format_playbook(activity: Activity, remaining_only: bool = False) -> list[str]:
+    """定石（この順にやる。コードが守る。docs/design/74）: 済・今・先。`remaining_only` なら残りだけ（全部済なら出さない）。"""
     if not activity.playbook:
         return []
     now = next((s.name for s in activity.playbook if s.name not in activity.playbook_done), None)
+    steps = [s for s in activity.playbook if not remaining_only or s.name not in activity.playbook_done]
+    if not steps:
+        return []
     parts = [
         f"[{'済' if s.name in activity.playbook_done else '今' if s.name == now else '先'}] {s.title}"
-        for s in activity.playbook
+        for s in steps
     ]
-    return [f"- 定石（この順に。コードが守る）: {' → '.join(parts)}"]
+    return [f"- 定石{'の残り' if remaining_only else ''}（この順に。コードが守る）: {' → '.join(parts)}"]
 
 
 def _format_objective(goal: Objective, with_ids: bool, current: bool) -> str:
@@ -600,7 +612,7 @@ def _format_nearby(nearby: list) -> str:
     def one(n: dict) -> str:
         p = n.get("nearest") or {}
         where = f"{DIRECTION_NAMES.get(p.get('direction'), p.get('direction', ''))} {p.get('distance_m')}m"
-        owner = OWNER_NAMES.get(n.get("owner"), "自分で建てたものではない")
+        owner = OWNER_NAMES.get(n.get("owner"), "家のものではない")
         count = f" {n['count']}" if n.get("count", 1) > 1 else ""
         return f"{LANDMARK_NAMES.get(n.get('kind'), n.get('kind'))}{count}（一番近いもの: {where}、{owner}）"
 
@@ -698,11 +710,23 @@ def _format_home(obs: GameObservation) -> str:
 
 
 def format_place(obs: GameObservation) -> str:
-    """今いる場所: 家の中か、家の外と家までの距離。"""
-    if obs.inside_home:
-        return "家の中"
-    distance = obs.home_distance_m
-    return f"家の外（家まで {distance}m）" if distance is not None else "家の外"
+    """
+    今いる場所: 家の中か、家の外と家までの距離。地下なら「地下」、位置（座標と足元の高さ）、バイオーム。
+    小目標を選ぶ側にも要る（高さで掘る鉱石の層が決まる、地下では夜でも帰らなくてよい、羊は草原）。
+    """
+    parts = []
+    if obs.has_home:
+        distance = obs.home_distance_m
+        parts.append("家の中" if obs.inside_home else f"家の外（家まで {distance}m）" if distance is not None else "家の外")
+    if obs.underground:
+        parts.append("地下")
+    me = (obs.state.get("self") or {}).get("position") or {}
+    if all(k in me for k in ("x", "y", "z")):
+        parts.append(f"x={round(me['x'])} y={round(me['y'])} z={round(me['z'])}")
+    biome = format_biome((obs.state.get("self") or {}).get("biome"))
+    if biome:
+        parts.append(f"バイオーム {biome}")
+    return "、".join(parts)
 
 
 # バイオームの日本語（ここにないものは英語名のまま）
@@ -728,6 +752,17 @@ def format_biome(biome: str | None) -> str:
     # 名前の末尾が合うもの（deep_lukewarm_ocean → ぬるい海）は、長く合うほうを取る
     ja = BIOME_JA.get(biome) or next((BIOME_JA[k] for k in sorted(BIOME_JA, key=len, reverse=True) if biome.endswith(f"_{k}")), "")
     return f"{ja}（{biome}）" if ja else biome
+
+
+def _format_biomes_seen(biomes: list) -> list[str]:
+    """歩いて見たバイオームと、そこへの向きと距離（近い順）。羊は草原、など探す方向を選ぶ手がかり。立った所だけの記録。"""
+    if not biomes:
+        return []
+    parts = [
+        f"{format_biome(b['biome'])} {DIRECTION_NAMES.get(b.get('direction'), b.get('direction', ''))} {b['distance_m']}m"
+        for b in biomes
+    ]
+    return [f"- 歩いて見たバイオーム（一番近い所。立った所だけ覚えている）: {'、'.join(parts)}"]
 
 
 def _format_broken(broken: list) -> list[str]:
@@ -814,14 +849,13 @@ def _format_titles(obs: GameObservation) -> list[str]:
     return [f"- 建物・施設の呼び名（人に話すときはこの呼び名で言う。目標・判定・道具には元の名前を使う）: {named}"]
 
 
-def _format_situation(obs: GameObservation) -> str:
+def _format_situation(obs: GameObservation, brief: bool = False) -> str:
     s = obs.state
     lines = [
         f"- 時間帯: {format_time(s.get('time', {}))}",
         f"- 家: {_format_home(obs)}",
         *_format_titles(obs),
-        *([f"- 今いる場所: {format_place(obs)}"] if obs.has_home else []),
-        *([f"- 今いるバイオーム: {biome}"] if (biome := format_biome((s.get("self") or {}).get("biome"))) else []),
+        *([f"- 今いる場所: {place}"] if (place := format_place(obs)) else []),
         f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
         *_format_around(s.get("around") or {}),
         *_format_quarry(s.get("quarry") or {}),
@@ -829,14 +863,16 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 装備: {_format_equipment(s.get('self', {}))}",
         f"- 持ち物: {_format_inventory(s.get('inventory', {}))}",
         *_format_broken(s.get("broken_tools") or []),
-        *_format_tool_wear(s.get("tool_wear") or []),
+        *_format_tool_wear([w for w in s.get("tool_wear") or [] if not brief or tool_is_worn(w)]),
         f"- 気をつけること: {'、'.join(n for n in obs.needs if n != 'none') or 'なし'}",
         *_format_risk(s.get("risk") or {}),
         *_format_farm(s.get("farm") or {}),
         f"- チェストの中身: {_format_chests(s.get('memory') or {})}",
         f"- 覚えている場所（前に見た、今は見えない）: {_format_memory(s.get('memory') or {})}",
+        *_format_biomes_seen((s.get("memory") or {}).get("biomes") or []),
     ]
-    recent = s.get("recent_actions", [])
+    # 道具を選ぶ手には「直近の道具」の節が別にある（同じ手が二重に並ぶ）
+    recent = [] if brief else s.get("recent_actions", [])
     if recent:
         lines.append(
             "- 直近の行動: "

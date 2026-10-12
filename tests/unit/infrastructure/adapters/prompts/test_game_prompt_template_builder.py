@@ -20,6 +20,7 @@ from ailoveshen.domain.value_objects import (
     ObjectiveState,
     Mission,
     Side,
+    SkillInfo,
     ToolCall,
     ToolOutcome,
     TownDefinition,
@@ -231,17 +232,26 @@ class TestGamePromptTemplateBuilder:
         assert "家: 建ててある、ベッドあり、チェスト 0\n- 今いる場所: 家の中\n" in prompt
         assert "チェストの中身: なし" in prompt
 
-    def test_goal_prompt_tells_the_biome_you_are_in(self):
-        """今いるバイオームを、日本語名と元の名前で言う（羊は草原、など探す場所の手がかり）。読めなければ行を出さない。"""
-        obs = _obs()
-        obs.state.setdefault("self", {})["biome"] = "meadow"
-        assert "- 今いるバイオーム: 草原（meadow）\n" in _goal_prompt(obs)
+    def test_goal_prompt_tells_where_you_are_with_position_underground_and_biome(self):
+        """今いる場所に、位置（座標と足元の高さ）、地下、バイオーム（日本語名と元の名前）を言う。分からないものは出さない。"""
+        obs = replace(_obs(), has_home=True)
+        obs.state["self"]["position"] = {"x": 98.5, "y": 66, "z": -264.5}
+        obs.state["self"]["biome"] = "meadow"
+        assert "- 今いる場所: 家の外、x=98 y=66 z=-264、バイオーム 草原（meadow）\n" in _goal_prompt(obs)
+        # 地下: 家の外の地下。高さで掘る層が決まる
+        under = replace(obs, underground=True)
+        assert "- 今いる場所: 家の外、地下、x=98 y=66 z=-264、バイオーム 草原（meadow）\n" in _goal_prompt(under)
+        # 家がなくても場所は言う
+        homeless = replace(_obs(), has_home=False)
+        homeless.state["self"]["position"] = {"x": 1, "y": 70, "z": 2}
+        assert "- 今いる場所: x=1 y=70 z=2\n" in _goal_prompt(homeless)
+        # バイオーム: 末尾が合うものは長く合うほう、ないものは英語名のまま、読めなければ出さない
         obs.state["self"]["biome"] = "deep_lukewarm_ocean"
-        assert "- 今いるバイオーム: ぬるい海（deep_lukewarm_ocean）\n" in _goal_prompt(obs)
+        assert "バイオーム ぬるい海（deep_lukewarm_ocean）" in _goal_prompt(obs)
         obs.state["self"]["biome"] = "some_new_biome"
-        assert "- 今いるバイオーム: some_new_biome\n" in _goal_prompt(obs)
+        assert "バイオーム some_new_biome" in _goal_prompt(obs)
         obs.state["self"]["biome"] = None
-        assert "今いるバイオーム" not in _goal_prompt(obs)
+        assert "バイオーム" not in _goal_prompt(obs)
 
     def test_goal_prompt_house_planks_are_also_told_as_logs(self):
         """板材の数を原木の数と取り違えない（have(log, 71) を決めた: 原木 18 本ぶん）。"""
@@ -284,7 +294,7 @@ class TestGamePromptTemplateBuilder:
         assert "- 今いる場所: 家の外\n" in prompt
         obs.state["home"]["door"] = {"x": -76, "y": 65, "z": -151}
         obs.state["self"] = {"position": {"x": -73.3, "y": 63, "z": -414.3}}
-        assert "- 今いる場所: 家の外（家まで 263m）\n" in _goal_prompt(obs)
+        assert "- 今いる場所: 家の外（家まで 263m）、" in _goal_prompt(obs)
         # 空のチェストは出さない（数は家の行にある。26 §4）
         assert "- チェストの中身: oak_log 20、cobblestone 14（2 分前）\n" in prompt
 
@@ -432,6 +442,63 @@ class TestGamePromptTemplateBuilder:
             "- 街の場所（決めたこと）: 「いしのまち」を東（96,0）に作る: 地表の石が多い" in prompt
         )
         assert "- 調べた候補地（ブリッジが測った数字" in prompt
+
+    def test_tool_prompt_is_short_for_one_step(self):
+        """道具を 1 つ選ぶ手には、街づくりの見直しの材料（候補地の一覧・街の定義・済んだ定石）や、減っていない道具の耐久を出さない。
+        直近の小目標は、同じものを 1 つにして新しい 3 つだけ。技は先の 3 つだけ説明つきで、残りは名前だけ。"""
+        base = _obs()
+        wear = [
+            {"item": "stone_pickaxe", "left": 20, "max": 131},
+            {"item": "iron_sword", "left": 228, "max": 250},
+        ]
+        observation = replace(base, state={**base.state, "survey": {"planned": 9, "sites": [HERE_ROW, EAST_ROW]}, "tool_wear": wear})
+        outcome = GoalOutcome(PLANKS, "goal have(planks, 12) is met", met=True)
+        other = GoalOutcome(Goal(GoalSpec(GoalPredicate.HAVE, item="stick", count=4), "棒", objective_id="m1"), "goal have(stick, 4) is met", met=True)
+        activity = Activity(
+            mission=MISSION, site=EAST, town=TOWN, objectives=(HOUSE,), goal=PLANKS, observation=observation,
+            recent_goals=(other, other, outcome, outcome, other, outcome),
+        )
+        skills = [SkillInfo(f"skill_{i}", f"説明 {i}", 1) for i in range(6)]
+        step = GamePromptTemplateBuilder().build_tool_prompt(activity, {"self": {"position": {"x": 1, "y": 2, "z": 3}}}, (), (), skills=skills)
+        full = _goal_prompt(activity=activity)
+
+        assert "- 街の場所（決めたこと）:" in step
+        assert "調べた候補地" not in step and "調べた候補地" in full
+        assert "街の定義" not in step and "街の定義" in full
+        assert "stone_pickaxe 残り 20/131（もうすぐ壊れる）" in step and "iron_sword" not in step
+        assert "iron_sword 残り 228/250" in full
+        assert "- 直近の行動:" not in step and "- 直近の行動:" in full
+        recent = step.split("- これまでの小目標（古い順）:")[1].split("- 自分のメモ")[0].split("## ")[0]
+        assert recent.count("\n  - ") == 3  # 続けて同じものは 1 つにして、新しい 3 つ
+        assert "- skill_2 v1" in step and "- skill_3 v1" not in step
+        assert "- ほかの技（名前だけ。run_skill で呼べる）: skill_3、skill_4、skill_5" in step
+
+    def test_tool_prompt_tells_the_biomes_seen_and_the_biome_ahead_of_an_exploration(self):
+        """歩いて見たバイオームを向きと距離つきで、探索の提案には、まだ見ていない土地までの距離とその手前のバイオームを添える。"""
+        base = _obs()
+        memory = {
+            **base.state["memory"],
+            "biomes": [
+                {"biome": "plains", "regions": 4, "direction": "N", "distance_m": 40},
+                {"biome": "meadow", "regions": 1, "direction": "W", "distance_m": 130},
+            ],
+        }
+        observation = replace(base, state={**base.state, "memory": memory})
+        prompt = GamePromptTemplateBuilder().build_tool_prompt(
+            Activity(mission=MISSION, goal=PLANKS, observation=observation),
+            {},
+            (
+                Candidate("explore west", {"unexplored_land_m": 150, "biome_ahead": "meadow"}),
+                Candidate("explore east", {"unexplored_land_m": 90}),
+                Candidate("dig oak_log at 1,2,3", {"distance": 9.6}),
+            ),
+            (),
+        )
+
+        assert "- 歩いて見たバイオーム（一番近い所。立った所だけ覚えている）: 平原（plains） 北 40m、草原（meadow） 西 130m\n" in prompt
+        assert "- explore west（まだ見ていない土地まで 150m、その手前は草原（meadow））\n" in prompt
+        assert "- explore east（まだ見ていない土地まで 90m）\n" in prompt
+        assert "- dig oak_log at 1,2,3（9.6m）\n" in prompt
 
     def test_stage_prompt(self):
         """段階のプロンプトは段階を変えず、解決していないものを並べる。"""
@@ -614,7 +681,7 @@ def test_the_landmarks_around_are_shown_with_whose_they_are():
     ]
     prompt = _goal_prompt(obs)
     assert (
-        "- 近くにあるもの（24 m 以内）: ベッド（一番近いもの: 北 6.5m、自分で建てたものではない）、"
+        "- 近くにあるもの（24 m 以内）: ベッド（一番近いもの: 北 6.5m、家のものではない）、"
         "松明 4（一番近いもの: 西 3.0m、家のもの）" in prompt
     )
     assert "- 近くにあるもの（24 m 以内）: なし" in _goal_prompt()

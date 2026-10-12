@@ -755,7 +755,11 @@ export function createTools (deps) {
   const queries = {
     find_blocks (args) {
       const id = bot.registry.blocksByName[args.block]?.id
-      if (id == null) refuse(`unknown block ${args.block}`)
+      if (id == null) {
+        // 動物・モブはブロックではない（2026-10-12: 羊を find_blocks("sheep") で 3 回探して断られた）
+        if (bot.registry.entitiesByName?.[args.block]) refuse(`unknown block ${args.block}: it is an animal or a mob, not a block. Look for it in the nearby mobs list, or search_memory for where you saw one before; if none is known, explore (a biome it lives in is told in "where you are" and the biomes you have walked)`)
+        refuse(`unknown block ${args.block}`)
+      }
       const radius = Math.max(4, Math.min(FIND_RADIUS, Number(args.radius ?? 32)))
       const me = bot.entity.position
       // 断られる場所（家・建物）と、前に断られた・着けなかった場所は出さない（掘れと言われて断られる）

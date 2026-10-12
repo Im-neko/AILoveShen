@@ -83,7 +83,7 @@ import { loadNames, itemList, itemInfo } from './items.mjs'
 import { zonesAround, TOWN_CELLS, ZONE_SIZE } from './zones.mjs'
 import { registerCheck, checksList, CheckError } from './conditions.mjs'
 import { mapAround } from './map.mjs'
-import { summarize, bearing, round, inventoryCounts, isUnderground, blockInfo, pushHistory } from './observe.mjs'
+import { summarize, bearing, round, inventoryCounts, isUnderground, biomeName, blockInfo, pushHistory } from './observe.mjs'
 import { foodCount, foodIn, foodPointsIn } from './cooking.mjs'
 import { trackSurface } from './surface.mjs'
 import { installDamageLog } from './damage-log.mjs'
@@ -288,7 +288,7 @@ const publicStatus = (s) => s && { spec: s.spec, met: s.met, remaining: s.remain
 const run = createRunner(bot, state, {
   afterRun () {
     // 途中で見えた動物（ブロックは視界の地図が、歩きながら覚える）
-    remember(state.memory, sightings(bot), bot.entity.position, worldAge())
+    remember(state.memory, sightings(bot), bot.entity.position, worldAge(), isUnderground(bot) ? null : biomeName(bot))
     persist()
   }
 })
