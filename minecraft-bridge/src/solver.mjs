@@ -332,6 +332,9 @@ function gatherOption (k, world, item, n, kind, sources, nearby, unitCost, ledge
   } else if (plan?.dig) {
     leaf = { kind: 'dig_mine', item, facility: plan.dig, sources }
     cost += MINE_COST * 2
+  } else if (plan?.extend) {
+    leaf = { kind: 'dig_mine', item, facility: plan.extend, sources, extend: true }
+    cost += MINE_COST * 2
   } else if (plan?.make !== undefined) {
     leaf = { kind: 'make_mine', item, bottom_y: plan.make, sources, ...(plan.exhausted ? { exhausted: plan.exhausted } : {}) }
     cost += MINE_COST * 3
@@ -513,7 +516,9 @@ function describe (leaf, method) {
     case 'explore': return `find ${leaf.sources.join('/')}`
     case 'dig_down': return `dig stairs down to ${leaf.sources.join('/')} (${leaf.depth} blocks down)`
     case 'go_mine': return `go down the mine ${leaf.mine.name} (bottom y ${leaf.mine.bottom.y}) for ${leaf.sources.join('/')}`
-    case 'dig_mine': return `dig the mine ${leaf.facility} (stairs down, the main tunnel and its branches), then take ${leaf.item} from its walls`
+    case 'dig_mine': return leaf.extend
+      ? `the mine ${leaf.facility} is dug out and no ${leaf.item} shows in its walls: make its main tunnel longer (more branches), then take ${leaf.item} from its walls`
+      : `dig the mine ${leaf.facility} (stairs down, the main tunnel and its branches), then take ${leaf.item} from its walls`
     case 'make_mine': return `design a mine down to y ${leaf.bottom_y} near the home and dig it (branch mining), then take ${leaf.item} from its walls`
     case 'place': return `place ${leaf.item}`
     case 'withdraw': return 'take it out of the chest'

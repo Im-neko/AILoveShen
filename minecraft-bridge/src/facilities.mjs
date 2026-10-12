@@ -843,6 +843,67 @@ function mineCells (x0, z0, y0, bottom, tunnels, length, branch = 0) {
   return cells
 }
 
+// 採掘場の幹の先を延ばす（user 2026-10-12: 「必要な個数、目的の鉱物が取れるまで掘ります。採掘場は目的の度に作らず、使いまわします。
+// どんどん長くなるイメージです」）。掘り切った採掘場は、鉱石が壁に出ないなら、幹の先に EXTEND_LENGTH マスと、その分の枝を足す。
+// 上限は置かない: 幹が終わるのは、危ないもの（水・溶岩・岩盤）で打ち切られたとき（stopMine）と、ほかの採掘場のセルに突き当たったとき。
+// 打ち切られた向きは延ばさない。幹の長さは layout.reach（向きごと。なければ設計の tunnel_length）
+export const EXTEND_LENGTH = 16
+
+// 延ばせる向き: 幹が最後まで掘られていて（打ち切られていない）、閉じていない向き。短い順
+function extendableDirs (fac) {
+  const L = fac.layout
+  if (fac.kind !== 'mine' || !L?.sealing || !L.branch_length) return []
+  return (L.tunnels ?? [])
+    .filter((name) => !(L.closed ?? []).includes(name))
+    .map((name) => ({ name, cells: L.cells.filter((c) => c.part === `tunnel_${name}`), reach: L.reach?.[name] ?? L.tunnel_length }))
+    .filter((d) => d.cells.length && d.cells.length === d.reach)
+    .sort((a, b) => a.reach - b.reach)
+}
+
+export const canExtendMine = (fac) => extendableDirs(fac).length > 0
+
+// 幹を 1 向き延ばして、そのセルと枝を足す。足したセルの数 { dir, trunk, branches } か、延ばせないとき null
+export function extendMine (state, fac) {
+  const L = fac.layout
+  const taken = new Set(mines(state).flatMap((f) => [...plannedBlocks(f.layout.cells)]))
+  for (const d of extendableDirs(fac)) {
+    const [dx, dz] = DIRECTIONS[d.name]
+    const origin = d.cells[0]
+    const at = (i, off = 0, side = [0, 0]) => ({ x: origin.x + dx * i + side[0] * off, y: origin.y, z: origin.z + dz * i + side[1] * off, h: origin.h })
+    const free = (c) => blocksOf(c).every((p) => !taken.has(`${p.x},${p.y},${p.z}`))
+    const trunk = []
+    for (let i = d.reach; i < d.reach + EXTEND_LENGTH; i++) {
+      const c = { ...at(i), part: `tunnel_${d.name}` }
+      if (!free(c)) break
+      trunk.push(c)
+      blocksOf(c).forEach((p) => taken.add(`${p.x},${p.y},${p.z}`))
+    }
+    if (!trunk.length) { (L.closed ??= []).push(d.name); continue }
+    const end = d.reach + trunk.length
+    // 枝は設計と同じ並び（坑道の 3 マスおき。最後の 1 マス手前まで）。前に枝を出さなかった最後の 1 マスから
+    const branches = []
+    let start = d.reach - 1
+    while (start % BRANCH.spacing !== BRANCH.spacing - 1) start++
+    for (let i = start; i < end - 1; i += BRANCH.spacing) {
+      for (const side of [1, -1]) {
+        const dir = dx !== 0 ? [0, side] : [side, 0]
+        const part = `branch_${d.name}_${i}_${side > 0 ? 'a' : 'b'}`
+        for (let j = 1; j <= L.branch_length; j++) {
+          const c = { ...at(i, j, dir), part }
+          if (!free(c)) break
+          branches.push(c)
+          blocksOf(c).forEach((p) => taken.add(`${p.x},${p.y},${p.z}`))
+        }
+      }
+    }
+    L.cells = [...L.cells, ...trunk, ...branches] // 新しい配列（セルの索引を作り直す）
+    L.reach = { ...(L.reach ?? {}), [d.name]: end }
+    fac.status = 'building'
+    return { dir: d.name, from: d.reach, to: end, trunk: trunk.length, branches: branches.length }
+  }
+  return null
+}
+
 // 空ける予定のマス（"x,y,z"）
 export const plannedBlocks = (cells) => new Set(cells.flatMap((c) => blocksOf(c).map((p) => `${p.x},${p.y},${p.z}`)))
 export const mineBlocks = blocksOf
@@ -1030,9 +1091,21 @@ function trimBranches (cells, clear) {
 export function stopMine (fac, index, reason) {
   const c = fac.layout.cells[index]
   fac.layout.stopped = { x: c.x, y: c.y, z: c.z, reason }
+  const cells = fac.layout.cells
+  const trunk = /^tunnel_(\w+)$/.exec(c.part)
+  if (trunk) {
+    // 幹が危ない: その向きの幹の先と、先に付く枝だけを外す（もう一方の向きや、延ばした分は残す）
+    const at = cells.slice(0, index).filter((x) => x.part === c.part).length
+    fac.layout.cells = cells.filter((x, i) => {
+      if (x.part === c.part) return i < index
+      const b = /^branch_(\w+?)_(\d+)_[ab]$/.exec(x.part)
+      return !(b && b[1] === trunk[1] && Number(b[2]) >= at)
+    })
+    return
+  }
   fac.layout.cells = c.part.startsWith('branch')
-    ? fac.layout.cells.filter((x, i) => i < index || x.part !== c.part)
-    : fac.layout.cells.slice(0, index)
+    ? cells.filter((x, i) => i < index || x.part !== c.part)
+    : cells.slice(0, index)
 }
 
 // 採掘場を自分で設計する（設計書 68）: sites（[x0, z0] の並び）の中で、bottom_y まで安全に下りられる所。

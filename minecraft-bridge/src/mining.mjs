@@ -7,7 +7,7 @@
 import vec3Pkg from 'vec3'
 import { isLog } from './observe.mjs'
 import { sealStock } from './sealing.mjs'
-import { minesAt, mineBottom, onMineCell, MINE_BOTTOM, MINE_MIN_STEPS } from './facilities.mjs'
+import { minesAt, mineBottom, onMineCell, canExtendMine, MINE_BOTTOM, MINE_MIN_STEPS } from './facilities.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -63,7 +63,7 @@ export function bottomFor (state, sources) {
 }
 
 // 採掘の次の一手（solver の world.minePlan）: { go: 採掘場 } 下りて鉱石のある所へ / { dig: 名前 } 途中の採掘場の続きを掘る /
-// { make: bottom_y } 新しく設計して掘る（{ exhausted: 名前 } = 底まで掘り尽くして、壁に鉱石が出なかった採掘場。
+// { extend: 名前 } 掘り切った採掘場の幹を延ばして掘る / { make: bottom_y } 新しく設計して掘る（{ exhausted: 名前 } = 底まで掘り尽くして、壁に鉱石が出なかった採掘場。
 // make_mine がその印を付けて、次の採掘場は別の入口に作る）
 export function minePlan (bot, state, sources) {
   const at = minesAt(bot, state, oreY(sources), TOLERANCE)
@@ -74,8 +74,11 @@ export function minePlan (bot, state, sources) {
   const done = at[0]
   if (done) {
     const above = bot.entity.position.y > done.bottom.y + 2
-    // 下りきった採掘場の底にいて、見える所に鉱石がない: 掘り尽くした。新しい採掘場へ
-    return above ? { go: { name: done.fac.name, bottom: done.bottom, above } } : { make: bottomFor(state, sources), exhausted: done.fac.name }
+    if (above) return { go: { name: done.fac.name, bottom: done.bottom, above } }
+    // 下りきった採掘場の底にいて、見える所に鉱石がない: 採掘場は使いまわし、幹を延ばして枝を足す（user: 「採掘場は目的の度に作らず、
+    // 使いまわします。どんどん長くなる」）。延ばせないほど打ち切られて初めて、掘り尽くしたとして新しい採掘場へ
+    const longer = at.find((m) => m.fac.status === 'done' && canExtendMine(m.fac))
+    return longer ? { extend: longer.fac.name } : { make: bottomFor(state, sources), exhausted: done.fac.name }
   }
   return { make: bottomFor(state, sources) }
 }

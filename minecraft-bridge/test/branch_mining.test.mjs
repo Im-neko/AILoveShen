@@ -103,7 +103,57 @@ test('stopMine: 枝のセルなら、その枝の先だけを外す。坑道な�
   assert.equal(fac.layout.stopped.reason, 'lava at 1,2,3')
   const t = after.findIndex((c) => c.part === 'tunnel_east')
   stopMine(fac, t + 10, 'cave')
-  assert.equal(fac.layout.cells.length, t + 10)
+  // 幹: その向きの幹の先と、先に付く枝だけ外れる。もう一方の向きと、手前の枝は残る
+  const left = fac.layout.cells
+  assert.equal(left.filter((c) => c.part === 'tunnel_east').length, 10)
+  assert.ok(left.some((c) => c.part === 'tunnel_west'))
+  assert.ok(left.some((c) => c.part === 'branch_east_5_a'), '手前（幹の 6 マス目）の枝は残る')
+  assert.ok(!left.some((c) => c.part === 'branch_east_11_a'), '先（幹の 12 マス目）の枝は外れる')
+  assert.ok(left.some((c) => c.part === 'branch_west_11_a'))
+})
+
+test('extendMine: 掘り切った採掘場の幹を延ばし、枝を足す。打ち切られた向き・ほかの採掘場に当たる所は延ばさない', async () => {
+  const { extendMine, canExtendMine, EXTEND_LENGTH } = await import('../src/facilities.mjs')
+  const { fac, s } = design()
+  s.facilities = { mine_1: fac }
+  const L = fac.layout
+  const total0 = L.cells.length
+  assert.equal(canExtendMine(fac), true)
+  const first = extendMine(s, fac) // 短い向きから（同じなら 設計の順）
+  assert.equal(first.to - first.from, EXTEND_LENGTH)
+  assert.equal(fac.status, 'building')
+  assert.ok(L.cells.length > total0 + EXTEND_LENGTH, '幹と枝が足される')
+  assert.equal(L.reach[first.dir], first.to)
+  const grown = L.cells.filter((c) => c.part === `tunnel_${first.dir}`)
+  assert.equal(grown.length, first.to)
+  // 延ばした幹は、元の幹と同じ列に一直線で続く
+  const [a, b] = [grown[first.from - 1], grown[first.from]]
+  assert.equal(Math.abs(a.x - b.x) + Math.abs(a.z - b.z), 1)
+  assert.equal(a.y, b.y)
+  // 枝は設計と同じ並び（3 マスおき）で、元の最後の 1 マス手前から続く
+  const roots = new Set(L.cells.filter((c) => c.part.startsWith(`branch_${first.dir}_`)).map((c) => Number(c.part.split('_')[2])))
+  assert.ok([...roots].every((i) => i % 3 === 2))
+  assert.ok(roots.has(first.from - 1 + ((2 - ((first.from - 1) % 3) + 3) % 3)), '元の最後の 1 マス以降の最初の 3 マスおき')
+  // 打ち切られた向き（幹が reach より短い）は延ばさない
+  const second = extendMine(s, fac)
+  assert.notEqual(second.dir, first.dir)
+  const cut = L.cells.findIndex((c) => c.part === `tunnel_${first.dir}`) + 5
+  stopMine(fac, cut, 'lava')
+  assert.equal(L.cells.filter((c) => c.part === `tunnel_${first.dir}`).length, 5)
+  assert.ok(extendMine(s, fac), 'もう一方の向きはまた延ばせる')
+  assert.equal(L.cells.filter((c) => c.part === `tunnel_${first.dir}`).length, 5, '打ち切られた向きは延びない')
+})
+
+test('minePlan: 底に着いて鉱石が見えなければ、採掘場は延ばして使いまわす。延ばせなくなったら新しい採掘場', () => {
+  const { fac, s } = design()
+  s.facilities = { mine_1: fac }
+  fac.status = 'done'
+  const room = fac.layout.cells.find((c) => c.part === 'room')
+  const atBottom = { ...world(), entity: { position: new Vec3(room.x, fac.layout.bottom_y, room.z) } }
+  const sources = ['iron_ore']
+  assert.deepEqual(minePlan(atBottom, s, sources), { extend: 'mine_1' })
+  fac.layout.closed = [...fac.layout.tunnels] // どの向きも延ばせない
+  assert.equal(minePlan(atBottom, s, sources).exhausted, 'mine_1')
 })
 
 test('dig_mine: 枝が危なければその枝だけ打ち切って、ほかの枝を掘り続ける', async () => {

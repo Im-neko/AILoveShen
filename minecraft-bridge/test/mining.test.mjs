@@ -120,8 +120,12 @@ test('採掘の次の一手: なければ設計、途中なら続き、下りき
   assert.equal(minePlan(done, s, ['iron_ore']).go.name, fac.name)
   const bottom = fac.layout.cells.filter((c) => c.part === 'stairs').at(-1)
   const below = world(dug(fac), new Vec3(bottom.x, bottom.y, bottom.z))
-  // 底にいて、見える所に鉱石がない（solver はそのときだけ計画を聞く）: 掘り尽くした。新しい採掘場を、印の名前つきで
+  // 底にいて、見える所に鉱石がない（solver はそのときだけ計画を聞く）: 採掘場は使いまわし、幹を延ばして掘る
+  assert.deepEqual(minePlan(below, s, ['iron_ore']), { extend: fac.name })
+  // どの向きにも延ばせないなら、掘り尽くした。新しい採掘場を、印の名前つきで
+  fac.layout.closed = [...fac.layout.tunnels]
   assert.deepEqual(minePlan(below, s, ['iron_ore']), { make: 16, exhausted: fac.name })
+  delete fac.layout.closed
   assert.equal(minesAt(done, s, 16).length, 1)
   // 印を付けた採掘場は、もう当てにしない（下りない・続きとも言わない）
   fac.layout.exhausted = true

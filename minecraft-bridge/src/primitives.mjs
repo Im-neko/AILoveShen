@@ -33,7 +33,7 @@ import { SINGLE_CHEST, defragChests, contentsSignature, chestRecordPos, storageU
 import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
 import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
-import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
+import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, extendMine, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
 import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
 import { routeThroughMine, climbsDirect } from './mine-route.mjs'
 import { sealStock, openings, enclosure, sealCell, plugCell, mendStand, floorSolid, SEAL_FROM_DEPTH } from './sealing.mjs'
@@ -2144,6 +2144,12 @@ export const PRIMITIVES = {
   async dig_mine (bot, state, c, signal) {
     const fac = state.facilities?.[c.facility]
     if (!fac?.layout || fac.kind !== 'mine') throw new Error(`there is no mine named ${c.facility}`)
+    // 掘り切った採掘場の幹を延ばす（掘る前に、延ばしたセルを設計に足す）
+    if (c.extend && !mineStatus(bot, fac).next) {
+      const longer = extendMine(state, fac)
+      if (!longer) throw new Error(`the mine ${fac.name} cannot be made longer: its tunnels end at dangers or at other mines`)
+      console.log(`[mine] ${fac.name} を延ばした: ${longer.dir} の幹 ${longer.from} → ${longer.to}（幹 ${longer.trunk} マス、枝 ${longer.branches} マス）`)
+    }
     // 松明なしでは掘り始めない（暗い坑道はモブが湧く。夜も昼も同じ）: 足りないと知らせて、作りに戻らせる
     if (mineStatus(bot, fac).next && !bot.inventory.items().some((i) => i.name === 'torch')) {
       throw new Error(`no torch to light the mine ${fac.name} (a torch goes on the wall every ${MINE_TORCH.tunnel} cells in a tunnel, ${MINE_TORCH.stairs} on the stairs, once in each branch): make torches first (a torch is 1 coal or charcoal + 1 stick)`)

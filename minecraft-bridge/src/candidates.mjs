@@ -11,7 +11,7 @@
 // 候補をもう一度作り、その id の候補を実行する。
 
 import vec3Pkg from 'vec3'
-import { workCell, mineStatus, waterAt, HOME_FARM } from './facilities.mjs'
+import { workCell, mineStatus, canExtendMine, waterAt, HOME_FARM } from './facilities.mjs'
 import { cropBySeed, CROPS } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
 import { standingCell, round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inventoryCounts, fillItem, UNDERGROUND_BELOW, EXPLODES } from './observe.mjs'
@@ -405,6 +405,11 @@ function fromLeaf (bot, state, world, leaf) {
       // 採掘場を設計どおりに掘る（設計書 47 §16）: 1 回の行動で、並びの次のセルから危ないものに当たるまで
       const fac = state.facilities?.[leaf.facility]
       const m = fac ? mineStatus(bot, fac) : null
+      // 掘り切った採掘場の幹を延ばして掘る（leaf.extend。延ばすのは dig_mine が掘る前にする）: 今いる所から掘り始める
+      if (leaf.extend && fac && !m?.next && canExtendMine(fac)) {
+        const p = bot.entity.position
+        return [{ id: `make the mine ${fac.name} longer and dig it (${m.done}/${m.total} cells dug, no ${leaf.item} in its walls)`, verb: 'dig_mine', target: fac.name, facility: fac.name, extend: true, ...(leaf.sources ? { sources: leaf.sources } : {}), pos: new Vec3(p.x, p.y, p.z), distance: 0 }]
+      }
       if (!m?.next) return []
       const p = new Vec3(m.next.x, m.next.y, m.next.z)
       return [{ id: `dig the mine ${fac.name} (${m.done}/${m.total} cells dug)`, verb: 'dig_mine', target: fac.name, facility: fac.name, ...(leaf.sources ? { sources: leaf.sources } : {}), pos: p, distance: dist(bot, p) }]
