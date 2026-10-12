@@ -1,7 +1,7 @@
 // 共通の状態（GET /state）: 見張りの質問（Jev）と、Gemini の道具の選択が見る 1 つの書式。
 // 要約だけを入れる（生データはトークンが 4〜20 倍で、正答の確率も低かった）。質問ごとの専用の
 // 状態は作らない: 作ると、場面ごとのコードに戻る（設計書 19 §11.2、21 §4）。
-import { round, bearing, dayPhase, nearbyEntities, isHostile, inventoryCounts } from './observe.mjs'
+import { round, bearing, dayPhase, nearbyEntities, isHostile, inventoryCounts, biomeName } from './observe.mjs'
 import { isInside } from './home.mjs'
 import { closedSpaceCached } from './reach.mjs'
 import { inBurrow } from './burrow.mjs'
@@ -106,7 +106,8 @@ export function sharedState (bot, state, needsOf) {
       held_item: bot.heldItem?.name ?? null,
       in_water: isSwimming(bot),
       ...(underwater(bot) ? { head_in_water: true, air: underwater(bot).air } : {}),
-      in_home: isInside(bot, state.home)
+      in_home: isInside(bot, state.home),
+      biome: biomeName(bot)
     },
     surroundings: { ...lookAround(bot), ...closedAround(bot, state) },
     mobs: mobs(bot),

@@ -7,7 +7,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { round } from './observe.mjs'
+import { round, biomeNameAt } from './observe.mjs'
 import { blockLightAt, skyLightAt } from './light.mjs'
 import { protectedReason } from './home.mjs'
 import { closedSpace, isolatedSpace, pillarUnder } from './reach.mjs'
@@ -80,6 +80,7 @@ export function inspectCell (bot, state, pos) {
     // サーバーが送った光（ブロックの光 0〜15。0 はモブが湧く暗さ）。届いていなければ null（light.mjs）
     light: blockLightAt(bot, pos),
     sky_light: skyLightAt(bot, pos),
+    biome: block.biome ? { id: block.biome.id, name: biomeNameAt(bot, block) } : null,
     neighbours,
     eye_distance: round(distance),
     within_reach: distance <= REACH,

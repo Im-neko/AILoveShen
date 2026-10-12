@@ -231,6 +231,18 @@ class TestGamePromptTemplateBuilder:
         assert "家: 建ててある、ベッドあり、チェスト 0\n- 今いる場所: 家の中\n" in prompt
         assert "チェストの中身: なし" in prompt
 
+    def test_goal_prompt_tells_the_biome_you_are_in(self):
+        """今いるバイオームを、日本語名と元の名前で言う（羊は草原、など探す場所の手がかり）。読めなければ行を出さない。"""
+        obs = _obs()
+        obs.state.setdefault("self", {})["biome"] = "meadow"
+        assert "- 今いるバイオーム: 草原（meadow）\n" in _goal_prompt(obs)
+        obs.state["self"]["biome"] = "deep_lukewarm_ocean"
+        assert "- 今いるバイオーム: ぬるい海（deep_lukewarm_ocean）\n" in _goal_prompt(obs)
+        obs.state["self"]["biome"] = "some_new_biome"
+        assert "- 今いるバイオーム: some_new_biome\n" in _goal_prompt(obs)
+        obs.state["self"]["biome"] = None
+        assert "今いるバイオーム" not in _goal_prompt(obs)
+
     def test_goal_prompt_house_planks_are_also_told_as_logs(self):
         """板材の数を原木の数と取り違えない（have(log, 71) を決めた: 原木 18 本ぶん）。"""
         prompt = _goal_prompt()

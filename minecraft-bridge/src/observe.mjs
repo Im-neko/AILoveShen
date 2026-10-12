@@ -196,7 +196,8 @@ export function summarize (bot, history, extra = {}) {
       dark: isDark(bot),
       in_water: isSwimming(bot),
       ...(underwater(bot) ? { head_in_water: true, air: underwater(bot).air } : {}),
-      riding: bot.vehicle?.name ?? null
+      riding: bot.vehicle?.name ?? null,
+      biome: biomeName(bot)
     },
     inventory: inventoryCounts(bot),
     mobs,
@@ -261,6 +262,23 @@ function roofThickness (bot) {
 // 2026-10-04、地表 76 の畑の下、y63 の洞窟に、種を持ったまま降りて、地下の規則（松明がなければ地上へ、など）が
 // 何も効かなかった）。家の屋根や崖の庇、木の下は薄いので含めない
 export const DEEP_ROOF = 8
+// 今いるバイオームの名前（plains、meadow、forest など。読めなければ null）。羊は草原、など探す場所の手がかりになる
+export function biomeName (bot) {
+  try {
+    return biomeNameAt(bot, bot.blockAt(bot.entity.position.floored()))
+  } catch {
+    return null
+  }
+}
+
+// ブロックの biome.id から名前を引く（ブロックの biome.name は、サーバーが送った群系の表に置き換わったあと空になる）
+export function biomeNameAt (bot, block) {
+  const biome = block?.biome
+  if (!biome) return null
+  const r = bot.registry
+  return biome.name || r?.biomes?.[biome.id]?.name || r?.biomesArray?.[biome.id]?.name || null
+}
+
 export const isUnderground = (bot) => {
   if (!isCovered(bot)) return false
   if (bot.entity.position.y >= UNDERGROUND_BELOW && roofThickness(bot) < DEEP_ROOF) return false

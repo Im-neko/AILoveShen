@@ -705,6 +705,31 @@ def format_place(obs: GameObservation) -> str:
     return f"家の外（家まで {distance}m）" if distance is not None else "家の外"
 
 
+# バイオームの日本語（ここにないものは英語名のまま）
+BIOME_JA = {
+    "plains": "平原", "sunflower_plains": "ひまわり平原", "meadow": "草原", "cherry_grove": "桜の林",
+    "forest": "森", "flower_forest": "花の森", "birch_forest": "白樺の森", "dark_forest": "暗い森",
+    "old_growth_birch_forest": "巨大な白樺の森", "taiga": "タイガ", "old_growth_pine_taiga": "巨大なマツのタイガ",
+    "old_growth_spruce_taiga": "巨大なトウヒのタイガ", "snowy_plains": "雪原", "snowy_taiga": "雪のタイガ",
+    "snowy_slopes": "雪の斜面", "grove": "雪の林", "desert": "砂漠", "savanna": "サバンナ",
+    "savanna_plateau": "サバンナの台地", "windswept_savanna": "吹きさらしのサバンナ", "badlands": "荒野",
+    "swamp": "沼地", "mangrove_swamp": "マングローブの沼地", "jungle": "ジャングル", "sparse_jungle": "まばらなジャングル",
+    "bamboo_jungle": "竹林のジャングル", "beach": "砂浜", "stony_shore": "岩の海岸", "river": "川",
+    "frozen_river": "凍った川", "ocean": "海", "deep_ocean": "深い海", "lukewarm_ocean": "ぬるい海",
+    "windswept_hills": "吹きさらしの丘", "windswept_forest": "吹きさらしの森", "dripstone_caves": "鍾乳洞",
+    "lush_caves": "緑の洞窟", "deep_dark": "ディープダーク", "mushroom_fields": "キノコ島",
+}
+
+
+def format_biome(biome: str | None) -> str:
+    """今いるバイオーム（名前が分からなければ空）。日本語名と元の名前。"""
+    if not biome:
+        return ""
+    # 名前の末尾が合うもの（deep_lukewarm_ocean → ぬるい海）は、長く合うほうを取る
+    ja = BIOME_JA.get(biome) or next((BIOME_JA[k] for k in sorted(BIOME_JA, key=len, reverse=True) if biome.endswith(f"_{k}")), "")
+    return f"{ja}（{biome}）" if ja else biome
+
+
 def _format_broken(broken: list) -> list[str]:
     """最近壊れた道具（壊れたものはもう持っていない。持ち物の行が正しい）。"""
     if not broken:
@@ -796,6 +821,7 @@ def _format_situation(obs: GameObservation) -> str:
         f"- 家: {_format_home(obs)}",
         *_format_titles(obs),
         *([f"- 今いる場所: {format_place(obs)}"] if obs.has_home else []),
+        *([f"- 今いるバイオーム: {biome}"] if (biome := format_biome((s.get("self") or {}).get("biome"))) else []),
         f"- 近くにあるもの（{LANDMARK_RADIUS} m 以内）: {_format_nearby(s.get('nearby') or [])}",
         *_format_around(s.get("around") or {}),
         *_format_quarry(s.get("quarry") or {}),
