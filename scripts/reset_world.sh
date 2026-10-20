@@ -12,6 +12,7 @@
 #      data/learned_candidates.json、data/goal.json）を、日付つきの名前にして取っておく（消さない）
 #   2. .env の MC_LEVEL と MC_SEED を書き換える
 #   3. Minecraft サーバーを作り直して（docker compose up --force-recreate）、"Done" が出るまで待つ
+#   1a. 技のうち、今の版が 100 回以上使われて成功率が 95% を超えるもの（tools/keep_skills.py）は、新しい世界に残す
 #   1b. 教訓のうち、失敗から書いて一度も効かなかったもの（tools/set_aside_lessons.py）を、data/lessons-unproven-日付.json に取り分ける
 # 残るもの: 効いた教訓と教わった教訓、自分について話したこと、名前の読み（ワールドによらない）
 #
@@ -120,6 +121,7 @@ for f in "${FORGOTTEN[@]}"; do
 done
 echo "    サーバーを作り直す: docker compose up -d --force-recreate（${CONTAINER}）"
 "$PYTHON" "$ROOT/tools/set_aside_lessons.py" --lessons "$LESSONS" --out "$(stamped "$ROOT/data/lessons-unproven.json")" --dry-run | sed 's/^/    取り分ける教訓: /'
+"$PYTHON" "$ROOT/tools/keep_skills.py" --from "$SKILLS" --to "$SKILLS" --dry-run | sed 's/^/    残す技: /'
 echo "    残るもの: 効いた教訓と教わった教訓、自分について話したこと、名前の読み"
 if [ "$dry" = 1 ]; then echo "(dry-run: 何も変えていない)"; fi
 
@@ -145,6 +147,10 @@ for f in "${FORGOTTEN[@]}"; do
   to="$(stamped "$f")"
   run mv "$f" "$to"
   moved+=("$f|$to")
+  # 技のうち、今の版が 100 回以上使われて成功率が 95% を超えるものは、新しい世界に残す（tools/keep_skills.py）
+  if [ "$f" = "$SKILLS" ] && [ "$dry" = 0 ]; then
+    "$PYTHON" "$ROOT/tools/keep_skills.py" --from "$to" --to "$SKILLS"
+  fi
 done
 
 # 1b. 教訓のうち、失敗から書いて一度も効かなかったものを取り分ける

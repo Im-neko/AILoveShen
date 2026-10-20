@@ -23,7 +23,7 @@ SITUATION = {
     "body": "ok",
 }
 GOAL = "have(wheat, 24)"
-HOE = ToolCall("craft", {"item": "wooden_hoe"}, intent="クワを作り直す")
+HOE = ToolCall("eat", {"item": "wooden_hoe"}, intent="クワを作り直す")
 
 
 class MemoryStore(ILearnedCandidateStore):
@@ -53,7 +53,8 @@ def _learn(book, call=HOE, before=None, after=None, situation=SITUATION):
 
 
 def test_only_calls_without_coordinates_that_are_not_waiting_are_remembered():
-    assert learnable(ToolCall("craft", {"item": "wooden_hoe"}))
+    assert not learnable(ToolCall("craft", {"item": "wooden_hoe"}))  # ソルバーが候補に出す
+    assert learnable(ToolCall("eat", {"item": "bread"}))
     assert learnable(ToolCall("smelt", {"input": "raw_iron"}))
     assert not learnable(ToolCall("withdraw", {"item": "wheat_seeds", "count": 4}))  # ブリッジの候補が数を決める
     assert not learnable(ToolCall("deposit", {"item": "oak_log"}))
@@ -71,7 +72,7 @@ def test_a_step_that_changed_the_inventory_is_remembered_and_recalled_in_the_sam
     book = LearnedCandidates(store)
     _learn(book)
     (move,) = book.recall(SITUATION)
-    assert move.tool == "craft" and move.args == {"item": "wooden_hoe"} and move.worked == 1
+    assert move.tool == "eat" and move.args == {"item": "wooden_hoe"} and move.worked == 1
     assert move.intent == "クワを作り直す"
     assert store.saved[0][0].id == move.id  # 保存する
     # 目標・対象・場所が同じなら思い出す（時刻や体の様子は問わない）
@@ -113,8 +114,8 @@ def test_offers_are_the_kinds_of_options_without_the_ones_every_scene_has():
 
 def test_quantities_are_not_kept_so_the_same_move_with_another_number_is_one_move():
     book = LearnedCandidates(MemoryStore())
-    _learn(book, ToolCall("craft", {"item": "stick", "times": 1}))
-    _learn(book, ToolCall("craft", {"item": "stick", "times": 4}), after={"stick": 8})
+    _learn(book, ToolCall("eat", {"item": "stick", "times": 1}))
+    _learn(book, ToolCall("eat", {"item": "stick", "times": 4}), after={"stick": 8})
     (move,) = book.learned
     assert move.args == {"item": "stick"} and move.worked == 2
 
@@ -123,9 +124,9 @@ def test_candidates_saved_by_the_old_way_are_dropped_when_loaded():
     from ailoveshen.domain.value_objects import LearnedCandidate
 
     old_key = (("goal", "have"), ("item", "food"), ("place", "home"))
-    stale = LearnedCandidate(id="m1", situation=old_key, tool="craft", args={"item": "stick"})
+    stale = LearnedCandidate(id="m1", situation=old_key, tool="eat", args={"item": "stick"})
     no_longer = LearnedCandidate(id="m2", situation=tuple((k, "") for k in MATCH_KEYS), tool="withdraw", args={"item": "oak_planks"})
-    fine = LearnedCandidate(id="m3", situation=tuple((k, "") for k in MATCH_KEYS), tool="craft", args={"item": "wooden_hoe"})
+    fine = LearnedCandidate(id="m3", situation=tuple((k, "") for k in MATCH_KEYS), tool="eat", args={"item": "wooden_hoe"})
     store = MemoryStore()
     store.saved = ([stale, no_longer, fine], 4)
     book = LearnedCandidates(store)
@@ -169,8 +170,8 @@ def test_a_replayed_move_that_fails_to_run_counts_at_once():
 def test_the_book_keeps_at_most_max_learned_dropping_the_weakest():
     book = LearnedCandidates(MemoryStore(), max_learned=2)
     for item in ("a", "b", "c"):
-        _learn(book, ToolCall("craft", {"item": item}))
-    _learn(book, ToolCall("craft", {"item": "c"}), after={"z": 1})  # c は強くなる
+        _learn(book, ToolCall("eat", {"item": item}))
+    _learn(book, ToolCall("eat", {"item": "c"}), after={"z": 1})  # c は強くなる
     assert sorted(m.args["item"] for m in book.learned) == ["b", "c"]
 
 
@@ -182,15 +183,15 @@ def test_the_book_is_saved_and_loaded_across_restarts(tmp_path):
     again.load()
     assert again.learned == book.learned
     assert again.recall(SITUATION)[0].args == {"item": "wooden_hoe"}
-    _learn(again, ToolCall("craft", {"item": "stone_hoe"}))
+    _learn(again, ToolCall("eat", {"item": "stone_hoe"}))
     assert {m.id for m in again.learned} == {"l1", "l2"}  # 次の id の番号も続く
 
 
 def test_shown_limits_how_many_candidates_are_offered_best_first():
     book = LearnedCandidates(MemoryStore(), shown=2)
     for item in ("a", "b", "c"):
-        _learn(book, ToolCall("craft", {"item": item}))
-    _learn(book, ToolCall("craft", {"item": "c"}), after={"z": 1})
+        _learn(book, ToolCall("eat", {"item": item}))
+    _learn(book, ToolCall("eat", {"item": "c"}), after={"z": 1})
     assert [m.args["item"] for m in book.recall(SITUATION)][0] == "c"
     assert len(book.recall(SITUATION)) == 2
 
@@ -203,7 +204,7 @@ class TestOfferedToJev:
         _learn(book)
         (move,) = book.learned
         selector = Mock()
-        option = f"{LEARNED_PREFIX}craft(item=wooden_hoe)"
+        option = f"{LEARNED_PREFIX}eat(item=wooden_hoe)"
 
         async def select(state, offered, instructions):
             assert option in [c.action_id for c in offered]
@@ -222,7 +223,7 @@ class TestOfferedToJev:
             )
         )
         assert picked.learned == move
-        assert picked.call.name == "craft" and picked.call.args == {"item": "wooden_hoe"}
+        assert picked.call.name == "eat" and picked.call.args == {"item": "wooden_hoe"}
         assert picked.call.intent == "クワを作り直す"
 
 

@@ -670,7 +670,7 @@ class TestToolStep:
         before = replace(_obs(), state={"inventory": {"stick": 2}})
         after = replace(_obs(), state={"inventory": {"stick": 2, "wooden_hoe": 1}})
         self.text_generator.choose_tool.side_effect = [
-            ToolChoice("craft", {"item": "wooden_hoe", "intent": "クワを作る"}),
+            ToolChoice("eat", {"item": "wooden_hoe", "intent": "クワを作る"}),
             ToolChoice("wait", {"intent": "待つ"}),
         ]
 
@@ -678,14 +678,14 @@ class TestToolStep:
         assert book.learned == ()  # まだ効いたか分からない
         await use_case._act_with_tools(session, after)
         (move,) = book.learned
-        assert move.tool == "craft" and move.args == {"item": "wooden_hoe"}
+        assert move.tool == "eat" and move.args == {"item": "wooden_hoe"}
         # 同じ状況の 2 手目: 覚えた手を Jev に渡す
         assert use_case._step_picker.pick.await_args.kwargs["learned"] == [move]
 
         # Jev が選んだら、その道具をそのまま実行し、効いたか数える
-        call = ToolCall("craft", {"item": "wooden_hoe"}, intent="クワを作る")
+        call = ToolCall("eat", {"item": "wooden_hoe"}, intent="クワを作る")
         use_case._step_picker.pick = AsyncMock(
-            return_value=PickedStep(call, "learned craft(item=wooden_hoe)", 0.9, learned=move)
+            return_value=PickedStep(call, "learned eat(item=wooden_hoe)", 0.9, learned=move)
         )
         await use_case._act_with_tools(session, after)
         assert watcher.run.await_args.args[0] == call

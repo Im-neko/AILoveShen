@@ -25,10 +25,11 @@ from ailoveshen.domain.value_objects import Candidate, GameObservation, LearnedC
 
 # 覚えてよい道具: 何を作る・持つ・焼くかだけで決まり、場所を選ばないもの。待つ・寝る・戦う・逃げる・
 # 歩く・掘る・置く（場所が要る）や、ソルバーの提案は覚えない。チェストの出し入れ（withdraw / deposit）も
-# 覚えない: 数はそのときの不足で決まり、ブリッジが正しい数の候補（take N from the chest）を出している
+# 覚えない: 数はそのときの不足で決まり、ブリッジが正しい数の候補（take N from the chest）を出している。
+# craft も覚えない: レシピと不足はソルバーが候補に出すので覚える意味が薄く、100 件の上限の 9 割を占めて
+# ほかの学びを押し出していた（2026-10-20: 91/100 件。失敗は 0 件で、害は見ていない。試しに外している）
 LEARNED_TOOLS = frozenset(
     {
-        "craft",
         "eat",
         "equip",
         "smelt",
