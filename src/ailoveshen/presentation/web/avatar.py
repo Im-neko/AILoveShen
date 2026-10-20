@@ -7,6 +7,7 @@
 - GET /api/avatar/stream   アバターへの合図（Server-Sent Events）
 - GET /assets/avatar.vrm   VRM のモデル（設定 avatar.model_path）
 - GET /vendor/...          three.js と three-vrm（CDN につながらなくても動くように同梱）
+- GET /js/lipsync.mjs      口の動き（母音の並びと、前後の音をつなぐ補間。設計書 24）
 
 合図は 3 種類だけ: 話す（本文と長さ。口の動きはページが本文から作る）、話し終わる、表情や
 しぐさ（うれしい・驚いた・かなしい、うなずく・よろこぶ）。ゲームの判断には関わらない
@@ -58,6 +59,7 @@ from ailoveshen.domain.value_objects import EmotionType, SupportKind
 
 AVATAR_HTML = Path(__file__).with_name("avatar.html")
 VENDOR_DIR = Path(__file__).with_name("vendor")
+JS_DIR = Path(__file__).with_name("js")
 KEEPALIVE_SECONDS = 15.0
 QUEUE_SIZE = 32
 
@@ -229,6 +231,7 @@ class AvatarStage:
             return FileResponse(self._model, media_type="model/gltf-binary")
 
         app.mount("/vendor", StaticFiles(directory=VENDOR_DIR), name="vendor")
+        app.mount("/js", StaticFiles(directory=JS_DIR), name="js")
 
     def _uses_tts(self) -> bool:
         return self._lip_sync == "tts" or (self._lip_sync == "auto" and self._tts_seen)

@@ -90,6 +90,7 @@ def test_the_page_the_model_and_the_libraries_are_served(tmp_path):
     assert client.get("/assets/avatar.vrm").content == b"glTF-model"
     assert client.get("/vendor/three-vrm/three-vrm.module.min.js").status_code == 200
     assert client.get("/vendor/three/build/three.module.js").status_code == 200
+    assert client.get("/js/lipsync.mjs").status_code == 200  # 口の動き（avatar.html が読む）
     missing = TestClient(GoalBoard(lambda: None, avatar=AvatarStage(model_path=None)).app)
     assert missing.get("/assets/avatar.vrm").status_code == 404
     with pytest.raises(ValueError, match="lip_sync"):

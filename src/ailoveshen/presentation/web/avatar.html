@@ -34,6 +34,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
+import { MOUTH, OPEN, mouthAt, pace, visemes } from '/js/lipsync.mjs'
 
 const params = new URLSearchParams(location.search)
 const VIEW = params.get('view') === 'bust' ? 'bust' : 'full'
@@ -154,44 +155,14 @@ function setEmotion (emotion, intensity = 0.8, seconds = 3) {
   faceUntil = now() + seconds
 }
 
-// ---------------------------------------------------------------- 口（本文から母音を並べる）
-const VOWEL = {}
-const rows = { aa: 'あかさたなはまやらわがざだばぱぁゃゎ', ih: 'いきしちにひみりぎじぢびぴぃ', ou: 'うくすつぬふむゆるぐずづぶぷぅゅゔ', ee: 'えけせてねへめれげぜでべぺぇ', oh: 'おこそとのほもよろをごぞどぼぽぉょ' }
-for (const [v, chars] of Object.entries(rows)) {
-  for (const c of chars) {
-    VOWEL[c] = v
-    VOWEL[String.fromCharCode(c.charCodeAt(0) + 0x60)] = v // カタカナ
-  }
-}
-const OPEN = ['aa', 'oh', 'ih', 'ee', 'ou']
-const SMALL = new Set('ゃゅょぁぃぅぇぉャュョァィゥェォ')
-const PAUSE = /[、。，．,.!！?？…\s「」『』（）()]/
-
-// 本文 → [{viseme, weight}]（1 つがおよそ 1 モーラ）
-function visemes (text) {
-  const out = []
-  for (const c of text) {
-    if (PAUSE.test(c)) { out.push({ v: null, w: 0 }, { v: null, w: 0 }); continue }
-    if (c === 'ー' || c === '〜') { if (out.length) out.push({ ...out[out.length - 1] }); continue }
-    if (c === 'っ' || c === 'ッ') { out.push({ v: null, w: 0 }); continue }
-    if (c === 'ん' || c === 'ン') { out.push({ v: 'ou', w: 0.25 }); continue }
-    if (SMALL.has(c) && out.length) { out[out.length - 1] = { v: VOWEL[c], w: 0.9 }; continue }
-    if (VOWEL[c]) { out.push({ v: VOWEL[c], w: 0.9 }); continue }
-    // 漢字や英数字: 読みが分からないので、字ごとに決まった 2 モーラ
-    const code = c.codePointAt(0)
-    const n = /[一-鿿]/.test(c) ? 2 : 1
-    for (let i = 0; i < n; i++) out.push({ v: OPEN[(code + i * 3) % OPEN.length], w: 0.75 })
-  }
-  return out
-}
-
+// ---------------------------------------------------------------- 口（本文から母音を並べる。js/lipsync.mjs）
 let speech = null // { seq, start, per, end }
 const mouth = Object.fromEntries(OPEN.map((v) => [v, 0]))
 
 function speak (text, durationMs, emotion) {
-  const seq = visemes(text)
-  if (!seq.length) return
-  const per = Math.min(0.22, Math.max(0.07, durationMs / 1000 / seq.length))
+  const all = visemes(text)
+  if (!all.length) return
+  const { seq, per } = pace(all, Math.min(0.22, Math.max(0.07, durationMs / 1000 / all.length)))
   speech = { seq, start: now(), per, end: now() + Math.max(durationMs / 1000, per * seq.length) }
   if (emotion) setEmotion(emotion, 0.7, Math.max(2.5, durationMs / 1000))
 }
@@ -264,15 +235,11 @@ function update (dt) {
   const blink = bp >= 0 && bp <= 1 ? Math.sin(Math.PI * bp) : 0
   vrm.expressionManager.setValue('blink', blink * (1 - 0.8 * face.happy))
   // 口
-  const target = Object.fromEntries(OPEN.map((v) => [v, 0]))
-  if (talking) {
-    const k = (t - speech.start) / speech.per
-    const i = Math.floor(k)
-    const cur = speech.seq[i]
-    if (cur && cur.v) target[cur.v] = cur.w * (0.55 + 0.45 * Math.sin(Math.PI * (k - i)))
-  } else if (speech && t >= speech.end) speech = null
+  let target = Object.fromEntries(OPEN.map((v) => [v, 0]))
+  if (talking) target = mouthAt(speech.seq, (t - speech.start) / speech.per)
+  else if (speech && t >= speech.end) speech = null
   for (const v of OPEN) {
-    mouth[v] += (target[v] - mouth[v]) * Math.min(1, dt * 18)
+    mouth[v] += (target[v] - mouth[v]) * Math.min(1, dt * MOUTH.smooth)
     vrm.expressionManager.setValue(v, mouth[v] * (1 - 0.5 * face.happy))
   }
   // 目線: ほとんどはカメラ、ときどき少しよそを見る
