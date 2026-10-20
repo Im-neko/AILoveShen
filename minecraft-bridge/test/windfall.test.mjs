@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import vec3Pkg from 'vec3'
 import minecraftData from 'minecraft-data'
 import { Knowledge } from '../src/knowledge.mjs'
-import { windfallNow, collectKinds, canHarvest, WINDFALL_ORE } from '../src/windfall.mjs'
+import { windfallNow, windfallTrips, collectKinds, canHarvest, WINDFALL_ORE } from '../src/windfall.mjs'
+import { WorldMap, makeClassifier, AIR } from '../src/worldmap.mjs'
+import { registerFacility } from '../src/facilities.mjs'
 import { ground } from '../src/candidates.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -121,4 +123,22 @@ test('候補の一覧（ground）に、目標と関係なく出る', () => {
   const { bot, state } = setup({ items: [['stone_pickaxe', 1]], blocks: ORE_IRON })
   const { candidates } = ground(bot, state, k, { dig: () => [], hunt: () => [] }, { leaves: [] })
   assert.ok(candidates.some((c) => c.windfall === 'now' && c.block === 'iron_ore'))
+})
+
+test('採掘場の階段の柱にある鉱石へは、行く候補を出さない（行っても dig が断る）', () => {
+  const cls = makeClassifier(md)
+  const worldMap = new WorldMap()
+  const { bot, state } = setup({ items: [['stone_pickaxe', 1], ['stone_sword', 1], ['torch', 64]] })
+  Object.assign(state, { worldMap, mapCells: cls, plan: null, placed: {}, builds: {}, formerHomes: [] })
+  const put = (x, y, z) => { worldMap.set(x, y, z, cls.cellOf('iron_ore'), 90); worldMap.set(x, y + 1, z, AIR, 90) }
+  const flat = { registry: md, entity: { position: v(10, 64, 0) }, inventory: { items: () => [], emptySlotCount: () => 30 }, entities: {}, findBlock: () => null, time: { timeOfDay: 1000, age: 0 }, findBlocks: () => [], blockAt: (p) => { const name = p.y > 63 ? 'air' : p.y === 63 ? 'grass_block' : 'stone'; return { name, boundingBox: p.y > 63 ? 'empty' : 'block', position: p } } }
+  const fac = registerFacility(flat, { home: { inside: v(0, 64, 0), min: v(-1, 64, -1), max: v(1, 64, 1), door: v(0, 64, 2), outside: v(0, 64, 3) }, plan: null, builds: {}, formerHomes: [] }, 'mine_1', {
+    kind: 'mine', boxes: [{ min_x: 8, min_z: 0, max_x: 15, max_z: 7 }], design: { bottom_y: 40, tunnels: 2, tunnel_length: 8 }
+  })
+  state.facilities = { mine_1: fac }
+  const pillar = { x: fac.box.min.x + 1, y: 50, z: fac.box.min.z + 1 }
+  put(pillar.x, pillar.y, pillar.z)
+  put(-30, 66, 0) // 採掘場とは関係ない鉄
+  const trips = windfallTrips(bot, state, k)
+  assert.deepEqual(trips.map((t) => [t.pos.x, t.pos.z]), [[-30, 0]])
 })

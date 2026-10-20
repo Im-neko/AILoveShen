@@ -178,6 +178,15 @@ test('洞窟の鉱石は、道具の dig でも掘らない（家の床より 10
   assert.equal((await outcrop('dig', { x: 10, y: 69, z: 10 })).ok, true) // 浅い露頭
 })
 
+test('find_blocks は、洞窟の深い鉱石を出さない（dig が断る）。全部がそうなら、理由を言う。浅い露頭は出す', async () => {
+  const { callTool, bot } = setup({ at: v(10.5, 50, 10.5), items: [['stone_pickaxe', 1]], extra: { '10,49,10': 'iron_ore', '10,69,10': 'iron_ore' } })
+  bot.findBlocks = () => [v(10, 49, 10)]
+  const deep = (await callTool('find_blocks', { block: 'iron_ore', radius: 32 })).result
+  assert.match(deep, /no iron_ore you may take.*1 lie deep in caves.*never in a cave/)
+  bot.findBlocks = () => [v(10, 49, 10), v(10, 69, 10)]
+  assert.deepEqual((await callTool('find_blocks', { block: 'iron_ore', radius: 32 })).result.map((f) => f.y), [69])
+})
+
 test('goto は水の上の座標へ歩かない（海を歩いて溺れた）。陸の座標と、ボートのときは通す', async () => {
   const extra = { '8,71,8': 'water', '8,70,8': 'water', '8,69,8': 'water', '8,68,8': 'water' }
   const { callTool, runs } = setup({ at: v(2.5, 70, 2.5), extra })
@@ -216,6 +225,13 @@ test('クラフトはレシピから作業台が要るかを決め、近くに�
   assert.equal((await callTool('craft', { item: 'stick', times: 2 })).ok, true)
   assert.deepEqual([runs[0].c.needsTable, runs[0].c.times], [false, 2])
   assert.match((await callTool('craft', { item: 'dirt' })).result, /has no crafting recipe/)
+})
+
+test('作業台を持っているのに近くになければ、断りは「置く」ことを教える（作ったあと置かずに 4 回断られた）', async () => {
+  const { callTool } = setup({ at: v(10.5, 70, 10.5), items: [['crafting_table', 1], ['oak_planks', 4]] })
+  const refused = (await callTool('craft', { item: 'wooden_pickaxe' })).result
+  assert.match(refused, /you carry 1 crafting_table: place it/)
+  assert.doesNotMatch(refused, /craft one/)
 })
 
 test('ソルバーの提案は、今ある候補の id だけ実行する', async () => {

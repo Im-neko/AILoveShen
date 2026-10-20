@@ -9,12 +9,12 @@
 // 行けと言われて掘れない場所を出さないため、記録するときにしていた除外（家・建物、水をせき止める物、
 // 木でない原木）を、引くときにする。地図は見えた面しか持たないので、木の判定は未知を偽とする
 
-import { protectedReason } from './home.mjs'
+import { takeRefusal } from './takeable.mjs'
 import { isNaturalLogName, logClusterIsTree } from './trees.mjs'
 import { REMEMBERED_ANIMALS, REMEMBERED_BLOCK, REMEMBERED_STONE, recallableKinds } from './memory.mjs'
 import { AIR, TICKS_PER_MINUTE, minuteOf, minutesSince } from './worldmap.mjs'
 import { UNDERGROUND_BELOW } from './observe.mjs'
-import { caveOre, mineFromHome } from './mining.mjs'
+import { mineFromHome } from './mining.mjs'
 
 export const PLACES_RADIUS = 192
 const MAP_FIND_RADIUS = 96
@@ -55,7 +55,7 @@ export function usable (state, x, y, z, cell) {
   const { worldMap: map, mapCells: cls } = state
   const name = cls.nameOf(cell)
   if (!name || name === 'air') return false
-  if (protectedReason(state, { x, y, z }, 0, null)) return false
+  if (takeRefusal(state, { x, y, z }, name)) return false // dig が断る所は行き先にしない（takeable.mjs）
   if (cls.isSolid(cell) && holdsBackLiquid(map, cls, x, y, z)) return false
   if (name.endsWith('_log')) {
     if (!isNaturalLogName(name)) return false
@@ -126,16 +126,16 @@ export function mapPlaces (state, me, ticksNow, kinds = null) {
 // 場所を引くときの memory: 動物は memory.places のまま、ブロックは地図から。kinds: 探す種類（null で全部）
 export function memoryView (state, me, ticksNow, kinds = null) {
   const memory = state.memory
-  if (!state.worldMap) return mineFromHome(state) ? { ...memory, places: withoutCaveOre(state, memory.places ?? {}) } : memory
+  if (!state.worldMap) return { ...memory, places: withoutRefused(state, memory.places ?? {}) }
   const animals = Object.fromEntries(Object.entries(memory.places ?? {}).filter(([k]) => REMEMBERED_ANIMALS.has(k)))
-  return { ...memory, places: withoutCaveOre(state, { ...animals, ...mapPlaces(state, me, ticksNow, kinds) }) }
+  return { ...memory, places: withoutRefused(state, { ...animals, ...mapPlaces(state, me, ticksNow, kinds) }) }
 }
 
-// 洞窟の深い鉱石は、覚えている場所に出さない（出すと、LLM が見に行く。取らない物へは行かせない: 2026-10-07、
-// 覚えていた洞窟の鉄鉱石へ歩いて、自然の洞窟で鉄を掘った）
-function withoutCaveOre (state, places) {
+// dig が断る所は、覚えている場所に出さない（出すと、LLM が見に行く。取らない物へは行かせない: 2026-10-07 洞窟の
+// 鉄鉱石、2026-10-16 採掘場の階段の柱の鉄鉱石へ 3 時間で goto と dig を 20 回ずつ）。動物の場所は掘るものでない
+function withoutRefused (state, places) {
   return Object.fromEntries(Object.entries(places)
-    .map(([kind, list]) => [kind, list.filter((p) => !caveOre(state, p, kind))])
+    .map(([kind, list]) => [kind, REMEMBERED_ANIMALS.has(kind) ? list : list.filter((p) => !takeRefusal(state, p, kind))])
     .filter(([, list]) => list.length))
 }
 

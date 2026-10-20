@@ -65,6 +65,15 @@ test('目標が使う物は戻さない（丸石を集める目標では丸石�
   assert.ok(stowed.includes('andesite'))
 })
 
+test('夜明かしや帰宅の小目標でも、大目標の残りの中目標が集める物（also）は、その個数まで戻さない', () => {
+  const { state, tidy } = setup(HELD)
+  state.goal.also = [{ item: 'raw_iron', count: 7, members: ['raw_iron'] }, { item: 'oak_log', count: 2, members: ['oak_log'] }]
+  const stow = Object.fromEntries(tidy().stow.map((s) => [s.item, s.count]))
+  assert.equal(stow.raw_iron, undefined, '持っている 4 個は 7 個に満たないので全部残る')
+  assert.equal(stow.oak_log, 4, '2 個は残して、超えた分だけ戻す')
+  assert.equal(stow.cobblestone, 24)
+})
+
 test('戻すのは数どおり。入らなかったときは、しばらく出さない', async () => {
   const { bot, state, tidy } = setup(HELD)
   const c = tidy()

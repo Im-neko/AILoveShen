@@ -104,3 +104,17 @@ test('reach_land は陸にいれば何もしない。陸が見つからなけれ
 test('reach_land は水を泳いで渡る間、ダメージで止められない', () => {
   assert.ok(DAMAGE_TOLERANT.has('reach_land'))
 })
+
+test('水面より 2 ブロック以上高い岸は陸にしない（泳いで上がれない）。上がれる浅い岸を選ぶ', () => {
+  // x >= 10 は y 62 の岸（水面の高さ）、x < -3 は y 66 まで続く崖。東の浅い岸が選ばれる
+  const cliff = {}
+  for (let x = -12; x < -3; x++) for (let z = -20; z <= 20; z++) for (let y = 63; y <= 66; y++) cliff[`${x},${y},${z}`] = 'stone'
+  const w = ocean({ landX: 30, blocks: cliff })
+  const found = findLand(swimmer(w, new Vec3(-2.5, 62.4, 0.5)))
+  assert.ok(found && found.x >= 30, `climbable shore expected, got ${JSON.stringify(found)}`)
+  // 岸がどこも高い崖なら null（見えていても陸と言わない）
+  const walls = {}
+  for (let x = -12; x <= 80; x++) for (let z = -60; z <= 60; z++) for (let y = 63; y <= 66; y++) if (x < -3 || x > 8) walls[`${x},${y},${z}`] = 'stone'
+  const trapped = ocean({ landX: 1000, blocks: walls })
+  assert.equal(findLand(swimmer(trapped, new Vec3(0.5, 62.4, 0.5)), { radius: 20 }), null)
+})

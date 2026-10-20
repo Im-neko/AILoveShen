@@ -68,17 +68,31 @@ test('溶岩のある輪は避け、どこも届かなければ一番深く安�
   const lava = { '11,50,3': 'lava' }
   const fac = registerFacility(world(lava), state(), 'mine_1', { ...MINE, design: { bottom_y: 40 } })
   assert.ok(fac.layout.cells.every((c) => !(c.x === 11 && c.z === 3 && c.y <= 50 && c.y + c.h > 50)))
-  // y 45 は一面の水: 一番深くて y 47 まで（水の隣は掘らない）
+  // y 45 は一面の溶岩: 一番深くて y 47 まで（溶岩の隣は掘らない）
   const sea = {}
-  for (let x = 0; x <= 20; x++) for (let z = -4; z <= 12; z++) sea[`${x},45,${z}`] = 'water'
+  for (let x = 0; x <= 20; x++) for (let z = -4; z <= 12; z++) sea[`${x},45,${z}`] = 'lava'
   try {
     registerFacility(world(sea), state(), 'mine_2', { ...MINE, design: { bottom_y: 40 } })
     assert.fail('should refuse')
   } catch (e) {
     assert.ok(e instanceof FacilityError && !e.world)
-    assert.match(e.message, /deepest safe one reaches y 47: water/)
+    assert.match(e.message, /deepest safe one reaches y 47: lava/)
   }
+  // 水は断る理由にならない（見えない所の水を知って避けない。当たったら掘る手が塞いで水を抜く: 設計書 183）
+  const lake = {}
+  for (let x = 0; x <= 20; x++) for (let z = -4; z <= 12; z++) lake[`${x},45,${z}`] = 'water'
+  const wet = registerFacility(world(lake), state(), 'mine_4', { ...MINE, design: { bottom_y: 40 } })
+  assert.equal(wet.layout.cells.filter((c) => c.part === 'stairs').at(-1).y, 40)
   assert.throws(() => registerFacility(world(), state(), 'mine_3', { ...MINE, design: { bottom_y: 62 } }), /not below the ground/)
+})
+
+test('階段の下の洞窟は設計で断らない（枝のある採掘場は、出会ったら掘る手が丸石で塞ぐ）', () => {
+  // y 45 は一面の空洞（洞窟）: 枝のない採掘場は、床が抜けるので y 46 までしか設計できない
+  const cave = {}
+  for (let x = 0; x <= 20; x++) for (let z = -4; z <= 12; z++) cave[`${x},45,${z}`] = 'air'
+  assert.throws(() => registerFacility(world(cave), state(), 'mine_1', { ...MINE, design: { bottom_y: 40 } }), /a cave or a drop under/)
+  const fac = registerFacility(world(cave), state(), 'mine_2', { ...MINE, design: { bottom_y: 40, tunnels: 2, tunnel_length: 8, branch_length: 4 } })
+  assert.equal(fac.layout.cells.filter((c) => c.part === 'stairs').at(-1).y, 40)
 })
 
 test('facility(mine): 全部のセルが空いたら済み。次に掘るのは並びの最初の空いていないセル', () => {
@@ -110,17 +124,24 @@ test('facility(mine): 全部のセルが空いたら済み。次に掘るのは�
   assert.equal(finishedMine(bot, s).bottom.y, 40)
 })
 
-test('掘っている途中で水が出たら、そこから先を設計から外して理由を残す', async () => {
+test('掘っている途中で水が出たら、壁で塞いで水を抜き、そのまま掘り進める', async () => {
   const { PRIMITIVES } = await import('../src/primitives.mjs')
   const s = state()
   const fac = registerFacility(world(), s, 'mine_1', MINE)
   const blocks = {}
-  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 8 }])
+  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }, { name: 'cobblestone', count: 20 }])
   const seventh = fac.layout.cells[7]
+  const wall = `${seventh.x},${seventh.y},${seventh.z + 1}`
+  let flooded = false
   bot.dig = async (b) => {
     blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air'
-    // 5 段目を掘ると、7 段目の隣に水が流れてくる
-    if (b.position.y === fac.layout.cells[5].y) blocks[`${seventh.x},${seventh.y},${seventh.z + 1}`] = 'water' // 輪の外側
+    // 5 段目を掘ると（1 回だけ）、7 段目の隣に水が流れてくる
+    if (b.position.y === fac.layout.cells[5].y && !flooded) { flooded = true; blocks[wall] = 'water' } // 輪の外側
+  }
+  // 置けるのは水のマスだけ（松明は置いたことにしない）
+  bot.placeBlock = async (ref, face) => {
+    const key = `${ref.position.x + face.x},${ref.position.y + face.y},${ref.position.z + face.z}`
+    if (blocks[key] === 'water') blocks[key] = 'cobblestone'
   }
   bot.equip = async () => {}
   bot.heldItem = null
@@ -128,9 +149,29 @@ test('掘っている途中で水が出たら、そこから先を設計から�
   bot.waitForTicks = async () => {}
   const total = fac.layout.cells.length
   const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
-  assert.match(r, /stopped at .*: water at /)
-  assert.ok(fac.layout.cells.length < total)
-  assert.equal(fac.layout.stopped.reason.startsWith('water'), true)
+  assert.equal(blocks[wall], 'cobblestone')
+  assert.match(r, /walled off the water \d+ times/)
+  assert.equal(fac.layout.cells.length, total)
+  assert.equal(fac.layout.stopped, undefined)
+})
+
+test('水を塞ぐ物が足りなければ、設計を切らずに待つ（石を持ってから続きを掘る）', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  const blocks = {}
+  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }])
+  const first = fac.layout.cells[1] // 0 番は地上で、すでに空いている
+  blocks[`${first.x},${first.y + 1},${first.z + 1}`] = 'water'
+  bot.dig = async (b) => { blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air' }
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async () => {}, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  const total = fac.layout.cells.length
+  await assert.rejects(PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal), /waits at .*: water at .*walling it off takes 1 blocks and you carry 0/)
+  assert.equal(fac.layout.cells.length, total)
+  assert.ok(fac.layout.paused)
 })
 
 test('整地は採掘場の入口を埋めない', () => {
@@ -377,4 +418,111 @@ test('部屋が階段の床を消す古い形の採掘場は、使わない扱�
   const fresh = registerFacility(world(), state(), 'mine_1', MINE)
   assert.equal(retireUnclimbableMine(fresh), false)
   assert.equal(fresh.layout.exhausted, undefined)
+})
+
+test('砂利が上にあっても設計は断らない。掘り直せないとき（柱が高い、柱の上が水・溶岩）だけ断る', () => {
+  // 輪の列の上に砂利 1 枚: 断らず、その輪（またはほかの輪）で底まで設計できる
+  const thin = { '11,52,3': 'gravel' }
+  const fac = registerFacility(world(thin), state(), 'mine_1', { ...MINE, design: { bottom_y: 40 } })
+  assert.equal(fac.layout.cells.filter((c) => c.part === 'stairs').at(-1).y, 40)
+  // y 45 から上へ一面の砂利（厚さ 6）: 掘り直せないので、その手前までしか設計できない
+  const deep = {}
+  for (let x = 0; x <= 20; x++) for (let z = -4; z <= 12; z++) for (let y = 44; y <= 49; y++) deep[`${x},${y},${z}`] = 'gravel'
+  assert.throws(() => registerFacility(world(deep), state(), 'mine_2', { ...MINE, design: { bottom_y: 40 } }), /deepest safe one reaches y .*stacked above/)
+  // 砂利の上が水: 落ちたあとに流れ込むので断る
+  const pour = {}
+  for (let x = 0; x <= 20; x++) for (let z = -4; z <= 12; z++) { pour[`${x},44,${z}`] = 'gravel'; pour[`${x},45,${z}`] = 'water' }
+  assert.throws(() => registerFacility(world(pour), state(), 'mine_3', { ...MINE, design: { bottom_y: 40 } }), /water above the 1 blocks of sand or gravel/)
+})
+
+test('砂利の下のセルを掘ると落ちてくる砂利を、空くまで掘り直して進む', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  const blocks = {}
+  const fifth = fac.layout.cells[5]
+  const top = fifth.y + fifth.h - 1
+  // 5 段目の真上に砂利が 2 枚積んである
+  blocks[`${fifth.x},${top + 1},${fifth.z}`] = 'gravel'
+  blocks[`${fifth.x},${top + 2},${fifth.z}`] = 'gravel'
+  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }])
+  let redug = 0
+  bot.dig = async (b) => {
+    const key = `${b.position.x},${b.position.y},${b.position.z}`
+    if (b.name === 'gravel') redug++
+    blocks[key] = 'air'
+    // 支えが抜けた砂利は、空いたマスへ 1 枚ずつ落ちる（下から順に）
+    for (let y = b.position.y + 1; y <= b.position.y + 6; y++) {
+      const here = `${b.position.x},${y},${b.position.z}`
+      const below = `${b.position.x},${y - 1},${b.position.z}`
+      if (blocks[here] === 'gravel' && bot.blockAt(new Vec3(b.position.x, y - 1, b.position.z)).boundingBox === 'empty') { blocks[below] = 'gravel'; blocks[here] = 'air' }
+    }
+  }
+  bot.placeBlock = async () => {}
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async () => {}, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.equal(redug, 2)
+  assert.doesNotMatch(r, /stopped at/)
+  assert.equal(fac.layout.stopped, undefined)
+})
+
+test('斜面で空に開いた浅い階段は洞窟ではない: 塞がずに掘り進める（天井を塞げず mine_5 が 3 段で切れた）', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', { ...MINE, design: { bottom_y: 40, tunnels: 2, tunnel_length: 8, branch_length: 4 } })
+  const blocks = {}
+  // 地面が y 62 まで削れた斜面: 輪のまわりは y 62 から上が空気（入口から 4 段下りたセルも、天井は空に開いている）
+  for (let x = 7; x <= 18; x++) for (let z = -2; z <= 8; z++) for (let y = 62; y <= 70; y++) blocks[`${x},${y},${z}`] = 'air'
+  const bot = world(blocks, [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }, { name: 'cobblestone', count: 40 }])
+  bot.dig = async (b) => { blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air' }
+  bot.placeBlock = async () => {} // 空に向かっては何も置けない（借りる固いブロックがない）
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async () => {}, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.doesNotMatch(r, /could not wall off/)
+  assert.equal(fac.layout.stopped, undefined)
+})
+
+test('遠くて読み込まれていないセルがあると、次のセルが深い所に飛ぶ（skipped）。読み込まれていれば順どおり', () => {
+  const fac = registerFacility(world(), state(), 'mine_1', MINE)
+  const all = world()
+  assert.equal(mineStatus(all, fac).skipped, false)
+  assert.equal(mineStatus(all, fac).index, 1) // 入口のセルは地上の空気で、もう空いている
+  // 浅いセル（0〜9 番目）は読み込まれていない: 10 番目より先の読み込まれたセルが「次」になる
+  const far = world()
+  const inner = far.blockAt
+  const hidden = new Set(fac.layout.cells.slice(0, 10).flatMap((c) => Array.from({ length: c.h }, (_, i) => `${c.x},${c.y + i},${c.z}`)))
+  far.blockAt = (p) => (hidden.has(`${p.x},${p.y},${p.z}`) ? null : inner(p))
+  const st = mineStatus(far, fac)
+  assert.equal(st.skipped, true)
+  assert.ok(st.index >= 10 && st.unseen > 0)
+})
+
+test('掘ったセルの先にたまたま空いている所（岩の向こうの洞窟）は、明るくしに行かない（経路が決まらず掘りが止まった）', async () => {
+  const { PRIMITIVES } = await import('../src/primitives.mjs')
+  const s = state()
+  const fac = registerFacility(world(), s, 'mine_1', MINE)
+  // 入口の次のセルは岩のまま。ずっと先のセルだけ、自然の空洞で空いている（暗い）
+  const far = fac.layout.cells.at(-1)
+  const blocks = {}
+  for (let i = 0; i < far.h; i++) blocks[`${far.x},${far.y + i},${far.z}`] = 'air'
+  const placed = []
+  const walked = []
+  const items = [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 80 }]
+  const bot = digger(fac, items)
+  Object.assign(bot, world(blocks, items), { entity: { position: new Vec3(10, 64, 0), onGround: true } })
+  bot.equip = async () => {}
+  bot.heldItem = null
+  bot.pathfinder = { goto: async (g) => { walked.push(g) }, setGoal: () => {} }
+  bot.waitForTicks = async () => {}
+  bot.world = lightWorld((x, y, z) => torchLight(5)(x, y, z, placed))
+  bot.placeBlock = async (wall, face) => { placed.push(wall.position.plus(face)) }
+  bot.dig = async (b) => { blocks[`${b.position.x},${b.position.y},${b.position.z}`] = 'air' }
+  await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.ok(walked.every((g) => !(g.x === far.x && g.y === far.y && g.z === far.z)), 'walked to the far natural pocket')
 })

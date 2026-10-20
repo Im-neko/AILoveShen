@@ -31,6 +31,8 @@ export const cropOf = (item) => CROP_ALIASES[String(item)] ?? null
 export const cropBySeed = (seed) => Object.keys(CROPS).find((k) => CROPS[k].seed === seed) ?? null
 export const SAPLING_GROUND = /^(dirt|grass_block|podzol|coarse_dirt|rooted_dirt|mud|moss_block|mycelium)$/
 export const TILLABLE = /^(dirt|grass_block|dirt_path)$/
+// 整地（設計書 41、75、195）で畑にできる柔らかい地面: そろえて土で埋めれば耕せる
+export const SOFT_GROUND = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|mycelium|mud|clay|sand|red_sand|gravel|snow_block|dirt_path|farmland)$/
 // 耕す前に掘ってどける、地面の上の草花（耕すには上が空いている必要がある）
 export const CLEARABLE = /^(short_grass|tall_grass|fern|large_fern|dead_bush|dandelion|poppy|blue_orchid|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony|(red|orange|white|pink)_tulip)$/
 export const PLANT_RING = { min: 6, max: 24 } // 家から（水平の距離）

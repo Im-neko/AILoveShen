@@ -39,7 +39,7 @@ const FUTILE = [
 ]
 
 // 場所を持たない手（その場でする）のうち、同じ場所で失敗したら台帳に載せる手と、その場所（自分の立つセル）
-const IN_PLACE_RECORDED = new Set(['climb_out', 'dig_out', 'leave_burrow'])
+const IN_PLACE_RECORDED = new Set(['climb_out', 'shaft_up', 'dig_out', 'leave_burrow'])
 export const spotOf = (c, here) => c.pos ?? (c.inPlace && IN_PLACE_RECORDED.has(c.verb) ? here : null)
 
 export function isFutile (reason) {

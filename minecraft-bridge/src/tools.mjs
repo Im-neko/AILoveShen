@@ -9,9 +9,9 @@ import vec3Pkg from 'vec3'
 import { round, inventoryCounts, isHostile, bearing, blockProps, fillCount, isUnderground } from './observe.mjs'
 import { shelterOf, needsOutside, creeperNear, CREEPER_HOME_REASON } from './candidates.mjs'
 import { refusalAt, noteRefusal } from './refusals.mjs'
-import { shallowStone, caveOre, SHALLOW_REMEDY, CAVE_ORE_REMEDY } from './mining.mjs'
+import { CAVE_ORE_REMEDY } from './mining.mjs'
 import { protectedReason, hasBed, bedSpot, inStandingBuilding, TEMPORARY } from './home.mjs'
-import { liquidReason } from './liquid.mjs'
+import { takeRefusal, refusalText } from './takeable.mjs'
 import { isTreeLog, isLeftoverLog, isNaturalLogName } from './trees.mjs'
 import { placedByMe } from './ledger.mjs'
 import { rockBetween, closedSpace } from './reach.mjs'
@@ -30,12 +30,13 @@ import { freeGuards } from './guards.mjs'
 import { describeRecipe } from './recipes.mjs'
 import { usesOf, foodsInfo, loadNames } from './items.mjs'
 import { foodNow } from './foodnow.mjs'
-import { workCell, layoutAt, layoutStatus, waterAt, mineBodyReason } from './facilities.mjs'
+import { workCell, layoutAt, layoutStatus, waterAt } from './facilities.mjs'
 import { BOAT, boatItem, riding } from './boat.mjs'
 import { holdsWater } from './breath.mjs'
-import { levelTarget, levelStatus, keptByNotDemolishing, keptGround, findCount, fillNeeded, KEPT_REMEDY, MIN_LEVEL, MAX_LEVEL, FARM_MARGIN } from './leveling.mjs'
+import { levelTarget, levelStatus, keptByNotDemolishing, findCount, fillNeeded, MIN_LEVEL, MAX_LEVEL, FARM_MARGIN } from './leveling.mjs'
 import { supportFor } from './placing.mjs'
 import { inspectCell, inspectSelf, readDiagnostics } from './inspect.mjs'
+import { crossSection } from './section.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -64,7 +65,7 @@ const MAX_HOLD_S = 3
 export const ACTION_TOOLS = ['do_suggestion', 'goto', 'dig', 'place', 'craft', 'pickup', 'attack', 'flee', 'eat', 'equip',
   'smelt', 'deposit', 'toss', 'withdraw', 'go_home', 'sleep', 'build_next', 'move_furniture', 'plant', 'till', 'sow', 'water', 'wait',
   'use_item', 'ride_boat', 'level', 'clear_site']
-export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of', 'find_foods', 'inspect', 'diagnostics']
+export const QUERY_TOOLS = ['find_blocks', 'recipe_of', 'find_recipes', 'how_to_get', 'uses_of', 'find_foods', 'inspect', 'diagnostics', 'cross_section']
 
 class Refused extends Error {}
 const refuse = (why) => { throw new Refused(why) }
@@ -127,7 +128,7 @@ function nearbySolids (bot, state, pos) {
         const p = pos.offset(dx, dy, dz)
         const b = bot.blockAt(p)
         if (b?.boundingBox !== 'block' || /^(bedrock|water|lava)$/.test(b.name)) continue
-        if (protectedReason(state, p, 0, b) || mineBodyReason(state, p) || liquidReason(bot, p, b)) continue // 掘れないものは勧めない
+        if (takeRefusal(state, p, b.name, { bot, block: b })) continue // 掘れないものは勧めない
         const d = Math.hypot(dx, dy, dz)
         if (!best.has(b.name) || d < best.get(b.name).d) best.set(b.name, { p, d })
       }
@@ -331,22 +332,12 @@ export function createTools (deps) {
       if (!block) refuse(`the block at ${fmt(pos)} is not loaded`)
       // 草・作物・苗木・花は当たり判定がないが掘れる（草から種、育った作物の収穫。設計書 33）
       if (block.boundingBox !== 'block' && !PLANTS.test(block.name)) refuse(`there is ${block.name} at ${fmt(pos)}, nothing to dig${nearbySolids(bot, state, pos)}`)
-      // 水や溶岩をせき止めているブロックは、demolish でも掘らない（壊すと流れ出す。docs/design/55）
-      const wet = liquidReason(bot, pos, block)
-      if (wet) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${wet}. Leave it, or get the material somewhere else`)
-      // 家・建てている家・建物は、ふつうは掘らない。壊すと決めたとき（demolish）だけ掘る
-      const why = args.demolish === true ? null : protectedReason(state, pos, 0, block)
-      if (why) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${why}. If taking it down is the point of this goal, dig it again with demolish: true`)
-      // 採掘場の階段の柱と段の床は、掘ると底から上がれなくなる
-      const body = args.demolish === true ? null : mineBodyReason(state, pos)
-      if (body) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${body}. Dig the rock beside the mine instead`)
-      // 家があるとき、地表に近い石は掘らない（採掘場から。設計書 68）
-      if (shallowStone(bot, state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: it is close to the surface. ${SHALLOW_REMEDY}`)
-      // 洞窟の鉱石は取らない（採掘場の壁に出たものだけ。候補と寄り道には掛けていたが、道具の dig が抜けていた: 2026-10-07、
-      // 自然の洞窟で鉄を掘った）。壊すと決めたとき（demolish）は別
-      if (args.demolish !== true && caveOre(state, pos, block.name)) refuse(`will not dig ${block.name} at ${fmt(pos)}: ${CAVE_ORE_REMEDY}`)
-      // 整地する土地の、床より下の地面は掘らない（そろえた地面の下が穴だらけになる）
-      if (keptGround(state, pos, block.name)) advise(`will not dig ${block.name} at ${fmt(pos)}: ${KEPT_REMEDY}`)
+      // 掘ってよくない理由は 1 か所（takeable.mjs）。水や溶岩をせき止めているブロックは demolish でも掘らない
+      // （壊すと流れ出す。docs/design/55）。家・建物、階段の柱、地表に近い石、洞窟の鉱石も断る（demolish は家・建物と
+      // 柱と洞窟の鉱石の分だけ通す）。整地する土地の地面は助言
+      const taken = takeRefusal(state, pos, block.name, { bot, block, demolish: args.demolish === true })
+      if (taken?.soft) advise(refusalText(taken, block.name, fmt(pos)))
+      else if (taken) refuse(refusalText(taken, block.name, fmt(pos)))
       // 耕地は畑の地面: 掘ると土になって畑が減る（小麦の収穫に、作物の下の耕地の座標で dig を呼んでいた）
       if (block.name === 'farmland' && args.demolish !== true) {
         const crop = bot.blockAt(pos.offset(0, 1, 0))
@@ -394,7 +385,13 @@ export function createTools (deps) {
       if (!recipes.length) refuse(`${item} has no crafting recipe`)
       const times = Math.max(1, Math.min(MAX_CRAFT_TIMES, Math.floor(Number(args.times ?? 1))))
       const needsTable = recipes.every((r) => r.needsTable)
-      if (needsTable && !findTable(bot, state)) refuse(`${item} needs a crafting table within reach; craft one (4 planks) and place it`)
+      if (needsTable && !findTable(bot, state)) {
+        // 作業台を持っているなら、作る前に置く（2026-10-17: crafting_table を作ったあと、置かずに鉄のつるはしを 4 回断られた）
+        const carried = inventoryCounts(bot).crafting_table ?? 0
+        refuse(carried > 0
+          ? `${item} needs a crafting table within reach; you carry ${carried} crafting_table: place it (place crafting_table) on flat ground next to you first`
+          : `${item} needs a crafting table within reach; craft one (4 planks) and place it`)
+      }
       // 材料が足りなければ、実行する前に、何がいくつ足りないかを返す（「材料が足りない?」だけでは、
       // 小麦 2 個でパン 2 個と思い込んだまま作れなかった）
       short(knowledge, recipes, inventoryCounts(bot), item, times)
@@ -767,9 +764,15 @@ export function createTools (deps) {
       const spot = isQuarryKind(args.block) ? quarrySpot(state, me) : null
       const here = spot ? bot.findBlocks({ matching: id, point: spot, maxDistance: QUARRY_RADIUS, count: findCount(state) }) : []
       const seen = new Set()
+      let inCaves = 0
       const found = [...here, ...bot.findBlocks({ matching: id, maxDistance: radius, count: findCount(state) })]
         .filter((p) => !seen.has(`${p.x},${p.y},${p.z}`) && seen.add(`${p.x},${p.y},${p.z}`))
-        .filter((p) => !protectedReason(state, p, 0, bot.blockAt(p)) && !mineBodyReason(state, p) && !liquidReason(bot, p, bot.blockAt(p)) && !refusalAt(state, 'dig', p) && !shallowStone(bot, state, p, args.block) && !keptGround(state, p, args.block))
+        .filter((p) => !refusalAt(state, 'dig', p))
+        .filter((p) => { // dig が断る所は出さない（出すと、掘れと言われて断られる往復になる）。洞窟の鉱石は数えて、理由を言う
+          const r = takeRefusal(state, p, args.block, { bot, block: bot.blockAt(p) })
+          if (r?.kind === 'cave_ore') inCaves++
+          return !r
+        })
         .sort((a, b) => (inQuarry(spot, a) ? 0 : 1) - (inQuarry(spot, b) ? 0 : 1) || a.distanceTo(me) - b.distanceTo(me)).slice(0, FIND_SHOWN)
         .map((p) => ({ x: p.x, y: p.y, z: p.z, distance_m: round(p.distanceTo(me)), direction: bearing(me, p), exposed: exposed(bot, p), ...(inQuarry(spot, p) ? { quarry: true } : {}), ...details(p) }))
       // 読み込まれていない所と半径の外は、前に見た記録から（視界の地図。設計書 59）。読み込まれていて実物が
@@ -785,7 +788,9 @@ export function createTools (deps) {
           found.push({ x: m.x, y: m.y, z: m.z, distance_m: round(m.distance_m), direction: bearing(me, m), exposed: true, source: 'map', seen_minutes_ago: m.minutes_ago })
         }
       }
-      return found.length ? found : `no ${args.block} within ${radius}m${state.worldMap ? ' or in the map of what you have seen' : ''}`
+      if (found.length) return found
+      if (inCaves) return `no ${args.block} you may take within ${radius}m: ${inCaves} lie deep in caves. ${CAVE_ORE_REMEDY}`
+      return `no ${args.block} within ${radius}m${state.worldMap ? ' or in the map of what you have seen' : ''}`
     },
     recipe_of (args) {
       // バニラのレシピ全部から（設計書 29）: 作業台・かまど・石切台など、材料は「どれか 1 つ」も含めて
@@ -827,6 +832,10 @@ export function createTools (deps) {
       if (args.x == null && args.y == null && args.z == null) return inspectSelf(bot, state)
       const pos = reach(position(args), MAX_TOOL_DISTANCE, (q) => `the block at ${fmt(q)}`)
       return inspectCell(bot, state, pos)
+    },
+    // 縦の断面: 1 方向へ、高さごとの並びを文字で見る。岸の高さ、岩の厚み、頭の上と足元（設計書 190）
+    cross_section (args) {
+      return crossSection(bot, args)
     },
     // ブリッジが残した直近の失敗の記録（door: 開かないドア、place: 置けなかった、stuck: 歩けなかった）
     diagnostics (args) {

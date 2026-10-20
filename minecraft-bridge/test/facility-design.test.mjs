@@ -7,6 +7,7 @@ import { snapshot } from '../src/world.mjs'
 import { makeGoal, evaluate } from '../src/goals.mjs'
 import { Knowledge } from '../src/knowledge.mjs'
 import { createTools } from '../src/tools.mjs'
+import { farmLevel } from '../src/leveling.mjs'
 
 const { Vec3 } = vec3Pkg
 const md = minecraftData('1.21.4')
@@ -371,4 +372,37 @@ test('植林場: 全マスの 1/4 の苗木を植えたら、育った木がな�
   assert.deepEqual(run(at(c1, 'oak_sapling'), [{ name: 'oak_sapling', count: 1 }]).leaves.map((l) => l.kind), ['plant'])
   // 育った木があれば、その葉から苗木を集める手を出す
   assert.match(JSON.stringify(run(at(c1, 'oak_log')).leaves), /oak_sapling/)
+})
+
+// 設計書 195: 平らな耕せる地面がなくても、整地で畑にできる柔らかい地面なら設計する（作るときの整地が、そろえて土で埋める）
+const ground = (name, y = 63) => Object.fromEntries(Array.from({ length: 8 }, (_, i) => i).flatMap((dx) => Array.from({ length: 8 }, (_, dz) => [`${8 + dx},${y},${dz}`, name])))
+
+test('畑の設計: 砂の土地でも、整地する前提で設計する（leveled）。平らな草地なら整地の印は付かない', () => {
+  const sand = registerFacility(world(ground('sand')), state(), 'sand_farm', { kind: 'farm', boxes: ZONE, design: { crop: 'wheat', width: 4, depth: 4 } })
+  assert.equal(sand.layout.leveled, true)
+  assert.ok(sand.layout.cells.length >= 8)
+  // 作るときの整地が、砂の畑のマスを「直す所」として数える（掘って土で埋め直す）
+  const lv = farmLevel(world(ground('sand')), state(), sand)
+  assert.ok(lv.off > 0 && lv.fills.length > 0, JSON.stringify({ off: lv.off, fills: lv.fills.length, skipped: lv.skipped }))
+  const grass = registerFacility(world(), state(), 'grass_farm', { kind: 'farm', boxes: ZONE, design: { crop: 'wheat', width: 4, depth: 4 } })
+  assert.equal(grass.layout.leveled, undefined)
+})
+
+test('畑の設計: でこぼこの草地（高さの差 3 以内、2 段の差が半分）は整地で畑にする。整地で直せない土地（石、水）は、数を添えて断る', () => {
+  const bumpy = { ...ground('grass_block'), ...Object.fromEntries([8, 10, 12, 14].flatMap((x) => Array.from({ length: 8 }, (_, z) => [`${x},65,${z}`, 'grass_block']))) } // 東西に 1 列おきに 2 段高い
+  const farm = registerFacility(world(bumpy), state(), 'bumpy', { kind: 'farm', boxes: ZONE, design: { crop: 'wheat', width: 4, depth: 4 } })
+  assert.equal(farm.layout.leveled, true)
+  assert.throws(
+    () => registerFacility(world(ground('stone')), state(), 'rock', { kind: 'farm', boxes: ZONE, design: { crop: 'wheat', width: 4, depth: 4 } }),
+    /not enough ground for a 4x4 farm.*0 of 16 cells are flat dirt or grass.*0 are soft ground/
+  )
+})
+
+// 設計書 195: 家の床から 5 ブロック以上低い土地も、設計できる（区画の地形は上下 16 を見る）
+test('畑の設計: 家の床より 6 ブロック低い平らな草地にも設計できる', () => {
+  const low = Object.fromEntries(Array.from({ length: 8 }, (_, dx) => dx).flatMap((dx) => Array.from({ length: 8 }, (_, dz) => [`${8 + dx},57,${dz}`, 'grass_block'])))
+  const base = world(low)
+  const bot = { ...base, blockAt: (p) => (p.y > 57 && p.y <= 63 && p.x >= 8 && p.x <= 15 && p.z >= 0 && p.z <= 7 ? { name: 'air', boundingBox: 'empty', position: p } : base.blockAt(p)) }
+  const fac = registerFacility(bot, state(), 'low_farm', { kind: 'farm', boxes: ZONE, design: { crop: 'wheat', width: 4, depth: 4 } })
+  assert.ok(fac.layout.cells.length >= 8 && fac.layout.cells.every((c) => c.y === 57))
 })

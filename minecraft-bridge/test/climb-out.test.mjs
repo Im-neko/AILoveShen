@@ -5,7 +5,7 @@ import minecraftData from 'minecraft-data'
 import prismarineBlock from 'prismarine-block'
 import { closedSpace, isolatedSpace, pillarUnder } from '../src/reach.mjs'
 import { forNeeds, ground } from '../src/candidates.mjs'
-import { sharedState } from '../src/state.mjs'
+import { sharedState, rawState } from '../src/state.mjs'
 import { noteRefusal } from '../src/refusals.mjs'
 import { standingCell } from '../src/observe.mjs'
 import { PRIMITIVES } from '../src/primitives.mjs'
@@ -299,3 +299,18 @@ test('積んで出るのに失敗した場所では、その手を提案に出�
   assert.ok(!after.candidates.some((c) => c.verb === 'climb_out'))
   assert.match(after.withheld ?? '', /climb out.*could not jump up/)
 })
+
+test('判断なしの見え方（rawState）は、閉じた所・家の中・欲求・断りの助言を持たない（設計書 191）', () => {
+  const bot = botIn(world())
+  const full = sharedState(bot, state(), () => ['torch: go back and make one'])
+  assert.ok(full.surroundings.closed_space && full.needs.length && 'in_home' in full.self)
+  const raw = rawState(bot)
+  assert.deepEqual(Object.keys(raw).sort(), ['inventory', 'mobs', 'self', 'surroundings', 'time', 'tool_wear'])
+  assert.deepEqual(Object.keys(raw.surroundings).sort(), ['grid', 'legend'])
+  assert.equal('in_home' in raw.self, false)
+  assert.equal(raw.self.health, 20)
+  assert.equal('deaths' in raw, false)
+  const died = rawState(bot, { ...state(), deaths: 3, lastDeath: { phase: 'night', position: { x: 1, y: 64, z: 2 }, damage: { zombie: 5 }, place: 'outside', doing: ['x'] } })
+  assert.deepEqual(died.deaths, { count: 3, last: { time: 'night', position: { x: 1, y: 64, z: 2 }, damage_by: { zombie: 5 } } })
+})
+

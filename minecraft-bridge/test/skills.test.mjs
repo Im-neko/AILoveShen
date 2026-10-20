@@ -188,3 +188,82 @@ test('expects: 居場所（at: x,y,z の近く、out_of_closed_space: 歩いて�
   assert.throws(() => validateSkill({ ...def, expects: { predicate: 'at' } }), /where/)
   assert.throws(() => validateSkill({ ...def, expects: { predicate: 'at', where: 'home' } }), /where/)
 })
+
+test('expects: height は目標の高さに着くか、そこへ min_change 以上進んだら成功（途中まででも進んだ分は成功）', () => {
+  let here = { x: 0, y: 48, z: 0 }
+  const d = { where: () => here }
+  const down = { predicate: 'height', y: '$target', direction: 'down' }
+  const before = expectsBaseline(down, { target: 30 }, d)
+  assert.equal(before.y, 48)
+  here = { ...here, y: 47 }
+  const slow = judgeExpects(down, { target: 30 }, before, d)
+  assert.equal(slow.met, false) // 1 だけでは進んだと言わない
+  assert.match(slow.lines[0], /48\.0 -> 47\.0/)
+  here = { ...here, y: 30 }
+  assert.equal(judgeExpects(down, { target: 30 }, before, d).met, true) // 着いた
+  here = { ...here, y: 40 }
+  const partial = judgeExpects(down, { target: 30 }, before, d)
+  assert.equal(partial.met, true) // 8 下りた
+  assert.match(partial.lines[0], /8\.0 lower/)
+  here = { ...here, y: 50 }
+  assert.equal(judgeExpects(down, { target: 30 }, before, d).met, false) // 上がった
+  const up = { predicate: 'height', y: 64, direction: 'up', min_change: 2 }
+  here = { x: 0, y: 40, z: 0 }
+  const b = expectsBaseline(up, {}, d)
+  here = { ...here, y: 42 }
+  assert.equal(judgeExpects(up, {}, b, d).met, true)
+  assert.equal(judgeExpects({ ...down, y: 'abc' }, {}, before, d).met, false)
+
+  const def = { description: '下りる', code: 'export default async function (t) {}' }
+  assert.equal(validateSkill({ ...def, expects: down }).expects.direction, 'down')
+  assert.throws(() => validateSkill({ ...def, expects: { predicate: 'height', direction: 'down' } }), /needs y/)
+  assert.throws(() => validateSkill({ ...def, expects: { predicate: 'height', y: 3 } }), /direction/)
+})
+
+test('expects: at の min_change は目標へ近づいた分も成功（遠くへ歩く技が途中で終わっても、進んだ分は成功）', () => {
+  let here = { x: 0.5, y: 64, z: 0.5 }
+  const d = { where: () => here }
+  const walk = { predicate: 'at', where: '100,64,0', distance: 3, min_change: 10 }
+  const before = expectsBaseline(walk, {}, d)
+  here = { x: 5.5, y: 64, z: 0.5 }
+  assert.equal(judgeExpects(walk, {}, before, d).met, false) // 5 だけ
+  here = { x: 40.5, y: 64, z: 0.5 }
+  const partial = judgeExpects(walk, {}, before, d)
+  assert.equal(partial.met, true)
+  assert.match(partial.lines.join(' '), /40\.0 blocks closer/)
+  here = { x: -30.5, y: 64, z: 0.5 }
+  assert.equal(judgeExpects(walk, {}, before, d).met, false) // 遠ざかった
+  here = { x: 99.5, y: 64, z: 0.5 }
+  assert.equal(judgeExpects(walk, {}, before, d).met, true) // 着いた
+  const plain = { predicate: 'at', where: '100,64,0', distance: 3 }
+  here = { x: 40.5, y: 64, z: 0.5 }
+  assert.equal(judgeExpects(plain, {}, expectsBaseline(plain, {}, d), d).met, false) // min_change がなければ従来どおり
+  const def = { description: '歩く', code: 'export default async function (t) {}' }
+  assert.equal(validateSkill({ ...def, expects: walk }).expects.min_change, 10)
+  assert.throws(() => validateSkill({ ...def, expects: { ...walk, min_change: 0 } }), /min_change/)
+})
+
+test('expects: 判定できない引数は、走らせる前に断る（走らせたあとで分かると数分が無駄になる）', () => {
+  const d = { where: () => ({ x: 0, y: 64, z: 0 }) }
+  const at = { predicate: 'at', where: '$dest', distance: 20 }
+  assert.throws(() => expectsBaseline(at, { dest: 'mine_4' }, d), /where must be "x,y,z".*nothing was run/)
+  assert.throws(() => expectsBaseline(at, {}, d), /argument is missing/)
+  assert.equal(expectsBaseline(at, { dest: '10,64,20' }, d).x, 0)
+  const height = { predicate: 'height', y: '$target', direction: 'down' }
+  assert.throws(() => expectsBaseline(height, { target: 'deep' }, d), /y must be a number/)
+  assert.equal(expectsBaseline(height, { target: 30 }, d).y, 64)
+})
+
+test('動いている間の経過（経った秒数と、技が書いた最後の数行）を見せる（実況が途中経過を話す材料）', async () => {
+  const d = deps()
+  const control = {}
+  const running = runSkill(skill(`
+    for (let i = 0; i < 5; i++) { await t.log('step ' + i); await t.wait() }
+    return t.done()`), {}, d, LIMITS, control)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const view = control.view()
+  assert.equal(typeof view.seconds, 'number')
+  assert.ok(view.log.length <= 3 && view.log.every((l) => /^step \d$/.test(l)))
+  await running
+  assert.deepEqual(control.view().log.slice(-1), ['step 4'])
+})

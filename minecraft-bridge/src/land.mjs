@@ -22,18 +22,29 @@ const LEVELS = [0, -1, 1, -2, 2, -3, 3, 4]
 const solid = (b) => !!b && b.boundingBox === 'block' && !HAZARD.test(b.name) && !holdsWater(b)
 const open = (b) => passable(b) && !holdsWater(b)
 
+// 水面から這い上がれる地面の高さ（地面のブロックの y）の上限: 水面（いちばん上の水ブロック）の 1 つ上まで。
+// それより高い岸（2026-10-18: 沼地の 3〜4 ブロックの崖）は、見えていても泳いで上がれない
+const reachableGround = (bot) => {
+  const feet = bot.entity.position.floored()
+  let top = feet.y
+  while (top < feet.y + 8 && holdsWater(bot.blockAt(new Vec3(feet.x, top + 1, feet.z)))) top++
+  return top + 1
+}
+
 // x,z の列に、立てる地面（固くて、上の 2 マスが水でない空き）があれば、その地面のブロックの y。なければ null
-function groundY (bot, x, z, y0) {
+// cap: 地面の高さの上限（水から上がるとき。水を出たあとの続きの地面には付けない）
+function groundY (bot, x, z, y0, cap = Infinity) {
   for (const dy of LEVELS) {
     const y = y0 + dy
+    if (y > cap) continue
     if (solid(bot.blockAt(new Vec3(x, y, z))) && open(bot.blockAt(new Vec3(x, y + 1, z))) && open(bot.blockAt(new Vec3(x, y + 2, z)))) return y
   }
   return null
 }
 
 // 1 マスだけの岩や柱は陸とみなさない: 四方のうち 2 つ以上にも、立てる地面が続く
-function isLand (bot, x, z, y0) {
-  const y = groundY(bot, x, z, y0)
+function isLand (bot, x, z, y0, cap) {
+  const y = groundY(bot, x, z, y0, cap)
   if (y == null) return null
   let around = 0
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -50,11 +61,12 @@ export function findLand (bot, { radius = LAND_RADIUS, avoid = [] } = {}) {
   const x0 = Math.floor(me.x)
   const z0 = Math.floor(me.z)
   const y0 = Math.floor(me.y)
+  const cap = reachableGround(bot)
   for (let r = 1; r <= radius; r++) {
     let best = null
     const visit = (x, z) => {
       if (avoid.some((a) => Math.hypot(a.x - x, a.z - z) <= AVOID_M)) return
-      const gy = isLand(bot, x, z, y0)
+      const gy = isLand(bot, x, z, y0, cap)
       if (gy == null) return
       const d = Math.hypot(x + 0.5 - me.x, z + 0.5 - me.z)
       if (!best || d < best.distance) best = { x, y: gy + 1, z, distance: Math.round(d) }

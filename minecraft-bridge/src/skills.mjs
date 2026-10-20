@@ -27,11 +27,19 @@ export const LIMITS = {
 // その技はメインプロセスの vm で動く（isolate ではない: ファイル・ネットワークに届く。使い捨ての世界でだけ使う）
 // Python の設定（minecraft.agent.skill_raw_bot）と同じ解釈: 空・0・false・no・off 以外は有効
 export const rawBotEnabled = () => !['', '0', 'false', 'no', 'off'].includes((process.env.BRIDGE_RAW_BOT ?? '').trim().toLowerCase())
+// 判断なしの実験（設計書 191）。BRIDGE_RAW_ONLY=1 のとき、技は生の bot（raw: true）だけで書く: t.goto などの道具（ブリッジの
+// 断りと state.goal に依存する）、ソルバーや記録の調べもの、判定の質問、助言入りの state は技から消える。
+// 成功の条件（expects）は、目標に頼らない 4 つだけ
+export const rawOnlyEnabled = () => !['', '0', 'false', 'no', 'off'].includes((process.env.BRIDGE_RAW_ONLY ?? '').trim().toLowerCase())
+// 調べもの: ゲームの知識（レシピ）と、見えるだけの断面。ブリッジが世界から導く find_blocks（tree / quarry / exposed）、inspect（断る理由）などは外す
+export const RAW_ONLY_QUERIES = ['recipe_of', 'find_recipes', 'uses_of', 'cross_section']
+const RAW_ONLY_PREDICATES = ['have', 'at', 'height', 'out_of_closed_space', 'block_near']
+export const BLOCK_NEAR_MAX = 32 // block_near で探す半径の上限
 export const MAX_CODE_CHARS = 4000
 export const MAX_DESCRIPTION_CHARS = 200
 const MAX_LOG = 50
 const MAX_CALLS_SHOWN = 30
-const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'custom', 'facility', 'progress', 'at', 'out_of_closed_space']
+const EXPECT_PREDICATES = ['have', 'stored', 'built', 'placed', 'lit', 'planted', 'farmed', 'leveled', 'custom', 'facility', 'progress', 'at', 'height', 'out_of_closed_space', 'block_near']
 const NAME = /^[a-z][a-z0-9_]{1,39}$/
 // 技から呼べる行動（ソルバーの提案は技からは使わない: 技はソルバーに依存しない手順にする）
 export const SKILL_ACTIONS = ACTION_TOOLS.filter((n) => n !== 'do_suggestion')
@@ -57,6 +65,10 @@ export function validateSkill (def) {
   if (typeof code !== 'string' || !code.trim()) bad('code is required')
   if (code.length > MAX_CODE_CHARS) bad(`the code is longer than ${MAX_CODE_CHARS} characters`)
   validateExpects(expects)
+  if (rawOnlyEnabled()) {
+    if (!raw) bad('only raw skills are allowed here: set raw to true and write the code over t.bot (the t.goto / t.dig tools are not available)')
+    if (!RAW_ONLY_PREDICATES.includes(expects.predicate)) bad(`expects.predicate must be one of ${RAW_ONLY_PREDICATES.join(', ')} here (the others need a goal or a plan)`)
+  }
   if (raw != null && typeof raw !== 'boolean') bad('raw must be true or false')
   if (raw && !rawBotEnabled()) bad('raw skills are off here (the bridge was not started with BRIDGE_RAW_BOT=1): write the skill over the t.* tools only')
   const isolate = new ivm.Isolate({ memoryLimit: 8 })
@@ -76,11 +88,24 @@ function validateExpects (e) {
   if (['have', 'stored'].includes(e.predicate)) {
     if (e.item == null) bad(`expects ${e.predicate} needs an item`)
     if (e.count == null) bad(`expects ${e.predicate} needs a count (a number, "+N" or "$param")`)
+    // 0 個は「ない」ことで、持ち物の述語では判定できない（置いた物は持ち物から消える: 置いたかは block_near で見る）
+    if (typeof e.count === 'number' && !(e.count >= 1)) bad(`expects ${e.predicate}: count must be 1 or more (got ${e.count}); to check that something was placed, use block_near { block, distance }`)
+  }
+  if (e.predicate === 'block_near') {
+    if (typeof e.block !== 'string' || !(e.block.startsWith('$') || /^[a-z][a-z0-9_]*$/.test(e.block))) bad('expects block_near needs block: a block name such as "crafting_table" (or "$param")')
+    if (e.distance != null && !(typeof e.distance === 'string' && e.distance.startsWith('$')) && !(Number(e.distance) >= 1 && Number(e.distance) <= BLOCK_NEAR_MAX)) bad(`expects block_near: distance must be 1 to ${BLOCK_NEAR_MAX} blocks`)
   }
   if (e.predicate === 'custom' && !e.name) bad('expects custom needs the name of a check (a custom objective condition)')
   if (e.predicate === 'facility' && !e.name) bad('expects facility needs the name of a designed facility (search_facility)')
   if (e.predicate === 'at' && (typeof e.where !== 'string' || !(e.where.startsWith('$') || parseSpot(e.where)))) {
     bad('expects at needs where: "x,y,z" (or "$param") — you stand within distance (default 2) blocks of it')
+  }
+  if (e.predicate === 'at' && e.min_change != null && !(Number(e.min_change) > 0) && !(typeof e.min_change === 'string' && e.min_change.startsWith('$'))) {
+    bad('expects at: min_change must be a number above 0 (how many blocks closer than the start also counts as success)')
+  }
+  if (e.predicate === 'height') {
+    if (e.y == null || (typeof e.y === 'string' && !e.y.startsWith('$') && !Number.isFinite(Number(e.y)))) bad('expects height needs y: a number (or "$param")')
+    if (!['down', 'up'].includes(e.direction)) bad('expects height needs direction: "down" or "up"')
   }
 }
 
@@ -103,6 +128,24 @@ function substitute (value, args) {
 // 実行の前: 相対の数（"+N"）のための今の数と、progress のための今の残り
 export function expectsBaseline (expects, args, deps) {
   if (expects.predicate === 'progress') return { remaining: deps.remaining() }
+  // 走らせる前に、成功を判定できる引数か確かめる（走らせたあとで「判定できない」と分かると、数分の作業が無駄な失敗になる:
+  // 2026-10-17 descend_stair_raw の dest に "mine_4" や "new" を渡して、毎回走ってから失敗した）
+  if (expects.predicate === 'height') {
+    const goal = substitute(expects.y, args)
+    if (!Number.isFinite(Number(goal))) bad(`expects height cannot be judged: y must be a number (got ${goal}); nothing was run`)
+    return { y: deps.where().y }
+  }
+  if (expects.predicate === 'at') {
+    const where = substitute(expects.where, args)
+    if (!parseSpot(where)) bad(`expects at cannot be judged: where must be "x,y,z" with numbers (got ${where}); nothing was run. Pass the coordinates, not a name`)
+    const here = deps.where()
+    return { x: here.x, y: here.y, z: here.z }
+  }
+  if (expects.predicate === 'block_near') {
+    const block = substitute(expects.block, args)
+    if (!deps.knownBlock(block)) bad(`expects block_near cannot be judged: "${block}" is not a block name; nothing was run`)
+    return {}
+  }
   if (!['have', 'stored', 'planted', 'farmed'].includes(expects.predicate)) return {}
   const count = substitute(expects.count, args)
   if (typeof count === 'string' && count.startsWith('+')) {
@@ -118,6 +161,13 @@ export function judgeExpects (expects, args, before, deps) {
     if (before.remaining == null || now == null) return { met: false, lines: ['there is no small goal to measure progress on'] }
     return { met: now < before.remaining, lines: [`the small goal's remaining work ${before.remaining} -> ${now}`] }
   }
+  // そばにあるブロック: 置いた物は持ち物から消えるので、置けたかは世界のブロックで見る（世界の事実だけ。設計書 193）
+  if (expects.predicate === 'block_near') {
+    const block = substitute(expects.block, args)
+    const distance = Math.min(BLOCK_NEAR_MAX, Math.max(1, Number(substitute(expects.distance, args) ?? 5)))
+    const found = deps.blockNear(block, distance)
+    return { met: Boolean(found), lines: [found ? `${block} is ${found.distance} blocks away at ${found.x},${found.y},${found.z}` : `no ${block} within ${distance} blocks`] }
+  }
   // 居場所: 技が世界のどこに立って終わったか。持ち物や施設の述語では言えない移動・脱出の成功をここで判定する
   if (expects.predicate === 'out_of_closed_space') {
     // 積み上がって、まわりが崖の柱の頂上・屋根に出ただけなら出られていない（閉じた所ではないが、降りる手がない）
@@ -132,7 +182,29 @@ export function judgeExpects (expects, args, before, deps) {
     const radius = Number(substitute(expects.distance, args) ?? 2)
     const flat = Math.hypot(here.x - (goal.x + 0.5), here.z - (goal.z + 0.5))
     const high = Math.abs(here.y - goal.y)
-    return { met: flat <= radius && high <= 2, lines: [`you stand ${flat.toFixed(1)} blocks (${high.toFixed(1)} in height) from ${goal.x},${goal.y},${goal.z}; within ${radius} blocks and 2 in height is the goal`] }
+    const lines = [`you stand ${flat.toFixed(1)} blocks (${high.toFixed(1)} in height) from ${goal.x},${goal.y},${goal.z}; within ${radius} blocks and 2 in height is the goal`]
+    const reached = flat <= radius && high <= 2
+    // 近づいた分も成功: 目標への距離（水平と高さの合成）が始めより min_change 以上減った（途中まで歩いて、もう一度呼んで続ける）
+    if (expects.min_change != null && before.x != null) {
+      const need = Number(substitute(expects.min_change, args))
+      const away = (p) => Math.hypot(p.x - (goal.x + 0.5), p.y - goal.y, p.z - (goal.z + 0.5))
+      const closer = away(before) - away(here)
+      lines.push(`${closer.toFixed(1)} blocks closer than at the start; counts as progress from ${need}`)
+      return { met: reached || closer >= need, lines }
+    }
+    return { met: reached, lines }
+  }
+  // 高さ: 目標の高さに着いたか、そこへ向かって min_change 以上進んだか（途中まででも進んだ分は成功: もう一度呼んで続ける）
+  if (expects.predicate === 'height') {
+    const goal = Number(substitute(expects.y, args))
+    if (!Number.isFinite(goal)) return { met: false, lines: [`expects height cannot be judged: y is not a number (${substitute(expects.y, args)})`] }
+    const sign = expects.direction === 'down' ? -1 : 1
+    const now = deps.where().y
+    const moved = (now - (before.y ?? now)) * sign
+    const need = Number(substitute(expects.min_change, args) ?? 3)
+    const reached = (goal - now) * sign <= 0
+    const way = expects.direction === 'down' ? 'lower' : 'higher'
+    return { met: reached || moved >= need, lines: [`y ${(before.y ?? now).toFixed(1)} -> ${now.toFixed(1)} (${moved.toFixed(1)} ${way}); ${reached ? `reached y ${goal}` : `goal y ${goal}; counts as progress from ${need} ${way}`}`] }
   }
   const spec = {}
   for (const [k, v] of Object.entries(expects)) spec[k] = substitute(v, args)
@@ -164,6 +236,14 @@ t.fail = (reason = '') => ({ __end: 'fail', reason: String(reason) })
 Object.freeze(t)
 `
 
+// 止められた技の bot に触れたときの例外。index.mjs が、技の外から投げられても落とさないために目印を付ける
+export const SKILL_STOPPED = 'skillStopped'
+function stoppedError (reason) {
+  const e = new Error(reason)
+  e[SKILL_STOPPED] = true
+  return e
+}
+
 // 生の bot を渡す技のために、技が付けたリスナーを覚えておいて終わりに外す（残すと、次の技や反射と二重に動く）。
 // 関数は元のオブジェクトに束ねて返す（Proxy のまま呼ぶと内部の this がずれる）
 function tracked (target, owned) {
@@ -171,7 +251,7 @@ function tracked (target, owned) {
   return new Proxy(target, {
     get (obj, prop) {
       // 止められた後に、進行中の待ち（dig など）から戻った技が、反射の握った操作キーや経路を書き換えない
-      if (owned.stopped?.()) throw new Error(owned.stopped())
+      if (owned.stopped?.()) throw stoppedError(owned.stopped())
       const value = Reflect.get(obj, prop)
       if (typeof prop === 'string' && ADD.has(prop) && typeof value === 'function') {
         return (event, fn) => {
@@ -194,6 +274,13 @@ function releaseBot (bot, owned) {
   try { bot.clearControlStates?.() } catch {}
   try { bot.pathfinder?.setGoal?.(null) } catch {}
   try { bot.stopDigging?.() } catch {}
+  // 技が setMovements(new Movements(t.bot)) で渡した経路の設定は、t.bot を抱えたまま pathfinder に残る。止められたあとは
+  // t.bot が例外を投げるので、次に反射や別の技が歩くと物理の tick の中で投げて、ブリッジごと落ちる
+  // （2026-10-18 21:17 ベンチ: 反射の逃走で落ち、そのあと 24 分間ブリッジがなかった）。技を始める前の設定に戻す
+  try {
+    const pf = bot.pathfinder
+    if (pf && pf.movements !== owned.movements) pf.setMovements(owned.movements ?? new pathfinderPkg.Movements(bot))
+  } catch {}
 }
 
 const clip = (s, n = 160) => { const text = typeof s === 'string' ? s : JSON.stringify(s); return text.length > n ? `${text.slice(0, n)}…` : text }
@@ -227,7 +314,8 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
   }
   control.stop = stop
   control.raw = raw
-  control.view = () => ({ calls: used.action + used.query, current })
+  // 実況のために、動いている間の経過を見せる: 経った秒数と、技が書いた最後の数行（t.log）
+  control.view = () => ({ calls: used.action + used.query, current, seconds: Math.round((Date.now() - started) / 1000), log: log.slice(-3) })
 
   const over = (kind) => {
     const max = { action: limits.actions, query: limits.queries, judge: limits.judges }[kind]
@@ -250,7 +338,7 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     }
     if (kind === 'query') {
       over('query')
-      if (name === 'state') return deps.state()
+      if (name === 'state') return rawOnlyEnabled() ? deps.rawState() : deps.state()
       if (name === 'block_at') return deps.blockAt(a)
       const r = await deps.callTool(name, a)
       calls.push({ tool: name, args: a, ok: r.ok })
@@ -301,14 +389,16 @@ export async function runSkill (skill, args, deps, limits = LIMITS, control = {}
     if (!deps.bot) return { ended: 'error', reason: 'raw skills need the bot (deps.bot)' }
     const call = (kind, name) => async (a) => JSON.parse(JSON.stringify((await dispatch(kind, name, JSON.stringify(a ?? {}))) ?? null))
     const t = {}
-    for (const n of SKILL_ACTIONS) t[n] = call('action', n)
-    for (const n of QUERY_TOOLS) t[n] = call('query', n)
+    const only = rawOnlyEnabled()
+    if (!only) for (const n of SKILL_ACTIONS) t[n] = call('action', n)
+    for (const n of only ? RAW_ONLY_QUERIES : QUERY_TOOLS) t[n] = call('query', n)
     t.state = call('query', 'state')
     t.block_at = call('query', 'block_at')
-    t.judge = (question, options) => call('judge', 'judge')({ question: String(question), ...(options ?? {}) })
+    if (!only) t.judge = (question, options) => call('judge', 'judge')({ question: String(question), ...(options ?? {}) })
     t.log = (message) => call('log', 'log')({ message: String(message) })
     t.done = (summary = '') => ({ __end: 'done', summary: String(summary) })
     t.fail = (reason = '') => ({ __end: 'fail', reason: String(reason) })
+    owned.movements = deps.bot.pathfinder?.movements
     t.bot = tracked(deps.bot, owned)
     t.Vec3 = Vec3
     t.goals = pathfinderPkg.goals

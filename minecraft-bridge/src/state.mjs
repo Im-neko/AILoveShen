@@ -117,3 +117,36 @@ export function sharedState (bot, state, needsOf) {
     time: dayPhase(bot.time.timeOfDay)
   }
 }
+
+// 判断を加えない見え方（設計書 191）: 位置・体・持ち物・まわりの高さ・モブ・時刻だけ。欲求（needs）、断りの履歴、家の中か、
+// 閉じた所か、拾える物の有無など、ブリッジが世界から導いた助言や判定は入れない。死んだ回数と最後の様子は起きたことの記録で、
+// 入れる（入れないと、持ち物を失って同じ夜の野原に戻されても、死んだことを知らず、同じ手を繰り返す。2026-10-18 ベンチ 8 回目: 97 分で 24 回）
+export function rawState (bot, state = null) {
+  const p = bot.entity.position
+  const around = lookAround(bot)
+  return {
+    self: {
+      position: { x: round(p.x), y: round(p.y), z: round(p.z) },
+      health: round(bot.health),
+      food: bot.food,
+      held_item: bot.heldItem?.name ?? null,
+      on_ground: Boolean(bot.entity.onGround),
+      in_water: isSwimming(bot),
+      ...(underwater(bot) ? { head_in_water: true, air: underwater(bot).air } : {}),
+      biome: biomeName(bot)
+    },
+    surroundings: { legend: around.legend, grid: around.grid },
+    mobs: mobs(bot),
+    inventory: inventoryCounts(bot),
+    tool_wear: toolWear(bot),
+    time: dayPhase(bot.time.timeOfDay),
+    ...(state?.deaths ? { deaths: { count: state.deaths, last: lastDeathOf(state.lastDeath) } } : {})
+  }
+}
+
+// 最後に死んだときの、いつ・どこで・何に削られたか（死んだ瞬間の持ち物は、死んだあとの空の持ち物が語る）
+function lastDeathOf (d) {
+  if (!d) return null
+  return { time: d.phase, position: d.position ?? null, damage_by: d.damage }
+}
+

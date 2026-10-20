@@ -14,7 +14,7 @@ import vec3Pkg from 'vec3'
 import { workCell, mineStatus, canExtendMine, waterAt, HOME_FARM } from './facilities.mjs'
 import { cropBySeed, CROPS } from './farming.mjs'
 import { describeWhere } from './placing.mjs'
-import { standingCell, round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inventoryCounts, fillItem, UNDERGROUND_BELOW, EXPLODES } from './observe.mjs'
+import { standingCell, round, bearing, dayPhase, burningInDaylight, isDark, isUnderground, inventoryCounts, fillItem, fillCount, UNDERGROUND_BELOW, EXPLODES } from './observe.mjs'
 import { leakingHoles } from './ledger.mjs'
 import { sleepersInBeds } from './sleepers.mjs'
 import { leaveRoute } from './exit-route.mjs'
@@ -38,7 +38,6 @@ import { surfaceExits } from './surface.mjs'
 import { UNDERGROUND_LEAVES } from './solver.mjs'
 import { riding } from './boat.mjs'
 import { isSwimming } from './swim.mjs'
-import { caveOre } from './mining.mjs'
 import { refusalAt, spotOf } from './refusals.mjs'
 import { KEEP_WHEN_FIGHTING, toReplace } from './wear.mjs'
 import { REGEN_FOOD, cannotHeal, needsFoodToHeal } from './healing.mjs'
@@ -128,6 +127,9 @@ export { shelterOf }
 const LOW_HEALTH_WALK = 32 // 体力が危険なとき、これより遠い家へは歩かない
 const STEP_OFF_MIN_HEALTH = 6 // 縁から飛び降りたあとに残したい体力（primitives.mjs と同じ）
 const STEP_OFF_COMFORT = 12 // 聞かずに飛び降りてよい、降りたあとの体力
+const SURFACE_FAILED_MS = 20 * 60 * 1000 // surface が失敗してから、縦穴を掘り上がる手を出す間
+const SHAFT_RESUME_MS = 2 * 60 * 1000 // 掘り上がりの途中（地上に出ていない）で、続きを急ぐ間
+const SHAFT_MIN_BLOCKS = 12 // 縦穴を掘り上がるのに要る、積むブロックの数
 const SHUT_IN_SMALL = 24 // 閉じた所がこの広さ以下なら、聞かずに積んで出る（広い洞窟は、積まなくても別の出方があるかもしれない）
 export const CREEPER_HOME_HOLD = 16 // クリーパーがこの距離以内にいる間は、家へ帰る手を出さない（追われる距離）
 export const CREEPER_HOME_REASON = `a creeper is within ${CREEPER_HOME_HOLD} m: it follows you and blows up the walls next to you, so do not lead it to the house`
@@ -221,7 +223,6 @@ function fromLeaf (bot, state, world, leaf) {
       // 前に見た場所を先に出す。次に方角を、すでに行った場所には印をつけて出す
       const recalled = state.memory
         ? recall(memoryView(state, me, Number(bot.time.age), leaf.sources), leaf.sources, me, Number(bot.time.age), (p) => recallTripOk(bot, p))
-          .filter((p) => !caveOre(state, p, p.kind)) // 洞窟の深い鉱石へは歩いて行かない（採掘場の壁だけ）
           .map((p) => ({
           id: `go to ${p.kind} seen at x=${p.x} z=${p.z}`, verb: 'goto_memory', target: p.kind, pos: new Vec3(p.x, p.y, p.z),
           distance: p.distance, seen_minutes_ago: p.minutesAgo, count: p.count
@@ -508,6 +509,14 @@ export function forNeeds (bot, state, knowledge) {
       out.push({ id: 'get out to the surface (no torches, and little to make them from underground)', verb: 'surface', target: 'the surface', pos, distance: dist(bot, pos), purpose: 'underground with fewer than 4 torches: torches are made from coal and sticks, which a cave rarely gives; go up and make them at home' })
     }
   }
+  // 地下で、地上へ出る道が見つからない・歩いて着けなかった（surface が失敗した）: 真上へ縦穴を掘り上がる（docs/design/178）。
+  // つるはしがなくても素手で掘る。夜は安全な地下で朝を待てるので urgent は昼と夜明けだけ（掘り上がっている途中は夜でも）
+  const surfaceFailed = Date.now() - (state.surfaceFailedAt ?? 0) < SURFACE_FAILED_MS
+  const shafting = Date.now() - (state.shaftUpAt ?? 0) < SHAFT_RESUME_MS
+  if (isUnderground(bot) && !isInside(bot, state.home) && !inBurrow(bot) && (surfaceFailed || shafting) &&
+      fillCount(bot) >= SHAFT_MIN_BLOCKS && !(state.shaftBlockedUntil > Date.now())) {
+    out.push({ id: 'dig a shaft up to the surface by piling up blocks', verb: 'shaft_up', target: 'the surface', inPlace: true, ...(shafting || dayPhase(bot.time.timeOfDay) !== 'night' ? { urgent: true } : {}), purpose: `underground and no way on foot to the surface (${fillCount(bot)} blocks to pile up with${bot.inventory.items().some((i) => i.name.endsWith('_pickaxe')) ? '' : '; no pickaxe: the rock above is dug by hand'}): dig straight up, piling a block under your feet each time` })
+  }
   const weapon = bestWeapon(bot)
   if (weapon && bot.heldItem?.name !== weapon.name) out.push({ id: `equip ${weapon.name}`, verb: 'equip', target: weapon.name, item: weapon.name, inPlace: true })
   // 体力が危険になってやめた戦い（cleared など）には、目標に関係なく帰る道が要る。まわりに危険が
@@ -726,6 +735,16 @@ function goalNeeds (knowledge, state, world) {
   return keep
 }
 
+// 今の小目標とは別に、大目標の残りの中目標が集める物（goal.also）の個数。夜明かしや帰宅の小目標のあいだに
+// 預けると、次の手で出し直す往復になる（2026-10-16: 鉄のレギンスのための生の鉄を、夜ごとに預けては出した）
+function alsoReserve (state) {
+  const out = new Map()
+  for (const { count, members } of state.goal?.also ?? []) {
+    for (const name of members ?? []) out.set(name, Math.max(out.get(name) ?? 0, count))
+  }
+  return out
+}
+
 // チェストから出した物は、しばらく預け直さない（かぼちゃを出した次の手で、預ける手が戻した: 2026-10-01）
 export function recentlyTaken (state, bot, name) {
   return Number(bot.time.age) - (state.withdrawn?.[name] ?? -Infinity) < TIDY_BLOCKED_TICKS
@@ -761,9 +780,10 @@ function tidyUp (bot, state, knowledge, world, status) {
   const food = new Set(knowledge.resolve('food').members)
   const tidyReserve = mineInProgress(state) ? { ...TIDY_RESERVE, ...MINING_RESERVE } : TIDY_RESERVE // 枝掘りの間は、塞ぐ丸石を預けない
   const surplus = new Map(seedsToToss(bot, state, goalKeep(knowledge, state.goal?.spec)).map((s) => [s.item, s.count])) // 余った種は預けず捨てる
+  const forLater = alsoReserve(state)
   const stowable = Object.entries(inventoryCounts(bot))
     .filter(([name, n]) => n > 0 && !KEEP_WHEN_FIGHTING.test(name) && !TIDY_KEEP.test(name) && !food.has(name) && !recentlyTaken(state, bot, name))
-    .map(([item, n]) => ({ item, count: n - (tidyReserve[item] ?? 0) - (surplus.get(item) ?? 0) }))
+    .map(([item, n]) => ({ item, count: n - Math.max(tidyReserve[item] ?? 0, forLater.get(item) ?? 0) - (surplus.get(item) ?? 0) }))
     .filter((s) => s.count > 0)
   if (stowable.reduce((sum, s) => sum + s.count, 0) < TIDY_MIN_ITEMS) return []
   const keep = goalNeeds(knowledge, state, world)

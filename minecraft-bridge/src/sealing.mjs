@@ -7,7 +7,7 @@
 
 import vec3Pkg from 'vec3'
 import { inventoryCounts } from './observe.mjs'
-import { onMineCell } from './facilities.mjs'
+import { onMineCell, SEAL_FROM_DEPTH } from './facilities.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -16,8 +16,7 @@ const FLUID = /water|lava/
 const SIX = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
 const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 const PASSES = 3 // 置いた面が次の面の「借りる隣」になるので、数回まわす
-// 階段は、入口からこの段数より深くなってから塞ぐ（浅い所は地上の空気に面していて、洞窟ではない。設計書 134）
-export const SEAL_FROM_DEPTH = 4
+export { SEAL_FROM_DEPTH }
 
 // 手元の、塞ぐのに使える丸石の数
 export const sealStock = (bot) => {
@@ -36,12 +35,38 @@ export function enclosure (state, cell, skip = new Set()) {
   return out.filter((f) => !onMineCell(state, f.pos) && !skip.has(`${f.pos.x},${f.pos.y},${f.pos.z}`))
 }
 
-// 塞ぐ面のうち、今空いているもの（読み込まれていない面、水や溶岩の面は数えない: 水・溶岩は mineDanger が断る）
+// セルの真上が空まで開いているか（地表に出た浅い階段。斜面では、入口から 4 段下りても天井が空気のまま）。洞窟は上に固い天井
+// があるので、開いていない。空に開いた所は洞窟ではないので塞がない（塞ごうにも、借りる隣の固いブロックがない）
+export function underSky (bot, cell, reach = 12) {
+  for (let dy = cell.h; dy < cell.h + reach; dy++) {
+    const b = bot.blockAt(new Vec3(cell.x, cell.y + dy, cell.z))
+    if (!b || b.boundingBox === 'block' || FLUID.test(b.name)) return false
+  }
+  return true
+}
+
+// 塞ぐ面のうち、今空いているもの（読み込まれていない面、水や溶岩の面は数えない: 水は wetSpots、溶岩は mineDanger）
 export function openings (bot, state, cell, skip) {
   return enclosure(state, cell, skip).filter(({ pos }) => {
     const b = bot.blockAt(pos)
     return !!b && b.boundingBox === 'empty' && !FLUID.test(b.name)
   })
+}
+
+// 水を塞ぐのに置く物: 丸石が先、なければ手元の土や石（水に置くと、水の代わりにそのブロックになる）
+export const PLUG_ITEMS = [...SEAL_ITEMS, 'dirt', 'andesite', 'diorite', 'granite', 'stone']
+export const plugStock = (bot) => {
+  const have = inventoryCounts(bot)
+  return PLUG_ITEMS.reduce((sum, name) => sum + (have[name] ?? 0), 0)
+}
+
+// セルの中と、それを囲む面（床・壁・天井）にある水のマス（上から。水は上から流れ込むので、上を先に塞ぐ）。
+// 水に当たったら壁で塞いで水を抜く、のために掘る前に見る（設計書 183）
+export function wetSpots (bot, state, cell, skip) {
+  const own = Array.from({ length: cell.h }, (_, i) => new Vec3(cell.x, cell.y + i, cell.z))
+  return [...enclosure(state, cell, skip).map((f) => f.pos), ...own]
+    .filter((pos) => /water/.test(bot.blockAt(pos)?.name ?? ''))
+    .sort((a, b) => b.y - a.y)
 }
 
 // pos に names のうち手元にあるものを 1 個置く（既定は丸石）。借りる隣は、固いブロック（どれでもよい）。
@@ -126,4 +151,20 @@ export async function plugCell (bot, cell, signal) {
     if (b?.boundingBox === 'empty' && !FLUID.test(b.name) && await placeSeal(bot, pos, signal)) plugged++
   }
   return plugged
+}
+
+// セルの水を、手元の丸石（なければ土や石）で塞ぐ。囲む面の水は壁になり、セルの中の水はブロックになる（あとで掘れば
+// 水のない空洞になる: 水源が壁の向こうに隔てられているので、流れ込んだ水は抜ける）。置けないほど開けた水（湖の底など）は
+// remaining に残る。{ ok, placed, remaining }
+export async function wallOffWater (bot, state, cell, signal, skip) {
+  let placed = 0
+  for (let pass = 0; pass < PASSES + 2; pass++) {
+    const wet = wetSpots(bot, state, cell, skip)
+    if (!wet.length) break
+    let progress = 0
+    for (const pos of wet) if (await placeSeal(bot, pos, signal, PLUG_ITEMS)) { placed++; progress++ }
+    if (!progress) break
+  }
+  const remaining = wetSpots(bot, state, cell, skip)
+  return { ok: !remaining.length, placed, remaining }
 }

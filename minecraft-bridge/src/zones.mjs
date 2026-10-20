@@ -3,6 +3,7 @@
 // 用途を決める材料: 見えている割合、水・溶岩、平らさ、木、建てた物、重なる施設。
 import vec3Pkg from 'vec3'
 import { mapKind } from './map.mjs'
+import { TILLABLE, SOFT_GROUND } from './farming.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -33,7 +34,7 @@ function top (bot, x, z, baseY) {
   for (let y = baseY + SCAN_UP; y >= baseY - SCAN_DOWN; y--) {
     const b = bot.blockAt(new Vec3(x, y, z))
     if (!b) return null
-    if (b.boundingBox === 'block' || /water|lava/.test(b.name)) return [mapKind(b.name), y]
+    if (b.boundingBox === 'block' || /water|lava/.test(b.name)) return [mapKind(b.name), y, b.name]
   }
   return ['other', baseY - SCAN_DOWN]
 }
@@ -48,6 +49,8 @@ export function zonesAround (bot, state, center, cells = TOWN_CELLS, size = ZONE
   return zoneBoxes(center, cells, size).map((box) => {
     const counts = {}
     const heights = []
+    let soil = 0 // 耕せる土（草・土）の列
+    let soft = 0 // 整地で畑にできる柔らかい地面（砂、砂利なども）の列
     let seen = 0
     for (let x = box.min_x; x <= box.max_x; x++) {
       for (let z = box.min_z; z <= box.max_z; z++) {
@@ -55,6 +58,8 @@ export function zonesAround (bot, state, center, cells = TOWN_CELLS, size = ZONE
         if (!t) continue
         seen++
         counts[t[0]] = (counts[t[0]] ?? 0) + 1
+        if (TILLABLE.test(t[2])) soil++
+        if (SOFT_GROUND.test(t[2])) soft++
         if (t[0] !== 'water' && t[0] !== 'lava') heights.push(t[1])
       }
     }
@@ -69,6 +74,9 @@ export function zonesAround (bot, state, center, cells = TOWN_CELLS, size = ZONE
       trees: share('tree') + share('leaves'),
       built: share('built'),
       stone: share('stone'),
+      // 畑にできる地面の割合（設計書 195）: soil はそのまま耕せる（草、土）、soft は整地すれば畑にできる（砂、砂利、雪の土地も）
+      soil: seen ? Math.round((soil / seen) * 100) / 100 : 0,
+      soft: seen ? Math.round((soft / seen) * 100) / 100 : 0,
       // 平らさ: 真ん中の高さから ±1 に入る列の割合。高さは地面の目安からの差
       flat: sorted.length ? Math.round((sorted.filter((y) => Math.abs(y - median) <= 1).length / sorted.length) * 100) / 100 : 0,
       height: median === null ? null : median - baseY,

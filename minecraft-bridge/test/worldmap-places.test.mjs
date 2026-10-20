@@ -81,7 +81,7 @@ test('memoryView: 動物は memory のまま、ブロックは地図から（古
   assert.deepEqual(Object.keys(view.places).sort(), ['coal_ore', 'cow'])
   assert.equal(state.memory.places.iron_ore.length, 1, '元の memory は書き換えない')
   // 地図がなければ memory のまま
-  assert.equal(memoryView({ memory: state.memory }, me, NOW), state.memory)
+  assert.deepEqual(memoryView({ memory: state.memory }, me, NOW), state.memory)
 })
 
 test('思い出した場所（recall）は 32 m より遠いものだけ。地図で見た遠い木が候補になる', () => {
@@ -146,7 +146,7 @@ test('rememberedKinds: 種類がいくつあっても、地図をなめるのは
 })
 
 test('memoryView: 洞窟の深い鉱石は覚えている場所に出さない。浅い鉱石や、ほかの物は出す（取らない物へ行かせない）', () => {
-  const home = { inside: { x: 0, y: 70, z: 0 }, min: { x: 0, y: 70, z: 0 }, found: false }
+  const home = { inside: { x: 0, y: 70, z: 0 }, min: { x: 0, y: 70, z: 0 }, max: { x: 2, y: 70, z: 2 }, found: false }
   const state = { home, plan: null, memory: newMemory(), placed: {} }
   state.memory.places.iron_ore = [{ x: 5, y: 52, z: 5, count: 2, seen: NOW }]
   state.memory.places.coal_ore = [{ x: 8, y: 66, z: 8, count: 1, seen: NOW }]

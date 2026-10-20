@@ -4,6 +4,8 @@ import minecraftData from 'minecraft-data'
 import vec3Pkg from 'vec3'
 import { Knowledge } from '../src/knowledge.mjs'
 import { makeGoal, evaluate } from '../src/goals.mjs'
+import { ground } from '../src/candidates.mjs'
+import { goalKeep } from '../src/spare.mjs'
 import { biomeMatches, foundKind, foundNow, aheadOrder } from '../src/found.mjs'
 
 const { Vec3 } = vec3Pkg
@@ -91,4 +93,16 @@ test('探索の向きの並び: 水の手前は後ろへ、探している群系
   assert.deepEqual(order(undefined), ['e', 's', 'n', 'w'])
   assert.equal(aheadOrder('sheep', { biome_ahead: 'forest' }, { biome_ahead: 'taiga' }), 0)
   assert.equal(aheadOrder('sheep', { biome_ahead: 'river' }, { biome_ahead: 'beach' }), 0)
+})
+
+test('found の item は生き物・群系の名前で、品物としては引かない（ground が例外にならず、残す物にも入らない）', () => {
+  const st = state()
+  const bot = fakeBot()
+  for (const item of ['sheep', 'plains']) {
+    st.goal = makeGoal({ predicate: 'found', item, distance: 96 }, bot, st, k)
+    const status = evaluate(bot, st, k, world)
+    assert.doesNotThrow(() => ground(bot, st, k, world, status))
+    assert.ok(!goalKeep(k, st.goal.spec).has(item))
+    assert.ok(goalKeep(k, st.goal.spec).size > 0) // 食料は残す
+  }
 })

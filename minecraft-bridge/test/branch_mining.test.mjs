@@ -173,6 +173,21 @@ test('dig_mine: 枝が危なければその枝だけ打ち切って、ほかの�
   assert.equal(mineStatus(bot, fac).next, null)
 })
 
+test('dig_mine: 掘っても空かないセル（水が流れ込み続ける）は、例外にせず、その枝だけ打ち切って先へ進む', async () => {
+  const { fac } = design()
+  const s = state({ facilities: { mine_1: fac } })
+  const blocks = {}
+  const bot = digger([{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 40 }], blocks)
+  const bad = fac.layout.cells.filter((c) => c.part === 'branch_east_2_a')[1]
+  const dig = bot.dig
+  bot.dig = async (b) => { if (key(b.position) !== key(bad)) await dig(b) } // 掘っても元に戻る
+  bot.entity.position = new Vec3(fac.layout.cells[0].x, 64, fac.layout.cells[0].z)
+  const r = await PRIMITIVES.dig_mine(bot, s, { facility: 'mine_1' }, new AbortController().signal)
+  assert.match(r, /branches cut short for danger: branch_east_2_a at .*: digging it does not open it/)
+  assert.equal(fac.layout.cells.filter((c) => c.part === 'branch_east_2_a').length, 1)
+  assert.ok(fac.layout.cells.filter((c) => c.part === 'branch_west_29_b' || c.part === 'branch_west_26_b').length > 0)
+})
+
 test('dig_mine: 探している鉱石が壁に出たら、そこで止めて掘る手に任せる。1 回で少なくとも数セルは掘る', async () => {
   const { fac } = design()
   const s = state({ facilities: { mine_1: fac } })

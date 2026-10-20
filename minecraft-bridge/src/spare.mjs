@@ -32,9 +32,12 @@ export const isTossable = (name) => (TERRAIN.test(name) && !name.endsWith('_ore'
 
 // 目標が使う物（食料、目標の種類ごとの材料、目標の品物）。預ける物も捨てる物も、これは残す
 const GOAL_GROUPS = { built: ['log', 'planks', 'door'], placed: ['bed', 'wool', 'planks'] }
+// item が品物でない目標: found の item は生き物かバイオームの名前（sheep, plains）で、品物としては引けない
+const NOT_AN_ITEM = new Set(['found'])
 export function goalKeep (knowledge, spec) {
   if (!knowledge) return new Set()
-  const groups = ['food', ...(GOAL_GROUPS[spec?.predicate] ?? []), ...(spec?.item ? [spec.item] : [])]
+  const item = spec?.item && !NOT_AN_ITEM.has(spec.predicate) ? [spec.item] : []
+  const groups = ['food', ...(GOAL_GROUPS[spec?.predicate] ?? []), ...item]
   return new Set(groups.flatMap((g) => knowledge.resolve(g).members))
 }
 

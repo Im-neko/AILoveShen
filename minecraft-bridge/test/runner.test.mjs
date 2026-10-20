@@ -274,3 +274,21 @@ test('閉じた所から出る手が同じ理由で失敗したら、自分の�
   await run({ verb: 'dig_out', inPlace: true }, 'dig out')
   assert.equal(listRefusals(state).length, 1)
 })
+
+test('途中で投げた失敗には、何をしている途中だったかを末尾に添える。元の文は先頭のまま、止めた理由には重ねない', async () => {
+  const failing = (bot) => {
+    bot.actionPhase = 'walking to stand beside the stairs cell at 1,2,3 of the mine mine_9'
+    throw new Error('Took to long to decide path to goal! The goal 147,16,139 (43m away) is probably unreachable from here')
+  }
+  const { run } = setup({ dig_mine: failing })
+  const r = await run({ verb: 'dig_mine' }, 'dig the mine mine_9')
+  assert.equal(r.ok, false)
+  assert.match(r.result, /^failed: Took to long to decide path to goal! .* \(while walking to stand beside the stairs cell at 1,2,3 of the mine mine_9\)/)
+  // 何もしていない途中（phase なし）は、今まで通り
+  const plain = setup({ dig_mine: () => { throw new Error('no torch') } })
+  assert.equal((await plain.run({ verb: 'dig_mine' }, 'dig the mine mine_9')).result, 'failed: no torch')
+  // phase が前の行動の残りでも、始めに消える（runner が行動の始めに空にする）
+  const stale = setup({ dig_mine: () => { throw new Error('no torch') } })
+  stale.bot.actionPhase = 'left over from the last action'
+  assert.equal((await stale.run({ verb: 'dig_mine' }, 'dig the mine mine_9')).result, 'failed: no torch')
+})

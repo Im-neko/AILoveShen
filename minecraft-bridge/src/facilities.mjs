@@ -9,7 +9,7 @@ import { buildBox } from './builds.mjs'
 import { refusalAt } from './refusals.mjs'
 import { inHouse } from './home.mjs'
 import { farmLevel } from './leveling.mjs'
-import { CROPS, cropByBlock, cropOf, cropStatus, ageOf, isDry, isRipe, SAPLING, PLANT_RING, TILLABLE, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
+import { CROPS, cropByBlock, cropOf, cropStatus, ageOf, isDry, isRipe, SAPLING, PLANT_RING, TILLABLE, SOFT_GROUND, CLEARABLE, SAPLING_GROUND, TREE_GAP, farmRefusal, nearName, surfaceAt } from './farming.mjs'
 
 const { Vec3 } = vec3Pkg
 
@@ -224,9 +224,30 @@ function unionBox (boxes) {
   }
 }
 
+// 範囲の地面の高さ（柔らかくても固くても、水と溶岩を除いた一番上の固いブロックの高さの中央値）。家の床から AREA_SCAN
+// まで上下を見る。家の床から 5 ブロック以上低い土地も、そこで設計できる（区画の地形 zones.mjs は上下 16 を見るので、
+// 区画では平らな土地と出ても、家の床の高さの近くだけを見ると 0 マスになった。設計書 195）
+const AREA_SCAN = 12
+function areaGroundY (bot, area, y0) {
+  const ys = []
+  for (let x = area.min_x; x <= area.max_x; x++) {
+    for (let z = area.min_z; z <= area.max_z; z++) {
+      for (let y = y0 + AREA_SCAN; y >= y0 - AREA_SCAN; y--) {
+        const b = bot.blockAt(new Vec3(x, y, z))
+        if (!b || /water|lava/.test(b.name)) break
+        if (b.boundingBox === 'block') { ys.push(y); break }
+      }
+    }
+  }
+  if (!ys.length) return y0
+  ys.sort((a, b) => a - b)
+  return ys[Math.floor(ys.length / 2)] + 1 // 足の高さ（地面の上）
+}
+
 // 施設に使える地面（範囲のすべての列）。ほかの施設・家・建物のそばは除く
 function groundCells (bot, state, area, name) {
-  const y0 = state.home ? state.home.inside.y : Math.floor(bot.entity.position.y)
+  const home0 = state.home ? state.home.inside.y : Math.floor(bot.entity.position.y)
+  const y0 = areaGroundY(bot, area, home0)
   const others = Object.values(state.facilities ?? {}).filter((x) => x.name !== name && x.kind !== 'home')
   const out = []
   let unloaded = 0
@@ -261,9 +282,14 @@ function groundWithPlants (bot, x, z, y0) {
 }
 
 // 畑: 幅 x 奥行きの四角（向きは両方試す）のうち、耕せる地面が同じ高さ（±1）に一番多く並ぶ所。
+// 平らな耕せる地面が足りなければ、整地（設計書 41、75）で畑にできる柔らかい地面（砂、砂利、雪の土地など）が、
+// 高さの差 LEVEL_REACH 以内に並ぶ所を選ぶ（設計書 195。作るときの整地が、そろえて土で埋める）。
 // 四角の中に水のマスを 9 マスごとに 1 つ置く（水から縦横 4 マス以内の耕地が湿る）: { cells: 作物のマス, water: 水のマス }
-function farmLayout (bot, cells, area, width, depth) {
-  const byXZ = new Map(cells.filter((c) => TILLABLE.test(c.ground.name) || c.ground.name === 'farmland')
+const LEVEL_REACH = 3 // 整地で畑の高さにそろえてよい、地面の高さの差（掘るのも埋めるのも）
+
+// usable な地面が、中央値の高さから tolerance 以内に一番多く並ぶ四角
+function bestRect (bot, cells, area, width, depth, usable, tolerance) {
+  const byXZ = new Map(cells.filter((c) => usable(c.ground.name))
     .filter((c) => !nearName(bot, c.cell, LOGS, 1)).map((c) => [cellKey(c.cell), c]))
   let best = null
   for (const [w, d] of width === depth ? [[width, depth]] : [[width, depth], [depth, width]]) {
@@ -274,16 +300,28 @@ function farmLayout (bot, cells, area, width, depth) {
         if (!inside.length) continue
         const ys = inside.map((c) => c.cell.y).sort((a, b) => a - b)
         const mid = ys[Math.floor(ys.length / 2)]
-        const level = inside.filter((c) => Math.abs(c.cell.y - mid) <= 1)
-        if (!best || level.length > best.cells.length) best = { cells: level, size: w * d, x0, z0, w, d }
+        const level = inside.filter((c) => Math.abs(c.cell.y - mid) <= tolerance)
+        if (!best || level.length > best.cells.length) best = { cells: level, size: w * d, x0, z0, w, d, mid }
       }
     }
   }
-  if (!best || best.cells.length < best.size * USABLE_SHARE) {
-    const most = best ? best.cells.length : 0
-    throw new FacilityError(`not enough flat dirt or grass for a ${width}x${depth} farm in these zones (at most ${most} of ${width * depth} cells): choose a smaller size or other zones`)
+  return best
+}
+
+function farmLayout (bot, cells, area, width, depth) {
+  const enough = (b) => b && b.cells.length >= b.size * USABLE_SHARE
+  let best = bestRect(bot, cells, area, width, depth, (n) => TILLABLE.test(n) || n === 'farmland', 1)
+  let leveled = false
+  if (!enough(best)) {
+    const soft = bestRect(bot, cells, area, width, depth, (n) => SOFT_GROUND.test(n), LEVEL_REACH)
+    if (!enough(soft)) {
+      throw new FacilityError(`not enough ground for a ${width}x${depth} farm in these zones (at most ${best ? best.cells.length : 0} of ${width * depth} cells are flat dirt or grass, and at most ${soft ? soft.cells.length : 0} are soft ground (dirt, grass, sand, gravel, snow) within ${LEVEL_REACH} blocks of one height, which levelling can fix): choose a smaller size or other zones`)
+    }
+    // 整地で、この四角の地面を同じ高さ（中央値）にそろえる前提で、水の置き場と作物のマスを決める
+    best = { ...soft, cells: soft.cells.map((c) => ({ ...c, cell: new Vec3(c.cell.x, soft.mid, c.cell.z) })) }
+    leveled = true
   }
-  const { crops, water } = waterCells(bot, best)
+  const { crops, water } = waterCells(bot, best, { leveled })
   if (crops.length + water.length < best.size * USABLE_SHARE) {
     throw new FacilityError(`not enough ground for a ${width}x${depth} farm with water in these zones (${crops.length} crop cells and ${water.length} water of ${width * depth}: the rest is uneven or out of the water's reach): choose a smaller size or other zones`)
   }
@@ -294,7 +332,7 @@ function farmLayout (bot, cells, area, width, depth) {
   for (const y of ys) counts.set(y, (counts.get(y) ?? 0) + 1)
   const y = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]
   const at = (c) => ({ x: c.cell.x, y, z: c.cell.z })
-  return { cells: crops.map(at), water: water.map(at), y, rect: { x0: best.x0, z0: best.z0, w: best.w, d: best.d } }
+  return { cells: crops.map(at), water: water.map(at), y, rect: { x0: best.x0, z0: best.z0, w: best.w, d: best.d }, ...(leveled ? { leveled } : {}) }
 }
 
 // 畑のまわりの柵の輪（四角の 1 マス外側。高さは地面の上）と、ゲートのマス（輪の角でない、家にいちばん近い所）。
@@ -328,8 +366,9 @@ function fenceRing (bot, state, name, { x0, z0, w, d }, y) {
 // 水のマスを選ぶ。四角を縦横 9 マスずつに区切り、それぞれで一番多く湿らせるマス（同じなら真ん中に近いマス）に 1 つ。
 // 水から縦横 HYDRATION マス以内で、水と同じ高さか 1 段低い耕地が湿る。どの水も届かないマスは畑に入れない。
 // 水は地面のブロックを掘った穴に置くので、穴の横 4 マスの地面が水の高さ以上でなければ水が流れ出す（そういうマスは選ばない）
-function waterCells (bot, { cells, x0, z0, w, d }) {
-  const solid = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.boundingBox === 'block'
+function waterCells (bot, { cells, x0, z0, w, d }, { leveled = false } = {}) {
+  // 整地する畑は、水の横の地面も整地で同じ高さにそろう（いまの高さは見ない）
+  const solid = (x, y, z) => leveled || bot.blockAt(new Vec3(x, y, z))?.boundingBox === 'block'
   const reach = (wet, c) => c !== wet && Math.max(Math.abs(c.cell.x - wet.cell.x), Math.abs(c.cell.z - wet.cell.z)) <= HYDRATION &&
     [0, 1].includes(wet.cell.y - c.cell.y)
   const water = []
@@ -745,6 +784,8 @@ const MINE_SITES = 60 // 自分で設計するとき: 家の外周の輪の、�
 const RING = [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1], [3, 2], [3, 3], [2, 3], [1, 3], [0, 3], [0, 2], [0, 1]] // 4 x 4 の外周
 const FALLING = /(^|_)(sand|gravel)$|concrete_powder$/
 const FLUID = /water|lava/
+const LAVA = /lava/
+const WATER = /water/
 const SIX = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
 const DIRECTIONS = { east: [1, 0], south: [0, 1], west: [-1, 0], north: [0, -1] }
 
@@ -762,23 +803,43 @@ export function stairSupport (stairs, bottom) {
 const isOpen = (b) => !!b && b.boundingBox === 'empty' && !FLUID.test(b.name)
 const blocksOf = (c) => Array.from({ length: c.h }, (_, i) => new Vec3(c.x, c.y + i, c.z))
 
+// 砂・砂利の柱がこの高さまでなら、掘ったあとに落ちてきたものを掘り直せる（primitives.mjs clearFallen）
+export const FALLING_STACK_MAX = 4
+
+// セルの真上に積もった砂・砂利は、下を掘ると落ちてくる。落ちたものは掘り直せば済むので、断るのは掘り直せないときだけ:
+// 柱が FALLING_STACK_MAX より高い、柱の上が水か溶岩（砂利が落ちたあとに流れ込む）、読み込まれていない（なし: ''）
+export function fallingDanger (bot, c) {
+  let y = c.y + c.h
+  let n = 0
+  for (;; y++) {
+    const b = bot.blockAt(new Vec3(c.x, y, c.z))
+    if (!b) return n ? `not loaded above the ${n} blocks of sand or gravel at ${c.x},${c.y + c.h},${c.z}` : ''
+    if (!FALLING.test(b.name)) {
+      if (n && FLUID.test(b.name)) return `${b.name} above the ${n} blocks of sand or gravel at ${c.x},${c.y + c.h},${c.z}: it would pour in when they fall`
+      return ''
+    }
+    if (++n > FALLING_STACK_MAX) return `more than ${FALLING_STACK_MAX} blocks of ${b.name} stacked above ${c.x},${c.y + c.h - 1},${c.z}: they would keep falling in`
+  }
+}
+
 // そのセルを掘ると危ない理由（なし: ''）。planned は空ける予定のマス（床や隣が予定の空きなら洞窟ではない）
 export function mineDanger (bot, c, planned = new Set(), sealable = false) {
   for (const p of blocksOf(c)) {
     const b = bot.blockAt(p)
     if (!b) return 'not loaded'
     if (b.name === 'bedrock') return `bedrock at ${p.x},${p.y},${p.z}`
+    // 水は危ないものではない: 掘る手が壁で塞いで水を抜く（sealing.mjs wallOffWater）。溶岩だけは掘らない
     for (const [x, y, z] of [[0, 0, 0], ...SIX]) {
       const n = bot.blockAt(p.offset(x, y, z))
-      if (n && FLUID.test(n.name)) return `${n.name.includes('lava') ? 'lava' : 'water'} at ${n.position.x},${n.position.y},${n.position.z}`
+      if (n && LAVA.test(n.name)) return `lava at ${n.position.x},${n.position.y},${n.position.z}`
     }
   }
-  const above = bot.blockAt(new Vec3(c.x, c.y + c.h, c.z))
-  if (FALLING.test(above?.name ?? '')) return `${above.name} above ${c.x},${c.y + c.h - 1},${c.z} would fall in`
+  const fall = fallingDanger(bot, c)
+  if (fall) return fall
   const floor = new Vec3(c.x, c.y - 1, c.z)
   const below = bot.blockAt(floor)
-  // sealable: 坑道と枝は、床の空洞を丸石で埋めて通る（sealing.mjs）。水や溶岩は上で断っている
-  if (!sealable && !planned.has(`${floor.x},${floor.y},${floor.z}`) && below?.boundingBox !== 'block') return `a cave or a drop under ${c.x},${c.y},${c.z}`
+  // sealable: 坑道と枝は、床の空洞を丸石で埋めて通る（sealing.mjs）。床の水も同じ（塞いで通る）。溶岩は上で断っている
+  if (!sealable && !planned.has(`${floor.x},${floor.y},${floor.z}`) && below?.boundingBox !== 'block' && !WATER.test(below?.name ?? '')) return `a cave or a drop under ${c.x},${c.y},${c.z}`
   return ''
 }
 
@@ -908,11 +969,18 @@ export function extendMine (state, fac) {
 export const plannedBlocks = (cells) => new Set(cells.flatMap((c) => blocksOf(c).map((p) => `${p.x},${p.y},${p.z}`)))
 export const mineBlocks = blocksOf
 
-// 危なくないセルの並びの長さ（最初の危ないセルまで）と、その理由。from より前のセルは確かめ済み
-function safePrefix (bot, cells, from = 0) {
+// 階段は、入口からこの段数より深くなってから塞ぐ（浅い所は地上の空気に面していて、洞窟ではない。設計書 134）
+export const SEAL_FROM_DEPTH = 4
+
+// 掘る手が、洞窟に出たら丸石で塞いで通るセルか（sealing は枝のある採掘場）。cells[0] は入口の段
+export const sealableCell = (sealing, cells, cell) => !!sealing && (cell.part !== 'stairs' || cells[0].y - cell.y >= SEAL_FROM_DEPTH)
+
+// 危なくないセルの並びの長さ（最初の危ないセルまで）と、その理由。from より前のセルは確かめ済み。
+// 塞いで通れる洞窟は、設計では断らない（見えない所の洞窟を知って避けない。出会ったら掘る手が塞ぐ）
+function safePrefix (bot, cells, from = 0, sealing = false) {
   const planned = plannedBlocks(cells)
   for (let i = from; i < cells.length; i++) {
-    const why = mineDanger(bot, cells[i], planned)
+    const why = mineDanger(bot, cells[i], planned, sealableCell(sealing, cells, cells[i]))
     if (why) return { n: i, why }
   }
   return { n: cells.length, why: '' }
@@ -959,7 +1027,7 @@ function mineLayout (bot, state, area, name, design, sites = null) {
     if (RING.some(([dx, dz]) => farmRefusal(state, new Vec3(x0 + dx, y0, z0 + dz)) || others.some((o) => inBox(o.box, new Vec3(x0 + dx, y0, z0 + dz))))) continue
     const shaft = mineCells(x0, z0, y0, bottom, [], 0)
     if (!clear(shaft)) continue
-    const safe = safePrefix(bot, shaft)
+    const safe = safePrefix(bot, shaft, 0, branch > 0)
     if (safe.n < shaft.length) {
       const y = shaft[Math.max(0, safe.n - 1)].y
       if (!deepest || y < deepest.y) deepest = { y, why: safe.why }
@@ -975,7 +1043,7 @@ function mineLayout (bot, state, area, name, design, sites = null) {
       for (const [len, need] of attempts) {
         const ok = directions.filter((d) => {
           const t = mineCells(x0, z0, y0, bottom, [d], len).filter((c) => c.part.startsWith('tunnel'))
-          return clear(t) && safePrefix(bot, [...shaft, ...t], shaft.length).n === shaft.length + t.length
+          return clear(t) && safePrefix(bot, [...shaft, ...t], shaft.length, branch > 0).n === shaft.length + t.length
         })
         if (ok.length >= need) { picked = { ok: ok.slice(0, count), len }; break }
       }
@@ -998,13 +1066,14 @@ function mineLayout (bot, state, area, name, design, sites = null) {
 // 枝のある採掘場（layout.sealing）は、空いているだけでは済みでない: 空洞に出たセルは、丸石で囲まれて（sealed）から済み
 // （階段は除く。sealing.mjs。dig_mine が点検して印を付ける）
 export function mineStatus (bot, fac) {
-  const out = { total: fac.layout.cells.length, done: 0, next: null, index: -1, unseen: 0 }
+  // skipped: 読み込まれていないセルより先に「次」が決まった（遠くにいると、次のセルが深い所に飛ぶ。入口へ近づいて読み直す）
+  const out = { total: fac.layout.cells.length, done: 0, next: null, index: -1, unseen: 0, skipped: false }
   const sealing = !!fac.layout.sealing
   fac.layout.cells.forEach((c, i) => {
     const bs = blocksOf(c).map((p) => bot.blockAt(p))
     if (bs.some((b) => !b)) { out.unseen++; return }
     if (bs.every(isOpen) && (!sealing || c.part === 'stairs' || c.sealed)) { out.done++; return }
-    if (!out.next) { out.next = c; out.index = i }
+    if (!out.next) { out.next = c; out.index = i; out.skipped = out.unseen > 0 }
   })
   return out
 }

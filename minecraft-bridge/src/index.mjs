@@ -25,7 +25,7 @@
 //                             実際のマスはブリッジが区画の中から選ぶ。直せる理由は 400、読み込まれていない区画は 409
 //   GET  /worldmap         -> 視界の地図の様子: { sections, cells_added, cells_changed, samples, avg_ms, max_ms }（設計書 59）
 //   GET  /memory           -> 覚えている場所を座標つきで: { places（種類ごと）, chests, furnaces, deaths }（search_memory）
-//   GET  /zones?x=&z=[&cells=&size=] -> 街の理想図の区画の地形（zones.mjs、設計書 47 §6）: [{ id, min_x.., seen, water, lava, trees, built, stone, flat, height, facilities }]
+//   GET  /zones?x=&z=[&cells=&size=] -> 街の理想図の区画の地形（zones.mjs、設計書 47 §6）: [{ id, min_x.., seen, water, lava, trees, built, stone, soil, soft, flat, height, facilities }]
 //   GET  /items            -> アイテムとブロックの名前と日本語名 [{ name, ja }]（item_info の一覧）
 //   GET  /items/<name>     -> 取り方（作る・焼く・掘る・モブ・育てる）、置けるか、食べられるか、何に使うか（item_info）
 //   PUT  /conditions/<name> {description, code} -> Gemini が書いた判定を確かめて登録する（設計書 42）:
@@ -40,6 +40,7 @@
 //   GET  /skills           -> 技の一覧（設計書 22）: [{ name, description, params, expects, version, verified, uses, successes, failures, last_failure }]
 //   GET  /skills/<name>    -> 一番新しい版（コードを含む。直すときに読む）
 //   PUT  /skills/<name> {description, params, expects, code} -> 確かめて新しい版として保存: { name, version }（だめなら 400 と理由）
+//   POST /skills/try {definition, args, run?} -> 保存しないで 1 回試す（設計書 185。run: false なら確かめるだけ）
 //   POST /skills/<name>/run {args, version?} -> 技を 1 回実行する: { ok, ended, version, summary?, reason?, expects: {met, lines},
 //                             calls, log, seconds, learned }（learned: この実行で初めて成功した）
 //   GET  /danger           -> 反射が動いているとき、共通の状態に danger（id, trigger, target, options, rule, choice）、まわりの目印、
@@ -91,7 +92,8 @@ import { noteDamage, deathReport } from './death-report.mjs'
 import { configureMovements, DAMAGE_TOLERANT, knownFurnace, nearbyDrops } from './primitives.mjs'
 import { createRunner, abortCurrent } from './runner.mjs'
 import { createTools, DROP_RADIUS as PICKUP_RADIUS } from './tools.mjs'
-import { sharedState } from './state.mjs'
+import { sharedState, rawState } from './state.mjs'
+import { sceneOf } from './scene.mjs'
 import { closedSpace, isolatedSpace } from './reach.mjs'
 import { BuildPlan } from './build.mjs'
 import { RecipeBook } from './craft.mjs'
@@ -108,7 +110,7 @@ import { countPlaced } from './placing.mjs'
 import { newMemory, remember, rememberDeath, summarizeMemory, memoryList, homeChests, storedCounts } from './memory.mjs'
 import { surveyedSites } from './survey.mjs'
 import { landmarks, adoptFoundBase } from './landmarks.mjs'
-import { SkillStore, SkillError, runSkill, expectsBaseline, judgeExpects, blockedReason, LIMITS, DEFAULT_DIR } from './skills.mjs'
+import { SkillStore, SkillError, runSkill, validateSkill, expectsBaseline, judgeExpects, blockedReason, LIMITS, DEFAULT_DIR, SKILL_STOPPED } from './skills.mjs'
 
 // 家のチェストの数と空き（観測の home に付ける）: chest_blocks = 家にあるチェストのブロック数（ラージは 2）、
 // chest_slots / chest_free = 記録からのスロット数と空き、chest_saving = まとめると空くスロット、chest_spot = もう 1 つ置ける場所があるか（storage.mjs）
@@ -309,7 +311,13 @@ const skillDeps = {
   bot,
   callTool,
   state: () => sharedState(bot, state, needs),
+  rawState: () => rawState(bot, state),
   blockAt: (args) => blockInfo(bot, args),
+  knownBlock: (name) => Boolean(bot.registry.blocksByName[name]),
+  blockNear (name, distance) {
+    const found = bot.findBlock({ matching: bot.registry.blocksByName[name].id, maxDistance: distance })
+    return found ? { x: found.position.x, y: found.position.y, z: found.position.z, distance: round(bot.entity.position.distanceTo(found.position)) } : null
+  },
   // 質問を /state に出し、見張りのティックで Jev が答えるのを待つ（来なければ answer: null）
   judge (q, signal, waitMs) {
     return new Promise((resolve) => {
@@ -353,25 +361,22 @@ function reflexState () {
   }
 }
 
-async function runSkillOnce (name, args, version) {
-  // 版を指定しないとき: 新しい版の試しが失敗していれば、前に成功した版を動かす（設計書 168 §4）
-  const back = version == null ? skills.defaultVersion(name) : null
-  const skill = skills.get(name, back?.version ?? version)
-  if (!skill) return null
-  // 同じ理由の失敗が続いている版は動かさない（前の失敗から SKILL_PROBE_MS たてば、1 回試せる）
-  const blocked = blockedReason(skill, skills.list().find((s) => s.name === name)?.last_good_version)
-  if (blocked) return { ok: false, ended: 'refused', version: skill.version, reason: blocked, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
+// 失敗した生の bot の技に、そのときの現場の事実を添える（設計書 193）
+const failedScene = (skill, ok) => (skill.raw && !ok ? { scene: sceneOf(bot) } : {})
+
+// 技を 1 回走らせて、expects を世界で判定する（保存した技の実行と、保存しない試しで共通）。{ r, expects } か { error }
+async function executeSkill (skill, name, args, limits) {
   let before
   try {
     before = expectsBaseline(skill.expects, args, skillDeps)
   } catch (e) {
-    return { ok: false, ended: 'error', version: skill.version, reason: e.message, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
+    return { error: e.message }
   }
   const control = {}
   state.skill = { name, version: skill.version, control }
   let r
   try {
-    r = await runSkill(skill, args, skillDeps, LIMITS, control)
+    r = await runSkill(skill, args, skillDeps, limits, control)
   } finally {
     state.skill = null
     state.pendingJudge = null
@@ -382,11 +387,43 @@ async function runSkillOnce (name, args, version) {
   } catch (e) {
     expects = { met: false, lines: [e.message] }
   }
+  return { r, expects }
+}
+
+// 保存しない技の試し（設計書 185）: 形と構文を確かめて、1 回だけ走らせる。記録（成績・足止め）にも保存にも残さない。
+// 試しの上限は短い（洞窟の中で何分も走らせない）。走らせる前後の位置と持ち物の差を添える
+export const TRY_RAW_MS = 3 * 60 * 1000
+async function trySkill (definition, args) {
+  const skill = { ...validateSkill(definition), name: '_try', version: 0 }
+  const at = () => { const p = bot.entity.position; return { x: round(p.x), y: round(p.y), z: round(p.z) } }
+  const startAt = at()
+  const startHave = inventoryCounts(bot)
+  const done = await executeSkill(skill, '_try', args, { ...LIMITS, rawMs: TRY_RAW_MS })
+  if (done.error) return { ok: false, ended: 'error', reason: done.error, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
+  const { r, expects } = done
+  const have = inventoryCounts(bot)
+  const gained = {}
+  for (const k of new Set([...Object.keys(startHave), ...Object.keys(have)])) if ((have[k] ?? 0) !== (startHave[k] ?? 0)) gained[k] = (have[k] ?? 0) - (startHave[k] ?? 0)
+  const ok = r.ended === 'done' && expects.met
+  return { ok, version: 0, ...r, reason: ok ? null : r.reason ?? `expects not met: ${expects.lines.join('; ')}`, expects, from: startAt, to: at(), inventory_change: gained, ...failedScene(skill, ok) }
+}
+
+async function runSkillOnce (name, args, version) {
+  // 版を指定しないとき: 新しい版の試しが失敗していれば、前に成功した版を動かす（設計書 168 §4）
+  const back = version == null ? skills.defaultVersion(name) : null
+  const skill = skills.get(name, back?.version ?? version)
+  if (!skill) return null
+  // 同じ理由の失敗が続いている版は動かさない（前の失敗から SKILL_PROBE_MS たてば、1 回試せる）
+  const blocked = blockedReason(skill, skills.list().find((s) => s.name === name)?.last_good_version)
+  if (blocked) return { ok: false, ended: 'refused', version: skill.version, reason: blocked, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
+  const done = await executeSkill(skill, name, args, LIMITS)
+  if (done.error) return { ok: false, version: skill.version, ended: 'error', reason: done.error, calls: [], log: [], seconds: 0, expects: { met: false, lines: [] } }
+  const { r, expects } = done
   const ok = r.ended === 'done' && expects.met
   const reason = ok ? null : r.reason ?? `expects not met: ${expects.lines.join('; ')}`
   const learned = skills.record(name, skill.version, ok, reason, r.seconds)
   persist()
-  return { ok, version: skill.version, ...r, reason, expects, learned, ...(back ? { fell_back_from: back.from } : {}) }
+  return { ok, version: skill.version, ...r, reason, expects, learned, ...failedScene(skill, ok), ...(back ? { fell_back_from: back.from } : {}) }
 }
 
 async function act (id) {
@@ -400,6 +437,9 @@ const send = (res, code, body) => {
   res.writeHead(code, { 'content-type': 'application/json' })
   res.end(JSON.stringify(body))
 }
+
+// 動かせない理由（409 に添える。反射が動いているときと、ほかの行動・技が動いているときで、LLM のすることが違う）
+const busyWhy = () => (state.reflex ? 'reflex' : state.skill ? 'skill' : 'action')
 
 async function readJson (req) {
   let body = ''
@@ -448,7 +488,7 @@ async function handle (req, res) {
   }
   if (req.method === 'POST' && req.url === '/act') {
     const { id } = await readJson(req)
-    if (state.busy || state.skill) return send(res, 409, { error: 'busy' })
+    if (state.busy || state.skill) return send(res, 409, { error: 'busy', why: busyWhy() })
     return send(res, 200, await act(id))
   }
   if (req.method === 'POST' && req.url === '/tool') {
@@ -457,6 +497,11 @@ async function handle (req, res) {
     const r = await callTool(name, args ?? {})
     console.log(`[tool] ${name} ${JSON.stringify(args ?? {})}: ${r.refused ? '断った' : r.ok ? '成功' : '失敗'} ${typeof r.result === 'string' ? r.result : '(調べた)'}`)
     return send(res, 200, r)
+  }
+  // 判断を加えない見え方（設計書 191）: 助言も判定も入れない。反射と動いている技だけは、呼ぶ側が待つために要る
+  if (req.method === 'GET' && req.url === '/state?raw=1') {
+    const skill = state.skill && { name: state.skill.name, version: state.skill.version, ...state.skill.control.view?.() }
+    return send(res, 200, { ...rawState(bot, state), reflex: Boolean(state.reflex), skill: skill || null })
   }
   if (req.method === 'GET' && req.url === '/state') {
     const skill = state.skill && { name: state.skill.name, version: state.skill.version, ...state.skill.control.view?.() }
@@ -514,6 +559,21 @@ async function handle (req, res) {
   if (req.method === 'GET' && req.url === '/skills') {
     return send(res, 200, skills.list())
   }
+  const tryPath = req.url.match(/^\/skills\/try$/)
+  if (req.method === 'POST' && tryPath) {
+    // 保存しない試し: { definition: {description, params, expects, code, raw}, args, run?: false（確かめるだけ） }
+    const { definition, args, run } = await readJson(req)
+    try {
+      if (run === false) return send(res, 200, { valid: !!validateSkill(definition) })
+      if (state.busy || state.reflex || state.skill) return send(res, 409, { error: 'busy', why: busyWhy() })
+      const r = await trySkill(definition, args ?? {})
+      console.log(`[skill] 試し: ${r.ok ? '成功' : '失敗'} ${r.ok ? r.summary : r.reason}（${r.seconds}秒、道具 ${r.calls.length}）`)
+      return send(res, 200, r)
+    } catch (e) {
+      if (e instanceof SkillError) return send(res, 400, { error: e.message })
+      throw e
+    }
+  }
   const skillPath = req.url.match(/^\/skills\/([a-z][a-z0-9_]{1,39})(\/run)?$/)
   if (req.method === 'GET' && skillPath && !skillPath[2]) {
     const skill = skills.get(skillPath[1])
@@ -531,7 +591,7 @@ async function handle (req, res) {
   }
   if (req.method === 'POST' && skillPath?.[2]) {
     const { args, version } = await readJson(req)
-    if (state.busy || state.reflex || state.skill) return send(res, 409, { error: 'busy' })
+    if (state.busy || state.reflex || state.skill) return send(res, 409, { error: 'busy', why: busyWhy() })
     const r = await runSkillOnce(skillPath[1], args ?? {}, version)
     if (!r) return send(res, 404, { error: `there is no skill named ${skillPath[1]}${version != null ? ` v${version}` : ''}` })
     console.log(`[skill] ${skillPath[1]} v${r.version}: ${r.ok ? '成功' : '失敗'} ${r.ok ? r.summary : r.reason}（${r.seconds}秒、道具 ${r.calls.length}）`)
@@ -651,7 +711,8 @@ startReflex(bot, state, {
 installDamageLog(bot, () => state.current?.id ?? (state.reflex ? 'the reflex' : ''), (d) => noteDamage(state, d))
 bot.on('death', () => {
   state.deaths += 1
-  state.lastDeath = deathReport(bot, state)
+  const at = bot.entity.position
+  state.lastDeath = { ...deathReport(bot, state), position: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) } }
   rememberDeath(state.memory, bot.entity.position, worldAge())
   persist()
   console.log(`[bot] ${bot.entity.position} で死んだ`)
@@ -694,6 +755,21 @@ bot.on('physicsTick', () => {
 bot.on('death', () => { console.log('[bot] 死んだ'); pushHistory(state, { action: 'event', ok: false, result: 'died', seconds: 0 }) })
 bot.on('kicked', (r) => console.log('[bot] キックされた', JSON.stringify(r)))
 bot.on('error', (e) => console.log('[bot] エラー', e.message))
+
+// 生の bot の技（設計書 168）はこのプロセスの中で動く。止められたあとに、技の中の待っていない処理（await しない
+// t.log など）が拒否されても、ブリッジごと落とさない（2026-10-17 20:16: pillar_up_stone_v3 が反射で止められたあと、
+// 待っていない t.log の拒否で Node が終了し、10 分間ブリッジが止まった）。技の外の例外は今までどおり落とす
+process.on('unhandledRejection', (e) => {
+  console.log('[bridge] 待たれなかった拒否（無視して続ける）:', e?.stack ?? e)
+})
+process.on('uncaughtException', (e) => {
+  if (String(e?.stack).includes('evalmachine') || e?.[SKILL_STOPPED]) {
+    console.log('[bridge] 技の中の例外（無視して続ける）:', e.stack)
+    return
+  }
+  console.error(e)
+  process.exit(1)
+})
 
 // 止めるとき（Ctrl-C、npm run dev のファイル変更での再起動）: 実行中の行動を止め、状態を保存し、ボットを
 // サーバーから抜けさせる（抜けないと、次に入ったボットと同じ名前で重なる）

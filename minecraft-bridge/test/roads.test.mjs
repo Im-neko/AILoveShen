@@ -109,3 +109,27 @@ test('pave: 近い順に全部敷く。草を刈ってから。済んだ所は�
   const bare = fakeBot(world(), { shovel: false })
   await assert.rejects(PRIMITIVES.pave(bare, newState({ home: home(), roads: state.roads }), {}, signal), /the shovel is gone/)
 })
+
+test('paved: 計画した道がすべて土の道になったら達成。道がなければ目標にできない。シャベルがなければ作るところから（設計書 200）', async () => {
+  const { Knowledge } = await import('../src/knowledge.mjs')
+  const { checkConditions, makeGoal } = await import('../src/goals.mjs')
+  const k = new Knowledge(md)
+  const world0 = { inventory: {}, blocks: {}, mobs: {}, table: null, unlocked: () => true, dig: () => [], hunt: () => [] }
+  const state = newState({ home: home() })
+  const w = world({ '1,64,0': 'short_grass' })
+  const bot = fakeBot(w, { shovel: false })
+
+  assert.throws(() => makeGoal({ predicate: 'paved' }, bot, state, k), /no planned roads/)
+  const [none] = checkConditions([{ predicate: 'paved' }], bot, state, k, world0)
+  assert.equal(none.met, false)
+
+  setRoads(state, [{ min_x: 0, min_z: 0, max_x: 2, max_z: 1 }])
+  const [bare] = checkConditions([{ predicate: 'paved' }], bot, state, k, world0)
+  assert.equal(bare.met, false)
+  assert.match(bare.lines.join('\n'), /planned road cells: 0 of 6 laid/)
+
+  const laid = fakeBot(w)
+  await PRIMITIVES.pave(laid, state, {}, signal)
+  const [done] = checkConditions([{ predicate: 'paved' }], laid, state, k, world0)
+  assert.equal(done.met, true)
+})

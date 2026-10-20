@@ -20,7 +20,7 @@ const RETRY_SWAPPED_MS = 1000 // 行動に持ち替えられて置かなかっ�
 // 縦穴を掘り上がる行動（leave_burrow / climb_out / dig_out / surface）も含める: 暗い竪穴を数分登っても松明を置かず、真っ暗のままだった
 // （2026-10-10 14:33、岩の中を素手で掘り上がった）
 export const TRAIL_VERBS = new Set(['goto_pos', 'goto_memory', 'go_home', 'explore', 'survey', 'recover_items', 'sleep_at',
-  'dig', 'dig_down', 'pickup', 'level', 'leave_burrow', 'climb_out', 'dig_out', 'surface'])
+  'dig', 'dig_down', 'pickup', 'level', 'leave_burrow', 'climb_out', 'shaft_up', 'dig_out', 'surface'])
 // 置いたあと、この距離（m）以内では置き直さない。竪穴を登ると、足元の松明は足場を置くときに壊される（home.mjs jumpAndPlace）ので、
 // 暗いまま 1 段ごとに置き直して松明を使い切らないように
 export const TORCH_MIN_GAP = 5

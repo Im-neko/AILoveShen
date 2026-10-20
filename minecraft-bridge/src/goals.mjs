@@ -16,6 +16,7 @@
 //   surveyed(count)          街の候補地を `count` か所調べた（docs/design/16_town_site.md）
 //   planted(item, count)     自分が植えた苗木（sapling か種類）が `count` 本ある（育った木も数える。設計書 33）
 //   farmed(item, count)      畑（設計した畑と家の畑）に作物（wheat, carrots, potatoes, beetroots）が `count` マス植わっている（設計書 47 §14）
+//   paved           街の理想図の道（roads.mjs）がすべて土の道になっている（設計書 200）
 //   leveled(where, distance) where（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている（設計書 41）
 //   facility(name)           設計した施設（畑・植林場: facilities.mjs）のマスがすべて済んでいる（耕してまいた、植えた。設計書 47 §7）
 //   custom(name)             Gemini が書いた判定（conditions.mjs）が成り立っている（設計書 42。候補は出さない: 道具で進める）
@@ -29,6 +30,7 @@ import { isInside, isDoorOpen, hasBed, bedSpot, dangerOutside, homeEntryBlocked 
 import { assessRisk, atLeast, describeRisk, SHELTER_LEVEL } from './risk.mjs'
 import { homeChests, storedCounts } from './memory.mjs'
 import { darkGround } from './lighting.mjs'
+import { roadStatus } from './roads.mjs'
 import { levelStatus, levelTarget, describeLevel, toolsMissing, fillNeeded, farmLevel, soilCount, keptByNotDemolishing, MIN_LEVEL, MAX_LEVEL } from './leveling.mjs'
 import { cooking, isRawMeat, FAR_COOK_MIN } from './cooking.mjs'
 import { runCheck } from './conditions.mjs'
@@ -63,10 +65,10 @@ const isDusk = (phase) => phase === 'dusk' || phase === 'night' // 夕方と夜�
 const MORNING = 0 // また日が昇る時刻（明け方は 24000 = 0 で終わる）
 const TICKS_PER_MINUTE = 1200
 
-export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'found', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
+export const PREDICATES = ['have', 'built', 'placed', 'at_home', 'through_night', 'explored', 'found', 'cleared', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'paved', 'custom', 'facility']
 // ワールドの状態だけから判定するので、大目標の完了条件にできる
 // （ほかはその時点や、目標を立てた場所によって変わる）
-export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'custom', 'facility']
+export const CONDITION_PREDICATES = ['have', 'built', 'placed', 'stored', 'lit', 'surveyed', 'planted', 'farmed', 'leveled', 'paved', 'custom', 'facility']
 const MAX_PLANTED = 32
 const DEPOSIT_BATCH = 32 // これだけ持ったらチェストに入れに行く
 const NEAR_HOME = 12
@@ -233,6 +235,10 @@ function validGoal (spec, bot, state, knowledge) {
       const distance = Number(spec.distance)
       if (!Number.isInteger(distance) || distance < MIN_LIT || distance > MAX_LIT) throw new Error(`distance (the radius) must be ${MIN_LIT}-${MAX_LIT}`)
       return { spec: { predicate, distance } }
+    }
+    case 'paved': {
+      if (!state.roads?.strips?.length) throw new NotYetError('the town has no planned roads yet (the roads come with the town map)')
+      return { spec: { predicate } }
     }
     case 'leveled': {
       const where = String(spec.where ?? 'home')
@@ -703,6 +709,20 @@ function evaluateOne (bot, state, knowledge, world) {
       const torches = inventoryCounts(bot).torch ?? 0
       if (torches) out.leaves.push({ kind: 'light', pos: dark[0] })
       else addSolved([{ spec: 'torch', count: 4 }])
+      break
+    }
+    case 'paved': {
+      // 計画した道がすべて土の道になっている（設計書 200）。敷く手（pave）は candidates の paveCandidate と同じ
+      const s = roadStatus(bot, state, { fresh: true })
+      if (!s) {
+        out.blocked.push('the town has no planned roads')
+        break
+      }
+      out.met = s.todo.length === 0 && s.unseen === 0 && s.total > 0
+      out.remaining = s.todo.length + s.unseen
+      out.lines.push(`planned road cells: ${s.done} of ${s.total} laid${s.unseen ? `, ${s.unseen} out of view` : ''}`)
+      if (out.met) break
+      if (!bot.inventory.items().some((i) => /_shovel$/.test(i.name))) addSolved([{ spec: 'stone_shovel', count: 1 }])
       break
     }
     case 'leveled': {

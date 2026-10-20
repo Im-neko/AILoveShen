@@ -1,12 +1,12 @@
 import { test, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { runSkill, validateSkill, SkillStore, LIMITS, rawBotEnabled } from '../src/skills.mjs'
+import { runSkill, validateSkill, SkillStore, LIMITS, rawBotEnabled, expectsBaseline, judgeExpects } from '../src/skills.mjs'
 
 const EXPECTS = { predicate: 'have', item: 'food', count: '+1' }
 const rawSkill = (body) => ({ raw: true, code: `export default async function (t, args) {\n${body}\n}`, expects: EXPECTS })
 
-afterEach(() => { delete process.env.BRIDGE_RAW_BOT })
+afterEach(() => { delete process.env.BRIDGE_RAW_BOT; delete process.env.BRIDGE_RAW_ONLY })
 
 // 操作キー・経路・掘りと、tick のイベントを持つ bot の代役
 function fakeBot () {
@@ -126,6 +126,28 @@ test('after a stop, a body that comes back from a pending dig cannot touch the b
   assert.ok(bot.goals.length > 0 && bot.goals.every((g) => g === null)) // 後から setGoal('late') が届いていない
 })
 
+test('経路の設定を t.bot で作った技が止められても、pathfinder には技の前の設定が戻り、例外には目印が付く', async () => {
+  const bot = fakeBot()
+  const before = { name: 'bridge movements' }
+  bot.pathfinder = { movements: before, setGoal: () => {}, setMovements (m) { this.movements = m } }
+  let mine
+  const control = {}
+  const run = runSkill(rawSkill(`
+    t.bot.pathfinder.setMovements({ name: 'skill movements', bot: t.bot })
+    await t.sleep(5000)
+    return t.done()`), {}, deps(bot), LIMITS, control)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  mine = bot.pathfinder.movements
+  assert.equal(mine.name, 'skill movements')
+  control.stop('reflex: skeleton 6.7m away (hurt)')
+  const r = await run
+  assert.equal(r.ended, 'stopped')
+  assert.equal(bot.pathfinder.movements, before) // 残ると、次の tick で mine.bot の中身に触れた pathfinder が投げる
+  let thrown
+  try { mine.bot.entity } catch (e) { thrown = e }
+  assert.equal(thrown.skillStopped, true)
+})
+
 test('the switch reads on/off words the way the Python setting does', () => {
   for (const [v, on] of [['1', true], ['true', true], ['yes', true], ['', false], ['0', false], ['false', false], ['off', false], [undefined, false]]) {
     if (v === undefined) delete process.env.BRIDGE_RAW_BOT
@@ -233,4 +255,51 @@ test('the list keeps each version\'s runs and average seconds', () => {
   store.record('sk_one', 1, false, 'x', 2)
   const [item] = store.list()
   assert.deepEqual(item.versions, [{ version: 1, uses: 2, successes: 1, failures: 1, avg_seconds: 3 }])
+})
+
+// 判断なしの実験（設計書 191）
+test('BRIDGE_RAW_ONLY: 技は生の bot だけで書く。道具・判定・助言入りの state は技から消え、expects は 4 種に限る', async () => {
+  process.env.BRIDGE_RAW_BOT = '1'
+  process.env.BRIDGE_RAW_ONLY = '1'
+  try {
+    const rawHave = { predicate: 'have', item: 'oak_log', count: '+1' }
+    assert.throws(() => validateSkill({ description: 'x', code: 'export default async function (t) { return t.done() }', expects: rawHave }), /only raw skills/)
+    assert.throws(() => validateSkill({ ...rawSkill('return t.done()'), description: 'x', expects: { predicate: 'progress' } }), /one of have, at, height, out_of_closed_space, block_near/)
+    assert.equal(validateSkill({ ...rawSkill('return t.done()'), description: 'x', expects: rawHave }).raw, true)
+    const bot = fakeBot()
+    const d = deps(bot)
+    d.state = () => { throw new Error('the advice state must not be used') }
+    d.rawState = () => ({ self: { health: 20 } })
+    const r = await runSkill(rawSkill(`
+      const s = await t.state()
+      return t.done([typeof t.goto, typeof t.dig, typeof t.judge, typeof t.how_to_get, typeof t.find_blocks, typeof t.inspect, typeof t.cross_section, typeof t.recipe_of, typeof t.bot, s.self.health, 'needs' in s].join(','))`), {}, d)
+    assert.equal(r.summary, 'undefined,undefined,undefined,undefined,undefined,undefined,function,function,object,20,false')
+  } finally {
+    delete process.env.BRIDGE_RAW_ONLY
+  }
+})
+
+// 設計書 193: 置いた物は持ち物から消える。置けたかは世界のブロックで見る
+test('expects block_near: 近くにそのブロックがあれば成功。名前と半径を事前に確かめ、持ち物の個数 0 は断る', () => {
+  process.env.BRIDGE_RAW_BOT = '1'
+  process.env.BRIDGE_RAW_ONLY = '1'
+  try {
+    const near = { predicate: 'block_near', block: 'crafting_table', distance: 4 }
+    assert.equal(validateSkill({ ...rawSkill('return t.done()'), description: 'x', expects: near }).raw, true)
+    assert.throws(() => validateSkill({ ...rawSkill('return t.done()'), description: 'x', expects: { predicate: 'block_near' } }), /needs block/)
+    assert.throws(() => validateSkill({ ...rawSkill('return t.done()'), description: 'x', expects: { ...near, distance: 99 } }), /distance must be 1 to 32/)
+    assert.throws(() => validateSkill({ ...rawSkill('return t.done()'), description: 'x', expects: { predicate: 'have', item: 'crafting_table', count: 0 } }), /count must be 1 or more.*block_near/)
+    // 判定: 近くにある → 成功、ない → 失敗（半径と名前が記録に出る）
+    const deps = (found) => ({ knownBlock: (n) => n === 'crafting_table', blockNear: (n, d) => (found ? { x: 1, y: 70, z: 2, distance: 2.5 } : null) })
+    assert.deepEqual(expectsBaseline(near, {}, deps(true)), {})
+    assert.throws(() => expectsBaseline({ predicate: 'block_near', block: 'craft_table' }, {}, deps(true)), /not a block name/)
+    const yes = judgeExpects(near, {}, {}, deps(true))
+    assert.equal(yes.met, true)
+    assert.match(yes.lines[0], /crafting_table is 2.5 blocks away at 1,70,2/)
+    const no = judgeExpects({ predicate: 'block_near', block: '$what' }, { what: 'furnace' }, {}, deps(false))
+    assert.equal(no.met, false)
+    assert.match(no.lines[0], /no furnace within 5 blocks/)
+  } finally {
+    delete process.env.BRIDGE_RAW_ONLY
+  }
 })

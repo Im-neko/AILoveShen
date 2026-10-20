@@ -121,10 +121,14 @@ export function createRunner (bot, state, deps = {}) {
       result = await primitives[c.verb](bot, state, c, controller.signal)
       if (controller.signal.aborted) throw controller.signal.reason
     } catch (e) {
-      const reason = controller.signal.aborted ? controller.signal.reason : e
+      const stopped = controller.signal.aborted
+      const reason = stopped ? controller.signal.reason : e
       abort(reason.message)
       ok = false
-      result = `failed: ${reason.message}`
+      // 何をしている途中で失敗したか（bot.actionPhase。プリミティブが書く）を添える。元の文は先頭のまま（refusals.mjs と同じ理由の判定が見る）。
+      // 止められた理由は、止めた側の文のまま（止めた理由には上で phase が入っている）
+      const phase = stopped ? '' : bot.actionPhase
+      result = `failed: ${reason.message}${phase && !reason.message.includes(phase) ? ` (while ${phase})` : ''}`
     } finally {
       clearInterval(timer)
       stopTrail?.()
@@ -160,7 +164,7 @@ export function createRunner (bot, state, deps = {}) {
 
 // 閉じた所・縦穴から出る行動。途中で考え直しに止められると、岩の中の縦穴に残る（2026-10-10 14:31、climb_out が 71 秒登ったところで
 // 「区画間の道を整備して」の考え直しに止められ、そのあと穴の中で作業台へ戻ろうとして No path を繰り返した）
-export const ESCAPE_VERBS = new Set(['leave_burrow', 'climb_out', 'dig_out', 'surface', 'reach_land'])
+export const ESCAPE_VERBS = new Set(['leave_burrow', 'climb_out', 'shaft_up', 'dig_out', 'surface', 'reach_land'])
 
 // 実行中の行動を理由をつけて止める（POST /abort）。行動がないか、もう止まっていれば何もしない。
 // 考え直し（rethink:）は、出る行動の間は待たせる（依頼は消えず、出たあとの切れ目で効く）

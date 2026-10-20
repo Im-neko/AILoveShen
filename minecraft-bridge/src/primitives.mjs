@@ -33,10 +33,10 @@ import { SINGLE_CHEST, defragChests, contentsSignature, chestRecordPos, storageU
 import { burrowSpot, inBurrow, inOpenShaft, sealSupport, canStepOut, BURROW_DEPTH } from './burrow.mjs'
 import { furnitureInHome } from './furniture.mjs'
 import { refusalAt } from './refusals.mjs'
-import { mineStatus, mineDanger, mineBlocks, plannedBlocks, stopMine, updateStatus, extendMine, onMineCell, inMineBody, designMine, layoutStatus, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
+import { mineStatus, mineDanger, mineBlocks, plannedBlocks, FALLING_STACK_MAX, stopMine, updateStatus, extendMine, onMineCell, inMineBody, designMine, layoutStatus, sealableCell, onFarmGround, FARM_DIG_COST, FENCE_ITEM, FENCE_GATE_ITEM, FacilityError } from './facilities.mjs'
 import { mineFromHome, mineSites, protectedRock } from './mining.mjs'
 import { routeThroughMine, climbsDirect } from './mine-route.mjs'
-import { sealStock, openings, enclosure, sealCell, plugCell, mendStand, floorSolid, SEAL_FROM_DEPTH } from './sealing.mjs'
+import { sealStock, plugStock, openings, enclosure, wetSpots, wallOffWater, sealCell, plugCell, mendStand, floorSolid, underSky, SEAL_FROM_DEPTH } from './sealing.mjs'
 import { quarryTargets } from './seal-stone.mjs'
 import { backfillHole, isOreBlock } from './backfill.mjs'
 import { isSwimming, swimToward } from './swim.mjs'
@@ -171,8 +171,9 @@ export function planBlockToPlace (bot, plan, planBlock) {
 const HAND_DIG_HOME = new Set(['go_home', 'surface'])
 const HAND_CLIMB_ABOVE = 6 // 素手で上がる高さ: 地下の境（海面の 2 下）より、これだけ上
 const hasPickaxe = (bot) => bot.inventory.items().some((i) => i.name.endsWith('_pickaxe'))
-const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'dig_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
+const ROCK_ESCAPE = new Set(['go_home', 'surface', 'recover_items', 'dig_in', 'wall_in', 'reach_land', 'leave_burrow', 'climb_out', 'shaft_up', 'dig_out', 'flee', 'sleep_at', 'exit_wall']) // 深い岩も掘ってよい行動（出られなくならないように）
 const CLIMB_MAX = 24 // 閉じた所から出るために積む高さの上限
+const SHAFT_STEP = 20 // 縦穴を掘り上がる 1 手で積む高さの上限（続きは次の手）
 const DESCEND_MAX = 200 // 柱を掘り下げる最大の数
 const STEP_OFF_MIN_HEALTH = 6 // 縁から飛び降りたあとに残したい体力
 const PILLAR_KEEP = 64 // 積んだ列として覚えるセルの数
@@ -890,9 +891,10 @@ const blockKey = (p) => `${p.x},${p.y},${p.z}`
 const markUnreachable = (state, pos) => state.unreachableBlocks?.add(blockKey(pos))
 export const isUnreachable = (state, pos) => !!state.unreachableBlocks?.has(blockKey(pos))
 
-// そのブロックに一番速い道具を持っていれば装備する
-// 掘るのに使う道具: 採るのに要る道具（石にツルハシ）か、素手より速く掘れる道具のうち一番速いもの。
-// 同じ速さなら安い方（木 < 石 < 金 < 鉄 < ダイヤ < ネザライト）。壊れかけの道具は要るときだけ。
+// そのブロックに合う道具を持っていれば装備する
+// 掘るのに使う道具: 採るのに要る道具（石にツルハシ）のうち、採れる一番安いもの（木 < 石 < 金 < 鉄 < ダイヤ < ネザライト。
+// 2026-10-18: 一番速いものを選んでいて、石を掘るたびに鉄のツルハシが減り、ダイヤの前に 2 度折れた）。壊れかけは後回し。
+// 要らない道具（原木に斧、土にシャベル）は、素手より速く掘れるもののうち一番速いもの。同じ速さなら安い方。
 // どれも素手より速くなければ null（素手）。pathfinder の bestHarvestTool は、速い道具がないと
 // 持ち物の最初のもの（ツルハシや土）を返していて、原木をツルハシで切っていた
 const TIERS = ['wooden', 'stone', 'golden', 'iron', 'diamond', 'netherite']
@@ -914,7 +916,9 @@ export function chooseTool (bot, block) {
     const t = block.digTime(item.type, false, false, false, item.enchants ?? [], effects)
     if (!required && t >= hand) continue
     if (!required && almostBroken(item)) continue
-    if (!best || t < best.t || (t === best.t && tierOf(item.name) < tierOf(best.item.name))) best = { item, t }
+    // 採るのに要る道具は、安い方を先に使う（高い道具は、それでなければ採れないブロックのために取っておく）
+    const rank = required ? (almostBroken(item) ? TIERS.length + 1 : 0) + tierOf(item.name) : 0
+    if (!best || (required ? rank < best.rank || (rank === best.rank && t < best.t) : t < best.t || (t === best.t && tierOf(item.name) < tierOf(best.item.name)))) best = { item, t, rank }
   }
   return best?.item ?? null
 }
@@ -979,6 +983,23 @@ const STAIR_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 // 次の段で掘る 3 マス（頭、足、1 段下の足）と、その下の床
 function stairCells (me, [dx, dz]) {
   return { cells: [me.offset(dx, 1, dz), me.offset(dx, 0, dz), me.offset(dx, -1, dz)], floor: me.offset(dx, -2, dz) }
+}
+
+// 砂・砂利の下を掘ると、上の柱が落ちてセルに積もる: 空くまで掘り直す（柱の高さは mineDanger が FALLING_STACK_MAX までにしている）。
+// 立っているのはセルの隣なので、落ちてくる砂利はボットに当たらない
+const FALLEN_WAIT_MS = 600
+async function clearFallen (bot, state, cell, signal) {
+  for (let round = 0; round <= FALLING_STACK_MAX; round++) {
+    await new Promise((resolve) => setTimeout(resolve, FALLEN_WAIT_MS))
+    signal.throwIfAborted()
+    const fallen = mineBlocks(cell).map((p) => bot.blockAt(p)).filter((b) => b && b.boundingBox !== 'empty' && FALLING.test(b.name))
+    if (!fallen.length) return
+    for (const b of fallen.reverse()) {
+      await equipToolFor(bot, state, b)
+      await bot.dig(b, true)
+      signal.throwIfAborted()
+    }
+  }
 }
 
 // その方向に 1 段下りられない理由（なし: ''）
@@ -1057,6 +1078,7 @@ function oreShowing (bot, state, sources) {
 }
 const cutNote = (cut) => cut.length ? `; branches cut short for danger: ${cut.join('; ')}` : ''
 const sealNote = (n) => n ? `; walled off ${n} cave openings with cobblestone (floor, walls and ceiling)` : ''
+const waterNote = (n) => n ? `; walled off the water ${n} times with blocks (the water is cut off from the mine and drains)` : ''
 
 // セルの壁に松明を 1 本（置けなければ false）。置いたあとは、持っていた物（ツルハシ）に戻す:
 // 松明を持ったまま掘ると素手と同じ遅さになる（2026-10-07）
@@ -1118,7 +1140,15 @@ async function relightMine (bot, cells, signal) {
     const torch = torchOf(bot)
     if (!torch) return 'missing'
     const cell = dark[0]
-    await goto(bot, new goals.GoalBlock(cell.x, cell.y, cell.z), signal)
+    // 行けない暗いセルは飛ばす（掘りの全体を止めない）
+    bot.actionPhase = `walking to a dark cell at ${cell.x},${cell.y},${cell.z} to put a torch there`
+    try {
+      await goto(bot, new goals.GoalBlock(cell.x, cell.y, cell.z), signal)
+    } catch (e) {
+      if (signal.aborted) throw e
+      failed.add(cell)
+      continue
+    }
     if (!(await wallTorch(bot, cells, cell, torch))) { failed.add(cell); continue }
     await bot.waitForTicks(Math.ceil(LIGHT_SETTLE_MS / 50))
   }
@@ -1441,6 +1471,52 @@ export const PRIMITIVES = {
     }
     const at = standingCell(bot)
     return `piled up ${raised} block${raised === 1 ? '' : 's'} and can walk out now (at ${at.x},${at.y},${at.z})`
+  },
+  // 地下から、真上へ縦穴を掘って地上まで出る（歩いて出る道が見つからないとき。docs/design/178）。climb_out と同じく足元に
+  // 積んで上がるが、閉じた所でなくても、24 より高くても使う: 洞窟の中で surface の道が水や岩に阻まれ、つるはしも松明もなく、
+  // 約 1 時間同じ所で失敗を続けた（2026-10-16）。頭の上が岩なら素手でも掘る（何も落ちなくてよい）。1 回に SHAFT_STEP 個まで
+  // 上がって返す（長い 1 手にしない）。続きは次の手で
+  async shaft_up (bot, state, c, signal) {
+    if (!isUnderground(bot) && !closedSpace(bot)) return 'not underground: you can walk out from here'
+    let raised = 0
+    try {
+      while (raised < SHAFT_STEP) {
+        signal.throwIfAborted()
+        if (raised && !isUnderground(bot) && !closedSpace(bot) && !isolatedSpace(bot)) break
+        const cell = standingCell(bot)
+        const item = fillItem(bot)
+        if (!item) throw new Error(`piled up ${raised} blocks and ran out of dirt and cobblestone`)
+        const hazard = bot.entity.isInWater ? /lava/ : FLUID
+        const roof = bot.blockAt(cell.offset(0, 2, 0)) // 1 つ上がった足の高さの頭
+        if (!roof) throw new Error('the space above is not loaded')
+        if (roof.boundingBox === 'block') {
+          const why = protectedReason(state, roof.position, 0, roof)
+          if (why) throw new Error(`the way up goes through ${roof.name} at ${roof.position.x},${roof.position.y},${roof.position.z}: ${why}`)
+          const bad = [[0, 0, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
+            .map(([x, y, z]) => bot.blockAt(roof.position.offset(x, y, z)))
+            .find((b) => b && (hazard.test(b.name) || (FALLING.test(b.name) && b.position.y > roof.position.y)))
+          if (bad) throw new Error(`${bad.name} at ${bad.position.x},${bad.position.y},${bad.position.z} beside the rock above: digging it would let it in on you`)
+          await equipToolFor(bot, state, roof, { drops: false })
+          await bot.dig(roof, true)
+        } else if (hazard.test(roof.name)) {
+          throw new Error(`${roof.name} above at ${roof.position.x},${roof.position.y},${roof.position.z}: not piling up into it`)
+        }
+        await jumpAndPlace(bot, cell, item)
+        state.pillar = [...(state.pillar ?? []), { x: cell.x, y: cell.y, z: cell.z }].slice(-PILLAR_KEEP)
+        raised++
+        await bot.waitForTicks(4)
+      }
+    } catch (e) {
+      if (!signal.aborted) state.shaftBlockedUntil = Date.now() + CLIMB_BLOCK_MS
+      forgetRegion(bot)
+      throw e
+    }
+    forgetRegion(bot)
+    const at = standingCell(bot)
+    const out = !isUnderground(bot) && !closedSpace(bot)
+    if (!out && !raised) throw new Error('could not go up')
+    state.shaftUpAt = out ? 0 : Date.now()
+    return `piled up ${raised} block${raised === 1 ? '' : 's'} and now stand at ${at.x},${at.y},${at.z}${out ? ': out of the ground' : ' (still underground: go on up)'}`
   },
   // 閉じた所から、壁を掘って歩いて出る（docs/design/90 §5.1）。土や丸石がなくても、素手でも掘る。壁は
   // 掘る数がいちばん少ない向きを選び、掘れない壁（保護、溶岩に接する、大きな水を止める）は避ける
@@ -1990,7 +2066,10 @@ export const PRIMITIVES = {
   // 地下から地上に出る: 最後に地上にいた場所、鉱山の入口、家の玄関の外の順に、地上に出るまで歩く（surface.mjs）
   async surface (bot, state, c, signal) {
     const exits = surfaceExits(bot, state)
-    if (!exits.length) throw new Error('no known way out (nowhere higher that you stood): dig upward with a pickaxe, or explore toward daylight')
+    if (!exits.length) {
+      state.surfaceFailedAt = Date.now()
+      throw new Error('no known way out (nowhere higher that you stood): dig a shaft up with the candidate "dig a shaft up to the surface", or explore toward daylight')
+    }
     let last = null
     for (const way of exits) {
       const pos = new Vec3(way.x, way.y, way.z)
@@ -2004,6 +2083,7 @@ export const PRIMITIVES = {
       }
       if (!isUnderground(bot)) { const p = bot.entity.position.floored(); return `back on the surface at ${p.x},${p.y},${p.z}` }
     }
+    state.surfaceFailedAt = Date.now() // 縦穴を掘り上がる手（shaft_up）を出す根拠
     throw new Error(`could not get to the surface by the ways known (${exits.length}): ${last?.message ?? 'still underground'}`)
   },
   // c.pos の地面に置く（完全なブロックの上の空いたセル）
@@ -2154,26 +2234,37 @@ export const PRIMITIVES = {
     if (mineStatus(bot, fac).next && !bot.inventory.items().some((i) => i.name === 'torch')) {
       throw new Error(`no torch to light the mine ${fac.name} (a torch goes on the wall every ${MINE_TORCH.tunnel} cells in a tunnel, ${MINE_TORCH.stairs} on the stairs, once in each branch): make torches first (a torch is 1 coal or charcoal + 1 stick)`)
     }
-    // すでに掘ったセルに暗い所があれば、先に明るくする（松明が壊された、枝の先に届いていなかった、など）
-    if (await relightMine(bot, fac.layout.cells, signal) === 'missing') {
+    // すでに掘ったセルに暗い所があれば、先に明るくする（松明が壊された、枝の先に届いていなかった、など）。掘ったセルは
+    // 並びの先頭からつながった分だけ: その先にたまたま空いている所（洞窟、水脈の空気）は岩の向こうで、明るくしに行けない
+    // （2026-10-18: mine_2 の枝の先の水脈の空気に向かって goto し、「経路が決まらない」で 3 回止まった）
+    const dugSoFar = mineStatus(bot, fac)
+    bot.actionPhase = `lighting the dark cells already dug in the mine ${fac.name}`
+    if (await relightMine(bot, dugSoFar.next ? fac.layout.cells.slice(0, dugSoFar.index) : fac.layout.cells, signal) === 'missing') {
       throw new Error(`the mine ${fac.name} has dark cells (light below ${MIN_LIGHT}: monsters spawn there) and you carry no torch: make torches first (a torch is 1 coal or charcoal + 1 stick)`)
+    }
+    bot.actionPhase = ''
+    // 遠くて読み込まれていないセルがあると、次に掘るセルが深い所に飛ぶ（2026-10-18: mine_6 の次が y -8 のセルになり、
+    // 掘っていない階段の先へ経路が決まらず 3 回止まった）。先に入口へ近づいて、読み込んでから決める
+    if (mineStatus(bot, fac).skipped) {
+      const gate = fac.layout.cells[0]
+      await legToward(bot, state, new Vec3(gate.x + 0.5, gate.y, gate.z + 0.5), 'the entrance of the mine', signal, { viaMine: false })
     }
     // 外から掘りに来たなら、入口から階段を下りる（洞窟や谷の近道を通らない: mine-route.mjs）
     const first = mineStatus(bot, fac).next
     if (first) {
+      bot.actionPhase = `going down the stairs of the mine ${fac.name} to ${first.x},${first.y},${first.z}`
       await routeThroughMine(bot, state, { x: first.x + 0.5, y: first.y, z: first.z + 0.5 }, (p) => legToward(bot, state, p, 'the entrance of the mine', signal, { viaMine: false }), (g) => goto(bot, g, signal), signal)
     }
     let dug = 0
     let last = -1
     let lastTorchAt = 0
     let walled = 0 // 丸石で塞いだ面の数
+    let plugged = 0 // 水を塞いだブロックの数
     const cut = [] // 危なくて打ち切った枝
     for (;;) {
       signal.throwIfAborted()
       const m = mineStatus(bot, fac)
       if (!m.next) break
-      if (m.index === last) throw new Error(`could not clear ${m.next.x},${m.next.y},${m.next.z} of the mine ${fac.name} (dug ${dug} cells)`)
-      last = m.index
       const cells = fac.layout.cells
       const cell = m.next
       const adjacent = (a) => Math.abs(a.x - cell.x) + Math.abs(a.z - cell.z) === 1 && a.y - cell.y >= 0 && a.y - cell.y <= 1
@@ -2184,8 +2275,12 @@ export const PRIMITIVES = {
       if (stand && !floorSolid(bot, stand) && !await mendStand(bot, stand, before, free, (a) => goto(bot, new goals.GoalBlock(a.x, a.y, a.z), signal), signal)) {
         stand = before.find((a) => adjacent(a) && free(a) && floorSolid(bot, a))
       }
-      await goto(bot, stand ? new goals.GoalBlock(stand.x, stand.y, stand.z) : new goals.GoalNear(cell.x, cell.y, cell.z, 1), signal)
+      // 水に浸かった坑道では、経路探索器は水の中から動かない: 泳いで立つセルへ行く
+      bot.actionPhase = `walking to stand beside the ${cell.part} cell at ${cell.x},${cell.y},${cell.z} of the mine ${fac.name}`
+      if (stand && isSwimming(bot)) await stepTo(bot, stand, signal)
+      else await goto(bot, stand ? new goals.GoalBlock(stand.x, stand.y, stand.z) : new goals.GoalNear(cell.x, cell.y, cell.z, 1), signal)
       signal.throwIfAborted()
+      bot.actionPhase = `digging the ${cell.part} cell at ${cell.x},${cell.y},${cell.z} of the mine ${fac.name}`
       // この採掘場に出会った危ないもの（水・溶岩・岩盤・落ちる砂利）か、封じ切れない洞窟: 枝ならその枝だけ打ち切って
       // ほかの枝を掘り続ける。階段・部屋・坑道は、そこから先がなくなる
       const giveUp = (reason) => {
@@ -2196,16 +2291,49 @@ export const PRIMITIVES = {
           return null
         }
         updateStatus(bot, fac)
-        return `dug ${dug} cells of the mine ${fac.name}; stopped at ${cell.x},${cell.y},${cell.z}: ${reason} (the mine now ends before it)${cutNote(cut)}${sealNote(walled)}`
+        return `dug ${dug} cells of the mine ${fac.name}; stopped at ${cell.x},${cell.y},${cell.z}: ${reason} (the mine now ends before it)${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
       }
+      // 掘ったのにまだ空かない（水や砂利が流れ込み続ける）: 続きを同じセルから掘り直しても同じ。例外で終えると、次の手が
+      // また同じセルを掘り、流れ込んだ穴をふさぐ手（plug_hole）と交互に繰り返して先へ進まない（2026-10-19: mine_2 の
+      // 150,16,133〜136 で 20 分）。枝ならその枝を、ほかなら先を打ち切る
+      if (m.index === last) {
+        const stopped = giveUp('digging it does not open it (water or falling blocks keep filling it)')
+        if (stopped) return stopped
+        continue
+      }
+      last = m.index
       // 坑道・枝・階段は、空洞（洞窟）に出たら、手元の丸石で床・壁・天井を作って塞ぐ（sealing.mjs）。床の穴は埋めて通る。
       // 階段は入口に近い所（地上の空気に面した所）を塞がない（設計書 134）
-      const sealable = !!fac.layout.sealing && (cell.part !== 'stairs' || cells[0].y - cell.y >= SEAL_FROM_DEPTH)
+      const sealable = sealableCell(fac.layout.sealing, cells, cell) && !(cell.part === 'stairs' && underSky(bot, cell))
       const why = mineDanger(bot, cell, plannedBlocks(cells), sealable)
       if (why) {
         const stopped = giveUp(why)
         if (stopped) return stopped
         continue
+      }
+      // 水に当たった（セルの中か、囲む面が水）: 見えない所の水を避けて設計せず、当たったら壁（丸石、なければ土や石）で塞いで
+      // 水を抜く。足りなければ、坑道の横の石を掘って作る。壁を置けないほど開けた水は、その先を打ち切る（設計書 183）
+      const wet = wetSpots(bot, state, cell)
+      if (wet.length) {
+        if (plugStock(bot) < wet.length) {
+          await quarryForSeal(bot, state, wet.length - plugStock(bot), cells.slice(Math.max(0, m.index - 4), m.index).reverse(), new Set(enclosure(state, cell).map((f) => `${f.pos.x},${f.pos.y},${f.pos.z}`)), signal)
+        }
+        if (plugStock(bot) < wet.length) {
+          const w = wet[0]
+          const reason = `water at ${w.x},${w.y},${w.z}: walling it off takes ${wet.length} blocks and you carry ${plugStock(bot)} (no stone beside the tunnel to dig for it: bring cobblestone, then dig on)`
+          fac.layout.paused = { x: cell.x, y: cell.y, z: cell.z, need: wet.length, reason }
+          updateStatus(bot, fac)
+          if (!dug) throw new Error(`the mine ${fac.name} waits at ${cell.x},${cell.y},${cell.z}: ${reason}`)
+          return `dug ${dug} cells of the mine ${fac.name}; stopped: ${reason}${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
+        }
+        const sealed = await wallOffWater(bot, state, cell, signal)
+        plugged += sealed.placed
+        if (!sealed.ok) {
+          const r = sealed.remaining[0]
+          const stopped = giveUp(`water at ${r.x},${r.y},${r.z} is too open to wall off with blocks`)
+          if (stopped) return stopped
+          continue
+        }
       }
       const gaps = sealable ? openings(bot, state, cell) : []
       if (gaps.length && sealStock(bot) < gaps.length) {
@@ -2218,11 +2346,12 @@ export const PRIMITIVES = {
           fac.layout.paused = { x: cell.x, y: cell.y, z: cell.z, need: gaps.length, reason }
           updateStatus(bot, fac)
           if (!dug) throw new Error(`the mine ${fac.name} waits at ${cell.x},${cell.y},${cell.z}: ${reason}`)
-          return `dug ${dug} cells of the mine ${fac.name}; stopped: ${reason}${cutNote(cut)}${sealNote(walled)}`
+          return `dug ${dug} cells of the mine ${fac.name}; stopped: ${reason}${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
         }
       }
       delete fac.layout.paused
       let dugAny = false
+      const stacked = FALLING.test(bot.blockAt(mineBlocks(cell).at(-1).offset(0, 1, 0))?.name ?? '')
       for (const p of mineBlocks(cell).reverse()) {
         const block = bot.blockAt(p)
         if (!block || block.boundingBox === 'empty') continue
@@ -2231,6 +2360,7 @@ export const PRIMITIVES = {
         signal.throwIfAborted()
         dugAny = true
       }
+      if (stacked) await clearFallen(bot, state, cell, signal)
       if (gaps.length) {
         const sealed = await sealCell(bot, state, cell, signal, () => goto(bot, new goals.GoalBlock(cell.x, cell.y, cell.z), signal))
         walled += sealed.placed
@@ -2253,7 +2383,7 @@ export const PRIMITIVES = {
       if (placed === 'placed') lastTorchAt = Date.now()
       if (placed === 'missing') {
         updateStatus(bot, fac)
-        return `dug ${dug} cells of the mine ${fac.name}; stopped: out of torches (one is due on the wall here, every ${MINE_TORCH.tunnel} cells in a tunnel, ${MINE_TORCH.stairs} on the stairs, ${MINE_TORCH.branch}th in a branch): make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}`
+        return `dug ${dug} cells of the mine ${fac.name}; stopped: out of torches (one is due on the wall here, every ${MINE_TORCH.tunnel} cells in a tunnel, ${MINE_TORCH.stairs} on the stairs, ${MINE_TORCH.branch}th in a branch): make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
       }
       // 実際の光を見る: 間隔どおりに置いても、枝の先や、壊された松明のあとは暗いままになる。ここから近い、掘り終えた
       // セル（いま掘ったセルは光がまだ届かないので除く）に光が足りないものがあれば、ここにも 1 本。松明を置いた直後は
@@ -2264,7 +2394,7 @@ export const PRIMITIVES = {
           const torch = torchOf(bot)
           if (!torch) {
             updateStatus(bot, fac)
-            return `dug ${dug} cells of the mine ${fac.name}; stopped: ${near.length} cells near ${cell.x},${cell.y},${cell.z} are too dark (light below ${MIN_LIGHT}) and you carry no torch: make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}`
+            return `dug ${dug} cells of the mine ${fac.name}; stopped: ${near.length} cells near ${cell.x},${cell.y},${cell.z} are too dark (light below ${MIN_LIGHT}) and you carry no torch: make torches first (a torch is 1 coal or charcoal + 1 stick), then dig on${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
           }
           if (await wallTorch(bot, cells, cell, torch)) lastTorchAt = Date.now()
         }
@@ -2275,7 +2405,7 @@ export const PRIMITIVES = {
         const shown = oreShowing(bot, state, c.sources)
         if (shown) {
           updateStatus(bot, fac)
-          return `dug ${dug} cells of the mine ${fac.name}; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it${cutNote(cut)}${sealNote(walled)}`
+          return `dug ${dug} cells of the mine ${fac.name}; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
         }
       }
     }
@@ -2284,7 +2414,7 @@ export const PRIMITIVES = {
     // 掘り終えたら、最後のセルを含めて、暗い所を残さない
     const unlit = await relightMine(bot, fac.layout.cells, signal) === 'missing' ? `; some cells are still too dark (light below ${MIN_LIGHT}) and you carry no torch: make torches first` : ''
     const shown = c.sources?.length ? oreShowing(bot, state, c.sources) : null
-    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}${unlit}${shown ? `; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it` : ''}${cutNote(cut)}${sealNote(walled)}`
+    return `dug ${dug} cells of the mine ${fac.name}; the mine is ${fac.status === 'done' ? 'complete' : fac.status}${unlit}${shown ? `; ${shown.name} shows in the wall at ${shown.pos.x},${shown.pos.y},${shown.pos.z}: dig it` : ''}${cutNote(cut)}${sealNote(walled)}${waterNote(plugged)}`
   },
   // 採掘場を自分で設計して掘る（設計書 68）: 家の外周（壁から 10〜30 m）の、鉱石の高さまで下りられる所に、
   // 階段と坑道を設計し、そのまま掘り始める。掘り切る前に止まっても、次は dig_mine が続きから掘る

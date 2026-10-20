@@ -3,18 +3,18 @@
 
 import { isLog, inventoryCounts, nearbyEntities } from './observe.mjs'
 import { inHouse } from './home.mjs'
-import { liquidReason } from './liquid.mjs'
+import { takeRefusal } from './takeable.mjs'
 import { gatherableLog, isNaturalLogName } from './trees.mjs'
 import { findTable, findFurnace, knownFurnace, isLeaves, isUnreachable, HUNGER_URGENT } from './primitives.mjs'
 import { HUNTABLE } from './knowledge.mjs'
 import { isRipe, cropByBlock } from './farming.mjs'
-import { cropFarms, finishedMine, mineSummaries, inMineBody, inTown, onFarmGround, waterAt, mineStatus } from './facilities.mjs'
+import { cropFarms, finishedMine, mineSummaries, inTown, onFarmGround, waterAt, mineStatus } from './facilities.mjs'
 import { inHomeRoom } from './builds.mjs'
 import { REMEMBERED_ANIMALS, storedCounts, smeltingCounts } from './memory.mjs'
 import { rememberedKinds } from './worldmap-places.mjs'
 import { isQuarryKind, quarrySpot, usableShaft, QUARRY_RADIUS } from './quarry.mjs'
-import { keptGround, findCount } from './leveling.mjs'
-import { mineFromHome, minePlan, shallowStone, caveOre } from './mining.mjs'
+import { findCount } from './leveling.mjs'
+import { mineFromHome, minePlan } from './mining.mjs'
 import { mineTorchesWanted } from './mine-torches.mjs'
 
 const DIG_RADIUS = 32
@@ -104,12 +104,9 @@ export function waterSource (bot, state) {
 export function diggable (bot, state, name, p) {
   const me = bot.entity.position
   return !inHouse(state, p) && exposed(bot, p) && !isUnreachable(state, p) && isRipe(bot.blockAt(p)) &&
-    !liquidReason(bot, p, bot.blockAt(p)) && (!isNaturalLogName(name) || gatherableLog(bot, state, p)) &&
-    (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY) &&
-    !shallowStone(bot, state, p, name) && // 家があるとき、地表に近い石は採掘場から（設計書 68）
-    !caveOre(state, p, name) && // 洞窟に出ている深い鉱石は取らない。採掘場の壁に出たものだけ（設計書 86 §4）
-    !keptGround(state, p, name) && // 整地する土地の下は掘らない（土は整地の外から）
-    !inMineBody(state, p) // 採掘場の階段の柱と段の床は掘らない（底から上がれなくなる）
+    !takeRefusal(state, p, name, { bot, block: bot.blockAt(p) }) && // dig が断る所は掘らない（takeable.mjs）
+    (!isNaturalLogName(name) || gatherableLog(bot, state, p)) &&
+    (isLog(name) ? logReachable(bot, bot.blockAt(p)) : Math.abs(p.y - Math.floor(me.y)) <= DIG_DY)
 }
 
 // この種類のうちボットが掘れるブロック: 近い順。家の一部は含めない。石・土などの地形は、採掘の場所が
