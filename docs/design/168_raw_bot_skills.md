@@ -56,7 +56,7 @@ user: 「こういう時に LLM が自分で状況判断してスキル追加し
 | 行き詰まりの節（続けて 2 回失敗）が、調べる・助言を聞く・実験する、へ導くだけで、`write_skill` に触れない。技の話は常時の 1 行だけ | 節の終わりに 1 項（raw が有効なときだけ）: 提案や道具が同じ理由で通らず、助言も言い直しなら、手が足りない。`write_skill` で raw の技を書き、`what` に通らない手・理由・直したい動きを書く。`diagnostics` の kind（place は高さと送った時機 `timing`、stuck）も案内 |
 | 助言者の依頼は「上の道具だけを使え」で、足りない手を書く道が答えに出ない | raw が有効なとき、依頼に 1 文: ブリッジの手が同じ原因で通らず他の組み合わせで越えられないなら、手が足りないと言い、`write_skill` を勧める（`ADVICE_SKILL_HINT`） |
 | 失敗した `do_suggestion`（その場でする手）は「しばらく使えない手」に載らず、提案に出続けた。台帳は場所のある手だけを覚える | その場でする出る手（`climb_out` `dig_out` `leave_burrow`）が futile な理由（`could not jump up from the hole`、`piling up does not get you out`）で失敗したら、立っていたセルを場所として台帳に載せる（`spotOf`）。同じセルでは提案から外し、`withheld` に理由を言う。5 分で期限切れ。セルが変われば別（積んで動いたときは別の場所） |
-| 成功条件の語彙に位置がなく、移動・脱出の技は成功を世界から判定できない | `expects` に `at`（`where: "x,y,z"` か `"$引数名"`、`distance` 半径・既定 2、高さは ±2）と `out_of_closed_space`（歩いて出られる。家の中は閉じた所に数える。積み上がって四方が崖の柱の頂上・屋根に出ただけ（`isolatedSpace`）は出たことにしない: 保存前の検証が、降りる手のない 10 分の停止を成功と読まないため）を足した。`deps.where()`（index.mjs）が位置と `closedSpace(bot)` を渡す |
+| 成功条件の語彙に位置がなく、移動・脱出の技は成功を世界から判定できない | `expects` に `at`（`where: "x,y,z"` か `"$引数名"`、`distance` 半径・既定 2、高さは ±2）と `height`（`y` / `direction` / `min_change`: 高さの前進。設計書 184 §2.1）と `out_of_closed_space`（歩いて出られる。家の中は閉じた所に数える。積み上がって四方が崖の柱の頂上・屋根に出ただけ（`isolatedSpace`）は出たことにしない: 保存前の検証が、降りる手のない 10 分の停止を成功と読まないため）を足した。`deps.where()`（index.mjs）が位置と `closedSpace(bot)` を渡す |
 | まわりの状態は近くの 7x7 の格子だけで、歩ける範囲の全体（閉じているか）は `inspect` を呼ばないと見えない。助言者は格子から「谷底の高い所」と読んだ | `surroundings.closed_space.cells` を状態に足し（家の中・塞いだ穴は言わない。候補 `climb_out` と同じ見方）、道具の選択のまわりの節に 1 行（「歩いて出られない閉じた所にいる（歩ける範囲は全部で N マス）。…」） |
 
 調べて直さなかったもの:
@@ -67,3 +67,17 @@ user: 「こういう時に LLM が自分で状況判断してスキル追加し
 テスト: ブリッジ `climb-out.test.mjs`（`closed_space` が閉じた所だけに出る、台帳で提案から外れて `withheld` に出る）、`runner.test.mjs`（失敗した出る手が台帳に載り、成功は載らない）、`refusals.test.mjs`（`spotOf`・futile な理由）、`skills.test.mjs`（`at` / `out_of_closed_space` の判定と検証）。Python `test_skills.py`（行き詰まりの節・助言の依頼が raw のときだけ技を勧める、スキーマの述語）、`test_game_prompt_template_builder.py`（閉じた所の 1 行）。
 
 検証が要るもの（実機）: 行き詰まりの節の 1 項で LLM が実際に `write_skill` を選ぶか（効かなければ、節の位置か、選ぶ条件を数で示す）。書かれた技が `at` / `out_of_closed_space` で成功と判定されるか。再起動後でないと効かない。
+
+## 9. 技の中の待たれなかった拒否でブリッジを落とさない（2026-10-17）
+
+生の技はブリッジと同じプロセスの `vm` で動くので、技が `await` しない非同期処理（`t.log(...)` など）が、技を止めたあとに拒否されると、Node の既定の動き（unhandledRejection で終了）でブリッジごと落ちる。実際に 20:16 に落ち、10 分間止まった。`index.mjs` に `unhandledRejection`（ログして続ける）と `uncaughtException`（スタックに `evalmachine` を含む技の中の例外だけ続ける）を入れた。技の外の例外は今までどおり落とす。
+
+
+## 10. 技が残した経路の設定で、止めたあとにブリッジが落ちる（2026-10-18）
+
+§9 の `uncaughtException` の受けは、スタックに `evalmachine` を含む例外しか通さない。ところが技が `bot.pathfinder.setMovements(new Movements(t.bot))` で渡した設定は、`t.bot`（止められると例外を投げる Proxy、`tracked`）を抱えたまま pathfinder に残る。技が止められたあと、反射の逃走や別の技が歩くと、pathfinder が物理の tick の中で `Movements` を通して `t.bot` に触れて投げ、スタックは `mineflayer/physics.js` から始まる（`evalmachine` を含まない）ので、`process.exit(1)` になった（2026-10-18 21:17 のベンチ 7 回目: 反射がスケルトンから逃げている最中に落ち、その後 24 分間ブリッジがなかった）。
+
+- 直し 1（原因）: 技を始める前の `bot.pathfinder.movements` を覚えておき、`releaseBot` で戻す（なければ新しい `Movements`）。技の `t.bot` を抱えた設定が、技より長生きしない
+- 直し 2（受け）: 止められた Proxy が投げる例外に目印（`skillStopped`）を付け、`uncaughtException` はそれも続ける。技の持ち物が思わぬ経路で残っても、ブリッジは落ちない
+- テスト: `raw-skills.test.mjs`（止めたあとに設定が戻る、例外に目印が付く）
+- 計測の側: ベンチは、ブリッジが途中で消えても cap の時間まで 60 秒間隔で待ち続ける。今回は 24 分が無駄になった。止めるかは次の課題（ブリッジを再起動して続けるか、測定を打ち切るか）
