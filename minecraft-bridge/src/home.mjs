@@ -27,6 +27,9 @@ const DATA_FILE = process.env.STATE_FILE || path.join(path.dirname(fileURLToPath
 const DOOR_TOGGLE_TIMEOUT_MS = 1000 // 1 回の手で、ドアが動くのを待つ時間（手は DOOR_TRIES の数だけ）
 const DOOR_BREAK_MS = 10000
 const WALK_THROUGH_TIMEOUT_MS = 3000
+const STALL_JUMP_AFTER_MS = 400 // この間まったく進めなければ、ジャンプを押す（ドアの前の 1/16 の段差は、梁の下では歩いて上れない）
+const STALL_JUMP_HOLD_MS = 250
+const STALL_MOVED = 0.02 // これ以上動けば進んだとみなす（水平、ブロック）
 const DOORSTEP_DEPTH = 3 // ドアの前の床の穴は、ここまでの深さなら下から埋める
 const PLACE_REACH = 4
 const JUMP_OUT_MS = 1500
@@ -336,12 +339,30 @@ export async function walkInto (bot, cell) {
   await bot.lookAt(target.offset(0, bot.entity.eyeHeight, 0), true)
   bot.setControlState('forward', true)
   const start = Date.now()
+  // 進めないまま止まったらジャンプする（2026-10-20: ドアの前が dirt_path（高さ 15/16）で、立つ高さが 1/16 低く、
+  // 2 マス高の入口の梁の下では物理の段差上りが通れず、開いたドアの前で止まった。ジャンプなら通る）
+  let from = bot.entity.position.clone()
+  let since = Date.now()
+  let jumpUntil = 0
   try {
     while (bot.entity.position.xzDistanceTo(target) > 0.35) {
-      if (Date.now() - start > WALK_THROUGH_TIMEOUT_MS) {
+      const now = Date.now()
+      if (now - start > WALK_THROUGH_TIMEOUT_MS) {
         const why = describeWalkStall(bot, cell)
         console.log(`[door] 歩いて通れない: ${cell} ${why}`)
         throw new Error(`could not walk to ${cell} (${why})`)
+      }
+      if (bot.entity.position.xzDistanceTo(from) > STALL_MOVED) {
+        from = bot.entity.position.clone()
+        since = now
+      } else if (!jumpUntil && now - since > STALL_JUMP_AFTER_MS) {
+        bot.setControlState('jump', true)
+        jumpUntil = now + STALL_JUMP_HOLD_MS
+      }
+      if (jumpUntil && now >= jumpUntil) {
+        bot.setControlState('jump', false)
+        jumpUntil = 0
+        since = now
       }
       await bot.lookAt(target.offset(0, bot.entity.eyeHeight, 0), true)
       await bot.waitForTicks(1)

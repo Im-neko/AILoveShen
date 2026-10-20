@@ -7,7 +7,7 @@ const { Vec3 } = vec3Pkg
 const v = (x, y, z) => new Vec3(x, y, z)
 const CELL = v(44, 68, -199)
 
-function fakeBot ({ at = v(44.5, 68, -199.44), blocks = {}, controls = { forward: true }, goal = null, moves = false } = {}) {
+function fakeBot ({ at = v(44.5, 68, -199.44), blocks = {}, controls = { forward: true }, goal = null, moves = false, needsJump = false } = {}) {
   const block = (p) => {
     const spec = blocks[`${p.x},${p.y},${p.z}`] ?? 'air'
     const name = typeof spec === 'string' ? spec : spec.name
@@ -23,7 +23,7 @@ function fakeBot ({ at = v(44.5, 68, -199.44), blocks = {}, controls = { forward
     clearControlStates: () => { bot.controlState = {} },
     waitForTicks: async () => {
       await new Promise((resolve) => setTimeout(resolve, 20))
-      if (moves) bot.entity.position.z += 0.2
+      if (moves && (!needsJump || bot.controlState.jump)) bot.entity.position.z += 0.2
     }
   }
   return bot
@@ -68,4 +68,24 @@ test('進めるときは、そのまま着く', async () => {
   const bot = fakeBot({ moves: true })
   await walkInto(bot, CELL)
   assert.ok(bot.entity.position.z > -198.9)
+})
+
+test('歩いて進めないまま止まったら、ジャンプを押して通る（ドアの前の 1/16 の段差）', async () => {
+  const bot = fakeBot({ moves: true, needsJump: true })
+  const pressed = []
+  const set = bot.setControlState
+  bot.setControlState = (k, on) => { if (k === 'jump') pressed.push(on); set(k, on) }
+  await walkInto(bot, CELL)
+  assert.ok(bot.entity.position.z > -198.9)
+  assert.equal(pressed[0], true)
+  assert.deepEqual(bot.controlState, {})
+})
+
+test('すぐ進めるときは、ジャンプを押さない', async () => {
+  const bot = fakeBot({ moves: true })
+  const pressed = []
+  const set = bot.setControlState
+  bot.setControlState = (k, on) => { if (k === 'jump') pressed.push(on); set(k, on) }
+  await walkInto(bot, CELL)
+  assert.deepEqual(pressed, [])
 })
