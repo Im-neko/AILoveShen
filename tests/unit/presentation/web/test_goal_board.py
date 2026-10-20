@@ -98,10 +98,18 @@ class TestGoalsSnapshot:
             "site": None,
             "survey": None,
             "objectives": [],
+            "history": [],
             "goal": None,
             "home": None,
             "town_map": None,
         }
+
+    def test_the_history_is_on_the_board(self):
+        """自分がやったこと（設計書 199）は /api/goals に入る。"""
+        session = _session()  # m3 を断念している
+        session.plan.complete("m1")
+        snap = goals_snapshot(session.activity())
+        assert [(d["title"], d["done"]) for d in snap["history"]] == [("剣を持つ", False), ("自分の家を作る", True)]
 
     def test_the_town_map_is_on_the_board(self):
         """街の理想図（docs/design/47 §6）は /api/goals に入り、/town が描く。"""

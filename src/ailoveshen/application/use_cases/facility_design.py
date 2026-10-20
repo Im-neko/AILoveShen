@@ -141,6 +141,40 @@ def _design(data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     }
 
 
+GROUND_HINT_ZONES = 4  # 断るときに添える、畑にできる地面が多い区画の数
+GROUND_HINT_LEAST = 0.3  # 添える区画の、畑にできる地面の割合の下限
+
+
+def _ground_hint(rows: list[dict[str, Any]], choices: list[str]) -> str:
+    """
+    場所が悪くて断ったときに、選べる区画のうち畑にできる地面（草、土、砂、砂利、雪の土地）が一番多い所を添える。
+    soft: 整地すれば畑にできる地面の割合、soil: そのまま耕せる割合、flat: 平らさ（設計書 195）。
+    """
+    free = set(choices)
+    best = sorted(
+        (
+            r
+            for r in rows
+            if r.get("id") in free
+            and float(r.get("seen", 0)) >= 0.5
+            and float(r.get("soft", 0)) >= GROUND_HINT_LEAST
+            and not r.get("facilities")  # 畑や家がもうある区画は、畑の地面（farmland）が多くても使えない
+            and float(r.get("built", 0)) < 0.2
+        ),
+        key=lambda r: (-float(r["soft"]), -float(r.get("flat", 0))),
+    )[:GROUND_HINT_ZONES]
+    if not best:
+        return (
+            ". None of the zones you can choose has ground a farm can use (dirt, grass, sand, gravel or snow ground "
+            "in 30% or more of the zone): there is no farmland nearby yet. Explore for flatter ground or choose another facility"
+        )
+    listed = ", ".join(f"{r['id']} (usable {r['soft']}, tillable as it is {r.get('soil', 0)}, flat {r.get('flat', 0)})" for r in best)
+    return (
+        ". Zones you can choose with the most ground a farm can use (usable = dirt, grass, sand, gravel or snow ground; "
+        f"uneven or sandy ground is levelled when it is built): {listed}. Pick zones next to each other from these"
+    )
+
+
 def _rectangle(zones: list[Zone], chosen: list[str], name: str) -> list[Zone]:
     """選んだ区画が 1 つの四角になり、ほかの用途の区画を含まないか。区画の一覧を返す。"""
     by_id = {z.id: z for z in zones}
@@ -246,9 +280,11 @@ class FacilityDesigner:
                     body["near_home"] = True
                 facility = await self._bridge.set_facility(name, body)
             except FacilityAreaNotReadyError as e:
-                raise FacilityNotDesignedError(str(e), name=name) from e
+                raise FacilityNotDesignedError(str(e), name=name, world=True) from e
             except (ValueError, GoalRejectedError, TextGenerationError) as e:
                 error = str(e)
+                if "other zones" in error:  # 場所が悪くて断られた: どこなら作れるかを添える
+                    error += _ground_hint(rows, choices)
                 logger.warning(f"施設 {name} の設計の試行 {attempt} を差し戻した: {error}")
                 continue
             except GameBridgeError as e:  # ブリッジにつながらない: やり直しても同じ

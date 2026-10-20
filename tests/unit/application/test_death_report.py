@@ -41,13 +41,30 @@ def test_the_death_block_in_the_prompt_asks_for_a_lesson():
     assert _format_death("") == ""
 
 
-def test_the_schema_after_a_death_requires_a_lesson_and_offers_no_retry():
-    predicates = [GoalPredicate.HAVE]
-    died = goal_schema(predicates, [], after_failure=True, retry_allowed=False, died=True)
-    assert {"diagnosis", "remedy", "lesson"} <= set(died["required"])
-    assert died["properties"]["remedy"]["enum"] == ["change"]
-    assert died["properties"]["lesson"]["description"].startswith("Required")
-    # 行き詰まった失敗は、教訓は任意のまま
-    stuck = goal_schema(predicates, [], after_failure=True)
-    assert "lesson" not in stuck["required"]
-    assert stuck["properties"]["lesson"]["description"].startswith("Optional")
+def test_the_schema_is_the_same_after_a_death_and_the_code_checks_the_lesson_and_the_retry():
+    """スキーマは呼び出しごとに変えない（設計書 177: 違うとキャッシュが全部外れる）。教訓とやり直しは答えのあとに確かめる。"""
+    import pytest
+
+    from ailoveshen.application.use_cases.goal_vocabulary import parse_decision
+    from ailoveshen.application.use_cases.play import _check_remedy
+    from ailoveshen.domain.value_objects import GoalSpec
+
+    failed = GoalSpec(GoalPredicate.HAVE, item="stone", count=3)
+    schema = goal_schema(after_failure=True)
+    assert {"diagnosis", "remedy"} <= set(schema["required"]) and "lesson" not in schema["required"]
+    assert schema["properties"]["remedy"]["enum"] == ["retry", "change"]
+    assert goal_schema(after_failure=True) == schema
+
+    change = parse_decision(
+        {"diagnosis": "d", "remedy": "change", "predicate": "have", "item": "oak_log", "count": 4, "serves": "current"}
+    )
+    with pytest.raises(ValueError, match="you died: write a lesson"):
+        _check_remedy(change, failed, 1, retry_allowed=False, died=True)
+    _check_remedy(change, failed, 1, retry_allowed=False, died=False)
+    retry = parse_decision(
+        {"diagnosis": "d", "remedy": "retry", "advice": "a", "predicate": "have", "item": "stone", "count": 3,
+         "serves": "current"}
+    )
+    with pytest.raises(ValueError, match="retry is not available"):
+        _check_remedy(retry, failed, 1, retry_allowed=False)
+    _check_remedy(retry, failed, 1, retry_allowed=True)

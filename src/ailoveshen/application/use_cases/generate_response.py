@@ -366,6 +366,20 @@ class GenerateResponseUseCase(IGenerateResponse):
             if kind in (*ACTIONABLE, "withdraw")
             else self._max_attempts
         )
+        held: dict[str, object] | None = None  # 差し戻した返答が書いていた教訓（助言のとき）
+
+        def learn(final: dict[str, object]) -> None:
+            # 差し戻した返答の教訓は、使う返答に教訓がなく、断っていなければ覚える（2026-10-20: 「予備の
+            # ツルハシを持って」を教訓つきで返したのが形の不足で差し戻され、書き直した返答は大目標にしただけで
+            # 教訓が残らなかった）
+            if (
+                held is not None
+                and not str(final.get("lesson") or "").strip()
+                and final.get("request") != RequestHandling.DECLINE.value
+            ):
+                final = {**final, "lesson": held.get("lesson"), "lesson_when": held.get("lesson_when")}
+            self._learn(session, request, final)
+
         for attempt in range(1, attempts + 1):
             prompt = self._prompt_builder.build_chat_response_prompt(
                 user_name=request.user_name,
@@ -382,6 +396,8 @@ class GenerateResponseUseCase(IGenerateResponse):
             )
             text = str(data.get("reply", "")).strip()
             handling = data.get("request")
+            if advice and str(data.get("lesson") or "").strip():
+                held = data
             if is_foreign_comment(request.message) and mostly_japanese(text) and attempt < attempts:
                 # 日本語以外のコメントに日本語で返した（2026-10-10: 英語に日本語で返した）: その言語で書き直させる
                 error = (
@@ -462,16 +478,16 @@ class GenerateResponseUseCase(IGenerateResponse):
                         # 最後の試しでも助言の形が直らない: 黙って返事を落とさない。教訓は覚え、大目標にはせず、
                         # 覚えておくと言う返事を話す（2026-10-10 19:39: 「苗木の上に土を置かないで」に、条件の
                         # 形が 3 回合わず、返事が出なかった）
-                        self._learn(session, request, data)
+                        learn(data)
                         return text, None
                     continue
-                self._learn(session, request, data)
+                learn(data)
                 if not proposal.now:
                     self._rethink(session, request.user_name, data.get("rethink"))
                 outcome = self._accepted(proposal, timing, when_note)
                 return await self._final(request, context, outcome, text), objective
             if handling == RequestHandling.WITHDRAW.value:
-                self._learn(session, request, data)
+                learn(data)
                 await self._withdraw(session, request.user_name)
                 return await self._final(request, context, ReplyOutcome("withdrawn"), text), None
             if await self._empty_promise(request.message, text, str(handling), data.get("rethink")):
@@ -496,8 +512,9 @@ class GenerateResponseUseCase(IGenerateResponse):
                         "約束しない返答にする（覚えておく、普段からしている、まだできない）。"
                     )
                     logger.warning(f"返答 {attempt} の約束は守れない: {kept.reason}")
+                    held = None
                     continue
-                self._learn(session, request, data)
+                learn(data)
                 if kept is None or not kept.now:
                     self._rethink(session, request.user_name, data.get("rethink"))
                 if kept is None:
@@ -511,7 +528,7 @@ class GenerateResponseUseCase(IGenerateResponse):
                     error = wrong
                     logger.warning(f"返答 {attempt} は持ち物の事実と食い違う: {data!r}")
                     continue
-            self._learn(session, request, data)
+            learn(data)
             self._rethink(session, request.user_name, data.get("rethink"))
             outcome = self._plain_outcome(kind, data)
             if outcome is None:

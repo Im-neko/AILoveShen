@@ -17,7 +17,7 @@ COMMON_SYSTEM = """\
 
 # ゲームの文脈のいらない機械的な変換（読み上げ用のカタカナ変換、教訓の統合）には入れない
 # （入れると、変換せずに配信者として答えかねない）
-NO_COMMON_SYSTEM = frozenset({"reading", "lesson_compaction"})
+NO_COMMON_SYSTEM = frozenset({"reading", "lesson_compaction", "lesson_check"})
 
 
 def with_common_system(system: Optional[str], purpose: Optional[str]) -> Optional[str]:

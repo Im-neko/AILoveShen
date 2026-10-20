@@ -116,6 +116,7 @@ def _goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             "site": None,
             "survey": None,
             "objectives": [],
+            "history": [],
             "goal": None,
             "home": None,
             "town_map": None,
@@ -137,6 +138,7 @@ def _goals_snapshot(activity: Activity | None) -> dict[str, Any]:
             _objective(g, "current" if i == 0 else "pending") for i, g in enumerate(pending)
         ]
         + [_objective(g, g.state.value) for g in finished],
+        "history": [asdict(d) for d in activity.history],
         "goal": None
         if goal is None
         else {
@@ -189,6 +191,8 @@ def goal_label(spec: GoalSpec) -> str:
     if p == GoalPredicate.LEVELED:
         where = "家" if spec.where == "home" else "そこ"
         return f"{where}のまわり {spec.distance}m を整地する"
+    if p == GoalPredicate.PAVED:
+        return "街の道を敷く"
     if p == GoalPredicate.CUSTOM:
         return f"{spec.name} を仕上げる"
     if p == GoalPredicate.SURVEYED:
@@ -209,6 +213,7 @@ _JOB_KINDS = {
     GoalPredicate.PLACED: "ブロックの設置",
     GoalPredicate.BUILT: "ブロックの設置",
     GoalPredicate.LEVELED: "整地",
+    GoalPredicate.PAVED: "道づくり",
     GoalPredicate.PLANTED: "植林",
     GoalPredicate.FARMED: "畑づくり",
     GoalPredicate.LIT: "明かりの設置",

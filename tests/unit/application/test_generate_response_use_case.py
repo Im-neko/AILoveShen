@@ -694,6 +694,70 @@ async def test_with_a_lesson_book_the_advice_is_kept_with_when_it_applies(
     assert lessons.learn.call_args.kwargs == {"explicit": True, "source": "viewer:neko"}
 
 
+@pytest.mark.asyncio
+async def test_the_lesson_of_a_sent_back_reply_is_kept_when_the_final_reply_has_none(
+    mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+):
+    """実例（2026-10-20）: 「予備のツルハシを持って」への返答が、教訓つきで relevance がなく差し戻され、
+    書き直した返答は大目標にしただけで教訓が残らなかった。差し戻した返答の教訓を、使う返答が持たず、
+    断ってもいなければ覚える。"""
+    lessons = Mock()
+    use_case = GenerateResponseUseCase(
+        text_generator=mock_text_generator,
+        prompt_builder=mock_prompt_builder,
+        event_publisher=mock_event_publisher,
+        conversation=conversation,
+        character=CharacterProfile(),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        lessons=lessons,
+    )
+    mock_text_generator.generate_json.side_effect = [
+        {
+            "reply": "予備も持っていくね",
+            "request": "none",
+            "lesson": "坑道へ行くときは予備のツルハシを持つ",
+            "lesson_when": {"text": "坑道へ行くとき"},
+        },
+        {
+            "reply": "予備のことを考え直すね",
+            "request": "none",
+            "relevance": "related",
+            "relevance_reason": "x",
+            "rethink": "Make spare pickaxes before the mine.",
+        },
+    ]
+    await use_case.execute(
+        GenerateResponseRequest(user_name="neko", message="予備のツルハシを持ってったら？", session=_playing(), kind="advice")
+    )
+    assert mock_text_generator.generate_json.await_count == 2
+    text, condition, _keys = lessons.learn.call_args.args
+    assert (text, condition) == ("坑道へ行くときは予備のツルハシを持つ", "坑道へ行くとき")
+
+
+@pytest.mark.asyncio
+async def test_the_lesson_of_a_sent_back_reply_is_not_kept_when_the_final_reply_declines(
+    mock_text_generator, mock_prompt_builder, mock_event_publisher, conversation, bridge, store
+):
+    lessons = Mock()
+    use_case = GenerateResponseUseCase(
+        text_generator=mock_text_generator,
+        prompt_builder=mock_prompt_builder,
+        event_publisher=mock_event_publisher,
+        conversation=conversation,
+        character=CharacterProfile(),
+        objectives=ObjectiveKeeper(bridge=bridge, event_publisher=mock_event_publisher, store=store),
+        lessons=lessons,
+    )
+    mock_text_generator.generate_json.side_effect = [
+        {"reply": "そうするね", "request": "none", "lesson": "夜に外で寝る"},
+        {"reply": "それは危ないからやめておくね", "request": "decline", "decline_reason": "wrong"},
+    ]
+    await use_case.execute(
+        GenerateResponseRequest(user_name="neko", message="夜は外で寝たら？", session=_playing(), kind="advice")
+    )
+    lessons.learn.assert_not_called()
+
+
 class TestEmptyPromise:
     """約束だけで何もしない返事は書き直させる（docs/design/34 §10）。"""
 

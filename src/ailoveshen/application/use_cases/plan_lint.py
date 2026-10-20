@@ -15,6 +15,8 @@ LLM が書いた中目標を、世界に照らす前に形で確かめる。通�
 - 大目標につながらない中目標（`aimless_jobs`、設計書 50 §20）: 探すだけの大目標の計画に、ドアの製作・整地・
   作る物の材料が並んだ。中目標にできるのは備え（食料・明かり・武器と防具・道具・乗り物・ベッド）と、材料の木が
   ある大目標ではその木に出る物だけ
+- 存在しない名前の施設 `facility(mine_7)`: 建物と同じ。採掘場は、その鉱石を要る手が作って掘る。2026-10-17 の 3.5 時間で、
+  採掘場を中目標に書いた計画が 4 回あり、小目標にしようとして 47 回断られた
 - もう建ててある建物の `built`（`already_built`、設計書 50 §20）: 「夜に家の中にいる」の代わりに `built()` を
   中目標にして、書いた瞬間に済んだ（at_home は計画の条件にない）
 """
@@ -43,6 +45,25 @@ def unregistered_builds(
     found: dict[str, GoalSpec] = {}
     for spec in specs:
         if spec.predicate == GoalPredicate.BUILT and spec.name and spec.name not in known:
+            found.setdefault(spec.describe(), spec)
+    return list(found.values())
+
+
+def unregistered_facilities(
+    specs: Iterable[GoalSpec], objective: Optional[Objective], facilities: Collection[str]
+) -> list[GoalSpec]:
+    """
+    存在しない名前の `facility(name)`。設計されるのは大目標の条件になった名前だけなので、その名前と
+    登録済みの施設（`facilities`）は除く（建物の `unregistered_builds` と同じ）。
+    """
+    known = set(facilities) | {
+        c.name
+        for c in (objective.conditions if objective else ())
+        if c.predicate == GoalPredicate.FACILITY and c.name
+    }
+    found: dict[str, GoalSpec] = {}
+    for spec in specs:
+        if spec.predicate == GoalPredicate.FACILITY and spec.name and spec.name not in known:
             found.setdefault(spec.describe(), spec)
     return list(found.values())
 
@@ -250,6 +271,7 @@ def check_plan(
     builds: Optional[Collection[str]] = None,
     trees: Optional[Mapping[str, MaterialTree]] = None,
     met: Optional[Mapping[str, bool]] = None,
+    facilities: Optional[Collection[str]] = None,
 ) -> None:
     """
     中目標の並びを検査する。
@@ -260,6 +282,7 @@ def check_plan(
         builds: 登録済みの建物の名前（None: 分からないので、建物の名前は確かめない）
         trees: 条件の書き方から材料の木（None: 分からないので、材料は確かめない）
         met: 条件の書き方から、今もう満たしているか（None: 分からないので、確かめない）
+        facilities: 登録済みの施設の名前（None: 分からないので、施設の名前は確かめない）
 
     Raises:
         ValueError: 直させる理由（英語。モデルに返す）
@@ -272,6 +295,16 @@ def check_plan(
                 "can never be judged or worked on: only a build that is one of the objective's own "
                 "conditions gets designed. The house itself is built(), with no name. Write the "
                 "materials and the steps as have / placed conditions instead"
+            )
+    if facilities is not None:
+        missing = unregistered_facilities((x for j in jobs for x in j.all_specs()), objective, facilities)
+        if missing:
+            raise ValueError(
+                f"{', '.join(s.describe() for s in missing)} names a facility that does not exist, so it "
+                "can never be judged or worked on: only a facility that is one of the objective's own "
+                "conditions gets designed. A mine is not a step of its own: it is made and dug by the "
+                "step that needs its ore (write have(raw_iron, n) or have(diamond, n); the bridge offers "
+                "'make a mine' for it). Write the materials and the steps as have / placed conditions instead"
             )
     done = list(objective.done_jobs) if objective is not None else []
     fresh = [j for j in jobs if not any(d.same_as(j) for d in done)]

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any, Optional
 
 from ailoveshen.domain.value_objects import (
+    Guide,
     Activity,
     Candidate,
     CharacterProfile,
@@ -18,7 +19,9 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     Mission,
     Objective,
+    PlaybookStep,
     SameCause,
+    WithdrawnHand,
     SkillInfo,
     ToolOutcome,
     TownDefinition,
@@ -147,6 +150,32 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_mission_prompt(
+        self,
+        character: CharacterProfile,
+        mission: Mission,
+        done: tuple[str, ...],
+        playbook: tuple[PlaybookStep, ...],
+        town: TownDefinition,
+        facts: dict[str, Any],
+        previous_error: str = "",
+    ) -> str:
+        """
+        最終目標を達成したあとの、次の最終目標とその定石（済んだ定石と同じ形の順に並べた段）を
+        LLM に尋ねるプロンプトを組み立てる。
+
+        Args:
+            character: 配信者
+            mission: 達成した最終目標
+            done: これまでに達成した最終目標の文（古い順）
+            playbook: 済んだ定石の段（書き方の見本と、名前を重ねないための一覧）
+            town: 完成した街
+            facts: 今の様子（日数、持ち物、建てたもの）
+            previous_error: 前回の答えが拒否された理由（あれば）
+        """
+        ...
+
+    @abstractmethod
     def build_stage_prompt(
         self, town: TownDefinition, stage: TownStage, previous_error: str = ""
     ) -> str:
@@ -193,6 +222,7 @@ class IGamePromptBuilder(ABC):
         activity: Activity,
         replan_reason: str = "",
         previous_error: str = "",
+        guide_notes: str = "",
     ) -> str:
         """
         大目標の計画（中目標と、その小目標の並び）を書かせるプロンプト（docs/design/50 §18）。
@@ -201,6 +231,7 @@ class IGamePromptBuilder(ABC):
             objective: 計画を立てる大目標（一番上のもの）
             activity: 今していることと状況
             replan_reason: 書き直すときの理由（失敗、行き詰まり、死んだこと。初めてなら空）
+            guide_notes: 手引きの「計画のための要点」（固定の部分に入れる。なければ空。設計書 201）
             previous_error: 前回の出力が使えなかった理由（あれば）
         """
         ...
@@ -337,6 +368,29 @@ class IGamePromptBuilder(ABC):
         ...
 
     @abstractmethod
+    def build_raw_prompt(
+        self,
+        task: str,
+        state: dict[str, Any],
+        recent_tools: Sequence[ToolOutcome],
+        skills: Sequence[SkillInfo],
+        guides: Sequence[Guide] = (),
+        notes: Sequence[str] = (),
+    ) -> str:
+        """
+        判断なしの実験（設計書 191）の、道具を 1 つ選ばせるプロンプトを組み立てる。目標・ソルバーの提案・助言は入れない。
+
+        Args:
+            task: 課題の文（自由文）
+            state: ブリッジが測ったそのままの状態（`raw_state`）
+            recent_tools: 直近の道具の呼び出しと結果（古い順）
+            skills: 覚えた技
+            guides: 手引き（名前と一行の説明を出す。設計書 192）
+            notes: 自分用のメモ（番号をつけて出す。設計書 196）
+        """
+        ...
+
+    @abstractmethod
     def build_tool_prompt(
         self,
         activity: Activity,
@@ -351,6 +405,8 @@ class IGamePromptBuilder(ABC):
         repeated_times: int = 0,
         repeated_skill: str = "",
         same_cause: SameCause | None = None,
+        withdrawn: Sequence[WithdrawnHand] = (),
+        guides: Sequence[Guide] = (),
     ) -> str:
         """
         配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。
@@ -368,6 +424,8 @@ class IGamePromptBuilder(ABC):
             repeated_times: その並びを続けた回数
             repeated_skill: その並びに合う、すでに覚えた技の名前（なければ空）
             same_cause: 同じ道具が同じ理由で失敗し続けているとき、その状態（なければ None）
+            withdrawn: 同じ理由で通らず、提案から外した手（設計書 184。なければ空）
+            guides: 手引き（名前と一行の説明を出す。設計書 192）
         """
         ...
 

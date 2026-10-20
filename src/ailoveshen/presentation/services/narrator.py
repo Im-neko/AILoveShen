@@ -19,6 +19,7 @@ from ailoveshen.domain.events import (
     GoalSetEvent,
     HouseCompletedEvent,
     JobDoneEvent,
+    MissionAdvancedEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     ObjectiveDroppedEvent,
@@ -140,6 +141,7 @@ class Narrator:
         bus.subscribe(TownDefinedEvent, self.on_town_defined)
         bus.subscribe(TownMapDrawnEvent, self.on_town_map_drawn)
         bus.subscribe(TownCompletedEvent, self.on_town_completed)
+        bus.subscribe(MissionAdvancedEvent, self.on_mission_advanced)
         bus.subscribe(SkillLearnedEvent, self.on_skill_learned)
         bus.subscribe(SkillRevisedEvent, self.on_skill_revised)
 
@@ -334,6 +336,14 @@ class Narrator:
     async def on_town_completed(self, event: TownCompletedEvent) -> None:
         """街の完成。次の目標と一緒に話す。"""
         self._pending.append(f"街が完成した（{event.text}）")
+        self._must_speak = True
+
+    async def on_mission_advanced(self, event: MissionAdvancedEvent) -> None:
+        """最終目標を達成して、次の最終目標を決めた。見どころなので、次の目標を待たずに話す。"""
+        self._pending.append(
+            f"最終目標「{event.done}」を達成した。次の最終目標は「{event.text}」: {event.reason}"
+            f"（まず: {' → '.join(event.steps)}）"
+        )
         self._must_speak = True
 
     async def on_skill_learned(self, event: SkillLearnedEvent) -> None:

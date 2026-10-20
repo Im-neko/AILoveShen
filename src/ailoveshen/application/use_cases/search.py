@@ -23,11 +23,13 @@ from loguru import logger
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridge
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
+from ailoveshen.application.use_cases.guides import GuideBook
 from ailoveshen.application.use_cases.tool_catalog import (
     ITEM_INFO,
     SEARCH_ABILITIES,
     SEARCH_FACILITY,
     SEARCH_MEMORY,
+    READ_GUIDE,
 )
 from ailoveshen.domain.exceptions import AILoveShenError, GameBridgeError
 from ailoveshen.domain.value_objects import FastQuestion, FastQuestionKind
@@ -368,24 +370,26 @@ class WorldSearch:
         bridge: IMinecraftBridge,
         search: KeySearch,
         abilities: Sequence[dict[str, Any]] = (),
+        guides: GuideBook | None = None,
     ) -> None:
         """
         Args:
             bridge: 一覧を読むブリッジ
             search: 一覧から選ぶもの
             abilities: やり方の帳の項目
+            guides: 手引き（read_guide が本文を返す。設計書 192）
         """
         self._bridge = bridge
         self._search = search
         self._abilities = ability_entries(abilities)
+        self._guides = guides or GuideBook()
         self._items: list[SearchEntry] = []  # アイテムの一覧は変わらない: 1 回だけ読む
-        self._tools = {str(a.get("key")): tuple(a.get("tools") or ()) for a in abilities}
-        self.revealed: tuple[str, ...] = ()  # 直前の search_abilities が引いた項目の道具（道具に足す）
 
     async def run(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
         """(ok, 結果の文)。一覧を読めないときは ok が偽（空の一覧は偽ではない: まだないと返す）。"""
+        if tool == READ_GUIDE:
+            return self._guides.read(str(args.get("name") or ""))
         query = str(args.get("query") or "").strip()
-        self.revealed = ()
         if not query:
             return False, "invalid call: query is empty"
         describe = None
@@ -405,8 +409,6 @@ class WorldSearch:
             result = await self._search.find(tool, query, entries, what, describe)
         except GameBridgeError as e:
             return False, f"could not read the list: {e}"
-        if tool == SEARCH_ABILITIES:
-            self.revealed = tuple(dict.fromkeys(t for k in result.keys for t in self._tools.get(k, ())))
         return True, result.text
 
     async def _item_info(self, entry: SearchEntry) -> str:

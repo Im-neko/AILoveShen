@@ -10,8 +10,6 @@ from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import MAX_QUERIES_PER_STEP, AdvancePlayUseCase
 from ailoveshen.application.use_cases.tool_catalog import (
-    CORE_TOOLS,
-    groups_for,
     ToolCallError,
     is_query,
     parse_tool_call,
@@ -400,10 +398,10 @@ class TestToolStep:
         assert watcher.run.await_args.args[0].name == "wait"
 
     @pytest.mark.asyncio
-    async def test_a_tool_outside_the_core_comes_after_search_abilities_and_stays_for_the_small_goal(
+    async def test_search_abilities_only_answers_and_the_offered_tools_stay_the_same(
         self, use_case, bridge, watcher
     ):
-        """道具は毎回渡すものだけ。search_abilities が引いた項目の道具が、その小目標のあいだ足される（設計書 169）。"""
+        """道具は固定（設計書 177）。search_abilities はやり方を返すだけで、道具を足さない（設計書 169 をやめた）。"""
         from ailoveshen.application.use_cases.search import WorldSearch, KeySearch
 
         use_case._search = WorldSearch(
@@ -413,18 +411,14 @@ class TestToolStep:
         )
         self.text_generator.choose_tool.side_effect = [
             ToolChoice("search_abilities", {"query": "make_farm"}),
-            *[ToolChoice("wait", {"intent": "待つ"}) for _ in range(3)],
+            ToolChoice("wait", {"intent": "待つ"}),
         ]
         await use_case.execute(_session(HAVE_PLANKS))
-        offered = [{t.name for t in c.args[1]} for c in self.text_generator.choose_tool.call_args_list]
-        assert {"till", "sow"}.isdisjoint(offered[0]) and {"till", "sow"} <= offered[1]
+        offered = [[t.name for t in c.args[1]] for c in self.text_generator.choose_tool.call_args_list]
+        assert offered[0] == offered[1]
+        assert {"till", "sow"} <= set(offered[0])
         recent = self.prompt_builder.build_tool_prompt.call_args.args[3]
-        assert "tools you can call now: till, sow" in recent[0].result  # 道具に足したことを返す（craft は元からある）
-
-        await use_case.execute(_session(HAVE_PLANKS))  # 同じ小目標の次の手にも残る
-        assert {"till", "sow"} <= {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
-        await use_case.execute(_session(GoalSpec(GoalPredicate.THROUGH_NIGHT)))  # 小目標が変われば空
-        assert {"till", "sow"}.isdisjoint({t.name for t in self.text_generator.choose_tool.call_args.args[1]})
+        assert "tools you can call now" not in recent[0].result
 
     @pytest.mark.asyncio
     async def test_the_advisor_is_asked_with_what_she_saw_and_its_answer_comes_back_as_a_tool_record(
@@ -516,34 +510,24 @@ class TestToolStep:
         self.text_generator.choose_tool.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_pickup_is_not_offered_when_nothing_lies_on_the_ground(self, use_case, bridge):
-        bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": [], "pickup_ready": False}
-        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
-        await use_case.execute(_session(HAVE_PLANKS))
-        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
-        assert "pickup" not in offered and "dig" in offered
-
-        bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": [], "pickup_ready": True}
-        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
-        await use_case.execute(_session(HAVE_PLANKS))
-        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
-        assert "pickup" in offered
-
-    @pytest.mark.asyncio
-    async def test_experiment_tools_are_offered_only_once_the_step_is_stuck(self, use_case, bridge):
-        bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": []}
-        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
-        await use_case.execute(_session(HAVE_PLANKS))
-        offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
-        assert "inspect" not in offered and "diagnostics" not in offered
-
-        stuck = _session(HAVE_PLANKS)
-        stuck.consecutive_failures = 2
-        self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
-        await use_case.execute(stuck)
-        offered = {t.name: t for t in self.text_generator.choose_tool.call_args.args[1]}
-        assert {"inspect", "diagnostics"} <= offered.keys()
-        assert "face" in offered["use_item"].parameters["properties"]
+    async def test_the_offered_tools_do_not_change_with_the_state_or_when_stuck(self, use_case, bridge):
+        """pickup も実験の道具も、状態や行き詰まりで出し入れしない（設計書 177: 定義が違うとキャッシュが全部外れる）。"""
+        offered = []
+        for state, failures in (
+            ({"pickup_ready": False}, 0),
+            ({"pickup_ready": True}, 0),
+            ({"mobs": [{"id": 1, "name": "zombie", "hostile": True, "distance_m": 3}]}, 0),
+            ({}, 2),
+        ):
+            bridge.state.return_value = {"action": None, "surroundings": {}, "mobs": [], **state}
+            self.text_generator.choose_tool.side_effect = [ToolChoice("wait", {"intent": "待つ"})]
+            session = _session(HAVE_PLANKS)
+            session.consecutive_failures = failures
+            await use_case.execute(session)
+            offered.append(self.text_generator.choose_tool.call_args.args[1])
+        assert all(o == offered[0] for o in offered)
+        names = {t.name for t in offered[0]}
+        assert {"pickup", "inspect", "diagnostics"} <= names
 
     @pytest.mark.asyncio
     async def test_a_failing_small_goal_makes_the_model_think_and_try_another_way(self, use_case):
@@ -725,7 +709,7 @@ class TestToolStep:
 
 
 def test_move_furniture_is_an_action_tool_with_an_optional_target():
-    specs = {t.name: t for t in tool_specs(groups=["build"])}
+    specs = {t.name: t for t in tool_specs()}
     move = specs["move_furniture"].parameters
     assert move["required"] == ["intent", "x", "y", "z"]
     assert {"to_x", "to_y", "to_z"} <= set(move["properties"])
@@ -767,27 +751,18 @@ def test_the_tool_prompt_lists_the_moves_the_bridge_refused():
 
 
 class TestExperimentTools:
-    """行き詰まったときだけ出す実験の道具（設計書 85）。"""
+    """行き詰まったときに使う実験の道具（設計書 85）。道具は固定なので、いつも出ている（設計書 177）。"""
 
-    def test_inspect_and_diagnostics_are_offered_only_when_stuck(self):
-        plain = {t.name for t in tool_specs()}
-        stuck = {t.name for t in tool_specs(experiment=True)}
-        assert {"inspect", "diagnostics"}.isdisjoint(plain)
-        assert {"inspect", "diagnostics"} <= stuck
+    def test_inspect_and_diagnostics_are_always_offered(self):
+        names = {t.name for t in tool_specs()}
+        assert {"inspect", "diagnostics"} <= names
         assert is_query("inspect") and is_query("diagnostics")
 
-    def test_use_item_takes_a_bare_hand_a_face_and_sneak_only_when_stuck(self):
-        def use_item(experiment):
-            return next(
-                t for t in tool_specs(experiment=experiment, groups=["farm"]) if t.name == "use_item"
-            )
-
-        plain, stuck = use_item(False), use_item(True)
-        assert {"face", "sneak", "target"}.isdisjoint(plain.parameters["properties"])
-        assert "item" in plain.parameters["required"]
-        assert {"face", "sneak", "target"} <= stuck.parameters["properties"].keys()
-        assert "item" not in stuck.parameters["required"]  # 素手で押せる
-        assert "intent" in stuck.parameters["required"]
+    def test_use_item_takes_a_bare_hand_a_face_and_sneak(self):
+        use_item = next(t for t in tool_specs() if t.name == "use_item")
+        assert {"face", "sneak", "target"} <= use_item.parameters["properties"].keys()
+        assert "item" not in use_item.parameters["required"]  # 素手で押せる
+        assert "intent" in use_item.parameters["required"]
 
     def test_a_door_click_with_the_home_door_alias_can_be_learned_but_one_with_coordinates_cannot(self):
         from ailoveshen.application.use_cases.learned_candidates import learnable
@@ -799,35 +774,88 @@ class TestExperimentTools:
 
 
 
-class TestToolGroups:
-    """毎回渡す道具と、小目標・状態で足す道具の組（設計書 169）。"""
+class TestWithdrawnHands(TestToolStep):
+    """同じ理由で通らないブリッジの提案は、提案から外す（設計書 184）。"""
 
-    def test_only_the_core_tools_are_offered_by_default(self):
-        names = {t.name for t in tool_specs()}
-        assert names == CORE_TOOLS - {"ask_advisor", "look_screen"}
-        assert {"till", "build_next", "smelt", "deposit", "recipe_of", "write_skill", "inspect"}.isdisjoint(names)
+    MINE = "make a mine down to y -58 near the home and dig it (for diamond)"
+    NO_SHAFT = "failed: could not design a mine down to y -58: a cave or a drop under 97,-4,-280"
 
-    def test_a_goal_adds_its_group(self):
-        farm = groups_for(GoalSpec(GoalPredicate.FARMED, item="wheat", count=9))
-        assert farm == {"farm"}
-        assert {t.name for t in tool_specs(groups=farm)} >= {"till", "sow", "plant", "water", "use_item"}
-        assert groups_for(GoalSpec(GoalPredicate.FACILITY, name="wheat_farm_1")) == {"farm", "build"}
-        assert groups_for(GoalSpec(GoalPredicate.STORED, item="cobblestone", count=64)) == {"store"}
-        assert groups_for(GoalSpec(GoalPredicate.HAVE, item="iron_ingot", count=2)) == {"cook"}
-        assert groups_for(GoalSpec(GoalPredicate.HAVE, item="oak_log", count=4)) == frozenset()
-        assert groups_for(None) == frozenset()
+    @pytest.mark.asyncio
+    async def test_a_suggestion_that_failed_three_times_for_the_same_reason_is_gone_from_the_next_step(
+        self, use_case, bridge, watcher
+    ):
+        bridge.observe.return_value = _obs(candidates=(self.MINE, "wait"))
+        watcher.run.side_effect = lambda call: ToolOutcome(call, False, self.NO_SHAFT, 0.0)
+        self.text_generator.choose_tool.return_value = ToolChoice(
+            "do_suggestion", {"id": self.MINE, "intent": "採掘場を作る"}
+        )
+        for _ in range(3):
+            await use_case.execute(_session(HAVE_PLANKS))
+        shown = [c.args[2] for c in self.prompt_builder.build_tool_prompt.call_args_list]
+        assert all(self.MINE in [x.action_id for x in s] for s in shown)  # 3 回目までは出ている
+        withdrawn = [c.kwargs["withdrawn"] for c in self.prompt_builder.build_tool_prompt.call_args_list]
+        assert not any(withdrawn)
 
-    def test_the_state_adds_its_group(self):
-        spec = GoalSpec(GoalPredicate.HAVE, item="oak_log", count=4)
-        assert groups_for(spec, {"mobs": [{"hostile": True}]}) == {"fight"}
-        assert groups_for(spec, {"mobs": [{"hostile": False}]}) == frozenset()
-        assert groups_for(spec, {"self": {"in_water": True}}) == {"water"}
-        assert groups_for(spec, {"time": "night"}) == {"night"}
-        assert groups_for(spec, {"pickup_ready": True}) == {"store"}
-        assert groups_for(spec, {"needs": ["hungry: food 6/20"]}) == {"cook"}
+        await use_case.execute(_session(HAVE_PLANKS))
+        call = self.prompt_builder.build_tool_prompt.call_args
+        assert [x.action_id for x in call.args[2]] == ["wait"]
+        assert [w.hand for w in call.kwargs["withdrawn"]] == [self.MINE]
+        # 外した手を LLM が id で言ってきても実行しない
+        assert watcher.run.await_count == 3
+        outcome = use_case._recent_tools[-1]
+        assert outcome.refused and "withdrawn" in outcome.result
+
+
+    @pytest.mark.asyncio
+    async def test_a_skill_that_failed_three_times_is_not_offered_and_not_run(self, use_case, bridge, watcher):
+        from ailoveshen.domain.value_objects import SkillInfo
+
+        info = SkillInfo(name="descend_stair_raw", description="下りる", params={}, expects={}, version=7)
+        bridge.skills = AsyncMock(return_value=[info])
+        use_case._skills = Mock()
+        use_case._run_skill = AsyncMock(
+            side_effect=lambda call, *a: ToolOutcome(call, False, "skill descend_stair_raw v7 failed (done)", 1.0)
+        )
+        self.text_generator.choose_tool.return_value = ToolChoice(
+            "run_skill", {"name": "descend_stair_raw", "intent": "下りる"}
+        )
+        for _ in range(3):
+            await use_case.execute(_session(HAVE_PLANKS))
+        offered = [c.kwargs["skills"] for c in self.prompt_builder.build_tool_prompt.call_args_list]
+        assert all(any(s.name == "descend_stair_raw" for s in o) for o in offered)
+
+        await use_case.execute(_session(HAVE_PLANKS))
+        call = self.prompt_builder.build_tool_prompt.call_args
+        assert not any(s.name == "descend_stair_raw" for s in call.kwargs["skills"])
+        assert [w.hand for w in call.kwargs["withdrawn"]] == ["skill descend_stair_raw"]
+        assert use_case._run_skill.await_count == 3  # 4 回目は実行しない
+        assert "write_skill" in use_case._recent_tools[-1].result
+
+
+class TestFixedToolSet:
+    """道具は全部入りで固定（設計書 177）。定義が 1 つでも違うとキャッシュが全部外れる。"""
+
+    def test_the_set_does_not_depend_on_the_goal_or_the_state(self):
+        assert tool_specs() == tool_specs()
+        names = [t.name for t in tool_specs()]
+        assert len(names) == len(set(names))
+        assert {"till", "build_next", "smelt", "deposit", "recipe_of", "inspect", "pickup", "use_item"} <= set(names)
+
+    def test_what_is_decided_by_the_run_adds_its_tools_without_reordering_the_rest(self):
+        base = [t.name for t in tool_specs()]
+        for kwargs, extra in (
+            (dict(advisor=True), "ask_advisor"),
+            (dict(can_look=True), "look_screen"),
+            (dict(skills=True), "run_skill"),
+            (dict(write_skill=True), "write_skill"),
+        ):
+            names = [t.name for t in tool_specs(**kwargs)]
+            assert extra in names and extra not in base
+            added = {extra, "try_skill"} if extra == "write_skill" else {extra}  # 試す道具は書く道具と一緒に出る
+            assert [n for n in names if n not in added] == base
 
     def test_skill_tools_follow_what_the_skills_are_for(self):
         assert "run_skill" not in {t.name for t in tool_specs()}
         assert "run_skill" in {t.name for t in tool_specs(skills=True)}
-        assert "write_skill" not in {t.name for t in tool_specs(skills=True)}  # 書くのは行き詰まり・繰り返しのとき
+        assert "write_skill" not in {t.name for t in tool_specs(skills=True)}
         assert "write_skill" in {t.name for t in tool_specs(skills=True, write_skill=True)}

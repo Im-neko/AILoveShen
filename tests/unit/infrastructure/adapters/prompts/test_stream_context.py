@@ -89,3 +89,21 @@ def test_the_town_site_says_the_standing_height_so_a_where_can_be_written_as_x_y
     obs = GameObservation(state={"survey": {"sites": [row], "planned": 9}}, candidates=(), health=20, food=20)
     text = format_activity(Activity(observation=obs, site=site))
     assert "街の場所（決めたこと）: 「エコー・プレイン」を東（160,64,-462）に作る" in text
+
+
+def test_history_is_shown_to_the_goal_decision_only_and_recent_first_cut():
+    """自分がやったこと（設計書 199）は目標の決定（ID つき）だけが見る。多いときは直近だけ。"""
+    from ailoveshen.domain.value_objects import Deed
+
+    history = tuple(Deed(f"大目標{i}", True, day=i) for i in range(40)) + (
+        Deed("柵", False, "柵は建物に使えない", day=41, requested_by="neko"),
+    )
+    activity = Activity(history=history)
+
+    text = format_activity(activity, with_ids=True)
+
+    assert "自分がやったこと" in text and "全部で 41 件" in text
+    assert "大目標0（" not in text and "大目標39（完了）" in text  # 古いものは出さない
+    assert "41 日目 柵（neko の頼み）（断念: 柵は建物に使えない）" in text
+    assert "自分がやったこと" not in format_activity(activity)  # 実況・返答には出さない
+    assert "自分がやったこと" not in format_activity(activity, with_ids=True, step=True)

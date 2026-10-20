@@ -118,6 +118,17 @@ class IMinecraftBridge(ABC):
         """
         ...
 
+    async def raw_state(self) -> dict[str, Any]:
+        """
+        判断を加えない状態（設計書 191）: 位置・体・持ち物・まわりの高さ・モブ・時刻と、反射と動いている技だけ。
+        欲求、断りの履歴、家の中か、などブリッジが導いた助言は入らない。
+
+        Raises:
+            GameBridgeError: ブリッジに届かないとき
+            NotImplementedError: この実装が対応していないとき
+        """
+        raise NotImplementedError("this bridge has no raw state")
+
     @abstractmethod
     async def abort(self, reason: str) -> bool:
         """
@@ -267,6 +278,20 @@ class IMinecraftBridge(ABC):
         self, name: str, args: dict[str, Any], version: int | None = None
     ) -> SkillRun:
         """技を 1 回実行する（サンドボックス。成功は expects を世界で判定）。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def try_skill(self, draft: SkillDraft, args: dict[str, Any]) -> SkillRun:
+        """書いた技を保存せずに 1 回だけ走らせる（成績にも足止めにも残さない。設計書 185）。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def check_skill(self, draft: SkillDraft) -> None:
+        """技の形と構文を確かめる（保存も実行もしない）。
+
+        Raises:
+            SkillRejectedError: 形・構文・expects が正しくないとき（理由つき）
+        """
         raise NotImplementedError
 
     @abstractmethod

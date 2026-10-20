@@ -159,3 +159,58 @@ def test_resetting_before_the_play_starts_says_so():
     client, _ = _client(spy)
     assert client.post("/api/admin/reset", headers=GUARD).json() == {"ok": False}
     assert client.get("/api/admin/state").json()["log"][0]["result"] == "プレイ前"
+
+
+def _client_with_lessons():
+    from ailoveshen.application.use_cases.lessons import LessonBook
+
+    class Store:
+        saved = None
+
+        def load(self):
+            return self.saved
+
+        def save(self, lessons, next_id):
+            self.saved = (list(lessons), next_id)
+
+    book = LessonBook(Store(), mode="rules")
+    book.learn("沼地では鉄が出にくい", "鉄を探すとき", {"goal": "have"}, True, "failure")
+    spy = Spy()
+    panel = AdminPanel(
+        SpeechPresets(MemoryStore(), new_id=iter(["a1"]).__next__),
+        speak=spy.speak,
+        instruct=spy.instruct,
+        rethink=spy.rethink,
+        reset=spy.reset,
+        allowed_hosts=TESTING,
+        lessons=book,
+    )
+    app = FastAPI()
+    panel.install(app, lambda: {"goal": None, "objectives": []})
+    return TestClient(app), book
+
+
+def test_lessons_are_listed_added_and_removed_from_the_admin_page():
+    client, book = _client_with_lessons()
+    listed = client.get("/api/admin/lessons").json()
+    assert listed["enabled"] and listed["lessons"][0]["text"] == "沼地では鉄が出にくい"
+    assert listed["lessons"][0]["situation"] == {"goal": "have"}
+    added = client.post("/api/admin/lessons", json={"text": "鉄は y=16 付近に多い", "condition": "鉄を探すとき"}, headers=GUARD)
+    assert added.status_code == 200
+    assert [n.source for n in book.lessons][-1] == "viewer:運営"
+    assert client.delete("/api/admin/lessons/L1", headers=GUARD).json() == {"ok": True}
+    assert [n.text for n in book.lessons] == ["鉄は y=16 付近に多い"]
+    assert client.delete("/api/admin/lessons/L1", headers=GUARD).status_code == 404
+
+
+def test_lesson_writes_need_the_guard_header_and_a_text():
+    client, _ = _client_with_lessons()
+    assert client.post("/api/admin/lessons", json={"text": "x"}).status_code == 403
+    assert client.delete("/api/admin/lessons/L1").status_code == 403
+    assert client.post("/api/admin/lessons", json={"text": "  "}, headers=GUARD).status_code == 400
+
+
+def test_without_a_lesson_book_the_list_is_empty_and_writes_are_refused():
+    client, _ = _client()
+    assert client.get("/api/admin/lessons").json() == {"enabled": False, "lessons": []}
+    assert client.post("/api/admin/lessons", json={"text": "x"}, headers=GUARD).status_code == 409

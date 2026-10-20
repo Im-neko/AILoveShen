@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -21,6 +21,13 @@ from loguru import logger
 from ailoveshen.application.ports.output.fast_judge import IFastJudge
 from ailoveshen.application.ports.output.lesson_store import ILessonStore
 from ailoveshen.application.ports.output.watch_recorder import IWatchRecorder
+from ailoveshen.application.use_cases.lesson_check import (
+    DUPLICATE,
+    WRONG,
+    LessonChecker,
+    LessonVerdict,
+    same_goal,
+)
 from ailoveshen.application.use_cases.lesson_compaction import LessonCompactor, LessonMerge
 from ailoveshen.domain.exceptions import AILoveShenError
 from ailoveshen.domain.value_objects import (
@@ -164,6 +171,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+OPERATOR_SOURCE = "viewer:運営"  # 運営（人）が管理ページで足した教訓。画面では「運営さんに教わった」。確認で消さない
+
+
 class LessonBook:
     """教訓帳を変える・読む唯一の経路（docs/design/35）。"""
 
@@ -180,6 +190,7 @@ class LessonBook:
         recorder: Optional[IWatchRecorder] = None,
         clock: Callable[[], str] = _now_iso,
         compactor: Optional[LessonCompactor] = None,
+        checker: Optional[LessonChecker] = None,
     ) -> None:
         """
         Args:
@@ -194,6 +205,7 @@ class LessonBook:
             recorder: 思い出した記録
             clock: 実時間（ISO 8601）
             compactor: 上限を超えたとき、似た教訓を統合する LLM（None: 弱いほうから消すだけ）
+            checker: 新しい教訓を、手引きに反しないか・既存と同じでないか確かめる LLM（None: 確かめない）
         """
         if mode not in ("jev", "rules"):
             raise ValueError(f"mode must be jev or rules, got {mode!r}")
@@ -209,6 +221,8 @@ class LessonBook:
         self._clock = clock
         self._compactor = compactor
         self._compacting: Optional[asyncio.Task[None]] = None
+        self._checker = checker
+        self._checking: set[asyncio.Task[None]] = set()
         self._lessons: list[Lesson] = []
         self._next_id = 1
 
@@ -276,9 +290,76 @@ class LessonBook:
         self._prune()
         self._save()
         self._compact_in_background()
+        self._check_in_background(lesson)
         where = "、".join(f"{k}={v}" for k, v in situation) or "いつでも"
         logger.info(f"教訓を書いた: {lesson.id} {lesson.text}（{condition or where}; {source}）")
         return lesson
+
+    def remove(self, lesson_id: str) -> bool:
+        """教訓を 1 件消す（人が間違いを直す入口。設計書 201）。消せたか。"""
+        if not any(n.id == lesson_id for n in self._lessons):
+            return False
+        self._lessons = [n for n in self._lessons if n.id != lesson_id]
+        self._save()
+        logger.info(f"教訓を消した（人が直した）: {lesson_id}")
+        return True
+
+    def _check_in_background(self, lesson: Lesson) -> None:
+        """新しい教訓を、裏で確かめる（書く側は待たない）。動いているイベントループがなければ何もしない。"""
+        if self._checker is None or lesson.source == OPERATOR_SOURCE:
+            return  # 人が足したものは、LLM に二度目の判定をさせない
+        try:
+            task = asyncio.get_running_loop().create_task(self._check(lesson))
+        except RuntimeError:
+            logger.debug("イベントループがないので、教訓の確認は飛ばす")
+            return
+        self._checking.add(task)
+        task.add_done_callback(self._checking.discard)
+
+    async def _check(self, lesson: Lesson) -> None:
+        """手引きに反する教訓は消し、既存と同じ教訓は既存に重ねる。確かめられないときは、そのまま残す。"""
+        assert self._checker is not None
+        try:
+            verdict = await self._checker.check(lesson, tuple(self._lessons))
+        except Exception as e:  # noqa: BLE001 - 確かめられなくても、教訓は残してプレイは続ける
+            logger.warning(f"教訓を確かめられなかった（残す）: {lesson.id}: {type(e).__name__}: {e}")
+            return
+        self._record_check(lesson, verdict)
+        if not any(n.id == lesson.id for n in self._lessons):
+            return  # 答えを待つ間に、統合や整理で消えている
+        if verdict.kind == WRONG:
+            self._lessons = [n for n in self._lessons if n.id != lesson.id]
+            self._save()
+            logger.warning(f"教訓を消した（手引きに反する）: {lesson.id} {lesson.text}: {verdict.reason}")
+        elif verdict.kind == DUPLICATE:
+            old = next((n for n in self._lessons if n.id == verdict.duplicate_of), None)
+            if old is None or not same_goal(old, lesson):
+                return
+            merged = replace(
+                old,
+                taught=old.taught + lesson.taught,
+                condition=old.condition or lesson.condition,
+                source=lesson.source if lesson.source.startswith("viewer:") else old.source,
+            )
+            self._lessons = [merged if n.id == old.id else n for n in self._lessons if n.id != lesson.id]
+            self._save()
+            logger.info(f"教訓を既存に重ねた: {lesson.id} → {old.id} {old.text}: {verdict.reason}")
+
+    def _record_check(self, lesson: Lesson, verdict: LessonVerdict) -> None:
+        if self._recorder is None:
+            return
+        try:
+            self._recorder.record(
+                {
+                    "moment": "check",
+                    "lesson": {"id": lesson.id, "text": lesson.text, "source": lesson.source},
+                    "verdict": verdict.kind,
+                    "duplicate_of": verdict.duplicate_of,
+                    "reason": verdict.reason,
+                }
+            )
+        except Exception as e:  # noqa: BLE001 - 記録の失敗でプレイを止めない
+            logger.warning(f"教訓の確認の記録を残せなかった: {e}")
 
     async def recall(
         self,
@@ -522,6 +603,7 @@ class LessonBook:
         ]
         for n in weak:
             logger.info(f"効かない教訓を消した: {n.id} {n.text}（{n.used} 回思い出して効かなかった）")
+            self._record_removed(n, "weak")
         self._lessons = [n for n in self._lessons if n not in weak]
         while len(self._lessons) > limit:
             candidates = [n for n in self._lessons if not n.proven] or self._lessons
@@ -531,6 +613,19 @@ class LessonBook:
             )
             self._lessons.remove(worst)
             logger.info(f"教訓帳がいっぱいなので消した: {worst.id} {worst.text}")
+            self._record_removed(worst, "full")
+
+    def _record_removed(self, lesson: Lesson, why: str) -> None:
+        """整理で消した教訓を、全部の中身つきで記録に残す。効かなかったのと間違いは同じではなく、確かな事実が
+        消えていることがある（手引きに上げる候補を `tools/lesson_promotion.py --pruned` で見直す。設計書 201）。"""
+        if self._recorder is None:
+            return
+        try:
+            self._recorder.record(
+                {"moment": "pruned", "why": why, "lesson": {**asdict(lesson), "situation": dict(lesson.situation)}}
+            )
+        except Exception as e:  # noqa: BLE001 - 記録の失敗でプレイを止めない
+            logger.warning(f"消した教訓の記録を残せなかった: {e}")
 
     def _save(self) -> None:
         try:

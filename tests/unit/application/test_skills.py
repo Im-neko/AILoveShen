@@ -87,6 +87,11 @@ class TestSkillTools:
         with pytest.raises(ToolCallError, match="needs what"):
             parse_tool_call(ToolChoice("write_skill", {"name": "hunt", "intent": "i"}))
 
+    def test_a_skill_whose_expects_refers_to_an_argument_needs_arguments(self):
+        refers = SkillInfo(name="dig", description="掘る", version=1, expects={"predicate": "height", "y": "$target"})
+        assert refers.needs_arguments  # params に required がなくても、$target なしでは判定できない
+        assert not SkillInfo(name="dig", description="掘る", version=1, expects={"predicate": "progress"}).needs_arguments
+
     def test_skills_that_fit_the_goal_come_first(self):
         other = SkillInfo(name="torches", description="松明", version=1, successes=9, verified=True)
         trial = SkillInfo(
@@ -189,6 +194,51 @@ class TestSkillWriter:
         assert isinstance(await writer.write("other", "x", Activity(), (), []), WrittenSkill)
         now[0] = 3601.0
         assert isinstance(await writer.write("hunt", "x", Activity(), (), []), WrittenSkill)
+
+    @pytest.mark.asyncio
+    async def test_an_unsaved_try_only_checks_the_skill_and_keeps_the_draft_for_the_next_fix(self, parts):
+        generator, prompts, bridge = parts
+        written = await SkillWriter(generator, prompts, bridge).write(
+            "hunt", "狩る", Activity(), (), [], unsaved=True
+        )
+        assert written.version == 0 and written.draft is not None and written.draft.code
+        bridge.check_skill.assert_awaited_once()
+        bridge.save_skill.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_try_that_worked_is_saved_as_it_was_by_write_skill_without_writing_again(self, parts):
+        generator, prompts, bridge = parts
+        writer = SkillWriter(generator, prompts, bridge)
+        tried = await writer.write("hunt", "狩る", Activity(), (), [], unsaved=True)
+        writer.mark_proven("hunt", {"animal": "pig"})
+        calls = generator.generate_json.await_count
+        saved = await writer.write("hunt", "狩る", Activity(), (), [])
+        assert generator.generate_json.await_count == calls  # 書き直さない
+        name, draft = bridge.save_skill.await_args.args
+        assert draft == tried.draft and saved.trial_args == {"animal": "pig"} and saved.version == 1
+
+    @pytest.mark.asyncio
+    async def test_the_next_try_after_a_failure_fixes_the_last_try_not_the_saved_version(self, parts):
+        generator, prompts, bridge = parts
+        bridge.skill.return_value = HUNT
+        writer = SkillWriter(generator, prompts, bridge)
+        generator.generate_json.return_value = {**DRAFT, "diagnosis": FIX_DIAGNOSIS}
+        first = await writer.write("hunt", "狩る", Activity(), (), [HUNT], unsaved=True)
+        generator.generate_json.return_value = {**DRAFT, "diagnosis": FIX_DIAGNOSIS, "code": "export default async function (t) { return t.done('2') }"}
+        await writer.write("hunt", "直す", Activity(), (), [HUNT], "trial failed", unsaved=True)
+        previous = prompts.build_skill_prompt.call_args.kwargs["previous"]
+        assert previous.code == first.draft.code and previous.version == 0
+
+    @pytest.mark.asyncio
+    async def test_tries_have_their_own_hourly_limit(self, parts):
+        generator, prompts, bridge = parts
+        codes = iter(f"export default async function (t) {{ return t.done('{i}') }}" for i in range(10))
+        generator.generate_json.side_effect = lambda *a, **k: {**DRAFT, "diagnosis": FIX_DIAGNOSIS, "code": next(codes)}
+        writer = SkillWriter(generator, prompts, bridge, rewrites_per_hour=1, tries_per_hour=2)
+        for _ in range(2):
+            assert isinstance(await writer.write("hunt", "x", Activity(), (), [], unsaved=True), WrittenSkill)
+        assert isinstance(await writer.write("hunt", "x", Activity(), (), [], unsaved=True), NotWritten)
+        assert isinstance(await writer.write("hunt", "x", Activity(), (), []), WrittenSkill)  # 保存の枠は別
 
 
 class TestRawBotSkills:
@@ -400,7 +450,7 @@ class TestSkillStep:
         assert self._published(SkillLearnedEvent)[0].description == "近くの動物を狩る"
         assert self.prompt_builder.build_tool_prompt.call_args.kwargs["skills"] == [HUNT]
         offered = {t.name for t in self.text_generator.choose_tool.call_args.args[1]}
-        assert "run_skill" in offered and "write_skill" not in offered
+        assert "run_skill" in offered and "write_skill" in offered  # 技を書く設定なら、道具は固定で出ている（設計書 177）
 
     @pytest.mark.asyncio
     async def test_a_failure_is_kept_for_the_fix_and_write_skill_tries_the_new_version(
@@ -443,15 +493,15 @@ class TestSkillStep:
                 name="hunt", version=2, ok=False, ended=ended, reason="no pig"
             )
             report = await use_case.execute(_session(HAVE_PLANKS))
-            note = "Find the cause first" in report.result.result
+            note = "runs succeeded" in report.result.result
             assert note is expected, ended
             if expected:
-                assert "write_skill (name hunt" in report.result.result
+                assert "write_skill with the same name hunt" in report.result.result
         bridge.run_skill.return_value = SkillRun(
             name="hunt", version=2, ok=True, ended="done", summary="hunted a pig"
         )
         report = await use_case.execute(_session(HAVE_PLANKS))
-        assert "Find the cause first" not in report.result.result
+        assert "runs succeeded" not in report.result.result
 
     @pytest.mark.asyncio
     async def test_a_refused_run_does_not_replace_the_failure_shown_for_the_fix(
@@ -487,6 +537,70 @@ class TestSkillStep:
         report = await use_case.execute(_session(HAVE_PLANKS))
         assert not report.result.ok and "3 times" in report.result.result
         bridge.run_skill.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_try_skill_runs_the_draft_unsaved_and_says_what_moved(self, bridge, watcher):
+        from ailoveshen.domain.value_objects import SkillDraft
+
+        draft = SkillDraft(description="掘る", params={}, expects={"predicate": "progress"}, code="x")
+        writer = AsyncMock()
+        writer.write.return_value = WrittenSkill("dig_try", 0, "掘る", {"depth": 3}, draft=draft)
+        writer.mark_proven = Mock()
+        use_case = self._use_case(bridge, watcher, writer)
+        bridge.try_skill.return_value = SkillRun(
+            name="try", version=0, ok=False, ended="fail", reason="no pickaxe",
+            moved_from={"x": 1, "y": 64, "z": 2}, moved_to={"x": 1, "y": 60, "z": 2}, inventory_change={"dirt": 3},
+        )
+        self.text_generator.choose_tool.return_value = ToolChoice(
+            "try_skill", {"name": "dig_try", "what": "掘る", "intent": "試す"}
+        )
+        session = _session(HAVE_PLANKS)
+
+        report = await use_case.execute(session)
+
+        bridge.try_skill.assert_awaited_once_with(draft, {"depth": 3})
+        assert writer.write.await_args.kwargs["unsaved"] is True
+        bridge.save_skill.assert_not_awaited()
+        result = report.result.result
+        assert "trial of dig_try (not saved)" in result and "moved 1,64,2 -> 1,60,2; inventory dirt +3" in result
+        assert "try_skill again" in result
+        assert use_case._skill_failures["dig_try"].startswith("trial of dig_try")  # 次の直しに見せる
+        assert use_case._hands.current() == ()  # 試しは外す手に数えない
+
+        bridge.try_skill.return_value = SkillRun(name="try", version=0, ok=True, ended="done", summary="dug")
+        report = await use_case.execute(session)
+        assert "Save it with write_skill" in report.result.result
+        writer.mark_proven.assert_called_once_with("dig_try", {"depth": 3})
+        assert "dig_try" not in use_case._skill_failures
+
+    @pytest.mark.asyncio
+    async def test_the_progress_of_a_running_skill_is_put_on_the_session_and_cleared_when_it_ends(
+        self, bridge, watcher, monkeypatch
+    ):
+        from ailoveshen.application.use_cases import play
+
+        monkeypatch.setattr(play, "SKILL_NOTE_SECONDS", 0.01)
+        use_case = self._use_case(bridge, watcher, AsyncMock())
+        session = _session(HAVE_PLANKS)
+        seen = []
+        bridge.state.return_value = {
+            "self": {"position": {"x": 1, "y": 30, "z": 2}},
+            "skill": {"name": "hunt", "seconds": 7, "log": ["step 2 now"]},
+        }
+
+        async def slow_run(name, args, version):
+            await asyncio.sleep(0.05)
+            seen.append(session.skill_note)  # 動いている間
+            return SkillRun(name="hunt", version=2, ok=True, ended="done", summary="hunted")
+
+        bridge.run_skill.side_effect = slow_run
+        self.text_generator.choose_tool.return_value = ToolChoice("run_skill", {"name": "hunt", "intent": "狩る"})
+
+        await use_case.execute(session)
+
+        assert "技「hunt」を実行して7秒" in seen[0] and "技のログ: step 2 now" in seen[0]
+        assert session.skill_note == ""  # 終わったら消える
+        assert session.activity().skill_note == ""
 
 
 class TestSkillPrompts:

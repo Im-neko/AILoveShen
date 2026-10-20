@@ -75,7 +75,7 @@ def flags_of(names: set[str]) -> dict[str, bool]:
     return {
         "can_look": "look_screen" in names,
         "skills": any(n in names for n in SKILL_TOOLS),
-        "experiment": "inspect" in names,
+        "write_skill": "write_skill" in names,
         "advisor": ADVISOR in names,
     }
 

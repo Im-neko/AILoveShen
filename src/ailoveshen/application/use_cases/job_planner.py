@@ -49,8 +49,12 @@ _PREDICATES = [p for p in GoalPredicate if p in STEP_PREDICATES]
 _MATERIAL_PREDICATES = frozenset({GoalPredicate.HAVE, GoalPredicate.PLACED, GoalPredicate.STORED})
 
 
-def _step_schema(levels: int) -> dict[str, Any]:
-    """小目標 1 つの形。`levels` は、この下に前提を何段書けるか。"""
+def _step_schema(levels: int, nested: bool = False) -> dict[str, Any]:
+    """
+    小目標 1 つの形。`levels` は、この下に前提を何段書けるか。`nested` は前提（needs）の中の小目標で、理由は
+    省いてよい（2026-10-17: 計画の書き直し 66 回のうち 53 回が `needs[].reason is required`。1 回 19 秒かかる。
+    理由は読み出しで空を許している）。
+    """
     properties: dict[str, Any] = {
         **_spec_properties(_PREDICATES),
         "reason": {"type": "string", "description": "Why this step, one short Japanese sentence"},
@@ -62,9 +66,9 @@ def _step_schema(levels: int) -> dict[str, Any]:
             "description": "Prerequisites: what has to be there before this step, in order "
             "(a bucket needs iron). Skipped when this step is already met; leave empty when "
             "nothing is needed",
-            "items": _step_schema(levels - 1),
+            "items": _step_schema(levels - 1, nested=True),
         }
-    return {"type": "object", "properties": properties, "required": ["predicate", "reason"]}
+    return {"type": "object", "properties": properties, "required": ["predicate"] if nested else ["predicate", "reason"]}
 
 
 def plan_schema() -> dict[str, Any]:
@@ -172,6 +176,7 @@ class JobPlanner:
         bridge: IMinecraftBridge,
         objectives: ObjectiveKeeper,
         max_attempts: int = 3,
+        guide_notes: str = "",
     ) -> None:
         """
         Args:
@@ -180,12 +185,14 @@ class JobPlanner:
             bridge: 書いた条件をブリッジが判定できるか確かめる
             objectives: 書いた計画を大目標に反映して保存する
             max_attempts: あきらめるまでに書かせる回数
+            guide_notes: 手引きの「計画のための要点」（計画のプロンプトの固定の部分に入れる）
         """
         self._text_generator = text_generator
         self._prompt_builder = prompt_builder
         self._bridge = bridge
         self._objectives = objectives
         self._max_attempts = max_attempts
+        self._guide_notes = guide_notes
 
     async def plan(
         self,
@@ -217,13 +224,17 @@ class JobPlanner:
         error = ""
         for attempt in range(1, self._max_attempts + 1):
             prompt = self._prompt_builder.build_plan_prompt(
-                current, activity, replan_reason=replan_reason, previous_error=error
+                current,
+                activity,
+                replan_reason=replan_reason,
+                previous_error=error,
+                guide_notes=self._guide_notes,
             )
             try:
                 data = await self._text_generator.generate_json(prompt, schema, purpose="plan")
                 jobs = own_condition_last(parse_plan(data), current)
                 trees, met = await self._check_bridge(jobs, current)
-                check_plan(jobs, current, await self._builds(), trees, met)
+                check_plan(jobs, current, await self._builds(), trees, met, await self._facility_names())
                 await self._objectives.set_jobs(
                     plan, current.id, jobs, planned=True, keep_done_steps=keep_done_steps
                 )
@@ -253,6 +264,14 @@ class JobPlanner:
             return {str(b.get("name")) for b in await self._bridge.builds()}
         except AILoveShenError as e:
             logger.debug(f"建物の一覧を読めなかった: {e}")
+            return None
+
+    async def _facility_names(self) -> Optional[set[str]]:
+        """登録済みの施設の名前（分からなければ None: 施設の名前は確かめない）。"""
+        try:
+            return {str(f.get("name")) for f in await self._bridge.facilities()}
+        except AILoveShenError as e:
+            logger.debug(f"施設の一覧を読めなかった: {e}")
             return None
 
     async def _check_bridge(

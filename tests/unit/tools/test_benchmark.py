@@ -484,3 +484,56 @@ class TestToolCounts:
         s = tool.summarize_task(rows)
         assert s["median_refused"] == 4
         assert s["median_advised"] == 4
+
+
+class TestRawFree:
+    """判断なしのプレイ（設計書 191）: 条件でなく、節目に着いた秒を測る。"""
+
+    def test_raw_free_is_a_named_scenario_that_does_not_run_by_default(self):
+        config = tool.load_config()
+
+        assert "raw_free" not in {t.name for t in tool.load_tasks(config)}
+        task = tool.load_tasks(config, ["raw_free"])[0]
+        assert task.control == "raw" and task.conditions == () and task.freeze_day is False
+
+    def test_the_raw_bridge_only_allows_raw_skills(self):
+        assert tool.RAW_BRIDGE_ENV == {"BRIDGE_RAW_BOT": "1", "BRIDGE_RAW_ONLY": "1"}
+
+    def test_milestones_latch_from_what_was_held_and_what_was_placed(self):
+        milestones = tool.bench_milestones
+        tracker = milestones.MilestoneTracker()
+
+        assert tracker.update(10.0, {"oak_log": 2}) == ["log"]
+        # 作ってすぐ置くと持ち物に残らない: 置いたブロックでも着いたことにする
+        assert tracker.update(30.0, {"oak_planks": 4}, placed={"crafting_table"}) == ["planks", "crafting_table"]
+        # 持ち物から消えても戻らない
+        assert tracker.update(40.0, {}, placed=set()) == []
+        assert tracker.at == {"log": 10.0, "planks": 30.0, "crafting_table": 30.0}
+        assert not tracker.finished
+        tracker.update(900.0, {"diamond": 1})
+        assert tracker.finished and tracker.at["diamond"] == 900.0
+
+    def test_an_empty_stack_is_not_held(self):
+        assert tool.bench_milestones.reached({"oak_log": 0, "stone_pickaxe": 1}) == {"stone_pickaxe"}
+
+    def test_the_summary_counts_skills_versions_and_llm_calls(self, tmp_path):
+        skills = tmp_path / "bridge" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "chop.json").write_text(json.dumps({"name": "chop", "versions": [{"successes": 0, "uses": 2}, {"successes": 5, "uses": 6}]}))
+        generations = tmp_path / "logs" / "generations"
+        generations.mkdir(parents=True)
+        (generations / "gen-1.jsonl").write_text('{"purpose": "tool"}\n{"purpose": "skill_write"}\n{"purpose": "tool_after_failure"}\n')
+
+        summary = tool.raw_summary(tmp_path)
+
+        assert summary["skills_saved"] == 1 and summary["skill_versions"] == 2
+        assert summary["skill_successes"] == 5 and summary["skill_uses"] == 8
+        assert summary["llm_calls"] == {"tool": 1, "skill_write": 1, "tool_after_failure": 1}
+        assert summary["tool_steps"] == 2
+
+    def test_raw_free_has_no_guides_and_raw_guided_has_them(self):
+        tasks = {t.name: t for t in tool.load_tasks(tool.load_config(), ["raw_free", "raw_guided"])}
+
+        assert tasks["raw_free"].guides is False and tasks["raw_guided"].guides is True
+        assert tasks["raw_guided"].control == "raw"
+

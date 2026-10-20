@@ -12,6 +12,7 @@ from ailoveshen.application.use_cases.house import (
     PROVISIONAL_HOUSE_SCHEMA,
     HouseDesigner,
 )
+from ailoveshen.application.use_cases.goal_vocabulary import goal_schema
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
@@ -417,6 +418,32 @@ class TestStartPlay:
         assert session.plan.next_id == 8
 
     @pytest.mark.asyncio
+    async def test_saved_plan_carries_on_with_the_mission_written_after_the_first(
+        self, text_generator, prompt_builder, bridge, events, store
+    ):
+        """達成して書いた次の最終目標と足した定石の段は、設定の最終目標が同じなら再起動で戻る。"""
+        text_generator.generate_json.return_value = VALID_DESIGN
+        step = PlaybookStep(name="armor", title="鉄の防具", conditions=(SWORD,), keep=True)
+        store.load.return_value = SavedPlan(
+            mission=Mission("鉄の装備で遠くを探索する"),
+            origin=MISSION,
+            pending=(),
+            finished=(),
+            next_id=8,
+            missions_done=(MISSION.text,),
+            extra_playbook=(step,),
+        )
+
+        session = await self._use_case(
+            text_generator, prompt_builder, bridge, events, store
+        ).execute()
+
+        assert session.plan.mission == Mission("鉄の装備で遠くを探索する")
+        assert session.plan.missions_done == (MISSION.text,)
+        assert session.plan.extra_playbook == (step,)
+        assert session.plan.origin == MISSION
+
+    @pytest.mark.asyncio
     async def test_saved_plan_for_another_mission_is_not_used(
         self, text_generator, prompt_builder, bridge, events, store
     ):
@@ -615,18 +642,18 @@ class TestAdvancePlay:
         assert use_case._goal_store.save.call_count == 2  # 決めたとき、1 手のあと
 
     @pytest.mark.asyncio
-    async def test_predicates_offered_follow_the_house(self, use_case, text_generator, bridge):
-        """家・拠点・チェスト・明かりの小目標は、当てはまるときだけ出す。"""
+    async def test_predicates_offered_follow_the_house(self, use_case, text_generator, bridge, prompt_builder):
+        """家・拠点・チェスト・明かりの小目標は、当てはまるときだけ出す（本文の「今使える小目標」。スキーマは変えない: 設計書 177）。"""
         text_generator.generate_json.return_value = PLANKS
 
         await use_case.execute(_session())
-        schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["predicate"]["enum"] == ["have", "through_night", "explored", "found"]
+        offered = [p.value for p in prompt_builder.build_goal_prompt.call_args.kwargs["predicates"]]
+        assert offered == ["have", "through_night", "explored", "found"]
 
         bridge.observe.return_value = _obs(goal=False, has_plan=True)
         await use_case.execute(_session())
-        schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["predicate"]["enum"] == [
+        offered = [p.value for p in prompt_builder.build_goal_prompt.call_args.kwargs["predicates"]]
+        assert offered == [
             "built",
             "have",
             "through_night",
@@ -638,8 +665,8 @@ class TestAdvancePlay:
             goal=False, has_plan=True, house_complete=True, has_home=True
         )
         await use_case.execute(_session())
-        schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["predicate"]["enum"] == [
+        offered = [p.value for p in prompt_builder.build_goal_prompt.call_args.kwargs["predicates"]]
+        assert offered == [
             "have",
             "at_home",
             "through_night",
@@ -650,6 +677,7 @@ class TestAdvancePlay:
             "planted",
             "farmed",
             "leveled",
+            "paved",
             "explored",
             "found",
         ]
@@ -659,8 +687,8 @@ class TestAdvancePlay:
             goal=False, has_plan=True, house_complete=True, has_home=True, time_phase="night"
         )
         await use_case.execute(_session())
-        schema = text_generator.generate_json.call_args.args[1]
-        assert "cleared" in schema["properties"]["predicate"]["enum"]
+        offered = [p.value for p in prompt_builder.build_goal_prompt.call_args.kwargs["predicates"]]
+        assert "cleared" in offered
 
     @pytest.mark.asyncio
     async def test_goal_rejected_by_bridge_is_retried_with_reason(
@@ -1353,8 +1381,7 @@ class TestAdvancePlay:
         added = _published(events, ObjectiveAddedEvent)[0]
         assert (added.title, added.position, added.requested_by) == ("剣を持つ", 3, "")
         schema = text_generator.generate_json.call_args.args[1]
-        change = schema["properties"]["plan_changes"]["items"]
-        assert change["properties"]["id"]["enum"] == ["m1", "m2"]
+        assert schema == goal_schema()  # 大目標の ID はスキーマに入れない（設計書 177）
         store.save.assert_called_with(session.plan)
 
     @pytest.mark.asyncio
@@ -2015,8 +2042,7 @@ class TestFailureDiagnosis:
         kwargs = prompt_builder.build_goal_prompt.call_args.kwargs
         assert not kwargs["retry_allowed"]
         assert "2 times in a row" in kwargs["previous_error"]
-        schema = text_generator.generate_json.call_args.args[1]
-        assert schema["properties"]["remedy"]["enum"] == ["change"]
+        assert text_generator.generate_json.call_args.args[1] == goal_schema(after_failure=True)
         assert session.goal.spec.predicate == GoalPredicate.EXPLORED
 
 
@@ -2070,9 +2096,7 @@ class TestDeath:
         # 死んだことは行き詰まった失敗ではないので、行動の記録はないが、分析と教訓は書かせる（設計書 105）
         assert prompt_builder.build_goal_prompt.call_args.kwargs["failure_record"] == ()
         assert prompt_builder.build_goal_prompt.call_args.kwargs["retry_allowed"] is False
-        schema = text_generator.generate_json.call_args.args[1]
-        assert {"diagnosis", "remedy", "lesson"} <= set(schema["required"])
-        assert schema["properties"]["remedy"]["enum"] == ["change"]
+        assert text_generator.generate_json.call_args.args[1] == goal_schema(after_failure=True)
         assert session.deaths_at_goal == 1  # 新しい小目標は、今の数から数える
 
     @pytest.mark.asyncio

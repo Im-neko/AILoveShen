@@ -2,6 +2,8 @@
 
 from unittest.mock import AsyncMock, Mock
 
+import time
+
 import pytest
 
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
@@ -189,9 +191,27 @@ async def test_no_map_while_moving_and_an_error_after_the_last_try():
     await planner.prepare(plan)
     text_generator.generate_json.assert_not_awaited()
 
-    planner, _, _, _ = _planner([{"concept": ""}] * 3)
-    with pytest.raises(TextGenerationError, match="no valid town map"):
-        await planner.prepare(_defined())
+    planner, text_generator, _, _ = _planner([{"concept": ""}] * 3)
+    plan = _defined()
+    await planner.prepare(plan)  # 描けなくても止めない（2026-10-19: 出力の上限で切れ続け、プレイを始められなかった）
+    assert plan.town_map is None and text_generator.generate_json.await_count == 3
+    await planner.prepare(plan)  # しばらくは頼み直さない
+    assert text_generator.generate_json.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_a_map_that_could_not_be_drawn_keeps_the_old_one_and_is_asked_again_later(monkeypatch):
+    old = TownMap(0, 0, tuple(base_zones(_rows())), concept="前", stage=0)
+    planner, text_generator, _, _ = _planner([TextGenerationError("cut at 8192"), ANSWER_ON_ROAD])
+    plan = _defined(town_stage=1, town_map=old)
+
+    await planner.prepare(plan)
+    assert plan.town_map is old
+
+    now = time.monotonic()
+    monkeypatch.setattr(time, "monotonic", lambda: now + 301)
+    await planner.prepare(plan)
+    assert plan.town_map.stage == 1
 
 
 def test_an_area_that_touches_no_road_is_sent_back_and_a_mine_may_be_off_the_road():

@@ -468,19 +468,54 @@ async def test_the_cache_tokens_the_proxy_reports_are_logged():
 
 
 @pytest.mark.asyncio
-async def test_cache_control_goes_on_the_system_and_in_front_of_each_cache_break_for_claude():
+async def test_cache_control_goes_in_front_of_each_cache_break_for_claude_and_only_the_last_is_five_minutes():
     from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
 
     server = _Server(_answer("a"))
     claude = _claude(server, prompt_cache=True)
     await claude.generate(f"rules\n{CACHE_BREAK}goal\n{CACHE_BREAK}state", system_instruction="persona", purpose="goal")
     system, user = server.requests[0]["messages"]
-    assert system["content"] == [{"type": "text", "text": with_common_system("persona", "goal"), "cache_control": {"type": "ephemeral"}}]
+    # ツールのない呼び出しのシステム指示は短くてキャッシュの最小に届かないので、印は付けない（最初の印が全部を固める）
+    assert system["content"] == with_common_system("persona", "goal")
     assert user["content"] == [
-        {"type": "text", "text": "rules\n", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "rules\n", "cache_control": {"type": "ephemeral", "ttl": "1h"}},
         {"type": "text", "text": "goal\n", "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": "state"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_tool_call_marks_the_system_so_the_tool_definitions_in_front_of_it_are_cached():
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+    call = {"function": {"name": "dig", "arguments": "{}"}}
+    server = _Server(_answer(tool_calls=[call]))
+    claude = _claude(server, prompt_cache=True)
+    await claude.choose_tool(f"rules\n{CACHE_BREAK}state", TOOLS, system_instruction="persona", purpose="tool")
+    system, user = server.requests[0]["messages"]
+    assert system["content"] == [
+        {"type": "text", "text": with_common_system("persona", "tool"), "cache_control": {"type": "ephemeral", "ttl": "1h"}}
+    ]
+    assert user["content"] == [
+        {"type": "text", "text": "rules\n", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "state"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_schema_goes_where_the_slot_is_and_at_the_end_without_one():
+    """設計書 177: 変わらないスキーマは、最初の境目の手前（キャッシュに入る所）に置ける。"""
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK, SCHEMA_SLOT
+
+    server = _Server(_answer('{"color": "red"}'), _answer('{"color": "red"}'))
+    claude = _claude(server, prompt_cache=True)
+    await claude.generate_json(f"rules{SCHEMA_SLOT}{CACHE_BREAK}state", SCHEMA, purpose="plan")
+    first, last = server.requests[0]["messages"][-1]["content"]
+    assert "JSON Schema" in first["text"] and first["text"].startswith("rules") and "cache_control" in first
+    assert last == {"type": "text", "text": "state"}
+    await claude.generate_json("plain", SCHEMA, purpose="plan")
+    plain = server.requests[1]["messages"][-1]["content"]
+    assert plain.startswith("plain") and "JSON Schema" in plain and SCHEMA_SLOT not in plain
 
 
 @pytest.mark.asyncio
@@ -534,7 +569,7 @@ async def test_a_model_that_is_not_claude_gets_its_depth_as_reasoning_effort_and
     code = server.requests[1]
     assert code["model"] == "claude-sonnet-5-5"
     assert code["thinking"] == {"type": "adaptive"} and code["reasoning_effort"] == "high"
-    assert code["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert code["messages"][1]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
 @pytest.mark.asyncio
@@ -559,4 +594,93 @@ async def test_every_call_carries_the_same_common_system_except_the_mechanical_o
     assert systems[1] == COMMON_SYSTEM + "\npersona" and systems[1].startswith(systems[0])
     assert systems[2] == "katakana only"
     assert systems[3] is None
-    assert NO_COMMON_SYSTEM == {"reading", "lesson_compaction"}
+    assert NO_COMMON_SYSTEM == {"reading", "lesson_compaction", "lesson_check"}
+
+
+def _many_optional(n: int) -> dict:
+    return {"type": "object", "properties": {f"p{i}": {"type": "string"} for i in range(n)}, "required": []}
+
+
+def test_optional_parameters_are_counted_through_nested_objects():
+    from ailoveshen.infrastructure.adapters.local_llm.schema_check import optional_parameters
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "a": {"type": "string"},
+            "b": {"type": "array", "items": {"type": "object", "properties": {"x": {}, "y": {}}, "required": ["x"]}},
+        },
+        "required": ["a"],
+    }
+    assert optional_parameters(schema) == 2  # b と、items の y
+    assert optional_parameters({"type": "string"}) == 0
+
+
+@pytest.mark.asyncio
+async def test_claude_is_not_sent_a_schema_with_too_many_optional_parameters_but_other_models_are():
+    seen = []
+
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        body = json.loads(request.content)
+        seen.append((body["model"], "response_format" in body))
+        return httpx.Response(200, json=_answer("{}"))
+
+    big, small = _many_optional(25), _many_optional(24)
+    claude = OpenAICompatTextGenerator("http://lite/v1", model="claude-haiku-5-5", transport=httpx.MockTransport(server))
+    await claude.generate_json("x", big, purpose="goal")
+    await claude.generate_json("x", big, purpose="goal")
+    await claude.generate_json("x", small, purpose="plan")
+    other = OpenAICompatTextGenerator("http://lite/v1", model="gemini-3.8-flash", transport=httpx.MockTransport(server))
+    await other.generate_json("x", big, purpose="goal")
+    assert seen == [("claude-haiku-5-5", False), ("claude-haiku-5-5", False), ("claude-haiku-5-5", True), ("gemini-3.8-flash", True)]
+    assert claude._no_response_format == set()  # 断られて外したのではない
+
+
+@pytest.mark.asyncio
+async def test_a_transient_gateway_error_is_asked_again_instead_of_failing_the_step(monkeypatch):
+    from ailoveshen.infrastructure.adapters.local_llm import openai_compat_text_generator as module
+
+    monkeypatch.setattr(module, "TRANSIENT_DELAYS", (0.0, 0.0))
+    seen = []
+
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        seen.append(1)
+        if len(seen) <= 2:
+            return httpx.Response(502, text="<!DOCTYPE html>bad gateway")
+        return httpx.Response(200, json=_answer("ok"))
+
+    local = OpenAICompatTextGenerator("http://local/v1", transport=httpx.MockTransport(server))
+    assert await local.generate("x", purpose="tool") == "ok"
+    assert len(seen) == 3
+
+    seen.clear()
+    always = OpenAICompatTextGenerator(
+        "http://local/v1",
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"data": [{"id": "m"}]}) if r.url.path.endswith("/models") else httpx.Response(502, text="down")),
+    )
+    with pytest.raises(TextGenerationError, match="502"):
+        await always.generate("x", purpose="tool")  # 2 回やり直しても通らなければ、エラーにする
+
+
+@pytest.mark.asyncio
+async def test_a_structured_answer_cut_by_the_limit_while_thinking_is_asked_again_without_thinking():
+    cut = {"choices": [{"message": {"content": '{"color": "re'}, "finish_reason": "length"}]}
+    full = {"choices": [{"message": {"content": '{"color": "red"}'}, "finish_reason": "stop"}]}
+    seen = []
+
+    def server(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "m"}]})
+        body = json.loads(request.content)
+        seen.append(body["chat_template_kwargs"]["enable_thinking"])
+        return httpx.Response(200, json=cut if len(seen) == 1 else full)
+
+    local = OpenAICompatTextGenerator(
+        "http://local/v1", transport=httpx.MockTransport(server), thinking_levels={"goal_after_failure": "medium"}
+    )
+    assert await local.generate_json("pick", SCHEMA, purpose="goal_after_failure") == {"color": "red"}
+    assert seen == [True, False]  # 切れた答えを書き直させず、思考なしで 1 回聞き直した

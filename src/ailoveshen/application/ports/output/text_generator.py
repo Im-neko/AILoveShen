@@ -13,6 +13,10 @@ from ailoveshen.domain.value_objects import Screenshot
 # 変わる部分を後ろに並べ、境目に 1 つ置く。キャッシュの境目を指定できるモデル（LiteLLM 経由の Claude）は
 # ここで分けて cache_control を付け、ほかのアダプターは印を取り除く（取り除いたあとは何も変わらない）
 CACHE_BREAK = "\ue000"
+# `generate_json` が JSON Schema の説明を入れる場所（docs/design/177）。印がなければ本文の最後に足す。スキーマは
+# 呼び出しごとに変わらない用途だけ、変わらない部分の最後（最初の CACHE_BREAK の手前）に置く: 本文の後ろに足すと、
+# 毎回違う状態の後ろにあって、キャッシュに入らない
+SCHEMA_SLOT = "\ue001"
 
 
 def split_cache_breaks(prompt: str) -> list[str]:

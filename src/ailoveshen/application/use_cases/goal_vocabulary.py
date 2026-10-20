@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -22,8 +24,10 @@ from ailoveshen.domain.value_objects import (
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    Mission,
     NoteKind,
     Job,
+    PlaybookStep,
     TownDefinition,
     TownSite,
     TownStage,
@@ -312,57 +316,45 @@ def _conditions_schema() -> dict[str, Any]:
     }
 
 
-def _note_change_schema(note_ids: list[str], goals: int, viewers: list[str]) -> dict[str, Any]:
-    """メモの編集 1 つ。書ける種類と根拠は、今示しているものに合わせる。"""
-    kinds = [NoteKind.PLAN.value]
-    properties: dict[str, Any] = {
-        "op": {"type": "string", "enum": [o.value for o in NoteOp]},
-        "text": {
-            "type": "string",
-            "description": f"add: the note, one sentence of at most {MAX_NOTE_CHARS} characters",
+def _note_change_schema() -> dict[str, Any]:
+    """メモの編集 1 つ。示している ID・番号・視聴者は本文にあり、答えのあとにコードで確かめる（設計書 177）。"""
+    return {
+        "type": "object",
+        "properties": {
+            "op": {"type": "string", "enum": [o.value for o in NoteOp]},
+            "text": {
+                "type": "string",
+                "description": f"add: the note, one sentence of at most {MAX_NOTE_CHARS} characters",
+            },
+            "goal": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "lesson: the number [n] of the small goal it was learned from (the list of small goals)",
+            },
+            "viewer": {
+                "type": "string",
+                "description": "viewer: whom the note is about (a viewer in the conversation shown)",
+            },
+            "kind": {
+                "type": "string",
+                "enum": [NoteKind.LESSON.value, NoteKind.PLAN.value, NoteKind.VIEWER.value],
+                "description": "add: the kind",
+            },
+            "id": {"type": "string", "description": "drop / keep: the id of one of your notes shown"},
         },
+        "required": ["op"],
     }
-    if goals:
-        kinds.insert(0, NoteKind.LESSON.value)
-        properties["goal"] = {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": goals,
-            "description": "lesson: the number of the small goal it was learned from",
-        }
-    if viewers:
-        kinds.append(NoteKind.VIEWER.value)
-        properties["viewer"] = {
-            "type": "string",
-            "enum": viewers,
-            "description": "viewer: whom the note is about",
-        }
-    properties["kind"] = {"type": "string", "enum": kinds, "description": "add: the kind"}
-    if note_ids:
-        properties["id"] = {"type": "string", "enum": note_ids, "description": "drop / keep"}
-    return {"type": "object", "properties": properties, "required": ["op"]}
 
 
-def goal_schema(
-    predicates: list[GoalPredicate],
-    objective_ids: list[str],
-    note_ids: list[str] | None = None,
-    goals: int = 0,
-    viewers: list[str] | None = None,
-    after_failure: bool = False,
-    retry_allowed: bool = True,
-    plan_owns_jobs: bool = False,
-    died: bool = False,
-) -> dict[str, Any]:
+def goal_schema(after_failure: bool = False) -> dict[str, Any]:
     """
     目標の決定の JSON スキーマ: 小目標、大目標リストの編集、自分のメモの編集。
 
-    `goals` は示した小目標の数（lesson の根拠に使える）、`viewers` は示した会話にいる
-    視聴者。`after_failure` なら、先頭に原因の分析、次に対処と助言（docs/design/27。
-    出力はスキーマの順に書かれるので、分析してから決める）。`retry_allowed` が False なら
-    同じ小目標のやり直しは選べない。`plan_owns_jobs` なら、一番上の大目標の中目標は計画（LLM が
-    段階と小目標の並びとして書いた。docs/design/50 §18）が持つので、`jobs` は書かせない。
-    `died`（失敗のうち、死んだとき。docs/design/105）なら、教訓（lesson）を必ず書かせる。
+    呼び出しごとに変わらない（docs/design/177）。スキーマが 1 文字でも違うと Claude のキャッシュが全部外れるので、
+    その時々で変わる値（今使える小目標、大目標・メモの ID、小目標の番号、会話にいる視聴者、やり直しを選べるか、
+    計画が中目標を持つか、死んだあとの教訓）は本文に書き、答えのあとにコードで確かめる（`play.py`）。
+    `after_failure` なら、先頭に原因の分析、次に対処と助言（docs/design/27。出力はスキーマの順に
+    書かれるので、分析してから決める）。
     """
     change: dict[str, Any] = {
         "type": "object",
@@ -391,12 +383,10 @@ def goal_schema(
         },
         "required": ["op", "reason"],
     }
-    if objective_ids:
-        change["properties"]["id"] = {
-            "type": "string",
-            "enum": objective_ids,
-            "description": "move / drop / satisfy: the objective",
-        }
+    change["properties"]["id"] = {
+        "type": "string",
+        "description": "move / drop / satisfy: the id of the objective, as shown in [] before its title",
+    }
     schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -430,9 +420,9 @@ def goal_schema(
                 "type": "array",
                 "description": "Edits of your own notes, applied in order (usually none)",
                 "maxItems": MAX_NOTE_CHANGES,
-                "items": _note_change_schema(note_ids or [], goals, viewers or []),
+                "items": _note_change_schema(),
             },
-            **_spec_properties(predicates),
+            **_spec_properties(list(GoalPredicate)),
             "dig_depth": {
                 "type": "integer",
                 "minimum": 0,
@@ -459,7 +449,8 @@ def goal_schema(
                 "material (have(oak_log, 4)) is sent back. Write them when it has no jobs yet, they are not "
                 "working, or the review finds a faster way (a job already done, materials at hand "
                 "or in a chest, a nearer source); otherwise leave empty (the jobs stay and the "
-                "fast model picks the next one itself)",
+                "fast model picks the next one itself). Always leave empty when the objective at the "
+                "top already has a plan (its jobs show 計画:): the plan owns the jobs",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -473,11 +464,9 @@ def goal_schema(
         },
         "required": ["review", "trips", "predicate", "serves", "reason"],
     }
-    if plan_owns_jobs:
-        del schema["properties"]["jobs"]
     if not after_failure:
         return schema
-    remedies = [Remedy.RETRY.value, Remedy.CHANGE.value] if retry_allowed else [Remedy.CHANGE.value]
+    remedies = [Remedy.RETRY.value, Remedy.CHANGE.value]
     head = {
         "diagnosis": {
             "type": "string",
@@ -489,7 +478,7 @@ def goal_schema(
             "type": "string",
             "enum": remedies,
             "description": "retry: the same small goal again (same predicate and item), done "
-            "differently as the advice says; change: a different small goal",
+            "differently as the advice says (only when the text allows it); change: a different small goal",
         },
         "advice": {
             "type": "string",
@@ -500,20 +489,14 @@ def goal_schema(
     tail = {
         "lesson": {
             "type": "string",
-            "description": "Optional, last: what to remember from this failure for similar "
-            "situations later (general, no coordinates), one Japanese sentence of at most 80 "
-            "characters",
+            "description": "Last: what to remember from this failure for similar situations later "
+            "(general, no coordinates), one Japanese sentence of at most 80 characters. Optional, "
+            "except after a death (the text says so): then write what could have kept you alive",
         },
         "lesson_when": lesson_when_schema(),
     }
-    if died:
-        tail["lesson"]["description"] = (
-            "Required, last: what to remember from this death so the same death does not "
-            "happen again (general, no coordinates; the situation and what you could have done "
-            "differently), one Japanese sentence of at most 80 characters"
-        )
     schema["properties"] = {**head, **schema["properties"], **tail}
-    schema["required"] = ["diagnosis", "remedy", *schema["required"], *(["lesson"] if died else [])]
+    schema["required"] = ["diagnosis", "remedy", *schema["required"]]
     return schema
 
 
@@ -1013,6 +996,8 @@ def predicates_now(
         out += [GoalPredicate.PLANTED, GoalPredicate.FARMED]
         # 整地（設計書 41）: 家のまわりか、x,y,z のまわり
         out.append(GoalPredicate.LEVELED)
+        # 街の道を敷く（設計書 200）
+        out.append(GoalPredicate.PAVED)
     if obs.has_home and any(
         c.predicate == GoalPredicate.SURVEYED for g in plan.pending for c in g.conditions
     ):
@@ -1113,6 +1098,93 @@ def parse_town(data: dict[str, Any]) -> TownDefinition:
             raise ValueError("a town stage needs a title")
         stages.append(parse_stage(raw, title, str(raw.get("why", ""))))
     return TownDefinition(text=str(data.get("text", "")).strip(), stages=tuple(stages))
+
+
+MAX_NEXT_STEPS = 6
+_STEP_NAME = re.compile(r"[a-z][a-z0-9_]{1,31}")
+
+
+def mission_schema() -> dict[str, Any]:
+    """次の最終目標の JSON スキーマ: 文と、理由と、定石と同じ形の順に並べた段。"""
+    return {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The next final goal in one sentence, in Japanese (shown on stream)",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Why this goal comes next, from what is done and what is in hand, "
+                "in 1-2 sentences (said on stream)",
+            },
+            "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_NEXT_STEPS,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "A short unique id of the step (a-z, 0-9, _)",
+                        },
+                        "title": {"type": "string", "description": "What to do, in Japanese"},
+                        "conditions": _conditions_schema(),
+                        "reason": {"type": "string", "description": "Why this step, in Japanese"},
+                        "keep": {
+                            "type": "boolean",
+                            "description": "True for something to keep holding (a weapon, armor): "
+                            "the step comes back when it is lost",
+                        },
+                    },
+                    "required": ["name", "title", "conditions", "reason", "keep"],
+                },
+            },
+        },
+        "required": ["text", "reason", "steps"],
+    }
+
+
+def parse_mission(data: dict[str, Any], taken: Collection[str]) -> tuple[Mission, str, tuple[PlaybookStep, ...]]:
+    """
+    次の最終目標と、その定石の段をパースする。
+
+    Args:
+        data: LLM の答え
+        taken: すでにある定石の段の名前（重ならないように）
+
+    Raises:
+        ValueError: 文か段がないか、段の名前や条件が正しくないとき
+    """
+    text = str(data.get("text", "")).strip()
+    if not text:
+        raise ValueError("the next mission needs a text")
+    steps: list[PlaybookStep] = []
+    names = set(taken)
+    for raw in data.get("steps") or []:
+        name = str(raw.get("name", "")).strip()
+        if not _STEP_NAME.fullmatch(name):
+            raise ValueError(f"step name {name!r} must be a-z, 0-9, _ (2-32 characters, starting with a letter)")
+        if name in names:
+            raise ValueError(f"step name {name} is already used: give each step its own id")
+        names.add(name)
+        conditions = tuple(parse_spec(c) for c in raw.get("conditions") or [])
+        for c in conditions:
+            if c.predicate not in PLANNABLE_CONDITIONS:
+                raise ValueError(f"{c.predicate.value} cannot be a condition of step {name}")
+        steps.append(
+            PlaybookStep(
+                name=name,
+                title=str(raw.get("title", "")).strip(),
+                conditions=conditions,
+                reason=str(raw.get("reason", "")).strip(),
+                keep=bool(raw.get("keep", False)),
+            )
+        )
+    if not steps:
+        raise ValueError("the next mission needs at least one step")
+    return Mission(text=text), str(data.get("reason", "")).strip(), tuple(steps)
 
 
 def site_schema(site_ids: list[str]) -> dict[str, Any]:

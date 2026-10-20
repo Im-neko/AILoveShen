@@ -447,6 +447,22 @@ class TestSkillsOverHttp:
         assert await client.skill("x") is None
         run = await client.run_skill("x", {})
         assert not run.ok and "no skill" in run.reason
+        assert run.ended == "refused" and "not saved" in run.reason  # 保存前の試しの名前は、コードの失敗ではない
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("why", "expected"),
+        [("reflex", "the reflex against a nearby enemy"), ("skill", "another skill is still running"), (None, "another action")],
+    )
+    async def test_a_busy_body_is_a_refusal_that_says_why(self, why, expected):
+        body = {"error": "busy", **({"why": why} if why else {})}
+        client = _client(lambda req: httpx.Response(409, json=body))
+        for run in (
+            await client.run_skill("x", {}),
+            await client.try_skill(SkillDraft("d", {}, {"predicate": "progress"}, "c"), {}),
+        ):
+            assert not run.ok and run.ended == "refused"
+            assert run.reason.startswith("not started: ") and expected in run.reason
 
 
 def test_what_other_objectives_gather_is_sent_as_also():

@@ -83,6 +83,7 @@ class TwitchSupportSettings:
 
 DEFAULT_THINKING_LEVELS = {
     "town": "high",
+    "mission": "high",
     "site": "high",
     "house": "medium",
     "build_design": "high",
@@ -117,7 +118,7 @@ class LocalLlmSettings:
     thinking_param: str = "chat_template_kwargs"  # chat_template_kwargs | none
     # 思考させる用途（ほかは思考なし）。ふだんの操作の判断（tool / goal と失敗の後）は思考なし
     thinking_purposes: list[str] = field(
-        default_factory=lambda: ["skill_write", "house", "town", "site"]
+        default_factory=lambda: ["skill_write", "house", "town", "mission", "site"]
     )
     # 思考させる用途の出力（思考を含む）の上限。上限で答えが出なければ、思考なしで聞き直す
     thinking_max_tokens: dict[str, int] = field(default_factory=lambda: {"tool_stuck": 8000})
@@ -135,7 +136,7 @@ class LiteLlmSettings:
     model: str = ""  # LiteLLM のモデル名（必須）
     api_key: str = ""
     context_tokens: int = 200000
-    max_output_tokens: int = 8192
+    max_output_tokens: int = 16384  # 思考を含む
     response_format: str = "auto"  # auto | off
     # 用途 → モデル（表にない用途は model）。コードを書く用途だけ上のモデルにする。LiteLLM に回った呼び出しにだけ効く
     # （どの用途が回るかは llm.routes と、ローカルを切っているかで決まる）
@@ -249,6 +250,8 @@ class MinecraftSettings:
     supplies: list[dict[str, Any]] = field(default_factory=list)
     # 自分のメモ（docs/design/18_notes.md）。再起動をまたいで残す
     notes_path: str = "data/notes.json"
+    # 同じ理由で通らず外した手の台帳（設計書 184）。再起動をまたいで残す。ワールドのリセットで退避する
+    hands_path: str = "data/hands.json"
     # Blocks to collect when found nearby even if no goal needs them (the bridge always collects ores;
     # which tool can mine a block is the bridge's rule: docs/design/79_windfall.md)
     collect: list[str] = field(default_factory=lambda: ["obsidian", "clay", "sugar_cane"])
@@ -256,6 +259,10 @@ class MinecraftSettings:
     # 行動の決め方（docs/design/21）: tools（既定。Gemini が道具を呼ぶ）か candidates（候補から Jev が
     # 選ぶ。前の方式、比べるときだけ）
     control: str = "tools"
+    # control: raw（判断なしの実験。設計書 191）で、LLM に渡す課題の文
+    raw_task: str = ""
+    # 手引き（文章のスキル。設計書 192）の置き場: guides/<名前>/SKILL.md
+    guides_dir: str = "guides"
     # 小目標の決め方（docs/design/26）: jev（Gemini が書いた中目標から Jev が選ぶ）か gemini（毎回 Gemini）
     small_goals: str = "jev"
     # 道具モードの 1 手（docs/design/34 §3）: jev（まず Jev が候補と技から選び、迷ったら Gemini）か
@@ -288,6 +295,8 @@ class MinecraftSettings:
     lesson_min_confidence: float = 0.6
     lesson_timeout_seconds: float = 2.0
     max_lessons: int = 200
+    # 新しく書いた教訓を、手引きに反しないか・既存と同じでないか裏で確かめる（docs/design/201）
+    lesson_check: bool = True
     # 覚えた候補（docs/design/52）: LLM が選んでうまくいった手（座標を含まない道具）を覚え、似た状況で
     # Jev の選択肢（候補）に出す（道具モードだけ）。learned_candidates: false で使わない
     learned_candidates: bool = True
@@ -356,21 +365,6 @@ class TTSSettings:
     model_name: str = "default"
     default_style: str = "Neutral"
     speaking_rate: float = 1.0
-
-
-@dataclass
-class MemorySettings:
-    """記憶の管理の設定。"""
-
-    short_term_capacity: int = 20
-    long_term_db: str = "data/memory.db"
-
-
-@dataclass
-class MCPSettings:
-    """MCP（Model Context Protocol）の設定。"""
-
-    memory: MemorySettings = field(default_factory=MemorySettings)
 
 
 @dataclass
@@ -458,7 +452,6 @@ class Settings:
     jev: JevSettings = field(default_factory=JevSettings)
     minecraft: MinecraftSettings = field(default_factory=MinecraftSettings)
     tts: TTSSettings = field(default_factory=TTSSettings)
-    mcp: MCPSettings = field(default_factory=MCPSettings)
     obs: OBSSettings = field(default_factory=OBSSettings)
     avatar: AvatarSettings = field(default_factory=AvatarSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
@@ -752,6 +745,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             max_stalled_steps=agent_data.get("max_stalled_steps", defaults.max_stalled_steps),
             supplies=list(mc_data.get("supplies", defaults.supplies) or []),
             notes_path=agent_data.get("notes_path", defaults.notes_path),
+            hands_path=agent_data.get("hands_path", defaults.hands_path),
             collect=list(agent_data.get("collect", defaults.collect)),
             mission=MissionSettings(
                 text=mission_data.get("text", mission_defaults.text),
@@ -767,6 +761,8 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 store_path=mission_data.get("store_path", mission_defaults.store_path),
             ),
             control=agent_data.get("control", defaults.control),
+            raw_task=str(agent_data.get("raw_task", defaults.raw_task)),
+            guides_dir=str(agent_data.get("guides_dir", defaults.guides_dir)),
             small_goals=agent_data.get("small_goals", defaults.small_goals),
             step_picker=agent_data.get("step_picker", defaults.step_picker),
             step_min_confidence=float(
@@ -800,6 +796,7 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
                 agent_data.get("lesson_timeout_seconds", defaults.lesson_timeout_seconds)
             ),
             max_lessons=int(agent_data.get("max_lessons", defaults.max_lessons)),
+            lesson_check=bool(agent_data.get("lesson_check", defaults.lesson_check)),
             learned_candidates=bool(agent_data.get("learned_candidates", defaults.learned_candidates)),
             learned_candidates_path=agent_data.get("learned_candidates_path", defaults.learned_candidates_path),
             learned_candidates_record_dir=agent_data.get("learned_candidates_record_dir", defaults.learned_candidates_record_dir),
@@ -871,16 +868,6 @@ def _dict_to_settings(data: dict[str, Any]) -> Settings:
             model_name=tts_data.get("model_name", "default"),
             default_style=tts_data.get("default_style", "Neutral"),
             speaking_rate=tts_data.get("speaking_rate", 1.0),
-        )
-
-    if "mcp" in data:
-        mcp_data = data["mcp"]
-        memory_data = mcp_data.get("memory", {})
-        settings.mcp = MCPSettings(
-            memory=MemorySettings(
-                short_term_capacity=memory_data.get("short_term_capacity", 20),
-                long_term_db=memory_data.get("long_term_db", "data/memory.db"),
-            ),
         )
 
     if "avatar" in data:

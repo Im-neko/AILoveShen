@@ -1,11 +1,14 @@
 """JsonMissionStore アダプタのテスト。"""
 
+import json
+
 from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
     GoalPredicate,
     GoalSpec,
     ObjectiveState,
     Mission,
+    PlaybookStep,
     TownDefinition,
     TownSite,
     TownStage,
@@ -45,6 +48,32 @@ class TestJsonMissionStore:
         assert saved.pending[0].budget_used == 1
         assert saved.next_id == 4
         assert not (tmp_path / "sub" / "mission.json.tmp").exists()
+
+    def test_history_round_trip_and_an_old_file_without_it(self, tmp_path):
+        """自分がやったこと（終わった大目標の記録）は残る。履歴のない古いファイルは空で読める。"""
+        plan = ObjectivePlan(mission=Mission("街にしていく"), finished_shown=1)
+        plan.note_day(3)
+        plan.add("家", (BUILT,))
+        plan.add("剣", (SWORD,), requested_by="neko")
+        plan.complete("m1")
+        plan.note_day(4)
+        plan.drop("m2", "材料がない")
+        store = JsonMissionStore(tmp_path / "mission.json")
+
+        store.save(plan)
+        saved = store.load()
+
+        assert saved.history == plan.history
+        assert [(d.title, d.done, d.day, d.requested_by) for d in saved.history] == [
+            ("家", True, 3, ""),
+            ("剣", False, 4, "neko"),
+        ]
+        assert len(saved.finished) == 1  # 最近終わったものは 1 件だけ。履歴は全部残る
+
+        data = json.loads((tmp_path / "mission.json").read_text(encoding="utf-8"))
+        del data["history"]
+        (tmp_path / "mission.json").write_text(json.dumps(data), encoding="utf-8")
+        assert store.load().history == ()
 
     def test_town_round_trip(self, tmp_path):
         """街、済んだ段階、段階の小目標がそのまま戻る。"""
@@ -117,3 +146,44 @@ def test_the_jobs_of_an_objective_survive_a_restart(tmp_path):
     assert saved.jobs == plan.get(goal.id).jobs
     assert [s.spec for s in saved.jobs] == [s.spec for s in steps]
     assert saved.conditions == (annex,)
+
+
+class TestNextMission:
+    """達成して書いた次の最終目標と、足した定石の段の保存。"""
+
+    def test_the_next_mission_and_its_steps_come_back(self, tmp_path):
+        """設定の最終目標（origin）と、今の最終目標、達成の記録、足した段が戻る。"""
+        plan = ObjectivePlan(mission=Mission("街にしていく"))
+        town = TownDefinition("街", (TownStage("備え", "夜に備える", (BED,)),))
+        plan.restore([], [], 1, town=town, town_stage=1)
+        step = PlaybookStep(
+            name="armor", title="鉄の防具", conditions=(SWORD,), reason="守りを固める", keep=True
+        )
+        plan.advance_mission(Mission("鉄の装備で遠くを探索する"), [step])
+        store = JsonMissionStore(tmp_path / "mission.json")
+
+        store.save(plan)
+        saved = store.load()
+
+        assert saved.mission == Mission("鉄の装備で遠くを探索する")
+        assert saved.origin == Mission("街にしていく")
+        assert saved.missions_done == ("街にしていく",)
+        assert saved.extra_playbook == (step,)
+
+    def test_a_file_from_before_has_no_origin(self, tmp_path):
+        """origin のない保存は、今の最終目標が設定のものだったということ。"""
+        plan = ObjectivePlan(mission=Mission("街にしていく"))
+        store = JsonMissionStore(tmp_path / "mission.json")
+        store.save(plan)
+        path = tmp_path / "mission.json"
+        import json
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for key in ("origin", "missions_done", "extra_playbook"):
+            del data[key]
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        saved = store.load()
+
+        assert saved.origin is None and saved.mission == Mission("街にしていく")
+        assert saved.missions_done == () and saved.extra_playbook == ()

@@ -1,7 +1,10 @@
-"""最終目標の街: 場所を選び、LLM が一度だけ定め、ブリッジが確かめ、あとで埋める。"""
+"""最終目標の街: 場所を選び、LLM が一度だけ定め、ブリッジが確かめ、あとで埋める。達成したら次の最終目標を決める。"""
 
 from __future__ import annotations
 
+import hashlib
+import time
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -13,6 +16,8 @@ from ailoveshen.application.ports.output.minecraft_bridge import IMinecraftBridg
 from ailoveshen.application.ports.output.mission_store import IMissionStore
 from ailoveshen.application.ports.output.text_generator import ITextGenerator
 from ailoveshen.application.use_cases.goal_vocabulary import (
+    mission_schema,
+    parse_mission,
     parse_site,
     parse_stage,
     parse_town,
@@ -32,6 +37,7 @@ from ailoveshen.application.use_cases.town_roads import road_strips
 from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     HouseDesignedEvent,
+    MissionAdvancedEvent,
     TownDefinedEvent,
     TownMapDrawnEvent,
     TownSiteChosenEvent,
@@ -39,14 +45,18 @@ from ailoveshen.domain.events import (
 from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError, TextGenerationError
 from ailoveshen.domain.value_objects import (
     CharacterProfile,
+    ConditionStatus,
     GameObservation,
     GoalPredicate,
     GoalSpec,
+    PlaybookStep,
     TownDefinition,
     TownSite,
     TownStage,
 )
 
+MAP_RETRY_SECONDS = 300.0  # 理想図を描けなかったあと、また描くまで待つ時間（time.monotonic）
+MISSION_RETRY_SECONDS = 300.0  # 次の最終目標を書けなかったあと、また頼むまで待つ時間（time.monotonic）
 SURVEY_SITES = 9  # 家の場所と 8 方向（minecraft-bridge/src/survey.mjs の plannedSites）
 MOVE_CONDITIONS = (
     GoalSpec(GoalPredicate.BUILT),
@@ -110,6 +120,8 @@ class TownPlanner:
         self._objectives = objectives
         self._designer = designer
         self._max_attempts = max_attempts
+        self._mission_failed_at = -MISSION_RETRY_SECONDS
+        self._map_failed_at = -MAP_RETRY_SECONDS
 
     async def advance(self, session: PlaySession, obs: GameObservation) -> None:
         """
@@ -128,6 +140,8 @@ class TownPlanner:
             if plan.site.moving:
                 await self._move(session, plan.site, obs)
             await self.prepare(plan)
+            if plan.mission_achieved:
+                await self._next_mission(plan, obs)
         except TextGenerationError as e:
             logger.error(f"街の準備を次の切れ目に持ち越す: {e}")
 
@@ -146,7 +160,7 @@ class TownPlanner:
         if plan.town is None:
             town = await self._define(plan, await self._site_facts(plan.site))
             # 今の語彙で書いた段階は、書き直しを試したのと同じ
-            version = self._prompt_builder.vocabulary_version()
+            version = await self._version(plan)
             town = replace(
                 town,
                 stages=tuple(
@@ -169,7 +183,7 @@ class TownPlanner:
         if i >= len(town.stages):
             return
         stage = town.stages[i]
-        version = self._prompt_builder.vocabulary_version()
+        version = await self._version(plan, stage)
         if stage.ready or stage.tried_with == version:
             return
         written = replace(await self._resolve(town, stage), tried_with=version)
@@ -178,6 +192,114 @@ class TownPlanner:
         stages[i] = written
         plan.define_town(replace(town, stages=tuple(stages)))
         self._store.save(plan)
+
+    async def _version(self, plan: ObjectivePlan, stage: TownStage | None = None) -> str:
+        """
+        未解決の部分を書き直す理由の版: 語彙（条件の一覧と、できること）と、完成した施設の名前と、段階の条件が
+        全部そろったか。
+
+        語彙だけだと、畑ができて `farmed(wheat, 9)` が手に入るようになっても、段階が書き直されず、条件が
+        そろった段階が終わらなかった。そのあいだ、大目標が空になるたびに同じ畑を別の名前で作り直した
+        （2026-10-19: wheat_farm_1〜5）。施設が増えたときと、段階の条件がそろったときに、一度ずつ書き直す
+        （条件がそろった段階の未解決は、施設のほかの理由でも、手に入るようになっているかもしれない）。
+        """
+        version = self._prompt_builder.vocabulary_version()
+        try:
+            done = sorted(str(f.get("name")) for f in await self._bridge.facilities() if f.get("status") == "done")
+        except GameBridgeError:
+            done = []
+        if stage is not None and stage.conditions and all(c in plan.stage_met for c in stage.conditions):
+            done.append("(conditions met)")
+        if not done:
+            return version
+        return f"{version}+{hashlib.sha256(','.join(done).encode('utf-8')).hexdigest()[:8]}"
+
+    async def _next_mission(self, plan: ObjectivePlan, obs: GameObservation) -> None:
+        """
+        最終目標を達成したので、次の最終目標と、その定石（済んだ定石と同じ形の段）を LLM に書かせる
+        （docs/design/180）。段の条件はブリッジが確かめる: 判定できない条件、今できることでは手に
+        入らない物、全部もう満たしている段しかない答えは、理由をつけて差し戻す。定石の大目標は
+        `ObjectiveKeeper` が次の切れ目から順に足す。書けなかったときは、しばらく待ってまた頼む。
+        """
+        if time.monotonic() - self._mission_failed_at < MISSION_RETRY_SECONDS:
+            return
+        assert plan.town is not None
+        done = plan.mission
+        facts = {
+            "day": obs.day,
+            "inventory": obs.state.get("inventory") or {},
+            "builds": [name for name, _ in obs.titles],
+        }
+        taken = {s.name for s in plan.playbook}
+        error = ""
+        for attempt in range(1, self._max_attempts + 1):
+            prompt = self._prompt_builder.build_mission_prompt(
+                self._character,
+                done,
+                plan.missions_done,
+                plan.playbook,
+                plan.town,
+                facts,
+                previous_error=error,
+            )
+            data = await self._text_generator.generate_json(
+                prompt, mission_schema(), purpose="mission"
+            )
+            try:
+                mission, reason, steps = parse_mission(data, taken)
+            except ValueError as e:
+                error = str(e)
+                logger.warning(f"次の最終目標の試行 {attempt} を差し戻した: {error}")
+                continue
+            problems = [
+                f"段「{s.title}」: {p}"
+                for s in steps
+                for p in await self._condition_problems(_judgeable(s.conditions))
+            ]
+            if not problems and await self._all_met(steps):
+                problems = ["全部の段の条件がもう満たされている。まだできていないことを書く"]
+            if not problems:
+                problems = [
+                    f"段「{s.title}」の条件はもう満たされている。まだできていないこと（新しい建物、新しい成果）を書く"
+                    for s in steps
+                    if not s.keep and await self._step_met(s)
+                ]
+            if problems:
+                error = "\n".join(problems)
+                logger.warning(f"次の最終目標の試行 {attempt} を差し戻した: {error}")
+                continue
+            plan.advance_mission(mission, steps)
+            self._store.save(plan)
+            logger.info(f"最終目標を達成した: {done.text}")
+            logger.info(f"次の最終目標を決めた: {mission.text} - {reason}")
+            for step in steps:
+                logger.info(f"  定石 {step.name} {step.title}: {', '.join(c.describe() for c in step.conditions)}")
+            await self._event_publisher.publish(
+                MissionAdvancedEvent(
+                    done=done.text, text=mission.text, reason=reason, steps=tuple(s.title for s in steps)
+                )
+            )
+            return
+        self._mission_failed_at = time.monotonic()
+        raise TextGenerationError(
+            f"no valid next mission after {self._max_attempts} attempts: {error}"
+        )
+
+    async def _step_met(self, step: PlaybookStep) -> bool:
+        """段の条件がもう全部満たされているか（これから作る施設や、まだない判定がある段は、まだ）。"""
+        if len(_judgeable(step.conditions)) < len(step.conditions):
+            return False
+        if await self._unwritten(step.conditions):
+            return False
+        return all(s.met for s in await self._bridge.check(step.conditions))
+
+    async def _all_met(self, steps: Sequence[PlaybookStep]) -> bool:
+        for step in steps:
+            if len(_judgeable(step.conditions)) < len(step.conditions):
+                return False  # 施設はこれから作る
+            if not all(s.met for s in await self._bridge.check(step.conditions)):
+                return False
+        return True
 
     async def _keep_map(self, plan: ObjectivePlan) -> None:
         """
@@ -188,10 +310,20 @@ class TownPlanner:
             return
         current = plan.town_map
         if current is None:
-            await self._draw_map(plan, "街を定めた" if plan.town_stage == 0 else "理想図がまだない")
+            reason = "街を定めた" if plan.town_stage == 0 else "理想図がまだない"
         elif current.stage < plan.town_stage and not plan.town_complete:
-            stage = plan.town.stages[plan.town_stage]
-            await self._draw_map(plan, f"段階 {plan.town_stage + 1}「{stage.title}」に進んだ")
+            reason = f"段階 {plan.town_stage + 1}「{plan.town.stages[plan.town_stage].title}」に進んだ"
+        else:
+            return
+        if time.monotonic() - self._map_failed_at < MAP_RETRY_SECONDS:
+            return
+        try:
+            await self._draw_map(plan, reason)
+        except TextGenerationError as e:
+            # 理想図は進めるための地図で、描けなくても街づくりは止めない（2026-10-19: 出力の上限で毎回切れ、
+            # プレイを始められないまま 8 分待った）。前の図のまま続けて、しばらくしてからまた描く
+            self._map_failed_at = time.monotonic()
+            logger.warning(f"街の理想図を描けなかった。前の図のまま続ける: {e}")
 
     async def _draw_map(self, plan: ObjectivePlan, reason: str) -> None:
         """理想図を描く（描き直す）。区画の地形を読めなければ次の切れ目に持ち越す。"""
@@ -371,6 +503,8 @@ class TownPlanner:
                 continue
             problems = await self._problems(written)
             if not problems:
+                problems = _added_unresolved(stage, written)
+            if not problems:
                 problems = await self._already_done(stage, written)
             if not problems:
                 return written
@@ -379,7 +513,10 @@ class TownPlanner:
         return stage
 
     async def _already_done(self, stage: TownStage, written: TownStage) -> list[str]:
-        new = [c for c in written.conditions if c not in stage.conditions]
+        # 未解決として書いてあった条件そのもの（`farmed(wheat, 9)`）が、畑ができて今そろったのは、言い換えではなく解決
+        named = " ".join(stage.unresolved)
+        new = [c for c in written.conditions if c not in stage.conditions and c.describe() not in named]
+        new = [c for c in new if c not in await self._unwritten(new)]
         if not new or not all(s.met for s in await self._bridge.check(new)):
             return []
         conditions = ", ".join(c.describe() for c in new)
@@ -390,7 +527,25 @@ class TownPlanner:
 
     async def _problems(self, stage: TownStage) -> list[str]:
         """段階の条件を保存できない理由。条件ごとに 1 行（なし: すべて問題ない）。"""
-        return [p for c in stage.conditions if (p := await self._problem(c))]
+        return await self._condition_problems(stage.conditions)
+
+    async def _condition_problems(self, conditions: Sequence[GoalSpec]) -> list[str]:
+        unwritten = await self._unwritten(conditions)
+        return [p for c in conditions if c not in unwritten and (p := await self._problem(c))]
+
+    async def _unwritten(self, conditions: Sequence[GoalSpec]) -> set[GoalSpec]:
+        """
+        まだ判定が書かれていない `custom(name)`。段階が大目標になるときに `ObjectiveKeeper` が書かせるので、
+        今は確かめない（述語で書けない部分を、判定コードを LLM が書くことで条件にする。設計書 199 §5）。
+        """
+        named = [c for c in conditions if c.predicate == GoalPredicate.CUSTOM]
+        if not named:
+            return set()
+        try:
+            known = {str(c["name"]) for c in await self._bridge.conditions()}
+        except GameBridgeError:
+            return set()
+        return {c for c in named if c.name not in known}
 
     async def _problem(self, condition: GoalSpec) -> str:
         try:
@@ -398,21 +553,66 @@ class TownPlanner:
         except GoalRejectedError as e:
             return f"{condition.describe()} は判定できない（{e}）"
         if status.impossible:
-            why = ", ".join(status.impossible)
-            return f"{condition.describe()} は今できることでは手に入らない（{why}）"
+            return _impossible(condition, status)
         return ""
 
     async def _settle(self, stage: TownStage) -> TownStage:
-        """保存できない条件を未解決の部分に移した段階。"""
+        """
+        保存できない条件を整えた段階。
+
+        手に入らない条件は未解決の部分に移す（能力が足されたら書き直す）。判定できない条件は
+        書き損じで、能力が足されても書けるようにならない: 未解決で待たせると段階が二度と終わらないので捨てる。
+        """
         kept: list[GoalSpec] = []
         unresolved = list(stage.unresolved)
+        unwritten = await self._unwritten(stage.conditions)
         for c in stage.conditions:
-            problem = await self._problem(c)
-            if problem:
-                unresolved.append(problem)
+            if c in unwritten:
+                kept.append(c)
+                continue
+            try:
+                [status] = await self._bridge.check([c])
+            except GoalRejectedError as e:
+                logger.warning(f"街の段階「{stage.title}」の条件 {c.describe()} は判定できないので捨てた（{e}）")
+                continue
+            if status.impossible:
+                unresolved.append(_impossible(c, status))
             else:
                 kept.append(c)
+        if not kept and not unresolved:
+            raise TextGenerationError(
+                f"town stage {stage.title} has no condition the bridge can judge"
+            )
         return replace(stage, conditions=tuple(kept), unresolved=tuple(unresolved))
+
+
+def _added_unresolved(stage: TownStage, written: TownStage) -> list[str]:
+    """
+    書き直しで、元の未解決より多くの未解決を足していないか。足すと段階が終わらなくなる（2026-10-19: 畑ができて
+    farmed(wheat, 9) を書けたのに、「食料が減らないことを判定する条件がない」と新しい未解決を足して、段階が閉じなかった）。
+    条件に書けるようになった部分（元の未解決の文に、新しい条件の描写がある）は、残る数から引く。
+    """
+    resolved = sum(
+        1
+        for u in stage.unresolved
+        if any(c.describe() in u for c in written.conditions if c not in stage.conditions)
+    )
+    allowed = len(stage.unresolved) - resolved
+    if len(written.unresolved) <= allowed:
+        return []
+    return [
+        f"unresolved が {len(written.unresolved)} 個ある。書き直す前の未解決のうち今も書けないのは多くても {allowed} 個で、"
+        "新しいことを足すと段階が終わらなくなる。書けるようになった部分は conditions に書き、unresolved に新しいことを足さない"
+    ]
+
+
+def _judgeable(conditions: Sequence[GoalSpec]) -> tuple[GoalSpec, ...]:
+    """今ブリッジに確かめられる条件。新しい名前の施設は、足すときに設計してから判定する（定石の段）。"""
+    return tuple(c for c in conditions if c.predicate != GoalPredicate.FACILITY)
+
+
+def _impossible(condition: GoalSpec, status: ConditionStatus) -> str:
+    return f"{condition.describe()} は今できることでは手に入らない（{', '.join(status.impossible)}）"
 
 
 def _describe(stage: TownStage) -> str:

@@ -275,10 +275,20 @@ class TestParse:
         assert "needs" not in level2["properties"]
         assert schema["required"] == ["outline", "jobs"]
 
+    def test_a_step_needs_a_reason_but_the_prerequisites_inside_it_do_not(self):
+        """前提の理由の書き忘れで、計画が 66 回中 53 回書き直しになった（1 回 19 秒。2026-10-17）。"""
+        step = plan_schema()["properties"]["jobs"]["items"]["properties"]["steps"]["items"]
+        assert "reason" in step["required"]
+        level1 = step["properties"]["needs"]["items"]
+        level2 = level1["properties"]["needs"]["items"]
+        assert "reason" in level1["properties"] and "reason" not in level1["required"]
+        assert "reason" not in level2["required"]
+        assert parse_plan({"outline": "", "jobs": [{"title": "t", "predicate": "have", "item": "oak_log", "count": 1, "reason": "r", "steps": [{"predicate": "have", "item": "oak_log", "count": 1, "reason": "r", "needs": [{"predicate": "have", "item": "stick", "count": 1}]}]}]})
+
     def test_the_goal_decision_leaves_jobs_to_the_plan(self):
-        args = ([GoalPredicate.HAVE], ["m1"])
-        assert "jobs" in goal_schema(*args)["properties"]
-        assert "jobs" not in goal_schema(*args, plan_owns_jobs=True)["properties"]
+        """スキーマは変えない（設計書 177）。計画が持つ中目標を書いてきたら、play が捨てる。"""
+        jobs = goal_schema()["properties"]["jobs"]
+        assert "計画:" in jobs["description"] and "plan owns the jobs" in jobs["description"]
 
 
 class TestPlanner:
@@ -364,6 +374,20 @@ class TestShown:
         plan = _plan(_job())
         prompt = GamePromptTemplateBuilder().build_plan_prompt(plan.current, _session(plan=plan).activity())
         assert "畑を広げる" in prompt and "前提（needs）" in prompt and "wheat_farm_3" in prompt
+
+    def test_the_rules_and_the_schema_come_first_and_only_the_state_changes_the_later_parts(self):
+        """設計書 177: 決まり・スキーマ（変わらない）→ 大目標と階層 → 今の状態、の 3 つに分けて印を置く。"""
+        from ailoveshen.application.ports.output.text_generator import SCHEMA_SLOT, split_cache_breaks
+
+        plan = _plan(_job())
+        builder = GamePromptTemplateBuilder()
+        prompt = builder.build_plan_prompt(plan.current, _session(plan=plan).activity())
+        rules, goals, doing = split_cache_breaks(prompt)
+        assert "## 計画の書き方" in rules and "## 使える条件" in rules and rules.endswith(SCHEMA_SLOT)
+        assert "## 大目標" in goals and "畑を広げる" in goals and "最終目標" not in rules
+        assert "今の小目標" in doing
+        other = builder.build_plan_prompt(plan.current, _session(plan=plan).activity(), replan_reason="stuck")
+        assert split_cache_breaks(other)[0] == rules
 
     def test_the_plan_and_goal_prompts_say_the_fence_and_gate_come_after_the_farm_cells(self):
         """畑の柵とゲートは最後（2026-10-04: 柵のための板が先に集められ、畑が 63 手進まなかった）。"""

@@ -25,21 +25,15 @@ def _add(kind: NoteKind, text: str = "メモ", **kwargs) -> NoteChange:
 class TestNoteVocabulary:
     """note_changes のスキーマとパースのテスト。"""
 
-    def _notes_schema(self, **kwargs):
-        schema = goal_schema([GoalPredicate.HAVE], ["m1"], **kwargs)
+    def _notes_schema(self):
+        schema = goal_schema()
         return schema["properties"]["note_changes"]["items"]["properties"]
 
-    def test_the_schema_offers_only_the_grounds_shown(self):
-        """lesson は示した小目標があるとき、viewer は会話に視聴者がいるときだけ書ける。"""
-        bare = self._notes_schema()
-        assert bare["kind"]["enum"] == ["plan"]
-        assert "goal" not in bare and "viewer" not in bare and "id" not in bare
-
-        full = self._notes_schema(note_ids=["n1"], goals=2, viewers=["neko"])
-        assert full["kind"]["enum"] == ["lesson", "plan", "viewer"]
-        assert full["goal"]["maximum"] == 2
-        assert full["viewer"]["enum"] == ["neko"]
-        assert full["id"]["enum"] == ["n1"]
+    def test_the_schema_does_not_depend_on_the_grounds_shown(self):
+        """設計書 177: 示した小目標・視聴者・メモの ID はスキーマに入れず、答えのあとに確かめる（`_about`）。"""
+        props = self._notes_schema()
+        assert props["kind"]["enum"] == ["lesson", "plan", "viewer"]
+        assert "enum" not in props["id"] and "enum" not in props["viewer"] and "maximum" not in props["goal"]
 
     def test_parse_note_changes(self):
         """add は種類と本文と根拠、drop と keep は id を読む。"""

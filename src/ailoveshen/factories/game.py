@@ -18,11 +18,20 @@ from ailoveshen.application.use_cases.job_planner import JobPlanner
 from ailoveshen.application.use_cases.goal_vocabulary import parse_spec
 from ailoveshen.application.use_cases.house import HouseDesigner
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
+from ailoveshen.application.use_cases.guides import planning_notes, reference_of
+from ailoveshen.application.use_cases.lesson_check import LessonChecker
 from ailoveshen.application.use_cases.lesson_compaction import LessonCompactor
 from ailoveshen.application.use_cases.lessons import LessonBook
 from ailoveshen.application.use_cases.learned_candidates import LearnedCandidates
 from ailoveshen.application.use_cases.notes import NoteKeeper
 from ailoveshen.application.use_cases.play import AdvancePlayUseCase, StartPlayUseCase
+from ailoveshen.application.use_cases.raw_play import (
+    RAW_SKILL_MAX_ATTEMPTS,
+    RAW_SKILL_REWRITES_PER_HOUR,
+    RAW_SKILL_TRIES_PER_HOUR,
+    RawAdvancePlay,
+    RawStartPlay,
+)
 from ailoveshen.application.use_cases.search import KeySearch
 from ailoveshen.application.use_cases.skills import SkillWriter
 from ailoveshen.application.use_cases.town import TownPlanner
@@ -45,9 +54,11 @@ from ailoveshen.infrastructure.adapters.minecraft_bridge.mineflayer_bridge_clien
     MineflayerBridgeClient,
 )
 from ailoveshen.infrastructure.adapters.prompts.abilities import load_abilities
+from ailoveshen.infrastructure.adapters.prompts.guides import load_guides
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
 )
+from ailoveshen.infrastructure.adapters.storage.json_hand_store import JsonHandStore
 from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
 from ailoveshen.infrastructure.adapters.storage.json_note_store import JsonNoteStore
 from ailoveshen.infrastructure.adapters.storage.json_lesson_store import JsonLessonStore
@@ -184,7 +195,9 @@ def create_game_service(
         port=minecraft.bridge_port,
         timeout_seconds=minecraft.request_timeout_seconds,
     )
-    prompt_builder = GamePromptTemplateBuilder(raw_bot=minecraft.skill_raw_bot)
+    raw = minecraft.control == "raw"  # 判断なしの実験（設計書 191）
+    guides = load_guides(minecraft.guides_dir)  # 手引き（設計書 192）
+    prompt_builder = GamePromptTemplateBuilder(raw_bot=minecraft.skill_raw_bot or raw, raw_only=raw)
     # 配信の画面を撮る（docs/design/23）。OBS が動いていなくても、画像なしで続く
     screen = None
     capture = None
@@ -213,7 +226,7 @@ def create_game_service(
     # control: tools（設計書 21）: Gemini が道具を呼び、Jev が実行中に質問に答える
     fast_judge = None
     tool_watcher = None
-    reflex_by_jev = minecraft.reflex.judge == "jev" and bool(jev.api_key)
+    reflex_by_jev = minecraft.reflex.judge == "jev" and bool(jev.api_key) and not raw
     if (
         minecraft.control == "tools"
         or (minecraft.small_goals == "jev" and jev.api_key)
@@ -315,6 +328,9 @@ def create_game_service(
             if minecraft.lessons_record_dir
             else None,
             compactor=LessonCompactor(text_generator, advisor=has_advisor(llm or LlmSettings())),
+            checker=LessonChecker(text_generator, lambda: reference_of(guides.guides))
+            if minecraft.lesson_check
+            else None,
         )
         lessons.load()
     # 覚えた候補: LLM が選んでうまくいった手を覚え、似た状況で Jev の選択肢に出す（設計書 52）
@@ -387,79 +403,105 @@ def create_game_service(
     )
 
     goal_store = JsonGoalStore(minecraft.goal_path) if minecraft.goal_path else None
-    start = StartPlayUseCase(
-        bridge=bridge,
-        event_publisher=event_publisher,
-        designer=designer,
-        plan=plan,
-        store=store,
-        town=town,
-        notes=notes,
-        max_steps_per_goal=minecraft.max_steps_per_goal,
-        max_consecutive_failures=minecraft.max_consecutive_failures,
-        max_stalled_steps=minecraft.max_stalled_steps,
-        goal_store=goal_store,
-        collect=minecraft.collect,
-    )
-    advance = AdvancePlayUseCase(
-        bridge=bridge,
-        text_generator=text_generator,
-        prompt_builder=prompt_builder,
-        action_selector=action_selector,
-        event_publisher=event_publisher,
-        conversation=conversation,
-        objectives=objectives,
-        town=town,
-        notes=notes,
-        control=minecraft.control,
-        tool_watcher=tool_watcher,
-        screen=screen,
-        chooser=chooser,
-        # 大目標の計画は、小目標を中目標から選ぶ（chooser）ときだけ（docs/design/50 §18）
-        planner=(
-            JobPlanner(
-                text_generator=text_generator,
-                prompt_builder=prompt_builder,
-                bridge=bridge,
-                objectives=objectives,
-            )
-            if chooser is not None
-            else None
-        ),
-        replan_minutes=minecraft.replan_minutes,
-        objective_stall_steps=minecraft.objective_stall_steps,
-        step_picker=step_picker,
-        failure_routing=minecraft.failure_routing,
-        stuck_check=stuck_check,
-        stagnation_seconds=minecraft.stagnation_seconds,
-        lessons=lessons,
-        learned_candidates=learned_candidates,
-        goal_store=goal_store,
-        goal_end_recorder=(
-            JsonlWatchRecorder(minecraft.goal_end_record_dir)
-            if minecraft.goal_end_record_dir
-            else None
-        ),
-        search=search,
-        abilities=load_abilities(),
-        namer=NameGiver(bridge, text_generator, prompt_builder),
-        advisor=(
-            Advisor(text_generator, prompt_builder)
-            if minecraft.control == "tools" and has_advisor(llm or LlmSettings())
-            else None
-        ),
-        skills=(
-            SkillWriter(
+    if raw:
+        # 目標・ソルバー・候補・Jev なし。ブリッジが判断しないので、反射（LLM の外）以外に、ブリッジが LLM の手を助けるものはない。
+        # 聞くか聞かないかを決めるのは LLM で、聞く先（LITELLM_ADVISOR_MODEL）は、決めてあるときだけ道具に出る（設計書 197）
+        start = RawStartPlay(plan)
+        advance = RawAdvancePlay(
+            bridge=bridge,
+            text_generator=text_generator,
+            prompt_builder=prompt_builder,
+            skills=SkillWriter(
                 text_generator,
                 prompt_builder,
                 bridge,
-                rewrites_per_hour=minecraft.skill_rewrites_per_hour,
-                raw_bot=minecraft.skill_raw_bot,
-            )
-            if minecraft.control == "tools" and minecraft.skills_enabled
-            else None
-        ),
-    )
+                rewrites_per_hour=RAW_SKILL_REWRITES_PER_HOUR,
+                tries_per_hour=RAW_SKILL_TRIES_PER_HOUR,
+                max_attempts=RAW_SKILL_MAX_ATTEMPTS,
+                raw_bot=True,
+                raw_only=True,
+            ),
+            task=minecraft.raw_task,
+            guides=guides,
+            advisor=Advisor(text_generator, prompt_builder) if has_advisor(llm or LlmSettings()) else None,
+        )
+    else:
+        start = StartPlayUseCase(
+            bridge=bridge,
+            event_publisher=event_publisher,
+            designer=designer,
+            plan=plan,
+            store=store,
+            town=town,
+            notes=notes,
+            max_steps_per_goal=minecraft.max_steps_per_goal,
+            max_consecutive_failures=minecraft.max_consecutive_failures,
+            max_stalled_steps=minecraft.max_stalled_steps,
+            goal_store=goal_store,
+            collect=minecraft.collect,
+        )
+        advance = AdvancePlayUseCase(
+            bridge=bridge,
+            text_generator=text_generator,
+            prompt_builder=prompt_builder,
+            action_selector=action_selector,
+            event_publisher=event_publisher,
+            conversation=conversation,
+            objectives=objectives,
+            town=town,
+            notes=notes,
+            hand_store=JsonHandStore(minecraft.hands_path),
+            control=minecraft.control,
+            tool_watcher=tool_watcher,
+            screen=screen,
+            chooser=chooser,
+            # 大目標の計画は、小目標を中目標から選ぶ（chooser）ときだけ（docs/design/50 §18）
+            planner=(
+                JobPlanner(
+                    text_generator=text_generator,
+                    prompt_builder=prompt_builder,
+                    bridge=bridge,
+                    objectives=objectives,
+                    guide_notes=planning_notes(guides.guides),
+                )
+                if chooser is not None
+                else None
+            ),
+            replan_minutes=minecraft.replan_minutes,
+            objective_stall_steps=minecraft.objective_stall_steps,
+            step_picker=step_picker,
+            failure_routing=minecraft.failure_routing,
+            stuck_check=stuck_check,
+            stagnation_seconds=minecraft.stagnation_seconds,
+            lessons=lessons,
+            learned_candidates=learned_candidates,
+            goal_store=goal_store,
+            goal_end_recorder=(
+                JsonlWatchRecorder(minecraft.goal_end_record_dir)
+                if minecraft.goal_end_record_dir
+                else None
+            ),
+            search=search,
+            abilities=load_abilities(),
+            guides=guides,
+            namer=NameGiver(bridge, text_generator, prompt_builder),
+            advisor=(
+                Advisor(text_generator, prompt_builder)
+                if minecraft.control == "tools" and has_advisor(llm or LlmSettings())
+                else None
+            ),
+            skills=(
+                SkillWriter(
+                    text_generator,
+                    prompt_builder,
+                    bridge,
+                    rewrites_per_hour=minecraft.skill_rewrites_per_hour,
+                    raw_bot=minecraft.skill_raw_bot,
+                )
+                if minecraft.control == "tools" and minecraft.skills_enabled
+                else None
+            ),
+        )
     return GameService(
         start_play=start,
         advance_play=advance,

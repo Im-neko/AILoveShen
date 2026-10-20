@@ -10,15 +10,12 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable
 from typing import Any
 
 from loguru import logger
 
 from ailoveshen.application.ports.output.text_generator import ToolChoice, ToolSpec
 from ailoveshen.domain.value_objects import (
-    GoalPredicate,
-    GoalSpec,
     MAX_WATCH_QUESTION_CHARS,
     MAX_WATCH_QUESTIONS,
     ToolCall,
@@ -27,17 +24,17 @@ from ailoveshen.domain.value_objects import (
 )
 
 LOOK_SCREEN = "look_screen"
-# 行き詰まったときだけ道具に加える実験の道具（docs/design/85）。道具の定義は 1 手の時間を食うので、ふだんは出さない
-EXPERIMENT_QUERIES = frozenset({"inspect", "diagnostics"})
 SEARCH_FACILITY = "search_facility"
 SEARCH_MEMORY = "search_memory"
 ITEM_INFO = "item_info"
 SEARCH_ABILITIES = "search_abilities"
-SEARCH_TOOLS = (SEARCH_FACILITY, SEARCH_MEMORY, ITEM_INFO, SEARCH_ABILITIES)
+READ_GUIDE = "read_guide"
+SEARCH_TOOLS = (SEARCH_FACILITY, SEARCH_MEMORY, ITEM_INFO, SEARCH_ABILITIES, READ_GUIDE)
 # より強いモデルの意見を聞く（LITELLM_ADVISOR_MODEL を決めたときだけ道具に出す。docs/design/143）
 ASK_ADVISOR = "ask_advisor"
 RUN_SKILL = "run_skill"
 WRITE_SKILL = "write_skill"
+TRY_SKILL = "try_skill"
 SKILL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 
 
@@ -67,8 +64,8 @@ _WATCH = {
     "items": {"type": "string", "description": "<stop|wake|maybe_done>: <English yes/no question>"},
 }
 
-# 行き詰まったときの use_item: 素手・押す面・スニーク・家のドアを足し、item を必須でなくす
-EXPERIMENT_USE_ITEM_PROPS = {
+# use_item の素手・押す面・スニーク・家のドア（item は省くと素手。docs/design/85）
+_USE_ITEM_PRESS = {
     "item": _str("使うアイテム。省くと素手で x,y,z のブロックを押す（ドア・レバー・ボタン）"),
     "target": _str("座標の代わりに home_door（家のドア）。うまくいった手は覚えられる"),
     "face": _str("押すブロックの面: up / down / north / south / east / west（省くと自分のいる側）"),
@@ -219,13 +216,13 @@ ACTION_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         "hold 秒押し続ける（弓を引く、盾を構える）。何も変わらなければ失敗。火打石・溶岩バケツ・TNT は"
         "使わない。食べるのは eat、ボートは ride_boat、チェスト・ベッド・かまどはそれぞれの道具",
         {
-            "item": _str("使うアイテム"),
+            **_USE_ITEM_PRESS,
             "entity": _int("使う相手の mobs の id（省略可）"),
             **{k: _int(f"使うブロックの {k}（省略可）") for k in ("x", "y", "z")},
             "hold": _int("押し続ける秒数（0〜3、既定 0）"),
             "override": _bool("家・建てている家・建物の保護を承知で、それでも使うときだけ true（既定 false）"),
         },
-        ["item"],
+        [],
     ),
     "ride_boat": (
         "ボートで水の上を x,z に向かって進む（短い水でも）。水際でボートを置いて乗り、岸に着いたら降りて拾う。"
@@ -265,6 +262,16 @@ SKILL_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {
             "name": _str("技の名前（英小文字と _、例 hunt_nearest_animal）"),
             "what": _str("技がすること（1〜2 文。直すときは、何を直すか）"),
+        },
+        ["name", "what"],
+    ),
+    TRY_SKILL: (
+        "技を保存せずに 1 回だけ試す（使い捨て。書いて、すぐ走らせる）。うまくいくか分からない動き、道具の断りを避ける"
+        "動きを、失敗してもよいので試す。結果（成功・失敗の理由、記録、動いた距離、持ち物の増減）が返る。うまくいったら"
+        "write_skill（同じ名前）で保存する。失敗したら原因を読んで、同じ名前でもう一度試す",
+        {
+            "name": _str("技の名前（英小文字と _、保存するときもこの名前）"),
+            "what": _str("試すこと（1〜2 文。直して試すときは、何を直すか）"),
         },
         ["name", "what"],
     ),
@@ -345,6 +352,11 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         {"query": _str("したいこと（日本語か英語。例: 畑を作る、水を渡る、肉を焼く、夜を越す）")},
         ["query"],
     ),
+    READ_GUIDE: (
+        "「手引き」の一覧にある手引きの本文を読む（すぐ返る）",
+        {"name": _str("手引きの名前")},
+        ["name"],
+    ),
     # advisor を使えるときだけ出す（docs/design/143）
     ASK_ADVISOR: (
         "行き詰まったとき、やり方を考え直す前に、より強いモデルの意見を聞く（数秒かかる）。同じ道具が"
@@ -373,6 +385,12 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
         },
         [],
     ),
+    "cross_section": (
+        "1 方向への横から見た断面（行が高さ、列が距離。# は見えない岩の中）と、地面・水面・岸の段差の説明。"
+        "岸の高さ、岩の厚みに使う。すぐ返る",
+        {"direction": {**_str("向き（省略すると見ている向き）"), "enum": ["north", "south", "east", "west"]}},
+        [],
+    ),
     # 画面を撮れるときだけ出す（docs/design/23）
     LOOK_SCREEN: (
         "配信の画面（自分の視点）を撮り、次の選択に画像として添える（すぐ返る）。"
@@ -383,99 +401,29 @@ QUERY_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
 }
 
 
-# 毎回渡す道具（使われた呼び出しの 8 割強。2026-10-11 の記録 8,106 回のうち上位 10 個が 83%）。ほかは、小目標や今の状態で
-# コードが足す道具の組（下の TOOL_GROUPS）か、search_abilities が引いた項目の道具。全部を渡すと道具の定義だけで
-# 約 13,700 トークンあり、小さいモデルでは選び間違いと遅さのもとになる（docs/design/169）
-CORE_ACTIONS = ("do_suggestion", "goto", "dig", "place", "craft", "equip", "wait", "go_home")
-CORE_QUERIES = ("find_blocks", *SEARCH_TOOLS)
-CORE_TOOLS = frozenset((*CORE_ACTIONS, *CORE_QUERIES))
-
-# 小目標・状態で足す道具の組
-TOOL_GROUPS: dict[str, tuple[str, ...]] = {
-    "farm": ("till", "sow", "plant", "water", "use_item"),
-    "build": ("build_next", "move_furniture", "clear_site", "level"),
-    "store": ("deposit", "withdraw", "toss", "pickup"),
-    "cook": ("smelt", "eat", "find_foods"),
-    "fight": ("attack", "flee"),
-    "night": ("sleep",),
-    "water": ("ride_boat",),
-}
-_COOKED = re.compile(r"ingot|cooked|charcoal|bread|glass|brick|baked|steak|porkchop|mutton|beef|chicken|cod|salmon|potato")
-_GOAL_GROUPS = {
-    GoalPredicate.FARMED: ("farm",),
-    GoalPredicate.PLANTED: ("farm",),
-    GoalPredicate.FACILITY: ("farm", "build"),
-    GoalPredicate.BUILT: ("build",),
-    GoalPredicate.PLACED: ("build",),
-    GoalPredicate.LEVELED: ("build",),
-    GoalPredicate.STORED: ("store",),
-    GoalPredicate.CLEARED: ("fight",),
-    GoalPredicate.THROUGH_NIGHT: ("night",),
-    GoalPredicate.AT_HOME: ("night",),
-}
-
-
-def groups_for(goal: GoalSpec | None, state: dict[str, Any] | None = None) -> frozenset[str]:
-    """
-    今の小目標と状態から、道具の組を決める（コードが決める。LLM に道具を探させる往復を増やさない）。
-    足りない道具は、LLM が search_abilities で引いた項目の道具で足される。
-    """
-    state = state or {}
-    groups: set[str] = set()
-    if goal is not None:
-        groups.update(_GOAL_GROUPS.get(goal.predicate, ()))
-        if goal.predicate == GoalPredicate.HAVE and _COOKED.search(str(goal.item or "")):
-            groups.add("cook")
-    if any(m.get("hostile") for m in state.get("mobs") or []):
-        groups.add("fight")
-    if (state.get("self") or {}).get("in_water"):
-        groups.add("water")
-    if state.get("time") in ("dusk", "night"):
-        groups.add("night")
-    if state.get("pickup_ready"):
-        groups.add("store")
-    if any(str(n).startswith(("hungry", "starving")) for n in state.get("needs") or []):
-        groups.add("cook")
-    return frozenset(groups)
-
-
 def tool_specs(
     can_look: bool = False,
     skills: bool = False,
-    experiment: bool = False,
     advisor: bool = False,
-    groups: Iterable[str] = (),
-    extra: Iterable[str] = (),
     write_skill: bool = False,
 ) -> list[ToolSpec]:
     """
-    配信者に渡す道具の一覧。ふだんは CORE_TOOLS だけ（定義が小さいほど選び間違いと遅さが減る）。
-    `groups` の組（TOOL_GROUPS）と `extra`（search_abilities が引いた項目の道具）を足す。
-    `can_look` が真なら look_screen を、`skills` が真なら run_skill を、`write_skill` が真なら write_skill を、
+    配信者に渡す道具の一覧。全部入りで、並びも固定（`ACTION_TOOLS` → `SKILL_TOOLS` → `QUERY_TOOLS` の定義順）。
+    道具の定義はプロンプトの先頭にあり、1 つでも違うとキャッシュが全部外れるので、小目標や状態で出し入れしない
+    （docs/design/177。前は小目標の組で足していた: 設計書 169）。変わるのは、この実行で決まっていることだけ:
+    `can_look` が真なら look_screen を、`skills` が真なら run_skill を、`write_skill` が真なら write_skill と try_skill を、
     `advisor` が真なら ask_advisor を加える。
-    `experiment` が真（行き詰まっているとき）は、inspect / diagnostics と、use_item の素手・面・スニーク
-    を加える（docs/design/85）。
     """
-    wanted = set(CORE_TOOLS) | set(extra)
-    for g in groups:
-        wanted.update(TOOL_GROUPS.get(g, ()))
-    if can_look:
-        wanted.add(LOOK_SCREEN)
-    if advisor:
-        wanted.add(ASK_ADVISOR)
-    if skills:
-        wanted.add(RUN_SKILL)
-    if write_skill:
-        wanted.add(WRITE_SKILL)
-    if experiment:
-        wanted.update((*EXPERIMENT_QUERIES, "use_item"))
+    optional = {
+        LOOK_SCREEN: can_look,
+        ASK_ADVISOR: advisor,
+        RUN_SKILL: skills,
+        WRITE_SKILL: write_skill,
+        TRY_SKILL: write_skill,
+    }
     specs = []
-    actions = {**ACTION_TOOLS, **SKILL_TOOLS}
-    if experiment:
-        description, props, _ = actions["use_item"]
-        actions["use_item"] = (description, {**props, **EXPERIMENT_USE_ITEM_PROPS}, [])
-    for name, (description, props, required) in actions.items():
-        if name not in wanted:
+    for name, (description, props, required) in {**ACTION_TOOLS, **SKILL_TOOLS}.items():
+        if not optional.get(name, True):
             continue
         specs.append(
             ToolSpec(
@@ -493,8 +441,75 @@ def tool_specs(
             )
         )
     for name, (description, props, required) in QUERY_TOOLS.items():
-        if name not in wanted:
+        if not optional.get(name, True):
             continue
+        specs.append(
+            ToolSpec(
+                name=name,
+                description=description,
+                parameters={"type": "object", "properties": props, "required": required},
+            )
+        )
+    return specs
+
+
+# 判断なしの実験（設計書 191）。ブリッジの BRIDGE_RAW_ONLY の技の調べもの（RAW_ONLY_QUERIES）と同じ
+RAW_QUERY_TOOLS = ("recipe_of", "find_recipes", "uses_of", "cross_section")
+RAW_GUIDE_TOOLS = (READ_GUIDE,)  # Python が読む（ブリッジを通らない）
+WRITE_NOTE = "write_note"
+# 自分用のメモ（設計書 196）。判断なしの実験だけの道具で、Python が受ける（ブリッジを通らない）
+NOTE_TOOLS: dict[str, tuple[str, dict[str, Any], list[str]]] = {
+    WRITE_NOTE: (
+        "自分用のメモを書く（すぐ返る）。メモは毎回「自分のメモ」に載って残る（直近の道具は数件で消える）。"
+        "死んでも残る学びだけを書く: 死んだ・失敗した原因と次にどうするか、うまくいったやり方、この世界の場所（木や水）、"
+        "次にやる順番。体力・敵の位置・持ち物など「いま」に出ている状態は書かない。12 件までで、いっぱいになったら足せない。"
+        "状況が変わった・まとめられるときは、番号を replace に渡して、そのメモを書き直す",
+        {
+            "text": _str("メモの文（240 字まで。原因と、次にどうするかを書く）"),
+            "replace": _int("書き直すメモの番号（省略すると新しく足す）"),
+        },
+        ["text"],
+    ),
+}
+
+
+RAW_ASK_ADVISOR = (
+    "行き詰まったとき・死んだ直後に、やり方を考え直す前に、より強いモデルの意見を聞く（数秒かかる）。同じ技が 2 回続けて止められた・"
+    "失敗した、失敗の理由が前と同じ、同じ死に方をした、次に何をすればよいか分からない、というときに使う。"
+    "原因と、次にどんな技をどの引数で書くかを聞ける。答えは直近の道具に出る。従うかは自分で決める",
+    QUERY_TOOLS[ASK_ADVISOR][1],
+    ["question"],
+)
+
+
+def raw_tool_specs(advisor: bool = False) -> list[ToolSpec]:
+    """
+    判断なしの実験の道具: 技の 3 つ（run_skill / try_skill / write_skill）と、ゲームの知識・断面の調べもの。
+    `advisor` が真なら ask_advisor を加える（小目標の話は書かない raw 用の説明）。
+    見張りの質問（watch）は付けない（見張る速い判断モデルがない）。ブリッジの行動の道具（goto や dig）は出さない。
+    """
+    specs = []
+    for name in (RUN_SKILL, TRY_SKILL, WRITE_SKILL):
+        description, props, required = SKILL_TOOLS[name]
+        specs.append(
+            ToolSpec(
+                name=name,
+                description=description,
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "intent": _str("今やろうとしていること（配信者の口調の 1 文、日本語）"),
+                        **props,
+                    },
+                    "required": ["intent", *required],
+                },
+            )
+        )
+    for name, (description, props, required) in (
+        *((n, QUERY_TOOLS[n]) for n in (*RAW_QUERY_TOOLS, *RAW_GUIDE_TOOLS)),
+        *NOTE_TOOLS.items(),
+        *(((ASK_ADVISOR, RAW_ASK_ADVISOR),) if advisor else ()),
+    ):
         specs.append(
             ToolSpec(
                 name=name,
@@ -522,12 +537,12 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
         ToolCallError: 知らない道具か、行動の道具に intent がないとき
     """
     name = choice.name
-    if name not in ACTION_TOOLS and name not in QUERY_TOOLS and name not in SKILL_TOOLS:
+    if name not in ACTION_TOOLS and name not in QUERY_TOOLS and name not in SKILL_TOOLS and name not in NOTE_TOOLS:
         raise ToolCallError(f"unknown tool {name!r}")
     args = dict(choice.args)
     intent = str(args.pop("intent", "") or "").strip()
     raw_watch = args.pop("watch", None) or []
-    if name in QUERY_TOOLS:
+    if name in QUERY_TOOLS or name in NOTE_TOOLS:
         return ToolCall(name=name, args=args)
     if not intent:
         raise ToolCallError(f"{name} needs an intent (what you are trying to do, one sentence)")
@@ -548,7 +563,7 @@ def parse_tool_call(choice: ToolChoice) -> ToolCall:
 
 
 def is_skill_tool(name: str) -> bool:
-    """技の道具（run_skill / write_skill）か。"""
+    """技の道具（run_skill / write_skill / try_skill）か。"""
     return name in SKILL_TOOLS
 
 
@@ -557,10 +572,10 @@ def _skill_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     skill = str(args.get("name", "")).strip()
     if not SKILL_NAME.match(skill):
         raise ToolCallError("the skill name must be snake_case: a-z, 0-9 and _, 2-40 characters")
-    if name == WRITE_SKILL:
+    if name in (WRITE_SKILL, TRY_SKILL):
         what = str(args.get("what", "")).strip()
         if not what:
-            raise ToolCallError("write_skill needs what (what the skill does)")
+            raise ToolCallError(f"{name} needs what (what the skill does)")
         return {"name": skill, "what": what}
     raw = args.get("args") or "{}"
     try:

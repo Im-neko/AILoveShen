@@ -272,6 +272,16 @@ class TownCompletedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class MissionAdvancedEvent(DomainEvent):
+    """最終目標を達成して、次の最終目標を決めたときのイベント。"""
+
+    done: str = ""
+    text: str = ""
+    reason: str = ""
+    steps: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class SupportReceivedEvent(DomainEvent):
     """配信への応援（フォロー、サブスク、ギフト、ビッツ、レイド）に、お礼を言うときのイベント。
 

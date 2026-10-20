@@ -220,3 +220,80 @@ async def test_a_mine_is_designed_with_its_depth_and_tunnels():
     body = bridge.set_facility.call_args.args[1]
     assert body["design"] == {"bottom_y": 16, "tunnels": 2, "tunnel_length": 16}
     assert plan.town_map.zone("B2").use == "mine"
+
+
+@pytest.mark.asyncio
+async def test_a_bad_place_is_refused_with_the_zones_that_have_usable_ground():
+    rows = _rows()
+    for row, soft in zip(rows, (0.0, 0.9, 0.2, 0.7)):  # A1 B1 A2 B2
+        row.update({"soft": soft, "soil": soft / 2})
+    refusals = []
+
+    def refuse_once(name, body):
+        refusals.append(body)
+        if len(refusals) == 1:
+            raise GoalRejectedError("not enough ground for a 8x4 farm in these zones: choose a smaller size or other zones")
+        return {"name": name}
+
+    designer, _, bridge, text_generator, _ = _designer([FARM, FARM], set_facility=refuse_once)
+    bridge.zones.return_value = rows
+    await designer.design("wheat_farm", "b")
+    retry = text_generator.generate_json.call_args.args[0]
+    # 使える地面が 0.3 以上の区画だけを、多い順に載せる（B1 0.9 は水が多い区画。A2 0.2 は足りない）
+    assert "B2 (usable 0.7" in retry and "A2 (usable" not in retry
+
+
+@pytest.mark.asyncio
+async def test_when_no_zone_has_usable_ground_it_says_so():
+    from ailoveshen.application.use_cases.facility_design import _ground_hint
+
+    rows = [{"id": "A2", "seen": 1, "soft": 0.1, "soil": 0, "flat": 1}]
+    assert "None of the zones you can choose" in _ground_hint(rows, ["A2"])
+    assert _ground_hint([{"id": "A2", "seen": 0.2, "soft": 1}], ["A2"]).startswith(". None of")
+
+
+@pytest.mark.asyncio
+async def test_an_unloaded_area_is_a_world_failure_not_a_design_failure():
+    def unloaded(name, body):
+        raise FacilityAreaNotReadyError("the area is not loaded")
+
+    designer, *_ = _designer([FARM], set_facility=unloaded)
+    with pytest.raises(FacilityNotDesignedError) as e:
+        await designer.design("wheat_farm", "b")
+    assert e.value.world is True
+
+
+def test_design_failures_are_kept_in_the_plan_and_expire(tmp_path, monkeypatch):
+    from ailoveshen.application.use_cases import objectives
+    from ailoveshen.infrastructure.adapters.storage.json_mission_store import JsonMissionStore
+
+    plan = ObjectivePlan(mission=MISSION)
+    store = JsonMissionStore(tmp_path / "mission.json")
+    keeper = ObjectiveKeeper(bridge=AsyncMock(), event_publisher=AsyncMock(), store=store)
+    now = [1000.0]
+    monkeypatch.setattr(objectives.time, "time", lambda: now[0])
+    for _ in range(objectives.MAX_STAGE_DESIGN_TRIES):
+        keeper._design_failed(plan, "wheat_farm", GoalRejectedError("x"))
+    assert keeper._design_blocked(plan, "wheat_farm")
+    # 再起動しても数えは残る
+    restored = ObjectivePlan(mission=MISSION)
+    saved = store.load()
+    assert saved is not None
+    restored.restore(list(saved.pending), list(saved.finished), saved.next_id, design_failed=saved.design_failed)
+    assert restored.design_failed["wheat_farm"][0] == objectives.MAX_STAGE_DESIGN_TRIES
+    assert keeper._design_blocked(restored, "wheat_farm")
+    # 一定時間たてば試し直す
+    now[0] += objectives.DESIGN_RETRY_SECONDS
+    assert not keeper._design_blocked(restored, "wheat_farm") and "wheat_farm" not in restored.design_failed
+
+
+def test_the_hint_skips_zones_that_already_have_a_farm_or_a_build():
+    from ailoveshen.application.use_cases.facility_design import _ground_hint
+
+    rows = [
+        {"id": "A2", "seen": 1, "soft": 1, "soil": 0, "flat": 1, "facilities": [{"name": "wheat_farm_1", "kind": "farm"}]},
+        {"id": "B2", "seen": 1, "soft": 1, "soil": 0, "flat": 1, "built": 0.5},
+        {"id": "C2", "seen": 1, "soft": 0.8, "soil": 0.8, "flat": 1, "facilities": [], "built": 0},
+    ]
+    hint = _ground_hint(rows, ["A2", "B2", "C2"])
+    assert "C2 (usable 0.8" in hint and "A2" not in hint and "B2" not in hint

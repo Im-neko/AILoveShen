@@ -9,11 +9,12 @@ from string import Template
 from typing import Any, Optional
 
 from ailoveshen.application.ports.output.game_prompt_builder import IGamePromptBuilder
-from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
-from ailoveshen.application.use_cases.goal_vocabulary import MAX_TOWN_STAGES
+from ailoveshen.application.ports.output.text_generator import CACHE_BREAK, SCHEMA_SLOT, strip_cache_breaks
+from ailoveshen.application.use_cases.goal_vocabulary import MAX_NEXT_STEPS, MAX_TOWN_STAGES
 from ailoveshen.application.use_cases.tool_catalog import ASK_ADVISOR
 from ailoveshen.application.use_cases.town_map import removable_facilities
 from ailoveshen.domain.value_objects import (
+    Guide,
     Activity,
     BuildDesign,
     Candidate,
@@ -26,7 +27,9 @@ from ailoveshen.domain.value_objects import (
     HouseBlueprint,
     Mission,
     Objective,
+    PlaybookStep,
     SameCause,
+    WithdrawnHand,
     SkillInfo,
     ToolOutcome,
     TownDefinition,
@@ -38,9 +41,12 @@ from ailoveshen.domain.value_objects import (
 from ailoveshen.infrastructure.adapters.prompts.stream_context import (
     ABILITIES,
     format_activity,
+    format_doing,
+    format_goals,
     format_biome,
     format_conditions,
     format_messages,
+    format_mission_facts,
     format_predicates,
     format_site_choice,
     format_site_facts,
@@ -247,11 +253,62 @@ $conditions
 ## 定義の決まり
 - 段階（先に作るもの → 後で作るもの）に分ける。$max_stages 段階まで。前の段階が後の準備になるように
 - 段階ごとの完了条件（conditions）は、上の判定できる条件だけで書く。1 段階 3 つまで
-- 上の条件で書けないもの（2 軒目の建物、柵、道など）は unresolved に文で書き、何ができれば
-  判定・実行できるかを添える。判定できるふりをしない（今の built() は最初の家のこと）
+- 上の条件で書けないが、ブロックや生き物を読めば成り立つかが分かるもの（道、囲い、並び、数）は、
+  custom(名前) で書く。判定コードは、その段階が大目標になるときに LLM が書く（成り立つことを具体的に
+  言える名前にする）。畑の柵は畑の施設が自分で置くので、facility(wheat_farm) で足りる（柵を別に書かない）
+- 世界を読んでも判定できず、実行もできないものだけ、unresolved に文で書き、何ができれば判定・実行できるかを
+  添える。判定できるふりをしない（今の built() は最初の家のこと）
 - 「にぎやか」「きれい」のような判定できない言葉は、数や配置に言い換える
 - 手に入らない物（今できることで作れない物）を条件にしない
 - 場所の数字に合わせる（例: 石が多いなら石を使う、動物が多いなら食料の備蓄から）
+$previous_error
+## 出力
+指定の JSON で出力してください。
+""")
+
+MISSION_TEMPLATE = Template("""\
+あなたは Minecraft のサバイバルで暮らす AI 配信者「$name」の方針を決めます。
+配信の最終目標「$mission」を達成しました（街が完成し、定石が全部済んだ）。次の最終目標を決め、
+それに向かう定石（この順にやる段）を書いてください。
+
+## これまでに達成した最終目標
+$done
+
+## 済んだ定石（この形にならって次を書く）
+$playbook
+
+## 街
+$town
+
+## 今の様子
+$facts
+
+## 今できること
+$abilities
+
+## 今ゲームの状態から判定できる条件
+$conditions
+
+## 書き方の決まり
+- 最終目標は 1 文。今ある街と持ち物の次に進むこと。二つの向きがあり、これまでに達成した最終目標を見て
+  かたよらないように選ぶ: ①冒険と資源（探索、装備、掘る、新しい施設など） ②街の発展（下の「街の発展の軸」）。
+  達成した最終目標をくり返さない。直前が①なら②、直前が②なら①を選ぶのを基本にする
+- 街の発展の軸（②のとき。段ごとに違う成果にする）:
+  - 道: 街の道を全部敷く（paved）。そのあと街灯（lit、placed の松明）で夜も歩ける道にする
+  - 建物を大きくする: 家や倉庫の増築（built(増築の名前)。前より大きく、2 階建てなど）
+  - いろいろな建築: 見張りの塔、橋、井戸、市場、風車、灯台など、種類の違う建物を 1 段に 1 つずつ設計して建てる
+    （built(新しい名前)。名前の末尾の番号だけ違う同じ建物は、種類が違うと言わない）
+  - デザイン: 窓、屋根、庭、池、並木など、見た目を整える。述語で書けない成り立ちは custom(名前) で書く
+    （窓がある、屋根がある、花を植えた、などは判定コードが書かれる）
+  - 街の発展の最終目標は、1 つの軸に偏らず、上から 2 つ以上の軸を段に混ぜる。同じ建物を並べるだけにしない
+- 定石は $max_steps 段まで。前の段が後の段の準備になる順に並べる。コードがこの順を守る
+- 段の完了条件（conditions）は、上の判定できる条件だけで書く。1 段 3 つまで。施設（facility）の条件に
+  ほかの条件を混ぜてよい（作って回るところまでを 1 段にする）。建物（built）は 1 段に 1 つの建物だけ
+- 段の名前（name）は a-z、0-9、_ の短い名前で、済んだ定石や他の段と重ならない
+- 手に入らない物（今できることで作れない物）、判定できないもの（「にぎやか」など）を条件にしない
+- 持ち続けたい物（武器、防具）の段は keep を true にする。失うとその段に戻る。keep でない段は、まだ満たして
+  いないこと（すでにある建物や、持っている物だけの段は作らない）
+- 1 段は、配信の中で達成が見えるくらいの大きさにする。一度に全部を求めない
 $previous_error
 ## 出力
 指定の JSON で出力してください。
@@ -328,20 +385,14 @@ $previous_error
 指定の JSON で出力してください。
 """)
 
-# 大目標の計画（docs/design/50 §18）: 段階（中目標）と、それぞれの小目標の並び、前提つき（purpose=plan）
+# 大目標の計画（docs/design/50 §18）: 段階（中目標）と、それぞれの小目標の並び、前提つき（purpose=plan）。
+# 並びは 決まり・スキーマ（変わらない。印）、大目標と目標の階層（印）、今の状態（設計書 177）
 PLAN_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者の、大目標を進める計画を立てます。
 大目標を段階（中目標）に分け、それぞれを小目標（今やる 1 つの具体的な作業）の並びにします。
 計画は一度立てたら、失敗や行き詰まりがあるまでこのとおりに進めます。材料の作り方の分解と細かい操作は
 自動ですが、何を先にそろえるか、どの順に進めるかはここで決めます。
 
-## 大目標
-$objective
-
-## 今していること
-$activity
-$town_map
-$replan
 ## 計画の書き方
 - 中目標（jobs）: 大目標を達する段階を、順番どおりに 1〜6 個。title は段階の名前（日本語の名詞句。
   例: 水源の確保、種の用意）で、条件（predicate…）は「その段階が終わった状態」。条件で書けない段階
@@ -382,10 +433,16 @@ $replan
 
 ## 使える条件
 $conditions
-$previous_error
-## 出力
-指定の JSON で出力してください（outline、jobs）。
-""")
+
+$guide_notes## 出力
+指定の JSON で出力してください（outline、jobs）。${schema_slot}${cache_break}
+## 大目標
+$objective
+
+## 今していること
+$activity
+$town_map
+$replan$previous_error""")
 
 _GRID_FIXED = {
     "home": "H",
@@ -445,9 +502,12 @@ def _terrain(row: dict[str, Any]) -> str:
         return "まだ見ていない"
     height = row.get("height")
     h = f"、高さ {int(height):+d}" if height is not None else ""
+    ground = (
+        f"、畑にできる地面 {row.get('soft')}（そのまま耕せる {row.get('soil')}）" if "soft" in row else ""
+    )
     return (
         f"平ら {row.get('flat')}、木 {row.get('trees')}、石 {row.get('stone')}、"
-        f"水 {row.get('water')}{h}"
+        f"水 {row.get('water')}{ground}{h}"
     )
 
 
@@ -503,7 +563,19 @@ $conditions
 書き直しの決まり:
 - 意味を変えて書けるものに言い換えない
   （今の built() は最初の家のことで、2 軒目や倉庫の意味にはならない）
-- 今もうそろっている条件にしない（まだできないことは、今そろってはいない）
+- 上の「まだ判定できない部分」に書いていないことを、conditions にも unresolved にも新しく足さない
+  （足すと、この段階が終わらなくなる）
+- 判定できるようになった部分は、その条件を conditions に書き、unresolved から外す。畑ができて farmed(wheat, 9) が
+  手に入るようになった、というときは、その条件が今そろっていてもよい（できるようになって、やっと満たされた）。
+  上に書いていない条件で、今もうそろっているものは、言い換えとみなして差し戻される
+- unresolved に残すのは、上の部分のうち今も書けないものだけ
+- 述語で書けなくても、ブロックや生き物を読めば成り立つかが分かるもの（囲われている、並んでいる、数がある）は、
+  custom(名前) で書く。判定は、この段階が大目標になるときに、題名と理由から書かれる。その部分は unresolved に
+  残さない。名前は、成り立つことが分かる短い名前にする
+- 段階の題名と意味（上の「その段階」の括弧）に含まれていない部分が未解決に書いてあれば、書き損じなので外す
+  （段階が余計な部分で終わらなくなる）。段階の意味は変えない
+- 畑の柵は畑の施設が自分で置く（facility(wheat_farm) が済めば柵もある）ので、柵の部分は、すでにある条件で
+  足りているなら unresolved から外す（条件を足さなくてよい）
 
 ## 今できること
 $abilities
@@ -516,7 +588,7 @@ $previous_error
 # 当たるようにする（docs/design/26 §4）。状態で変わるものは GOAL_TEMPLATE の側に書く
 GOAL_SYSTEM_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者の方針を決めます。
-目標は 4 層: 最終目標（変わらない）、大目標（上から順に取り組むリスト）、中目標（一番上の大目標のための仕事の並び）、小目標（今の 1 つ）。
+目標は 4 層: 最終目標（達成するまで変わらない）、大目標（上から順に取り組むリスト）、中目標（一番上の大目標のための仕事の並び）、小目標（今の 1 つ）。
 決めるのは次の小目標と、見直しに応じた大目標リスト・中目標・自分のメモの編集です。
 
 ## 方針: 効率を先に
@@ -546,6 +618,7 @@ GOAL_SYSTEM_TEMPLATE = Template("""\
 - 何度も要る物・近くにない物は増やす仕組みを作る（木は植林場、食べ物は畑: facility で作る・別の名前で増やす）
 - 待つ時間（作物が育つ間、夜、家の中）は、そばでできること（畑の空きを埋める、クラフト、置く、しまう）に使う
 - 今は手に入らない中目標には、手に入るようにする中目標を前に入れるか、大目標を後ろに回す
+- 「これまでに選んだ小目標」で「進まず止まった」が重なる小目標は、同じ計画をやめて入手元・方法・場所を変える
 見つけたら plan_changes / jobs を直し、何をどう変えたかを review に書く。今のままが一番よければ
 変えずに理由を書く（変えないのも答え。理由のない入れ替えはしない）
 
@@ -624,6 +697,11 @@ $conditions
 - 12 件まで（いっぱいなら drop してから add）。書いた日から 3 日で消える。まだ正しいものは keep で
   延ばし、間違っていたものは drop する
 
+## 教訓（本文に「自分のルール」「思い出したこと」があるとき）
+- review に、使う教訓と使わない教訓（理由）を書く。「自分のルール」は何度も効いたので、当てはまるなら守る
+- 「〜の前に〜を揃える」の準備の教訓が、これから始める作業に当てはまり、準備がまだなら、次の小目標は
+  その準備にする。「思い出したこと」は確かめていない: 効かなかった回数が多いものは使わない
+
 ## 小目標がうまくいかなかったとき（本文に「うまくいかなかった小目標の記録」があるとき）
 - まず原因を分析する（diagnosis）: 記録（行動、確信度、結果）、最後に出ていた候補、進み具合、
   持ち物、覚えている場所のどの事実でそう言えるかを示して 1〜2 文（例: 東と南の探索を交互に選んで
@@ -644,8 +722,7 @@ $all_predicates
 
 ## 出力
 見直し（review）、trips、大目標リストとメモの編集（なければ空）、次の小目標（predicate と必要な
-引数）、serves、その理由（短い 1 文）を指定の JSON で出力してください。
-""")
+引数）、serves、その理由（短い 1 文）を指定の JSON で出力してください。${schema_slot}""")
 
 GOAL_TEMPLATE = Template("""\
 ## 建てる家
@@ -668,9 +745,10 @@ $failure$previous_error
 
 # spikes/primitive_choice_eval.py で測った: 体が必要とするもの（needs）を状態に書くと効いた。
 # 指示に優先順位を書くと、選択器は 20m 先の敵からも逃げるようになった。
-# 並びは「変わらないものが前、変わるものが後ろ」（設計書 127 §5）: 決まり、（印）、目標の階層（format_activity が
-# 小目標の前にも印を置く）、いまの状態。印はキャッシュの境目で、ほかのアダプターは取り除く。決まりは
-# 状態の後ろにあり、先頭から同じ部分が全体の 26% しかなかった（2026-10-09 の記録の中央値）
+# 並びは「変わらないものが前、変わるものが後ろ」（設計書 127 §5、177）: 決まり、（印）、目標の階層、（印）、覚えた技、
+# （印）、いまの状態。印はキャッシュの境目で、ほかのアダプターは取り除く。決まりは状態の後ろにあり、先頭から同じ部分が
+# 全体の 26% しかなかった（2026-10-09 の記録の中央値）。階層は 98% の隣り合う呼び出しで同じ（2026-10-11 の記録）。
+# 技の一覧（3K 字ほど）は小目標が変わるまで同じなので、状態の前に置く
 TOOL_TEMPLATE = Template("""\
 あなたは Minecraft のサバイバルで暮らす AI 配信者として、自分の手で操作しています。
 今の小目標に向けて、次に呼ぶ道具を 1 つ選んでください。
@@ -698,15 +776,17 @@ TOOL_TEMPLATE = Template("""\
   - item_info: 物の取り方・要る道具・使い道（例: 鉄、iron_ingot）。uses_of: その素材で作れる物
   - search_facility: 自分の施設（畑、植林場、建物）の場所と中身。行く・使う前に
   - search_memory: 前に見た場所（鉱石、木、動物、チェストの中身）。遠くへ探しに行く前に
-- 道具の一覧にない道具（畑、建築、精錬、チェスト、食べ物、レシピなど）は、search_abilities で引くと、その小目標のあいだ呼べるようになる
 - 夜に家の中にいるときは、外に出る道具は断られる
 - 座標は整数で、符号つき。z=-284 は -284 と書く（マイナスを落とすと別の場所になり、遠すぎると断られる）。y は足元の高さ
 - look_screen（使えるときだけ出ている）は配信の画面を撮り、次の選択に画像として添える。
   文字の状態で分からないとき（地形、何が起きているか）に使う。画像で完了は決めない
 - 画像が添えてあれば、それはいま配信に映っている自分の視点
 ${cache_break}
+## 配信者の目標
+$goals
+${cache_break}$skills
 ## 配信者が今していること
-$activity
+$doing
 
 ## まわり（ブリッジが今測ったもの）
 - 位置: $position
@@ -830,6 +910,44 @@ def _same_cause_section(cause: SameCause | None) -> str:
         advice=SAME_CAUSE_FAR if far else SAME_CAUSE_OTHER,
         withheld=Template(SAME_CAUSE_WITHHELD).substitute(tool=cause.tool) if cause.withheld else "",
     )
+
+
+# 同じ理由で通らず、提案から外した手（設計書 184）。外したら、同じ手を言い換えて選び直す道は閉じてある。
+# 次の手は別の道具か、自分で書く技
+TOOL_WITHDRAWN_SECTION = """
+## 提案から外した手（同じ理由で通らなかった）
+$hands
+- 外した手は、数字や言い方を変えても通らない。選び直さない
+$next"""
+WITHDRAWN_NEXT = """\
+- 手が足りない。本物の bot を触る技（raw）を書き、外した手がしたかったことを自分でする。まず try_skill で試す（保存されない。
+  失敗してよい: 結果の動いた距離や持ち物の増減と記録を読んで、直してもう一度）。うまくいったら write_skill（同じ名前）で保存する。
+  what に、外した手の名前と通らなかった理由、避けたいこと（水・溶岩・洞窟の穴）を書く。
+  成功は expects で世界から確かめる（have: 持ち物の数、at: その座標の近くに立つ、height: 掘り下りる・上がる、
+  progress: 小目標の残りが減る）
+"""
+WITHDRAWN_SKILL_NEXT = """\
+- 外した技（skill 名前）は、原因を直した版を書く（同じ名前。what に、失敗の記録の原因と直し方）。try_skill で試し
+  （保存されない）、うまくいったら write_skill で保存すればまた使える。同じコードのまま、引数だけ変えて呼んでも通らない
+"""
+WITHDRAWN_NEXT_PLAIN = """\
+- 別の道具（goto / dig / place など）で目的に近づく手を考える
+"""
+
+
+def _withdrawn_section(hands: Sequence[WithdrawnHand], raw_bot: bool) -> str:
+    """外した手の節。なければ空。外した技があれば、その直し方を足す。"""
+    if not hands:
+        return ""
+    lines = "\n".join(
+        f"- {h.hand}（{'続けて' if h.hand.startswith('skill ') else '同じ理由で'} {h.times} 回: {h.reason}。"
+        f"あと約 {h.minutes} 分外す）"
+        for h in hands
+    )
+    next_ = WITHDRAWN_NEXT if raw_bot else WITHDRAWN_NEXT_PLAIN
+    if any(h.hand.startswith("skill ") for h in hands):
+        next_ = WITHDRAWN_SKILL_NEXT + (next_ if any(not h.hand.startswith("skill ") for h in hands) else "")
+    return Template(TOOL_WITHDRAWN_SECTION).substitute(hands=lines, next=next_)
 
 
 # 生の bot の技が有効なときだけ、行き詰まりの節の終わりに足す（設計書 168。技の話が常時の 1 行だけだと、行き詰まりの導線
@@ -968,6 +1086,11 @@ export default async function (t, args) {
 - 座標を決め打ちしない。t.state() や t.find_blocks() で探すか、引数にする（技は別の場所・別の
   ワールドでも使う）
 - 行動の結果の ok を確かめ、だめなら理由を t.log して別の手か t.fail(理由) にする
+- 動いている間の進み具合を t.log に短く書く（例: t.log('y=' + y + ' まで下りた')）。配信の実況は、技が動いている間、位置と
+  t.log の最後の数行から途中経過を話す（書かないと、技が終わるまで何が起きているか話せない）
+- 進んだ所で安全のために止まるとき（水・溶岩・洞窟に出た、上限に届いた）は、t.fail ではなく t.done(止まった理由、今の位置)。
+  expects の height / at（min_change）が進んだ分を成功と見る。t.fail は何も進まなかったときだけ（進んだのに t.fail にすると、
+  失敗に数えられて技が外される）
 - ループには上限を付ける。上限: 1 回に行動 40 回、調べもの 200 回、judge 10 回（時間の上限はない）。
   上限を超えると技は失敗になり、覚えられない。繰り返す手順は、上限より前（行動が 36 回ほど）で自分で
   切り上げて t.done する（残りは、技をもう一度呼んで続ける）。await せずに回るループは止められる
@@ -981,7 +1104,8 @@ export default async function (t, args) {
   "+N"（始めより N 多い）、"$引数名"）、planted / farmed（item と count。"+N" も）、built（name）、
   placed（where: home）、lit（distance）、
   progress（今の小目標の残りの作業が減る）、at（where: "x,y,z" か "$引数名"、distance: 半径で省略は 2。その近くに立って
-  終わる）、out_of_closed_space（歩いて出られない閉じた所から、歩いて降りられる所に出る。家の中も閉じた所に数え、積み上がっただけの柱の頂上・屋根は出たことにならない）。done() だけでは成功にならない
+  終わる。min_change: 始めよりこれだけ近づけば途中でも成功。遠くへ歩く技はこれ）、height（y: 着きたい高さの数か "$引数名"、direction: down か up、min_change: そこへこれだけ進めば
+  途中でも成功で省略は 3。掘り下りる・上がる技はこれ。at で出発点の近くを成功にしない）、out_of_closed_space（歩いて出られない閉じた所から、歩いて降りられる所に出る。家の中も閉じた所に数え、積み上がっただけの柱の頂上・屋根は出たことにならない）。done() だけでは成功にならない
 - 直すとき: 前のコードと失敗の記録（理由、log、最後の道具）を読み、先に diagnosis に原因（どの
   呼び出しが、どんな文で失敗・断られたか、なぜか）を書き、その原因を直すコードにする。原因を
   書かない、前と同じコードは受け取られない
@@ -1019,12 +1143,116 @@ t.* の道具では足りない手（ブリッジにない動き、tick ごと�
 """
 
 SKILL_TEMPLATE = Template("""\
-## 書く技
+${schema_slot}${cache_break}## 書く技
 名前: $name
 すること: $what
 
 ## 配信者が今していること
 $activity
+
+## 直近の道具の呼び出し（古い順。手順の手本）
+$recent
+
+## ほかの技（重複しない。使えるものは真似る）
+$skills
+$previous$previous_error""")
+
+# 判断なしの実験（設計書 191）。ブリッジは目標も提案も助言もしない。体を動かすのは自分で書いた技だけ
+RAW_TOOL_TEMPLATE = Template("""\
+あなたは Minecraft（サバイバル）を遊んでいる AI 配信者です。ブリッジ（ゲームとの橋）は何も判断しません:
+目標が済んだかの判定も、次の手の提案も、助言も、安全の見張りもありません（近くの敵への反射だけは働く）。
+何をするかは自分で決め、体は技で動かし、結果は自分で確かめます。
+
+## 課題
+$task
+
+## 決まり
+- 体を動かす手段は技だけ。try_skill で技を書いて 1 回試し（保存されない）、うまくいったら write_skill（同じ名前）で保存し、
+  次からは run_skill で呼ぶ。技は生の bot（t.bot）で書く。成功は expects で世界から確かめられる
+- 失敗したら、結果の記録（理由、log、動いた距離、持ち物の増減）を読んで原因を直す。同じコードをもう一度試さない
+- 食べる、寝る、水や溶岩や高い所や夜の敵を避ける、道具の耐久を見る、も自分の技でする。満腹度が 0 になると飢えて、体力が 0 で死ぬ
+- 死ぬと持ち物はすべて失い、世界のどこかで素手のまま生き返る。「いま」の deaths は、死んだ回数と最後の様子（いつ、どこで、何に削られたか）。同じ死に方を繰り返さないように使う
+- 直近の道具は数件で消える。死んだ・失敗したときの原因と次にどうするか、この世界の場所、次にやる順番は、write_note で「自分のメモ」に
+  書き残す。メモは毎回ここに載り、12 件まで。体力や敵の位置など「いま」に出ている値は書かない。変わったことは replace で書き直す
+- 同じ技が 2 回続けて止められた・失敗した、死んだ直後、次の手が分からないときは、ask_advisor（出ているとき）で強いモデルに聞く
+- 調べもの（recipe_of / find_recipes / uses_of / cross_section）はすぐ返る。まわりは下の「いま」と、技の中の t.state() / t.bot で見る
+- 行動の道具には intent（今やろうとしていること、配信者の口調の 1 文、日本語）を必ず書く。配信で読み上げる
+- 座標は整数で、符号つき。技の引数や expects には、名前でなく座標の数字を渡す
+
+$guides${cache_break}
+## 覚えた技
+$skills
+
+## 自分のメモ（write_note で書いたもの）
+$notes
+${cache_break}
+## 技の成績（動かすたびに変わる）
+$records
+
+## 直近の道具（古い順）
+$recent
+
+## いま（ブリッジが測ったそのままの値）
+$state
+""")
+
+SKILL_SYSTEM_RAW_ONLY = """\
+あなたは Minecraft のサバイバルで暮らす AI 配信者の「技」を JavaScript で書きます。技は本物の mineflayer の bot を
+直接動かす手順です。うまくいったものは覚えて何度も使います。ブリッジは何も判断しません（道具の断りも、助言もない）。
+
+## 形
+export default async function (t, args) {
+  // t: 下の API。args: 引数（params のスキーマどおり）
+  return t.done('何をしたか')   // 最後は t.done(...) か t.fail('理由')
+}
+
+## API（t）。raw は常に true
+- t.bot: 本物の mineflayer の bot（bot.entity.position / onGround / velocity、bot.blockAt(vec3)、bot.findBlocks({matching, maxDistance, count})、
+  bot.dig(block)、bot.placeBlock(refBlock, faceVector)、bot.equip(item, 'hand')、bot.inventory.items()、bot.craft(recipe, count, table)、
+  bot.recipesFor(id, null, 1, table)、bot.consume()、bot.activateBlock(block)、bot.sleep(bed)、bot.openFurnace(block)、bot.attack(entity)、
+  bot.setControlState('jump' | 'forward' | 'back' | 'left' | 'right' | 'sprint' | 'sneak', bool)、bot.clearControlStates()、
+  bot.lookAt(vec3, force?)、bot.waitForTicks(n)、bot.on('physicsTick' | 'blockUpdate' | ..., fn)、
+  bot.pathfinder.goto(goal) / setGoal(goal)、bot.registry、bot.entities、bot.health、bot.food、bot.time.timeOfDay など）
+- t.Vec3: new t.Vec3(x, y, z)
+- t.goals: mineflayer-pathfinder の goals（new t.goals.GoalNear(x, y, z, range) など）
+- t.sleep(ms): setTimeout の代わり（止められると待ちが終わる）。ほかのタイマーは使えない
+- t.state() → ブリッジが測ったそのままの値 { self: {position, health, food, held_item, on_ground, in_water, biome}, surroundings:
+  {legend, grid}（足元の高さの格子）, mobs: [{id, name, hostile, distance_m, direction}], inventory: {名前: 数},
+  tool_wear: [{item, left, max}], time }
+- t.block_at({x, y, z}) → { name, props? }
+- 調べもの: t.recipe_of({item}), t.find_recipes({query, limit?}), t.uses_of({item}), t.cross_section({direction?, length?, down?, up?})
+  （断面。見えるブロックだけ名前が出て、岩の中は # ）
+- 記録: t.log(message)（失敗したときに読み返す。動いている間の進み具合も短く書く: 配信の実況が最後の数行から途中経過を話す）
+- ないもの: t.goto / t.dig / t.place などの道具、require、fetch、process、ファイル、setTimeout
+
+## 決まり
+- 安全の制約は何も掛からない: 家や建物を壊す、溶岩や水に入る、高い所から落ちる、夜に外へ出る手も通る。自分で確かめる。
+  敵が近づくと反射が働いて技が止められ、失敗として返る
+- 技が終わる（失敗・止められるときも）と、付けたリスナー・タイマー・操作キー・経路の目標・掘りは外される。残したいものは世界に残す
+- 1 回の上限は 10 分。await せずに回るループは 1 秒で止められる。1 tick は 50 ms
+- 座標を決め打ちしない。t.state() や bot.findBlocks で探すか、引数にする
+- 進んだ所で安全のために止まるとき（水・溶岩・洞窟に出た、上限に届いた）は、t.fail ではなく t.done(止まった理由、今の位置)。
+  何も進まなかったときだけ t.fail
+- 生の bot の呼び出しは、失敗の記録の「最後の道具」には載らない。何が起きたか（座標、高さ、例外の文）を t.log に書く。
+  直すときは、その log と例外の文を読む
+- 1 つの技は 1 つのこと（木を切る、作業台を置く、石を掘る、食べる、寝る）。大きな目標は小さな技の組み合わせで進める
+- expects: 技が成功したときに世界で成り立つこと。次の 5 つだけ。have（item と count。count は 1 以上の数、"+N"（始めより N 多い）、"$引数名"。
+  置いた物は持ち物から消えるので、置けたかは have でなく block_near で見る）、
+  block_near（block: ブロックの名前、distance: 半径で省略は 5。そのブロックが近くにある）、
+  at（where: "x,y,z" か "$引数名"、distance: 半径で省略は 2、min_change: 始めよりこれだけ近づけば途中でも成功）、
+  height（y: 着きたい高さの数か "$引数名"、direction: down か up、min_change: そこへこれだけ進めば途中でも成功で省略は 3）、
+  out_of_closed_space（歩いて出られない閉じた所から出る）。t.done() だけでは成功にならない
+- 失敗した技の記録には、終わったときの現場（立っていた所、向き、手の物、足元・頭・まわりのブロック、視線の先、近くのもの）が付く。
+  置けない・掘れないときは、これで原因を読む
+- 直すとき: 前のコードと失敗の記録（理由、log）を読み、先に diagnosis に原因（どの呼び出しが、どんな文で失敗したか、なぜか）を書き、
+  その原因を直すコードにする。原因を書かない、前と同じコードは受け取られない
+- コードは 4000 字まで。説明は日本語 1 文
+"""
+
+SKILL_TEMPLATE_RAW = Template("""\
+${schema_slot}${cache_break}## 書く技
+名前: $name
+すること: $what
 
 ## 直近の道具の呼び出し（古い順。手順の手本）
 $recent
@@ -1069,9 +1297,13 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     他のプロンプトと同じく日本語。行動の選択器には英語を渡す（評価したときの言語）。
     """
 
-    def __init__(self, raw_bot: bool = False) -> None:
-        """raw_bot: 技の書き手に、生の mineflayer の bot を触る書き方を教える（docs/design/168）。"""
+    def __init__(self, raw_bot: bool = False, raw_only: bool = False) -> None:
+        """
+        raw_bot: 技の書き手に、生の mineflayer の bot を触る書き方を教える（docs/design/168）。
+        raw_only: 判断なしの実験（設計書 191）。技は生の bot だけで書き、道具の選択も目標・提案なしの短い形にする。
+        """
         self._raw_bot = raw_bot
+        self._raw_only = raw_only
 
     def build_build_design_prompt(
         self,
@@ -1187,6 +1419,34 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             conditions=format_conditions(),
             max_stages=MAX_TOWN_STAGES,
             previous_error=_retry(previous_error, "定義し直してください。"),
+        )
+
+    def build_mission_prompt(
+        self,
+        character: CharacterProfile,
+        mission: Mission,
+        done: tuple[str, ...],
+        playbook: tuple[PlaybookStep, ...],
+        town: TownDefinition,
+        facts: dict[str, Any],
+        previous_error: str = "",
+    ) -> str:
+        """最終目標を達成したあとの、次の最終目標とその定石を答えさせるプロンプトを組み立てる。"""
+        return MISSION_TEMPLATE.substitute(
+            name=character.name,
+            mission=mission.text,
+            done="\n".join(f"- {t}" for t in done) or "- なし（これが最初）",
+            playbook="\n".join(
+                f"- {s.name}: {s.title}（{', '.join(c.describe() for c in s.conditions)}）"
+                + (f" - {s.reason}" if s.reason else "")
+                for s in playbook
+            ),
+            town=town.text,
+            facts=format_mission_facts(facts),
+            abilities=ABILITIES,
+            conditions=format_conditions(),
+            max_steps=MAX_NEXT_STEPS,
+            previous_error=_retry(previous_error, "書き直してください。"),
         )
 
     def build_stage_prompt(
@@ -1330,6 +1590,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         activity: Activity,
         replan_reason: str = "",
         previous_error: str = "",
+        guide_notes: str = "",
     ) -> str:
         """大目標の計画（中目標と、その小目標の並び）を書かせるプロンプト（docs/design/50 §18）。"""
         progress = "\n".join(f"  {line}" for line in objective.progress[:12])
@@ -1349,17 +1610,22 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         return PLAN_TEMPLATE.substitute(
             objective=f"{objective.describe()}\n理由: {objective.reason or '（なし）'}"
             + (f"\n今の進み具合:\n{progress}" if progress else ""),
-            activity=format_activity(activity),
+            activity=format_activity(activity, cache_break=True),
             town_map=format_town_map(activity.town_map),
             replan=replan,
             conditions=format_conditions(),
             previous_error=error,
+            guide_notes=f"## 手引きの要点（計画に入れる）\n{guide_notes}\n\n" if guide_notes else "",
+            schema_slot=SCHEMA_SLOT,
+            cache_break=CACHE_BREAK,
         )
 
     def build_goal_system(self) -> str:
         """目標の決定の決まり（毎回同じ文。システム指示に渡す）。"""
         return GOAL_SYSTEM_TEMPLATE.substitute(
-            conditions=format_conditions(), all_predicates=format_predicates(list(GoalPredicate))
+            conditions=format_conditions(),
+            all_predicates=format_predicates(list(GoalPredicate)),
+            schema_slot=SCHEMA_SLOT,
         )
 
     def build_goal_prompt(
@@ -1387,7 +1653,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         return GOAL_TEMPLATE.substitute(
             predicates=", ".join(p.value for p in predicates),
             blueprint=_format_blueprint(blueprint, activity.observation),
-            activity=format_activity(activity, with_ids=True),
+            activity=format_activity(activity, with_ids=True, cache_break=True),
             recent_messages=format_messages(tuple(recent_messages)),
             reason=goal_ended_because or "なし",
             failure=_format_failure(failure_record, offered, retry_allowed) + _format_death(death_report),
@@ -1400,7 +1666,7 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
     def build_advice_prompt(self, question: str, situation: str) -> str:
         """配信者が判断に迷って advisor に聞くプロンプト（docs/design/143）。"""
         return ADVICE_TEMPLATE.substitute(
-            situation=situation,
+            situation=strip_cache_breaks(situation),  # 道具の選択の本文の印を持ち込まない（間隔が 5 分を超える用途は固めても読まれない）
             question=question.strip(),
             skill_hint=ADVICE_SKILL_HINT if self._raw_bot else "",
         )
@@ -1419,6 +1685,8 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         repeated_times: int = 0,
         repeated_skill: str = "",
         same_cause: SameCause | None = None,
+        withdrawn: Sequence[WithdrawnHand] = (),
+        guides: Sequence[Guide] = (),
     ) -> str:
         """配信者に道具を 1 つ選ばせるプロンプトを組み立てる（設計書 21 §6）。"""
         around = state.get("surroundings") or {}
@@ -1430,7 +1698,15 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
         ]
         return TOOL_TEMPLATE.substitute(
             cache_break=CACHE_BREAK,
-            activity=format_activity(activity, cache_break=True, step=True),
+            goals=format_goals(activity, step=True),
+            skills=_format_guides(guides) + (
+                Template(TOOL_SKILLS_SECTION).substitute(skills=_format_skill_list(skills))
+                + (TOOL_RAW_SKILLS_LINE if self._raw_bot else "")
+                + CACHE_BREAK
+                if skills is not None
+                else ""
+            ),
+            doing=format_doing(activity, step=True),
             position=f"{me.get('x')}, {me.get('y')}, {me.get('z')}" if me else "不明",
             legend=around.get("legend", ""),
             grid="\n".join(f"    {row}" for row in around.get("grid", [])) or "    （なし）",
@@ -1441,17 +1717,36 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             mobs="、".join(mobs) or "なし",
             suggestions="\n".join(f"- {c.action_id}{_suggestion_note(c)}" for c in suggestions) or "- なし",
             recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
-        ) + (
-            Template(TOOL_SKILLS_SECTION).substitute(
-                skills=_format_skill_list(skills)
-            )
-            + (TOOL_RAW_SKILLS_LINE if self._raw_bot else "")
-            if skills is not None
-            else ""
-        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions, self._raw_bot) + _same_cause_section(same_cause) + _repeat_section(repeated, repeated_times, repeated_skill)
+        ) + _refused_section(state.get("refusals")) + _stuck_section(failing, stagnant_seconds, stagnant_actions, self._raw_bot) + _same_cause_section(same_cause) + _withdrawn_section(withdrawn, self._raw_bot) + _repeat_section(repeated, repeated_times, repeated_skill)
+
+    def build_raw_prompt(
+        self,
+        task: str,
+        state: dict[str, Any],
+        recent_tools: Sequence[ToolOutcome],
+        skills: Sequence[SkillInfo],
+        guides: Sequence[Guide] = (),
+        notes: Sequence[str] = (),
+    ) -> str:
+        """
+        判断なしの実験（設計書 191）の、道具を 1 つ選ばせるプロンプト。課題、技、メモ、技の成績、直近の結果、測ったままの状態だけ。
+        プロンプトキャッシュは先頭からの一致なので、変わらないものを前に、毎回変わるものを後ろに並べる（設計書 198）。
+        """
+        return RAW_TOOL_TEMPLATE.substitute(
+            task=task,
+            guides=_format_guides(guides),
+            cache_break=CACHE_BREAK,
+            skills="\n".join(f"- {s.describe_fixed()}" for s in skills) or "- まだない",
+            notes="\n".join(f"{i}. {n}" for i, n in enumerate(notes, 1)) or "- まだない",
+            records="\n".join(f"- {s.record()}" for s in skills) or "- なし",
+            recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
+            state=json.dumps(state, ensure_ascii=False, indent=None, separators=(", ", ": ")),
+        )
 
     def build_skill_system(self) -> str:
         """技を書くシステム指示（API と書き方。docs/design/22）。"""
+        if self._raw_only:
+            return SKILL_SYSTEM_RAW_ONLY
         return SKILL_SYSTEM + SKILL_RAW_BOT if self._raw_bot else SKILL_SYSTEM
 
     def build_skill_prompt(
@@ -1479,7 +1774,20 @@ class GamePromptTemplateBuilder(IGamePromptBuilder):
             if previous_error
             else ""
         )
+        if self._raw_only:
+            return SKILL_TEMPLATE_RAW.substitute(
+                schema_slot=SCHEMA_SLOT,
+                cache_break=CACHE_BREAK,
+                name=name,
+                what=what,
+                recent="\n".join(_format_tool(o) for o in recent_tools) or "- なし",
+                skills="\n".join(f"- {s.describe()}" for s in skills) or "- まだない",
+                previous=prev,
+                previous_error=error,
+            )
         return SKILL_TEMPLATE.substitute(
+            schema_slot=SCHEMA_SLOT,
+            cache_break=CACHE_BREAK,
             name=name,
             what=what,
             activity=format_activity(activity),
@@ -1640,6 +1948,14 @@ def _retry(previous_error: str, ask: str) -> str:
 
 TOOL_RESULT_CHARS = 300
 ADVICE_RESULT_CHARS = 800  # advisor の答えは調べものの結果より長く、切ると読めなくなる
+
+
+def _format_guides(guides: Sequence[Guide]) -> str:
+    """手引きの一覧（名前と一行の説明）。本文は read_guide で読む。なければ空。"""
+    if not guides:
+        return ""
+    lines = "\n".join(f"- {g.name}: {g.description}" for g in guides)
+    return f"\n## 手引き（本文は read_guide で読む）\n{lines}\n"
 
 
 def _format_tool(o: ToolOutcome) -> str:

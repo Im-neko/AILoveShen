@@ -18,7 +18,11 @@ from ailoveshen.application.use_cases.builds import BuildDesigner
 from ailoveshen.application.use_cases.checks import CheckWriter
 from ailoveshen.application.use_cases.facility_design import FacilityDesigner
 from ailoveshen.application.use_cases.facility_satisfy import SATISFY_NEAR_HOME_M, check_satisfy
-from ailoveshen.application.use_cases.plan_lint import fake_infrastructure, unregistered_builds
+from ailoveshen.application.use_cases.plan_lint import (
+    fake_infrastructure,
+    unregistered_builds,
+    unregistered_facilities,
+)
 from ailoveshen.application.use_cases.goal_vocabulary import (
     ObjectiveProposal,
     PlanChange,
@@ -45,6 +49,8 @@ from ailoveshen.domain.value_objects import (
 )
 
 MAX_STAGE_DESIGN_TRIES = 2
+# 設計に失敗した名前を、世界が変わったかもしれないとして試し直すまでの秒数（失敗の数えは再起動をまたいで残す。設計書 195）
+DESIGN_RETRY_SECONDS = 3600.0
 PLACED_PROBE = 8  # 置いた数を調べるとき、今の数に足して試す数（1 回の判定にまとめて送る）
 # 定石（docs/design/74）: 施設の段は、家のそばで設計する（区画が読み込まれている範囲 m）。待つ間に調べ直す間隔と、
 # 設計に失敗しても試す回数
@@ -96,7 +102,6 @@ class ObjectiveKeeper:
         self._builder = builder
         self._checker = checker
         self._facilities = facilities
-        self._design_failures: dict[str, int] = {}  # 街の段階の建物の設計に失敗した回数
         self._playbook_failures: dict[str, int] = {}  # 定石の段を足せなかった回数
         self._playbook_at = -PLAYBOOK_RETRY_SECONDS  # 施設の段の置き場所を最後に調べた時刻（time.monotonic）
         self._playbook_site = False  # そのときの答え
@@ -159,30 +164,35 @@ class ObjectiveKeeper:
 
     async def _drop_unjudgeable(self, plan: ObjectivePlan) -> None:
         """
-        存在しない名前の建物 `built(name)` が条件の中目標を外す（`plan_lint` が新しい計画では止める。書いて
-        あったものは、いつまでも判定できず、小目標にもできない）。視聴者の頼み・助言の中目標は外さない。
-        中目標が尽きた大目標は、次の切れ目で計画を書き直す。
+        存在しない名前の建物 `built(name)`・施設 `facility(name)` が条件の中目標を外す（`plan_lint` が新しい
+        計画では止める。書いてあったものは、いつまでも判定できず、小目標にもできない）。視聴者の頼み・助言の
+        中目標は外さない。中目標が尽きた大目標は、次の切れ目で計画を書き直す。
         """
         suspects = [
             (g, j)
             for g in plan.pending
             for j in g.open_jobs
-            if not (j.requested_by or j.suggested_by) and unregistered_builds(j.specs, g, ())
+            if not (j.requested_by or j.suggested_by)
+            and (unregistered_builds(j.specs, g, ()) or unregistered_facilities(j.specs, g, ()))
         ]
         if not suspects:
             return
         try:
             builds = {str(b.get("name")) for b in await self._bridge.builds()}
+            facilities = {str(f.get("name")) for f in await self._bridge.facilities()}
         except AILoveShenError as e:
-            logger.debug(f"建物の一覧を読めなかった: {e}")
+            logger.debug(f"建物・施設の一覧を読めなかった: {e}")
             return
         for goal, job in suspects:
-            if not unregistered_builds(job.specs, goal, builds):
+            if not (
+                unregistered_builds(job.specs, goal, builds)
+                or unregistered_facilities(job.specs, goal, facilities)
+            ):
                 continue
             logger.warning(
-                f"中目標 {job.describe()} を外す（大目標 {goal.id}）: その名前の建物はなく、判定できない"
+                f"中目標 {job.describe()} を外す（大目標 {goal.id}）: その名前の建物・施設はなく、判定できない"
             )
-            plan.drop_job(goal.id, job.id, "it names a build that does not exist")
+            plan.drop_job(goal.id, job.id, "it names a build or facility that does not exist")
 
     async def _reconcile(self, plan: ObjectivePlan) -> None:
         """
@@ -302,7 +312,7 @@ class ObjectiveKeeper:
             for c in plan.stage_remaining
             if c.predicate == GoalPredicate.BUILT
             and c.name is not None
-            and self._design_failures.get(c.name, 0) < MAX_STAGE_DESIGN_TRIES
+            and not self._design_blocked(plan, c.name)
         ]
         if not names:
             return
@@ -313,8 +323,23 @@ class ObjectiveKeeper:
             try:
                 await self._builder.design(name, f"{stage.title}: {stage.why}")
             except GoalRejectedError as e:
-                self._design_failures[name] = self._design_failures.get(name, 0) + 1
+                self._design_failed(plan, name, e)
                 logger.error(f"街の段階の建物 {name} を設計できない: {e}")
+
+    def _design_blocked(self, plan: ObjectivePlan, name: str) -> bool:
+        """設計に MAX_STAGE_DESIGN_TRIES 回失敗した名前か（一定時間たてば試し直す）。"""
+        count, at = plan.design_failed.get(name, (0, 0.0))
+        if count < MAX_STAGE_DESIGN_TRIES:
+            return False
+        if time.time() - at >= DESIGN_RETRY_SECONDS:
+            plan.forget_design_failure(name)
+            return False
+        return True
+
+    def _design_failed(self, plan: ObjectivePlan, name: str, error: GoalRejectedError) -> None:
+        """設計の失敗を数えて保存する（再起動で数え直さない）。"""
+        plan.note_design_failure(name, time.time())
+        self._store.save(plan)
 
     async def _design_stage_facilities(self, plan: ObjectivePlan) -> None:
         """今の街の段階の条件に、まだない施設（facility(name)）があれば設計させる（失敗は建物と同じく数える）。"""
@@ -325,7 +350,7 @@ class ObjectiveKeeper:
             for c in plan.stage_remaining
             if c.predicate == GoalPredicate.FACILITY
             and c.name is not None
-            and self._design_failures.get(c.name, 0) < MAX_STAGE_DESIGN_TRIES
+            and not self._design_blocked(plan, c.name)
         ]
         if not names or self._facilities is None:
             return
@@ -336,7 +361,10 @@ class ObjectiveKeeper:
             try:
                 await self._facilities.design(name, f"{stage.title}: {stage.why}")
             except GoalRejectedError as e:
-                self._design_failures[name] = self._design_failures.get(name, 0) + 1
+                if getattr(e, "world", False):  # 区画がまだ読み込まれていない: 近づけば直る。失敗に数えない
+                    logger.warning(f"街の段階の施設 {name} はまだ設計できない: {e}")
+                    continue
+                self._design_failed(plan, name, e)
                 logger.error(f"街の段階の施設 {name} を設計できない: {e}")
 
     async def _write_stage_checks(self, plan: ObjectivePlan) -> None:
@@ -348,7 +376,7 @@ class ObjectiveKeeper:
             for c in plan.stage_remaining
             if c.predicate == GoalPredicate.CUSTOM
             and c.name is not None
-            and self._design_failures.get(c.name, 0) < MAX_STAGE_DESIGN_TRIES
+            and not self._design_blocked(plan, c.name)
         ]
         if not pending or self._checker is None:
             return
@@ -359,7 +387,7 @@ class ObjectiveKeeper:
             try:
                 await self._checker.write(c.name, f"{stage.title}: {stage.why}")
             except GoalRejectedError as e:
-                self._design_failures[c.name] = self._design_failures.get(c.name, 0) + 1
+                self._design_failed(plan, c.name, e)
                 logger.error(f"街の段階の判定 {c.name} を書けない: {e}")
 
     async def add_town_goal(
@@ -977,7 +1005,7 @@ class ObjectiveKeeper:
         設計に失敗した数えも消す: 次の判定で最初からやり直す。
         """
         plan.reset()
-        self._design_failures.clear()
+        plan.forget_design_failure()
         self._playbook_failures.clear()
         self._playbook_at = -PLAYBOOK_RETRY_SECONDS
         logger.info(f"大目標を最初のリストに戻した: {', '.join(g.describe() for g in plan.pending)}")

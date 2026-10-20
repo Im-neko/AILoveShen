@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
+    Deed,
     GoalSpec,
-    Objective,
     Mission,
+    Objective,
+    PlaybookStep,
     TownDefinition,
     TownMap,
     TownSite,
@@ -32,6 +34,11 @@ class SavedPlan:
     site: Optional[TownSite] = None  # 選んだ街の場所
     town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6）
     playbook_done: tuple[str, ...] = ()  # 済んだ定石の段（docs/design/74）
+    origin: Optional[Mission] = None  # 設定の最終目標（保存したあとに変わっていないかの目印。なければ mission）
+    missions_done: tuple[str, ...] = ()  # 達成した最終目標の文（docs/design/180）
+    extra_playbook: tuple[PlaybookStep, ...] = ()  # 次の最終目標のために足した定石の段
+    design_failed: dict[str, tuple[int, float]] = field(default_factory=dict)  # 設計に失敗した数と時刻（設計書 195）
+    history: tuple[Deed, ...] = ()  # 自分がやったこと: 終わった大目標の記録（設計書 199）
 
 
 class IMissionStore(ABC):

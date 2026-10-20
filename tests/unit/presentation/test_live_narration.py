@@ -438,3 +438,32 @@ async def test_a_line_that_fails_the_check_is_rewritten_from_the_same_events_or_
     await live.tick()
 
     assert said == []
+
+
+@pytest.mark.asyncio
+async def test_a_running_skill_is_narrated_from_its_progress_even_though_the_observation_is_stale():
+    """技は数十秒〜数分、観測が更新されない。途中経過（位置とログ）が変わったら話す（設計書 186）。"""
+    live, clock, said, _, llm, state = _setup(lines=["今 y=20 まで下りたよ！", "もう y=10 だ、順調！"])
+    obs = _obs({})
+
+    def running(note):
+        return Activity(acting=True, goal=GOAL, intent="北の森で原木を集めてくるね", observation=obs, skill_note=note)
+
+    state["activity"] = running("技「stair_down」を実行して2秒、今 x=0 y=60 z=0")
+    clock.now = 10
+    await live.tick()  # 基準
+    state["activity"] = running("技「stair_down」を実行して14秒、今 x=3 y=50 z=0、始めから10ブロック下りた")
+    clock.now = 20
+    await live.tick()  # 新しい intent を先に読む
+    state["activity"] = running("技「stair_down」を実行して26秒、今 x=6 y=40 z=0、始めから20ブロック下りた")
+    clock.now = 30
+    await live.tick()
+    assert said[-1] == "今 y=20 まで下りたよ！"
+    events = llm.generate_commentary.await_args.kwargs["recent_events"]
+    assert any("技の途中の様子" in e and "20ブロック下りた" in e for e in events)
+
+    # 秒数だけが進んで位置もログも同じなら、話す材料にならない
+    state["activity"] = running("技「stair_down」を実行して38秒、今 x=6 y=40 z=0、始めから20ブロック下りた")
+    clock.now = 45
+    await live.tick()
+    assert llm.generate_commentary.await_count == 1

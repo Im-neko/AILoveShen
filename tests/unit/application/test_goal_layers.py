@@ -422,6 +422,17 @@ class TestObjectiveProgress:
         assert base.progressed_by(_ObjectiveWatch("m1", 0, (3,), "j1", (3,)))  # 今の中目標の数が動いた
         assert base.progressed_by(_ObjectiveWatch("m2", 0, (), "", ()))  # 別の大目標
 
+    def test_a_number_that_falls_and_comes_back_is_not_progress(self):
+        # 集めた生の鉄をチェストに預けては出す（3 → 2 → 3）。最高（3）を超えたときだけ進み
+        base = _ObjectiveWatch("m1", 0, (3,), "j1", (3,))
+        lower = _ObjectiveWatch("m1", 0, (2,), "j1", (2,))
+        assert not base.progressed_by(lower)
+        kept = base.kept(lower)
+        assert not kept.progressed_by(_ObjectiveWatch("m1", 0, (3,), "j1", (3,)))
+        assert kept.progressed_by(_ObjectiveWatch("m1", 0, (4,), "j1", (3,)))
+        assert kept.progressed_by(_ObjectiveWatch("m1", 0, (2,), "j1", (4,)))
+        assert not kept.kept(_ObjectiveWatch("m2", 0, (1,), "", ())).progressed_by(_ObjectiveWatch("m2", 0, (1,), "", ()))
+
     def test_a_rewrite_that_only_changes_the_job_in_progress_is_not_progress(self):
         base = _ObjectiveWatch("m1", 0, (3,), "j1", (2,))
         assert not base.progressed_by(_ObjectiveWatch("m1", 0, (3,), "j5", (7,)))
@@ -568,7 +579,7 @@ class TestDropAJob:
     def test_the_schema_lets_a_drop_name_a_job(self):
         from ailoveshen.application.use_cases.goal_vocabulary import goal_schema
 
-        change = goal_schema([GoalPredicate.HAVE], ["m1"])["properties"][
+        change = goal_schema()["properties"][
             "plan_changes"
         ]["items"]["properties"]
         assert "job" in change
@@ -783,3 +794,28 @@ class TestCheckRemedy:
         failed = GoalSpec(GoalPredicate.HAVE, item="oak_planks", count=59)
         with pytest.raises(ValueError, match="different small goal"):
             _check_remedy(self._decision(failed, "retry", "x"), failed, 2)
+
+
+class TestSameFailures:
+    @staticmethod
+    def _outcome(spec, objective_id, ended="goal x stalled (no progress)"):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(goal=SimpleNamespace(spec=spec, objective_id=objective_id), ended_because=ended)
+
+    def test_survival_goals_between_do_not_break_the_run_of_failures(self):
+        from types import SimpleNamespace
+
+        from ailoveshen.application.use_cases.play import _same_failures
+
+        iron = GoalSpec(GoalPredicate.HAVE, item="raw_iron", count=4)
+        home = GoalSpec(GoalPredicate.AT_HOME)
+        recent = [
+            self._outcome(iron, "m1"),
+            self._outcome(home, None, "the time of day changed from day to dusk"),
+            self._outcome(iron, "m1"),
+        ]
+        assert _same_failures(SimpleNamespace(recent_goals=recent)) == 2
+        # 身を守る小目標そのものの失敗は、それだけで数える
+        recent.append(self._outcome(home, None))
+        assert _same_failures(SimpleNamespace(recent_goals=recent)) == 1

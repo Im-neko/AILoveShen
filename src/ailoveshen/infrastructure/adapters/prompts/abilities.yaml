@@ -140,8 +140,11 @@
 - key: make_mine
   title: 採掘場を作る
   words: mine shaft stairs tunnel branch mining iron diamond deep facility 採掘場
-  when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき、石炭や鉄が見えず探し回っているとき
+  when: 鉄やダイヤを何度も取りに行く、毎回その場で階段を掘り下げているとき、石炭や鉄が見えず探し回っているとき。新しく作る前に、同じ高さの採掘場がないかを見る（下の「使いまわし」）
   how: |
+    同じ高さ（鉱石の高さから 8 以内）の採掘場があれば新しく作らない。掘り終えていなければ続きを掘り、掘り終えて鉱石が
+    見えなければ幹を延ばして枝を足す（使いまわす。どんどん長くなる）。延ばせないほど打ち切られて初めて、新しい採掘場。
+    やり方と、この世界の採掘場の決まり・準備（予備のつるはし、松明）は read_guide(branch_mining)。
     家があるとき、採掘場はブリッジが自分で設計する（提案 make a mine down to y …。書かなくてよい）。
     家の外周の 10〜30 m、入口は前の採掘場と同じ行に揃え、鉱石の高さ（石炭・銅 y 32、鉄 16、ラピス 0、金 -16、
     レッドストーン・ダイヤ -58）まで階段で下りて、東西の坑道（長さ 32、危なければ短く）と 3 マスおきの枝（長さ 10）を掘る。
@@ -156,7 +159,7 @@
        そこで採掘場は終わりになり理由が残る
     3. 完成した採掘場は、深い石・鉱石が要るとき提案 go down the mine … でそこから下りる
     採掘場の場所・深さ・掘った数は search_facility（例: 採掘場、mine）
-  tools: [do_suggestion, craft, recipe_of, search_facility]
+  tools: [do_suggestion, craft, recipe_of, search_facility, read_guide]
   see: [mine_ores]
 - key: breath
   title: 水の中で息を続ける
@@ -251,7 +254,8 @@
     ボートは同じ木の板材 5 枚で craft（作業台が要る。例: oak_boat）
     goto など遠くへ行く道具は、途中に長い水があれば、ボートを持っていれば自分で乗って渡る
     ride_boat {x, z} で水の上を進む（水際で置いて乗り、岸で降りて拾う）
-  tools: [craft, goto, ride_boat]
+    水に落ちて岸の高さが分からないときは cross_section {direction}（水面と深さ、岸が水面より何ブロック高いか）を見て、低い岸の向きへ泳ぐ
+  tools: [craft, goto, ride_boat, cross_section]
 
 - key: store_items
   title: チェストにしまう・出す
@@ -432,9 +436,11 @@
        item を省くと素手で押す（ドア・レバー・ボタン）。家のドアは座標の代わりに target: home_door
     3. もう一度 inspect で変わったかを確かめる。変われば続ける（うまくいった座標なしの手は覚えた候補になる）。変わらなければ別の 1 つを変える
     4. 3 つ試して通らなければ別の手（家に戻る・小目標を変える）へ
+    横から見たい（水に落ちて岸の高さが分からない、岩の厚み、頭の上や足元に何があるか）ときは cross_section {direction: north|south|east|west}。
+       行が高さ、列が距離で、summary に地面の高さ・水面と深さ・岸の段差が出る（# は見えない岩の中）。歩いて出る向きを選ぶ前に見る
     間にある物（in_the_way）には、小麦・草・苗木・松明のように通り抜けられる物も含まれる（サーバーのレイはその枠に当たる）。
     バケツや置く手が効かなかったときの文に「the wheat at … is in the line」とあれば、書かれた横のマスに立ってもう一度使う
-  tools: [inspect, diagnostics, use_item]
+  tools: [inspect, diagnostics, cross_section, use_item]
   see: [use_items]
 
 - key: skills
@@ -444,9 +450,10 @@
   how: |
     run_skill {name} で覚えた技を実行する（合う技があれば道具を 1 つずつ呼ぶより先に）
     write_skill {name, what} で新しい技を書く（すぐ 1 回試す）。失敗したら先に原因を調べ（記録の失敗した道具とその文）、同じ名前で直す（原因を書き、コードを変える）
+    try_skill {name, what} は技を保存せずに 1 回だけ試す（使い捨て）。うまくいくか分からない動きや、提案が断られるときの別のやり方を、失敗してもよいので試す。結果に動いた距離と持ち物の増減が付く。うまくいったら write_skill（同じ名前）でそのまま保存できる。失敗したら原因を読んで、同じ名前で直して試す
     till → sow のような同じ手の並びを 3 回続けて成功させると、「同じ手の並びを繰り返している」と出る。技にするかは自分で決める
     1 回の実行は行動 40 回まで（超えると失敗）。長い作業は、36 回ほどで切り上げる技にして、もう一度呼んで続ける
-  tools: [run_skill, write_skill]
+  tools: [run_skill, write_skill, try_skill]
 
 - key: collect_on_the_way
   title: 探索中に見つけた鉱石や素材を、目標外でも集める
@@ -478,6 +485,18 @@
     - 積んで上がった先が、屋根・柱の頂上（四方が崖）に出るだけなら、climb_out は出ず、横の壁を掘る dig_out が出る
     - inspect（座標なし）の over_a_drop で、崖の上かどうかが分かる
   tools: [do_suggestion, inspect]
+  see: [climb_out]
+
+- key: shaft_up
+  title: 地下で、歩いて地上に出る道が見つからないとき、真上へ縦穴を掘り上がって出る
+  words: shaft up dig surface underground cave trapped stuck lost way out pillar pile cobblestone no pickaxe torch dark
+  when: 洞窟や地下で、`get out to the surface` が「could not get to the surface」「no known way out」で失敗する、go_home や goto が No path や経路の時間切れになる、つるはしも松明もなく暗い所から動けない
+  how: |
+    地下で surface が失敗したあと、丸石か土を 12 個以上持っていれば、候補 `dig a shaft up to the surface by piling up blocks` が出る（do_suggestion で実行する。昼と夜明けは聞かずに実行される）。
+    真上の岩を掘り（つるはしがなければ素手で。何も落ちなくてよい）、足元に積んで上がる。1 回に 20 個まで。地上に出るまで、続けて同じ候補を選ぶ
+    - 保護された家・建物の下、真上や隣に水・溶岩・落ちる砂があるときは、掘らずに理由を返す（その場所では掘らない）
+    - 出たら go_home で戻り、つるはしや松明を作り直す
+  tools: [do_suggestion]
   see: [climb_out]
 
 - key: climb_out

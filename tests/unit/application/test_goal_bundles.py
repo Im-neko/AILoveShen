@@ -77,7 +77,7 @@ class TestShape:
         assert decision.spec == LOG
         assert decision.together == (SAPLING, STONE)
         assert decision.approach.startswith("森へ")
-        schema = goal_schema([GoalPredicate.HAVE], ["m1"])
+        schema = goal_schema()
         # 見直しの次に、残りを外出ごとに分けさせてから中目標を書かせる（§9）
         assert list(schema["properties"])[:2] == ["review", "trips"]
         assert "trips" in schema["required"]

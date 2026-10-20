@@ -14,6 +14,7 @@ from ailoveshen.domain.value_objects import (
     PLANNABLE_CONDITIONS,
     Activity,
     ConversationMessage,
+    Deed,
     GameObservation,
     Goal,
     GoalOutcome,
@@ -94,6 +95,9 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
         "触らない）。where は home（家の床の高さ）か x,y,z（そこに立つ高さ。地面は y-1）。"
         "例: leveled(home, 8)"
     ),
+    GoalPredicate.PAVED: (
+        "paved: 街の理想図の道をシャベルで全部土の道にする（引数なし。理想図に道があるとき）"
+    ),
     GoalPredicate.CUSTOM: (
         "custom(name): ほかの条件で書けない、世界に残る結果（花を家の前に並べる、羊を柵に 3 匹）。"
         "新しい name を書くと、大目標の題名と理由から判定を書く。ほかの条件で書けるならそちらを"
@@ -135,7 +139,8 @@ PREDICATE_DESCRIPTIONS: dict[GoalPredicate, str] = {
     ),
     GoalPredicate.FACILITY: (
         "facility(name): 施設（畑、植林場、採掘場）を設計どおりに作る（畑は全部耕してまく、植林場は全部植える、"
-        "採掘場は底までのらせん階段と坑道を全部掘る）。"
+        "採掘場は底までのらせん階段と坑道を全部掘る）。採掘場の新しい名前は書かない（鉱石の have() が作って"
+        "掘る。書いてよいのは、もうある採掘場だけ）。"
         "新しく耕す・植えるのは施設のマスだけなので、畑や植林場を作る・増やすときは先にこれを大目標の"
         "条件にする（新しい name を書くと、街の理想図の区画に配置を設計してから作る。理想図に予定の施設が"
         "あればその名前で）。できた施設は広げられない: 増やすときは別の名前（例: wheat_farm_2）。"
@@ -182,6 +187,19 @@ def site_name(site_id: str) -> str:
     return "最初の家の場所" if site_id == HERE_SITE else DIRECTION_NAMES.get(site_id, site_id)
 
 
+def format_mission_facts(facts: dict) -> str:
+    """最終目標を達成したときの様子: 日数、持ち物、建てたもの（名前は判定に使う識別子）。"""
+    builds = "、".join(facts.get("builds") or []) or "なし"
+    day = f"{facts['day']} 日目" if facts.get("day") is not None else "日数は不明"
+    return "\n".join(
+        [
+            f"- 今は {day}",
+            f"- 持ち物: {_format_inventory(facts.get('inventory') or {})}",
+            f"- 建てた建物・施設: {builds}",
+        ]
+    )
+
+
 def format_site_facts(row: dict) -> str:
     """ブリッジが測った候補地 1 か所の数字（半径 32 ブロック）。"""
     stand = f" 立つ高さ y={row['stand_y']}" if row.get("stand_y") is not None else ""
@@ -212,16 +230,36 @@ def format_activity(
     `with_ids` なら大目標とメモの ID、小目標の番号（メモの根拠）を出す（目標の決定での
     編集用。配信で読み上げられうる所では出さない）。
     `cache_break` なら、目標の階層（変わりにくい）と今の小目標以下（変わる）の間にキャッシュの境目の印を置く。
-    `step` なら、道具を 1 つ選ぶ手のための短い形: 調べた候補地の一覧・街の定義・終わった大目標・済んだ定石・
-    すり減っていない道具の耐久・直近の行動（「直近の道具」の節と重なる）を出さず、直近の小目標は同じものを 1 つにして新しい 3 つだけ
-    （街づくりの見直しの材料で、1 手の選択には要らない。設計書 174）。
+    `step` なら、道具を 1 つ選ぶ手のための短い形（`format_goals` / `format_doing`）。
     """
     if activity is None:
         return "ゲームはしていない"
-    titles = {g.id: g.title for g in activity.objectives}
+    divider = f"\n{CACHE_BREAK}\n" if cache_break else "\n"
+    return format_goals(activity, with_ids, step) + divider + format_doing(activity, with_ids, step)
+
+
+# 大目標が空のときの目標の決定に足す一文: 生存の小目標は夜・空腹・体力・死亡のときしか通らないので、空のまま
+# 待っていても決まらない（2026-10-16: 街が完成して大目標が空になり、昼の through_night と済んだ at_home の
+# 差し戻しを約 1100 回繰り返した）
+_EMPTY_OBJECTIVES = (
+    "（空のままにしない: plan_changes の add で、最終目標に向かう大目標を足す。"
+    "身を守る小目標が選べるのは夜・空腹・体力・死亡のときだけ）"
+)
+
+
+def format_goals(activity: Activity | None, with_ids: bool = False, step: bool = False) -> str:
+    """
+    目標の階層（最終目標、街の場所、定石、街の定義、大目標）。変わりにくいので、プロンプトの前のほうに置く。
+    `step` なら、調べた候補地の一覧・街の定義・終わった大目標・済んだ定石を出さない（街づくりの見直しの
+    材料で、1 手の選択には要らない。設計書 174）。
+    """
+    if activity is None:
+        return "ゲームはしていない"
     lines = []
     if activity.mission is not None:
         lines.append(f"- 最終目標: {activity.mission.text}")
+        if activity.missions_done and not step:
+            lines.append(f"- 達成した最終目標: {' / '.join(activity.missions_done)}")
     lines += _format_site(activity, with_survey=not step)
     lines += _format_playbook(activity, remaining_only=step)
     if activity.town is not None and not step:
@@ -231,12 +269,25 @@ def format_activity(
     lines.append("- 大目標（上から順に取り組む）:")
     lines += [
         f"  {i}. {_format_objective(g, with_ids, current=i == 1)}" for i, g in enumerate(pending, 1)
-    ] or ["  - なし"]
+    ] or [f"  - なし{_EMPTY_OBJECTIVES if with_ids else ''}"]
     if finished and not step:
         lines.append("- 最近終わった大目標:")
         lines += [f"  - {_format_finished(g)}" for g in finished]
-    if cache_break:
-        lines.append(CACHE_BREAK)
+    if activity.history and with_ids and not step:  # 目標の決定だけ（実況や返答には要らない）
+        lines += _format_history(activity.history)
+    return "\n".join(lines)
+
+
+def format_doing(activity: Activity | None, with_ids: bool = False, step: bool = False) -> str:
+    """
+    今の小目標とゲームの状況、最近の小目標、メモ、教訓。ステップごとに変わる。
+    `step` なら、すり減っていない道具の耐久・直近の行動（「直近の道具」の節と重なる）を出さず、直近の小目標は
+    同じものを 1 つにして新しい 3 つだけ。
+    """
+    if activity is None:
+        return ""
+    titles = {g.id: g.title for g in activity.objectives}
+    lines = []
     recent = activity.recent_goals
     now = f" [{len(recent) + 1}]" if with_ids and activity.goal is not None else ""
     lines.append(f"- 今の小目標{now}: {_format_goal(activity.goal, activity.observation, titles)}")
@@ -254,6 +305,8 @@ def format_activity(
     lines.append(
         "\n".join(f"  - {f'[{i}] ' if with_ids else ''}{t}" for i, t in outcomes) or "  - なし"
     )
+    if activity.tried and not step:
+        lines.append(f"- 一番上の大目標のために、これまでに選んだ小目標（古いものも含む回数）: {' / '.join(activity.tried)}")
     lines += _format_notes(activity, with_ids)
     lines += _format_lessons(activity)
     return "\n".join(lines)
@@ -504,6 +557,27 @@ def _format_steps(job: Job) -> str:
     return "（計画: " + " → ".join(parts) + "）"
 
 
+# 自分がやったことに出す件数（最近のもの。全部は保存してある。設計書 199）
+HISTORY_SHOWN = 30
+
+
+def _format_history(history: tuple[Deed, ...]) -> list[str]:
+    """
+    自分がやったこと（終わった大目標の記録）。同じことをまた大目標に足さないための記憶で、世界の今を
+    表すものではない（畑や植林場が今もあるかは「作った施設」と状況を見る）。
+    """
+    shown = history[-HISTORY_SHOWN:]
+    lines = [
+        f"- 自分がやったこと（終わった大目標。古い順。済んだことをまた大目標に足さない。直近 {len(shown)} 件、全部で {len(history)} 件）:"
+    ]
+    for d in shown:
+        when = f"{d.day} 日目 " if d.day is not None else ""
+        how = "完了" if d.done else f"断念: {d.because}"
+        who = f"（{d.requested_by} の頼み）" if d.requested_by else ""
+        lines.append(f"  - {when}{d.title}{who}（{how}）")
+    return lines
+
+
 def _format_finished(goal: Objective) -> str:
     how = "完了" if goal.state == ObjectiveState.DONE else f"断念: {goal.ended_because}"
     return f"{goal.title}{_requested(goal)}（{how}）"
@@ -571,15 +645,24 @@ def _format_note(note: Note, with_ids: bool) -> str:
 
 def _format_lessons(activity: Activity) -> list[str]:
     """
-    今の状況で思い出した教訓（docs/design/35）: 前に似た状況で学んだこと。確かめていない。
-    思い出したものがなければ欄を出さない。
+    今の状況で思い出した教訓（docs/design/35）: 前に似た状況で学んだこと。何度も効いたもの（`proven`）は
+    「自分のルール」として守らせ、そうでないものは確かめていないこととして出す。思い出したものがなければ
+    欄を出さない。
     """
-    if not activity.lessons:
-        return []
-    return [
-        "- 思い出したこと（前に似た状況で学んだこと。確かめていない。事実は上のゲームの状況）:",
-        *(f"  - {_format_lesson(n)}" for n in activity.lessons),
-    ]
+    rules = [n for n in activity.lessons if n.proven]
+    heard = [n for n in activity.lessons if not n.proven]
+    lines: list[str] = []
+    if rules:
+        lines += [
+            "- 自分のルール（何度も効いた教訓。今の状況に当てはまるなら守る。守らないなら理由を言う）:",
+            *(f"  - {_format_lesson(n)}" for n in rules),
+        ]
+    if heard:
+        lines += [
+            "- 思い出したこと（前に似た状況で学んだこと。確かめていない。事実は上のゲームの状況）:",
+            *(f"  - {_format_lesson(n)}" for n in heard),
+        ]
+    return lines
 
 
 def _format_lesson(lesson: Lesson) -> str:
@@ -854,10 +937,17 @@ def _format_titles(obs: GameObservation) -> list[str]:
     return [f"- 建物・施設の呼び名（人に話すときはこの呼び名で言う。目標・判定・道具には元の名前を使う）: {named}"]
 
 
+# 深い地下にいるときの時間帯の注: 空の光が届かないので、昼と夜で暗さも湧き方も変わらない（夜の危険は地上のもの）
+UNDERGROUND_NIGHT_NOTE = (
+    "。今いるのは地下で、夜になっても危険は増えない（昼と同じ暗さ・同じ湧き方）。"
+    "夜だからと家に戻る理由はなく、そのまま作業を続けてよい"
+)
+
+
 def _format_situation(obs: GameObservation, brief: bool = False) -> str:
     s = obs.state
     lines = [
-        f"- 時間帯: {format_time(s.get('time', {}))}",
+        f"- 時間帯: {format_time(s.get('time', {}))}{UNDERGROUND_NIGHT_NOTE if obs.underground else ''}",
         f"- 家: {_format_home(obs)}",
         *_format_titles(obs),
         *([f"- 今いる場所: {place}"] if (place := format_place(obs)) else []),

@@ -120,6 +120,19 @@ def _is_type(value: Any, kind: str | list[str]) -> bool:
     return True
 
 
+def optional_parameters(schema: Any) -> int:
+    """スキーマの任意の項目（required にないプロパティ）の数。入れ子の object も全部足す。"""
+    if isinstance(schema, list):
+        return sum(optional_parameters(v) for v in schema)
+    if not isinstance(schema, dict):
+        return 0
+    count = sum(optional_parameters(v) for v in schema.values())
+    props = schema.get("properties")
+    if schema.get("type") == "object" and isinstance(props, dict):
+        count += len(set(props) - set(schema.get("required") or ()))
+    return count
+
+
 def estimate_tokens(text: str) -> int:
     """
     トークン数の見積もり（多めに）: ASCII でない字（日本語）は 1 字 1 トークン、

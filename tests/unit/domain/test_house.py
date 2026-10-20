@@ -214,6 +214,24 @@ class TestPlaySession:
         session.set_goal(Goal(PLANKS, "板材が要る", objective_id="m1"), "day")
         return session
 
+    def test_what_was_tried_for_the_objective_outlives_the_recent_goals(self):
+        session = self._session(goal_history=2)
+        for ended, met in [("goal x stalled (no progress)", False)] * 3 + [("goal x is met", True)]:
+            session.end_goal(ended, met)
+            session.set_goal(Goal(PLANKS, "板材が要る", objective_id="m1"), "day")
+        session.end_goal("the time of day changed from day to dusk", False)
+        assert len(session.recent_goals) == 2
+        assert session.tried("m1") == (
+            "have(planks): 進まず止まった 3 回",
+            "have(planks): 達成 1 回",
+            "have(planks): 途中で切れた 1 回",
+        )
+        assert session.tried("m2") == ()
+        survival = Goal(GoalSpec(GoalPredicate.AT_HOME), "身を守る")
+        session.set_goal(survival, "dusk")
+        session.end_goal("goal at_home() is met", True)
+        assert session.tried(None) == ()  # 身を守る小目標は、大目標のために選んだものに数えない
+
     def test_needs_goal_initially(self):
         session = PlaySession(blueprint=_blueprint(), plan=_plan())
         assert session.needs_new_goal(_obs(goal=False))

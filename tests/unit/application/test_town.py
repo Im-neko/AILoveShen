@@ -2,6 +2,8 @@
 
 from unittest.mock import AsyncMock, Mock
 
+import dataclasses
+
 import pytest
 
 from ailoveshen.application.use_cases.objectives import ObjectiveKeeper
@@ -9,6 +11,7 @@ from ailoveshen.application.use_cases.town import MOVE_CONDITIONS, TownPlanner
 from ailoveshen.domain.entities import ObjectivePlan, PlaySession
 from ailoveshen.domain.events import (
     HouseDesignedEvent,
+    MissionAdvancedEvent,
     ObjectiveAddedEvent,
     ObjectiveCompletedEvent,
     TownCompletedEvent,
@@ -24,6 +27,7 @@ from ailoveshen.domain.value_objects import (
     GoalSpec,
     HouseBlueprint,
     Mission,
+    PlaybookStep,
     Side,
     TownDefinition,
     TownSite,
@@ -116,6 +120,7 @@ def bridge():
     b = AsyncMock()
     b.check.side_effect = _check()
     b.zones.side_effect = GameBridgeError("no zones in this test")
+    b.facilities.return_value = []
     return b
 
 
@@ -247,6 +252,38 @@ class TestTownPlanner:
         assert text_generator.generate_json.await_count == 3
 
     @pytest.mark.asyncio
+    async def test_a_condition_the_bridge_cannot_judge_is_dropped_not_waited_for(
+        self, planner, text_generator, bridge
+    ):
+        """書き損じた条件を未解決で待たせると、能力が足されても段階が終わらない。捨てる。"""
+        bridge.check.side_effect = _check(rejected={SWORD})
+        with_sword = {**STOCK, "conditions": [FOOD.to_dict(), SWORD.to_dict()]}
+        text_generator.generate_json.return_value = {**TOWN, "stages": [with_sword]}
+        plan = _sited()
+
+        await planner.prepare(plan)
+
+        stage = plan.town.stages[0]
+        assert stage.conditions == (FOOD,)
+        assert stage.unresolved == ()
+        assert stage.ready
+
+    @pytest.mark.asyncio
+    async def test_a_stage_with_nothing_the_bridge_can_judge_is_tried_again_later(
+        self, planner, text_generator, bridge
+    ):
+        """判定できる条件がひとつも残らない段階は、定義を保存せず次の切れ目でやり直す。"""
+        bridge.check.side_effect = _check(rejected={SWORD})
+        only_sword = {**STOCK, "conditions": [SWORD.to_dict()]}
+        text_generator.generate_json.return_value = {**TOWN, "stages": [only_sword]}
+        plan = _sited()
+
+        with pytest.raises(TextGenerationError, match="no condition the bridge can judge"):
+            await planner.prepare(plan)
+
+        assert plan.town is None
+
+    @pytest.mark.asyncio
     async def test_malformed_every_time_raises(self, planner, text_generator):
         """定義が一度も解釈できなければ、開始を止める。"""
         text_generator.generate_json.return_value = {"text": "", "stages": []}
@@ -312,6 +349,97 @@ class TestTownPlanner:
         assert text_generator.generate_json.await_count == 3
 
     @pytest.mark.asyncio
+    async def test_an_unresolved_condition_that_is_now_met_is_a_resolution_not_a_rephrasing(
+        self, planner, text_generator, bridge
+    ):
+        """未解決に書いてあった `farmed(wheat, 9)` が、畑ができて満たされた（2026-10-19）: 言い換えとして差し戻さない。"""
+        farmed = GoalSpec(GoalPredicate.FARMED, item="wheat", count=9)
+        bridge.check.side_effect = _check(met={farmed})
+        text_generator.generate_json.return_value = {"conditions": [farmed.to_dict()], "unresolved": []}
+        stuck = TownStage(
+            "畑", "食料", conditions=(LIT,), unresolved=(f"{farmed.describe()} は今できることでは手に入らない（no farm）",),
+            tried_with="v0",
+        )
+        plan = ObjectivePlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(stuck), town_stage=0, site=HERE)
+
+        await planner.prepare(plan)
+
+        assert plan.town.stages[0].conditions == (farmed,) and plan.town.stages[0].ready
+        assert text_generator.generate_json.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_rewrite_that_adds_a_new_unresolved_part_is_refused(
+        self, planner, text_generator, prompt_builder, bridge
+    ):
+        """元の未解決を条件に書けたのに、新しい未解決（食料が減らないこと）を足すと、段階が終わらなくなる（2026-10-19）。"""
+        farmed = GoalSpec(GoalPredicate.FARMED, item="wheat", count=9)
+        bridge.check.side_effect = _check(met={farmed})
+        text_generator.generate_json.side_effect = [
+            {"conditions": [farmed.to_dict()], "unresolved": ["食料が減らないことを判定する条件がない"]},
+            {"conditions": [farmed.to_dict()], "unresolved": []},
+        ]
+        stuck = TownStage(
+            "畑", "食料", unresolved=(f"{farmed.describe()} は今できることでは手に入らない（no farm）",), tried_with="v0"
+        )
+        plan = ObjectivePlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(stuck), town_stage=0, site=HERE)
+
+        await planner.prepare(plan)
+
+        assert plan.town.stages[0].unresolved == () and plan.town.stages[0].conditions == (farmed,)
+        error = prompt_builder.build_stage_prompt.call_args.kwargs["previous_error"]
+        assert "新しいことを足すと段階が終わらなくなる" in error
+        assert text_generator.generate_json.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_stage_whose_conditions_are_all_met_is_written_again_once(
+        self, planner, text_generator, prompt_builder
+    ):
+        """条件がそろっても未解決が残る段階は、そろった時点で一度書き直す（施設のほかの理由で手に入るようになったかもしれない）。"""
+        text_generator.generate_json.return_value = {"conditions": [LIT.to_dict()], "unresolved": ["柵"]}
+        stuck = TownStage("植林場", "木", conditions=(LIT,), unresolved=("柵",), tried_with="v1")
+        plan = ObjectivePlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(stuck), town_stage=0, site=HERE)
+
+        await planner.prepare(plan)
+        text_generator.generate_json.assert_not_awaited()
+
+        plan.restore([], [], 1, town=_town(stuck), town_stage=0, site=HERE, stage_met=(LIT,))
+        await planner.prepare(plan)
+        assert text_generator.generate_json.await_count == 1
+        await planner.prepare(plan)
+        assert text_generator.generate_json.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_part_no_predicate_can_say_becomes_a_custom_check_written_later(
+        self, planner, text_generator, bridge
+    ):
+        """柵で囲む（述語がない）を `custom(名前)` で書けば、判定が書かれる前でも保存でき、未解決から外れる（設計書 199 §5）。"""
+        fenced = GoalSpec(GoalPredicate.CUSTOM, name="farm_fenced")
+        bridge.conditions.return_value = []  # まだ判定は書かれていない
+        ok = _check()
+
+        async def check(specs):
+            if fenced in specs:
+                raise GoalRejectedError("no check named farm_fenced")  # 確かめれば拒否される
+            return await ok(specs)
+
+        bridge.check.side_effect = check
+        text_generator.generate_json.return_value = {
+            "conditions": [LIT.to_dict(), fenced.to_dict()],
+            "unresolved": [],
+        }
+        stuck = TownStage("植林場", "木", conditions=(LIT,), unresolved=("畑を柵で囲むこと",), tried_with="v0")
+        plan = ObjectivePlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(stuck), town_stage=0, site=HERE)
+
+        await planner.prepare(plan)
+
+        assert plan.town.stages[0].conditions == (LIT, fenced) and plan.town.stages[0].ready
+        assert text_generator.generate_json.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_only_the_current_stage_and_only_when_the_vocabulary_changed(
         self, planner, text_generator, prompt_builder
     ):
@@ -333,6 +461,34 @@ class TestTownPlanner:
         text_generator.generate_json.reset_mock()
         await planner.prepare(plan)
         text_generator.generate_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_finished_facility_makes_the_current_stage_be_written_again_once(
+        self, planner, text_generator, prompt_builder, bridge
+    ):
+        """畑ができても未解決の `farmed(...)` が残って段階が終わらなかった（2026-10-19）: 完成した施設が増えたら一度だけ書き直す。"""
+        farmed = GoalSpec(GoalPredicate.FARMED, item="wheat", count=9)
+        text_generator.generate_json.return_value = {"conditions": [farmed.to_dict()], "unresolved": []}
+        stuck = TownStage("畑", "食料", conditions=(LIT,), unresolved=("farmed(wheat, 9)",), tried_with="v1")
+        plan = ObjectivePlan(mission=MISSION)
+        plan.restore([], [], 1, town=_town(stuck), town_stage=0, site=HERE)
+
+        await planner.prepare(plan)
+        text_generator.generate_json.assert_not_awaited()  # 施設がないあいだは、語彙が同じなら書き直さない
+
+        bridge.facilities.return_value = [
+            {"name": "wheat_farm", "kind": "farm", "status": "done"},
+            {"name": "mine_1", "kind": "mine", "status": "building"},
+        ]
+        await planner.prepare(plan)
+        assert prompt_builder.build_stage_prompt.call_args.args[1] == stuck
+        assert plan.town.stages[0].conditions == (farmed,)
+        assert plan.town.stages[0].ready and plan.town.stages[0].tried_with.startswith("v1+")
+
+        text_generator.generate_json.reset_mock()
+        plan.define_town(_town(dataclasses.replace(plan.town.stages[0], unresolved=("まだ",))))
+        await planner.prepare(plan)
+        text_generator.generate_json.assert_not_awaited()  # 同じ施設の集まりでは、もう書き直さない
 
 
 class TestTownStages:
@@ -587,3 +743,147 @@ class TestTownSite:
         await planner.advance(self._session(plan), _obs(survey=SURVEY_DONE))
 
         assert plan.site is None and plan.town is None
+
+
+ARMOR = GoalSpec(GoalPredicate.HAVE, item="iron_chestplate", count=1)
+MINE = GoalSpec(GoalPredicate.FACILITY, name="iron_mine_1")
+NEXT_MISSION = {
+    "text": "鉄の装備で遠くを探索する",
+    "reason": "街が整ったので、外の世界を見に行く",
+    "steps": [
+        {"name": "armor", "title": "鉄の防具をそろえる", "conditions": [ARMOR.to_dict()],
+         "reason": "守りを固める", "keep": True},
+        {"name": "mine", "title": "鉄の採掘場を作る", "conditions": [MINE.to_dict()],
+         "reason": "鉄を安定して手に入れる", "keep": False},
+    ],
+}
+
+
+def _finished() -> ObjectivePlan:
+    """街が完成し、定石の段がない（全部済み）プラン。"""
+    plan = _sited()
+    plan.define_town(_town(TownStage("備蓄", "備える", (FOOD,))))
+    plan.restore([], [], 1, town=plan.town, town_stage=1, site=HERE)
+    return plan
+
+
+class TestNextMission:
+    """最終目標を達成したら、次の最終目標とその定石を LLM に書かせる（docs/design/180）。"""
+
+    def _session(self, plan: ObjectivePlan) -> PlaySession:
+        return PlaySession(blueprint=None, plan=plan)
+
+    @pytest.mark.asyncio
+    async def test_the_next_mission_and_its_steps_are_written_checked_saved_and_told(
+        self, planner, text_generator, prompt_builder, bridge, events, store
+    ):
+        text_generator.generate_json.return_value = NEXT_MISSION
+        plan = _finished()
+        obs = GameObservation(
+            state={"inventory": {"cobblestone": 256}}, candidates=(), health=20.0, food=20,
+            has_home=True, day=244, titles=(("storehouse_3", "蔵"),),
+        )
+
+        await planner.advance(self._session(plan), obs)
+
+        assert plan.mission == Mission("鉄の装備で遠くを探索する")
+        assert plan.missions_done == (MISSION.text,)
+        assert [s.name for s in plan.playbook] == ["armor", "mine"]
+        assert plan.playbook[0].keep and not plan.playbook[1].keep
+        facts = prompt_builder.build_mission_prompt.call_args.args[5]
+        assert facts == {"day": 244, "inventory": {"cobblestone": 256}, "builds": ["storehouse_3"]}
+        [told] = _published(events, MissionAdvancedEvent)
+        assert (told.done, told.text) == (MISSION.text, "鉄の装備で遠くを探索する")
+        assert told.steps == ("鉄の防具をそろえる", "鉄の採掘場を作る")
+        store.save.assert_called_with(plan)
+        # 新しい施設は、足すときに設計してから判定する: ここでは確かめない
+        checked = [s for c in bridge.check.call_args_list for s in c.args[0]]
+        assert ARMOR in checked and MINE not in checked
+
+    @pytest.mark.asyncio
+    async def test_a_step_already_met_is_sent_back_unless_it_is_kept(
+        self, planner, text_generator, prompt_builder, bridge
+    ):
+        """すでにある建物だけの段は、発展にならない（蔵を並べた空回り。設計書 180、200）。持ち続ける段は、満たしていてよい。"""
+        tower = GoalSpec(GoalPredicate.BUILT, name="tower")
+        bridge.check.side_effect = _check(met={tower})
+        old = {**NEXT_MISSION, "steps": [
+            {"name": "armor", "title": "鉄の防具をそろえる", "conditions": [ARMOR.to_dict()], "reason": "守る", "keep": True},
+            {"name": "tower", "title": "見張りの塔を建てる", "conditions": [tower.to_dict()], "reason": "街を見渡す", "keep": False},
+        ]}
+        text_generator.generate_json.side_effect = [old, NEXT_MISSION]
+        plan = _finished()
+
+        await planner.advance(self._session(plan), _obs())
+
+        error = prompt_builder.build_mission_prompt.call_args.kwargs["previous_error"]
+        assert "見張りの塔を建てる" in error and "もう満たされている" in error
+        assert [s.name for s in plan.playbook] == ["armor", "mine"]
+
+    @pytest.mark.asyncio
+    async def test_nothing_is_asked_before_the_mission_is_achieved(
+        self, planner, text_generator, prompt_builder
+    ):
+        plan = _sited()  # 街がまだない
+        plan.define_town(_town(TownStage("備蓄", "備える", (FOOD,))))
+
+        await planner.advance(self._session(plan), _obs())
+
+        prompt_builder.build_mission_prompt.assert_not_called()
+        assert plan.mission == MISSION
+
+    @pytest.mark.asyncio
+    async def test_a_step_that_cannot_be_got_is_sent_back(
+        self, planner, text_generator, prompt_builder, bridge
+    ):
+        bridge.check.side_effect = _check(impossible={ARMOR})
+        fixed = {**NEXT_MISSION, "steps": [{**NEXT_MISSION["steps"][0], "conditions": [SWORD.to_dict()]}]}
+        text_generator.generate_json.side_effect = [NEXT_MISSION, fixed]
+        plan = _finished()
+
+        await planner.advance(self._session(plan), _obs())
+
+        error = prompt_builder.build_mission_prompt.call_args.kwargs["previous_error"]
+        assert "iron_chestplate" in error and "鉄の防具をそろえる" in error
+        assert [s.name for s in plan.playbook] == ["armor"]
+
+    @pytest.mark.asyncio
+    async def test_steps_that_are_all_done_already_are_sent_back(
+        self, planner, text_generator, prompt_builder, bridge
+    ):
+        only_armor = {**NEXT_MISSION, "steps": NEXT_MISSION["steps"][:1]}
+        bridge.check.side_effect = _check(met={ARMOR})
+        text_generator.generate_json.return_value = only_armor
+        plan = _finished()
+
+        await planner.advance(self._session(plan), _obs())
+
+        assert "もう満たされている" in prompt_builder.build_mission_prompt.call_args.kwargs["previous_error"]
+        assert plan.mission == MISSION  # 3 回とも差し戻した
+
+    @pytest.mark.asyncio
+    async def test_a_name_already_used_is_sent_back(self, planner, text_generator, prompt_builder):
+        used = {**NEXT_MISSION, "steps": [{**NEXT_MISSION["steps"][0], "name": "armor"}]}
+        plan = _finished()
+        plan.playbook = (PlaybookStep("armor", "古い防具", (ARMOR,)),)
+        plan.restore([], [], 1, town=plan.town, town_stage=1, site=HERE, playbook_done=("armor",),
+                     extra_playbook=(PlaybookStep("armor", "古い防具", (ARMOR,)),))
+        text_generator.generate_json.return_value = used
+
+        await planner.advance(self._session(plan), _obs())
+
+        assert "already used" in prompt_builder.build_mission_prompt.call_args.kwargs["previous_error"]
+
+    @pytest.mark.asyncio
+    async def test_after_a_failure_it_waits_before_asking_again(
+        self, planner, text_generator, prompt_builder
+    ):
+        text_generator.generate_json.return_value = {"text": "", "reason": "", "steps": []}
+        plan = _finished()
+
+        await planner.advance(self._session(plan), _obs())
+        calls = text_generator.generate_json.call_count
+        await planner.advance(self._session(plan), _obs())
+
+        assert calls == 3 and text_generator.generate_json.call_count == 3
+        assert plan.mission == MISSION and plan.missions_done == ()

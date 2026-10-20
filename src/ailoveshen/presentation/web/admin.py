@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -22,6 +22,11 @@ from loguru import logger
 from pydantic import BaseModel
 
 from ailoveshen.application.use_cases.presets import PresetError, SpeechPresets, clean_text
+
+from ailoveshen.application.use_cases.lessons import OPERATOR_SOURCE
+
+if TYPE_CHECKING:
+    from ailoveshen.application.use_cases.lessons import LessonBook
 
 ADMIN_HTML = Path(__file__).with_name("admin.html")
 # 書き込み（POST / PUT / DELETE）に付けるヘッダー。別のオリジンのページは、付けるには CORS の許可が
@@ -33,6 +38,11 @@ LOG_SIZE = 30
 
 class _Say(BaseModel):
     text: str
+
+
+class _Lesson(BaseModel):
+    text: str
+    condition: str = ""
 
 
 class _Preset(BaseModel):
@@ -207,6 +217,7 @@ class AdminPanel:
         reset: Callable[[], Awaitable[bool]],
         allowed_hosts: frozenset[str] = LOOPBACK,
         clock: Callable[[], datetime] = datetime.now,
+        lessons: LessonBook | None = None,
     ) -> None:
         """
         Args:
@@ -217,6 +228,7 @@ class AdminPanel:
             reset: 大目標を最初のリストに戻し、小目標を決め直させる。戻したか（プレイ前なら偽）
             allowed_hosts: 接続を受けるクライアントのホストと、Host / Origin のホスト（既定: このマシンだけ）
             clock: 時計（テストで差し替える）
+            lessons: 教訓帳（あれば、一覧・削除・追加ができる。設計書 201）
         """
         self._presets = presets
         self._speak = speak
@@ -225,6 +237,7 @@ class AdminPanel:
         self._reset = reset
         self._allowed = allowed_hosts
         self._clock = clock
+        self._lessons = lessons
         self._log: deque[dict[str, str]] = deque(maxlen=LOG_SIZE)
 
     def _note(self, kind: str, text: str, result: str = "") -> None:
@@ -265,6 +278,51 @@ class AdminPanel:
                 "presets": [asdict(p) for p in self._presets.all()],
                 "log": list(self._log),
             }
+
+        @app.get("/api/admin/lessons")
+        async def lessons(request: Request) -> dict[str, Any]:
+            self._guard(request)
+            book = self._lessons
+            return {
+                "enabled": book is not None,
+                "lessons": [
+                    {
+                        "id": n.id,
+                        "text": n.text,
+                        "condition": n.condition,
+                        "situation": n.keys,
+                        "source": n.source,
+                        "taught": n.taught,
+                        "used": n.used,
+                        "helped": n.helped,
+                        "failed": n.failed,
+                        "proven": n.proven,
+                    }
+                    for n in reversed(book.lessons if book else ())
+                ],
+            }
+
+        @app.post("/api/admin/lessons")
+        async def add_lesson(body: _Lesson, request: Request) -> dict[str, Any]:
+            self._guard(request)
+            if self._lessons is None:
+                raise HTTPException(status_code=409, detail="the lesson book is not in use")
+            text = body.text.strip()
+            if not text:
+                raise HTTPException(status_code=400, detail="the lesson is empty")
+            lesson = self._lessons.learn(text, body.condition.strip(), {}, False, OPERATOR_SOURCE)
+            if lesson is None:
+                raise HTTPException(status_code=400, detail="the lesson was not written (too long?)")
+            self._note("lesson", text, lesson.id)
+            return {"id": lesson.id}
+
+        @app.delete("/api/admin/lessons/{lesson_id}")
+        async def remove_lesson(lesson_id: str, request: Request) -> dict[str, Any]:
+            self._guard(request)
+            if self._lessons is None or not self._lessons.remove(lesson_id):
+                raise HTTPException(status_code=404, detail=f"no lesson {lesson_id}")
+            self._note("lesson-del", lesson_id)
+            return {"ok": True}
 
         @app.post("/api/admin/say")
         async def say(body: _Say, request: Request) -> dict[str, Any]:

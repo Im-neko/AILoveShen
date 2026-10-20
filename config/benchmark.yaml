@@ -62,3 +62,23 @@ benchmark:
       setup:
         - "execute at @a run fill ~-2 ~-1 ~-2 ~2 ~4 ~2 minecraft:dirt hollow"
         - "execute at @a run fill ~-1 ~ ~-1 ~1 ~1 ~1 minecraft:water"
+
+    # 判断なしで遊ぶ実験（設計書 191）。ブリッジは目標も提案も助言もせず、LLM は自分で書いた技だけで動かす。条件は使わず、
+    # 持ち物と置いたブロックから節目（tools/bench_milestones.py）に最初に着いた秒を測る。ダイヤを持てば成功。
+    # 夜も食べ物もある実際のサバイバルで測る（昼固定なし）。上限は時間単位に長くする: `--cap-minutes 180`。
+    # 技を書く費用の上限（1 時間あたり）は raw 用に大きくしてある。ブリッジは BRIDGE_RAW_BOT=1 BRIDGE_RAW_ONLY=1 で自動で起動する
+    raw_free:
+      title: "判断なしで遊ぶ"
+      reason: "ブリッジの判断をすべて外して、LLM が技を書いて試して直すことだけで、どこまで進めるか"
+      conditions: []
+      control: raw
+      freeze_day: false
+    # 同じ実験に手引き（guides/、設計書 192）を足したもの。raw_free と比べて、文章の知識がどれだけ効くかを見る
+    raw_guided:
+      title: "判断なしで遊ぶ（手引きあり）"
+      reason: "raw_free と同じで、手引き（guides/<名前>/SKILL.md を read_guide で読める）を足す"
+      conditions: []
+      control: raw
+      guides: true
+      freeze_day: false
+

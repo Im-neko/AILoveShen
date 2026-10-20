@@ -389,9 +389,9 @@ class PromptTemplateBuilder(IPromptBuilder):
         return base
 
     def build_commentary_prompt(self, context: GenerationContext) -> str:
-        """ゲーム実況の本文（状態で変わる所だけ）。"""
+        """ゲーム実況の本文（状態で変わる所だけ）。目標の階層（変わりにくい）と今の状態の間に境目を置く（設計書 177）。"""
         return COMMENTARY_TEMPLATE.substitute(
-            activity=format_activity(context.activity),
+            activity=format_activity(context.activity, cache_break=True),
             recent_events=_format_events(context.recent_events),
             recent_messages=format_messages(context.recent_messages),
             emotion=_format_emotion(context.emotion_state),

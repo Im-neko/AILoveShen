@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -15,6 +15,7 @@ from ailoveshen.domain.value_objects import (
     ActionResult,
     Activity,
     ConversationMessage,
+    Deed,
     GameObservation,
     Goal,
     GoalOutcome,
@@ -53,6 +54,9 @@ def generate_id() -> str:
 def _utc_now() -> datetime:
     """今の UTC の日時を返す。"""
     return datetime.now(timezone.utc)
+
+# 自分がやったことに残す、終わった大目標の数（古いものから消す。設計書 199）
+HISTORY_KEPT = 200
 
 
 @dataclass
@@ -198,7 +202,8 @@ class Conversation(Entity):
 @dataclass(eq=False)
 class ObjectivePlan(Entity):
     """
-    最終目標と、優先度順の大目標（未完了の最初のものに今取り組む）。それと、最終目標が
+    最終目標と、優先度順の大目標（未完了の最初のものに今取り組む）。最終目標は、街が完成し
+    定石がすべて済んだら達成とし、次の最終目標とその定石を足す（`advance_mission`）。それと、最終目標が
     作る街: その定義と、済んだ段階の数。取り組んでいる段階のうち今できることは、
     配信者自身の大目標になる。ほかの大目標と同じように（世界から）完了し、リストの
     下に移すことはできるが、断念はできない。段階は、条件をすべて満たし、まだない
@@ -237,9 +242,17 @@ class ObjectivePlan(Entity):
     _site: Optional[TownSite] = field(default=None, init=False, repr=False)
     _town_map: Optional[TownMap] = field(default=None, init=False, repr=False)
     _playbook_done: tuple[str, ...] = field(default=(), init=False, repr=False)
+    _origin: Mission = field(init=False, repr=False)
+    _base_playbook: int = field(init=False, repr=False)
+    _missions_done: tuple[str, ...] = field(default=(), init=False, repr=False)
+    _design_failed: dict[str, tuple[int, float]] = field(default_factory=dict, init=False, repr=False)
+    _history: list[Deed] = field(default_factory=list, init=False, repr=False)
+    _day: Optional[int] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """上限を検証する。"""
+        self._origin = self.mission
+        self._base_playbook = len(self.playbook)
         for label in ("max_goals", "max_viewer_goals", "viewer_budget", "finished_shown"):
             if getattr(self, label) <= 0:
                 raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
@@ -256,14 +269,84 @@ class ObjectivePlan(Entity):
         return tuple(g.closed() for g in self._finished)
 
     @property
+    def history(self) -> tuple[Deed, ...]:
+        """自分がやったこと: 終わった大目標の記録（古い順。最近の `HISTORY_KEPT` 件まで）。"""
+        return tuple(self._history)
+
+    def note_day(self, day: int) -> None:
+        """今のゲームの日を知る（大目標が終わった日に記録する）。"""
+        self._day = day
+
+    @property
     def current(self) -> Optional[Objective]:
         """今取り組んでいる大目標（未完了の最初のもの）。"""
         return self._goals[0] if self._goals else None
 
     @property
+    def design_failed(self) -> dict[str, tuple[int, float]]:
+        """街の段階の建物・施設・判定を設計できなかった数と、最後に失敗した時刻（epoch 秒）。名前ごと。再起動をまたいで残す。"""
+        return dict(self._design_failed)
+
+    def note_design_failure(self, name: str, at: float) -> int:
+        """設計の失敗を 1 つ数える。数えたあとの回数を返す。"""
+        count = self._design_failed.get(name, (0, 0.0))[0] + 1
+        self._design_failed[name] = (count, at)
+        return count
+
+    def forget_design_failure(self, name: Optional[str] = None) -> None:
+        """設計の失敗の数えを消す（名前を指さなければ全部）。"""
+        if name is None:
+            self._design_failed.clear()
+        else:
+            self._design_failed.pop(name, None)
+
+    @property
     def playbook_done(self) -> tuple[str, ...]:
         """済んだ定石の段の名前（一度済んだら済みのまま。持ち物が減っても戻さない）。"""
         return self._playbook_done
+
+    @property
+    def origin(self) -> Mission:
+        """設定の最終目標（最初の最終目標。保存したプランを戻すかの目印）。"""
+        return self._origin
+
+    @property
+    def missions_done(self) -> tuple[str, ...]:
+        """達成した最終目標の文（古い順）。"""
+        return self._missions_done
+
+    @property
+    def extra_playbook(self) -> tuple[PlaybookStep, ...]:
+        """設定の定石のあとに、次の最終目標のために足した定石の段。"""
+        return self.playbook[self._base_playbook :]
+
+    @property
+    def mission_achieved(self) -> bool:
+        """街が完成し、定石がすべて済んだか（最終目標の達成。次の最終目標を決めるとき）。"""
+        return (
+            self.town_complete
+            and not self.preparing_town
+            and all(s.name in self._playbook_done for s in self.playbook)
+        )
+
+    def advance_mission(self, mission: Mission, steps: Sequence[PlaybookStep]) -> None:
+        """
+        達成した最終目標を済みにして、次の最終目標とその定石の段を足す。済んだ定石の段と街は残す。
+
+        Raises:
+            ValueError: 達成していないとき、段がないとき、段の名前が今の定石と重なるとき
+        """
+        if not self.mission_achieved:
+            raise ValueError("the mission is not achieved yet: the town and the playbook are not done")
+        if not steps:
+            raise ValueError("the next mission needs at least one playbook step")
+        names = [s.name for s in self.playbook] + [s.name for s in steps]
+        if len(set(names)) != len(names):
+            raise ValueError("a playbook step name is already used")
+        self._missions_done += (self.mission.text,)
+        self.mission = mission
+        self.playbook += tuple(steps)
+        self.updated_at = _utc_now()
 
     @property
     def playbook_step(self) -> Optional[PlaybookStep]:
@@ -777,13 +860,16 @@ class ObjectivePlan(Entity):
         """
         大目標を最初のリストに戻す: 大目標（中目標、計画、視聴者のものも）と終えたものの記録、済んだ
         定石の段を消して、設定の最初の大目標を足し直す。街の定義・場所・理想図・段階は世界に建てたものの
-        ことなので残す。id は戻さない（走っている小目標が覚えている古い id が、新しい大目標と同じ名前に
-        ならないように）。
+        ことなので残す。最終目標も設定のものに戻し、足した定石の段と達成の記録を消す。id は戻さない
+        （走っている小目標が覚えている古い id が、新しい大目標と同じ名前にならないように）。
         """
         self._goals = []
         self._finished.clear()
         self._dropped_jobs = []
         self._playbook_done = ()
+        self.mission = self._origin
+        self.playbook = self.playbook[: self._base_playbook]
+        self._missions_done = ()
         self.updated_at = _utc_now()
         self.add_initial()
 
@@ -804,9 +890,19 @@ class ObjectivePlan(Entity):
         town_map: Optional[TownMap] = None,
         next_job_id: int = 1,
         playbook_done: tuple[str, ...] = (),
+        mission: Optional[Mission] = None,
+        missions_done: tuple[str, ...] = (),
+        extra_playbook: tuple[PlaybookStep, ...] = (),
+        design_failed: Optional[dict[str, tuple[int, float]]] = None,
+        history: Sequence[Deed] = (),
     ) -> None:
-        """保存したプランを戻す（id はそのまま）。"""
+        """保存したプランを戻す（id はそのまま）。最終目標と足した定石の段も保存のものにする。"""
+        self._history = list(history)[-HISTORY_KEPT:]
+        self._design_failed = dict(design_failed or {})
         self._playbook_done = playbook_done
+        self.mission = mission or self._origin
+        self._missions_done = missions_done
+        self.playbook = self.playbook[: self._base_playbook] + extra_playbook
         self._goals = list(pending)
         self._finished.clear()
         self._finished.extend(finished)
@@ -850,6 +946,16 @@ class ObjectivePlan(Entity):
         self._goals.remove(goal)
         ended = replace(goal, state=state, ended_because=because).closed()
         self._finished.append(ended)
+        self._history.append(
+            Deed(
+                title=ended.title,
+                done=state == ObjectiveState.DONE,
+                because=because,
+                day=self._day,
+                requested_by=ended.requested_by or "",
+            )
+        )
+        del self._history[:-HISTORY_KEPT]
         self.updated_at = _utc_now()
         return ended
 
@@ -1003,6 +1109,8 @@ class PlaySession(Entity):
     acting: bool = field(default=False, init=False)
     # 位置・持ち物・小目標の進み具合が変わらない時間（秒。動かないと数えるときだけ 0 より大きい。一言は黙る）
     stagnant_seconds: float = field(default=0.0, init=False)
+    # 技が動いている間の経過（技が終わると空）。観測は技の間は更新されないので、実況はこれで途中経過を話す
+    skill_note: str = field(default="", init=False)
     # 定期の見直しで画面について書いたこと（確かめていない。docs/design/23）
     screen_note: Optional[ScreenNote] = field(default=None, init=False)
     # 次の切れ目で今の小目標を終わらせる理由（コメントの指摘、画面の見直し、行き詰まりの確認）。
@@ -1022,6 +1130,8 @@ class PlaySession(Entity):
     # 直前のステップが襲われて止まった: 次の読み取りを「進まない」に数えない（docs/design/28）
     _skip_stall: bool = field(default=False, init=False, repr=False)
     _recent_goals: deque[GoalOutcome] = field(init=False, repr=False)
+    # 大目標ごとの、これまでの小目標の終わり方の回数（直近 goal_history 個では忘れる。再起動で消える）
+    _tried: dict[str, Counter] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         """上限を検証し、上限つきの目標の履歴を作る。"""
@@ -1034,10 +1144,13 @@ class PlaySession(Entity):
             if getattr(self, label) <= 0:
                 raise ValueError(f"{label} must be positive, got {getattr(self, label)}")
         self._recent_goals = deque(maxlen=self.goal_history)
+        self._tried = {}
 
     def observe(self, obs: GameObservation) -> None:
         """最新の観測を保つ（チャットの返答が見るゲームの様子）。"""
         self.last_observation = obs
+        if obs.day is not None:
+            self.plan.note_day(obs.day)
 
     def activity(self) -> Activity:
         """配信者が今していることとその理由（目標の決定、実況、返答が見る）。"""
@@ -1057,11 +1170,15 @@ class PlaySession(Entity):
             acting=self.acting,
             failing=self.consecutive_failures if self.goal else 0,
             stagnant_seconds=self.stagnant_seconds,
+            skill_note=self.skill_note,
             screen_note=self.screen_note,
             lessons=self.lessons,
             town_map=self.plan.town_map,
             playbook=self.plan.playbook,
             playbook_done=self.plan.playbook_done,
+            missions_done=self.plan.missions_done,
+            tried=self.tried(self.plan.current.id if self.plan.current else None),
+            history=self.plan.history,
         )
 
     @property
@@ -1075,7 +1192,20 @@ class PlaySession(Entity):
             return None
         outcome = GoalOutcome(goal=self.goal, ended_because=ended_because, met=met)
         self._recent_goals.append(outcome)
+        if self.goal.objective_id is not None:
+            kind = self.goal.spec.kind_label()  # 数だけ違う同じ小目標は一つに
+            self._tried.setdefault(self.goal.objective_id, Counter())[(kind, _how_it_ended(ended_because, met))] += 1
         return outcome
+
+    def tried(self, objective_id: Optional[str], limit: int = 6) -> tuple[str, ...]:
+        """
+        その大目標のために選んだ小目標の、終わり方ごとの回数（多い順）。見直しが前の失敗を覚えていて、同じやり方を
+        くり返さないための材料（docs/design/182: 直近 5 個の履歴だけで、同じ計画が 8 回書かれた）。
+        """
+        counts = self._tried.get(objective_id or "")
+        if not counts:
+            return ()
+        return tuple(f"{kind}: {how} {n} 回" for (kind, how), n in counts.most_common(limit))
 
     def track_progress(self, obs: GameObservation) -> None:
         """今の目標の残りの作業を記録する。減らなければ、進んでいないと数える。"""
@@ -1316,3 +1446,14 @@ class PlaySession(Entity):
         return self.plan.charge(
             self.goal.objective_id if self.goal else None, self.goal.spec if self.goal else None
         )
+
+
+def _how_it_ended(ended_because: str, met: bool) -> str:
+    """小目標の終わり方の短い言い方（回数の集計用）。"""
+    if met:
+        return "達成"
+    if " died and " in ended_because:
+        return "死んだ"
+    if " stalled " in ended_because or " is stuck " in ended_because or "has made no progress" in ended_because:
+        return "進まず止まった"
+    return "途中で切れた"

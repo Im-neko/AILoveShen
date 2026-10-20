@@ -18,6 +18,7 @@ from loguru import logger
 
 from ailoveshen.application.ports.output.generation_log import IGenerationLog
 from ailoveshen.application.ports.output.text_generator import (
+    SCHEMA_SLOT,
     ITextGenerator,
     ToolChoice,
     ToolSpec,
@@ -32,6 +33,7 @@ from ailoveshen.infrastructure.adapters.local_llm.schema_check import (
     drop_empty,
     estimate_tokens,
     extract_json,
+    optional_parameters,
     strip_thinking,
 )
 
@@ -40,8 +42,19 @@ RESPONSE_FORMATS = ("auto", "off")
 THINKING_ON = ("medium", "high")  # thinking_levels のうち、思考させる深さ（ローカルと Claude）
 REASONING_EFFORTS = ("low", "medium", "high")  # Claude 以外の LiteLLM のモデル（Gemini 3.8）が受ける reasoning_effort
 SCHEMA_ERRORS_SHOWN = 8
+# Claude（LiteLLM 経由）の response_format は、任意の項目が 24 を超えるスキーマを 400 で断る（"Schemas contains too many
+# optional parameters (25)"）。手前の 16〜20 でも、文法の用意に 40 秒以上かかるか "Schema is too complex" になる（2026-10-17
+# に実測）。断られてから外すと、再起動のたびに用途ごとに 1 回エラーになるので、送る前に数えて送らない
+CLAUDE_OPTIONAL_LIMIT = 24
+# LiteLLM の前の中継が一時的に返す 502 / 503（HTML の本文）は、少し待てば通る。1 ステップを失敗にせず、同じ要求をやり直す
+# （2026-10-17: 2 日で 13 回、そのたびにステップが失敗してバックオフした）
+TRANSIENT_STATUSES = (502, 503)
+TRANSIENT_DELAYS = (2.0, 6.0)
 IMAGE_TOKENS = 1600  # 画像 1 枚の見積もり（data: URL の長さではなく）
 EPHEMERAL = {"type": "ephemeral"}
+# 1 時間のキャッシュ（LiteLLM 経由で通ると確かめた: 340 秒あとにも読めた。書きは 5 分の 1.6 倍だが、呼び出しの間隔が
+# 5 分を超える用途は 5 分のままだと毎回書き直しになる）。長い TTL の印は短い TTL の印より前に置く決まり
+EPHEMERAL_1H = {"type": "ephemeral", "ttl": "1h"}
 MAX_CACHE_MARKS = 4  # Claude は 1 リクエストに 4 つまで
 
 
@@ -130,6 +143,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
         self._context = context_tokens
         self._use_response_format = response_format == "auto"
         self._no_response_format: set[str] = set()  # response_format を受け付けなかった用途
+        self._complex_noted: set[str] = set()  # 任意の項目が多くて response_format を送らないと知らせた用途
         self._tool_choice = "required"
         self._thinking_param = thinking_param
         self._levels = {"default": default_thinking_level, **dict(thinking_levels or {})}
@@ -214,7 +228,9 @@ class OpenAICompatTextGenerator(ITextGenerator):
         images: Sequence[Screenshot] = (),
     ) -> ToolChoice:
         self._check_images(images)
-        messages = _messages(prompt, with_common_system(system_instruction, purpose), images, self._cache_on(purpose))
+        messages = _messages(
+            prompt, with_common_system(system_instruction, purpose), images, self._cache_on(purpose), tools=bool(tools)
+        )
         message = await self._chat(messages, purpose, tools=tools)
         calls = message.get("tool_calls") or []
         if calls:
@@ -314,6 +330,7 @@ class OpenAICompatTextGenerator(ITextGenerator):
             schema is not None
             and self._use_response_format
             and (purpose or "default") not in self._no_response_format
+            and not self._too_complex_for(model, schema, purpose)
         ):
             body["response_format"] = {
                 "type": "json_schema",
@@ -342,6 +359,18 @@ class OpenAICompatTextGenerator(ITextGenerator):
             raise TextGenerationError(f"{self._label} LLM: unexpected answer {str(data)[:200]}") from e
         if (
             choice.get("finish_reason") == "length"
+            and think
+            and schema is not None
+            and (message.get("content") or "").strip()
+        ):
+            # 構造化した答えが途中で切れた（思考と答えで上限に届いた）。切れた JSON は使えず、書き直させても同じ長さで
+            # 切れるので、思考なしで聞き直す（2026-10-17: 計画 314 回のうち 13 回。1 回 60 秒を 2、3 回使った）
+            logger.warning(
+                f"{self._label} の答えが上限（{body['max_tokens']} トークン）で途中で切れた: 思考なしで聞き直す（{purpose}）"
+            )
+            return await self._chat(messages, purpose, schema, tools, allow_thinking=False)
+        if (
+            choice.get("finish_reason") == "length"
             and not (message.get("content") or "").strip()
             and not message.get("tool_calls")
         ):
@@ -358,6 +387,19 @@ class OpenAICompatTextGenerator(ITextGenerator):
                 f"({purpose}): raise max_output_tokens or think less for this purpose"
             )
         return message
+
+    def _too_complex_for(self, model: str, schema: dict[str, Any], purpose: Optional[str]) -> bool:
+        """Claude が構造化出力で断るスキーマか（プロンプトには書いてあり、答えは検査するので、送らなくても困らない）。"""
+        if not _is_claude(model) or (n := optional_parameters(schema)) <= CLAUDE_OPTIONAL_LIMIT:
+            return False
+        key = purpose or "default"
+        if key not in self._complex_noted:
+            self._complex_noted.add(key)
+            logger.info(
+                f"{self._label} の（{key}）スキーマは任意の項目が {n} 個（Claude の上限 {CLAUDE_OPTIONAL_LIMIT}）: "
+                "response_format は送らない（スキーマはプロンプトに書いてあり、答えは検査する）"
+            )
+        return True
 
     async def _post(self, body: dict[str, Any], purpose: Optional[str], think: bool) -> dict[str, Any]:
         started = time.monotonic()
@@ -402,6 +444,18 @@ class OpenAICompatTextGenerator(ITextGenerator):
         return response.status_code >= 500 and "response_format" in body
 
     async def _send(
+        self, body: dict[str, Any], purpose: Optional[str], think: bool, started: float
+    ) -> httpx.Response:
+        response = await self._send_once(body, purpose, think, started)
+        for delay in TRANSIENT_DELAYS:
+            if response.status_code not in TRANSIENT_STATUSES:
+                break
+            logger.warning(f"{self._label} LLM が {response.status_code} を返した（{purpose or 'default'}）: {delay:.0f} 秒待ってやり直す")
+            await asyncio.sleep(delay)  # 待つ間は同時の呼び出しの枠を空ける
+            response = await self._send_once(body, purpose, think, started)
+        return response
+
+    async def _send_once(
         self, body: dict[str, Any], purpose: Optional[str], think: bool, started: float
     ) -> httpx.Response:
         async with self._slots:
@@ -521,24 +575,34 @@ def _cache_tokens(usage: Mapping[str, Any]) -> tuple[int, int]:
 
 
 def _messages(
-    prompt: str, system: Optional[str], images: Sequence[Screenshot] = (), cache: bool = False
+    prompt: str,
+    system: Optional[str],
+    images: Sequence[Screenshot] = (),
+    cache: bool = False,
+    tools: bool = False,
 ) -> list[dict[str, Any]]:
-    """メッセージ。cache のとき、system の終わりと、プロンプトの CACHE_BREAK の手前に cache_control を付ける。"""
+    """
+    メッセージ。cache のとき、CACHE_BREAK の手前に cache_control を付ける（先頭から固まるので、印の手前が全部固まる）。
+    `tools`（道具の定義を渡す呼び出し）なら、システム指示の終わりにも付ける: 先頭の道具の定義 + システム指示が固まる。
+    道具がないとき、システム指示だけでは短くてキャッシュの最小に届かず、最初の印が全部を固める。
+    印は最後の 1 つだけ 5 分、ほかは 1 時間（長い方を前に）。
+    """
+    segments = split_cache_breaks(prompt) if cache else [strip_cache_breaks(prompt)]
+    marked = cache and bool(system) and tools
+    breaks = min(len(segments) - 1, MAX_CACHE_MARKS - int(marked)) if cache else 0
+    ttls = [EPHEMERAL_1H] * (int(marked) + breaks - 1) + [EPHEMERAL]  # 印が 0 個のときは使わない
+    ttl = iter(ttls)
     out: list[dict[str, Any]] = []
-    marks = MAX_CACHE_MARKS
     if system:
-        if cache:
-            out.append({"role": "system", "content": [{"type": "text", "text": system, "cache_control": EPHEMERAL}]})
-            marks -= 1
+        if marked:
+            out.append({"role": "system", "content": [{"type": "text", "text": system, "cache_control": next(ttl)}]})
         else:
             out.append({"role": "system", "content": system})
-    segments = split_cache_breaks(prompt) if cache else [strip_cache_breaks(prompt)]
     parts: list[dict[str, Any]] = []
     for i, segment in enumerate(segments):
         part: dict[str, Any] = {"type": "text", "text": segment}
-        if cache and i < len(segments) - 1 and marks > 0:
-            part["cache_control"] = EPHEMERAL
-            marks -= 1
+        if i < breaks:
+            part["cache_control"] = next(ttl)
         parts.append(part)
     parts += [
         {
@@ -575,11 +639,15 @@ def _images_in(messages: Sequence[Mapping[str, Any]]) -> list[tuple[str, bytes]]
 
 
 def _with_schema(prompt: str, schema: dict[str, Any]) -> str:
-    return (
-        f"{prompt}\n\nAnswer with one JSON object that follows this JSON Schema exactly (the "
+    """JSON Schema の説明を入れる。SCHEMA_SLOT があればそこに、なければ本文の最後に。"""
+    text = (
+        "Answer with one JSON object that follows this JSON Schema exactly (the "
         "descriptions say what to write; no other text):\n"
         f"{json.dumps(schema, ensure_ascii=False)}"
     )
+    if SCHEMA_SLOT in prompt:
+        return prompt.replace(SCHEMA_SLOT, f"\n\n{text}\n", 1).replace(SCHEMA_SLOT, "")
+    return f"{prompt}\n\n{text}"
 
 
 def _with_tools(prompt: str, tools: Sequence[ToolSpec]) -> str:

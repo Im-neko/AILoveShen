@@ -78,6 +78,11 @@ def _grams(text: str) -> set[str]:
     return {t[i : i + 2] for i in range(len(t) - 1)} or {t}
 
 
+def _skill_signature(note: str) -> str:
+    """技の経過のうち、秒数を除いたもの（位置やログが変わったときだけ話す材料にする）。"""
+    return note.partition("、")[2]
+
+
 def similarity(a: str, b: str) -> float:
     """2 つの文の近さ（文字の 2-gram の Jaccard、0〜1）。"""
     x, y = _grams(a), _grams(b)
@@ -397,6 +402,7 @@ class LiveNarration:
             "health": obs.health,
             "phase": obs.time_phase,
             "inside_home": obs.inside_home,
+            "skill": _skill_signature(activity.skill_note),
         }
 
     def _mark(self, activity: Activity) -> None:
@@ -432,4 +438,7 @@ class LiveNarration:
             out.append(f"時間帯が {before['phase']} から {now['phase']} に変わった")
         if now["inside_home"] != before["inside_home"]:
             out.append("家の中に入った" if now["inside_home"] else "家の外に出た")
+        if now["skill"] and now["skill"] != before.get("skill"):
+            # 技が動いている間は観測が更新されない: 技の経過（位置は観測より新しい）が、今起きていること
+            out.append(f"技の途中の様子（最新。上の観測より新しい）: {activity.skill_note}")
         return out

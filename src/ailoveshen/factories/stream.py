@@ -421,6 +421,7 @@ async def create_stream(settings: Settings, tts_config: dict[str, Any], base_dir
                 instruct=instruct,
                 rethink=rethink,
                 reset=reset_goals,
+                lessons=game.lessons,
             ),
         )
         board.subscribe(bus)

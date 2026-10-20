@@ -19,6 +19,7 @@ from ailoveshen.domain.value_objects import (
     Objective,
     ObjectiveState,
     Mission,
+    PlaybookStep,
     Side,
     SkillInfo,
     ToolCall,
@@ -27,6 +28,7 @@ from ailoveshen.domain.value_objects import (
     TownSite,
     TownStage,
 )
+from ailoveshen.infrastructure.adapters.prompts.stream_context import format_goals
 from ailoveshen.infrastructure.adapters.prompts.game_prompt_template_builder import (
     GamePromptTemplateBuilder,
 )
@@ -174,6 +176,19 @@ class TestGamePromptTemplateBuilder:
         assert builder.build_goal_system() == builder.build_goal_system()
         assert "$" not in builder.build_goal_system()
 
+    def test_goal_rules_end_with_the_schema_slot_and_the_hierarchy_is_cut_off_from_the_state(self):
+        """設計書 177: 決まり + スキーマ（変わらない）/ 階層 / 今の状態。違いは最後の部分に閉じる。"""
+        from ailoveshen.application.ports.output.text_generator import SCHEMA_SLOT, split_cache_breaks, with_rules
+
+        builder = GamePromptTemplateBuilder()
+        system = builder.build_goal_system()
+        assert system.endswith(SCHEMA_SLOT)
+        a = split_cache_breaks(with_rules(system, _goal_prompt(predicates=[GoalPredicate.HAVE])))
+        b = split_cache_breaks(with_rules(system, _goal_prompt(predicates=[GoalPredicate.HAVE, GoalPredicate.EXPLORED])))
+        assert len(a) == len(b) == 3
+        assert a[:2] == b[:2] and a[2] != b[2]
+        assert "今使える小目標" in a[2] and "## 今していること" in a[1]
+
     def test_goal_prompt_shows_the_current_goal_status(self):
         """小目標の進み具合と、何が妨げているかが LLM に届く。"""
         prompt = _goal_prompt()
@@ -231,6 +246,16 @@ class TestGamePromptTemplateBuilder:
         assert "時間帯: 夜（朝まで約 5 分）" in prompt
         assert "家: 建ててある、ベッドあり、チェスト 0\n- 今いる場所: 家の中\n" in prompt
         assert "チェストの中身: なし" in prompt
+
+    def test_goal_prompt_underground_night_adds_no_danger(self):
+        """地下では夜になっても危険は増えない、を時間帯の行で言う。地上では言わない（夜は危ない）。"""
+        obs = replace(_obs(), has_home=True, inside_home=False)
+        obs.state["time"] = {"phase": "night", "time_of_day": 18000}
+
+        under = _goal_prompt(replace(obs, underground=True))
+        assert "- 時間帯: 夜（朝まで約 5 分）。今いるのは地下で、夜になっても危険は増えない" in under
+        assert "夜だからと家に戻る理由はなく" in under
+        assert "夜になっても危険は増えない" not in _goal_prompt(obs)
 
     def test_goal_prompt_tells_where_you_are_with_position_underground_and_biome(self):
         """今いる場所に、位置（座標と足元の高さ）、地下、バイオーム（日本語名と元の名前）を言う。分からないものは出さない。"""
@@ -394,6 +419,16 @@ class TestGamePromptTemplateBuilder:
         done = _goal_prompt(activity=Activity(mission=MISSION, town=TOWN, town_stage=3))
         assert "街は完成した（全 3 段階）" in done
 
+    def test_goal_prompt_asks_for_an_objective_when_the_list_is_empty(self):
+        """大目標が空なら目標の決定に足すよう言う。大目標を編集できない道具の選びには言わない。"""
+        empty = _goal_prompt(activity=Activity(mission=MISSION))
+        assert "  - なし（空のままにしない: plan_changes の add" in empty
+        stage = Objective("m4", "備蓄", (FOOD,), stage=0)
+        assert "空のままにしない" not in _goal_prompt(
+            activity=Activity(mission=MISSION, objectives=(stage,))
+        )
+        assert "空のままにしない" not in format_goals(Activity(mission=MISSION))
+
     def test_town_prompt(self):
         """街のプロンプトには最終目標、能力、条件、エラーが入る。"""
         prompt = GamePromptTemplateBuilder().build_town_prompt(
@@ -406,6 +441,31 @@ class TestGamePromptTemplateBuilder:
         assert "stored(" in prompt and "lit(" in prompt
         assert "5 段階まで" in prompt
         assert "no way to get iron_sword\n定義し直してください" in prompt
+
+    def test_mission_prompt(self):
+        """次の最終目標のプロンプトには、達成した最終目標、済んだ定石（見本）、持ち物、エラーが入る。"""
+        step = PlaybookStep(
+            name="iron",
+            title="鉄の道具をそろえる",
+            conditions=(GoalSpec(GoalPredicate.HAVE, item="iron_pickaxe", count=1),),
+            reason="資材",
+        )
+        prompt = GamePromptTemplateBuilder().build_mission_prompt(
+            CharacterProfile(),
+            MISSION,
+            ("前の最終目標",),
+            (step,),
+            TownDefinition("小さな街", (TownStage("備蓄", "備える", (GoalSpec(GoalPredicate.LIT, distance=16),)),)),
+            {"day": 244, "inventory": {"cobblestone": 256}, "builds": ["storehouse_3"]},
+            previous_error="step name armor is already used",
+        )
+
+        assert "最終目標「生き延びながら家を建て、街にしていく」を達成しました" in prompt
+        assert "- 前の最終目標" in prompt
+        assert "- iron: 鉄の道具をそろえる（have(iron_pickaxe, 1)） - 資材" in prompt
+        assert "cobblestone 256" in prompt and "storehouse_3" in prompt and "244 日目" in prompt
+        assert "6 段まで" in prompt
+        assert "step name armor is already used\n書き直してください" in prompt
 
     def test_site_prompt(self):
         """場所の選択のプロンプトは、候補地の id と数字を並べる。"""
@@ -603,6 +663,12 @@ class TestToolPrompt:
         assert "どこを掘る？" in prompt
         assert "Do not call tools" in prompt
 
+    def test_the_advice_prompt_has_no_cache_breaks_even_when_the_situation_has_them(self):
+        from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+        prompt = GamePromptTemplateBuilder().build_advice_prompt("q", f"rules{CACHE_BREAK}state")
+        assert CACHE_BREAK not in prompt and "rulesstate" in prompt
+
     def test_a_screen_note_is_marked_unverified_with_its_age(self):
         from datetime import datetime, timedelta, timezone
 
@@ -737,8 +803,9 @@ class TestPromptLength:
     def test_goal_system_length(self):
         # 決まった文（システム指示、キャッシュに当たる部分）。27 の分析、家具の述語、31 の見直し、
         # 33 の植林と畑、ついでに取る・まとめて運ぶ決まり、41 の整地、42 の custom、44 の束、50 §13 の
-        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）、74 の定石、142 の satisfy で増えた
-        assert len(GamePromptTemplateBuilder().build_goal_system()) < 9500
+        # 中目標と小目標の粒度、50 §18 の計画（jobs は計画が持つ）、74 の定石、142 の satisfy、採掘場の新しい名前を
+        # facility に書かせない一文（計画の差し戻し 2026-10-17）、教訓を使わせる決まり（2026-10-20）で増えた
+        assert len(GamePromptTemplateBuilder().build_goal_system()) < 9900
 
     def test_goal_prompt_length(self):
         assert len(_goal_prompt()) < 2500
@@ -753,8 +820,27 @@ class TestPromptLength:
         )
         base = Activity(mission=MISSION, objectives=(HOUSE,), goal=PLANKS, observation=_obs())
         with_lessons = _goal_prompt(activity=replace(base, lessons=lessons))
-        assert "思い出したこと" in with_lessons
+        assert "自分のルール" in with_lessons
         assert len(with_lessons) - len(_goal_prompt(activity=base)) < 800
+
+
+class TestPlanPromptGuideNotes:
+    """計画のプロンプトの固定の部分に、手引きの「計画のための要点」を入れる（設計書 201）。"""
+
+    def _plan(self, **kwargs):
+        return GamePromptTemplateBuilder().build_plan_prompt(HOUSE, Activity(mission=MISSION, objectives=(HOUSE,)), **kwargs)
+
+    def test_the_notes_come_before_the_cache_break_so_that_the_prefix_stays_the_same(self):
+        from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+
+        prompt = self._plan(guide_notes="（手引き a より）\n- 準備を最初に")
+        before, after = prompt.split(CACHE_BREAK, 1)
+        assert "## 手引きの要点（計画に入れる）" in before and "準備を最初に" in before
+        assert "準備を最初に" not in after
+
+    def test_without_notes_the_prompt_is_the_same_as_before(self):
+        assert "手引きの要点" not in self._plan()
+        assert self._plan(guide_notes="") == self._plan()
 
 
 class TestReviewPrompt:
@@ -859,6 +945,28 @@ class TestToolPromptCacheBreaks:
         b = self._prompt(failing=3, stagnant_seconds=120.0)
         assert a.split(CACHE_BREAK)[0] == b.split(CACHE_BREAK)[0]
 
+    def test_only_the_last_segment_changes_with_the_step_and_the_skills_have_their_own_segment(self):
+        """設計書 177: 隣り合う 2 手が、状態（位置・持ち物・直近の道具）だけ違うとき、最後の部分以外は同じ（キャッシュが読まれる）。"""
+        from ailoveshen.application.ports.output.text_generator import split_cache_breaks
+        from ailoveshen.domain.value_objects import Activity, SkillInfo, ToolCall, ToolOutcome
+
+        def prompt(position, recent):
+            state = {"surroundings": {}, "mobs": [], "self": {"position": {"x": position, "y": 64, "z": 0}}}
+            return GamePromptTemplateBuilder().build_tool_prompt(
+                Activity(), state, (), recent, skills=[SkillInfo("hunt", "近くの動物を狩る", 1)]
+            )
+
+        a = split_cache_breaks(prompt(1, ()))
+        b = split_cache_breaks(prompt(2, (ToolOutcome(call=ToolCall("wait", {}), ok=True, result="waited", seconds=1.0),)))
+        assert len(a) == len(b) == 4  # 決まり / 目標の階層 / 覚えた技 / いまの状態
+        assert a[:3] == b[:3] and a[3] != b[3]
+        assert "## 配信者の目標" in a[1] and "## 覚えた技" in a[2] and "## 配信者が今していること" in a[3]
+
+    def test_without_skills_there_is_no_skills_segment(self):
+        from ailoveshen.application.ports.output.text_generator import split_cache_breaks
+
+        assert len(split_cache_breaks(self._prompt())) == 3
+
     def test_a_break_separates_the_goal_hierarchy_from_the_current_goal(self):
         from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
         from ailoveshen.infrastructure.adapters.prompts.stream_context import format_activity
@@ -868,3 +976,42 @@ class TestToolPromptCacheBreaks:
         before, after = text.split(CACHE_BREAK)
         assert "大目標" in before and "今の小目標" in after
         assert CACHE_BREAK not in format_activity(Activity())
+
+
+def _raw_skill(name, successes, uses, last_failure=None):
+    from ailoveshen.domain.value_objects import SkillInfo
+
+    return SkillInfo(
+        name=name, description=f"{name} をする", version=1, params={"properties": {"n": {}}}, verified=True,
+        uses=uses, successes=successes, last_failure=last_failure, raw=True,
+    )
+
+
+def test_the_raw_prompt_keeps_what_never_changes_in_front_of_the_first_two_cache_breaks():
+    """設計書 198: プロンプトキャッシュは先頭からの一致。技を動かした成績・直近の道具・状態が変わっても、前の 2 つの部分は同じ。"""
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK
+    from ailoveshen.domain.value_objects import ToolCall, ToolOutcome
+
+    builder = GamePromptTemplateBuilder(raw_bot=True, raw_only=True)
+    one = builder.build_raw_prompt(
+        "Survive.", {"self": {"health": 20}}, (), [_raw_skill("chop", 1, 1)], notes=("夜は囲む",)
+    )
+    outcome = ToolOutcome(call=ToolCall(name="run_skill", args={"name": "chop"}), ok=False, result="boom", seconds=1.0)
+    two = builder.build_raw_prompt(
+        "Survive.", {"self": {"health": 9}}, (outcome,), [_raw_skill("chop", 2, 5, "no tree")], notes=("夜は囲む",)
+    )
+    a, b = one.split(CACHE_BREAK), two.split(CACHE_BREAK)
+    assert len(a) == len(b) == 3
+    assert a[0] == b[0] and a[1] == b[1] and a[2] != b[2]
+    assert "chop v1: chop をする（生の bot）（引数 ['n']）" in a[1] and "夜は囲む" in a[1]  # 成績は入らない
+    assert "成功 2/5" in b[2] and "no tree" in b[2] and "boom" in b[2] and '"health": 9' in b[2]
+    assert b[2].rstrip().endswith('"health": 9}}')  # 毎回変わる状態は最後
+
+
+def test_the_skill_prompt_starts_with_the_schema_slot_and_a_break_so_the_system_and_schema_are_cached():
+    from ailoveshen.application.ports.output.text_generator import CACHE_BREAK, SCHEMA_SLOT
+
+    for raw_only in (True, False):
+        builder = GamePromptTemplateBuilder(raw_bot=True, raw_only=raw_only)
+        prompt = builder.build_skill_prompt("chop", "切る", Activity(), (), [])
+        assert prompt.startswith(SCHEMA_SLOT + CACHE_BREAK + "## 書く技")

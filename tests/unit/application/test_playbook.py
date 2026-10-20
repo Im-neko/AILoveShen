@@ -434,3 +434,94 @@ async def test_reset_keeps_the_town_and_forgets_failed_playbook_steps():
     await keeper.reset(plan)
     assert plan.town == town
     assert keeper._playbook_failures == {}
+
+
+NEXT = Mission("鉄の装備で遠くを探索する")
+ARMOR = PlaybookStep("armor", "鉄の防具", (GoalSpec(GoalPredicate.HAVE, item="iron_chestplate", count=1),), "守りを固める", keep=True)
+
+
+DONE_TOWN = TownDefinition("街", (TownStage("備え", "夜に備える", (BED,)),))
+
+
+def _finished_plan():
+    """街が完成し、定石が全部済んだプラン。"""
+    plan = _plan()
+    plan.restore(
+        [], [], 1, town=DONE_TOWN, town_stage=1, playbook_done=tuple(s.name for s in STEPS)
+    )
+    return plan
+
+
+def test_the_mission_is_achieved_when_the_town_is_complete_and_every_step_is_done():
+    plan = _plan()
+    assert not plan.mission_achieved  # 街がまだない
+    plan.restore([], [], 1, town=DONE_TOWN, town_stage=1, playbook_done=("bed", "weapon", "food"))
+    assert not plan.mission_achieved  # 鉄が残っている
+    assert _finished_plan().mission_achieved
+
+
+def test_the_next_mission_adds_its_steps_after_the_old_ones_and_keeps_what_is_done():
+    plan = _finished_plan()
+
+    plan.advance_mission(NEXT, [ARMOR])
+
+    assert plan.mission == NEXT and plan.origin == MISSION
+    assert plan.missions_done == (MISSION.text,)
+    assert [s.name for s in plan.playbook] == ["bed", "weapon", "food", "iron", "armor"]
+    assert plan.playbook_step == ARMOR  # 今の段は、新しい最初の段
+    assert plan.extra_playbook == (ARMOR,)
+    assert not plan.mission_achieved  # 新しい段が残っている
+
+
+def test_the_next_mission_is_refused_before_the_mission_is_achieved_or_with_a_used_name():
+    with pytest.raises(ValueError, match="not achieved"):
+        _plan().advance_mission(NEXT, [ARMOR])
+    with pytest.raises(ValueError, match="already used"):
+        _finished_plan().advance_mission(NEXT, [replace(ARMOR, name="iron")])
+    with pytest.raises(ValueError, match="at least one"):
+        _finished_plan().advance_mission(NEXT, [])
+
+
+def test_reset_goes_back_to_the_mission_of_the_settings():
+    plan = _finished_plan()
+    plan.advance_mission(NEXT, [ARMOR])
+
+    plan.reset()
+
+    assert plan.mission == MISSION and plan.missions_done == ()
+    assert plan.playbook == STEPS and plan.playbook_done == ()
+
+
+def test_restore_puts_back_the_mission_and_the_steps_that_were_added():
+    plan = _plan()
+
+    plan.restore(
+        [], [], 1, town=DONE_TOWN, town_stage=1, playbook_done=("bed",),
+        mission=NEXT, missions_done=(MISSION.text,), extra_playbook=(ARMOR,),
+    )
+
+    assert plan.mission == NEXT and plan.origin == MISSION
+    assert [s.name for s in plan.playbook][-1] == "armor"
+    assert plan.missions_done == (MISSION.text,)
+
+
+def test_the_goal_prompt_tells_the_missions_already_achieved():
+    plan = _finished_plan()
+    plan.advance_mission(NEXT, [ARMOR])
+
+    text = format_activity(
+        Activity(mission=plan.mission, missions_done=plan.missions_done, playbook=plan.playbook,
+                 playbook_done=plan.playbook_done)
+    )
+
+    assert f"最終目標: {NEXT.text}" in text
+    assert f"達成した最終目標: {MISSION.text}" in text
+
+
+def test_the_goal_prompt_tells_what_was_tried_for_the_top_objective():
+    tried = ("have(raw_iron): 進まず止まった 9 回", "explored(): 達成 1 回")
+
+    text = format_activity(Activity(mission=MISSION, tried=tried))
+
+    assert "これまでに選んだ小目標" in text and "have(raw_iron): 進まず止まった 9 回 / explored(): 達成 1 回" in text
+    assert "これまでに選んだ小目標" not in format_activity(Activity(mission=MISSION))

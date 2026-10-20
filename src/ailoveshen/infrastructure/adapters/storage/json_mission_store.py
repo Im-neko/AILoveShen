@@ -13,6 +13,7 @@ from loguru import logger
 from ailoveshen.application.ports.output.mission_store import IMissionStore, SavedPlan
 from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.value_objects import (
+    Deed,
     GoalPredicate,
     GoalSpec,
     JobState,
@@ -20,6 +21,7 @@ from ailoveshen.domain.value_objects import (
     ObjectiveState,
     Mission,
     Job,
+    PlaybookStep,
     Step,
     TownDefinition,
     TownMap,
@@ -72,6 +74,11 @@ class JsonMissionStore(IMissionStore):
                 site=TownSite(**data["site"]) if data.get("site") else None,
                 town_map=_town_map(data["town_map"]) if data.get("town_map") else None,
                 playbook_done=tuple(data.get("playbook_done", [])),
+                origin=Mission(text=data["origin"]) if data.get("origin") else None,
+                missions_done=tuple(data.get("missions_done", [])),
+                extra_playbook=tuple(_playbook_step(x) for x in data.get("extra_playbook", [])),
+                design_failed={str(k): (int(v[0]), float(v[1])) for k, v in data.get("design_failed", {}).items()},
+                history=tuple(_deed(d) for d in data.get("history", [])),
             )
         except (ValueError, KeyError, TypeError, AttributeError) as e:
             aside = self._path.with_suffix(self._path.suffix + ".unreadable")
@@ -99,11 +106,36 @@ class JsonMissionStore(IMissionStore):
             "site": asdict(plan.site) if plan.site else None,
             "town_map": asdict(plan.town_map) if plan.town_map else None,
             "playbook_done": list(plan.playbook_done),
+            "origin": plan.origin.text,
+            "missions_done": list(plan.missions_done),
+            "extra_playbook": [_playbook_step_dict(x) for x in plan.extra_playbook],
+            "design_failed": {k: [n, at] for k, (n, at) in plan.design_failed.items()},
+            "history": [asdict(d) for d in plan.history],
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(self._path)
+
+
+def _playbook_step_dict(step: PlaybookStep) -> dict[str, Any]:
+    return {
+        "name": step.name,
+        "title": step.title,
+        "conditions": [c.to_dict() for c in step.conditions],
+        "reason": step.reason,
+        "keep": step.keep,
+    }
+
+
+def _playbook_step(data: dict[str, Any]) -> PlaybookStep:
+    return PlaybookStep(
+        name=data["name"],
+        title=data["title"],
+        conditions=tuple(_spec(c) for c in data["conditions"]),
+        reason=data.get("reason", ""),
+        keep=bool(data.get("keep", False)),
+    )
 
 
 def _job_to_dict(job: Job) -> dict[str, Any]:
@@ -206,6 +238,16 @@ def _spec(c: dict[str, Any]) -> GoalSpec:
         where=c.get("where"),
         distance=c.get("distance"),
         name=c.get("name"),
+    )
+
+
+def _deed(data: dict[str, Any]) -> Deed:
+    return Deed(
+        title=data["title"],
+        done=bool(data["done"]),
+        because=data.get("because", ""),
+        day=int(data["day"]) if data.get("day") is not None else None,
+        requested_by=data.get("requested_by", ""),
     )
 
 

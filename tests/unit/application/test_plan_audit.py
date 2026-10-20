@@ -14,6 +14,7 @@ from ailoveshen.application.use_cases.plan_lint import (
     preparation_of,
     unneeded_materials,
     unregistered_builds,
+    unregistered_facilities,
 )
 from ailoveshen.domain.entities import ObjectivePlan
 from ailoveshen.domain.exceptions import GameBridgeError, GoalRejectedError
@@ -69,6 +70,19 @@ class TestLint:
         job = Job(PLANKS, title="板材", steps=(Step(HOUSE_NAMED, "建てる"),))
         with pytest.raises(ValueError, match="does not exist"):
             check_plan((job,), objective, builds=set())
+
+    def test_a_facility_that_does_not_exist_is_refused_but_the_objectives_own_or_a_registered_one_is_fine(self):
+        """採掘場を中目標に書いても、設計されない（47 回断られた）。有る施設と、大目標の条件の施設は通す。"""
+        mine = GoalSpec(GoalPredicate.FACILITY, name="mine_7")
+        diamond = GoalSpec(GoalPredicate.HAVE, item="diamond", count=3)
+        _, objective = _objective(diamond)
+        with pytest.raises(ValueError, match=r"facility\(mine_7\).*facility that does not exist.*have\(diamond, n\)"):
+            check_plan((Job(mine, title="採掘場"), Job(diamond, title="ダイヤ")), objective, facilities=set())
+        check_plan((Job(mine, title="採掘場"), Job(diamond, title="ダイヤ")), objective, facilities={"mine_7"})
+        _, own = _objective(mine)
+        check_plan((Job(mine, title="採掘場"),), own, facilities=set())
+        check_plan((Job(mine, title="採掘場"), Job(diamond, title="ダイヤ")), objective, facilities=None)
+        assert unregistered_facilities([mine], objective, set()) == [mine]
 
     def test_the_builds_are_not_checked_when_they_are_unknown(self):
         _, objective = _objective()

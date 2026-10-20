@@ -390,6 +390,7 @@ class GoalPredicate(str, Enum):
     - PLANTED: 自分が植えた苗木（item: sapling か種類）が `count` 本ある（育った木も数える）
     - FARMED: 家のまわりの耕地に作物（item: wheat など）が `count` マス植わっている
     - LEVELED: `where`（home か x,y,z）のまわり半径 `distance` の地面がその高さにそろっている
+    - PAVED: 街の理想図の道がすべて土の道になっている（引数なし。設計書 200）
       （整地）。`demolish` なら、置いた物・保護された家や建物・木・畑も壊してそろえる
     - CUSTOM: `name` の判定（Gemini が書いた JS。ブリッジが世界を読んで動かす）が成り立っている
       （組み込みの述語で書けない頼み。docs/design/42_custom_conditions.md）
@@ -409,6 +410,7 @@ class GoalPredicate(str, Enum):
     STORED = "stored"
     LIT = "lit"
     LEVELED = "leveled"
+    PAVED = "paved"
     SURVEYED = "surveyed"
     PLANTED = "planted"
     FARMED = "farmed"
@@ -499,6 +501,11 @@ class GoalSpec:
             other.where,
             other.name,
         )
+
+    def kind_label(self) -> str:
+        """数を除いた短い形。例: have(planks)。数だけ違う同じ小目標を、一つに数えるため。"""
+        args = [str(v) for v in (self.name, self.item, self.where, self.distance) if v is not None]
+        return f"{self.predicate.value}({', '.join(args)})"
 
     def describe(self) -> str:
         """プロンプトとログ用の短い形。例: have(planks, 12)。"""
@@ -609,6 +616,7 @@ CONDITION_PREDICATES = frozenset(
         GoalPredicate.PLANTED,
         GoalPredicate.FARMED,
         GoalPredicate.LEVELED,
+        GoalPredicate.PAVED,
         GoalPredicate.CUSTOM,
         GoalPredicate.FACILITY,
     }
@@ -654,8 +662,25 @@ def is_survival(spec: GoalSpec) -> bool:
 
 
 @dataclass(frozen=True)
+class Deed:
+    """
+    自分がやったこと: 終わった大目標（完了か断念）1 件の記録。再起動をまたいで残し、同じことをまた大目標に
+    足さないために目標の決定が見る（docs/design/199）。
+    """
+
+    title: str
+    done: bool  # 完了なら真、断念なら偽
+    because: str = ""  # 終わった理由（完了: 条件が満たされた理由、断念: 断念の理由）
+    day: Optional[int] = None  # 終わったときのゲームの日（分からなければ None）
+    requested_by: str = ""  # 視聴者の頼みだったときの名前
+
+
+@dataclass(frozen=True)
 class Mission:
-    """全体を貫く唯一の目標: 設定で決め、コメントでは変わらない。"""
+    """
+    全体を貫く唯一の目標: 最初は設定で決め、コメントでは変わらない。達成したら（街が完成し、
+    定石がすべて済んだら）LLM が次の最終目標を書く（docs/design/180）。
+    """
 
     text: str
 
@@ -1876,11 +1901,15 @@ class Activity:
     acting: bool = False  # 行動を実行している最中か（選んでいる間・目標を決めている間は偽）
     failing: int = 0  # 今の小目標で続けて失敗した行動の数（行き詰まりの目安。一言は黙る）
     stagnant_seconds: float = 0.0  # 状況が変わらない時間（秒。動かないと数えたときだけ。一言は黙る）
+    skill_note: str = ""  # 技が動いている間の経過（技の名前、経った秒数、今の位置、技のログ）。実況が途中経過を話す材料（設計書 186）
     screen_note: Optional["ScreenNote"] = None  # 画面で見たこと（確かめていない）
     lessons: tuple[Lesson, ...] = ()  # 今の状況で思い出した教訓（確かめていない。docs/design/35）
     town_map: Optional[TownMap] = None  # 街の理想図（docs/design/47 §6。目標の決定とボードが見る）
     playbook: tuple[PlaybookStep, ...] = ()  # 定石（この順にやる。docs/design/74）
     playbook_done: tuple[str, ...] = ()  # 済んだ定石の段の名前
+    missions_done: tuple[str, ...] = ()  # 達成した最終目標の文（古い順）
+    tried: tuple[str, ...] = ()  # 今の大目標のために選んだ小目標の、終わり方ごとの回数（多い順。docs/design/182）
+    history: tuple[Deed, ...] = ()  # 自分がやったこと: 終わった大目標の記録（古い順。docs/design/199）
 
 
 @dataclass(frozen=True)
@@ -2055,6 +2084,20 @@ class ToolOutcome:
 
 
 @dataclass(frozen=True)
+class WithdrawnHand:
+    """
+    ブリッジの提案（do_suggestion の id）が、同じ理由で何度も通らなかったので、提案から外した手。
+    場所や数字を変えて選び直しても、同じ理由で通らない（2026-10-17: `make a mine down to y -58` が、洞窟の設計の
+    断りで 3 時間に 19 回、LLM に選び直された）。`minutes` は外してある残りの分。
+    """
+
+    hand: str
+    reason: str
+    times: int
+    minutes: int
+
+
+@dataclass(frozen=True)
 class SameCause:
     """
     同じ道具が、同じ理由（数字を除いて同じ文）で続けて失敗・拒否されている状態。引数の数字を少し変えて
@@ -2097,12 +2140,14 @@ class SkillInfo:
     @property
     def needs_arguments(self) -> bool:
         """呼ぶのに要る引数があるか（params は引数がなくても {"type": "object", "properties": {}} が入る）。"""
-        return bool(self.params.get("required"))
+        # expects が "$引数名" を参照する技も、引数なしでは判定できない（2026-10-17: descend_stair_raw の expects が $dest で、
+        # 引数なしで Jev が選んで「expects refers to $dest but the argument is missing」が続いた）
+        refers = any(isinstance(v, str) and v.startswith("$") for v in self.expects.values())
+        return bool(self.params.get("required")) or refers
 
-    def describe(self) -> str:
-        """プロンプト用の 1 行。"""
+    def _mark(self) -> str:
         good = self.last_good_version
-        mark = (
+        return (
             ""
             if self.verified
             else f"（同じ理由で {self.streak} 回続けて失敗中。書き直すか、ほかの手で）"
@@ -2111,15 +2156,38 @@ class SkillInfo:
             if good and good != self.version
             else "（試し中）"
         )
+
+    def _failure(self) -> str:
         failure = f"、最後の失敗: {self.last_failure}" if self.last_failure else ""
         failure += f"（同じ理由で {self.streak} 回続けて失敗）" if self.streak >= 2 and not self.failing else ""
+        return failure
+
+    def _runs(self) -> str:
+        return f"（呼ぶと v{self.runs_version} が動く）" if self.runs_version not in (None, self.version) else ""
+
+    def _args(self) -> str:
+        return list((self.params.get("properties") or {}).keys())
+
+    def describe(self) -> str:
+        """プロンプト用の 1 行。"""
         return (
-            f"{self.name} v{self.version}{mark}: {self.description}"
+            f"{self.name} v{self.version}{self._mark()}: {self.description}"
             f"{'（生の bot）' if self.raw else ''}"
-            f"{f'（呼ぶと v{self.runs_version} が動く）' if self.runs_version not in (None, self.version) else ''}"
-            f"（引数 {list((self.params.get('properties') or {}).keys())}、"
-            f"成功 {self.successes}/{self.uses}{failure}）"
+            f"{self._runs()}"
+            f"（引数 {self._args()}、"
+            f"成功 {self.successes}/{self.uses}{self._failure()}）"
         )
+
+    def describe_fixed(self) -> str:
+        """成績を除いた 1 行（版を書き直すまで変わらない。プロンプトキャッシュの前方一致を壊さないように、成績と分ける）。"""
+        return (
+            f"{self.name} v{self.version}: {self.description}"
+            f"{'（生の bot）' if self.raw else ''}（引数 {self._args()}）"
+        )
+
+    def record(self) -> str:
+        """成績の 1 行（動かすたびに変わる: 試し中か、成功の数、最後の失敗）。"""
+        return f"{self.name}{self._mark()}{self._runs()}: 成功 {self.successes}/{self.uses}{self._failure()}"
 
 
 @dataclass(frozen=True)
@@ -2158,10 +2226,24 @@ class SkillRun:
     seconds: float = 0.0
     learned: bool = False  # この実行で初めて成功した
     fell_back_from: Optional[int] = None  # 新しい版の試しが失敗していたので、前に成功した版を動かした（docs/design/168）
+    moved_from: Optional[dict[str, Any]] = None  # 保存しない試しだけ: 走らせる前後の位置と持ち物の増減（設計書 185）
+    moved_to: Optional[dict[str, Any]] = None
+    inventory_change: dict[str, int] = field(default_factory=dict)
+    scene: dict[str, Any] = field(default_factory=dict)  # 失敗した生の bot の技の、終わったときの現場（設計書 193）
+
+    def trial_effect(self) -> str:
+        """保存しない試しの、世界に起きたこと（位置と持ち物の差）。なければ空。"""
+        if not self.moved_from or not self.moved_to:
+            return ""
+        a, b = self.moved_from, self.moved_to
+        text = f"moved {a['x']},{a['y']},{a['z']} -> {b['x']},{b['y']},{b['z']}"
+        if self.inventory_change:
+            text += "; inventory " + ", ".join(f"{k} {v:+d}" for k, v in sorted(self.inventory_change.items()))
+        return text
 
     def describe(self) -> str:
         """次の道具の選択に見せる結果（失敗なら理由、記録、最後の道具）。"""
-        head = f"skill {self.name} v{self.version}"
+        head = f"skill {self.name} v{self.version}" if self.version else f"trial of {self.name} (not saved)"
         if self.fell_back_from is not None:
             head += f" (v{self.fell_back_from} failed its trial, so the version that worked was run)"
         if self.ok:
@@ -2171,6 +2253,8 @@ class SkillRun:
             parts.append("expects: " + "; ".join(self.expects_lines))
         if self.log:
             parts.append("log: " + " | ".join(self.log[-5:]))
+        if self.scene:
+            parts.append("scene when it ended: " + json.dumps(self.scene, ensure_ascii=False, separators=(",", ":")))
         if self.calls:
             last = self.calls[-3:]
             parts.append(
@@ -2287,3 +2371,13 @@ class ChatComment:
             raise ValueError("a chat comment needs a user name")
         if not self.message.strip():
             raise ValueError("a chat comment needs a message")
+
+
+@dataclass(frozen=True)
+class Guide:
+    """手引き（文章のスキル。設計書 192）1 つ: 名前、いつ読むかの一行、本文。"""
+
+    name: str
+    description: str
+    body: str
+

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Sequence
 from typing import Any, Optional
@@ -33,6 +34,21 @@ from ailoveshen.domain.value_objects import (
     SkillRun,
     TownSite,
 )
+
+
+_NOT_STARTED = {
+    "reflex": "the reflex against a nearby enemy is running; skills are refused until it ends (it ends by itself: wait, or deal with the enemy)",
+    "skill": "another skill is still running",
+}
+
+
+def _not_started(name: str, version: int, response: httpx.Response) -> SkillRun:
+    """動かせなかった（409）。コードの失敗ではないので、断り（refused）として返す。理由は反射か、ほかの行動かで違う。"""
+    why = ""
+    with contextlib.suppress(ValueError):
+        why = str(response.json().get("why") or "")
+    reason = "not started: " + _NOT_STARTED.get(why, "another action is running")
+    return SkillRun(name=name, version=version, ok=False, ended="refused", reason=reason)
 
 
 class MineflayerBridgeClient(IMinecraftBridge):
@@ -149,6 +165,10 @@ class MineflayerBridgeClient(IMinecraftBridge):
     async def state(self) -> dict[str, Any]:
         """共通の状態を取得する。"""
         return await self._request("GET", "/state")
+
+    async def raw_state(self) -> dict[str, Any]:
+        """判断を加えない状態を取得する（設計書 191）。"""
+        return await self._request("GET", "/state?raw=1")
 
     async def abort(self, reason: str) -> bool:
         """実行中の行動を止める。もう終わっていれば False。"""
@@ -320,6 +340,45 @@ class MineflayerBridgeClient(IMinecraftBridge):
             )
         return int(response.json()["version"])
 
+    async def check_skill(self, draft: SkillDraft) -> None:
+        """技の形と構文を確かめる。400 には受け取れない理由が入っている。"""
+        await self._post_try({"definition": draft.to_dict(), "run": False})
+
+    async def try_skill(self, draft: SkillDraft, args: dict[str, Any]) -> SkillRun:
+        """書いた技を保存せずに 1 回走らせる（終わるまで待つ）。"""
+        response = await self._post_try({"definition": draft.to_dict(), "args": args}, self._action_timeout)
+        if response.status_code == 409:
+            return _not_started("try", 0, response)
+        d = response.json()
+        moved = d.get("from"), d.get("to")
+        return SkillRun(
+            name="try",
+            version=0,
+            ok=bool(d.get("ok")),
+            ended=str(d.get("ended", "")),
+            summary=str(d.get("summary") or ""),
+            reason=str(d.get("reason") or ""),
+            expects_lines=tuple(str(x) for x in (d.get("expects") or {}).get("lines", [])),
+            calls=tuple(d.get("calls") or ()),
+            log=tuple(str(x) for x in d.get("log") or ()),
+            seconds=float(d.get("seconds", 0.0)),
+            moved_from=moved[0],
+            moved_to=moved[1],
+            inventory_change=dict(d.get("inventory_change") or {}),
+            scene=dict(d.get("scene") or {}),
+        )
+
+    async def _post_try(self, payload: dict[str, Any], timeout: float | None = None) -> httpx.Response:
+        try:
+            response = await self._client.post("/skills/try", json=payload, **({"timeout": timeout} if timeout else {}))
+        except httpx.RequestError as e:
+            raise GameBridgeError(f"Minecraft bridge unreachable (POST /skills/try): {e}") from e
+        if response.status_code == 400:
+            raise SkillRejectedError(response.json()["error"])
+        if response.status_code not in (200, 409):
+            raise GameBridgeError(f"Minecraft bridge POST /skills/try -> {response.status_code}: {response.text[:200]}")
+        return response
+
     async def run_skill(
         self, name: str, args: dict[str, Any], version: int | None = None
     ) -> SkillRun:
@@ -334,21 +393,16 @@ class MineflayerBridgeClient(IMinecraftBridge):
         except httpx.RequestError as e:
             raise GameBridgeError(f"Minecraft bridge unreachable (POST /skills/run): {e}") from e
         if response.status_code == 404:
+            error = response.json().get("error", "no such skill")
             return SkillRun(
                 name=name,
                 version=version or 0,
                 ok=False,
-                ended="error",
-                reason=response.json().get("error", "no such skill"),
+                ended="refused",
+                reason=f"{error}. A try_skill trial is not saved: save it with write_skill (the same name), or try it again with try_skill",
             )
         if response.status_code == 409:
-            return SkillRun(
-                name=name,
-                version=version or 0,
-                ok=False,
-                ended="error",
-                reason="another action is running",
-            )
+            return _not_started(name, version or 0, response)
         if response.status_code != 200:
             raise GameBridgeError(
                 f"Minecraft bridge POST /skills/{name}/run -> {response.status_code}: "
@@ -368,6 +422,7 @@ class MineflayerBridgeClient(IMinecraftBridge):
             seconds=float(d.get("seconds", 0.0)),
             learned=bool(d.get("learned")),
             fell_back_from=d.get("fell_back_from"),
+            scene=dict(d.get("scene") or {}),
         )
 
     async def danger(self) -> dict[str, Any] | None:

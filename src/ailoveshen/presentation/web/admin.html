@@ -127,6 +127,23 @@
   </section>
 
   <section>
+    <details id="lessons-box">
+      <summary>教訓帳<span class="hint" id="lessons-sum">間違った教訓を消す・足す</span></summary>
+      <div class="row">
+        <input type="text" id="ls-filter" class="grow" placeholder="絞り込み（本文・条件・id）">
+        <button id="ls-reload">読み直す</button>
+      </div>
+      <div id="lessons"><span class="hint">読み込み中…</span></div>
+      <h3>足す</h3>
+      <textarea id="ls-text" placeholder="教訓（1 文、80 字まで）。例: 鉄は y=16 付近に多い"></textarea>
+      <div class="row">
+        <input type="text" id="ls-cond" class="grow" placeholder="どんなときか（60 字まで。空でもよい）">
+        <button class="primary" id="ls-add">教訓に足す</button>
+      </div>
+    </details>
+  </section>
+
+  <section>
     <h2>送ったもの</h2>
     <div class="log" id="log"><span class="hint">まだありません</span></div>
   </section>
@@ -237,6 +254,47 @@ function renderPresets () {
     : '<span class="hint">この分類にはまだありません。</span>'
 }
 
+let lessonList = []
+
+function renderLessons () {
+  const q = $('ls-filter').value.trim().toLowerCase()
+  const shown = lessonList.filter((n) => !q || `${n.id} ${n.text} ${n.condition}`.toLowerCase().includes(q)).slice(0, 80)
+  $('lessons-sum').textContent = `${lessonList.length} 件`
+  $('lessons').innerHTML = shown.length ? shown.map((n) => `<div class="preset" data-id="${esc(n.id)}">
+      <div class="head"><span class="title">${esc(n.id)}${n.proven ? ' ✓' : ''}</span><span class="cat">${esc(n.source)}</span><span class="cat">教わった ${n.taught} ／ 思い出した ${n.used} ／ 効いた ${n.helped} ／ 効かなかった ${n.failed}</span></div>
+      <div class="text">${esc(n.text)}${n.condition ? `（${esc(n.condition)}）` : ''}</div>
+      <div class="acts"><button class="danger" data-lesson-del="${esc(n.id)}">消す</button></div>
+    </div>`).join('') : '<span class="hint">ありません。</span>'
+}
+
+async function loadLessons () {
+  try {
+    const r = await api('GET', '/api/admin/lessons')
+    lessonList = r.lessons || []
+    renderLessons()
+    if (!r.enabled) $('lessons').innerHTML = '<span class="hint">教訓帳を使っていません。</span>'
+  } catch (e) { $('lessons').textContent = e.message }
+}
+
+$('ls-filter').oninput = renderLessons
+$('ls-reload').onclick = (ev) => act(ev.target, loadLessons)
+$('lessons').onclick = (ev) => {
+  const id = ev.target.dataset?.lessonDel
+  if (!id) return
+  act(ev.target, async () => {
+    await api('DELETE', `/api/admin/lessons/${encodeURIComponent(id)}`)
+    toast(`${id} を消しました`)
+    await loadLessons()
+  })
+}
+$('ls-add').onclick = (ev) => act(ev.target, async () => {
+  await api('POST', '/api/admin/lessons', { text: $('ls-text').value, condition: $('ls-cond').value })
+  $('ls-text').value = ''
+  $('ls-cond').value = ''
+  toast('教訓に足しました')
+  await loadLessons()
+})
+
 async function refresh () {
   try { render(await api('GET', '/api/admin/state')) } catch (e) { $('now').textContent = e.message }
 }
@@ -306,6 +364,7 @@ $('presets').onclick = (ev) => {
 }
 
 refresh()
+loadLessons()
 setInterval(() => { if (!editing) refresh() }, 3000)
 </script>
 </body>

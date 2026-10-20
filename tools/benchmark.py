@@ -42,6 +42,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bench_fixtures  # noqa: E402
+import bench_milestones  # noqa: E402
 
 CONFIG = REPO / "config" / "benchmark.yaml"
 COMPOSE_FILE = REPO / "docker" / "docker-compose.bench.yml"
@@ -76,6 +77,8 @@ class Task:
     setup: tuple[str, ...] = ()  # ボットが入ったあとに RCON で行う、状況づくりのコマンド（SETUP_VERBS だけ）
     freeze_day: Optional[bool] = None  # False: この課題は時間が進むことを求める（夜）。None なら全体の設定に従う
     fixture: Optional[str] = None  # 場面づくり（tools/bench_fixtures.py の名前）: 世界とブリッジの状態を作る
+    guides: bool = False  # raw の課題で手引き（設計書 192）を使うか。既定は使わない（自己改善だけを測る）
+    control: Optional[str] = None  # raw: 判断なしのプレイ（設計書 191）。条件は使わず、節目（tools/bench_milestones.py）に着く秒を測る
 
     def objective(self) -> dict[str, Any]:
         """`minecraft.mission.objectives` の 1 件。"""
@@ -111,6 +114,8 @@ def load_tasks(config: dict[str, Any], names: Optional[list[str]] = None) -> lis
             setup=tuple(known[n].get("setup") or ()),
             freeze_day=known[n].get("freeze_day"),
             fixture=known[n].get("fixture"),
+            control=known[n].get("control"),
+            guides=bool(known[n].get("guides", False)),
         )
         for n in chosen
     ]
@@ -379,6 +384,56 @@ def result_row(
     }
 
 
+RAW_POLL_SECONDS = 1.0  # 判断なしのプレイで、持ち物を見る間隔（作ってすぐ使う物を取りこぼさない）
+RAW_PLACED_SECONDS = 5.0  # 置いたブロック（作業台、かまど）を探す間隔
+
+
+async def placed_blocks(bridge: Any) -> set[str]:
+    """近くに置いてある、節目のブロックの名前（find_blocks はこの測定のために呼ぶ。LLM には見せない）。"""
+    found = set()
+    for name in bench_milestones.PLACED_BLOCKS:
+        ok, result, _, _ = await bridge.run_tool("find_blocks", {"block": name, "radius": 48})
+        try:
+            parsed = json.loads(result) if ok else None
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, list) and parsed:
+            found.add(name)
+    return found
+
+
+def raw_summary(run_dir: Path) -> dict[str, Any]:
+    """判断なしのプレイの、自己改善の大きさ: 書いた技の数と版の数、成功、LLM の呼び出しの用途ごとの数。"""
+    skills = versions = successes = uses = 0
+    for path in (run_dir / "bridge" / "skills").glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        skills += 1
+        for v in data.get("versions", []):
+            versions += 1
+            successes += int(v.get("successes") or 0)
+            uses += int(v.get("uses") or 0)
+    calls: dict[str, int] = {}
+    for path in sorted((run_dir / "logs" / "generations").glob("gen-*.jsonl")):
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                purpose = json.loads(line).get("purpose") or "?"
+            except json.JSONDecodeError:
+                continue
+            calls[purpose] = calls.get(purpose, 0) + 1
+    return {
+        "skills_saved": skills,
+        "skill_versions": versions,
+        "skill_successes": successes,
+        "skill_uses": uses,
+        "llm_calls": calls,
+        # 通常のプレイの steps は行動の記録から数える。ここは道具の選びの数
+        "tool_steps": sum(n for p, n in calls.items() if p.startswith("tool")),
+    }
+
+
 async def play_one(
     task: Task, run_dir: Path, cap_seconds: float, check_seconds: float, bridge_port: int
 ) -> dict[str, Any]:
@@ -405,8 +460,19 @@ async def play_one(
         raise RuntimeError(f"bridge port is {mc.bridge_port}, expected {bridge_port}")
     isolate(mc, run_dir)
     mc.mission.playbook = []
-    mc.mission.objectives = [task.objective()]
-    specs = [parse_spec(c) for c in task.conditions]
+    raw = task.control == "raw"
+    if raw:
+        # 判断なし（設計書 191）: 大目標も条件もない。反射は Jev でなく規則で選ぶ（ブリッジの外の判断をなくす）
+        mc.control = "raw"
+        mc.reflex.judge = "rules"
+        if not task.guides:
+            mc.guides_dir = ""  # 手引きなし: 文章の知識を渡さず、技を書いて直すことだけを測る
+        mc.mission.objectives = []
+        specs = []
+    else:
+        mc.mission.objectives = [task.objective()]
+        specs = [parse_spec(c) for c in task.conditions]
+    tracker = bench_milestones.MilestoneTracker()
 
     marks: dict[str, float] = {}
     started = time.monotonic()
@@ -452,8 +518,29 @@ async def play_one(
                 met.set()
                 return
 
+    async def watch_raw() -> None:
+        """持ち物と置いたブロックから、節目に着いた秒を記録する。ダイヤを持てば成功。"""
+        placed: set[str] = set()
+        placed_at = -RAW_PLACED_SECONDS
+        while True:
+            await asyncio.sleep(RAW_POLL_SECONDS)
+            now = time.monotonic() - started
+            try:
+                state = await bridge.state()
+                if now - placed_at >= RAW_PLACED_SECONDS:
+                    placed_at = now
+                    placed = await placed_blocks(bridge)
+            except Exception:  # 一時的な失敗は次の周で
+                continue
+            for name in tracker.update(now, state.get("inventory") or {}, placed):
+                print(f"[milestone] {name} {now:.0f}s", flush=True)
+            if tracker.finished:
+                marks["success"] = now
+                met.set()
+                return
+
     play = asyncio.create_task(game.play(max_steps=None, keep_going=True))
-    watcher = asyncio.create_task(watch())
+    watcher = asyncio.create_task(watch_raw() if raw else watch())
     success_wait = asyncio.create_task(met.wait())
     status, error = TIMEOUT, None
     deaths: Optional[int] = None
@@ -481,9 +568,13 @@ async def play_one(
     if status == TIMEOUT and outage >= LLM_OUTAGE_CALLS:
         # 環境の不具合（LLM サーバーの停止）で、成否に数えない
         status, error = ERROR, f"the LLM server was down at the end ({outage} calls in a row failed)"
-    return result_row(
+    row = result_row(
         status, error, marks, time.monotonic() - started, cap_seconds, count_steps(run_dir), deaths
     )
+    if raw:
+        row.update({"milestones": tracker.at, **raw_summary(run_dir)})
+        row["steps"] = row["tool_steps"]
+    return row
 
 
 def cmd_play(args: argparse.Namespace) -> int:
@@ -706,14 +797,18 @@ def stop_server(config: dict[str, Any]) -> None:
     )
 
 
-def start_bridge(run_dir: Path, config: dict[str, Any]) -> subprocess.Popen:
+# 判断なしのプレイ（設計書 191）のブリッジ: 生の bot の技だけ（BRIDGE_RAW_ONLY）。raw の技は使い捨てのワールドでだけ
+RAW_BRIDGE_ENV = {"BRIDGE_RAW_BOT": "1", "BRIDGE_RAW_ONLY": "1"}
+
+
+def start_bridge(run_dir: Path, config: dict[str, Any], extra_env: Optional[dict[str, str]] = None) -> subprocess.Popen:
     """ベンチマーク用のブリッジを起動し、観測が返るまで待つ。"""
     (run_dir / "bridge").mkdir(parents=True, exist_ok=True)
     out = open(run_dir / "bridge" / "stdout.log", "wb")
     proc = subprocess.Popen(
         ["node", "--no-node-snapshot", "src/index.mjs"],
         cwd=BRIDGE_DIR,
-        env=bridge_env(run_dir, config, dict(os.environ)),
+        env=bridge_env(run_dir, config, {**os.environ, **(extra_env or {})}),
         stdout=out,
         stderr=subprocess.STDOUT,
     )
@@ -766,7 +861,7 @@ def run_one(
     try:
         freeze_day = freeze_day and task.freeze_day is not False  # 夜の課題だけが、時間が進むことを求める
         start_server(level, seed, config, freeze_day)
-        bridge = start_bridge(run_dir, config)
+        bridge = start_bridge(run_dir, config, RAW_BRIDGE_ENV if task.control == "raw" else None)
         bridge = run_fixture(task, run_dir, config, bridge)
         give_items(task)
         run_setup(task)
@@ -811,7 +906,8 @@ def run_one(
         "seed": seed,
         "freeze_day": freeze_day,
         "guards": os.environ.get("BRIDGE_GUARDS") or "free",
-        "raw_bot": os.environ.get("BRIDGE_RAW_BOT") == "1",
+        "raw_bot": os.environ.get("BRIDGE_RAW_BOT") == "1" or task.control == "raw",
+        "control": task.control or "tools",
         "at": datetime.now(timezone.utc).isoformat(),
         **row,
         **tool_counts(run_dir),

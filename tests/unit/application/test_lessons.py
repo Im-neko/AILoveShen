@@ -162,6 +162,21 @@ def test_outcomes_are_counted_and_lessons_that_never_help_are_dropped():
     assert (kept.text, kept.used, kept.helped, kept.proven) == ("夜は家で寝る", 2, 2, True)
 
 
+def test_lessons_dropped_by_the_book_are_recorded_in_full():
+    book, _ = _book(max_lessons=2)
+    weak = book.learn("夜は走り回る", "夜", {"time": "night"}, True, "failure")
+    for _ in range(4):
+        book.mark_used([weak])
+        book.settle([weak], "stuck")
+    book.learn("木は斧で切る", "", {"item": "oak_log"}, True, "failure")
+    book.learn("石はつるはしで掘る", "", {"item": "stone"}, True, "failure")
+    book.learn("水は桶で汲む", "", {"item": "water_bucket"}, True, "failure")
+    pruned = [c.args[0] for c in book._recorder.record.call_args_list if c.args[0].get("moment") == "pruned"]
+    assert [(p["why"], p["lesson"]["text"]) for p in pruned][0] == ("weak", "夜は走り回る")
+    assert pruned[0]["lesson"]["situation"] == {"time": "night"} and pruned[0]["lesson"]["used"] == 4
+    assert [p["why"] for p in pruned][1:] == ["full"]
+
+
 def test_the_book_keeps_proven_lessons_when_it_is_full():
     book, _ = _book(max_lessons=2)
     proven = book.learn("夜は家で寝る", "", {"time": "night"}, True, "failure")
@@ -184,11 +199,23 @@ def test_the_book_is_saved_and_loaded_as_json(tmp_path):
 
 
 def test_recalled_lessons_are_shown_as_unverified_memories():
-    lesson = Lesson("L1", "夜は家で寝る", condition="夜になったとき", source="viewer:neko", used=3, helped=2)
+    lesson = Lesson("L1", "夜は家で寝る", condition="夜になったとき", source="viewer:neko", used=3, helped=1)
     text = format_activity(Activity(lessons=(lesson,)))
     assert "思い出したこと" in text and "確かめていない" in text
-    assert "夜は家で寝る（こういうとき: 夜になったとき）（nekoさんに教わった、効いた 2 回・効かなかった 0 回）" in text
+    assert "自分のルール" not in text
+    assert "夜は家で寝る（こういうとき: 夜になったとき）（nekoさんに教わった、効いた 1 回・効かなかった 0 回）" in text
     assert "思い出したこと" not in format_activity(Activity())
+
+
+def test_proven_lessons_are_shown_as_rules_to_keep_and_the_others_as_memories():
+    proven = Lesson("L1", "夜は家で寝る", used=3, helped=2)
+    weak = Lesson("L2", "石は斧で掘る", used=9, helped=1, failed=5)
+    text = format_activity(Activity(lessons=(proven, weak)))
+    rules, memories = text.index("自分のルール"), text.index("思い出したこと")
+    assert text.index("夜は家で寝る") > rules and text.index("夜は家で寝る") < memories
+    assert text.index("石は斧で掘る") > memories
+    assert "守らないなら理由を言う" in text
+
 
 
 def test_a_lesson_about_dark_places_is_recalled_in_a_cave_by_day_but_not_in_the_open_light():

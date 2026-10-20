@@ -66,6 +66,7 @@ _BY_VERB: dict[str, Callable[[dict[str, Any], str], str]] = {
     "bed_here": lambda d, cid: "ここにベッドを置いて寝る",
     "climb_down": lambda d, cid: "掘って柱から降りる",
     "climb_out": lambda d, cid: "土を積んで閉じた所から出る",
+    "shaft_up": lambda d, cid: "真上へ縦穴を掘って地上へ出る",
     "step_off": lambda d, cid: "縁から飛び降りる",
     "craft": _with("{thing}をクラフトする"),
     "defrag": lambda d, cid: "チェストの中をまとめる",
@@ -170,6 +171,9 @@ def action_label(call: ToolCall, candidates: tuple[Candidate, ...] = ()) -> str:
     if call.name == "run_skill":
         name = call.args.get("name")
         return f"技「{name}」を実行する" if name else ""
+    if call.name == "try_skill":
+        name = call.args.get("name")
+        return f"技「{name}」を試す" if name else ""
     if call.name == "do_suggestion":
         found: Optional[Candidate] = next(
             (c for c in candidates if c.action_id == call.args.get("id")), None

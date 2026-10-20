@@ -52,7 +52,7 @@ class TestSurveyed:
 
     def test_the_llm_cannot_write_it_as_a_condition(self):
         """LLM が書く大目標の条件には出さず、書いても断る。"""
-        schema = goal_schema([GoalPredicate.HAVE], [])
+        schema = goal_schema()
         condition = schema["properties"]["plan_changes"]["items"]["properties"]["conditions"]
         assert "surveyed" not in condition["items"]["properties"]["predicate"]["enum"]
         with pytest.raises(ValueError, match="surveyed cannot be a condition"):
@@ -99,7 +99,7 @@ class TestDigDepth:
 
     def test_offered_on_the_small_goal_only(self):
         """小目標のスキーマにはあり、大目標の条件（世界から判定する）にはない。"""
-        schema = goal_schema([GoalPredicate.HAVE], [])
+        schema = goal_schema()
         assert schema["properties"]["dig_depth"]["maximum"] == 384
         condition = schema["properties"]["plan_changes"]["items"]["properties"]["conditions"]
         assert "dig_depth" not in condition["items"]["properties"]

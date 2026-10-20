@@ -153,7 +153,7 @@ llm:
     # a farm or tree farm (47 §7); [] = never think. plan (an objective's jobs and small goals, 50 §18) does
     # not think locally: measured 2026-09-30, the thinking hit a 6000-token cap after 85 s and the answer
     # came from the second call without it (142 s in all; the answer without thinking was usable)
-    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "site", "tool", "town_plan", "facility_design"]
+    thinking_purposes: ["goal", "goal_after_failure", "skill_write", "house", "town", "mission", "site", "tool", "town_plan", "facility_design"]
     # Output cap (thinking included) per purpose that thinks; when the cap is hit without an answer the
     # call is asked again without thinking (a long think of tool_stuck held the play for minutes;
     # tool_stuck no longer thinks: see config/development.yaml)
@@ -162,7 +162,7 @@ llm:
     # 22 replies wrote 2,125-4,462 tokens, 248 s in all, and 12 of 552 tool choices wrote 600-2,498;
     # the usual answer is 90 for a tool, 217 for a reply, 250-350 for a goal, 1,000 for a plan; the caps
     # are above the 99th percentile of 2026-09-29/30)
-    output_max_tokens: {tool: 800, tool_after_failure: 800, tool_stuck: 1200, goal: 1600, goal_after_failure: 1600, reply: 1200, reply_final: 600, naming: 800, commentary: 300, live: 200, plan: 3500, promise: 600}
+    output_max_tokens: {tool: 800, tool_after_failure: 800, tool_stuck: 1200, goal: 1600, goal_after_failure: 1600, reply: 1200, reply_final: 600, naming: 800, commentary: 300, live: 200, plan: 5000, promise: 600}
     max_concurrent: 2
     timeout_seconds: 180
   # The remote LLM: an OpenAI-compatible LiteLLM proxy. Images are sent as data URLs. What differs per
@@ -177,7 +177,7 @@ llm:
     model: "${LITELLM_MODEL:-}"          # required: the name LiteLLM serves (claude-haiku-5-5, gemini-3.8-flash, ...)
     api_key: "${LITELLM_API_KEY:-}"      # the proxy's master key (pass: LITE_LLM_MASTER_KEY)
     context_tokens: 200000
-    max_output_tokens: 8192
+    max_output_tokens: 16384             # thinking included. 8192 cut every town_plan call (thinking high) with no answer (2026-10-19)
     response_format: "auto"
     # Per purpose model (empty: the model above). The purposes that write code go to a stronger model, e.g.
     # LITELLM_CODE_MODEL=claude-sonnet-5-5. Applies only to calls that reach LiteLLM: a purpose that
@@ -221,6 +221,7 @@ llm:
   # listed use default_thinking_level. high is unmeasured (it may hit max_output_tokens): measure before relying on it.
   thinking_levels:
     town: "high"               # the town definition
+    mission: "high"            # the next final goal and its playbook, once the final goal is achieved (docs/design/180)
     site: "high"               # choosing the town site
     town_plan: "high"          # the town's master plan (docs/design/47 §6)
     facility_design: "high"    # a farm or tree farm's zones and size (docs/design/47 §7)
@@ -243,6 +244,7 @@ llm:
     check_write: "medium"      # writing the check of a custom(name) condition (docs/design/42)
     advice: "medium"           # the advisor's answer to the playing LLM (docs/design/143)
     lesson_compaction: "low"   # merging similar lessons when the lesson book is full (docs/design/144)
+    lesson_check: "low"        # checking a new lesson against the guides and the existing lessons (docs/design/201)
 
 character:
   name: "AILoveShen"
@@ -361,22 +363,6 @@ tts:
       angry: "むっとした、少し強い口調。"
       surprised: "驚いた、声が少し上ずった話し方。"
       scared: "怖がって、少し震えた話し方。"
-
-# MCP Settings
-mcp:
-  enabled: true
-
-  memory:
-    short_term_capacity: 20
-    long_term_db: "data/memory.db"
-    # Auto-save memories with importance >= HIGH
-    auto_save_min_importance: "high"
-
-  emotion:
-    default_state: "neutral"
-    decay_rate: 0.1
-    neutral_threshold: 0.3
-    # Decay is applied when generating commentary
 
 # Live2D (VTube Studio) Integration
 live2d:
@@ -507,7 +493,15 @@ minecraft:
     #     of the bridge's candidates); Jev answers watch questions while a tool runs
     #   candidates: the bridge grounds candidates (solver) and Jev picks one (the old baseline, kept
     #     for comparison: --control candidates)
+    #   raw: an experiment with no bridge decisions (docs/design/191_raw_play.md): no goals, solver,
+    #     candidates, playbook or advice; the LLM only writes and runs its own skills over the real bot
+    #     (bridge started with BRIDGE_RAW_BOT=1 BRIDGE_RAW_ONLY=1). Run it with tools/benchmark.py
     control: "tools"
+    # Text skills (docs/design/192_guides.md): guides/<name>/SKILL.md with name + description frontmatter. The prompt lists
+    # the names; the LLM reads one with the read_guide tool
+    guides_dir: "guides"
+    # The task given to the LLM when control is raw
+    raw_task: "Survive in Minecraft and get as far as you can, as a player would: wood, tools, food, a place to live, iron, diamonds. How is up to you."
     # Each step in tools mode (docs/design/34 §3): jev = Jev picks first among the bridge's
     # candidates and the learned skills that worked and take no arguments; Gemini decides when Jev
     # picks "ask_gemini", is unsure, too slow, fails, after a failed tool, after
@@ -549,6 +543,9 @@ minecraft:
     lessons_shown: 4
     lesson_candidates: 6
     lesson_min_confidence: 0.6
+    # A new lesson is checked in the background against the guides (what is certain) and the lessons of the same goal: one that
+    # contradicts a guide is dropped, one that says the same as an existing lesson is merged into it (docs/design/201)
+    lesson_check: true
     lesson_timeout_seconds: 2.0
     max_lessons: 200
     # Learned candidates (docs/design/52): a step the LLM chose that worked (a tool call with no coordinates:
@@ -649,8 +646,10 @@ minecraft:
       torch: {low: 32, carry: 64, stock: 128}   # at least one stack in hand
       food: {low: 100, carry: 160, stock: 320}
 
-  # Goal hierarchy (docs/design/13_goal_hierarchy.md): the mission never changes on stream;
-  # objectives are worked on from the top, completed when their conditions hold in the world.
+  # Goal hierarchy (docs/design/13_goal_hierarchy.md): `text` is the first mission and the comments never change it.
+  # Once the town is complete and every playbook step is done, the LLM writes the next mission and its playbook
+  # steps (docs/design/180); the saved plan keeps them, and this text only says which plan the save belongs to.
+  # Objectives are worked on from the top, completed when their conditions hold in the world.
   # Conditions: built / placed (item: bed) / have (item, count)
   mission:
     text: "生き延びながら家を建て、街にしていく"
@@ -711,7 +710,7 @@ minecraft:
     max_objectives: 6
     max_viewer_objectives: 2       # at a time; one per viewer
     viewer_budget_steps: 80       # a viewer's objective is dropped (and told) after this many steps
-    # Carried on across restarts while the mission text stays the same
+    # Carried on across restarts while the mission text above stays the same
     store_path: "data/mission.json"
 
 # Logging
