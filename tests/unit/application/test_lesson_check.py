@@ -148,3 +148,37 @@ async def test_a_lesson_added_by_the_operator_is_not_judged_again_by_the_llm():
     await _settle(book)
     checker.check.assert_not_called()
     assert len(book.lessons) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_wrong_verdict_deletes_only_after_the_second_opinion_confirms_it():
+    from ailoveshen.application.use_cases.lesson_check import WRONG
+
+    generator = AsyncMock()
+    generator.generate_json.side_effect = [
+        {"reason": "鉱石の多さはバイオームで決まらない", "verdict": "wrong"},
+        {"reason": "手引きに反する", "confirmed": True},
+    ]
+    checker = LessonChecker(generator, lambda: "### g\n鉄は y=16")
+    verdict = await checker.check(Lesson("L2", "鉄は沼地に少ない", situation=(("goal", "have"),)), [])
+    assert verdict.kind == WRONG and generator.generate_json.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_a_wrong_verdict_whose_own_reason_says_the_lesson_is_right_is_not_acted_on():
+    # 2026-10-20: 理由で「正しい」と言いながら wrong と答え、正しい教訓 L1924 が消えた
+    generator = AsyncMock()
+    generator.generate_json.side_effect = [
+        {"reason": "クラフトで作れないという記述は正しいので、反しない", "verdict": "wrong"},
+        {"reason": "理由は教訓を正しいと言っている", "confirmed": False},
+    ]
+    checker = LessonChecker(generator, lambda: "")
+    verdict = await checker.check(Lesson("L3", "鉄インゴットは craft では作れない", situation=(("goal", "have"),)), [])
+    assert verdict.kind == OK
+
+
+def test_the_reason_comes_before_the_verdict_in_the_output_schema():
+    from ailoveshen.application.use_cases.lesson_check import confirm_schema
+
+    assert list(verdict_schema()["properties"])[:2] == ["reason", "verdict"]
+    assert "confirmed" in confirm_schema()["required"]

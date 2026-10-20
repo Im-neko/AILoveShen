@@ -47,18 +47,31 @@ class LessonVerdict:
 
 
 def verdict_schema() -> dict[str, Any]:
-    """確認の出力の JSON スキーマ。"""
+    """確認の出力の JSON スキーマ。理由を先に書かせて、判定は理由に従わせる（2026-10-20: 判定を先に書かせたら、
+    理由で「正しい」と言いながら wrong と答え、正しい教訓 L1924 が消えた）。"""
     return {
         "type": "object",
         "properties": {
+            "reason": {"type": "string", "description": "one Japanese sentence: what the lesson says and whether it contradicts the reference or the game (empty for ok)"},
             "verdict": {"type": "string", "enum": [OK, WRONG, DUPLICATE]},
             "duplicate_of": {
                 "type": "string",
                 "description": "duplicate only: the id of the existing lesson that says the same, e.g. L3",
             },
-            "reason": {"type": "string", "description": "one Japanese sentence (empty for ok)"},
         },
-        "required": ["verdict"],
+        "required": ["reason", "verdict"],
+    }
+
+
+def confirm_schema() -> dict[str, Any]:
+    """wrong の見直しの出力の JSON スキーマ。"""
+    return {
+        "type": "object",
+        "properties": {
+            "reason": {"type": "string", "description": "one Japanese sentence: does the first reason really show that the lesson is false?"},
+            "confirmed": {"type": "boolean", "description": "true only if the lesson is clearly false (contradicts the reference or the game)"},
+        },
+        "required": ["reason", "confirmed"],
     }
 
 
@@ -128,4 +141,21 @@ class LessonChecker:
             "## 頼み\nこの新しい教訓を、wrong / duplicate / ok のどれにするか答えてください。"
         )
         data = await self._text_generator.generate_json(prompt, verdict_schema(), purpose=PURPOSE)
-        return parse_verdict(data, {n.id for n in candidates})
+        verdict = parse_verdict(data, {n.id for n in candidates})
+        if verdict.kind == WRONG and not await self._confirmed(fixed, lesson, condition, verdict.reason):
+            logger.info(f"教訓を消さなかった（見直しで違った）: {lesson.id} {lesson.text}: {verdict.reason}")
+            return LessonVerdict(OK, reason=f"見直しで違った: {verdict.reason}")
+        return verdict
+
+    async def _confirmed(self, fixed: str, lesson: Lesson, condition: str, reason: str) -> bool:
+        """wrong と答えた理由が、本当に教訓の誤りを示しているか、もう一度聞く。消すのは取り返しがつかないので、
+        確かでなければ残す。固定の先頭は同じなので、キャッシュに乗る。"""
+        prompt = (
+            f"{fixed}{CACHE_BREAK}"
+            f"## 見直し\n[{lesson.id}] {lesson.text}{condition}\n\n"
+            f"一度目の判定は wrong で、理由はこうでした: {reason}\n\n"
+            "## 頼み\nこの理由は、教訓が参考か Minecraft 1.21 の仕組みに**はっきり反する**ことを本当に示していますか。"
+            "理由が教訓を正しいと言っているとき、確かめられないとき、経験則にすぎないときは confirmed=false にしてください。"
+        )
+        data = await self._text_generator.generate_json(prompt, confirm_schema(), purpose=PURPOSE)
+        return bool(data.get("confirmed"))
