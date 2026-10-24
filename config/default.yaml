@@ -175,7 +175,7 @@ llm:
   litellm:
     base_url: "${LITELLM_URL:-https://llm.ideta.net/v1}"
     model: "${LITELLM_MODEL:-}"          # required: the name LiteLLM serves (claude-haiku-5-5, gemini-3.8-flash, ...)
-    api_key: "${LITELLM_API_KEY:-}"      # the proxy's master key (pass: LITE_LLM_MASTER_KEY)
+    api_key: "${LITELLM_API_KEY:-}"      # the proxy's virtual key "ailoveshen" (pass: LITELLM_KEY_AILOVESHEN)
     context_tokens: 200000
     max_output_tokens: 16384             # thinking included. 8192 cut every town_plan call (thinking high) with no answer (2026-10-19)
     response_format: "auto"

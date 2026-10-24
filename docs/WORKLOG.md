@@ -7,6 +7,13 @@
 
 ## Completed Work
 
+### LiteLLM のキーを master key から仮想キー `ailoveshen` に替えた（2026-10-24、確認済み）
+
+- 呼び出し元別に Prometheus で集計するため、LiteLLM の `key_alias` ごとに仮想キーを発行した。AILoveShen は `ailoveshen`。pass の置き場は `LITELLM_KEY_AILOVESHEN`（`LITE_LLM_MASTER_KEY` は使わない）
+- 直した先: `.env.example`、`config/default.yaml` のコメント、`docs/streaming.md`。コードは `LITELLM_API_KEY` を読むだけなので変更なし
+- 要る操作: `LITELLM_API_KEY="$(pass show LITELLM_KEY_AILOVESHEN)"` で配信を再起動する
+- 設計書 127 §1 の「鍵は pass の `LITE_LLM_MASTER_KEY`」は 2026-10-09 時点の記録なので書き換えていない
+
 ### 教訓の確認が正しい教訓を消した: 理由を先に書かせ、wrong は見直してから消す（設計書 201 §8 の追補、2026-10-20 18:50、未確認: 実機で見直しが動くこと。ユーザー指示なし。監視中に見つけた）
 
 - 事故: 18:45 に新しい教訓 L1924「鉄インゴットは craft では作れない。原鉄をかまどで溶かして作る」が `wrong`（手引きに反する）で**消えた**。判定の理由は「クラフトで作れないとする記述は正しいので、この教訓は内容として反しない」で、**理由が正しいと言いながら判定は wrong**だった。実機で初めて出た `wrong` が、誤りだった

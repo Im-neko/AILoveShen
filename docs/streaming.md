@@ -61,7 +61,7 @@ cp .env.example .env
 
 | 変数 | 内容 |
 |---|---|
-| `LITELLM_API_KEY` | LiteLLM（llm.ideta.net）のキー。pass の `LITE_LLM_MASTER_KEY` を `LITELLM_API_KEY="$(pass show LITE_LLM_MASTER_KEY)"` で渡してもよい |
+| `LITELLM_API_KEY` | LiteLLM（llm.ideta.net）の仮想キー（`key_alias` が `ailoveshen`）。pass の `LITELLM_KEY_AILOVESHEN` を `LITELLM_API_KEY="$(pass show LITELLM_KEY_AILOVESHEN)"` で渡してもよい |
 | `LITELLM_MODEL` | LiteLLM のモデル名（`claude-haiku-5-5`、`gemini-3.8-flash` など） |
 | `TYPESAFE_API_KEY` | Jev の API キー |
 | `OBS_PASSWORD` | OBS の WebSocket のパスワード（下の 6） |
